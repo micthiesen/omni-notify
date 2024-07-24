@@ -1,4 +1,4 @@
-import { Task } from "./task";
+import { Task } from "./task.js";
 
 export const task1: Task = {
   name: "Task 1",

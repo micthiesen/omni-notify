@@ -1,9 +1,9 @@
 import PQueue from "p-queue";
-import { Task } from "./task";
+import { Task } from "./task.js";
 
 // Import your tasks
-import { task1 } from "./task1";
-import { task2 } from "./task2";
+import { task1 } from "./task1.js";
+import { task2 } from "./task2.js";
 
 export class TaskManager {
   private queue: PQueue;
