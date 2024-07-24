@@ -1,5 +1,5 @@
 # Use a specific Node.js version as a base image
-FROM node:18.16.0
+FROM node:20.16.0
 
 # Enable corepack
 RUN corepack enable
