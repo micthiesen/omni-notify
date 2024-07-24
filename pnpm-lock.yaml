@@ -24,6 +24,9 @@ importers:
       '@biomejs/biome':
         specifier: ^1.8.3
         version: 1.8.3
+      '@types/node':
+        specifier: 20.14.12
+        version: 20.14.12
       '@types/node-cron':
         specifier: 3.0.11
         version: 3.0.11
@@ -598,7 +601,6 @@ snapshots:
   '@types/node@20.14.12':
     dependencies:
       undici-types: 5.26.5
-    optional: true
 
   cac@6.7.14: {}
 
@@ -692,8 +694,7 @@ snapshots:
 
   typescript@5.5.4: {}
 
-  undici-types@5.26.5:
-    optional: true
+  undici-types@5.26.5: {}
 
   uuid@8.3.2: {}
 

@@ -10,11 +10,19 @@ const envSchema = z.object({
 		.string()
 		.optional()
 		.transform((val) => (val ? val.split(",") : [])),
+	PUSHOVER_USER_KEY: z.string(),
+	PUSHOVER_APP_TOKEN: z.string(),
 });
 
 export type Config = z.infer<typeof envSchema>;
 
 const config = envSchema.parse(process.env);
-console.log("Loaded config", config);
+console.log(
+	"Loaded config",
+	Object.entries(config).map(([key, value]) => [
+		key,
+		key.includes("TOKEN") || key.includes("KEY") ? "***" : value,
+	]),
+);
 
 export default config;
