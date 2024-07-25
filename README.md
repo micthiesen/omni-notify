@@ -30,3 +30,5 @@ channel changes from NOT live to live (or at startup).
 
 It looks for specific text on the channel's live page. Because of this, it could break if YouTube changes what
 the page looks like or if YouTube blocks the requests for some reason (it does not use the API).
+
+Inspired by: <https://github.com/your-diary/youtube_live_alert>
