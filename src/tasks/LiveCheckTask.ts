@@ -9,9 +9,13 @@ export default class LiveCheckTask extends Task {
 
 	private previousStatuses = new Map<string, boolean>();
 
+	public constructor(private channelNames: string[]) {
+		super();
+	}
+
 	public async run() {
 		const results = await Promise.allSettled(
-			config.YT_CHANNEL_NAMES.map(async (username) => {
+			this.channelNames.map(async (username) => {
 				const isLive = await checkYouTubeLiveStatus({ username });
 				debug(`${username} is ${isLive ? "" : "NOT "}live`);
 

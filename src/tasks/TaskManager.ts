@@ -3,6 +3,7 @@ import PQueue from "p-queue";
 import { debug, error } from "../utils/logging.js";
 import LiveCheckTask from "./LiveCheckTask.js";
 import type { Task } from "./types.js";
+import config from "../utils/config.js";
 
 export default class TaskManager {
 	private queue: PQueue;
@@ -10,7 +11,7 @@ export default class TaskManager {
 
 	constructor() {
 		this.queue = new PQueue({ concurrency: 1 });
-		this.tasks = [new LiveCheckTask()];
+		this.tasks = [new LiveCheckTask(config.YT_CHANNEL_NAMES)];
 	}
 
 	public async runTasks(): Promise<void> {
