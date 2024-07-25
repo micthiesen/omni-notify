@@ -16,7 +16,7 @@ export class TaskManager {
 		for (const task of this.tasks) {
 			this.queue.add(async () => {
 				try {
-					console.log(`Running task: ${task.name}`);
+					// console.log(`Running task: ${task.name}`);
 					await task.run(this.config);
 				} catch (error) {
 					console.error(`Error running task: ${task.name}`, error);
