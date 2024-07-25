@@ -1,16 +1,16 @@
 import PQueue from "p-queue";
 
-import type { Config } from "../config.js";
 import { debug, error } from "../logging.js";
-import { task1 } from "./task1.js";
+import LiveCheckTask from "./LiveCheckTask.js";
+import type { Task } from "./types.js";
 
-export class TaskManager {
+export default class TaskManager {
 	private queue: PQueue;
 	private tasks: Task[];
 
 	constructor() {
 		this.queue = new PQueue({ concurrency: 1 });
-		this.tasks = [task1];
+		this.tasks = [new LiveCheckTask()];
 	}
 
 	public async runTasks(): Promise<void> {
@@ -25,9 +25,4 @@ export class TaskManager {
 			});
 		}
 	}
-}
-
-export interface Task {
-	name: string;
-	run: () => Promise<void>;
 }
