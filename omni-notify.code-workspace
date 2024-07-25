@@ -9,7 +9,7 @@
 		"editor.codeActionsOnSave": {
 			"source.fixAll": "always"
 		},
-		"[typescript]": {
+		"[typescript][json][yaml]": {
 			"editor.defaultFormatter": "biomejs.biome",
 			"editor.formatOnSave": true,
 			"editor.codeActionsOnSave": {

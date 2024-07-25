@@ -7,7 +7,7 @@
 		"start": "node dist/index.js",
 		"build": "tsc",
 		"dev": "vite-node src/index.ts",
-		"lint": "biome check",
+		"lint": "tsc --noEmit && biome check",
 		"lint:fix": "biome check --fix",
 		"docker:build": "docker build -t my-nodejs-project .",
 		"docker:publish": "docker push my-nodejs-project",
