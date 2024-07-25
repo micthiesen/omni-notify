@@ -3,7 +3,7 @@ import TaskManager from "./tasks/TaskManager.js";
 import Logger from "./utils/Logger.js";
 
 const logger = new Logger("Main");
-const taskManager = new TaskManager();
+const taskManager = new TaskManager(logger);
 
 cron.schedule(
 	"*/20 * * * * *",

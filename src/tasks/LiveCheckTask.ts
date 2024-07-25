@@ -1,4 +1,4 @@
-import Logger from "../utils/Logger.js";
+import type Logger from "../utils/Logger.js";
 import { sendNotification } from "../utils/notifications.js";
 import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../utils/youtube.js";
 import { Task } from "./types.js";
@@ -6,11 +6,15 @@ import { Task } from "./types.js";
 export default class LiveCheckTask extends Task {
 	public name = "YT Live Check";
 
-	private logger = new Logger("LiveCheckTask");
+	private logger: Logger;
 	private previousStatuses = new Map<string, boolean>();
 
-	public constructor(private channelNames: string[]) {
+	public constructor(
+		private channelNames: string[],
+		parentLogger: Logger,
+	) {
 		super();
+		this.logger = parentLogger.extend("LiveCheckTask");
 	}
 
 	public async run() {

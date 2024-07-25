@@ -1,5 +1,5 @@
 import PQueue from "p-queue";
-import Logger from "../utils/Logger.js";
+import type Logger from "../utils/Logger.js";
 import config from "../utils/config.js";
 import LiveCheckTask from "./LiveCheckTask.js";
 import type { Task } from "./types.js";
@@ -7,11 +7,12 @@ import type { Task } from "./types.js";
 export default class TaskManager {
 	private queue: PQueue;
 	private tasks: Task[];
-	private logger = new Logger("TaskManager");
+	private logger: Logger;
 
-	constructor() {
+	constructor(parentLogger: Logger) {
+		this.logger = parentLogger.extend("TaskManager");
 		this.queue = new PQueue({ concurrency: 1 });
-		this.tasks = [new LiveCheckTask(config.YT_CHANNEL_NAMES)];
+		this.tasks = [new LiveCheckTask(config.YT_CHANNEL_NAMES, this.logger)];
 	}
 
 	public async runTasks(): Promise<void> {
