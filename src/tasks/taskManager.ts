@@ -2,6 +2,7 @@ import PQueue from "p-queue";
 
 import { task1 } from "./task1.js";
 import type { Config } from "../config.js";
+import { debug, error } from "../logging.js";
 
 export class TaskManager {
 	private queue: PQueue;
@@ -16,10 +17,10 @@ export class TaskManager {
 		for (const task of this.tasks) {
 			this.queue.add(async () => {
 				try {
-					// console.log(`Running task: ${task.name}`);
+					debug(`Running task: ${task.name}`);
 					await task.run(this.config);
-				} catch (error) {
-					console.error(`Error running task: ${task.name}`, error);
+				} catch (err) {
+					error(`Error running task: ${task.name}`, err);
 				}
 			});
 		}

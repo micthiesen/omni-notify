@@ -1,6 +1,13 @@
 import dotenv from "dotenv";
 import { z } from "zod";
 
+export enum LogLevel {
+	DEBUG = "debug",
+	INFO = "info",
+	WARN = "warn",
+	ERROR = "error",
+}
+
 // Load environment variables from .env file if it exists
 dotenv.config();
 
@@ -12,6 +19,7 @@ const envSchema = z.object({
 		.transform((val) => (val ? val.split(",") : [])),
 	PUSHOVER_USER_KEY: z.string(),
 	PUSHOVER_APP_TOKEN: z.string(),
+	LOG_LEVEL: z.nativeEnum(LogLevel).optional().default(LogLevel.INFO),
 });
 
 export type Config = z.infer<typeof envSchema>;

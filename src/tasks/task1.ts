@@ -1,3 +1,4 @@
+import { debug, error, info } from "../logging.js";
 import { sendNotification } from "../notifications.js";
 import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../youtube.js";
 import type { Task } from "./taskManager.js";
@@ -10,18 +11,18 @@ export const task1: Task = {
 		const results = await Promise.allSettled(
 			config.YT_CHANNEL_NAMES.map(async (username) => {
 				const isLive = await checkYouTubeLiveStatus({ username });
-				// console.log(`${username} is ${isLive ? "" : "NOT "}live`);
+				debug(`${username} is ${isLive ? "" : "NOT "}live`);
 
 				const isLivePrevious = PREVIOUS_STATUSES.get(username) ?? false;
 				if (isLive && !isLivePrevious) {
-					console.log(`${username} is live; sending notification`);
+					info(`${username} is live; sending notification`);
 					await sendNotification({
 						title: "LIVE on YouTube",
 						message: `${username} is LIVE on YouTube!`,
 						url: getYouTubeLiveUrl(username),
 					});
 				} else if (!isLive && isLivePrevious) {
-					console.log(`${username} is no longer live on YouTube`);
+					info(`${username} is no longer live on YouTube`);
 				}
 
 				PREVIOUS_STATUSES.set(username, isLive);
@@ -30,11 +31,7 @@ export const task1: Task = {
 
 		const failed = results.filter((r) => r.status === "rejected");
 		for (const result of failed) {
-			console.log("Failed to check live status:", result.reason);
-			await sendNotification({
-				title: "Live Check Failure",
-				message: `${result.reason}`,
-			});
+			error("Failed to check live status:", result.reason);
 		}
 	},
 };
