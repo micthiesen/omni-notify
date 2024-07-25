@@ -3,7 +3,7 @@ const TIMEOUT_MS = 10 * 1000;
 export async function checkYouTubeLiveStatus({
 	username,
 }: { username: string }): Promise<boolean> {
-	const url = `https://www.youtube.com/${username}/live`;
+	const url = getYouTubeLiveUrl(username);
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
