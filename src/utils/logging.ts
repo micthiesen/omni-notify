@@ -9,34 +9,39 @@ const LOG_LEVEL_MAP: Record<LogLevel, number> = {
 };
 const LOG_LEVEL_NUM = LOG_LEVEL_MAP[config.LOG_LEVEL];
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-function log(level: LogLevel, message: string, ...args: any[]) {
-	const levelNum = LOG_LEVEL_MAP[level];
-	if (levelNum < LOG_LEVEL_NUM) return;
-	console[level](message, ...args);
-}
+export class Logger {
+	public constructor(private name: string) {}
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-export function debug(message: string, ...args: any[]) {
-	log(LogLevel.DEBUG, message, ...args);
-}
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	public log(level: LogLevel, message: string, ...args: any[]) {
+		const levelNum = LOG_LEVEL_MAP[level];
+		if (levelNum < LOG_LEVEL_NUM) return;
+		const messageFinal = `[${level.toUpperCase()}] <${this.name}> ${message}`;
+		console[level](messageFinal, ...args);
+	}
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-export function info(message: string, ...args: any[]) {
-	log(LogLevel.INFO, message, ...args);
-}
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-export function warn(message: string, ...args: any[]) {
-	log(LogLevel.WARN, message, ...args);
-}
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	public debug(message: string, ...args: any[]) {
+		this.log(LogLevel.DEBUG, message, ...args);
+	}
 
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-export function error(message: string, ...args: any[]) {
-	log(LogLevel.ERROR, message, ...args);
-	(async () => {
-		sendNotification({
-			title: `Error: ${message}`,
-			message: `${args}`,
-		});
-	})();
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	public info(message: string, ...args: any[]) {
+		this.log(LogLevel.INFO, message, ...args);
+	}
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	public warn(message: string, ...args: any[]) {
+		this.log(LogLevel.WARN, message, ...args);
+	}
+
+	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	public error(message: string, ...args: any[]) {
+		this.log(LogLevel.ERROR, message, ...args);
+		(async () => {
+			sendNotification({
+				title: `Error: ${message}`,
+				message: `${args}`,
+			});
+		})();
+	}
 }

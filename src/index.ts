@@ -1,15 +1,15 @@
 import cron from "node-cron";
 import TaskManager from "./tasks/TaskManager.js";
-import { debug } from "./utils/logging.js";
+import { Logger } from "./utils/logging.js";
 
-// Initialize Task Manager
+const logger = new Logger("Main");
 const taskManager = new TaskManager();
 
 cron.schedule(
 	"*/20 * * * * *",
 	async () => {
 		await randomSleep(); // Fuzz
-		debug("Running scheduled tasks...");
+		logger.debug("Running scheduled tasks...");
 		await taskManager.runTasks();
 	},
 	{ runOnInit: false },
