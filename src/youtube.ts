@@ -21,7 +21,14 @@ export async function checkYouTubeLiveStatus({
 	} catch (error) {
 		clearTimeout(timeoutId);
 		throw new Error(
-			`Failed to check YouTube live status: ${(error as any)?.message}`,
+			`Failed to check YouTube live status: ${
+				// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+				(error as any)?.message
+			}`,
 		);
 	}
+}
+
+export function getYouTubeLiveUrl(username: string) {
+	return `https://www.youtube.com/${username}/live`;
 }
