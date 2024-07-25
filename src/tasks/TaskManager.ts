@@ -1,9 +1,9 @@
 import PQueue from "p-queue";
 
+import config from "../utils/config.js";
 import { debug, error } from "../utils/logging.js";
 import LiveCheckTask from "./LiveCheckTask.js";
 import type { Task } from "./types.js";
-import config from "../utils/config.js";
 
 export default class TaskManager {
 	private queue: PQueue;
