@@ -26,7 +26,7 @@ export type Config = z.infer<typeof envSchema>;
 
 const config = envSchema.parse(process.env);
 console.log(
-	"Loaded config",
+	"Loaded config:",
 	Object.fromEntries(
 		Object.entries(config).map(([key, value]) => [
 			key,

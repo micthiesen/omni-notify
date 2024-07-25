@@ -21,7 +21,7 @@ export default class LiveCheckTask extends Task {
 
 				const isLivePrevious = this.previousStatuses.get(username) ?? false;
 				if (isLive && !isLivePrevious) {
-					info(`${username} is live; sending notification`);
+					info(`${username} is live: sending notification`);
 					await sendNotification({
 						title: "LIVE on YouTube",
 						message: `${username} is LIVE on YouTube!`,
