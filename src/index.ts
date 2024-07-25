@@ -12,7 +12,7 @@ cron.schedule(
 		debug("Running scheduled tasks...");
 		await taskManager.runTasks();
 	},
-	{ runOnInit: true },
+	{ runOnInit: false },
 );
 
 function randomSleep(maxMilliseconds = 3000): Promise<void> {
