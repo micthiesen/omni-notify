@@ -1,6 +1,6 @@
 import PQueue from "p-queue";
 
-import { debug, error } from "../logging.js";
+import { debug, error } from "../utils/logging.js";
 import LiveCheckTask from "./LiveCheckTask.js";
 import type { Task } from "./types.js";
 

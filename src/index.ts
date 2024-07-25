@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { debug } from "./logging.js";
+import { debug } from "./utils/logging.js";
 import TaskManager from "./tasks/TaskManager.js";
 
 // Initialize Task Manager

@@ -1,7 +1,7 @@
-import config from "../config.js";
-import { debug, error, info } from "../logging.js";
-import { sendNotification } from "../notifications.js";
-import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../youtube.js";
+import config from "../utils/config.js";
+import { debug, error, info } from "../utils/logging.js";
+import { sendNotification } from "../utils/notifications.js";
+import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../utils/youtube.js";
 import { Task } from "./types.js";
 
 export default class LiveCheckTask extends Task {
