@@ -1,10 +1,9 @@
 import cron from "node-cron";
-import config from "./config.js";
 import { debug } from "./logging.js";
 import { TaskManager } from "./tasks/taskManager.js";
 
 // Initialize Task Manager
-const taskManager = new TaskManager(config);
+const taskManager = new TaskManager();
 
 cron.schedule(
 	"*/20 * * * * *",

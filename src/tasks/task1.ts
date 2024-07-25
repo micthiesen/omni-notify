@@ -1,3 +1,4 @@
+import config from "../config.js";
 import { debug, error, info } from "../logging.js";
 import { sendNotification } from "../notifications.js";
 import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../youtube.js";
@@ -7,7 +8,7 @@ const PREVIOUS_STATUSES = new Map<string, boolean>();
 
 export const task1: Task = {
 	name: "YT Live Check",
-	run: async (config) => {
+	run: async () => {
 		const results = await Promise.allSettled(
 			config.YT_CHANNEL_NAMES.map(async (username) => {
 				const isLive = await checkYouTubeLiveStatus({ username });

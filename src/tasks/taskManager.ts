@@ -8,7 +8,7 @@ export class TaskManager {
 	private queue: PQueue;
 	private tasks: Task[];
 
-	constructor(private config: Config) {
+	constructor() {
 		this.queue = new PQueue({ concurrency: 1 });
 		this.tasks = [task1];
 	}
@@ -18,7 +18,7 @@ export class TaskManager {
 			this.queue.add(async () => {
 				try {
 					debug(`Running task: ${task.name}`);
-					await task.run(this.config);
+					await task.run();
 				} catch (err) {
 					error(`Error running task: ${task.name}`, err);
 				}
@@ -29,5 +29,5 @@ export class TaskManager {
 
 export interface Task {
 	name: string;
-	run: (config: Config) => Promise<void>;
+	run: () => Promise<void>;
 }
