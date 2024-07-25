@@ -10,10 +10,11 @@ export const task1: Task = {
 		const results = await Promise.allSettled(
 			config.YT_CHANNEL_NAMES.map(async (username) => {
 				const isLive = await checkYouTubeLiveStatus({ username });
-				console.log(`${username} is ${isLive ? "" : "NOT "} live`);
+				console.log(`${username} is ${isLive ? "" : "NOT "}live`);
 
 				const isLivePrevious = PREVIOUS_STATUSES.get(username) ?? false;
 				if (isLive && !isLivePrevious) {
+					console.log(`Sending notification for ${username}`);
 					await sendNotification({
 						title: "Live on YouTube",
 						message: `${username} is LIVE on YouTube!`,
