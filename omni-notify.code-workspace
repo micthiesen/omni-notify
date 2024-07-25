@@ -1,14 +1,14 @@
 {
-  "folders": [
-    {
-      "path": "."
-    }
-  ],
-  "settings": {
-    "typescript.tsdk": "node_modules/typescript/lib",
-    "editor.codeActionsOnSave": {
-      "source.fixAll": "always"
-    },
-    "biome.enable": true
-  }
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"typescript.tsdk": "node_modules/typescript/lib",
+		"editor.codeActionsOnSave": {
+			"source.fixAll": "always"
+		},
+		"biome.enable": true
+	}
 }

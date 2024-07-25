@@ -1,8 +1,8 @@
 import PQueue from "p-queue";
 
-import { task1 } from "./task1.js";
 import type { Config } from "../config.js";
 import { debug, error } from "../logging.js";
+import { task1 } from "./task1.js";
 
 export class TaskManager {
 	private queue: PQueue;
