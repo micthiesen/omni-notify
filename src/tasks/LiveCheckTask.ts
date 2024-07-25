@@ -1,4 +1,4 @@
-import { Logger } from "../utils/logging.js";
+import Logger from "../utils/Logger.js";
 import { sendNotification } from "../utils/notifications.js";
 import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../utils/youtube.js";
 import { Task } from "./types.js";

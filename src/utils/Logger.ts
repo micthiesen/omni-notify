@@ -9,7 +9,7 @@ const LOG_LEVEL_MAP: Record<LogLevel, number> = {
 };
 const LOG_LEVEL_NUM = LOG_LEVEL_MAP[config.LOG_LEVEL];
 
-export class Logger {
+export default class Logger {
 	public constructor(private name: string) {}
 
 	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
