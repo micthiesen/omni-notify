@@ -16,7 +16,7 @@ export const task1: Task = {
 				if (isLive && !isLivePrevious) {
 					console.log(`${username} is live; sending notification`);
 					await sendNotification({
-						title: "lIVE on YouTube",
+						title: "LIVE on YouTube",
 						message: `${username} is LIVE on YouTube!`,
 						url: getYouTubeLiveUrl(username),
 					});
