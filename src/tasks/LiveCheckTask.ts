@@ -1,4 +1,3 @@
-import config from "../utils/config.js";
 import { debug, error, info } from "../utils/logging.js";
 import { sendNotification } from "../utils/notifications.js";
 import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../utils/youtube.js";
@@ -16,22 +15,22 @@ export default class LiveCheckTask extends Task {
 	public async run() {
 		const results = await Promise.allSettled(
 			this.channelNames.map(async (username) => {
-				const isLive = await checkYouTubeLiveStatus({ username });
-				debug(`${username} is ${isLive ? "" : "NOT "}live`);
+				const result = await checkYouTubeLiveStatus({ username });
+				debug(`${username} is ${result.isLive ? "" : "NOT "}live`);
 
 				const isLivePrevious = this.previousStatuses.get(username) ?? false;
-				if (isLive && !isLivePrevious) {
+				if (result.isLive && !isLivePrevious) {
 					info(`${username} is live: sending notification`);
 					await sendNotification({
-						title: "LIVE on YouTube",
-						message: `${username} is LIVE on YouTube!`,
+						title: `${username} is LIVE on YouTube!`,
+						message: result.title,
 						url: getYouTubeLiveUrl(username),
 					});
-				} else if (!isLive && isLivePrevious) {
+				} else if (!result.isLive && isLivePrevious) {
 					info(`${username} is no longer live on YouTube`);
 				}
 
-				this.previousStatuses.set(username, isLive);
+				this.previousStatuses.set(username, result.isLive);
 			}),
 		);
 

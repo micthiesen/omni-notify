@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  lint:
+  lint-and-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -31,9 +31,13 @@ jobs:
       - name: Lint TypeScript
         run: pnpm run lint
 
+      - name: Run tests
+        run: pnpm run test
+
+
   build-and-publish:
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [lint-and-test]
 
     permissions:
       contents: read

@@ -1,8 +1,12 @@
+import { decode } from "html-entities";
+
 const TIMEOUT_MS = 10 * 1000;
+
+export type IsLiveResult = { isLive: true; title: string } | { isLive: false };
 
 export async function checkYouTubeLiveStatus({
 	username,
-}: { username: string }): Promise<boolean> {
+}: { username: string }): Promise<IsLiveResult> {
 	const url = getYouTubeLiveUrl(username);
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -16,8 +20,8 @@ export async function checkYouTubeLiveStatus({
 			throw new Error(body);
 		}
 
-		const body = await response.text();
-		return body.includes('name="title"');
+		const html = await response.text();
+		return extractMetaTitleContent(html);
 	} catch (error) {
 		clearTimeout(timeoutId);
 		throw new Error(
@@ -27,6 +31,12 @@ export async function checkYouTubeLiveStatus({
 			}`,
 		);
 	}
+}
+
+export function extractMetaTitleContent(html: string): IsLiveResult {
+	const metaTagRegex = /<meta\s+name="title"\s+content="([^"]*)"\s*\/?>/i;
+	const match = metaTagRegex.exec(html);
+	return match ? { isLive: true, title: decode(match[1]) } : { isLive: false };
 }
 
 export function getYouTubeLiveUrl(username: string) {
