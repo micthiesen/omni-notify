@@ -19,10 +19,12 @@ export type Config = z.infer<typeof envSchema>;
 const config = envSchema.parse(process.env);
 console.log(
 	"Loaded config",
-	Object.entries(config).map(([key, value]) => [
-		key,
-		key.includes("TOKEN") || key.includes("KEY") ? "***" : value,
-	]),
+	Object.fromEntries(
+		Object.entries(config).map(([key, value]) => [
+			key,
+			key.includes("TOKEN") || key.includes("KEY") ? "***" : value,
+		]),
+	),
 );
 
 export default config;
