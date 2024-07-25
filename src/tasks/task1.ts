@@ -1,6 +1,6 @@
 import { sendNotification } from "../notifications.js";
 import { checkYouTubeLiveStatus, getYouTubeLiveUrl } from "../youtube.js";
-import type { Task } from "./task.js";
+import type { Task } from "./taskManager.js";
 
 const PREVIOUS_STATUSES = new Map<string, boolean>();
 

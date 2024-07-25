@@ -6,7 +6,7 @@ import { TaskManager } from "./tasks/taskManager.js";
 const taskManager = new TaskManager(config);
 
 // Schedule tasks to run every 30 seconds
-cron.schedule("*/30 * * * * *", () => {
+cron.schedule("*/15 * * * * *", () => {
 	console.log("Running scheduled tasks...");
 	taskManager.runTasks();
 });
