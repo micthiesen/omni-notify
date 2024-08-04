@@ -8,6 +8,7 @@ export default class LiveCheckTask extends Task {
 
 	private logger: Logger;
 	private previousStatuses = new Map<string, boolean>();
+	private numPreviousFailures = 0;
 
 	public constructor(
 		private channelNames: string[],
@@ -39,9 +40,23 @@ export default class LiveCheckTask extends Task {
 			}),
 		);
 
-		const failed = results.filter((r) => r.status === "rejected");
-		for (const result of failed) {
-			this.logger.error("Failed to check live status:", result.reason);
+		const failures = results.filter((r) => r.status === "rejected");
+		this.handleFailures(failures);
+	}
+
+	private handleFailures(failures: PromiseRejectedResult[]) {
+		if (failures.length > 0) {
+			// Don't sent a notification if there's an occasional error
+			const loggerMethod = this.numPreviousFailures >= 2 ? "error" : "warn";
+			for (const result of failures) {
+				this.logger[loggerMethod](
+					"Failed to check live status:",
+					result.reason,
+				);
+			}
+			this.numPreviousFailures += 1;
+		} else {
+			this.numPreviousFailures = 0;
 		}
 	}
 }
