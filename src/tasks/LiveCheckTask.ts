@@ -3,6 +3,7 @@ import { BetterMap } from "@micthiesen/mitools/dist/collections/maps.js";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import config from "../utils/config.js";
 import {
+	type LiveStatus,
 	type LiveStatusLive,
 	type LiveStatusOffline,
 	checkYouTubeLiveStatus,
@@ -14,17 +15,20 @@ type ChannelStatusLive = {
 	isLive: true;
 	title: string;
 	startedAt: Date;
+	maxViewerCount?: number;
 };
 type ChannelStatusOffline =
 	| {
 			isLive: false;
 			lastEndedAt?: undefined;
 			lastStartedAt?: undefined;
+			lastViewerCount?: undefined;
 	  }
 	| {
 			isLive: false;
 			lastEndedAt: Date;
 			lastStartedAt: Date;
+			lastViewerCount?: number;
 	  };
 type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
 
@@ -56,6 +60,8 @@ export default class LiveCheckTask extends Task {
 				} else if (!currentStatus.isLive && previousStatus.isLive) {
 					await this.handleOfflineEvent(username, currentStatus, previousStatus);
 				}
+
+				this.handleMaxViewerCount(username, currentStatus);
 			}),
 		);
 
@@ -66,7 +72,7 @@ export default class LiveCheckTask extends Task {
 	private async handleLiveEvent(
 		username: string,
 		{ title }: LiveStatusLive,
-		{ lastEndedAt, lastStartedAt }: ChannelStatusOffline,
+		{ lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
 	) {
 		this.logger.info(`${username} is live`);
 
@@ -74,7 +80,8 @@ export default class LiveCheckTask extends Task {
 			if (!lastEndedAt) return null;
 			const ago = formatDistanceToNow(lastEndedAt);
 			const duration = formatDistance(lastEndedAt, lastStartedAt);
-			return `Last live ${ago} ago for ${duration}`;
+			const text = `Last live ${ago} ago for ${duration}`;
+			return lastViewerCount ? `${text} with ${formatCount(lastViewerCount)}` : text;
 		})();
 		const message = (() => {
 			if (!lastLiveMessage) return title;
@@ -94,24 +101,41 @@ export default class LiveCheckTask extends Task {
 	private async handleOfflineEvent(
 		username: string,
 		_: LiveStatusOffline,
-		{ startedAt }: ChannelStatusLive,
+		{ startedAt, maxViewerCount }: ChannelStatusLive,
 	) {
 		const lastEndedAt = new Date();
 		this.logger.info(`${username} is no longer live`);
 
 		if (config.OFFLINE_NOTIFICATIONS) {
 			const duration = formatDistance(lastEndedAt, startedAt);
-			await notify({
-				title: `${username} is now offline`,
-				message: `Streamed for ${duration}`,
-			});
+			const durationText = `Streamed for ${duration}`;
+			const message = maxViewerCount
+				? `${durationText} with ${formatCount(maxViewerCount)}`
+				: durationText;
+
+			await notify({ title: `${username} is now offline`, message });
 		}
 
 		this.statuses.set(username, {
 			isLive: false,
 			lastEndedAt,
 			lastStartedAt: startedAt,
+			lastViewerCount: maxViewerCount,
 		});
+	}
+
+	private handleMaxViewerCount(username: string, currentStatus: LiveStatus) {
+		if (!currentStatus.isLive || currentStatus.viewerCount === undefined) return;
+
+		const updatedStatus = this.statuses.getOrThrow(username);
+		if (!updatedStatus.isLive) return;
+
+		if (
+			updatedStatus.maxViewerCount === undefined ||
+			currentStatus.viewerCount > updatedStatus.maxViewerCount
+		) {
+			updatedStatus.maxViewerCount = currentStatus.viewerCount;
+		}
 	}
 
 	private handleFailures(failures: PromiseRejectedResult[]) {
@@ -126,4 +150,8 @@ export default class LiveCheckTask extends Task {
 			this.numPreviousFailures = 0;
 		}
 	}
+}
+
+function formatCount(count: number) {
+	return `${count.toLocaleString()} viewers`;
 }

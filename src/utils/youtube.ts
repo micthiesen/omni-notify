@@ -2,7 +2,7 @@ import { decode } from "html-entities";
 
 const TIMEOUT_MS = 10 * 1000;
 
-export type LiveStatusLive = { isLive: true; title: string };
+export type LiveStatusLive = { isLive: true; title: string; viewerCount?: number };
 export type LiveStatusOffline = { isLive: false };
 export type LiveStatus = LiveStatusLive | LiveStatusOffline;
 
@@ -23,7 +23,7 @@ export async function checkYouTubeLiveStatus({
 		}
 
 		const html = await response.text();
-		return extractMetaTitleContent(html);
+		return extractLiveStatus(html);
 	} catch (error) {
 		clearTimeout(timeoutId);
 		throw new Error(
@@ -35,10 +35,20 @@ export async function checkYouTubeLiveStatus({
 	}
 }
 
-export function extractMetaTitleContent(html: string): LiveStatus {
+export function extractLiveStatus(html: string): LiveStatus {
 	const metaTagRegex = /<meta\s+name="title"\s+content="([^"]*)"\s*\/?>/i;
 	const match = metaTagRegex.exec(html);
-	return match ? { isLive: true, title: decode(match[1]) } : { isLive: false };
+	return match
+		? { isLive: true, title: decode(match[1]), viewerCount: extractViewerCount(html) }
+		: { isLive: false };
+}
+
+function extractViewerCount(html: string): number | undefined {
+	const match = html.match(/(?<="text":")[\d,]+(?="})/);
+	if (!match) return;
+
+	const count = Number.parseInt(match[0].replace(/,/g, ""), 10);
+	return Number.isNaN(count) ? undefined : count;
 }
 
 export function getYouTubeLiveUrl(username: string) {
