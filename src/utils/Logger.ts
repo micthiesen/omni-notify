@@ -16,7 +16,7 @@ export default class Logger {
 		return new Logger(`${this.name}:${name}`);
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	// biome-ignore lint/suspicious/noExplicitAny: intentional
 	public log(level: LogLevel, message: string, ...args: any[]) {
 		const levelNum = LOG_LEVEL_MAP[level];
 		if (levelNum < LOG_LEVEL_NUM) return;
