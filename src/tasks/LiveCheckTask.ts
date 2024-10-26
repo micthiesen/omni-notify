@@ -29,7 +29,7 @@ type ChannelStatusOffline =
 type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
 
 export default class LiveCheckTask extends Task {
-	public name = "YT Live Check";
+	public name = "Live Check";
 
 	private logger: Logger;
 	private statuses: BetterMap<string, ChannelStatus>;
