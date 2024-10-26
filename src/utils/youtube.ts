@@ -2,11 +2,13 @@ import { decode } from "html-entities";
 
 const TIMEOUT_MS = 10 * 1000;
 
-export type IsLiveResult = { isLive: true; title: string } | { isLive: false };
+export type LiveStatusLive = { isLive: true; title: string };
+export type LiveStatusOffline = { isLive: false };
+export type LiveStatus = LiveStatusLive | LiveStatusOffline;
 
 export async function checkYouTubeLiveStatus({
 	username,
-}: { username: string }): Promise<IsLiveResult> {
+}: { username: string }): Promise<LiveStatus> {
 	const url = getYouTubeLiveUrl(username);
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -33,7 +35,7 @@ export async function checkYouTubeLiveStatus({
 	}
 }
 
-export function extractMetaTitleContent(html: string): IsLiveResult {
+export function extractMetaTitleContent(html: string): LiveStatus {
 	const metaTagRegex = /<meta\s+name="title"\s+content="([^"]*)"\s*\/?>/i;
 	const match = metaTagRegex.exec(html);
 	return match ? { isLive: true, title: decode(match[1]) } : { isLive: false };

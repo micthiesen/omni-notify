@@ -12,9 +12,7 @@ interface PushoverMessage {
 	timestamp?: number;
 }
 
-export async function sendNotification(
-	message: PushoverMessage,
-): Promise<void> {
+export async function sendNotification(message: PushoverMessage): Promise<void> {
 	return new Promise((resolve, reject) => {
 		const params = new URLSearchParams({
 			token: config.PUSHOVER_APP_TOKEN,
@@ -53,9 +51,7 @@ export async function sendNotification(
 					resolve();
 				} else {
 					reject(
-						new Error(
-							`Pushover API returned status code ${res.statusCode}: ${data}`,
-						),
+						new Error(`Pushover API returned status code ${res.statusCode}: ${data}`),
 					);
 				}
 			});

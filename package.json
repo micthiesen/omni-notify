@@ -16,6 +16,7 @@
 		"docker:dev": "docker run -p 3000:3000 --rm --name my-nodejs-project my-nodejs-project"
 	},
 	"dependencies": {
+		"date-fns": "^4.1.0",
 		"dotenv": "^16.4.5",
 		"html-entities": "^2.5.2",
 		"node-cron": "^3.0.3",
@@ -26,9 +27,9 @@
 		"@biomejs/biome": "^1.8.3",
 		"@types/node": "20.14.12",
 		"@types/node-cron": "3.0.11",
+		"typescript": "^5.5.4",
 		"vite-node": "^2.0.4",
-		"vitest": "^2.0.4",
-		"typescript": "^5.5.4"
+		"vitest": "^2.0.4"
 	},
 	"engines": {
 		"node": "20.16.0",
