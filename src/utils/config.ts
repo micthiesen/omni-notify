@@ -1,27 +1,18 @@
+import { baseConfigSchema } from "@micthiesen/mitools";
 import dotenv from "dotenv";
 import { z } from "zod";
-
-export enum LogLevel {
-	DEBUG = "debug",
-	INFO = "info",
-	WARN = "warn",
-	ERROR = "error",
-}
 
 // Load environment variables from .env file if it exists
 dotenv.config();
 
 // Define a Zod schema for the environment variables
 const stringBoolean = (value: string): boolean => value.toLowerCase() === "true";
-const envSchema = z.object({
+const envSchema = baseConfigSchema.extend({
 	YT_CHANNEL_NAMES: z
 		.string()
 		.optional()
 		.transform((val) => (val ? val.split(",") : [])),
 	OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
-	PUSHOVER_USER_KEY: z.string(),
-	PUSHOVER_APP_TOKEN: z.string(),
-	LOG_LEVEL: z.nativeEnum(LogLevel).optional().default(LogLevel.INFO),
 });
 
 export type Config = z.infer<typeof envSchema>;

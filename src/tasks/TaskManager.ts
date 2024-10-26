@@ -1,5 +1,5 @@
+import type { Logger } from "@micthiesen/mitools";
 import PQueue from "p-queue";
-import type Logger from "../utils/Logger.js";
 import config from "../utils/config.js";
 import LiveCheckTask from "./LiveCheckTask.js";
 import type { Task } from "./types.js";

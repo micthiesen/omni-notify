@@ -1,8 +1,7 @@
+import { type Logger, notify } from "@micthiesen/mitools";
+import { BetterMap } from "@micthiesen/mitools/dist/collections/maps.js";
 import { formatDistance, formatDistanceToNow } from "date-fns";
-import BetterMap from "../utils/BetterMap.js";
 import config from "../utils/config.js";
-import type Logger from "../utils/Logger.js";
-import { sendNotification } from "../utils/notifications.js";
 import {
 	type LiveStatusLive,
 	type LiveStatusOffline,
@@ -82,7 +81,7 @@ export default class LiveCheckTask extends Task {
 			return `${title}\n\n${lastLiveMessage}`;
 		})();
 
-		await sendNotification({
+		await notify({
 			title: `${username} is LIVE on YouTube!`,
 			message,
 			url: getYouTubeLiveUrl(username),
@@ -102,7 +101,7 @@ export default class LiveCheckTask extends Task {
 
 		if (config.OFFLINE_NOTIFICATIONS) {
 			const duration = formatDistance(lastEndedAt, startedAt);
-			await sendNotification({
+			await notify({
 				title: `${username} is now offline`,
 				message: `Streamed for ${duration}`,
 			});

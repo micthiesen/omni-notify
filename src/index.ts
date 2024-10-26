@@ -1,6 +1,9 @@
+import { Injector, Logger } from "@micthiesen/mitools";
 import cron from "node-cron";
 import TaskManager from "./tasks/TaskManager.js";
-import Logger from "./utils/Logger.js";
+import config from "./utils/config.js";
+
+Injector.configure({ config });
 
 const logger = new Logger("Main");
 const taskManager = new TaskManager(logger);
