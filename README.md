@@ -13,8 +13,9 @@ services:
     image: ghcr.io/micthiesen/omni-notify:latest
     container_name: omni-notify
     environment:
-      - PUSHOVER_APP_TOKEN=token
-      - PUSHOVER_USER_KEY=key
+      - LOG_LEVEL=info
+      - PUSHOVER_TOKEN=token
+      - PUSHOVER_USER=user
       - YT_CHANNEL_NAMES=@some,@channel,@usernames
       - OFFLINE_NOTIFICATIONS=true
     restart: unless-stopped
