@@ -1,5 +1,6 @@
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import BetterMap from "../utils/BetterMap.js";
+import config from "../utils/config.js";
 import type Logger from "../utils/Logger.js";
 import { sendNotification } from "../utils/notifications.js";
 import {
@@ -68,7 +69,7 @@ export default class LiveCheckTask extends Task {
 		{ title }: LiveStatusLive,
 		{ lastEndedAt, lastStartedAt }: ChannelStatusOffline,
 	) {
-		this.logger.info(`${username} is live: sending notification`);
+		this.logger.info(`${username} is live`);
 
 		const lastLiveMessage = (() => {
 			if (!lastEndedAt) return null;
@@ -97,13 +98,15 @@ export default class LiveCheckTask extends Task {
 		{ startedAt }: ChannelStatusLive,
 	) {
 		const lastEndedAt = new Date();
-		this.logger.info(`${username} is no longer live: sending notification`);
+		this.logger.info(`${username} is no longer live`);
 
-		const duration = formatDistance(lastEndedAt, startedAt);
-		await sendNotification({
-			title: `${username} is now offline`,
-			message: `Streamed for ${duration}`,
-		});
+		if (config.OFFLINE_NOTIFICATIONS) {
+			const duration = formatDistance(lastEndedAt, startedAt);
+			await sendNotification({
+				title: `${username} is now offline`,
+				message: `Streamed for ${duration}`,
+			});
+		}
 
 		this.statuses.set(username, {
 			isLive: false,

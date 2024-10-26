@@ -12,11 +12,13 @@ export enum LogLevel {
 dotenv.config();
 
 // Define a Zod schema for the environment variables
+const stringBoolean = (value: string): boolean => value.toLowerCase() === "true";
 const envSchema = z.object({
 	YT_CHANNEL_NAMES: z
 		.string()
 		.optional()
 		.transform((val) => (val ? val.split(",") : [])),
+	OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
 	PUSHOVER_USER_KEY: z.string(),
 	PUSHOVER_APP_TOKEN: z.string(),
 	LOG_LEVEL: z.nativeEnum(LogLevel).optional().default(LogLevel.INFO),
