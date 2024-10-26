@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@micthiesen/mitools':
-        specifier: ^1.1.1
-        version: 1.1.1
+        specifier: ^1.1.2
+        version: 1.1.2
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
@@ -418,8 +418,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.25':
     resolution: {integrity: sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==}
 
-  '@micthiesen/mitools@1.1.1':
-    resolution: {integrity: sha512-6bOYpzoIhcBAimw0EP/Iw4nFkUaRaHrLv3BWY1UAzqk7BVmB1kqDEodLsdHSrs0TSKcFtXP9HFl8GO2tRpfkmA==}
+  '@micthiesen/mitools@1.1.2':
+    resolution: {integrity: sha512-cbJIXzfpSDjFBcsfKac2vr8mh9ra0FKXqhhzeWEeWbRo5Qxah7Hr+nq1wQ/UhgPv/HDA5fgr11tm17bfOsPNLg==}
     engines: {node: 20.16.0, pnpm: 9.12.0}
 
   '@noble/ciphers@1.0.0':
@@ -1121,7 +1121,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
-  '@micthiesen/mitools@1.1.1':
+  '@micthiesen/mitools@1.1.2':
     dependencies:
       zod: 3.23.8
 
