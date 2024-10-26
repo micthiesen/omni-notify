@@ -24,21 +24,21 @@ export default class Logger {
 		console[level](messageFinal, ...args);
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	// biome-ignore lint/suspicious/noExplicitAny: intentional
 	public debug(message: string, ...args: any[]) {
 		this.log(LogLevel.DEBUG, message, ...args);
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	// biome-ignore lint/suspicious/noExplicitAny: intentional
 	public info(message: string, ...args: any[]) {
 		this.log(LogLevel.INFO, message, ...args);
 	}
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	// biome-ignore lint/suspicious/noExplicitAny: intentional
 	public warn(message: string, ...args: any[]) {
 		this.log(LogLevel.WARN, message, ...args);
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+	// biome-ignore lint/suspicious/noExplicitAny: intentional
 	public error(message: string, ...args: any[]) {
 		this.log(LogLevel.ERROR, message, ...args);
 		(async () => {
