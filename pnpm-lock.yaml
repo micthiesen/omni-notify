@@ -14,9 +14,6 @@ importers:
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
-      dotenv:
-        specifier: ^16.4.5
-        version: 16.4.5
       html-entities:
         specifier: ^2.5.2
         version: 2.5.2

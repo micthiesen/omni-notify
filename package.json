@@ -20,7 +20,6 @@
 	"dependencies": {
 		"@micthiesen/mitools": "^1.1.1",
 		"date-fns": "^4.1.0",
-		"dotenv": "^16.4.5",
 		"html-entities": "^2.5.2",
 		"node-cron": "^3.0.3",
 		"p-queue": "^8.0.1",
