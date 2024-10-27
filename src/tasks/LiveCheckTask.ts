@@ -1,7 +1,12 @@
 import { type Logger, notify } from "@micthiesen/mitools";
-import { BetterMap } from "@micthiesen/mitools/dist/collections/maps.js";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import config from "../utils/config.js";
+import {
+	type ChannelStatusLive,
+	type ChannelStatusOffline,
+	getChannelStatus,
+	upsertChannelStatus,
+} from "../utils/database.js";
 import {
 	type FetchedStatus,
 	type FetchedStatusLive,
@@ -11,32 +16,10 @@ import {
 } from "../utils/youtube.js";
 import { Task } from "./types.js";
 
-type ChannelStatusLive = {
-	isLive: true;
-	title: string;
-	startedAt: Date;
-	maxViewerCount?: number;
-};
-type ChannelStatusOffline =
-	| {
-			isLive: false;
-			lastEndedAt?: undefined;
-			lastStartedAt?: undefined;
-			lastViewerCount?: undefined;
-	  }
-	| {
-			isLive: false;
-			lastEndedAt: Date;
-			lastStartedAt: Date;
-			lastViewerCount?: number;
-	  };
-type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
-
 export default class LiveCheckTask extends Task {
 	public name = "Live Check";
 
 	private logger: Logger;
-	private statuses: BetterMap<string, ChannelStatus>;
 	private numPreviousFailures = 0;
 
 	public constructor(
@@ -45,20 +28,19 @@ export default class LiveCheckTask extends Task {
 	) {
 		super();
 		this.logger = parentLogger.extend("LiveCheckTask");
-		this.statuses = new BetterMap(channelNames.map((n) => [n, { isLive: false }]));
 	}
 
 	public async run() {
 		const results = await Promise.allSettled(
 			this.channelNames.map(async (username) => {
 				const fetchedStatus = await fetchYouTubeLiveStatus({ username });
-				const previousStatus = this.statuses.getOrThrow(username);
+				const previousStatus = getChannelStatus(username);
 				this.logger.debug(`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`);
 
 				if (fetchedStatus.isLive && !previousStatus.isLive) {
-					await this.handleLiveEvent(username, fetchedStatus, previousStatus);
+					await this.handleLiveEvent(fetchedStatus, previousStatus);
 				} else if (!fetchedStatus.isLive && previousStatus.isLive) {
-					await this.handleOfflineEvent(username, fetchedStatus, previousStatus);
+					await this.handleOfflineEvent(fetchedStatus, previousStatus);
 				}
 
 				this.handleMaxViewerCount(username, fetchedStatus);
@@ -70,9 +52,8 @@ export default class LiveCheckTask extends Task {
 	}
 
 	private async handleLiveEvent(
-		username: string,
 		{ title }: FetchedStatusLive,
-		{ lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
+		{ username, lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
 	) {
 		this.logger.info(`${username} is live`);
 
@@ -95,13 +76,12 @@ export default class LiveCheckTask extends Task {
 			url_title: "Watch on YouTube",
 		});
 
-		this.statuses.set(username, { isLive: true, startedAt: new Date(), title });
+		upsertChannelStatus({ username, isLive: true, startedAt: new Date(), title });
 	}
 
 	private async handleOfflineEvent(
-		username: string,
 		_: FetchedStatusOffline,
-		{ startedAt, maxViewerCount }: ChannelStatusLive,
+		{ username, startedAt, maxViewerCount }: ChannelStatusLive,
 	) {
 		const lastEndedAt = new Date();
 		this.logger.info(`${username} is no longer live`);
@@ -116,7 +96,8 @@ export default class LiveCheckTask extends Task {
 			await notify({ title: `${username} is now offline`, message });
 		}
 
-		this.statuses.set(username, {
+		upsertChannelStatus({
+			username,
 			isLive: false,
 			lastEndedAt,
 			lastStartedAt: startedAt,
@@ -127,7 +108,7 @@ export default class LiveCheckTask extends Task {
 	private handleMaxViewerCount(username: string, fetchedStatus: FetchedStatus) {
 		if (!fetchedStatus.isLive || fetchedStatus.viewerCount === undefined) return;
 
-		const updatedStatus = this.statuses.getOrThrow(username);
+		const updatedStatus = getChannelStatus(username);
 		if (!updatedStatus.isLive) return;
 
 		if (
