@@ -1,6 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import { formatDistance, formatDistanceToNow } from "date-fns";
+import { differenceInSeconds, formatDistance, formatDistanceToNow } from "date-fns";
 import {
 	type FetchedStatus,
 	type FetchedStatusLive,
@@ -160,15 +160,24 @@ export default class LiveCheckTask extends Task {
 		if (!fetchedStatus.isLive || fetchedStatus.viewerCount === undefined) return;
 
 		if (fetchedStatus.viewerCount > previousMetrics.maxViewerCount) {
+			const now = new Date();
+			const secondsSinceLastNotification = differenceInSeconds(
+				now,
+				previousMetrics.lastNotificationAt ?? new Date("1970-01-01"),
+			);
+			if (secondsSinceLastNotification >= 5 * 60) {
+				await notify({
+					title: `New record for ${previousMetrics.username}!`,
+					message: `Now at ${formatCount(fetchedStatus.viewerCount)}`,
+				});
+			}
+
 			previousMetrics.maxViewerCount = fetchedStatus.viewerCount;
+			previousMetrics.lastNotificationAt = new Date();
 			upsertChannelMetrics(previousMetrics);
 			this.logger.info(
 				`Updated all-time max viewer count for ${previousMetrics.username}`,
 			);
-			await notify({
-				title: `New viewer record for ${previousMetrics.username}!`,
-				message: `Now at ${formatCount(fetchedStatus.viewerCount)}`,
-			});
 		}
 	}
 
