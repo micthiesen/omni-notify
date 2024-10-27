@@ -1,6 +1,7 @@
 # Omni Notify
 
-Currently only supports sending a Pushover notification when a YouTube channel goes live.
+Currently only supports sending a Pushover notification when a YouTube channel
+goes live.
 
 ## Setup
 
@@ -26,13 +27,16 @@ You can find YouTube channel names from their channel page.
 ## Usage
 
 The service will check to see if a channel is live every 20 seconds. It will
-send a notification if the channel changes goes either live or offline (if it
-was live before). The offline notifications can be disabled (see above).
+send a notification if the channel transitions from offline to live (or vice
+versa). The offline notifications can be disabled (see above).
 
 ## How it Works
 
 It looks for specific text on the channel's live page. Because of this, it could
 break if YouTube changes what the page looks like or if YouTube blocks the
 requests for some reason (it does not use the API).
+
+Statuses are stored in a SQLite database, so they should be remembered between
+restarts.
 
 Inspired by: <https://github.com/your-diary/youtube_live_alert>
