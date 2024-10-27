@@ -1,7 +1,6 @@
-import { baseConfigSchema, logConfig } from "@micthiesen/mitools/config";
+import { baseConfigSchema, logConfig, stringBoolean } from "@micthiesen/mitools/config";
 import { z } from "zod";
 
-const stringBoolean = (value: string): boolean => value.toLowerCase() === "true";
 const commaSeparatedString = z
 	.string()
 	.optional()
