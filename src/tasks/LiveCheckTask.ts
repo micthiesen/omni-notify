@@ -29,6 +29,7 @@ export default class LiveCheckTask extends Task {
 
 	private logger: Logger;
 	private numPreviousFailures = 0;
+	private runNumber = 1;
 
 	public constructor(channels: [Platform, string[]][], parentLogger: Logger) {
 		super();
@@ -43,13 +44,16 @@ export default class LiveCheckTask extends Task {
 	}
 
 	public async run() {
+		const handleMetrics = this.runNumber === 9;
+		if (handleMetrics) this.runNumber = 0;
+
 		const results = await Promise.allSettled(
 			this.channels.map(async ({ username, config }) => {
 				const fetchedStatus = await config.fetchLiveStatus({ username });
 				const previousStatus = getChannelStatus(username, config.platform);
 				const previousMetrics = getChannelMetrics(username);
 				this.logger.debug(
-					`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`,
+					`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live (${this.runNumber})`,
 					fetchedStatus,
 				);
 
@@ -60,12 +64,14 @@ export default class LiveCheckTask extends Task {
 				}
 
 				this.handleMaxViewerCount(username, config.platform, fetchedStatus);
-				this.handleChannelMetrics(previousMetrics, fetchedStatus);
+
+				if (handleMetrics) this.handleChannelMetrics(previousMetrics, fetchedStatus);
 			}),
 		);
 
 		const failures = results.filter((r) => r.status === "rejected");
 		this.handleFailures(failures);
+		this.runNumber += 1;
 	}
 
 	private async handleLiveEvent(
