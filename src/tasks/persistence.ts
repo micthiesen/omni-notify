@@ -25,7 +25,7 @@ export type ChannelStatusOffline =
 	  };
 export type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
 
-const logger = new Logger("persistence");
+const logger = new Logger("Persistence");
 
 export function getChannelStatus(username: string): ChannelStatus {
 	const pk = statusPk(username);
