@@ -29,7 +29,7 @@ export type ChannelStatusOffline =
 export type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
 
 export const ChannelStatusEntity = new Entity<ChannelStatus, ["username"]>(
-	"channel-metrics",
+	"channel-status",
 	["username"],
 );
 
