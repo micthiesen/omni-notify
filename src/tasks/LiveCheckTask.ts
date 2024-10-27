@@ -41,8 +41,11 @@ export default class LiveCheckTask extends Task {
 		const results = await Promise.allSettled(
 			this.channels.map(async ({ username, config }) => {
 				const fetchedStatus = await config.fetchLiveStatus({ username });
-				const previousStatus = getChannelStatus(username);
-				this.logger.debug(`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`);
+				const previousStatus = getChannelStatus(username, config.platform);
+				this.logger.debug(`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`, {
+					fetched: fetchedStatus,
+					previous: previousStatus,
+				});
 
 				if (fetchedStatus.isLive && !previousStatus.isLive) {
 					await this.handleLiveEvent(fetchedStatus, previousStatus, config);
@@ -50,7 +53,7 @@ export default class LiveCheckTask extends Task {
 					await this.handleOfflineEvent(fetchedStatus, previousStatus, config);
 				}
 
-				this.handleMaxViewerCount(username, fetchedStatus);
+				this.handleMaxViewerCount(username, config.platform, fetchedStatus);
 			}),
 		);
 
@@ -84,7 +87,13 @@ export default class LiveCheckTask extends Task {
 			url_title: `Watch on ${config.displayName}`,
 		});
 
-		upsertChannelStatus({ username, isLive: true, startedAt: new Date(), title });
+		upsertChannelStatus({
+			username,
+			platform: config.platform,
+			isLive: true,
+			startedAt: new Date(),
+			title,
+		});
 	}
 
 	private async handleOfflineEvent(
@@ -107,6 +116,7 @@ export default class LiveCheckTask extends Task {
 
 		upsertChannelStatus({
 			username,
+			platform: config.platform,
 			isLive: false,
 			lastEndedAt,
 			lastStartedAt: startedAt,
@@ -114,10 +124,14 @@ export default class LiveCheckTask extends Task {
 		});
 	}
 
-	private handleMaxViewerCount(username: string, fetchedStatus: FetchedStatus) {
+	private handleMaxViewerCount(
+		username: string,
+		platform: Platform,
+		fetchedStatus: FetchedStatus,
+	) {
 		if (!fetchedStatus.isLive || fetchedStatus.viewerCount === undefined) return;
 
-		const updatedStatus = getChannelStatus(username);
+		const updatedStatus = getChannelStatus(username, platform);
 		if (!updatedStatus.isLive) return;
 
 		if (
@@ -125,6 +139,10 @@ export default class LiveCheckTask extends Task {
 			fetchedStatus.viewerCount > updatedStatus.maxViewerCount
 		) {
 			updatedStatus.maxViewerCount = fetchedStatus.viewerCount;
+			upsertChannelStatus(updatedStatus);
+			this.logger.debug(
+				`Updated max viewer count for ${username} to ${fetchedStatus.viewerCount}`,
+			);
 		}
 	}
 

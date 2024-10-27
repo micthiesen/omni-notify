@@ -1,8 +1,10 @@
 import { getDoc, upsertDoc } from "@micthiesen/mitools/docstore";
 import { Logger } from "@micthiesen/mitools/logging";
+import type { Platform } from "../platforms/index.js";
 
 export type ChannelStatusLive = {
 	username: string;
+	platform: Platform;
 	isLive: true;
 	title: string;
 	startedAt: Date;
@@ -11,6 +13,7 @@ export type ChannelStatusLive = {
 export type ChannelStatusOffline =
 	| {
 			username: string;
+			platform: Platform;
 			isLive: false;
 			lastEndedAt?: undefined;
 			lastStartedAt?: undefined;
@@ -18,6 +21,7 @@ export type ChannelStatusOffline =
 	  }
 	| {
 			username: string;
+			platform: Platform;
 			isLive: false;
 			lastEndedAt: Date;
 			lastStartedAt: Date;
@@ -27,7 +31,7 @@ export type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
 
 const logger = new Logger("Persistence");
 
-export function getChannelStatus(username: string): ChannelStatus {
+export function getChannelStatus(username: string, platform: Platform): ChannelStatus {
 	const pk = statusPk(username);
 	const status = getDoc<ChannelStatus>(pk);
 
@@ -37,7 +41,7 @@ export function getChannelStatus(username: string): ChannelStatus {
 	}
 
 	logger.debug(`No status found in DB for ${pk}; returning default`);
-	return { username, isLive: false };
+	return { username, platform, isLive: false };
 }
 
 export function upsertChannelStatus(status: ChannelStatus): void {
