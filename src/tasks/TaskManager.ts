@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import PQueue from "p-queue";
+import { Platform } from "../platforms/index.js";
 import config from "../utils/config.js";
 import LiveCheckTask from "./LiveCheckTask.js";
 import type { Task } from "./types.js";
@@ -12,7 +13,15 @@ export default class TaskManager {
 	constructor(parentLogger: Logger) {
 		this.logger = parentLogger.extend("TaskManager");
 		this.queue = new PQueue({ concurrency: 1 });
-		this.tasks = [new LiveCheckTask(config.YT_CHANNEL_NAMES, this.logger)];
+		this.tasks = [
+			new LiveCheckTask(
+				[
+					[Platform.YouTube, config.YT_CHANNEL_NAMES],
+					[Platform.Kick, config.KICK_CHANNEL_NAMES],
+				],
+				this.logger,
+			),
+		];
 	}
 
 	public async runTasks(): Promise<void> {

@@ -2,11 +2,15 @@ import { baseConfigSchema, logConfig } from "@micthiesen/mitools/config";
 import { z } from "zod";
 
 const stringBoolean = (value: string): boolean => value.toLowerCase() === "true";
+const commaSeparatedString = z
+	.string()
+	.optional()
+	.transform((val) => (val ? val.split(",") : []));
+
+(value: string): string[] => value.split(",");
 const configSchema = baseConfigSchema.extend({
-	YT_CHANNEL_NAMES: z
-		.string()
-		.optional()
-		.transform((val) => (val ? val.split(",") : [])),
+	YT_CHANNEL_NAMES: commaSeparatedString,
+	KICK_CHANNEL_NAMES: commaSeparatedString,
 	OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
 });
 

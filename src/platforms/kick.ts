@@ -1,15 +1,12 @@
 import { decode } from "html-entities";
+import type { FetchedStatus } from "./index.js";
 
 const TIMEOUT_MS = 10 * 1000;
 
-export type FetchedStatusLive = { isLive: true; title: string; viewerCount?: number };
-export type FetchedStatusOffline = { isLive: false };
-export type FetchedStatus = FetchedStatusLive | FetchedStatusOffline;
-
-export async function fetchYouTubeLiveStatus({
+export async function fetchKickLiveStatus({
 	username,
 }: { username: string }): Promise<FetchedStatus> {
-	const url = getYouTubeLiveUrl(username);
+	const url = getKickLiveUrl(username);
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -51,6 +48,6 @@ function extractViewerCount(html: string): number | undefined {
 	return Number.isNaN(count) ? undefined : count;
 }
 
-export function getYouTubeLiveUrl(username: string) {
-	return `https://www.youtube.com/${username}/live`;
+export function getKickLiveUrl(username: string) {
+	return `https://kick.com/${username}`;
 }

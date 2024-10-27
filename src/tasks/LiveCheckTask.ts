@@ -1,14 +1,15 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { formatDistance, formatDistanceToNow } from "date-fns";
-import config from "../utils/config.js";
 import {
 	type FetchedStatus,
 	type FetchedStatusLive,
 	type FetchedStatusOffline,
-	fetchYouTubeLiveStatus,
-	getYouTubeLiveUrl,
-} from "../utils/youtube.js";
+	type Platform,
+	type PlatformConfig,
+	platformConfigs,
+} from "../platforms/index.js";
+import appConfig from "../utils/config.js";
 import {
 	type ChannelStatusLive,
 	type ChannelStatusOffline,
@@ -19,29 +20,34 @@ import { Task } from "./types.js";
 
 export default class LiveCheckTask extends Task {
 	public name = "Live Check";
+	private channels: { username: string; config: PlatformConfig }[] = [];
 
 	private logger: Logger;
 	private numPreviousFailures = 0;
 
-	public constructor(
-		private channelNames: string[],
-		parentLogger: Logger,
-	) {
+	public constructor(channels: [Platform, string[]][], parentLogger: Logger) {
 		super();
+		for (const [platform, usernames] of channels) {
+			const config = platformConfigs[platform];
+			for (const username of usernames) {
+				this.channels.push({ username, config });
+			}
+		}
+
 		this.logger = parentLogger.extend("LiveCheckTask");
 	}
 
 	public async run() {
 		const results = await Promise.allSettled(
-			this.channelNames.map(async (username) => {
-				const fetchedStatus = await fetchYouTubeLiveStatus({ username });
+			this.channels.map(async ({ username, config }) => {
+				const fetchedStatus = await config.fetchLiveStatus({ username });
 				const previousStatus = getChannelStatus(username);
 				this.logger.debug(`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`);
 
 				if (fetchedStatus.isLive && !previousStatus.isLive) {
-					await this.handleLiveEvent(fetchedStatus, previousStatus);
+					await this.handleLiveEvent(fetchedStatus, previousStatus, config);
 				} else if (!fetchedStatus.isLive && previousStatus.isLive) {
-					await this.handleOfflineEvent(fetchedStatus, previousStatus);
+					await this.handleOfflineEvent(fetchedStatus, previousStatus, config);
 				}
 
 				this.handleMaxViewerCount(username, fetchedStatus);
@@ -55,6 +61,7 @@ export default class LiveCheckTask extends Task {
 	private async handleLiveEvent(
 		{ title }: FetchedStatusLive,
 		{ username, lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
+		config: PlatformConfig,
 	) {
 		this.logger.info(`${username} is live`);
 
@@ -71,10 +78,10 @@ export default class LiveCheckTask extends Task {
 		})();
 
 		await notify({
-			title: `${username} is LIVE on YouTube!`,
+			title: `${username} is LIVE on ${config.displayName}!`,
 			message,
-			url: getYouTubeLiveUrl(username),
-			url_title: "Watch on YouTube",
+			url: config.getLiveUrl(username),
+			url_title: `Watch on ${config.displayName}`,
 		});
 
 		upsertChannelStatus({ username, isLive: true, startedAt: new Date(), title });
@@ -83,11 +90,12 @@ export default class LiveCheckTask extends Task {
 	private async handleOfflineEvent(
 		_: FetchedStatusOffline,
 		{ username, startedAt, maxViewerCount }: ChannelStatusLive,
+		config: PlatformConfig,
 	) {
 		const lastEndedAt = new Date();
 		this.logger.info(`${username} is no longer live`);
 
-		if (config.OFFLINE_NOTIFICATIONS) {
+		if (appConfig.OFFLINE_NOTIFICATIONS) {
 			const duration = formatDistance(lastEndedAt, startedAt);
 			const durationText = `Streamed for ${duration}`;
 			const message = maxViewerCount
