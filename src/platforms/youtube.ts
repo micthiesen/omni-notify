@@ -1,35 +1,13 @@
 import { decode } from "html-entities";
+import { fetchPageHtml } from "./common.js";
 import type { FetchedStatus } from "./index.js";
-
-const TIMEOUT_MS = 10 * 1000;
 
 export async function fetchYouTubeLiveStatus({
 	username,
 }: { username: string }): Promise<FetchedStatus> {
 	const url = getYouTubeLiveUrl(username);
-	const controller = new AbortController();
-	const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-	try {
-		const response = await fetch(url, { signal: controller.signal });
-		clearTimeout(timeoutId);
-
-		if (!response.ok) {
-			const body = await response.text();
-			throw new Error(body);
-		}
-
-		const html = await response.text();
-		return extractLiveStatus(html);
-	} catch (error) {
-		clearTimeout(timeoutId);
-		throw new Error(
-			`Failed to check YouTube live status: ${
-				// biome-ignore lint/suspicious/noExplicitAny: <explanation>
-				(error as any)?.message
-			}`,
-		);
-	}
+	const html = await fetchPageHtml(url);
+	return extractLiveStatus(html);
 }
 
 export function extractLiveStatus(html: string): FetchedStatus {
