@@ -1,6 +1,6 @@
 import { getDoc, upsertDoc } from "@micthiesen/mitools/docstore";
 import { Logger } from "@micthiesen/mitools/logging";
-import type { Platform } from "../platforms/index.js";
+import type { Platform } from "../../platforms/index.js";
 
 export type ChannelStatusLive = {
 	username: string;
@@ -29,7 +29,7 @@ export type ChannelStatusOffline =
 	  };
 export type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
 
-const logger = new Logger("Persistence");
+const logger = new Logger("Persistence.Status");
 
 export function getChannelStatus(username: string, platform: Platform): ChannelStatus {
 	const pk = statusPk(username);

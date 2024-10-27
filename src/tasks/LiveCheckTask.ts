@@ -11,11 +11,16 @@ import {
 } from "../platforms/index.js";
 import appConfig from "../utils/config.js";
 import {
+	type ChannelMetrics,
+	getChannelMetrics,
+	upsertChannelMetrics,
+} from "./persistence/metrics.js";
+import {
 	type ChannelStatusLive,
 	type ChannelStatusOffline,
 	getChannelStatus,
 	upsertChannelStatus,
-} from "./persistence.js";
+} from "./persistence/status.js";
 import { Task } from "./types.js";
 
 export default class LiveCheckTask extends Task {
@@ -42,6 +47,7 @@ export default class LiveCheckTask extends Task {
 			this.channels.map(async ({ username, config }) => {
 				const fetchedStatus = await config.fetchLiveStatus({ username });
 				const previousStatus = getChannelStatus(username, config.platform);
+				const previousMetrics = getChannelMetrics(username);
 				this.logger.debug(
 					`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`,
 					fetchedStatus,
@@ -54,6 +60,7 @@ export default class LiveCheckTask extends Task {
 				}
 
 				this.handleMaxViewerCount(username, config.platform, fetchedStatus);
+				this.handleChannelMetrics(previousMetrics, fetchedStatus);
 			}),
 		);
 
@@ -143,6 +150,25 @@ export default class LiveCheckTask extends Task {
 			this.logger.info(
 				`Updated max viewer count for ${username} to ${fetchedStatus.viewerCount}`,
 			);
+		}
+	}
+
+	private async handleChannelMetrics(
+		previousMetrics: ChannelMetrics,
+		fetchedStatus: FetchedStatus,
+	) {
+		if (!fetchedStatus.isLive || fetchedStatus.viewerCount === undefined) return;
+
+		if (fetchedStatus.viewerCount > previousMetrics.maxViewerCount) {
+			previousMetrics.maxViewerCount = fetchedStatus.viewerCount;
+			upsertChannelMetrics(previousMetrics);
+			this.logger.info(
+				`Updated all-time max viewer count for ${previousMetrics.username}`,
+			);
+			await notify({
+				title: `New viewer record for ${previousMetrics.username}!`,
+				message: `Now at ${formatCount(fetchedStatus.viewerCount)}`,
+			});
 		}
 	}
 
