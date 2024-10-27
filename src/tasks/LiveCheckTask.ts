@@ -3,10 +3,10 @@ import { BetterMap } from "@micthiesen/mitools/dist/collections/maps.js";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import config from "../utils/config.js";
 import {
-	type LiveStatus,
-	type LiveStatusLive,
-	type LiveStatusOffline,
-	checkYouTubeLiveStatus,
+	type FetchedStatus,
+	type FetchedStatusLive,
+	type FetchedStatusOffline,
+	fetchYouTubeLiveStatus,
 	getYouTubeLiveUrl,
 } from "../utils/youtube.js";
 import { Task } from "./types.js";
@@ -51,17 +51,17 @@ export default class LiveCheckTask extends Task {
 	public async run() {
 		const results = await Promise.allSettled(
 			this.channelNames.map(async (username) => {
-				const currentStatus = await checkYouTubeLiveStatus({ username });
+				const fetchedStatus = await fetchYouTubeLiveStatus({ username });
 				const previousStatus = this.statuses.getOrThrow(username);
-				this.logger.debug(`${username} is ${currentStatus.isLive ? "" : "NOT "}live`);
+				this.logger.debug(`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`);
 
-				if (currentStatus.isLive && !previousStatus.isLive) {
-					await this.handleLiveEvent(username, currentStatus, previousStatus);
-				} else if (!currentStatus.isLive && previousStatus.isLive) {
-					await this.handleOfflineEvent(username, currentStatus, previousStatus);
+				if (fetchedStatus.isLive && !previousStatus.isLive) {
+					await this.handleLiveEvent(username, fetchedStatus, previousStatus);
+				} else if (!fetchedStatus.isLive && previousStatus.isLive) {
+					await this.handleOfflineEvent(username, fetchedStatus, previousStatus);
 				}
 
-				this.handleMaxViewerCount(username, currentStatus);
+				this.handleMaxViewerCount(username, fetchedStatus);
 			}),
 		);
 
@@ -71,7 +71,7 @@ export default class LiveCheckTask extends Task {
 
 	private async handleLiveEvent(
 		username: string,
-		{ title }: LiveStatusLive,
+		{ title }: FetchedStatusLive,
 		{ lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
 	) {
 		this.logger.info(`${username} is live`);
@@ -100,7 +100,7 @@ export default class LiveCheckTask extends Task {
 
 	private async handleOfflineEvent(
 		username: string,
-		_: LiveStatusOffline,
+		_: FetchedStatusOffline,
 		{ startedAt, maxViewerCount }: ChannelStatusLive,
 	) {
 		const lastEndedAt = new Date();
@@ -124,17 +124,17 @@ export default class LiveCheckTask extends Task {
 		});
 	}
 
-	private handleMaxViewerCount(username: string, currentStatus: LiveStatus) {
-		if (!currentStatus.isLive || currentStatus.viewerCount === undefined) return;
+	private handleMaxViewerCount(username: string, fetchedStatus: FetchedStatus) {
+		if (!fetchedStatus.isLive || fetchedStatus.viewerCount === undefined) return;
 
 		const updatedStatus = this.statuses.getOrThrow(username);
 		if (!updatedStatus.isLive) return;
 
 		if (
 			updatedStatus.maxViewerCount === undefined ||
-			currentStatus.viewerCount > updatedStatus.maxViewerCount
+			fetchedStatus.viewerCount > updatedStatus.maxViewerCount
 		) {
-			updatedStatus.maxViewerCount = currentStatus.viewerCount;
+			updatedStatus.maxViewerCount = fetchedStatus.viewerCount;
 		}
 	}
 
