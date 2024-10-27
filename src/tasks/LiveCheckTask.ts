@@ -42,10 +42,10 @@ export default class LiveCheckTask extends Task {
 			this.channels.map(async ({ username, config }) => {
 				const fetchedStatus = await config.fetchLiveStatus({ username });
 				const previousStatus = getChannelStatus(username, config.platform);
-				this.logger.debug(`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`, {
-					fetched: fetchedStatus,
-					previous: previousStatus,
-				});
+				this.logger.debug(
+					`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live`,
+					fetchedStatus,
+				);
 
 				if (fetchedStatus.isLive && !previousStatus.isLive) {
 					await this.handleLiveEvent(fetchedStatus, previousStatus, config);
