@@ -1,4 +1,4 @@
-import { baseConfigSchema } from "@micthiesen/mitools";
+import { baseConfigSchema, logConfig } from "@micthiesen/mitools";
 import { z } from "zod";
 
 const stringBoolean = (value: string): boolean => value.toLowerCase() === "true";
@@ -13,16 +13,6 @@ const configSchema = baseConfigSchema.extend({
 export type Config = z.infer<typeof configSchema>;
 
 const config = configSchema.parse(process.env);
-console.log(
-	"Config:",
-	Object.fromEntries(
-		Object.entries(config).map(([key, value]) => [
-			key,
-			key.includes("TOKEN") || key.includes("KEY") || key.includes("USER")
-				? "***"
-				: value,
-		]),
-	),
-);
+logConfig(config);
 
 export default config;
