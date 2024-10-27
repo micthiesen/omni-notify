@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@micthiesen/mitools':
-        specifier: ^1.2.0
-        version: 1.2.0
+        specifier: ^1.2.1
+        version: 1.2.1
       date-fns:
         specifier: ^4.1.0
         version: 4.1.0
@@ -418,8 +418,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.25':
     resolution: {integrity: sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==}
 
-  '@micthiesen/mitools@1.2.0':
-    resolution: {integrity: sha512-ra/cyLP0HhrWalfyv2W8PDgmepcAhUesEQWDSMYwafcJh+lIKYVPIBS1doOCraq7yJ3Vuv44M+MH0mwNGTVZWg==}
+  '@micthiesen/mitools@1.2.1':
+    resolution: {integrity: sha512-tggzF05bn1Avv9I8VTHBhhJxoj3vhph1MViNWqqOsjVFPFvjCnXAYj9YnvyXeMZfweGTWV2fmWO372imrDVlRw==}
     engines: {node: 20.16.0, pnpm: 9.12.0}
 
   '@noble/ciphers@1.0.0':
@@ -1257,7 +1257,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
 
-  '@micthiesen/mitools@1.2.0':
+  '@micthiesen/mitools@1.2.1':
     dependencies:
       better-sqlite3: 11.5.0
       cbor: 9.0.2
