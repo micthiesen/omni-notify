@@ -1,12 +1,7 @@
-import { type Logger, notify } from "@micthiesen/mitools";
+import type { Logger } from "@micthiesen/mitools/logging";
+import { notify } from "@micthiesen/mitools/pushover";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import config from "../utils/config.js";
-import {
-	type ChannelStatusLive,
-	type ChannelStatusOffline,
-	getChannelStatus,
-	upsertChannelStatus,
-} from "../utils/database.js";
 import {
 	type FetchedStatus,
 	type FetchedStatusLive,
@@ -14,6 +9,12 @@ import {
 	fetchYouTubeLiveStatus,
 	getYouTubeLiveUrl,
 } from "../utils/youtube.js";
+import {
+	type ChannelStatusLive,
+	type ChannelStatusOffline,
+	getChannelStatus,
+	upsertChannelStatus,
+} from "./persistence.js";
 import { Task } from "./types.js";
 
 export default class LiveCheckTask extends Task {
