@@ -53,9 +53,11 @@ export function getChannelStatus(username: string): ChannelStatus {
 	const stmt = db.prepare("SELECT data FROM statuses WHERE username = ?");
 	const row = stmt.get(username) as { data: string } | undefined;
 	if (row) {
-		return JSON.parse(row.data, (key, value) => {
+		const status = JSON.parse(row.data, (key, value) => {
 			return dateKeys.has(key) && typeof value === "string" ? new Date(value) : value;
 		});
+		logger.debug(`Found status for ${username} in DB`, status);
+		return status;
 	}
 
 	logger.debug(`No status found in DB for ${username}; returning default`);
@@ -78,5 +80,5 @@ export function upsertChannelStatus(status: ChannelStatus): void {
 		value instanceof Date ? value.toISOString() : value,
 	);
 	stmt.run(status.username, data);
-	logger.debug(`Upserted status for ${status.username} in DB`);
+	logger.debug(`Upserted status for ${status.username} in DB`, status);
 }
