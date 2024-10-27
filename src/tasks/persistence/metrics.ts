@@ -3,7 +3,6 @@ import { Entity } from "@micthiesen/mitools/entities";
 export type ChannelMetrics = {
 	username: string;
 	maxViewerCount: number;
-	lastNotificationAt?: Date;
 };
 export const ChannelMetricsEntity = new Entity<ChannelMetrics, ["username"]>(
 	"channel-metrics",
