@@ -140,7 +140,7 @@ export default class LiveCheckTask extends Task {
 		) {
 			updatedStatus.maxViewerCount = fetchedStatus.viewerCount;
 			upsertChannelStatus(updatedStatus);
-			this.logger.debug(
+			this.logger.info(
 				`Updated max viewer count for ${username} to ${fetchedStatus.viewerCount}`,
 			);
 		}
