@@ -173,7 +173,7 @@ export default class LiveCheckTask extends Task {
 			}
 
 			previousMetrics.maxViewerCount = fetchedStatus.viewerCount;
-			previousMetrics.lastNotificationAt = new Date();
+			previousMetrics.lastNotificationAt = now;
 			upsertChannelMetrics(previousMetrics);
 			this.logger.info(
 				`Updated all-time max viewer count for ${previousMetrics.username}`,
