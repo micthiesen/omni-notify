@@ -19,7 +19,7 @@ export function extractLiveStatus(html: string): FetchedStatus {
 }
 
 function extractViewerCount(html: string): number | undefined {
-	const match = html.match(/(?<="text":")[\d,]+(?="})/);
+	const match = html.match(/(?<="viewCount":{"runs":\[{"text":")[\d,]+(?="})/);
 	if (!match) return;
 
 	const count = Number.parseInt(match[0].replace(/,/g, ""), 10);
