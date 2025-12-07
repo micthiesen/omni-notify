@@ -8,6 +8,7 @@ describe("extractLiveStatus", () => {
 		expect(result).toEqual({
 			isLive: true,
 			title: "Drum & Bass Non-Stop Liquid - To Chill / Relax To 24/7",
+			debugContext: expect.anything(),
 		});
 	});
 
@@ -39,6 +40,7 @@ describe("extractLiveStatus", () => {
 		expect(result).toEqual({
 			isLive: true,
 			title: "Drum & Bass Non-Stop Liquid - To Chill / Relax To 24/7",
+			debugContext: expect.anything(),
 		});
 	});
 
@@ -48,6 +50,7 @@ describe("extractLiveStatus", () => {
 		expect(result).toEqual({
 			isLive: true,
 			title: 'A "quoted" title',
+			debugContext: expect.anything(),
 		});
 	});
 
@@ -57,6 +60,7 @@ describe("extractLiveStatus", () => {
 		expect(result).toEqual({
 			isLive: true,
 			title: 'This is a "test" title',
+			debugContext: expect.anything(),
 		});
 	});
 
@@ -66,6 +70,7 @@ describe("extractLiveStatus", () => {
 		expect(result).toEqual({
 			isLive: true,
 			title: 'Test with "quotes" & special characters',
+			debugContext: expect.anything(),
 		});
 	});
 });

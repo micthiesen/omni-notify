@@ -13,9 +13,14 @@ export async function fetchYouTubeLiveStatus({
 export function extractLiveStatus(html: string): FetchedStatus {
 	const metaTagRegex = /<meta\s+name="title"\s+content="([^"]*)"\s*\/?>/i;
 	const match = metaTagRegex.exec(html);
-	return match
-		? { isLive: true, title: decode(match[1]), viewerCount: extractViewerCount(html) }
-		: { isLive: false };
+	if (!match) return { isLive: false };
+
+	return {
+		isLive: true,
+		title: decode(match[1]),
+		viewerCount: extractViewerCount(html),
+		debugContext: { metaTag: match[0] },
+	};
 }
 
 function extractViewerCount(html: string): number | undefined {

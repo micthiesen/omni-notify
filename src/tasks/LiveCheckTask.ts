@@ -75,11 +75,13 @@ export default class LiveCheckTask extends Task {
 	}
 
 	private async handleLiveEvent(
-		{ title }: FetchedStatusLive,
+		{ title, debugContext }: FetchedStatusLive,
 		{ username, lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
 		config: PlatformConfig,
 	) {
-		this.logger.info(`${username} is live`);
+		this.logger.info(`${username} is live`, debugContext);
+
+		const tempExtra = JSON.stringify(debugContext?.metaTag);
 
 		const lastLiveMessage = (() => {
 			if (!lastEndedAt) return null;
@@ -89,8 +91,8 @@ export default class LiveCheckTask extends Task {
 			return lastViewerCount ? `${text} with ${formatCount(lastViewerCount)}` : text;
 		})();
 		const message = (() => {
-			if (!lastLiveMessage) return title;
-			return `${title}\n\n${lastLiveMessage}`;
+			if (!lastLiveMessage) return `${title}\n\n${tempExtra}`;
+			return `${title}\n\n${lastLiveMessage}\n\n${tempExtra}`;
 		})();
 
 		await notify({
@@ -110,12 +112,12 @@ export default class LiveCheckTask extends Task {
 	}
 
 	private async handleOfflineEvent(
-		_: FetchedStatusOffline,
+		{ debugContext }: FetchedStatusOffline,
 		{ username, startedAt, maxViewerCount }: ChannelStatusLive,
 		config: PlatformConfig,
 	) {
 		const lastEndedAt = new Date();
-		this.logger.info(`${username} is no longer live`);
+		this.logger.info(`${username} is no longer live`, debugContext);
 
 		if (appConfig.OFFLINE_NOTIFICATIONS) {
 			const duration = formatDistance(lastEndedAt, startedAt);

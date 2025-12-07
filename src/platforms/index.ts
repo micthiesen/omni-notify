@@ -1,8 +1,16 @@
 import { fetchKickLiveStatus, getKickLiveUrl } from "./kick.js";
 import { fetchYouTubeLiveStatus, getYouTubeLiveUrl } from "./youtube.js";
 
-export type FetchedStatusLive = { isLive: true; title: string; viewerCount?: number };
-export type FetchedStatusOffline = { isLive: false };
+export type FetchedStatusLive = {
+	isLive: true;
+	title: string;
+	viewerCount?: number;
+	debugContext?: Record<string, unknown>;
+};
+export type FetchedStatusOffline = {
+	isLive: false;
+	debugContext?: Record<string, unknown>;
+};
 export type FetchedStatus = FetchedStatusLive | FetchedStatusOffline;
 
 export enum Platform {
