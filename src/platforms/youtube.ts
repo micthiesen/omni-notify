@@ -11,16 +11,17 @@ export async function fetchYouTubeLiveStatus({
 }
 
 export function extractLiveStatus(html: string): FetchedStatus {
-	const metaTagRegex = /<meta\s+name="title"\s+content="([^"]*)"\s*\/?>/i;
-	const match = metaTagRegex.exec(html);
-	if (!match) return { isLive: false };
+	const isLiveMatch =
+		/"isLive"\s*:\s*true/i.test(html) || /"isLiveNow"\s*:\s*true/i.test(html);
 
-	return {
-		isLive: true,
-		title: decode(match[1]),
-		viewerCount: extractViewerCount(html),
-		debugContext: { metaTag: match[0] },
-	};
+	if (!isLiveMatch) return { isLive: false };
+
+	// Extract title from meta tag
+	const metaTagRegex = /<meta\s+name="title"\s+content="([^"]*)"\s*\/?>/i;
+	const titleMatch = metaTagRegex.exec(html);
+	const title = titleMatch ? decode(titleMatch[1]) : "Unknown Title";
+
+	return { isLive: true, title, viewerCount: extractViewerCount(html) };
 }
 
 function extractViewerCount(html: string): number | undefined {
