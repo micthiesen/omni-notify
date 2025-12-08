@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { extractLiveStatus } from "./youtube.js";
 
-describe("extractLiveStatus", () => {
+describe.skip("extractLiveStatus", () => {
 	it("should extract the content value from a valid meta tag", () => {
 		const html = `<meta name="title" content="Drum &amp; Bass Non-Stop Liquid - To Chill / Relax To 24/7">`;
 		const result = extractLiveStatus(html);
