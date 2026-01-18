@@ -14,13 +14,7 @@ export default class TaskManager {
 		this.logger = parentLogger.extend("TaskManager");
 		this.queue = new PQueue({ concurrency: 1 });
 		this.tasks = [
-			new LiveCheckTask(
-				[
-					[Platform.YouTube, config.YT_CHANNEL_NAMES],
-					[Platform.Kick, config.KICK_CHANNEL_NAMES],
-				],
-				this.logger,
-			),
+			new LiveCheckTask([[Platform.YouTube, config.YT_CHANNEL_NAMES]], this.logger),
 		];
 	}
 

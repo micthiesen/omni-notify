@@ -9,7 +9,6 @@ const commaSeparatedString = z
 (value: string): string[] => value.split(",");
 const configSchema = baseConfigSchema.extend({
 	YT_CHANNEL_NAMES: commaSeparatedString,
-	KICK_CHANNEL_NAMES: commaSeparatedString,
 	OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
 });
 
