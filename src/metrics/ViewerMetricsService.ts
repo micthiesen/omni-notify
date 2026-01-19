@@ -44,48 +44,49 @@ export class ViewerMetricsService {
 
     const confirmedPeaks: ConfirmedPeak[] = [];
 
-    for (const window of WINDOW_CONFIGS) {
-      const windowMax = calculateWindowMax(metrics, window);
-      const pending = state.pendingPeaks.get(window.id);
+    for (const [windowId, config] of Object.entries(WINDOW_CONFIGS) as [
+      MetricWindow,
+      (typeof WINDOW_CONFIGS)[MetricWindow],
+    ][]) {
+      const windowMax = calculateWindowMax(metrics, config);
+      const pending = state.pendingPeaks.get(windowId);
 
       if (pending) {
         if (viewerCount > pending.value) {
           // Still climbing - update pending peak
           pending.value = viewerCount;
           this.logger.debug(
-            `${channelKey}: Updated pending ${window.label} to ${viewerCount}`,
+            `${channelKey}: Updated pending ${config.label} to ${viewerCount}`,
           );
         } else if (viewerCount < pending.value * HYSTERESIS) {
           // Peak confirmed!
           confirmedPeaks.push({
-            window,
+            windowId,
+            config,
             peak: pending.value,
             previous: pending.previousMax,
           });
-          state.pendingPeaks.delete(window.id);
+          state.pendingPeaks.delete(windowId);
 
           // Update all-time max in persistent storage
-          if (
-            window.id === MetricWindow.AllTime &&
-            pending.value > metrics.allTimeMax
-          ) {
+          if (windowId === MetricWindow.AllTime && pending.value > metrics.allTimeMax) {
             metrics.allTimeMax = pending.value;
             metrics.allTimeMaxTimestamp = Date.now();
           }
 
           this.logger.debug(
-            `${channelKey}: Confirmed ${window.label} peak at ${pending.value}`,
+            `${channelKey}: Confirmed ${config.label} peak at ${pending.value}`,
           );
         }
         // else: viewers between (pending * 0.95) and pending - still tracking
       } else if (viewerCount > windowMax) {
         // Start tracking new potential peak
-        state.pendingPeaks.set(window.id, {
+        state.pendingPeaks.set(windowId, {
           value: viewerCount,
           previousMax: windowMax,
         });
         this.logger.debug(
-          `${channelKey}: Started tracking ${window.label} peak at ${viewerCount} (prev: ${windowMax})`,
+          `${channelKey}: Started tracking ${config.label} peak at ${viewerCount} (prev: ${windowMax})`,
         );
       }
     }
@@ -116,11 +117,11 @@ export class ViewerMetricsService {
     const confirmedPeaks: ConfirmedPeak[] = [];
 
     for (const [windowId, pending] of state.pendingPeaks) {
-      const window = WINDOW_CONFIGS.find((w) => w.id === windowId);
-      if (!window) continue;
+      const config = WINDOW_CONFIGS[windowId];
 
       confirmedPeaks.push({
-        window,
+        windowId,
+        config,
         peak: pending.value,
         previous: pending.previousMax,
       });
@@ -132,7 +133,7 @@ export class ViewerMetricsService {
       }
 
       this.logger.debug(
-        `${channelKey}: Flushed pending ${window.label} peak at ${pending.value}`,
+        `${channelKey}: Flushed pending ${config.label} peak at ${pending.value}`,
       );
     }
 
@@ -171,14 +172,14 @@ export class ViewerMetricsService {
   ): Promise<void> {
     // Sort by priority descending, pick highest
     const sorted = [...confirmedPeaks].sort(
-      (a, b) => b.window.priority - a.window.priority,
+      (a, b) => b.config.priority - a.config.priority,
     );
     const highest = sorted[0];
 
-    const title = `New ${highest.window.label} for ${username}!`;
+    const title = `New ${highest.config.label} for ${username}!`;
     const message = `Peaked at ${formatCount(highest.peak)} (previous was ${highest.previous.toLocaleString()})`;
 
-    this.logger.info(`${username}: ${highest.window.label} at ${highest.peak} viewers`);
+    this.logger.info(`${username}: ${highest.config.label} at ${highest.peak} viewers`);
     await notify({ title, message });
   }
 }

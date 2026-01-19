@@ -8,18 +8,17 @@ export enum MetricWindow {
 }
 
 export type WindowConfig = {
-  id: MetricWindow;
   days: number | null; // null for all-time
   label: string;
   priority: number; // higher = more important
 };
 
-export const WINDOW_CONFIGS: WindowConfig[] = [
-  { id: MetricWindow.SevenDays, days: 7, label: "7-day high", priority: 1 },
-  { id: MetricWindow.ThirtyDays, days: 30, label: "30-day high", priority: 2 },
-  { id: MetricWindow.NinetyDays, days: 90, label: "90-day high", priority: 3 },
-  { id: MetricWindow.AllTime, days: null, label: "all-time record", priority: 4 },
-];
+export const WINDOW_CONFIGS: Record<MetricWindow, WindowConfig> = {
+  [MetricWindow.SevenDays]: { days: 7, label: "7-day high", priority: 1 },
+  [MetricWindow.ThirtyDays]: { days: 30, label: "30-day high", priority: 2 },
+  [MetricWindow.NinetyDays]: { days: 90, label: "90-day high", priority: 3 },
+  [MetricWindow.AllTime]: { days: null, label: "all-time record", priority: 4 },
+};
 
 export type DailyBucket = {
   date: string; // YYYY-MM-DD
@@ -45,7 +44,8 @@ export type ChannelPeakState = {
 };
 
 export type ConfirmedPeak = {
-  window: WindowConfig;
+  windowId: MetricWindow;
+  config: WindowConfig;
   peak: number;
   previous: number;
 };

@@ -1,18 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "../platforms/index.js";
-import {
-  MetricWindow,
-  type ViewerMetricsData,
-  WINDOW_CONFIGS,
-  type WindowConfig,
-} from "./types.js";
+import { MetricWindow, type ViewerMetricsData, WINDOW_CONFIGS } from "./types.js";
 import { calculateWindowMax, pruneBuckets, updateDailyBucket } from "./windows.js";
-
-function getWindowConfig(id: MetricWindow): WindowConfig {
-  const config = WINDOW_CONFIGS.find((w) => w.id === id);
-  if (!config) throw new Error(`Window config not found: ${id}`);
-  return config;
-}
 
 describe("updateDailyBucket", () => {
   beforeEach(() => {
@@ -127,24 +116,24 @@ describe("calculateWindowMax", () => {
   };
 
   it("should return all-time max for all-time window", () => {
-    const window = getWindowConfig(MetricWindow.AllTime);
+    const window = WINDOW_CONFIGS[MetricWindow.AllTime];
     expect(calculateWindowMax(baseMetrics, window)).toBe(10000);
   });
 
   it("should calculate 7-day max correctly", () => {
-    const window = getWindowConfig(MetricWindow.SevenDays);
+    const window = WINDOW_CONFIGS[MetricWindow.SevenDays];
     // Only includes buckets from 2024-06-15 and 2024-06-10
     expect(calculateWindowMax(baseMetrics, window)).toBe(1500);
   });
 
   it("should calculate 30-day max correctly", () => {
-    const window = getWindowConfig(MetricWindow.ThirtyDays);
+    const window = WINDOW_CONFIGS[MetricWindow.ThirtyDays];
     // Includes 2024-06-15, 2024-06-10, 2024-06-01
     expect(calculateWindowMax(baseMetrics, window)).toBe(2000);
   });
 
   it("should calculate 90-day max correctly", () => {
-    const window = getWindowConfig(MetricWindow.NinetyDays);
+    const window = WINDOW_CONFIGS[MetricWindow.NinetyDays];
     // Includes all buckets
     expect(calculateWindowMax(baseMetrics, window)).toBe(5000);
   });
@@ -154,7 +143,7 @@ describe("calculateWindowMax", () => {
       ...baseMetrics,
       dailyBuckets: [],
     };
-    const window = getWindowConfig(MetricWindow.SevenDays);
+    const window = WINDOW_CONFIGS[MetricWindow.SevenDays];
     expect(calculateWindowMax(emptyMetrics, window)).toBe(0);
   });
 });
