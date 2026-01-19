@@ -12,7 +12,8 @@
       "Bash(pnpm install:*)",
       "Bash(pnpm approve-builds:*)",
       "Bash(pnpm config set:*)",
-      "Bash(pnpm biome:*)"
+      "Bash(pnpm biome:*)",
+      "Bash(pnpm run check:*)"
     ],
     "deny": [],
     "ask": []
