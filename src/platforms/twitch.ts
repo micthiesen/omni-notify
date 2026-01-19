@@ -13,11 +13,16 @@ const twitchStreamSchema = z.object({
   viewersCount: z.number(),
 });
 
+const twitchBroadcastSettingsSchema = z.object({
+  liveUpNotification: z.string().nullable(),
+});
+
 const twitchGQLResponseSchema = z.object({
   data: z.object({
     user: z
       .object({
         stream: twitchStreamSchema.nullable(),
+        broadcastSettings: twitchBroadcastSettingsSchema,
       })
       .nullable(),
   }),
@@ -28,7 +33,7 @@ type TwitchGQLResponse = z.infer<typeof twitchGQLResponseSchema>;
 export async function fetchTwitchLiveStatus({
   username,
 }: { username: string }): Promise<FetchedStatus> {
-  const query = `query{user(login:"${username}"){stream{title viewersCount}}}`;
+  const query = `query{user(login:"${username}"){stream{title viewersCount}broadcastSettings{liveUpNotification}}}`;
 
   let raw: unknown;
   try {
@@ -68,9 +73,13 @@ export function extractLiveStatus(data: TwitchGQLResponse): FetchedStatus {
     return { status: LiveStatus.Offline };
   }
 
+  // Prefer liveUpNotification (custom notification message) over stream title
+  const title =
+    user.broadcastSettings.liveUpNotification || stream.title;
+
   return {
     status: LiveStatus.Live,
-    title: stream.title,
+    title,
     viewerCount: stream.viewersCount,
   };
 }
