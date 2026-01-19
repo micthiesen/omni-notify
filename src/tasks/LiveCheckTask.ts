@@ -81,8 +81,6 @@ export default class LiveCheckTask extends Task {
 	) {
 		this.logger.info(`${username} is live`, debugContext);
 
-		const tempExtra = JSON.stringify(debugContext?.metaTag);
-
 		const lastLiveMessage = (() => {
 			if (!lastEndedAt) return null;
 			const ago = formatDistanceToNow(lastEndedAt);
@@ -90,10 +88,7 @@ export default class LiveCheckTask extends Task {
 			const text = `Last live ${ago} ago for ${duration}`;
 			return lastViewerCount ? `${text} with ${formatCount(lastViewerCount)}` : text;
 		})();
-		const message = (() => {
-			if (!lastLiveMessage) return `${title}\n\n${tempExtra}`;
-			return `${title}\n\n${lastLiveMessage}\n\n${tempExtra}`;
-		})();
+		const message = lastLiveMessage ? `${title}\n\n${lastLiveMessage}` : title;
 
 		await notify({
 			title: `${username} is LIVE on ${config.displayName}!`,
