@@ -1,6 +1,13 @@
 {
 	"permissions": {
-		"allow": ["Bash(cat:*)", "Bash(xxd:*)"],
+		"allow": [
+			"Bash(cat *)",
+			"Bash(xxd *)",
+			"Bash(find *)",
+			"Bash(curl *)",
+			"Bash(bun test:*)",
+			"Bash(bun run build)"
+		],
 		"deny": [],
 		"ask": []
 	}

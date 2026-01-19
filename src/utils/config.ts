@@ -6,9 +6,9 @@ const commaSeparatedString = z
 	.optional()
 	.transform((val) => (val ? val.split(",") : []));
 
-(value: string): string[] => value.split(",");
 const configSchema = baseConfigSchema.extend({
 	YT_CHANNEL_NAMES: commaSeparatedString,
+	TWITCH_CHANNEL_NAMES: commaSeparatedString,
 	OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
 });
 

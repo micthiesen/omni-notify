@@ -1,3 +1,4 @@
+import { fetchTwitchLiveStatus, getTwitchLiveUrl } from "./twitch.js";
 import { fetchYouTubeLiveStatus, getYouTubeLiveUrl } from "./youtube.js";
 
 export type FetchedStatusLive = {
@@ -14,6 +15,7 @@ export type FetchedStatus = FetchedStatusLive | FetchedStatusOffline;
 
 export enum Platform {
 	YouTube = "youtube",
+	Twitch = "twitch",
 }
 
 export interface PlatformConfig {
@@ -29,5 +31,11 @@ export const platformConfigs: Record<Platform, PlatformConfig> = {
 		displayName: "YouTube",
 		getLiveUrl: getYouTubeLiveUrl,
 		fetchLiveStatus: fetchYouTubeLiveStatus,
+	},
+	[Platform.Twitch]: {
+		platform: Platform.Twitch,
+		displayName: "Twitch",
+		getLiveUrl: getTwitchLiveUrl,
+		fetchLiveStatus: fetchTwitchLiveStatus,
 	},
 };
