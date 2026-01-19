@@ -1,6 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { formatDistance, formatDistanceToNow } from "date-fns";
+import { ViewerMetricsService } from "../metrics/index.js";
 import {
   type FetchedStatus,
   type FetchedStatusLive,
@@ -10,11 +11,6 @@ import {
   platformConfigs,
 } from "../platforms/index.js";
 import appConfig from "../utils/config.js";
-import {
-  type ChannelMetrics,
-  getChannelMetrics,
-  upsertChannelMetrics,
-} from "./persistence/metrics.js";
 import {
   type ChannelStatusLive,
   type ChannelStatusOffline,
@@ -29,7 +25,7 @@ export default class LiveCheckTask extends Task {
 
   private logger: Logger;
   private consecutiveUnknowns = new Map<string, number>();
-  private runNumber = 1;
+  private metricsService: ViewerMetricsService;
 
   public constructor(channels: [Platform, string[]][], parentLogger: Logger) {
     super();
@@ -41,18 +37,15 @@ export default class LiveCheckTask extends Task {
     }
 
     this.logger = parentLogger.extend("LiveCheckTask");
+    this.metricsService = new ViewerMetricsService(parentLogger);
   }
 
   public async run(): Promise<void> {
-    const handleMetrics = this.runNumber === 9;
-    if (handleMetrics) this.runNumber = 0;
-
     await Promise.all(
       this.channels.map(async ({ username, config }) => {
         const channelKey = `${config.platform}:${username}`;
         const fetchedStatus = await config.fetchLiveStatus({ username });
         const previousStatus = getChannelStatus(username, config.platform);
-        const previousMetrics = getChannelMetrics(username);
 
         this.logStatus(username, fetchedStatus);
 
@@ -75,14 +68,17 @@ export default class LiveCheckTask extends Task {
 
         if (fetchedStatus.status === LiveStatus.Live) {
           this.updateMaxViewerCount(username, config.platform, fetchedStatus);
-          if (handleMetrics) {
-            await this.handleChannelMetrics(previousMetrics, fetchedStatus);
+          // Record viewer count for metrics tracking (peak confirmation system)
+          if (fetchedStatus.viewerCount !== undefined) {
+            await this.metricsService.recordViewerCount({
+              username,
+              platform: config.platform,
+              viewerCount: fetchedStatus.viewerCount,
+            });
           }
         }
       }),
     );
-
-    this.runNumber += 1;
   }
 
   private logStatus(username: string, status: FetchedStatus): void {
@@ -154,6 +150,9 @@ export default class LiveCheckTask extends Task {
     const lastEndedAt = new Date();
     this.logger.info(`${username} is now offline on ${config.displayName}`);
 
+    // Flush any pending peak records
+    await this.metricsService.flushPendingPeaks(username, config.platform);
+
     if (appConfig.OFFLINE_NOTIFICATIONS) {
       const duration = formatDistance(lastEndedAt, startedAt);
       const durationText = `Streamed for ${duration}`;
@@ -193,25 +192,6 @@ export default class LiveCheckTask extends Task {
       this.logger.debug(
         `Updated max viewer count for ${username} to ${fetchedStatus.viewerCount}`,
       );
-    }
-  }
-
-  private async handleChannelMetrics(
-    previousMetrics: ChannelMetrics,
-    fetchedStatus: FetchedStatusLive,
-  ): Promise<void> {
-    if (fetchedStatus.viewerCount === undefined) return;
-
-    if (fetchedStatus.viewerCount > previousMetrics.maxViewerCount) {
-      previousMetrics.maxViewerCount = fetchedStatus.viewerCount;
-      upsertChannelMetrics(previousMetrics);
-      this.logger.info(
-        `Updated all-time max viewer count for ${previousMetrics.username}`,
-      );
-      await notify({
-        title: `New record for ${previousMetrics.username}!`,
-        message: `Now at ${formatCount(fetchedStatus.viewerCount)}`,
-      });
     }
   }
 }

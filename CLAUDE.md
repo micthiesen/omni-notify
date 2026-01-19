@@ -9,13 +9,13 @@
 ## Quick Reference
 
 ```bash
-bun run dev      # Development with hot reload
-bun run build    # TypeScript compilation (run after changes)
-bun test         # Run tests
-bun run check    # Biome linting + formatting check
+pnpm dev      # Development with hot reload
+pnpm build    # TypeScript compilation (run after changes)
+pnpm test     # Run tests (vitest)
+pnpm check    # Biome linting + formatting check
 ```
 
-**Always run `bun test && bun run build` after making changes.**
+**Always run `pnpm test && pnpm build` after making changes.**
 
 ## Architecture
 
@@ -28,13 +28,18 @@ src/
 │   ├── youtube.ts           # YouTube HTML scraping
 │   ├── twitch.ts            # Twitch GQL API
 │   └── *.spec.ts            # Platform tests
+├── metrics/                 # Viewer metrics with rolling windows
+│   ├── types.ts             # MetricWindow enum, type definitions
+│   ├── persistence.ts       # ViewerMetricsEntity (daily buckets, all-time max)
+│   ├── windows.ts           # Rolling window calculation helpers
+│   ├── ViewerMetricsService.ts  # Peak confirmation state machine
+│   └── windows.spec.ts      # Unit tests
 ├── tasks/
 │   ├── types.ts             # Abstract Task class
 │   ├── TaskManager.ts       # Task orchestration
 │   ├── LiveCheckTask.ts     # Main logic: status transitions, notifications
-│   └── persistence/         # SQLite via @micthiesen/mitools Entity
-│       ├── status.ts        # Channel live/offline state
-│       └── metrics.ts       # All-time stats (max viewers)
+│   └── persistence/
+│       └── status.ts        # Channel live/offline state (SQLite)
 └── utils/
     └── config.ts            # Environment config with zod validation
 ```
@@ -87,7 +92,14 @@ enum LiveStatus {
 
 Uses `@micthiesen/mitools` Entity system with SQLite (`docstore.db`):
 - `ChannelStatusEntity`: Current live/offline state, timestamps, max viewers per stream
-- `ChannelMetricsEntity`: All-time stats per channel
+- `ViewerMetricsEntity`: Daily viewer buckets for rolling window calculations, all-time max
+
+### Viewer Metrics System
+
+Tracks viewer records across rolling time windows (7d, 30d, 90d, all-time) using **peak confirmation**:
+- Records are only confirmed when viewer count drops 5% below peak (prevents spam during climbs)
+- Pending peaks are flushed when stream goes offline
+- Only sends one notification for the highest-priority window when multiple records are broken
 
 ## Code Style
 
@@ -99,9 +111,11 @@ Uses `@micthiesen/mitools` Entity system with SQLite (`docstore.db`):
 
 ## Testing
 
+Uses **vitest** for testing. Run with pnpm:
+
 ```bash
-bun test              # Run all tests
-bun test --watch      # Watch mode
+pnpm test              # Run all tests
+pnpm test -- --watch   # Watch mode
 ```
 
 - YouTube tests are skipped (marked `.skip`) - they need real HTML fixtures
@@ -125,6 +139,7 @@ OFFLINE_NOTIFICATIONS=true|false
 - **node-cron**: Scheduling
 - **zod**: Schema validation (config, API responses)
 - **html-entities**: Decode HTML entities in YouTube titles
+- **vitest**: Testing framework
 
 ## Platform-Specific Notes
 

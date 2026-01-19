@@ -5,15 +5,19 @@
       "Bash(xxd *)",
       "Bash(find *)",
       "Bash(curl *)",
-      "Bash(bun test:*)",
-      "Bash(bun run build)",
-      "Bash(bun run format *)",
       "Bash(corepack prepare:*)",
       "Bash(pnpm install:*)",
       "Bash(pnpm approve-builds:*)",
       "Bash(pnpm config set:*)",
       "Bash(pnpm biome:*)",
-      "Bash(pnpm run check:*)"
+      "Bash(pnpm run check:*)",
+      "Bash(xargs cat:*)",
+      "Bash(ls:*)",
+      "Bash(pnpm remove:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm check:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,0 +1,188 @@
+import type { Logger } from "@micthiesen/mitools/logging";
+import { notify } from "@micthiesen/mitools/pushover";
+import type { Platform } from "../platforms/index.js";
+import { getViewerMetrics, upsertViewerMetrics } from "./persistence.js";
+import {
+  type ChannelPeakState,
+  type ConfirmedPeak,
+  MetricWindow,
+  type PendingPeak,
+  WINDOW_CONFIGS,
+} from "./types.js";
+import { calculateWindowMax, pruneBuckets, updateDailyBucket } from "./windows.js";
+
+const HYSTERESIS = 0.95; // Peak confirmed when viewers drop below peak × 0.95
+const MAX_BUCKET_AGE_DAYS = 100;
+
+export class ViewerMetricsService {
+  private logger: Logger;
+  private channelStates = new Map<string, ChannelPeakState>();
+
+  constructor(parentLogger: Logger) {
+    this.logger = parentLogger.extend("ViewerMetrics");
+  }
+
+  /**
+   * Record a viewer count observation. Updates daily buckets and tracks peaks.
+   * When a peak is confirmed (viewers drop below peak × hysteresis), sends notification.
+   */
+  async recordViewerCount({
+    username,
+    platform,
+    viewerCount,
+  }: {
+    username: string;
+    platform: Platform;
+    viewerCount: number;
+  }): Promise<void> {
+    const channelKey = this.getChannelKey(username, platform);
+    const metrics = getViewerMetrics(username, platform);
+    const state = this.getOrCreateChannelState(channelKey);
+
+    // Always update today's daily bucket
+    metrics.dailyBuckets = updateDailyBucket(metrics.dailyBuckets, viewerCount);
+
+    const confirmedPeaks: ConfirmedPeak[] = [];
+
+    for (const window of WINDOW_CONFIGS) {
+      const windowMax = calculateWindowMax(metrics, window);
+      const pending = state.pendingPeaks.get(window.id);
+
+      if (pending) {
+        if (viewerCount > pending.value) {
+          // Still climbing - update pending peak
+          pending.value = viewerCount;
+          this.logger.debug(
+            `${channelKey}: Updated pending ${window.label} to ${viewerCount}`,
+          );
+        } else if (viewerCount < pending.value * HYSTERESIS) {
+          // Peak confirmed!
+          confirmedPeaks.push({
+            window,
+            peak: pending.value,
+            previous: pending.previousMax,
+          });
+          state.pendingPeaks.delete(window.id);
+
+          // Update all-time max in persistent storage
+          if (
+            window.id === MetricWindow.AllTime &&
+            pending.value > metrics.allTimeMax
+          ) {
+            metrics.allTimeMax = pending.value;
+            metrics.allTimeMaxTimestamp = Date.now();
+          }
+
+          this.logger.debug(
+            `${channelKey}: Confirmed ${window.label} peak at ${pending.value}`,
+          );
+        }
+        // else: viewers between (pending * 0.95) and pending - still tracking
+      } else if (viewerCount > windowMax) {
+        // Start tracking new potential peak
+        state.pendingPeaks.set(window.id, {
+          value: viewerCount,
+          previousMax: windowMax,
+        });
+        this.logger.debug(
+          `${channelKey}: Started tracking ${window.label} peak at ${viewerCount} (prev: ${windowMax})`,
+        );
+      }
+    }
+
+    // Prune old buckets and persist
+    metrics.dailyBuckets = pruneBuckets(metrics.dailyBuckets, MAX_BUCKET_AGE_DAYS);
+    upsertViewerMetrics(metrics);
+
+    // Send notification for highest priority peak only
+    if (confirmedPeaks.length > 0) {
+      await this.sendNotification(confirmedPeaks, username);
+    }
+  }
+
+  /**
+   * Flush any pending peaks when a stream goes offline.
+   * This ensures we don't miss peaks that were never confirmed by a drop.
+   */
+  async flushPendingPeaks(username: string, platform: Platform): Promise<void> {
+    const channelKey = this.getChannelKey(username, platform);
+    const state = this.channelStates.get(channelKey);
+
+    if (!state || state.pendingPeaks.size === 0) {
+      return;
+    }
+
+    const metrics = getViewerMetrics(username, platform);
+    const confirmedPeaks: ConfirmedPeak[] = [];
+
+    for (const [windowId, pending] of state.pendingPeaks) {
+      const window = WINDOW_CONFIGS.find((w) => w.id === windowId);
+      if (!window) continue;
+
+      confirmedPeaks.push({
+        window,
+        peak: pending.value,
+        previous: pending.previousMax,
+      });
+
+      // Update all-time max if needed
+      if (windowId === MetricWindow.AllTime && pending.value > metrics.allTimeMax) {
+        metrics.allTimeMax = pending.value;
+        metrics.allTimeMaxTimestamp = Date.now();
+      }
+
+      this.logger.debug(
+        `${channelKey}: Flushed pending ${window.label} peak at ${pending.value}`,
+      );
+    }
+
+    // Clear channel state
+    state.pendingPeaks.clear();
+
+    // Persist any all-time max updates
+    upsertViewerMetrics(metrics);
+
+    // Send notification for highest priority peak only
+    if (confirmedPeaks.length > 0) {
+      await this.sendNotification(confirmedPeaks, username);
+    }
+  }
+
+  private getChannelKey(username: string, platform: Platform): string {
+    return `${platform}:${username}`;
+  }
+
+  private getOrCreateChannelState(channelKey: string): ChannelPeakState {
+    let state = this.channelStates.get(channelKey);
+    if (!state) {
+      state = { pendingPeaks: new Map<MetricWindow, PendingPeak>() };
+      this.channelStates.set(channelKey, state);
+    }
+    return state;
+  }
+
+  /**
+   * Send notification for the highest priority confirmed peak.
+   * Only sends one notification even if multiple windows have new records.
+   */
+  private async sendNotification(
+    confirmedPeaks: ConfirmedPeak[],
+    username: string,
+  ): Promise<void> {
+    // Sort by priority descending, pick highest
+    const sorted = [...confirmedPeaks].sort(
+      (a, b) => b.window.priority - a.window.priority,
+    );
+    const highest = sorted[0];
+
+    const title = `New ${highest.window.label} for ${username}!`;
+    const message = `Peaked at ${formatCount(highest.peak)} (previous was ${highest.previous.toLocaleString()})`;
+
+    this.logger.info(`${username}: ${highest.window.label} at ${highest.peak} viewers`);
+    await notify({ title, message });
+  }
+}
+
+function formatCount(count: number): string {
+  return `${count.toLocaleString()} viewers`;
+}
