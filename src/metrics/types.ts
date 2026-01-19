@@ -18,7 +18,7 @@ export const WINDOW_CONFIGS: WindowConfig[] = [
   { id: MetricWindow.SevenDays, days: 7, label: "7-day high", priority: 1 },
   { id: MetricWindow.ThirtyDays, days: 30, label: "30-day high", priority: 2 },
   { id: MetricWindow.NinetyDays, days: 90, label: "90-day high", priority: 3 },
-  { id: MetricWindow.AllTime, days: null, label: "All-time record", priority: 4 },
+  { id: MetricWindow.AllTime, days: null, label: "all-time record", priority: 4 },
 ];
 
 export type DailyBucket = {
