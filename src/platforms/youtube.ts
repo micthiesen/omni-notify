@@ -4,7 +4,9 @@ import { type FetchedStatus, LiveStatus } from "./index.js";
 
 export async function fetchYouTubeLiveStatus({
   username,
-}: { username: string }): Promise<FetchedStatus> {
+}: {
+  username: string;
+}): Promise<FetchedStatus> {
   const url = getYouTubeLiveUrl(username);
 
   let html: string;

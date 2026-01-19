@@ -7,7 +7,12 @@
       "Bash(curl *)",
       "Bash(bun test:*)",
       "Bash(bun run build)",
-      "Bash(bun run format *)"
+      "Bash(bun run format *)",
+      "Bash(corepack prepare:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm approve-builds:*)",
+      "Bash(pnpm config set:*)",
+      "Bash(pnpm biome:*)"
     ],
     "deny": [],
     "ask": []

@@ -32,7 +32,9 @@ type TwitchGQLResponse = z.infer<typeof twitchGQLResponseSchema>;
 
 export async function fetchTwitchLiveStatus({
   username,
-}: { username: string }): Promise<FetchedStatus> {
+}: {
+  username: string;
+}): Promise<FetchedStatus> {
   const query = `query{user(login:"${username}"){stream{title viewersCount}broadcastSettings{liveUpNotification}}}`;
 
   let raw: unknown;
@@ -74,8 +76,7 @@ export function extractLiveStatus(data: TwitchGQLResponse): FetchedStatus {
   }
 
   // Prefer liveUpNotification (custom notification message) over stream title
-  const title =
-    user.broadcastSettings.liveUpNotification || stream.title;
+  const title = user.broadcastSettings.liveUpNotification || stream.title;
 
   return {
     status: LiveStatus.Live,

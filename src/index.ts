@@ -9,15 +9,13 @@ Injector.configure({ config });
 const logger = new Logger("Main");
 const taskManager = new TaskManager(logger);
 
-cron.schedule(
-  "*/20 * * * * *",
-  async () => {
-    await randomSleep(); // Fuzz
-    logger.debug("Running scheduled tasks...");
-    await taskManager.runTasks();
-  },
-  { runOnInit: true },
-);
+const task = cron.schedule("*/20 * * * * *", async () => {
+  await randomSleep();
+  logger.debug("Running scheduled tasks...");
+  await taskManager.runTasks();
+});
+
+task.execute();
 
 function randomSleep(maxMilliseconds = 3000): Promise<void> {
   const delay = Math.floor(Math.random() * maxMilliseconds);
