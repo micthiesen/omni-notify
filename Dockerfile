@@ -3,7 +3,7 @@ FROM node:24.13.0-slim
 RUN corepack enable
 
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN corepack prepare pnpm@10.28.0 --activate && pnpm install
 
 COPY . .
