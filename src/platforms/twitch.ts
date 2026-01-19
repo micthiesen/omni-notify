@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { fetchGQL } from "./common.js";
-import type { FetchedStatus } from "./index.js";
+import { type FetchedStatus, LiveStatus } from "./index.js";
 
 const TWITCH_GQL_URL = "https://gql.twitch.tv/gql";
 
@@ -8,16 +8,16 @@ const TWITCH_GQL_URL = "https://gql.twitch.tv/gql";
 // No authentication required. See: https://github.com/nicknsy/twitch-api/wiki/Public-GraphQL-queries
 const TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
+const twitchStreamSchema = z.object({
+	title: z.string(),
+	viewersCount: z.number(),
+});
+
 const twitchGQLResponseSchema = z.object({
 	data: z.object({
 		user: z
 			.object({
-				stream: z
-					.object({
-						title: z.string(),
-						viewersCount: z.number(),
-					})
-					.nullable(),
+				stream: twitchStreamSchema.nullable(),
 			})
 			.nullable(),
 	}),
@@ -29,26 +29,47 @@ export async function fetchTwitchLiveStatus({
 	username,
 }: { username: string }): Promise<FetchedStatus> {
 	const query = `query{user(login:"${username}"){stream{title viewersCount}}}`;
-	const raw = await fetchGQL<unknown>({
-		url: TWITCH_GQL_URL,
-		clientId: TWITCH_CLIENT_ID,
-		query,
-	});
+
+	let raw: unknown;
+	try {
+		raw = await fetchGQL<unknown>({
+			url: TWITCH_GQL_URL,
+			clientId: TWITCH_CLIENT_ID,
+			query,
+		});
+	} catch (error) {
+		return {
+			status: LiveStatus.Unknown,
+			error: error instanceof Error ? error.message : String(error),
+		};
+	}
 
 	const result = twitchGQLResponseSchema.safeParse(raw);
 	if (!result.success) {
-		return { isLive: false, debugContext: { error: result.error.message, raw } };
+		return {
+			status: LiveStatus.Unknown,
+			error: `Invalid API response: ${result.error.message}`,
+		};
 	}
 
 	return extractLiveStatus(result.data);
 }
 
 export function extractLiveStatus(data: TwitchGQLResponse): FetchedStatus {
-	const stream = data.data?.user?.stream;
-	if (!stream) return { isLive: false };
+	const user = data.data.user;
+
+	// User doesn't exist - this is a definitive "offline" (or non-existent)
+	if (!user) {
+		return { status: LiveStatus.Offline };
+	}
+
+	const stream = user.stream;
+	if (!stream) {
+		return { status: LiveStatus.Offline };
+	}
 
 	return {
-		isLive: true,
+		status: LiveStatus.Live,
 		title: stream.title,
 		viewerCount: stream.viewersCount,
 	};

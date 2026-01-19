@@ -1,17 +1,28 @@
 import { fetchTwitchLiveStatus, getTwitchLiveUrl } from "./twitch.js";
 import { fetchYouTubeLiveStatus, getYouTubeLiveUrl } from "./youtube.js";
 
+export enum LiveStatus {
+	Live = "live",
+	Offline = "offline",
+	Unknown = "unknown",
+}
+
 export type FetchedStatusLive = {
-	isLive: true;
+	status: LiveStatus.Live;
 	title: string;
 	viewerCount?: number;
-	debugContext?: Record<string, unknown>;
 };
+
 export type FetchedStatusOffline = {
-	isLive: false;
-	debugContext?: Record<string, unknown>;
+	status: LiveStatus.Offline;
 };
-export type FetchedStatus = FetchedStatusLive | FetchedStatusOffline;
+
+export type FetchedStatusUnknown = {
+	status: LiveStatus.Unknown;
+	error: string;
+};
+
+export type FetchedStatus = FetchedStatusLive | FetchedStatusOffline | FetchedStatusUnknown;
 
 export enum Platform {
 	YouTube = "youtube",

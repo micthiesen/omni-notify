@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LiveStatus } from "./index.js";
 import { extractLiveStatus } from "./twitch.js";
 
 describe("extractLiveStatus", () => {
@@ -14,7 +15,7 @@ describe("extractLiveStatus", () => {
 			},
 		};
 		expect(extractLiveStatus(data)).toEqual({
-			isLive: true,
+			status: LiveStatus.Live,
 			title: "Playing games",
 			viewerCount: 15000,
 		});
@@ -22,11 +23,11 @@ describe("extractLiveStatus", () => {
 
 	it("should return offline when stream is null", () => {
 		const data = { data: { user: { stream: null } } };
-		expect(extractLiveStatus(data)).toEqual({ isLive: false });
+		expect(extractLiveStatus(data)).toEqual({ status: LiveStatus.Offline });
 	});
 
 	it("should return offline when user is null", () => {
 		const data = { data: { user: null } };
-		expect(extractLiveStatus(data)).toEqual({ isLive: false });
+		expect(extractLiveStatus(data)).toEqual({ status: LiveStatus.Offline });
 	});
 });

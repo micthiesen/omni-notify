@@ -4,7 +4,7 @@ import { formatDistance, formatDistanceToNow } from "date-fns";
 import {
 	type FetchedStatus,
 	type FetchedStatusLive,
-	type FetchedStatusOffline,
+	LiveStatus,
 	type Platform,
 	type PlatformConfig,
 	platformConfigs,
@@ -28,7 +28,7 @@ export default class LiveCheckTask extends Task {
 	private channels: { username: string; config: PlatformConfig }[] = [];
 
 	private logger: Logger;
-	private numPreviousFailures = 0;
+	private consecutiveUnknowns = new Map<string, number>();
 	private runNumber = 1;
 
 	public constructor(channels: [Platform, string[]][], parentLogger: Logger) {
@@ -43,43 +43,77 @@ export default class LiveCheckTask extends Task {
 		this.logger = parentLogger.extend("LiveCheckTask");
 	}
 
-	public async run() {
+	public async run(): Promise<void> {
 		const handleMetrics = this.runNumber === 9;
 		if (handleMetrics) this.runNumber = 0;
 
-		const results = await Promise.allSettled(
+		await Promise.all(
 			this.channels.map(async ({ username, config }) => {
+				const channelKey = `${config.platform}:${username}`;
 				const fetchedStatus = await config.fetchLiveStatus({ username });
 				const previousStatus = getChannelStatus(username, config.platform);
 				const previousMetrics = getChannelMetrics(username);
-				this.logger.debug(
-					`${username} is ${fetchedStatus.isLive ? "" : "NOT "}live (${this.runNumber})`,
-					fetchedStatus,
-				);
 
-				if (fetchedStatus.isLive && !previousStatus.isLive) {
-					await this.handleLiveEvent(fetchedStatus, previousStatus, config);
-				} else if (!fetchedStatus.isLive && previousStatus.isLive) {
-					await this.handleOfflineEvent(fetchedStatus, previousStatus, config);
+				this.logStatus(username, fetchedStatus);
+
+				if (fetchedStatus.status === LiveStatus.Unknown) {
+					this.handleUnknownStatus(channelKey, fetchedStatus.error);
+					return;
 				}
 
-				this.handleMaxViewerCount(username, config.platform, fetchedStatus);
+				// Clear consecutive unknowns on successful fetch
+				this.consecutiveUnknowns.delete(channelKey);
 
-				if (handleMetrics) this.handleChannelMetrics(previousMetrics, fetchedStatus);
+				if (fetchedStatus.status === LiveStatus.Live && !previousStatus.isLive) {
+					await this.handleLiveEvent(fetchedStatus, previousStatus, config);
+				} else if (fetchedStatus.status === LiveStatus.Offline && previousStatus.isLive) {
+					await this.handleOfflineEvent(previousStatus, config);
+				}
+
+				if (fetchedStatus.status === LiveStatus.Live) {
+					this.updateMaxViewerCount(username, config.platform, fetchedStatus);
+					if (handleMetrics) {
+						await this.handleChannelMetrics(previousMetrics, fetchedStatus);
+					}
+				}
 			}),
 		);
 
-		const failures = results.filter((r) => r.status === "rejected");
-		this.handleFailures(failures);
 		this.runNumber += 1;
 	}
 
+	private logStatus(username: string, status: FetchedStatus): void {
+		switch (status.status) {
+			case LiveStatus.Live:
+				this.logger.debug(`${username} is live: "${status.title}"`);
+				break;
+			case LiveStatus.Offline:
+				this.logger.debug(`${username} is offline`);
+				break;
+			case LiveStatus.Unknown:
+				this.logger.debug(`${username} status unknown: ${status.error}`);
+				break;
+		}
+	}
+
+	private handleUnknownStatus(channelKey: string, error: string): void {
+		const count = (this.consecutiveUnknowns.get(channelKey) ?? 0) + 1;
+		this.consecutiveUnknowns.set(channelKey, count);
+
+		// Escalate logging after repeated failures
+		if (count >= 10) {
+			this.logger.error(`${channelKey}: ${count} consecutive unknown statuses: ${error}`);
+		} else if (count >= 3) {
+			this.logger.warn(`${channelKey}: ${count} consecutive unknown statuses: ${error}`);
+		}
+	}
+
 	private async handleLiveEvent(
-		{ title, debugContext }: FetchedStatusLive,
+		{ title }: FetchedStatusLive,
 		{ username, lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
 		config: PlatformConfig,
-	) {
-		this.logger.info(`${username} is live`, debugContext);
+	): Promise<void> {
+		this.logger.info(`${username} is now live on ${config.displayName}`);
 
 		const lastLiveMessage = (() => {
 			if (!lastEndedAt) return null;
@@ -107,12 +141,11 @@ export default class LiveCheckTask extends Task {
 	}
 
 	private async handleOfflineEvent(
-		{ debugContext }: FetchedStatusOffline,
 		{ username, startedAt, maxViewerCount }: ChannelStatusLive,
 		config: PlatformConfig,
-	) {
+	): Promise<void> {
 		const lastEndedAt = new Date();
-		this.logger.info(`${username} is no longer live`, debugContext);
+		this.logger.info(`${username} is now offline on ${config.displayName}`);
 
 		if (appConfig.OFFLINE_NOTIFICATIONS) {
 			const duration = formatDistance(lastEndedAt, startedAt);
@@ -134,23 +167,23 @@ export default class LiveCheckTask extends Task {
 		});
 	}
 
-	private handleMaxViewerCount(
+	private updateMaxViewerCount(
 		username: string,
 		platform: Platform,
-		fetchedStatus: FetchedStatus,
-	) {
-		if (!fetchedStatus.isLive || fetchedStatus.viewerCount === undefined) return;
+		fetchedStatus: FetchedStatusLive,
+	): void {
+		if (fetchedStatus.viewerCount === undefined) return;
 
-		const updatedStatus = getChannelStatus(username, platform);
-		if (!updatedStatus.isLive) return;
+		const currentStatus = getChannelStatus(username, platform);
+		if (!currentStatus.isLive) return;
 
 		if (
-			updatedStatus.maxViewerCount === undefined ||
-			fetchedStatus.viewerCount > updatedStatus.maxViewerCount
+			currentStatus.maxViewerCount === undefined ||
+			fetchedStatus.viewerCount > currentStatus.maxViewerCount
 		) {
-			updatedStatus.maxViewerCount = fetchedStatus.viewerCount;
-			upsertChannelStatus(updatedStatus);
-			this.logger.info(
+			currentStatus.maxViewerCount = fetchedStatus.viewerCount;
+			upsertChannelStatus(currentStatus);
+			this.logger.debug(
 				`Updated max viewer count for ${username} to ${fetchedStatus.viewerCount}`,
 			);
 		}
@@ -158,9 +191,9 @@ export default class LiveCheckTask extends Task {
 
 	private async handleChannelMetrics(
 		previousMetrics: ChannelMetrics,
-		fetchedStatus: FetchedStatus,
-	) {
-		if (!fetchedStatus.isLive || fetchedStatus.viewerCount === undefined) return;
+		fetchedStatus: FetchedStatusLive,
+	): Promise<void> {
+		if (fetchedStatus.viewerCount === undefined) return;
 
 		if (fetchedStatus.viewerCount > previousMetrics.maxViewerCount) {
 			previousMetrics.maxViewerCount = fetchedStatus.viewerCount;
@@ -174,21 +207,8 @@ export default class LiveCheckTask extends Task {
 			});
 		}
 	}
-
-	private handleFailures(failures: PromiseRejectedResult[]) {
-		if (failures.length > 0) {
-			// Don't sent a notification if there's an occasional error
-			const loggerMethod = this.numPreviousFailures >= 2 ? "error" : "warn";
-			for (const result of failures) {
-				this.logger[loggerMethod]("Failed to check live status:", result.reason);
-			}
-			this.numPreviousFailures += 1;
-		} else {
-			this.numPreviousFailures = 0;
-		}
-	}
 }
 
-function formatCount(count: number) {
+function formatCount(count: number): string {
 	return `${count.toLocaleString()} viewers`;
 }
