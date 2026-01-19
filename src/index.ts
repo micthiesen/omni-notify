@@ -10,16 +10,16 @@ const logger = new Logger("Main");
 const taskManager = new TaskManager(logger);
 
 cron.schedule(
-	"*/20 * * * * *",
-	async () => {
-		await randomSleep(); // Fuzz
-		logger.debug("Running scheduled tasks...");
-		await taskManager.runTasks();
-	},
-	{ runOnInit: true },
+  "*/20 * * * * *",
+  async () => {
+    await randomSleep(); // Fuzz
+    logger.debug("Running scheduled tasks...");
+    await taskManager.runTasks();
+  },
+  { runOnInit: true },
 );
 
 function randomSleep(maxMilliseconds = 3000): Promise<void> {
-	const delay = Math.floor(Math.random() * maxMilliseconds);
-	return new Promise((resolve) => setTimeout(resolve, delay));
+  const delay = Math.floor(Math.random() * maxMilliseconds);
+  return new Promise((resolve) => setTimeout(resolve, delay));
 }

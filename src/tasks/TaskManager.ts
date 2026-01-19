@@ -6,34 +6,34 @@ import LiveCheckTask from "./LiveCheckTask.js";
 import type { Task } from "./types.js";
 
 export default class TaskManager {
-	private queue: PQueue;
-	private tasks: Task[];
-	private logger: Logger;
+  private queue: PQueue;
+  private tasks: Task[];
+  private logger: Logger;
 
-	constructor(parentLogger: Logger) {
-		this.logger = parentLogger.extend("TaskManager");
-		this.queue = new PQueue({ concurrency: 1 });
-		this.tasks = [
-			new LiveCheckTask(
-				[
-					[Platform.YouTube, config.YT_CHANNEL_NAMES],
-					[Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
-				],
-				this.logger,
-			),
-		];
-	}
+  constructor(parentLogger: Logger) {
+    this.logger = parentLogger.extend("TaskManager");
+    this.queue = new PQueue({ concurrency: 1 });
+    this.tasks = [
+      new LiveCheckTask(
+        [
+          [Platform.YouTube, config.YT_CHANNEL_NAMES],
+          [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
+        ],
+        this.logger,
+      ),
+    ];
+  }
 
-	public async runTasks(): Promise<void> {
-		for (const task of this.tasks) {
-			this.queue.add(async () => {
-				try {
-					this.logger.debug(`Running task: ${task.name}`);
-					await task.run();
-				} catch (err) {
-					this.logger.error(`Error running task: ${task.name}`, err);
-				}
-			});
-		}
-	}
+  public async runTasks(): Promise<void> {
+    for (const task of this.tasks) {
+      this.queue.add(async () => {
+        try {
+          this.logger.debug(`Running task: ${task.name}`);
+          await task.run();
+        } catch (err) {
+          this.logger.error(`Error running task: ${task.name}`, err);
+        }
+      });
+    }
+  }
 }
