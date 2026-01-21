@@ -28,10 +28,12 @@ export class ViewerMetricsService {
    */
   async recordViewerCount({
     username,
+    displayName,
     platform,
     viewerCount,
   }: {
     username: string;
+    displayName: string;
     platform: Platform;
     viewerCount: number;
   }): Promise<void> {
@@ -97,7 +99,7 @@ export class ViewerMetricsService {
 
     // Send notification for highest priority peak only
     if (confirmedPeaks.length > 0) {
-      await this.sendNotification(confirmedPeaks, username);
+      await this.sendNotification(confirmedPeaks, displayName);
     }
   }
 
@@ -105,7 +107,11 @@ export class ViewerMetricsService {
    * Flush any pending peaks when a stream goes offline.
    * This ensures we don't miss peaks that were never confirmed by a drop.
    */
-  async flushPendingPeaks(username: string, platform: Platform): Promise<void> {
+  async flushPendingPeaks(
+    username: string,
+    displayName: string,
+    platform: Platform,
+  ): Promise<void> {
     const channelKey = this.getChannelKey(username, platform);
     const state = this.channelStates.get(channelKey);
 
@@ -145,7 +151,7 @@ export class ViewerMetricsService {
 
     // Send notification for highest priority peak only
     if (confirmedPeaks.length > 0) {
-      await this.sendNotification(confirmedPeaks, username);
+      await this.sendNotification(confirmedPeaks, displayName);
     }
   }
 
@@ -168,7 +174,7 @@ export class ViewerMetricsService {
    */
   private async sendNotification(
     confirmedPeaks: ConfirmedPeak[],
-    username: string,
+    displayName: string,
   ): Promise<void> {
     // Sort by priority descending, pick highest
     const sorted = [...confirmedPeaks].sort(
@@ -176,10 +182,12 @@ export class ViewerMetricsService {
     );
     const highest = sorted[0];
 
-    const title = `New ${highest.config.label} for ${username}!`;
+    const title = `New ${highest.config.label} for ${displayName}!`;
     const message = `Peaked at ${formatCount(highest.peak)} (previous was ${highest.previous.toLocaleString()})`;
 
-    this.logger.info(`${username}: ${highest.config.label} at ${highest.peak} viewers`);
+    this.logger.info(
+      `${displayName}: ${highest.config.label} at ${highest.peak} viewers`,
+    );
     await notify({ title, message });
   }
 }

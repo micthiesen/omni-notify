@@ -19,20 +19,26 @@ import {
 } from "./persistence/status.js";
 import { Task } from "./types.js";
 
+type ChannelInfo = { username: string; displayName: string };
+
 export default class LiveCheckTask extends Task {
   public name = "Live Check";
-  private channels: { username: string; config: PlatformConfig }[] = [];
+  private channels: {
+    username: string;
+    displayName: string;
+    config: PlatformConfig;
+  }[] = [];
 
   private logger: Logger;
   private consecutiveUnknowns = new Map<string, number>();
   private metricsService: ViewerMetricsService;
 
-  public constructor(channels: [Platform, string[]][], parentLogger: Logger) {
+  public constructor(channels: [Platform, ChannelInfo[]][], parentLogger: Logger) {
     super();
-    for (const [platform, usernames] of channels) {
+    for (const [platform, channelList] of channels) {
       const config = platformConfigs[platform];
-      for (const username of usernames) {
-        this.channels.push({ username, config });
+      for (const { username, displayName } of channelList) {
+        this.channels.push({ username, displayName, config });
       }
     }
 
@@ -42,12 +48,12 @@ export default class LiveCheckTask extends Task {
 
   public async run(): Promise<void> {
     await Promise.all(
-      this.channels.map(async ({ username, config }) => {
+      this.channels.map(async ({ username, displayName, config }) => {
         const channelKey = `${config.platform}:${username}`;
         const fetchedStatus = await config.fetchLiveStatus({ username });
         const previousStatus = getChannelStatus(username, config.platform);
 
-        this.logStatus(username, fetchedStatus);
+        this.logStatus(displayName, fetchedStatus);
 
         if (fetchedStatus.status === LiveStatus.Unknown) {
           this.handleUnknownStatus(channelKey, fetchedStatus.error);
@@ -58,12 +64,17 @@ export default class LiveCheckTask extends Task {
         this.consecutiveUnknowns.delete(channelKey);
 
         if (fetchedStatus.status === LiveStatus.Live && !previousStatus.isLive) {
-          await this.handleLiveEvent(fetchedStatus, previousStatus, config);
+          await this.handleLiveEvent(
+            fetchedStatus,
+            previousStatus,
+            displayName,
+            config,
+          );
         } else if (
           fetchedStatus.status === LiveStatus.Offline &&
           previousStatus.isLive
         ) {
-          await this.handleOfflineEvent(previousStatus, config);
+          await this.handleOfflineEvent(previousStatus, displayName, config);
         }
 
         if (fetchedStatus.status === LiveStatus.Live) {
@@ -72,6 +83,7 @@ export default class LiveCheckTask extends Task {
           if (fetchedStatus.viewerCount !== undefined) {
             await this.metricsService.recordViewerCount({
               username,
+              displayName,
               platform: config.platform,
               viewerCount: fetchedStatus.viewerCount,
             });
@@ -114,9 +126,10 @@ export default class LiveCheckTask extends Task {
   private async handleLiveEvent(
     { title }: FetchedStatusLive,
     { username, lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
+    displayName: string,
     config: PlatformConfig,
   ): Promise<void> {
-    this.logger.info(`${username} is now live on ${config.displayName}`);
+    this.logger.info(`${displayName} is now live on ${config.displayName}`);
 
     const lastLiveMessage = (() => {
       if (!lastEndedAt) return null;
@@ -128,7 +141,7 @@ export default class LiveCheckTask extends Task {
     const message = lastLiveMessage ? `${title}\n\n${lastLiveMessage}` : title;
 
     await notify({
-      title: `${username} is LIVE on ${config.displayName}!`,
+      title: `${displayName} is LIVE on ${config.displayName}!`,
       message,
       url: config.getLiveUrl(username),
       url_title: `Watch on ${config.displayName}`,
@@ -145,13 +158,14 @@ export default class LiveCheckTask extends Task {
 
   private async handleOfflineEvent(
     { username, startedAt, maxViewerCount }: ChannelStatusLive,
+    displayName: string,
     config: PlatformConfig,
   ): Promise<void> {
     const lastEndedAt = new Date();
-    this.logger.info(`${username} is now offline on ${config.displayName}`);
+    this.logger.info(`${displayName} is now offline on ${config.displayName}`);
 
     // Flush any pending peak records
-    await this.metricsService.flushPendingPeaks(username, config.platform);
+    await this.metricsService.flushPendingPeaks(username, displayName, config.platform);
 
     if (appConfig.OFFLINE_NOTIFICATIONS) {
       const duration = formatDistance(lastEndedAt, startedAt);
@@ -160,7 +174,7 @@ export default class LiveCheckTask extends Task {
         ? `${durationText} with ${formatCount(maxViewerCount)}`
         : durationText;
 
-      await notify({ title: `${username} is now offline`, message });
+      await notify({ title: `${displayName} is now offline`, message });
     }
 
     upsertChannelStatus({

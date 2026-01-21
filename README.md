@@ -16,11 +16,16 @@ services:
       - LOG_LEVEL=info
       - PUSHOVER_TOKEN=token
       - PUSHOVER_USER=user
-      - YT_CHANNEL_NAMES=@some,@channel,@usernames
-      - TWITCH_CHANNEL_NAMES=shroud,xqc
+      - YT_CHANNEL_NAMES=@mkbhd:MKBHD,@pewdiepie:PewDiePie
+      - TWITCH_CHANNEL_NAMES=shroud:Shroud,xqc:xQc
       - OFFLINE_NOTIFICATIONS=true
     restart: unless-stopped
 ```
+
+Channel names use the format `username:DisplayName` where the display name is
+used in notifications. The display name is optional and defaults to the username
+(e.g., `shroud` and `shroud:Shroud` both work, but the latter shows "Shroud" in
+notifications).
 
 You can find YouTube channel names from their channel page. Twitch usernames are
 found in the channel URL (e.g., `twitch.tv/shroud`).

@@ -1,14 +1,22 @@
 import { baseConfigSchema, logConfig, stringBoolean } from "@micthiesen/mitools/config";
 import { z } from "zod";
 
-const commaSeparatedString = z
+export type ChannelEntry = { username: string; displayName: string };
+
+const channelList = z
   .string()
   .optional()
-  .transform((val) => (val ? val.split(",") : []));
+  .transform((val): ChannelEntry[] => {
+    if (!val) return [];
+    return val.split(",").map((entry) => {
+      const [username, displayName] = entry.split(":");
+      return { username, displayName: displayName ?? username };
+    });
+  });
 
 const configSchema = baseConfigSchema.extend({
-  YT_CHANNEL_NAMES: commaSeparatedString,
-  TWITCH_CHANNEL_NAMES: commaSeparatedString,
+  YT_CHANNEL_NAMES: channelList,
+  TWITCH_CHANNEL_NAMES: channelList,
   OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
 });
 
