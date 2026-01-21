@@ -124,7 +124,7 @@ export default class LiveCheckTask extends Task {
   }
 
   private async handleLiveEvent(
-    { title }: FetchedStatusLive,
+    { title, category }: FetchedStatusLive,
     { username, lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
     displayName: string,
     config: PlatformConfig,
@@ -138,7 +138,9 @@ export default class LiveCheckTask extends Task {
       const text = `Last live ${ago} ago for ${duration}`;
       return lastViewerCount ? `${text} with ${formatCount(lastViewerCount)}` : text;
     })();
-    const message = lastLiveMessage ? `${title}\n\n${lastLiveMessage}` : title;
+    const detailParts = [category, lastLiveMessage].filter(Boolean);
+    const details = detailParts.length > 0 ? detailParts.join(". ") : null;
+    const message = details ? `${title}\n\n${details}` : title;
 
     await notify({
       title: `${displayName} is LIVE on ${config.displayName}!`,

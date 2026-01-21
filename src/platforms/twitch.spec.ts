@@ -10,6 +10,7 @@ describe("extractLiveStatus", () => {
           stream: {
             title: "Playing games",
             viewersCount: 15000,
+            game: { name: "Elden Ring" },
           },
           broadcastSettings: {
             liveUpNotification: "Custom notification message",
@@ -21,6 +22,7 @@ describe("extractLiveStatus", () => {
       status: LiveStatus.Live,
       title: "Custom notification message",
       viewerCount: 15000,
+      category: "Elden Ring",
     });
   });
 
@@ -31,6 +33,7 @@ describe("extractLiveStatus", () => {
           stream: {
             title: "Playing games",
             viewersCount: 15000,
+            game: { name: "Just Chatting" },
           },
           broadcastSettings: {
             liveUpNotification: null,
@@ -42,6 +45,7 @@ describe("extractLiveStatus", () => {
       status: LiveStatus.Live,
       title: "Playing games",
       viewerCount: 15000,
+      category: "Just Chatting",
     });
   });
 
@@ -52,6 +56,7 @@ describe("extractLiveStatus", () => {
           stream: {
             title: "Playing games",
             viewersCount: 15000,
+            game: null,
           },
           broadcastSettings: {
             liveUpNotification: "",
@@ -63,6 +68,7 @@ describe("extractLiveStatus", () => {
       status: LiveStatus.Live,
       title: "Playing games",
       viewerCount: 15000,
+      category: undefined,
     });
   });
 

@@ -11,6 +11,7 @@ export type FetchedStatusLive = {
   status: LiveStatus.Live;
   title: string;
   viewerCount?: number;
+  category?: string;
 };
 
 export type FetchedStatusOffline = {

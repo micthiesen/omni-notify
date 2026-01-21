@@ -11,6 +11,7 @@ const TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 const twitchStreamSchema = z.object({
   title: z.string(),
   viewersCount: z.number(),
+  game: z.object({ name: z.string() }).nullable(),
 });
 
 const twitchBroadcastSettingsSchema = z.object({
@@ -35,7 +36,7 @@ export async function fetchTwitchLiveStatus({
 }: {
   username: string;
 }): Promise<FetchedStatus> {
-  const query = `query{user(login:"${username}"){stream{title viewersCount}broadcastSettings{liveUpNotification}}}`;
+  const query = `query{user(login:"${username}"){stream{title viewersCount game{name}}broadcastSettings{liveUpNotification}}}`;
 
   let raw: unknown;
   try {
@@ -82,6 +83,7 @@ export function extractLiveStatus(data: TwitchGQLResponse): FetchedStatus {
     status: LiveStatus.Live,
     title,
     viewerCount: stream.viewersCount,
+    category: stream.game?.name,
   };
 }
 
