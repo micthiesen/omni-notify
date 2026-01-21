@@ -15,9 +15,8 @@ export type ChannelFilter = {
   defaultOnError: boolean;
 };
 
-// Channel config (extends existing config capabilities)
+// Channel config
 export type ChannelConfig = {
-  displayName?: string;
   filter?: ChannelFilter;
 };
 
@@ -35,7 +34,6 @@ const channelFilterSchema = z.object({
 });
 
 const channelConfigSchema = z.object({
-  displayName: z.string().optional(),
   filter: channelFilterSchema.optional(),
 });
 

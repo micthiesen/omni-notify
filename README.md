@@ -56,7 +56,6 @@ Create a `channels.json` file in the project root:
 {
   "twitch": {
     "shroud": {
-      "displayName": "Shroud",
       "filter": {
         "prompt": "I like FPS games and variety content. Skip mobile games and sponsored streams.",
         "defaultOnError": true

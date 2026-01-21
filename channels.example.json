@@ -1,14 +1,12 @@
 {
   "twitch": {
     "shroud": {
-      "displayName": "Shroud",
       "filter": {
         "prompt": "I like FPS games and variety content. Skip mobile games and sponsored streams.",
         "defaultOnError": true
       }
     },
     "cohhcarnage": {
-      "displayName": "CohhCarnage",
       "filter": {
         "prompt": "Only notify for new game releases and RPGs, not retro games.",
         "defaultOnError": false
