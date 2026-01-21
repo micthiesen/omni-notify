@@ -8,6 +8,7 @@ export type ChannelStatusLive = {
   title: string;
   startedAt: Date;
   maxViewerCount?: number;
+  notifiedForStream?: boolean;
 };
 export type ChannelStatusOffline =
   | {

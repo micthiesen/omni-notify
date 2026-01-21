@@ -1,6 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { formatDistance, formatDistanceToNow } from "date-fns";
+import { StreamFilterService } from "../filters/index.js";
 import { ViewerMetricsService } from "../metrics/index.js";
 import {
   type FetchedStatus,
@@ -32,6 +33,7 @@ export default class LiveCheckTask extends Task {
   private logger: Logger;
   private consecutiveUnknowns = new Map<string, number>();
   private metricsService: ViewerMetricsService;
+  private filterService: StreamFilterService;
 
   public constructor(channels: [Platform, ChannelInfo[]][], parentLogger: Logger) {
     super();
@@ -44,6 +46,7 @@ export default class LiveCheckTask extends Task {
 
     this.logger = parentLogger.extend("LiveCheckTask");
     this.metricsService = new ViewerMetricsService(parentLogger);
+    this.filterService = new StreamFilterService(parentLogger);
   }
 
   public async run(): Promise<void> {
@@ -140,6 +143,28 @@ export default class LiveCheckTask extends Task {
   ): Promise<void> {
     this.logger.info(`${displayName} is now live on ${config.displayName}`);
 
+    // Check filter before sending notification
+    const filterResult = await this.filterService.shouldNotify({
+      username,
+      displayName,
+      platform: config.platform,
+      title,
+      category,
+    });
+
+    if (!filterResult.shouldNotify) {
+      this.logger.info(`Filtered: ${filterResult.reason}`);
+      upsertChannelStatus({
+        username,
+        platform: config.platform,
+        isLive: true,
+        startedAt: new Date(),
+        title,
+        notifiedForStream: false,
+      });
+      return;
+    }
+
     const lastLiveMessage = (() => {
       if (!lastEndedAt) return null;
       const ago = formatDistanceToNow(lastEndedAt);
@@ -168,6 +193,7 @@ export default class LiveCheckTask extends Task {
       isLive: true,
       startedAt: new Date(),
       title,
+      notifiedForStream: true,
     });
   }
 
@@ -203,13 +229,46 @@ export default class LiveCheckTask extends Task {
   }
 
   private async handleTitleChangeEvent(
-    { title }: FetchedStatusLive,
+    { title, category }: FetchedStatusLive,
     previousStatus: ChannelStatusLive,
     displayName: string,
     config: PlatformConfig,
   ): Promise<void> {
+    const { username } = previousStatus;
     this.logger.info(`${displayName} changed title on ${config.displayName}`);
 
+    // If we haven't notified for this stream yet (was filtered), re-check the filter
+    // This catches streams that become interesting mid-stream
+    // Note: check explicitly for false, not falsy, to handle legacy streams without this field
+    if (previousStatus.notifiedForStream === false) {
+      const filterResult = await this.filterService.shouldNotify({
+        username,
+        displayName,
+        platform: config.platform,
+        title,
+        category,
+      });
+
+      if (!filterResult.shouldNotify) {
+        this.logger.info(`Still filtered after title change: ${filterResult.reason}`);
+        upsertChannelStatus({ ...previousStatus, title });
+        return;
+      }
+
+      // Stream now passes filter - send live notification instead of title change
+      this.logger.info(`Stream now passes filter: ${filterResult.reason}`);
+      await notify({
+        title: `${displayName} is LIVE on ${config.displayName}!`,
+        message: title,
+        url: config.getLiveUrl(username),
+        url_title: `Watch on ${config.displayName}`,
+      });
+
+      upsertChannelStatus({ ...previousStatus, title, notifiedForStream: true });
+      return;
+    }
+
+    // Normal title change notification
     await notify({ title: `${displayName} changed title`, message: title });
 
     upsertChannelStatus({

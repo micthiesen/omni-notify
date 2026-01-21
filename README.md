@@ -36,6 +36,51 @@ The service will check to see if a channel is live every 20 seconds. It will
 send a notification if the channel transitions from offline to live (or vice
 versa). The offline notifications can be disabled (see above).
 
+## Stream Filtering (Optional)
+
+You can configure per-channel LLM-based filtering to only receive notifications
+for streams that match your interests. This uses Google Gemini Flash to analyze
+stream titles and categories.
+
+### Setup
+
+1. Get a [Google AI API key](https://aistudio.google.com/apikey)
+2. Set the `GOOGLE_GENERATIVE_AI_API_KEY` environment variable
+3. Create a `channels.json` file (or set `CHANNELS_CONFIG_PATH` to a custom path)
+
+### Configuration
+
+Create a `channels.json` file in the project root:
+
+```json
+{
+  "twitch": {
+    "shroud": {
+      "displayName": "Shroud",
+      "filter": {
+        "prompt": "I like FPS games and variety content. Skip mobile games and sponsored streams.",
+        "defaultOnError": true
+      }
+    }
+  },
+  "youtube": {
+    "@mkbhd": {
+      "filter": {
+        "prompt": "Only notify for smartphone and laptop reviews, not studio vlogs.",
+        "defaultOnError": false
+      }
+    }
+  }
+}
+```
+
+- **`prompt`**: Describe what types of streams you want to be notified about
+- **`defaultOnError`**: Whether to notify (`true`) or skip (`false`) if the LLM fails
+
+Channels not in the config file will always send notifications (default behavior).
+
+See `channels.example.json` for more examples.
+
 ## How it Works
 
 **YouTube**: Scrapes the channel's live page for specific text. This could break

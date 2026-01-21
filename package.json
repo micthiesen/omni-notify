@@ -18,7 +18,9 @@
     "docker:dev": "docker run -p 3000:3000 --rm --name omni-notify omni-notify"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.10",
     "@micthiesen/mitools": "^1.2.1",
+    "ai": "^6.0.44",
     "date-fns": "^4.1.0",
     "html-entities": "^2.6.0",
     "node-cron": "^4.2.1",

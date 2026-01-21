@@ -18,6 +18,8 @@ const configSchema = baseConfigSchema.extend({
   YT_CHANNEL_NAMES: channelList,
   TWITCH_CHANNEL_NAMES: channelList,
   OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
+  GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
+  CHANNELS_CONFIG_PATH: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
