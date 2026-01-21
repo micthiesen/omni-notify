@@ -183,7 +183,7 @@ export class ViewerMetricsService {
     const highest = sorted[0];
 
     const title = `New ${highest.config.label} for ${displayName}!`;
-    const message = `Peaked at ${formatCount(highest.peak)} (previous was ${highest.previous.toLocaleString()})`;
+    const message = `Peaked at ${formatCount(highest.peak)} (previous: ${highest.previous.toLocaleString()}).`;
 
     this.logger.info(
       `${displayName}: ${highest.config.label} at ${highest.peak} viewers`,

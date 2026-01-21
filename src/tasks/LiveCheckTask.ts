@@ -70,6 +70,15 @@ export default class LiveCheckTask extends Task {
             displayName,
             config,
           );
+        } else if (fetchedStatus.status === LiveStatus.Live && previousStatus.isLive) {
+          if (fetchedStatus.title !== previousStatus.title) {
+            await this.handleTitleChangeEvent(
+              fetchedStatus,
+              previousStatus,
+              displayName,
+              config,
+            );
+          }
         } else if (
           fetchedStatus.status === LiveStatus.Offline &&
           previousStatus.isLive
@@ -136,10 +145,14 @@ export default class LiveCheckTask extends Task {
       const ago = formatDistanceToNow(lastEndedAt);
       const duration = formatDistance(lastEndedAt, lastStartedAt);
       const text = `Last live ${ago} ago for ${duration}`;
-      return lastViewerCount ? `${text} with ${formatCount(lastViewerCount)}` : text;
+      return lastViewerCount
+        ? `${text} with ${formatCount(lastViewerCount)}.`
+        : `${text}.`;
     })();
-    const detailParts = [category, lastLiveMessage].filter(Boolean);
-    const details = detailParts.length > 0 ? detailParts.join(". ") : null;
+    const detailParts = [category ? `${category}.` : null, lastLiveMessage].filter(
+      Boolean,
+    );
+    const details = detailParts.length > 0 ? detailParts.join(" ") : null;
     const message = details ? `${title}\n\n${details}` : title;
 
     await notify({
@@ -173,8 +186,8 @@ export default class LiveCheckTask extends Task {
       const duration = formatDistance(lastEndedAt, startedAt);
       const durationText = `Streamed for ${duration}`;
       const message = maxViewerCount
-        ? `${durationText} with ${formatCount(maxViewerCount)}`
-        : durationText;
+        ? `${durationText} with ${formatCount(maxViewerCount)}.`
+        : `${durationText}.`;
 
       await notify({ title: `${displayName} is now offline`, message });
     }
@@ -186,6 +199,22 @@ export default class LiveCheckTask extends Task {
       lastEndedAt,
       lastStartedAt: startedAt,
       lastViewerCount: maxViewerCount,
+    });
+  }
+
+  private async handleTitleChangeEvent(
+    { title }: FetchedStatusLive,
+    previousStatus: ChannelStatusLive,
+    displayName: string,
+    config: PlatformConfig,
+  ): Promise<void> {
+    this.logger.info(`${displayName} changed title on ${config.displayName}`);
+
+    await notify({ title: `${displayName} changed title`, message: title });
+
+    upsertChannelStatus({
+      ...previousStatus,
+      title,
     });
   }
 
