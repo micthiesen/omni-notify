@@ -1,5 +1,6 @@
 import { google } from "@ai-sdk/google";
 import type { Logger } from "@micthiesen/mitools/logging";
+import type { Platform } from "../platforms/index.js";
 import { getChannelFilter } from "./config.js";
 import { generateStructuredOutput } from "./generateStructuredOutput.js";
 import {
@@ -16,11 +17,38 @@ Respond with:
 
 Be conservative: if uncertain, lean toward notifying.`;
 
+type ChannelInfo = { username: string; displayName: string; platform: Platform };
+
 export class StreamFilterService {
   private logger: Logger;
 
   public constructor(parentLogger: Logger) {
     this.logger = parentLogger.extend("StreamFilterService");
+  }
+
+  public logFilterStatus(channels: ChannelInfo[]): void {
+    const withFilters: string[] = [];
+    const withoutFilters: string[] = [];
+
+    for (const { username, displayName, platform } of channels) {
+      const filter = getChannelFilter(platform, username, this.logger);
+      const label =
+        displayName !== username ? `${displayName} (${username})` : username;
+
+      if (filter) {
+        const fallback = filter.defaultOnError ? "notify" : "skip";
+        withFilters.push(`${label} [${platform}, fallback: ${fallback}]`);
+      } else {
+        withoutFilters.push(label);
+      }
+    }
+
+    if (withFilters.length > 0) {
+      this.logger.info(`Channels with filters: ${withFilters.join(", ")}`);
+    }
+    if (withoutFilters.length > 0) {
+      this.logger.info(`Channels without filters: ${withoutFilters.join(", ")}`);
+    }
   }
 
   public async shouldNotify(context: StreamContext): Promise<FilterResult> {

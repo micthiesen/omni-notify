@@ -47,6 +47,14 @@ export default class LiveCheckTask extends Task {
     this.logger = parentLogger.extend("LiveCheckTask");
     this.metricsService = new ViewerMetricsService(parentLogger);
     this.filterService = new StreamFilterService(parentLogger);
+
+    this.filterService.logFilterStatus(
+      this.channels.map(({ username, displayName, config }) => ({
+        username,
+        displayName,
+        platform: config.platform,
+      })),
+    );
   }
 
   public async run(): Promise<void> {
