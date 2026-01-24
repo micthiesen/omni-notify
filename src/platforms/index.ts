@@ -54,3 +54,12 @@ export const platformConfigs: Record<Platform, PlatformConfig> = {
     fetchLiveStatus: fetchTwitchLiveStatus,
   },
 };
+
+/** Returns url and url_title fields for notifications */
+export function getNotificationUrlFields(platform: Platform, username: string) {
+  const config = platformConfigs[platform];
+  return {
+    url: config.getLiveUrl(username),
+    url_title: `Watch on ${config.displayName}`,
+  };
+}

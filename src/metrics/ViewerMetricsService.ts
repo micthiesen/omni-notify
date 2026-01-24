@@ -1,6 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import type { Platform } from "../platforms/index.js";
+import { getNotificationUrlFields, type Platform } from "../platforms/index.js";
 import { getViewerMetrics, upsertViewerMetrics } from "./persistence.js";
 import {
   type ChannelPeakState,
@@ -99,7 +99,7 @@ export class ViewerMetricsService {
 
     // Send notification for highest priority peak only
     if (confirmedPeaks.length > 0) {
-      await this.sendNotification(confirmedPeaks, displayName);
+      await this.sendNotification(confirmedPeaks, displayName, platform, username);
     }
   }
 
@@ -151,7 +151,7 @@ export class ViewerMetricsService {
 
     // Send notification for highest priority peak only
     if (confirmedPeaks.length > 0) {
-      await this.sendNotification(confirmedPeaks, displayName);
+      await this.sendNotification(confirmedPeaks, displayName, platform, username);
     }
   }
 
@@ -175,6 +175,8 @@ export class ViewerMetricsService {
   private async sendNotification(
     confirmedPeaks: ConfirmedPeak[],
     displayName: string,
+    platform: Platform,
+    username: string,
   ): Promise<void> {
     // Sort by priority descending, pick highest
     const sorted = [...confirmedPeaks].sort(
@@ -183,13 +185,18 @@ export class ViewerMetricsService {
     const highest = sorted[0];
 
     const title = `New ${highest.config.label} for ${displayName}!`;
-    const previousPart = highest.previous > 0 ? ` (previous: ${highest.previous.toLocaleString()})` : "";
+    const previousPart =
+      highest.previous > 0 ? ` (previous: ${highest.previous.toLocaleString()})` : "";
     const message = `Peaked at ${formatCount(highest.peak)}${previousPart}.`;
 
     this.logger.info(
       `${displayName}: ${highest.config.label} at ${highest.peak} viewers`,
     );
-    await notify({ title, message });
+    await notify({
+      title,
+      message,
+      ...getNotificationUrlFields(platform, username),
+    });
   }
 }
 
