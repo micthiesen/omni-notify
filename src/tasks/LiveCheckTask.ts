@@ -225,11 +225,7 @@ export default class LiveCheckTask extends Task {
         ? `${durationText} with ${formatCount(maxViewerCount)}.`
         : `${durationText}.`;
 
-      await notify({
-        title: `${displayName} is now offline`,
-        message,
-        ...getNotificationUrlFields(config.platform, username),
-      });
+      await notify({ title: `${displayName} is now offline`, message });
     }
 
     upsertChannelStatus({
