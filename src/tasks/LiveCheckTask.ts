@@ -186,7 +186,9 @@ export default class LiveCheckTask extends Task {
       Boolean,
     );
     const details = detailParts.length > 0 ? detailParts.join(" ") : null;
-    const message = details ? `${title}\n\n${details}` : title;
+    const filterReason = filterResult.wasFiltered ? filterResult.reason : null;
+    const messageParts = [title, details, filterReason].filter(Boolean);
+    const message = messageParts.join("\n\n");
 
     await notify({
       title: `${displayName} is LIVE on ${config.displayName}!`,
@@ -265,9 +267,11 @@ export default class LiveCheckTask extends Task {
 
       // Stream now passes filter - send live notification instead of title change
       this.logger.info(`Stream now passes filter: ${filterResult.reason}`);
+      const filterReason = filterResult.wasFiltered ? filterResult.reason : null;
+      const message = filterReason ? `${title}\n\n${filterReason}` : title;
       await notify({
         title: `${displayName} is LIVE on ${config.displayName}!`,
-        message: title,
+        message,
         url: config.getLiveUrl(username),
         url_title: `Watch on ${config.displayName}`,
       });

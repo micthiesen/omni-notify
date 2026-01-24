@@ -56,7 +56,7 @@ export class StreamFilterService {
 
     // No filter configured - always notify
     if (!filter) {
-      return { shouldNotify: true, reason: "No filter configured" };
+      return { shouldNotify: true, reason: "No filter configured", wasFiltered: false };
     }
 
     try {
@@ -85,7 +85,7 @@ export class StreamFilterService {
         `Filter decision for ${context.displayName}: ${output.shouldNotify} - ${output.reason}`,
       );
 
-      return output;
+      return { ...output, wasFiltered: true };
     } catch (error) {
       this.logger.warn(
         `Filter error for ${context.displayName}, using default (${filter.defaultOnError}): ${error}`,
@@ -93,6 +93,7 @@ export class StreamFilterService {
       return {
         shouldNotify: filter.defaultOnError,
         reason: `Filter error, using default: ${filter.defaultOnError}`,
+        wasFiltered: false,
       };
     }
   }

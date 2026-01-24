@@ -52,4 +52,6 @@ export type StreamContext = {
 export type FilterResult = {
   shouldNotify: boolean;
   reason: string;
+  /** Whether a filter was actually configured and evaluated */
+  wasFiltered: boolean;
 };
