@@ -10,5 +10,4 @@ COPY . .
 RUN pnpm run build
 
 ENV DOCKERIZED=true
-EXPOSE 3000
 CMD ["node", "dist/index.js"]

@@ -1,9 +1,10 @@
 import { google } from "@ai-sdk/google";
 import type { Logger } from "@micthiesen/mitools/logging";
 import type { Platform } from "../platforms/index.js";
-import { getChannelFilter } from "./config.js";
 import { generateStructuredOutput } from "./generateStructuredOutput.js";
 import {
+  type ChannelFilter,
+  type ChannelsConfig,
   type FilterResult,
   filterDecisionSchema,
   type StreamContext,
@@ -20,9 +21,11 @@ Be conservative: if uncertain, lean toward notifying.`;
 type ChannelInfo = { username: string; displayName: string; platform: Platform };
 
 export class StreamFilterService {
+  private config: ChannelsConfig;
   private logger: Logger;
 
-  public constructor(parentLogger: Logger) {
+  public constructor(config: ChannelsConfig, parentLogger: Logger) {
+    this.config = config;
     this.logger = parentLogger.extend("StreamFilterService");
   }
 
@@ -31,7 +34,7 @@ export class StreamFilterService {
     const withoutFilters: string[] = [];
 
     for (const { username, displayName, platform } of channels) {
-      const filter = getChannelFilter(platform, username, this.logger);
+      const filter = this.getFilter(platform, username);
       const label =
         displayName !== username ? `${displayName} (${username})` : username;
 
@@ -51,8 +54,12 @@ export class StreamFilterService {
     }
   }
 
+  private getFilter(platform: Platform, username: string): ChannelFilter | null {
+    return this.config[platform]?.[username]?.filter ?? null;
+  }
+
   public async shouldNotify(context: StreamContext): Promise<FilterResult> {
-    const filter = getChannelFilter(context.platform, context.username, this.logger);
+    const filter = this.getFilter(context.platform, context.username);
 
     // No filter configured - always notify
     if (!filter) {

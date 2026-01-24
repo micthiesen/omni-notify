@@ -9,13 +9,31 @@ Injector.configure({ config });
 const logger = new Logger("Main");
 const taskManager = new TaskManager(logger);
 
-const task = cron.schedule("*/20 * * * * *", async () => {
+const cronTask = cron.schedule("*/20 * * * * *", async () => {
   await randomSleep();
   logger.debug("Running scheduled tasks...");
   await taskManager.runTasks();
 });
 
-task.execute();
+cronTask.execute();
+
+// Graceful shutdown handling
+let isShuttingDown = false;
+
+async function shutdown(signal: string): Promise<void> {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  logger.info(`Received ${signal}, shutting down gracefully...`);
+  cronTask.stop();
+
+  await taskManager.waitForPending();
+  logger.info("Shutdown complete");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
 
 function randomSleep(maxMilliseconds = 3000): Promise<void> {
   const delay = Math.floor(Math.random() * maxMilliseconds);

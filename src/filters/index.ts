@@ -1,4 +1,4 @@
-export { getChannelConfig, getChannelFilter, loadChannelsConfig } from "./config.js";
+export { loadChannelsConfig } from "./config.js";
 export {
   type GenerateStructuredOutputOptions,
   type GenerateStructuredOutputResult,

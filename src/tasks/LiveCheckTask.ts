@@ -1,7 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { formatDistance, formatDistanceToNow } from "date-fns";
-import { StreamFilterService } from "../filters/index.js";
+import { type ChannelsConfig, StreamFilterService } from "../filters/index.js";
 import { ViewerMetricsService } from "../metrics/index.js";
 import {
   type FetchedStatus,
@@ -36,7 +36,11 @@ export default class LiveCheckTask extends Task {
   private metricsService: ViewerMetricsService;
   private filterService: StreamFilterService;
 
-  public constructor(channels: [Platform, ChannelInfo[]][], parentLogger: Logger) {
+  public constructor(
+    channels: [Platform, ChannelInfo[]][],
+    channelsConfig: ChannelsConfig,
+    parentLogger: Logger,
+  ) {
     super();
     for (const [platform, channelList] of channels) {
       const config = platformConfigs[platform];
@@ -47,7 +51,7 @@ export default class LiveCheckTask extends Task {
 
     this.logger = parentLogger.extend("LiveCheckTask");
     this.metricsService = new ViewerMetricsService(parentLogger);
-    this.filterService = new StreamFilterService(parentLogger);
+    this.filterService = new StreamFilterService(channelsConfig, parentLogger);
 
     this.filterService.logFilterStatus(
       this.channels.map(({ username, displayName, config }) => ({

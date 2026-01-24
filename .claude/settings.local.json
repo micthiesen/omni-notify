@@ -19,7 +19,8 @@
       "Bash(pnpm build:*)",
       "Bash(pnpm check:*)",
       "Bash(tree:*)",
-      "Bash(xargs ls:*)"
+      "Bash(xargs ls:*)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []
