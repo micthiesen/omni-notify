@@ -32,6 +32,6 @@ const configSchema = baseConfigSchema.extend({
 export type Config = z.infer<typeof configSchema>;
 
 const config = configSchema.parse(process.env);
-logConfig(config, ["GOOGLE_GENERATIVE_AI_API_KEY"]);
+logConfig(config);
 
 export default config;

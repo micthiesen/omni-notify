@@ -1,10 +1,11 @@
-import { webSearch } from "@exalabs/ai-sdk";
 import { google } from "@ai-sdk/google";
+import { webSearch } from "@exalabs/ai-sdk";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
+import config from "../utils/config.js";
 
 export default class NewsAgentTask extends ScheduledTask {
   public readonly name = "NewsAgent";
@@ -12,7 +13,21 @@ export default class NewsAgentTask extends ScheduledTask {
 
   private logger: Logger;
 
-  public constructor(parentLogger: Logger) {
+  public static create(parentLogger: Logger): NewsAgentTask | null {
+    const missing: string[] = [];
+    if (!config.GOOGLE_GENERATIVE_AI_API_KEY)
+      missing.push("GOOGLE_GENERATIVE_AI_API_KEY");
+    if (!config.EXA_API_KEY) missing.push("EXA_API_KEY");
+
+    if (missing.length > 0) {
+      parentLogger.info(`NewsAgentTask disabled: missing ${missing.join(", ")}`);
+      return null;
+    }
+
+    return new NewsAgentTask(parentLogger);
+  }
+
+  private constructor(parentLogger: Logger) {
     super();
     this.logger = parentLogger.extend("NewsAgentTask");
   }

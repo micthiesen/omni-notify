@@ -19,7 +19,9 @@ const channels: [Platform, { username: string; displayName: string }[]][] = [
 ];
 const channelsConfig = loadChannelsConfig(logger);
 scheduler.register(new LiveCheckTask(channels, channelsConfig, logger));
-scheduler.register(new NewsAgentTask(logger));
+
+const newsAgent = NewsAgentTask.create(logger);
+if (newsAgent) scheduler.register(newsAgent);
 
 // Start scheduler (runs tasks immediately, then on their schedules)
 scheduler.start();

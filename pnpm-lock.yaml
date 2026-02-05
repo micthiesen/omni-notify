@@ -15,8 +15,8 @@ importers:
         specifier: ^1.0.5
         version: 1.0.5(ai@6.0.44(zod@3.25.76))
       '@micthiesen/mitools':
-        specifier: ^1.3.0
-        version: 1.3.0
+        specifier: ^1.3.1
+        version: 1.3.1
       ai:
         specifier: ^6.0.44
         version: 6.0.44(zod@3.25.76)
@@ -318,8 +318,8 @@ packages:
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
 
-  '@micthiesen/mitools@1.3.0':
-    resolution: {integrity: sha512-+EvRVUHsRgEG/xtGCRnpbJqwhG5yK1UxF76HWSbuysMzJnFjTq1gTP6J7neNSeingTZqjHhNVLBOONIct1bAJQ==}
+  '@micthiesen/mitools@1.3.1':
+    resolution: {integrity: sha512-FHPAVG1mmUP/67dfW0+lLtow2Nix45U7BZAHyGKkKWy5VNqXkwW3eah7jTPwzXkYb7l2OCldreVreg2MeuOCnA==}
     engines: {node: 24.13.0, pnpm: 10.28.2}
 
   '@noble/ciphers@1.0.0':
@@ -1172,7 +1172,7 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
-  '@micthiesen/mitools@1.3.0':
+  '@micthiesen/mitools@1.3.1':
     dependencies:
       better-sqlite3: 11.5.0
       cbor: 9.0.2
