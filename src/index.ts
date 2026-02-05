@@ -1,9 +1,10 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
+import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
+import { briefingConfigs } from "./briefing-agent/configs.js";
 import { loadChannelsConfig } from "./live-check/filters/index.js";
 import { Platform } from "./live-check/platforms/index.js";
 import LiveCheckTask from "./live-check/task.js";
-import NewsAgentTask from "./news-agent/task.js";
 import { Scheduler } from "./scheduling/Scheduler.js";
 import config from "./utils/config.js";
 
@@ -20,8 +21,10 @@ const channels: [Platform, { username: string; displayName: string }[]][] = [
 const channelsConfig = loadChannelsConfig(logger);
 scheduler.register(new LiveCheckTask(channels, channelsConfig, logger));
 
-const newsAgent = NewsAgentTask.create(logger);
-if (newsAgent) scheduler.register(newsAgent);
+for (const config of briefingConfigs) {
+  const task = BriefingAgentTask.create(config, logger);
+  if (task) scheduler.register(task);
+}
 
 // Start scheduler (runs tasks immediately, then on their schedules)
 scheduler.start();

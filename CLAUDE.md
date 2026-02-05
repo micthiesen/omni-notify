@@ -38,6 +38,9 @@ src/
 │   │   ├── persistence.ts   # ViewerMetricsEntity (daily buckets)
 │   │   └── windows.ts       # Rolling window calculation helpers
 │   └── filters/             # Stream notification filtering
+├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
+│   ├── BriefingAgentTask.ts # Config-driven task class
+│   └── configs.ts           # Briefing configs (canadianNews, etc.)
 ├── emails/                  # Email utilities (general purpose)
 └── utils/
     └── config.ts            # Environment config with zod validation
@@ -106,6 +109,22 @@ enum LiveStatus {
    ```
 
 The `Scheduler` handles cron management, prevents overlapping runs (per-task queue), and graceful shutdown.
+
+### Adding a New Briefing Task
+
+Briefing tasks use AI to search the web and send notification summaries. To add a new topic, just add a config to `src/briefing-agent/configs.ts`:
+
+```typescript
+const techNews: BriefingConfig = {
+  name: "TechNews",
+  schedule: "0 0 9 * * *",  // 9am daily
+  prompt: `You are a tech news assistant...`,
+};
+
+export const briefingConfigs: BriefingConfig[] = [canadianNews, techNews];
+```
+
+The loop in `index.ts` auto-registers all configs. For custom behavior, subclass `BriefingAgentTask` and override `run()`.
 
 ### Error Handling
 
