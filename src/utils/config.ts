@@ -20,6 +20,7 @@ const configSchema = baseConfigSchema.extend({
   OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
   CHANNELS_CONFIG_PATH: z.string().optional(),
+  LOGS_EMAIL: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
