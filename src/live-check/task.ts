@@ -1,8 +1,16 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { formatDistance, formatDistanceToNow } from "date-fns";
-import { type ChannelsConfig, StreamFilterService } from "../filters/index.js";
-import { ViewerMetricsService } from "../metrics/index.js";
+import { ScheduledTask } from "../scheduling/ScheduledTask.js";
+import appConfig from "../utils/config.js";
+import { type ChannelsConfig, StreamFilterService } from "./filters/index.js";
+import { ViewerMetricsService } from "./metrics/index.js";
+import {
+  type ChannelStatusLive,
+  type ChannelStatusOffline,
+  getChannelStatus,
+  upsertChannelStatus,
+} from "./persistence.js";
 import {
   type FetchedStatus,
   type FetchedStatusLive,
@@ -11,20 +19,15 @@ import {
   type Platform,
   type PlatformConfig,
   platformConfigs,
-} from "../platforms/index.js";
-import appConfig from "../utils/config.js";
-import {
-  type ChannelStatusLive,
-  type ChannelStatusOffline,
-  getChannelStatus,
-  upsertChannelStatus,
-} from "./persistence/status.js";
-import { Task } from "./types.js";
+} from "./platforms/index.js";
 
 type ChannelInfo = { username: string; displayName: string };
 
-export default class LiveCheckTask extends Task {
-  public name = "Live Check";
+export default class LiveCheckTask extends ScheduledTask {
+  public readonly name = "LiveCheck";
+  public readonly schedule = "*/20 * * * * *";
+  public override readonly jitterMs = 3000;
+
   private channels: {
     username: string;
     displayName: string;
@@ -42,6 +45,9 @@ export default class LiveCheckTask extends Task {
     parentLogger: Logger,
   ) {
     super();
+
+    this.validateNoDuplicateUsernames(channels);
+
     for (const [platform, channelList] of channels) {
       const config = platformConfigs[platform];
       for (const { username, displayName } of channelList) {
@@ -60,6 +66,23 @@ export default class LiveCheckTask extends Task {
         platform: config.platform,
       })),
     );
+  }
+
+  private validateNoDuplicateUsernames(channels: [Platform, ChannelInfo[]][]): void {
+    const seen = new Map<string, Platform>();
+
+    for (const [platform, entries] of channels) {
+      for (const { username } of entries) {
+        const existing = seen.get(username);
+        if (existing) {
+          throw new Error(
+            `Duplicate username "${username}" found on ${existing} and ${platform}. ` +
+              "Each username must be unique across all platforms due to database key constraints.",
+          );
+        }
+        seen.set(username, platform);
+      }
+    }
   }
 
   public async run(): Promise<void> {

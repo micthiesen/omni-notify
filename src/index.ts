@@ -1,21 +1,26 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
-import cron from "node-cron";
-import TaskManager from "./tasks/TaskManager.js";
+import { loadChannelsConfig } from "./live-check/filters/index.js";
+import { Platform } from "./live-check/platforms/index.js";
+import LiveCheckTask from "./live-check/task.js";
+import { Scheduler } from "./scheduling/Scheduler.js";
 import config from "./utils/config.js";
 
 Injector.configure({ config });
 
 const logger = new Logger("Main");
-const taskManager = new TaskManager(logger);
+const scheduler = new Scheduler(logger);
 
-const cronTask = cron.schedule("*/20 * * * * *", async () => {
-  await randomSleep();
-  logger.debug("Running scheduled tasks...");
-  await taskManager.runTasks();
-});
+// Register tasks
+const channels: [Platform, { username: string; displayName: string }[]][] = [
+  [Platform.YouTube, config.YT_CHANNEL_NAMES],
+  [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
+];
+const channelsConfig = loadChannelsConfig(logger);
+scheduler.register(new LiveCheckTask(channels, channelsConfig, logger));
 
-cronTask.execute();
+// Start scheduler (runs tasks immediately, then on their schedules)
+scheduler.start();
 
 // Graceful shutdown handling
 let isShuttingDown = false;
@@ -25,17 +30,10 @@ async function shutdown(signal: string): Promise<void> {
   isShuttingDown = true;
 
   logger.info(`Received ${signal}, shutting down gracefully...`);
-  cronTask.stop();
-
-  await taskManager.waitForPending();
+  await scheduler.shutdown();
   logger.info("Shutdown complete");
   process.exit(0);
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
-
-function randomSleep(maxMilliseconds = 3000): Promise<void> {
-  const delay = Math.floor(Math.random() * maxMilliseconds);
-  return new Promise((resolve) => setTimeout(resolve, delay));
-}

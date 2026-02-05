@@ -21,25 +21,24 @@ pnpm check    # Biome linting + formatting check
 
 ```
 src/
-├── index.ts                 # Entry point, cron setup
-├── platforms/               # Platform implementations
-│   ├── index.ts             # Platform enum, types, config registry
-│   ├── common.ts            # Shared fetch utilities (fetchPageHtml, fetchGQL)
-│   ├── youtube.ts           # YouTube HTML scraping
-│   ├── twitch.ts            # Twitch GQL API
-│   └── *.spec.ts            # Platform tests
-├── metrics/                 # Viewer metrics with rolling windows
-│   ├── types.ts             # MetricWindow enum, type definitions
-│   ├── persistence.ts       # ViewerMetricsEntity (daily buckets, all-time max)
-│   ├── windows.ts           # Rolling window calculation helpers
-│   ├── ViewerMetricsService.ts  # Peak confirmation state machine
-│   └── windows.spec.ts      # Unit tests
-├── tasks/
-│   ├── types.ts             # Abstract Task class
-│   ├── TaskManager.ts       # Task orchestration
-│   ├── LiveCheckTask.ts     # Main logic: status transitions, notifications
-│   └── persistence/
-│       └── status.ts        # Channel live/offline state (SQLite)
+├── index.ts                 # Entry point, registers scheduled tasks
+├── scheduling/              # Generic scheduling infrastructure
+│   ├── Scheduler.ts         # Cron management, graceful shutdown
+│   └── ScheduledTask.ts     # Abstract base class for tasks
+├── live-check/              # Livestream monitoring feature
+│   ├── task.ts              # LiveCheckTask: status transitions, notifications
+│   ├── persistence.ts       # Channel live/offline state (SQLite)
+│   ├── platforms/           # Platform implementations
+│   │   ├── index.ts         # Platform enum, types, config registry
+│   │   ├── common.ts        # Shared fetch utilities
+│   │   ├── youtube.ts       # YouTube HTML scraping
+│   │   └── twitch.ts        # Twitch GQL API
+│   ├── metrics/             # Viewer metrics with rolling windows
+│   │   ├── ViewerMetricsService.ts  # Peak confirmation state machine
+│   │   ├── persistence.ts   # ViewerMetricsEntity (daily buckets)
+│   │   └── windows.ts       # Rolling window calculation helpers
+│   └── filters/             # Stream notification filtering
+├── emails/                  # Email utilities (general purpose)
 └── utils/
     └── config.ts            # Environment config with zod validation
 ```
@@ -62,24 +61,51 @@ enum LiveStatus {
 
 ### Adding a New Platform
 
-1. Create `src/platforms/{platform}.ts` with:
+1. Create `src/live-check/platforms/{platform}.ts` with:
    - `fetch{Platform}LiveStatus({ username })` → `Promise<FetchedStatus>`
    - `get{Platform}LiveUrl(username)` → `string`
    - `extractLiveStatus(data)` → `FetchedStatus` (for testing)
 
-2. Update `src/platforms/index.ts`:
+2. Update `src/live-check/platforms/index.ts`:
    - Add to `Platform` enum
    - Add to `platformConfigs` record
 
 3. Update `src/utils/config.ts`:
    - Add `{PLATFORM}_CHANNEL_NAMES: commaSeparatedString`
 
-4. Update `src/tasks/TaskManager.ts`:
-   - Add to `LiveCheckTask` constructor array
+4. Update `src/index.ts`:
+   - Add to `channels` array passed to `LiveCheckTask`
 
 5. Update `.env.example` and `README.md`
 
-6. Create `src/platforms/{platform}.spec.ts`
+6. Create `src/live-check/platforms/{platform}.spec.ts`
+
+### Adding a New Scheduled Task
+
+1. Create a new feature folder `src/{feature-name}/`
+
+2. Create `src/{feature-name}/task.ts`:
+   ```typescript
+   import { ScheduledTask } from "../scheduling/ScheduledTask.js";
+
+   export default class MyTask extends ScheduledTask {
+     public readonly name = "MyTask";
+     public readonly schedule = "0 17 * * *";  // 5pm daily
+     // Optional: public override readonly jitterMs = 5000;
+
+     public async run(): Promise<void> {
+       // Task logic
+     }
+   }
+   ```
+
+3. Register in `src/index.ts`:
+   ```typescript
+   import MyTask from "./{feature-name}/task.js";
+   scheduler.register(new MyTask());
+   ```
+
+The `Scheduler` handles cron management, prevents overlapping runs (per-task queue), and graceful shutdown.
 
 ### Error Handling
 

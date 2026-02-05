@@ -1,5 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
-import type { Platform } from "../../platforms/index.js";
+import type { Platform } from "./platforms/index.js";
 
 export type ChannelStatusLive = {
   username: string;
