@@ -1,3 +1,4 @@
+import { webSearch } from "@exalabs/ai-sdk";
 import { google } from "@ai-sdk/google";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
@@ -20,7 +21,7 @@ export default class NewsAgentTask extends ScheduledTask {
     this.logger.info("Starting news agent");
 
     const tools = {
-      google_search: google.tools.googleSearch({}),
+      web_search: webSearch(),
       send_notification: tool({
         description:
           "Send a push notification to the user with your news brief. Call this once you have something interesting to share.",
@@ -28,7 +29,7 @@ export default class NewsAgentTask extends ScheduledTask {
           title: z.string().describe("Short title for the notification"),
           message: z.string().describe("The notification body with your news summary"),
           url: z.string().url().describe("URL to the article"),
-          url_title: z.string().describe("Link text for the URL (e.g. 'Read on BBC')"),
+          url_title: z.string().describe("Link text for the URL (e.g. 'Read on CBC')"),
         }),
         execute: async ({ title, message, url, url_title }) => {
           this.logger.info(`Sending notification: ${title}`);

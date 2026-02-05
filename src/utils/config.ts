@@ -19,6 +19,7 @@ const configSchema = baseConfigSchema.extend({
   TWITCH_CHANNEL_NAMES: channelList,
   OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
+  EXA_API_KEY: z.string().optional(),
   CHANNELS_CONFIG_PATH: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional().default(587),

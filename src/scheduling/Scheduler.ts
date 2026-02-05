@@ -48,8 +48,9 @@ export class Scheduler {
 
       this.startedTasks.push({ task, queue, cronJob });
 
-      // Execute immediately on startup
-      queue.add(() => this.executeTask(task));
+      if (task.runOnStartup) {
+        queue.add(() => this.executeTask(task));
+      }
     }
     this.logger.info(`Started ${this.startedTasks.length} scheduled task(s)`);
   }

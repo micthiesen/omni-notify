@@ -8,6 +8,9 @@ export abstract class ScheduledTask {
   /** Optional max jitter in ms added before each run (default: 0) */
   public readonly jitterMs: number = 0;
 
+  /** Whether to run immediately on startup (default: false) */
+  public readonly runOnStartup: boolean = false;
+
   /** Execute the task */
   public abstract run(): Promise<void>;
 }

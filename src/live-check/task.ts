@@ -27,6 +27,7 @@ export default class LiveCheckTask extends ScheduledTask {
   public readonly name = "LiveCheck";
   public readonly schedule = "*/20 * * * * *";
   public override readonly jitterMs = 3000;
+  public override readonly runOnStartup = true;
 
   private channels: {
     username: string;
