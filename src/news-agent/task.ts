@@ -58,6 +58,15 @@ export default class NewsAgentTask extends ScheduledTask {
       model: google("gemini-3-flash-preview"),
       tools,
       stopWhen: stepCountIs(5),
+      onStepFinish: ({ text, toolCalls, toolResults }) => {
+        if (text) this.logger.debug(`Step Text: ${text}`);
+        for (const call of toolCalls) {
+          this.logger.info(`Tool Call: ${call.toolName}`, call);
+        }
+        for (const result of toolResults) {
+          this.logger.info(`Tool Result: ${result.toolName}`, result);
+        }
+      },
       prompt: `You are a morning news assistant focused on Canadian news.
 
 Search for the most important Canada-related news from the past 24 hours. Look for:
