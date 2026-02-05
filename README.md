@@ -19,6 +19,13 @@ services:
       - YT_CHANNEL_NAMES=@mkbhd:MKBHD,@pewdiepie:PewDiePie
       - TWITCH_CHANNEL_NAMES=shroud:Shroud,xqc:xQc
       - OFFLINE_NOTIFICATIONS=true
+      # Optional: Email logs via SMTP
+      - SMTP_HOST=smtp.example.com
+      - SMTP_PORT=587
+      - SMTP_USER=user
+      - SMTP_PASS=pass
+      - EMAIL_FROM=noreply@example.com
+      - LOGS_EMAIL_TO=logs@example.com
     restart: unless-stopped
 ```
 

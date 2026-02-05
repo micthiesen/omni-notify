@@ -20,7 +20,12 @@ const configSchema = baseConfigSchema.extend({
   OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
   GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
   CHANNELS_CONFIG_PATH: z.string().optional(),
-  LOGS_EMAIL: z.string().optional(),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  LOGS_EMAIL_TO: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
