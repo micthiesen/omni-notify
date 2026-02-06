@@ -6,7 +6,8 @@ import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
 import config from "../utils/config.js";
-import { addBriefingNotification, resolveHistoryPlaceholders } from "./persistence.js";
+import { addBriefingNotification } from "./persistence.js";
+import { resolveAllPlaceholders } from "./placeholders.js";
 
 export interface BriefingConfig {
   name: string;
@@ -49,7 +50,7 @@ export class BriefingAgentTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
-    const resolvedPrompt = resolveHistoryPlaceholders(this.prompt, this.name);
+    const resolvedPrompt = resolveAllPlaceholders(this.prompt, this.name);
     this.logger.info(`Starting briefing agent with prompt:\n${resolvedPrompt}`);
 
     const tools = {

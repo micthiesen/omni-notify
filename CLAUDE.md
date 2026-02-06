@@ -127,13 +127,19 @@ You are a tech news assistant...
 
 The loop in `index.ts` auto-registers all valid configs. Invalid files are skipped with a warning. For custom behavior, subclass `BriefingAgentTask` and override `run()`.
 
-**Notification History:** Use `{{history:N}}` in the prompt body to inject the last N notifications sent by that briefing. This helps the LLM avoid duplicate coverage. Example:
+**Prompt Placeholders:** Use placeholders in the prompt body to inject dynamic content at runtime:
+
+- `{{date}}` → current date, e.g. `Thursday, February 6, 2026` (local timezone)
+- `{{time}}` → current time, e.g. `9:00 AM EST` (local timezone)
+- `{{history:N}}` → last N notifications sent by this briefing (avoids duplicate coverage)
+
+Placeholder resolution lives in `src/briefing-agent/placeholders.ts` which chains all placeholder types via `resolveAllPlaceholders()`.
 
 ```markdown
 ---
 schedule: "0 0 9 * * *"
 ---
-You are a tech news assistant...
+You are a tech news assistant. Today is {{date}}, {{time}}.
 
 {{history:10}}
 
