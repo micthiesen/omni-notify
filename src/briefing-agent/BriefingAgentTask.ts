@@ -49,7 +49,8 @@ export class BriefingAgentTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
-    this.logger.info("Starting briefing agent");
+    const resolvedPrompt = resolveHistoryPlaceholders(this.prompt, this.name);
+    this.logger.info(`Starting briefing agent with prompt:\n${resolvedPrompt}`);
 
     const tools = {
       web_search: webSearch(),
@@ -105,7 +106,7 @@ export class BriefingAgentTask extends ScheduledTask {
           }
         }
       },
-      prompt: resolveHistoryPlaceholders(this.prompt, this.name),
+      prompt: resolvedPrompt,
     });
 
     this.logger.info(`Agent completed in ${steps.length} steps`);
