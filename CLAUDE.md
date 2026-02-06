@@ -127,6 +127,21 @@ You are a tech news assistant...
 
 The loop in `index.ts` auto-registers all valid configs. Invalid files are skipped with a warning. For custom behavior, subclass `BriefingAgentTask` and override `run()`.
 
+**Notification History:** Use `{{history:N}}` in the prompt body to inject the last N notifications sent by that briefing. This helps the LLM avoid duplicate coverage. Example:
+
+```markdown
+---
+schedule: "0 0 9 * * *"
+---
+You are a tech news assistant...
+
+{{history:10}}
+
+Do not cover topics that appear in past notifications above.
+```
+
+History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
+
 ### Error Handling
 
 - Providers catch their own errors and return `LiveStatus.Unknown`

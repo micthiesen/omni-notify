@@ -6,6 +6,7 @@ import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
 import config from "../utils/config.js";
+import { addBriefingNotification, resolveHistoryPlaceholders } from "./persistence.js";
 
 export interface BriefingConfig {
   name: string;
@@ -64,6 +65,12 @@ export class BriefingAgentTask extends ScheduledTask {
         execute: async ({ title, message, url, url_title }) => {
           this.logger.info(`Sending notification: ${title}`);
           await notify({ title, message, url, url_title });
+          addBriefingNotification(this.name, {
+            title,
+            message,
+            url,
+            timestamp: Date.now(),
+          });
           return { success: true };
         },
       }),
@@ -98,7 +105,7 @@ export class BriefingAgentTask extends ScheduledTask {
           }
         }
       },
-      prompt: this.prompt,
+      prompt: resolveHistoryPlaceholders(this.prompt, this.name),
     });
 
     this.logger.info(`Agent completed in ${steps.length} steps`);

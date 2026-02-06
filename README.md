@@ -111,6 +111,24 @@ Search for the most important Canada-related news from the past 24 hours...
 - `schedule` is a node-cron expression (6-field with seconds)
 - The body is the prompt sent to the AI agent
 
+Use `{{history:N}}` in the prompt to inject the last N notifications sent by that
+briefing, helping the AI avoid repeating topics:
+
+```markdown
+---
+schedule: "0 0 8 * * *"
+---
+You are a morning news assistant focused on Canadian news.
+Search for the most important Canada-related news from the past 24 hours...
+
+{{history:10}}
+
+Do not cover topics that appear in past notifications above.
+```
+
+History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
+Prompts without the placeholder work as before.
+
 Invalid files are skipped with a warning. If `BRIEFINGS_PATH` is unset, no
 briefing tasks are registered.
 
