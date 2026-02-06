@@ -33,9 +33,7 @@ export class Scheduler {
     const queue = new PQueue({ concurrency: 1 });
 
     this.registeredTasks.push({ task, queue });
-    this.logger.debug(
-      `Registered task "${task.name}" with schedule "${task.schedule}"`,
-    );
+    this.logger.info(`Registered task "${task.name}" with schedule "${task.schedule}"`);
   }
 
   /** Start all registered cron jobs and execute each task immediately. */

@@ -19,6 +19,10 @@ services:
       - YT_CHANNEL_NAMES=@mkbhd:MKBHD,@pewdiepie:PewDiePie
       - TWITCH_CHANNEL_NAMES=shroud:Shroud,xqc:xQc
       - OFFLINE_NOTIFICATIONS=true
+      # Optional: AI briefing notifications
+      - GOOGLE_GENERATIVE_AI_API_KEY=key
+      - EXA_API_KEY=key
+      - BRIEFINGS_PATH=/data/briefings
       # Optional: Email logs via SMTP
       - SMTP_HOST=smtp.example.com
       - SMTP_PORT=587
@@ -86,6 +90,29 @@ Create a `channels.json` file in the project root:
 Channels not in the config file will always send notifications (default behavior).
 
 See `channels.example.json` for more examples.
+
+## Briefing Notifications (Optional)
+
+AI-powered scheduled briefings that search the web and send Pushover notifications.
+Requires `GOOGLE_GENERATIVE_AI_API_KEY`, `EXA_API_KEY`, and `BRIEFINGS_PATH`.
+
+Create `.md` files in your briefings folder with a YAML frontmatter schedule and a
+prompt body:
+
+```markdown
+---
+schedule: "0 0 8 * * *"
+---
+You are a morning news assistant focused on Canadian news.
+Search for the most important Canada-related news from the past 24 hours...
+```
+
+- The filename becomes the task name (e.g. `CanadianNews.md`)
+- `schedule` is a node-cron expression (6-field with seconds)
+- The body is the prompt sent to the AI agent
+
+Invalid files are skipped with a warning. If `BRIEFINGS_PATH` is unset, no
+briefing tasks are registered.
 
 ## How it Works
 

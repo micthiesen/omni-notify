@@ -1,7 +1,7 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
-import { briefingConfigs } from "./briefing-agent/configs.js";
+import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { loadChannelsConfig } from "./live-check/filters/index.js";
 import { Platform } from "./live-check/platforms/index.js";
 import LiveCheckTask from "./live-check/task.js";
@@ -21,7 +21,7 @@ const channels: [Platform, { username: string; displayName: string }[]][] = [
 const channelsConfig = loadChannelsConfig(logger);
 scheduler.register(new LiveCheckTask(channels, channelsConfig, logger));
 
-for (const config of briefingConfigs) {
+for (const config of loadBriefingConfigs(logger)) {
   const task = BriefingAgentTask.create(config, logger);
   if (task) scheduler.register(task);
 }

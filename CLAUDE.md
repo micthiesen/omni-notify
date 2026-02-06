@@ -40,7 +40,7 @@ src/
 │   └── filters/             # Stream notification filtering
 ├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
 │   ├── BriefingAgentTask.ts # Config-driven task class
-│   └── configs.ts           # Briefing configs (canadianNews, etc.)
+│   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
 ├── emails/                  # Email utilities (general purpose)
 └── utils/
     └── config.ts            # Environment config with zod validation
@@ -112,19 +112,20 @@ The `Scheduler` handles cron management, prevents overlapping runs (per-task que
 
 ### Adding a New Briefing Task
 
-Briefing tasks use AI to search the web and send notification summaries. To add a new topic, just add a config to `src/briefing-agent/configs.ts`:
+Briefing tasks use AI to search the web and send notification summaries. Configs are loaded from `.md` files in the folder specified by `BRIEFINGS_PATH`. To add a new topic, create a markdown file:
 
-```typescript
-const techNews: BriefingConfig = {
-  name: "TechNews",
-  schedule: "0 0 9 * * *",  // 9am daily
-  prompt: `You are a tech news assistant...`,
-};
-
-export const briefingConfigs: BriefingConfig[] = [canadianNews, techNews];
+```markdown
+---
+schedule: "0 0 9 * * *"
+---
+You are a tech news assistant...
 ```
 
-The loop in `index.ts` auto-registers all configs. For custom behavior, subclass `BriefingAgentTask` and override `run()`.
+- **Filename** becomes the config name (e.g. `TechNews.md` → name `"TechNews"`)
+- **Frontmatter** must contain a valid `schedule` (node-cron expression)
+- **Body** is the prompt sent to the AI agent
+
+The loop in `index.ts` auto-registers all valid configs. Invalid files are skipped with a warning. For custom behavior, subclass `BriefingAgentTask` and override `run()`.
 
 ### Error Handling
 
@@ -176,12 +177,14 @@ PUSHOVER_TOKEN=xxx
 YT_CHANNEL_NAMES=@channel1,@channel2    # YouTube handles
 TWITCH_CHANNEL_NAMES=user1,user2        # Twitch usernames
 OFFLINE_NOTIFICATIONS=true|false
+BRIEFINGS_PATH=/path/to/briefings    # Folder with .md briefing configs
 ```
 
 ## External Dependencies
 
 - **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities
 - **node-cron**: Scheduling
+- **gray-matter**: YAML frontmatter parsing for briefing config files
 - **zod**: Schema validation (config, API responses)
 - **html-entities**: Decode HTML entities in YouTube titles
 - **vitest**: Testing framework
