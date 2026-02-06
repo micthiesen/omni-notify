@@ -74,12 +74,28 @@ export class BriefingAgentTask extends ScheduledTask {
       tools,
       stopWhen: stepCountIs(10),
       onStepFinish: ({ text, toolCalls, toolResults }) => {
-        if (text) this.logger.debug(`Step Text: ${text}`);
+        if (text) this.logger.debug(`Step text: ${text}`);
         for (const call of toolCalls) {
-          this.logger.info(`Tool Call: ${call.toolName}`, call);
+          if (call.toolName === "web_search") {
+            const input = call.input as { query?: string };
+            this.logger.info(`Search: "${input.query}"`);
+          } else if (call.toolName !== "send_notification") {
+            this.logger.info(`Tool call: ${call.toolName}`, call.input);
+          }
+          // send_notification already logged in execute callback
         }
         for (const result of toolResults) {
-          this.logger.info(`Tool Result: ${result.toolName}`, result);
+          if (result.toolName === "web_search") {
+            const output = result.output as Record<string, unknown>;
+            const count = Array.isArray(output?.results) ? output.results.length : "?";
+            const time =
+              typeof output?.searchTime === "number"
+                ? ` (${(output.searchTime / 1000).toFixed(1)}s)`
+                : "";
+            this.logger.debug(`Search returned ${count} results${time}`);
+          } else if (result.toolName !== "send_notification") {
+            this.logger.info(`Tool result: ${result.toolName}`, result.output);
+          }
         }
       },
       prompt: this.prompt,
