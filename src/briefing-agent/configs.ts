@@ -11,7 +11,8 @@ const frontmatterSchema = z.object({
   schedule: z.string(),
 });
 
-export function loadBriefingConfigs(logger: Logger): BriefingConfig[] {
+export function loadBriefingConfigs(parentLogger: Logger): BriefingConfig[] {
+  const logger = parentLogger.extend("Briefings");
   const briefingsPath = config.BRIEFINGS_PATH;
   if (!briefingsPath) {
     logger.info("No BRIEFINGS_PATH configured, skipping briefing tasks");

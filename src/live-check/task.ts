@@ -24,7 +24,7 @@ import {
 type ChannelInfo = { username: string; displayName: string };
 
 export default class LiveCheckTask extends ScheduledTask {
-  public readonly name = "LiveCheck";
+  public readonly name = "LiveCheckTask";
   public readonly schedule = "*/20 * * * * *";
   public override readonly jitterMs = 3000;
   public override readonly runOnStartup = true;
