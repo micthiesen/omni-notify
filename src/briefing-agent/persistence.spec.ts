@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@micthiesen/mitools/entities", () => {
   const store = new Map<string, unknown>();
@@ -42,6 +42,15 @@ function makeNotification(
 }
 
 describe("formatNotifications", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-02-06T14:30:00"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns empty message for empty array", () => {
     const result = formatNotifications([], 5);
     expect(result).toBe("- No previous notifications");
@@ -52,12 +61,12 @@ describe("formatNotifications", () => {
     expect(result).toBe("- No previous notifications");
   });
 
-  it("formats a single notification", () => {
+  it("formats a single notification with timestamp", () => {
     const result = formatNotifications(
       [makeNotification("Cool Article", "https://cbc.ca")],
       5,
     );
-    expect(result).toBe("- Cool Article (https://cbc.ca)");
+    expect(result).toBe("- Cool Article (https://cbc.ca) [Feb 6, 2:30 PM]");
   });
 
   it("limits to the most recent N notifications", () => {
@@ -102,7 +111,15 @@ describe("addBriefingNotification", () => {
 });
 
 describe("resolveHistoryPlaceholders", () => {
-  beforeEach(() => clearStore());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-02-06T14:30:00"));
+    clearStore();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("replaces {{history:N}} with formatted history", () => {
     addBriefingNotification("News", makeNotification("Article", "https://example.com"));
@@ -110,7 +127,7 @@ describe("resolveHistoryPlaceholders", () => {
       "System prompt\n\n{{history:5}}\n\nDo not repeat.",
       "News",
     );
-    expect(result).toContain("- Article (https://example.com)");
+    expect(result).toContain("- Article (https://example.com) [Feb 6, 2:30 PM]");
     expect(result).not.toContain("{{history");
   });
 

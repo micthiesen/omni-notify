@@ -49,7 +49,19 @@ export function formatNotifications(
   }
 
   const recent = notifications.slice(-count);
-  return recent.map((n) => `- ${n.title} (${n.url})`).join("\n");
+  return recent
+    .map((n) => {
+      const date = new Date(n.timestamp).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
+      const time = new Date(n.timestamp).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+      return `- ${n.title} (${n.url}) [${date}, ${time}]`;
+    })
+    .join("\n");
 }
 
 export function formatNotificationHistory(briefingName: string, count: number): string {

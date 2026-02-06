@@ -23,10 +23,7 @@ export function resolveTimePlaceholder(prompt: string): string {
   });
 }
 
-export function resolveAllPlaceholders(
-  prompt: string,
-  briefingName: string,
-): string {
+export function resolveAllPlaceholders(prompt: string, briefingName: string): string {
   let resolved = prompt;
   resolved = resolveHistoryPlaceholders(resolved, briefingName);
   resolved = resolveDatePlaceholder(resolved);

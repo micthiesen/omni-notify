@@ -92,8 +92,7 @@ describe("resolveAllPlaceholders", () => {
   });
 
   it("resolves {{date}}, {{time}}, and {{history:N}} together", () => {
-    const prompt =
-      "Date: {{date}}\nTime: {{time}}\nHistory:\n{{history:5}}";
+    const prompt = "Date: {{date}}\nTime: {{time}}\nHistory:\n{{history:5}}";
     const result = resolveAllPlaceholders(prompt, "TestBriefing");
     expect(result).not.toContain("{{date}}");
     expect(result).not.toContain("{{time}}");

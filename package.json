@@ -11,6 +11,7 @@
     "lint": "biome lint .",
     "format": "biome format .",
     "check": "biome check .",
+    "check:write": "biome check --write .",
     "test": "vitest",
     "docker:build": "docker build -t omni-notify .",
     "docker:publish": "docker push omni-notify",
