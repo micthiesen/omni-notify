@@ -41,6 +41,9 @@ src/
 ├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
 │   ├── BriefingAgentTask.ts # Config-driven task class
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
+├── tools/                   # Shared AI agent tools (reusable across any agent)
+│   ├── webSearch.ts         # Tavily web search tool
+│   └── fetchUrl.ts          # URL fetcher: HTML → clean markdown via Readability + Turndown
 ├── emails/                  # Email utilities (general purpose)
 └── utils/
     └── config.ts            # Environment config with zod validation
@@ -189,6 +192,16 @@ pnpm test -- --watch   # Watch mode
 - Twitch tests run against `extractLiveStatus` with mock data
 - Test the pure extraction functions, not the network fetchers
 
+### Ad-hoc integration scripts
+
+For testing things that hit real APIs or URLs (e.g. verifying Tavily search, testing HTML-to-markdown on real pages), write a temporary `.ts` script and run it with `dotenvx` + `bun` so it picks up `.env` credentials:
+
+```bash
+npx dotenvx run -- bun src/tools/my-test-script.ts
+```
+
+Delete the script when done—these are throwaway, not committed.
+
 ## Environment Variables
 
 ```bash
@@ -198,12 +211,18 @@ PUSHOVER_TOKEN=xxx
 YT_CHANNEL_NAMES=@channel1,@channel2    # YouTube handles
 TWITCH_CHANNEL_NAMES=user1,user2        # Twitch usernames
 OFFLINE_NOTIFICATIONS=true|false
-BRIEFINGS_PATH=/path/to/briefings    # Folder with .md briefing configs
+GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Gemini (for briefing agents)
+TAVILY_API_KEY=tvly-xxx                 # Tavily web search (for briefing agents)
+BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
 ```
 
 ## External Dependencies
 
 - **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities
+- **got**: HTTP client for all outbound requests (Tavily, platform checks, URL fetching)
+- **@mozilla/readability**: Firefox Reader View algorithm for extracting article content
+- **linkedom**: Lightweight DOM parser (used by Readability, 3x faster than jsdom)
+- **turndown** + **turndown-plugin-gfm**: HTML to Markdown conversion with table support
 - **node-cron**: Scheduling
 - **gray-matter**: YAML frontmatter parsing for briefing config files
 - **zod**: Schema validation (config, API responses)
