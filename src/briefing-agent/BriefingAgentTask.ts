@@ -4,6 +4,7 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
+import { fetchUrl } from "../tools/fetchUrl.js";
 import { webSearch } from "../tools/webSearch.js";
 import config from "../utils/config.js";
 import { addBriefingNotification } from "./persistence.js";
@@ -55,6 +56,7 @@ export class BriefingAgentTask extends ScheduledTask {
 
     const tools = {
       web_search: webSearch,
+      fetch_url: fetchUrl,
       send_notification: tool({
         description:
           "Send a push notification to the user with your briefing. Call this once you have something interesting to share.",
@@ -88,6 +90,9 @@ export class BriefingAgentTask extends ScheduledTask {
           if (call.toolName === "web_search") {
             const input = call.input as { query?: string };
             this.logger.info(`Search: "${input.query}"`);
+          } else if (call.toolName === "fetch_url") {
+            const input = call.input as { url?: string };
+            this.logger.info(`Fetching: ${input.url}`);
           } else if (call.toolName !== "send_notification") {
             this.logger.info(`Tool call: ${call.toolName}`, call.input);
           }
@@ -102,6 +107,12 @@ export class BriefingAgentTask extends ScheduledTask {
                 ? ` (${output.responseTime.toFixed(1)}s)`
                 : "";
             this.logger.debug(`Search returned ${count} results${time}`);
+          } else if (result.toolName === "fetch_url") {
+            const output = result.output as Record<string, unknown>;
+            const chars =
+              typeof output?.content === "string" ? output.content.length : "?";
+            const truncated = output?.truncated ? " (truncated)" : "";
+            this.logger.debug(`Fetched ${chars} chars${truncated}`);
           } else if (result.toolName !== "send_notification") {
             this.logger.info(`Tool result: ${result.toolName}`, result.output);
           }
