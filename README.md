@@ -21,7 +21,7 @@ services:
       - OFFLINE_NOTIFICATIONS=true
       # Optional: AI briefing notifications
       - GOOGLE_GENERATIVE_AI_API_KEY=key
-      - EXA_API_KEY=key
+      - TAVILY_API_KEY=key
       - BRIEFINGS_PATH=/data/briefings
       # Optional: Email logs via SMTP
       - SMTP_HOST=smtp.example.com
@@ -94,7 +94,7 @@ See `channels.example.json` for more examples.
 ## Briefing Notifications (Optional)
 
 AI-powered scheduled briefings that search the web and send Pushover notifications.
-Requires `GOOGLE_GENERATIVE_AI_API_KEY`, `EXA_API_KEY`, and `BRIEFINGS_PATH`.
+Requires `GOOGLE_GENERATIVE_AI_API_KEY`, `TAVILY_API_KEY`, and `BRIEFINGS_PATH`.
 
 Create `.md` files in your briefings folder with a YAML frontmatter schedule and a
 prompt body:

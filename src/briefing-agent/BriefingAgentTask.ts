@@ -1,10 +1,10 @@
 import { google } from "@ai-sdk/google";
-import { webSearch } from "@exalabs/ai-sdk";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
+import { webSearch } from "../tools/webSearch.js";
 import config from "../utils/config.js";
 import { addBriefingNotification } from "./persistence.js";
 import { resolveAllPlaceholders } from "./placeholders.js";
@@ -29,7 +29,7 @@ export class BriefingAgentTask extends ScheduledTask {
     const missing: string[] = [];
     if (!config.GOOGLE_GENERATIVE_AI_API_KEY)
       missing.push("GOOGLE_GENERATIVE_AI_API_KEY");
-    if (!config.EXA_API_KEY) missing.push("EXA_API_KEY");
+    if (!config.TAVILY_API_KEY) missing.push("TAVILY_API_KEY");
 
     if (missing.length > 0) {
       parentLogger.info(
@@ -54,7 +54,7 @@ export class BriefingAgentTask extends ScheduledTask {
     this.logger.info(`Starting briefing agent with prompt:\n${resolvedPrompt}`);
 
     const tools = {
-      web_search: webSearch(),
+      web_search: webSearch,
       send_notification: tool({
         description:
           "Send a push notification to the user with your briefing. Call this once you have something interesting to share.",
@@ -98,8 +98,8 @@ export class BriefingAgentTask extends ScheduledTask {
             const output = result.output as Record<string, unknown>;
             const count = Array.isArray(output?.results) ? output.results.length : "?";
             const time =
-              typeof output?.searchTime === "number"
-                ? ` (${(output.searchTime / 1000).toFixed(1)}s)`
+              typeof output?.responseTime === "number"
+                ? ` (${output.responseTime.toFixed(1)}s)`
                 : "";
             this.logger.debug(`Search returned ${count} results${time}`);
           } else if (result.toolName !== "send_notification") {
