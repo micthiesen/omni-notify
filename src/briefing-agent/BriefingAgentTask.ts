@@ -81,7 +81,10 @@ export class BriefingAgentTask extends ScheduledTask {
     };
 
     const { steps } = await generateText({
-      model: google("gemini-3-flash-preview"),
+      model: google("gemini-3-pro"),
+      providerOptions: {
+        google: { thinkingConfig: { thinkingLevel: "high" as const } },
+      },
       tools,
       stopWhen: stepCountIs(10),
       onStepFinish: ({ text, toolCalls, toolResults }) => {
