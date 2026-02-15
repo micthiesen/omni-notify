@@ -87,13 +87,13 @@ Models are configured via environment variables using `provider:model` format. S
 
 | Variable | Default | Used for |
 |---|---|---|
-| `BRIEFING_MODEL` | `google:gemini-3-pro` | Briefing agents |
-| `FILTER_MODEL` | `google:gemini-3-flash` | Stream notification filters |
+| `BRIEFING_MODEL` | `google:gemini-3-pro-preview` | Briefing agents |
+| `FILTER_MODEL` | `google:gemini-3-flash-preview` | Stream notification filters |
 
 Examples:
 
 ```bash
-BRIEFING_MODEL=google:gemini-3-pro
+BRIEFING_MODEL=google:gemini-3-pro-preview
 BRIEFING_MODEL=anthropic:claude-sonnet-4
 BRIEFING_MODEL=openai:gpt-4.1
 ```
@@ -107,8 +107,8 @@ BRIEFING_MODEL=openai:gpt-4.1
 | `YT_CHANNEL_NAMES` | No | YouTube channels (`@handle:Name,...`) |
 | `TWITCH_CHANNEL_NAMES` | No | Twitch channels (`username:Name,...`) |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
-| `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3-pro`) |
-| `FILTER_MODEL` | No | AI model for stream filters (default: `google:gemini-3-flash`) |
+| `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3-pro-preview`) |
+| `FILTER_MODEL` | No | AI model for stream filters (default: `google:gemini-3-flash-preview`) |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Required for `google:` models |
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |
