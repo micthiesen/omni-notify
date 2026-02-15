@@ -1,7 +1,7 @@
 import { tool } from "ai";
 import got from "got";
 import { z } from "zod";
-import config from "../utils/config.js";
+import config from "../../utils/config.js";
 
 interface TavilySearchResponse {
   results: Array<{ title: string; url: string; content: string }>;

@@ -15,7 +15,7 @@ pnpm test     # Run tests (vitest)
 pnpm check    # Biome linting + formatting check
 ```
 
-**Always run `pnpm test && pnpm build` after making changes.**
+**Always run `pnpm check:write && pnpm test && pnpm build` after making changes.**
 
 ## Architecture
 
@@ -38,14 +38,14 @@ src/
 │   │   ├── persistence.ts   # ViewerMetricsEntity (daily buckets)
 │   │   └── windows.ts       # Rolling window calculation helpers
 │   └── filters/             # Stream notification filtering
-├── ai/                      # AI model configuration
-│   └── registry.ts          # Provider registry (Google, Anthropic, OpenAI)
+├── ai/                      # AI model configuration and shared tools
+│   ├── registry.ts          # Provider registry (Google, Anthropic, OpenAI)
+│   └── tools/               # Shared AI agent tools (reusable across any agent)
+│       ├── webSearch.ts     # Tavily web search tool
+│       └── fetchUrl.ts      # URL fetcher: HTML → clean markdown via Readability + Turndown
 ├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
 │   ├── BriefingAgentTask.ts # Config-driven task class
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
-├── tools/                   # Shared AI agent tools (reusable across any agent)
-│   ├── webSearch.ts         # Tavily web search tool
-│   └── fetchUrl.ts          # URL fetcher: HTML → clean markdown via Readability + Turndown
 ├── emails/                  # Email utilities (general purpose)
 └── utils/
     └── config.ts            # Environment config with zod validation
