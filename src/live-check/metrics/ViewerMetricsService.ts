@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
+import config from "../../utils/config.js";
 import { getNotificationUrlFields, type Platform } from "../platforms/index.js";
 import { getViewerMetrics, upsertViewerMetrics } from "./persistence.js";
 import {
@@ -195,6 +196,7 @@ export class ViewerMetricsService {
     await notify({
       title,
       message,
+      token: config.PUSHOVER_LIVE_TOKEN,
       ...getNotificationUrlFields(platform, username),
     });
   }

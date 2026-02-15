@@ -64,7 +64,13 @@ export class BriefingAgentTask extends ScheduledTask {
         }),
         execute: async ({ title, message, url, url_title }) => {
           this.logger.info(`Sending notification: ${title}`);
-          await notify({ title, message, url, url_title });
+          await notify({
+            title,
+            message,
+            url,
+            url_title,
+            token: config.PUSHOVER_BRIEFING_TOKEN,
+          });
           addBriefingNotification(this.name, {
             title,
             message,

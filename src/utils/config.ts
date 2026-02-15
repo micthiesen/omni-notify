@@ -14,25 +14,37 @@ const channelList = z
     });
   });
 
-const configSchema = baseConfigSchema.extend({
-  YT_CHANNEL_NAMES: channelList,
-  TWITCH_CHANNEL_NAMES: channelList,
-  OFFLINE_NOTIFICATIONS: z.string().optional().default("true").transform(stringBoolean),
-  BRIEFING_MODEL: z.string().optional(),
-  FILTER_MODEL: z.string().optional(),
-  GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
-  ANTHROPIC_API_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(),
-  TAVILY_API_KEY: z.string().optional(),
-  CHANNELS_CONFIG_PATH: z.string().optional(),
-  BRIEFINGS_PATH: z.string().optional(),
-  SMTP_HOST: z.string().optional(),
-  SMTP_PORT: z.coerce.number().optional().default(587),
-  SMTP_USER: z.string().optional(),
-  SMTP_PASS: z.string().optional(),
-  EMAIL_FROM: z.string().optional(),
-  LOGS_EMAIL_TO: z.string().optional(),
-});
+const configSchema = baseConfigSchema
+  .extend({
+    YT_CHANNEL_NAMES: channelList,
+    TWITCH_CHANNEL_NAMES: channelList,
+    OFFLINE_NOTIFICATIONS: z
+      .string()
+      .optional()
+      .default("true")
+      .transform(stringBoolean),
+    PUSHOVER_LIVE_TOKEN: z.string().optional(),
+    PUSHOVER_BRIEFING_TOKEN: z.string().optional(),
+    BRIEFING_MODEL: z.string().optional(),
+    FILTER_MODEL: z.string().optional(),
+    GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
+    ANTHROPIC_API_KEY: z.string().optional(),
+    OPENAI_API_KEY: z.string().optional(),
+    TAVILY_API_KEY: z.string().optional(),
+    CHANNELS_CONFIG_PATH: z.string().optional(),
+    BRIEFINGS_PATH: z.string().optional(),
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().optional().default(587),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    EMAIL_FROM: z.string().optional(),
+    LOGS_EMAIL_TO: z.string().optional(),
+  })
+  .transform((c) => ({
+    ...c,
+    PUSHOVER_LIVE_TOKEN: c.PUSHOVER_LIVE_TOKEN ?? c.PUSHOVER_TOKEN,
+    PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
+  }));
 
 export type Config = z.infer<typeof configSchema>;
 

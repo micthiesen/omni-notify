@@ -20,7 +20,9 @@
       "Bash(pnpm check:*)",
       "Bash(tree:*)",
       "Bash(xargs ls:*)",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Read(/Users/michael/Code/mitools)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

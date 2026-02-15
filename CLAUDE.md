@@ -209,7 +209,9 @@ Delete the script when done—these are throwaway, not committed.
 ```bash
 LOG_LEVEL=info|debug|warn|error
 PUSHOVER_USER=xxx
-PUSHOVER_TOKEN=xxx
+PUSHOVER_TOKEN=xxx                      # Fallback for all notification types
+PUSHOVER_LIVE_TOKEN=xxx                 # Optional: override for live-check notifications
+PUSHOVER_BRIEFING_TOKEN=xxx             # Optional: override for briefing notifications
 YT_CHANNEL_NAMES=@channel1,@channel2    # YouTube handles
 TWITCH_CHANNEL_NAMES=user1,user2        # Twitch usernames
 OFFLINE_NOTIFICATIONS=true|false
@@ -225,7 +227,7 @@ BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
 ## External Dependencies
 
 - **@ai-sdk/google**, **@ai-sdk/anthropic**, **@ai-sdk/openai**: AI provider SDKs (configured via `BRIEFING_MODEL` env var)
-- **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities
+- **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities (source at `../mitools`)
 - **got**: HTTP client for all outbound requests (Tavily, platform checks, URL fetching)
 - **@mozilla/readability**: Firefox Reader View algorithm for extracting article content
 - **linkedom**: Lightweight DOM parser (used by Readability, 3x faster than jsdom)

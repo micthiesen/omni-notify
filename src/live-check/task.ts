@@ -222,6 +222,7 @@ export default class LiveCheckTask extends ScheduledTask {
     await notify({
       title: `${displayName} is LIVE on ${config.displayName}!`,
       message,
+      token: appConfig.PUSHOVER_LIVE_TOKEN,
       ...getNotificationUrlFields(config.platform, username),
     });
 
@@ -253,7 +254,11 @@ export default class LiveCheckTask extends ScheduledTask {
         ? `${durationText} with ${formatCount(maxViewerCount)}.`
         : `${durationText}.`;
 
-      await notify({ title: `${displayName} is now offline`, message });
+      await notify({
+        title: `${displayName} is now offline`,
+        message,
+        token: appConfig.PUSHOVER_LIVE_TOKEN,
+      });
     }
 
     upsertChannelStatus({
@@ -300,6 +305,7 @@ export default class LiveCheckTask extends ScheduledTask {
       await notify({
         title: `${displayName} is LIVE on ${config.displayName}!`,
         message,
+        token: appConfig.PUSHOVER_LIVE_TOKEN,
         ...getNotificationUrlFields(config.platform, username),
       });
 
@@ -311,6 +317,7 @@ export default class LiveCheckTask extends ScheduledTask {
     await notify({
       title: `${displayName} changed title`,
       message: title,
+      token: appConfig.PUSHOVER_LIVE_TOKEN,
       ...getNotificationUrlFields(config.platform, username),
     });
 
