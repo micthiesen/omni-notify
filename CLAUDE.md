@@ -38,6 +38,8 @@ src/
 │   │   ├── persistence.ts   # ViewerMetricsEntity (daily buckets)
 │   │   └── windows.ts       # Rolling window calculation helpers
 │   └── filters/             # Stream notification filtering
+├── ai/                      # AI model configuration
+│   └── registry.ts          # Provider registry (Google, Anthropic, OpenAI)
 ├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
 │   ├── BriefingAgentTask.ts # Config-driven task class
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
@@ -211,13 +213,18 @@ PUSHOVER_TOKEN=xxx
 YT_CHANNEL_NAMES=@channel1,@channel2    # YouTube handles
 TWITCH_CHANNEL_NAMES=user1,user2        # Twitch usernames
 OFFLINE_NOTIFICATIONS=true|false
-GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Gemini (for briefing agents)
+BRIEFING_MODEL=google:gemini-3-pro      # Model for briefing agents (provider:model)
+FILTER_MODEL=google:gemini-3-flash      # Model for stream notification filters
+GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Required for google: models
+ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
+OPENAI_API_KEY=xxx                      # Required for openai: models
 TAVILY_API_KEY=tvly-xxx                 # Tavily web search (for briefing agents)
 BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
 ```
 
 ## External Dependencies
 
+- **@ai-sdk/google**, **@ai-sdk/anthropic**, **@ai-sdk/openai**: AI provider SDKs (configured via `BRIEFING_MODEL` env var)
 - **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities
 - **got**: HTTP client for all outbound requests (Tavily, platform checks, URL fetching)
 - **@mozilla/readability**: Firefox Reader View algorithm for extracting article content

@@ -1,5 +1,5 @@
-import { google } from "@ai-sdk/google";
 import type { Logger } from "@micthiesen/mitools/logging";
+import { getFilterModel } from "../../ai/registry.js";
 import type { Platform } from "../platforms/index.js";
 import { generateStructuredOutput } from "./generateStructuredOutput.js";
 import {
@@ -68,7 +68,7 @@ export class StreamFilterService {
 
     try {
       const userPrompt = this.buildUserPrompt(context, filter.prompt);
-      const model = google("gemini-3-flash-preview");
+      const { model } = getFilterModel();
 
       const { output, attempts } = await generateStructuredOutput({
         model,

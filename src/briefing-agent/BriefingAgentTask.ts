@@ -1,8 +1,8 @@
-import { google } from "@ai-sdk/google";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
+import { getBriefingModel } from "../ai/registry.js";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
 import { fetchUrl } from "../tools/fetchUrl.js";
 import { webSearch } from "../tools/webSearch.js";
@@ -27,15 +27,8 @@ export class BriefingAgentTask extends ScheduledTask {
     briefingConfig: BriefingConfig,
     parentLogger: Logger,
   ): BriefingAgentTask | null {
-    const missing: string[] = [];
-    if (!config.GOOGLE_GENERATIVE_AI_API_KEY)
-      missing.push("GOOGLE_GENERATIVE_AI_API_KEY");
-    if (!config.TAVILY_API_KEY) missing.push("TAVILY_API_KEY");
-
-    if (missing.length > 0) {
-      parentLogger.info(
-        `${briefingConfig.name} disabled: missing ${missing.join(", ")}`,
-      );
+    if (!config.TAVILY_API_KEY) {
+      parentLogger.info(`${briefingConfig.name} disabled: missing TAVILY_API_KEY`);
       return null;
     }
 
@@ -52,7 +45,10 @@ export class BriefingAgentTask extends ScheduledTask {
 
   public async run(): Promise<void> {
     const resolvedPrompt = resolveAllPlaceholders(this.prompt, this.name);
-    this.logger.info(`Starting briefing agent with prompt:\n${resolvedPrompt}`);
+    const { model, modelId } = getBriefingModel();
+    this.logger.info(
+      `Starting briefing agent (${modelId}) with prompt:\n${resolvedPrompt}`,
+    );
 
     const tools = {
       web_search: webSearch,
@@ -81,7 +77,7 @@ export class BriefingAgentTask extends ScheduledTask {
     };
 
     const { steps } = await generateText({
-      model: google("gemini-3-pro"),
+      model,
       providerOptions: {
         google: { thinkingConfig: { thinkingLevel: "high" as const } },
       },
