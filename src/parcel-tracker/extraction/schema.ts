@@ -7,7 +7,9 @@ export const deliveryExtractionSchema = z.object({
       carrier: z.string().describe("The shipping carrier name (e.g. FedEx, UPS, USPS)"),
       description: z
         .string()
-        .describe("Brief description of the package contents or order"),
+        .describe(
+          "Short title for the package in Title Case (e.g. 'Running Shoes', 'Kitchen Knife Set')",
+        ),
     }),
   ),
 });
