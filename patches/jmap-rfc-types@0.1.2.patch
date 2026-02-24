@@ -1,0 +1,9 @@
+diff --git a/lib/index.ts b/lib/index.ts
+index db056e0cac264f8404774a5d4e3f014261510009..3bc516b76fda34a517f07bb92c2ca1c266f50bcd 100644
+--- a/lib/index.ts
++++ b/lib/index.ts
+@@ -1,2 +1,2 @@
+-export * from "./jmap-mail.ts";
+-export * from "./jmap.ts";
++export * from "./jmap-mail.js";
++export * from "./jmap.js";

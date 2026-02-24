@@ -27,9 +27,11 @@
     "ai": "^6.0.44",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
+    "eventsource": "^4.1.0",
     "got": "^14.6.6",
     "gray-matter": "^4.0.3",
     "html-entities": "^2.6.0",
+    "jmap-jam": "^0.13.1",
     "linkedom": "^0.18.12",
     "node-cron": "^4.2.1",
     "node-schedule": "^2.1.1",
@@ -59,6 +61,9 @@
       "ignoreMissing": [
         "@types/node"
       ]
+    },
+    "patchedDependencies": {
+      "jmap-rfc-types@0.1.2": "patches/jmap-rfc-types@0.1.2.patch"
     }
   }
 }

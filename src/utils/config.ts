@@ -33,6 +33,11 @@ const configSchema = baseConfigSchema
     TAVILY_API_KEY: z.string().optional(),
     CHANNELS_CONFIG_PATH: z.string().optional(),
     BRIEFINGS_PATH: z.string().optional(),
+    FASTMAIL_API_TOKEN: z.string().optional(),
+    FASTMAIL_USERNAME: z.string().optional(),
+    PARCEL_API_KEY: z.string().optional(),
+    EXTRACTION_MODEL: z.string().optional(),
+    PUSHOVER_PARCEL_TOKEN: z.string().optional(),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().optional().default(587),
     SMTP_USER: z.string().optional(),
@@ -44,6 +49,7 @@ const configSchema = baseConfigSchema
     ...c,
     PUSHOVER_LIVE_TOKEN: c.PUSHOVER_LIVE_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
+    PUSHOVER_PARCEL_TOKEN: c.PUSHOVER_PARCEL_TOKEN ?? c.PUSHOVER_TOKEN,
   }));
 
 export type Config = z.infer<typeof configSchema>;

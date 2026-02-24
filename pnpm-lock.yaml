@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  jmap-rfc-types@0.1.2:
+    hash: de64b735cee5efadda6ad1f64c9bc7ac01c62e9b55931f90ae8d9b75885c763b
+    path: patches/jmap-rfc-types@0.1.2.patch
+
 importers:
 
   .:
@@ -32,6 +37,9 @@ importers:
       date-fns-tz:
         specifier: ^3.2.0
         version: 3.2.0(date-fns@4.1.0)
+      eventsource:
+        specifier: ^4.1.0
+        version: 4.1.0
       got:
         specifier: ^14.6.6
         version: 14.6.6
@@ -41,6 +49,9 @@ importers:
       html-entities:
         specifier: ^2.6.0
         version: 2.6.0
+      jmap-jam:
+        specifier: ^0.13.1
+        version: 0.13.1
       linkedom:
         specifier: ^0.18.12
         version: 0.18.12
@@ -733,6 +744,10 @@ packages:
     resolution: {integrity: sha512-Vo1ab+QXPzZ4tCa8SwIHJFaSzy4R6SHf7BY79rFBDf0idraZWAkYrDjDj8uWaSm3S2TK+hJ7/t1CEmZ7jXw+pg==}
     engines: {node: '>=18.0.0'}
 
+  eventsource@4.1.0:
+    resolution: {integrity: sha512-2GuF51iuHX6A9xdTccMTsNb7VO0lHZihApxhvQzJB5A03DvHDd2FQepodbMaztPBmBcE/ox7o2gqaxGhYB9LhQ==}
+    engines: {node: '>=20.0.0'}
+
   execa@5.1.1:
     resolution: {integrity: sha512-8uSpZZocAZRBAPIEINJj3Lo9HyGitllczc27Eh5YYojjMFMn8yHMDMaUHE2Jqfq05D/wucwI4JGURyXt1vchyg==}
     engines: {node: '>=10'}
@@ -854,6 +869,12 @@ packages:
   isexe@3.1.1:
     resolution: {integrity: sha512-LpB/54B+/2J5hqQ7imZHfdU31OlgQqx7ZicVlkm9kzg9/w8GKLEcFfJl/t7DCEDueOyBAD6zCCwTO6Fzs0NoEQ==}
     engines: {node: '>=16'}
+
+  jmap-jam@0.13.1:
+    resolution: {integrity: sha512-sBHspB1xe6JrE22r92kR6LYdL//+PoHhVFzYu+u0pscXFBLRitVVhikeAINSNF2TL+Wk7jqJQ0umx+uUiquddQ==}
+
+  jmap-rfc-types@0.1.2:
+    resolution: {integrity: sha512-snd7/b+YQb7i2FC6PlK/XghTnuaUMydcsleObV+inEM/+Ex11fwdQqND2PidZb0G8V5Kogv55wIG/CidwtOc7w==}
 
   js-yaml@3.14.2:
     resolution: {integrity: sha512-PMSmkqxr106Xa156c2M265Z+FTrPl+oxd/rgOQy2tijQeK5TxQ43psO1ZCwhVOSdnn+RzkzlRz/eY4BgJBYVpg==}
@@ -1098,6 +1119,10 @@ packages:
     resolution: {integrity: sha512-4gB8na07fecVVkOI6Rs4e7T6NOTki5EmL7TUduTs6bu3EdnSycntVJ4re8kgZA+wx9IueI2Y11bfbgwtzuE0KQ==}
     engines: {node: '>=0.10.0'}
 
+  tagged-tag@1.0.0:
+    resolution: {integrity: sha512-yEFYrVhod+hdNyx7g5Bnkkb0G6si8HJurOoOEgC8B/O0uXLHlaey/65KRv6cuWBNhBgHKAROVpc7QyYqE5gFng==}
+    engines: {node: '>=20'}
+
   tar-fs@2.1.1:
     resolution: {integrity: sha512-V0r2Y9scmbDRLCNex/+hYzvp/zyYjvFbHPNgVTKfQvVrb6guiE/fxP+XblDNR011utopbkex2nM4dHNV6GDsng==}
 
@@ -1137,6 +1162,10 @@ packages:
   type-fest@4.41.0:
     resolution: {integrity: sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA==}
     engines: {node: '>=16'}
+
+  type-fest@5.4.4:
+    resolution: {integrity: sha512-JnTrzGu+zPV3aXIUhnyWJj4z/wigMsdYajGLIYakqyOW1nPllzXEJee0QQbHj+CTIQtXGlAjuK0UY+2xTyjVAw==}
+    engines: {node: '>=20'}
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -1770,6 +1799,10 @@ snapshots:
 
   eventsource-parser@3.0.6: {}
 
+  eventsource@4.1.0:
+    dependencies:
+      eventsource-parser: 3.0.6
+
   execa@5.1.1:
     dependencies:
       cross-spawn: 7.0.3
@@ -1879,6 +1912,15 @@ snapshots:
   isexe@2.0.0: {}
 
   isexe@3.1.1: {}
+
+  jmap-jam@0.13.1:
+    dependencies:
+      jmap-rfc-types: 0.1.2(patch_hash=de64b735cee5efadda6ad1f64c9bc7ac01c62e9b55931f90ae8d9b75885c763b)
+      type-fest: 5.4.4
+
+  jmap-rfc-types@0.1.2(patch_hash=de64b735cee5efadda6ad1f64c9bc7ac01c62e9b55931f90ae8d9b75885c763b):
+    dependencies:
+      type-fest: 5.4.4
 
   js-yaml@3.14.2:
     dependencies:
@@ -2111,6 +2153,8 @@ snapshots:
 
   strip-json-comments@2.0.1: {}
 
+  tagged-tag@1.0.0: {}
+
   tar-fs@2.1.1:
     dependencies:
       chownr: 1.1.4
@@ -2155,6 +2199,10 @@ snapshots:
       '@mixmark-io/domino': 2.2.0
 
   type-fest@4.41.0: {}
+
+  type-fest@5.4.4:
+    dependencies:
+      tagged-tag: 1.0.0
 
   typescript@5.9.3: {}
 
