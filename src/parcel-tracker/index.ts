@@ -24,7 +24,7 @@ export async function startParcelTracker(
     ctx,
     () => {
       pipeline.onEmailStateChange().catch((error) => {
-        logger.error(`Pipeline error: ${(error as Error).message}`);
+        logger.error("Pipeline error", (error as Error).message);
       });
     },
     logger,

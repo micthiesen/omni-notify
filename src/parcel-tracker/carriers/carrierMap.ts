@@ -92,5 +92,24 @@ async function fetchCarrierList(logger: Logger): Promise<CarrierEntry[] | undefi
   }
 }
 
+const AMAZON_CODE_PREFIXES = ["amzl", "amship"];
+
+export function isAmazonCarrier(code: string): boolean {
+  return AMAZON_CODE_PREFIXES.some((prefix) => code.startsWith(prefix));
+}
+
+/** Fetches carrier names and returns word-boundary regexes, excluding Amazon carriers. */
+export async function getCarrierNamePatterns(logger: Logger): Promise<RegExp[]> {
+  const carriers = await fetchCarrierList(logger);
+  if (!carriers) return [];
+  return carriers
+    .filter((c) => !isAmazonCarrier(c.code))
+    .map((c) => new RegExp(`\\b${escapeRegExp(c.name)}\\b`, "i"));
+}
+
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 // Exported for testing
 export { fetchCarrierList };

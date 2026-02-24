@@ -29,7 +29,7 @@ export async function sendEmail(params: SendEmailParams): Promise<boolean> {
     logger.debug(`Email sent: "${subject}" to ${to}`);
     return true;
   } catch (error) {
-    logger.error(`Failed to send email "${subject}" to ${to}: ${error}`);
+    logger.error(`Failed to send email "${subject}" to ${to}`, error);
     return false;
   }
 }

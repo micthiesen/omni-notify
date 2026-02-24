@@ -28,7 +28,8 @@ export async function submitDelivery(
     return true;
   } catch (error) {
     logger.error(
-      `Failed to submit delivery ${params.trackingNumber}: ${(error as Error).message}`,
+      `Failed to submit delivery ${params.trackingNumber}`,
+      (error as Error).message,
     );
     return false;
   }

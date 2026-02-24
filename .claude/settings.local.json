@@ -22,7 +22,8 @@
       "Bash(xargs ls:*)",
       "Bash(wc:*)",
       "Read(/Users/michael/Code/mitools)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(sqlite3:*)"
     ],
     "deny": [],
     "ask": []

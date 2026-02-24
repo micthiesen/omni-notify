@@ -1,104 +1,135 @@
-import { describe, expect, it } from "vitest";
+import type { Logger } from "@micthiesen/mitools/logging";
+import { describe, expect, it, vi } from "vitest";
 import { isTrackingCandidate } from "./keywords.js";
 
+const mockLogger = {
+  debug: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  extend: vi.fn(),
+} as unknown as Logger;
+
 describe("isTrackingCandidate", () => {
-  it("should match known carrier sender domains", () => {
+  it("should match known carrier sender domains", async () => {
     expect(
-      isTrackingCandidate({
-        from: "shipment-tracking@amazon.com",
-        subject: "Your order",
-        textBody: "Here is your order confirmation.",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "shipment-tracking@amazon.com",
+          subject: "Your order",
+          textBody: "Here is your order confirmation.",
+        },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 
-  it("should match UPS sender domain", () => {
+  it("should match UPS sender domain", async () => {
     expect(
-      isTrackingCandidate({
-        from: "noreply@ups.com",
-        subject: "Delivery update",
-        textBody: "",
-      }),
+      await isTrackingCandidate(
+        { from: "noreply@ups.com", subject: "Delivery update", textBody: "" },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 
-  it("should match amazon subdomains", () => {
+  it("should match amazon subdomains", async () => {
     expect(
-      isTrackingCandidate({
-        from: "ship-confirm@amazon.co.uk",
-        subject: "Your order",
-        textBody: "",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "ship-confirm@amazon.co.uk",
+          subject: "Your order",
+          textBody: "",
+        },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 
-  it("should match tracking keywords in subject", () => {
+  it("should match tracking keywords in subject", async () => {
     expect(
-      isTrackingCandidate({
-        from: "orders@somestore.com",
-        subject: "Your order has shipped!",
-        textBody: "Thank you for your purchase.",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "orders@somestore.com",
+          subject: "Your order has shipped!",
+          textBody: "Thank you for your purchase.",
+        },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 
-  it("should match tracking keywords in body", () => {
+  it("should match tracking keywords in body", async () => {
     expect(
-      isTrackingCandidate({
-        from: "orders@somestore.com",
-        subject: "Order confirmation",
-        textBody: "Your tracking number is 1Z999AA10123456784",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "orders@somestore.com",
+          subject: "Order confirmation",
+          textBody: "Your tracking number is 1Z999AA10123456784",
+        },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 
-  it("should match 'in transit' keyword", () => {
+  it("should match 'in transit' keyword", async () => {
     expect(
-      isTrackingCandidate({
-        from: "orders@somestore.com",
-        subject: "Your package is in transit",
-        textBody: "",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "orders@somestore.com",
+          subject: "Your package is in transit",
+          textBody: "",
+        },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 
-  it("should reject unrelated emails", () => {
+  it("should reject unrelated emails", async () => {
     expect(
-      isTrackingCandidate({
-        from: "newsletter@example.com",
-        subject: "Weekly digest",
-        textBody: "Here are this week's top stories.",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "newsletter@example.com",
+          subject: "Weekly digest",
+          textBody: "Here are this week's top stories.",
+        },
+        mockLogger,
+      ),
     ).toBe(false);
   });
 
-  it("should reject promotional emails", () => {
+  it("should reject promotional emails", async () => {
     expect(
-      isTrackingCandidate({
-        from: "marketing@store.com",
-        subject: "50% off sale!",
-        textBody: "Don't miss our biggest sale of the year.",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "marketing@store.com",
+          subject: "50% off sale!",
+          textBody: "Don't miss our biggest sale of the year.",
+        },
+        mockLogger,
+      ),
     ).toBe(false);
   });
 
-  it("should be case-insensitive for sender domains", () => {
+  it("should be case-insensitive for sender domains", async () => {
     expect(
-      isTrackingCandidate({
-        from: "noreply@FedEx.com",
-        subject: "Update",
-        textBody: "",
-      }),
+      await isTrackingCandidate(
+        { from: "noreply@FedEx.com", subject: "Update", textBody: "" },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 
-  it("should be case-insensitive for keywords", () => {
+  it("should be case-insensitive for keywords", async () => {
     expect(
-      isTrackingCandidate({
-        from: "orders@somestore.com",
-        subject: "YOUR ORDER HAS SHIPPED",
-        textBody: "",
-      }),
+      await isTrackingCandidate(
+        {
+          from: "orders@somestore.com",
+          subject: "YOUR ORDER HAS SHIPPED",
+          textBody: "",
+        },
+        mockLogger,
+      ),
     ).toBe(true);
   });
 });

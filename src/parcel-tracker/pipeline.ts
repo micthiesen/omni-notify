@@ -1,5 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { resolveCarrierCode } from "./carriers/carrierMap.js";
+import { isAmazonCarrier, resolveCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
 import { isTrackingCandidate } from "./filter/keywords.js";
 import type { JmapContext } from "./jmap/client.js";
@@ -42,20 +42,12 @@ export class DeliveryPipeline {
     const sinceState = getEmailState();
 
     if (!sinceState) {
-      // First run: save current state without processing
+      // First run: save current Email state without processing
       this.logger.info("First run: fetching current JMAP state (skipping history)");
-      const [result] = await this.ctx.jam.request([
-        "Email/query",
-        {
-          accountId: this.ctx.accountId,
-          filter: {},
-          limit: 1,
-        },
-      ]);
-      const queryState = (result as Record<string, unknown>).queryState as string;
-      if (queryState) {
-        saveEmailState(queryState);
-        this.logger.info(`Saved initial JMAP state: ${queryState}`);
+      const state = await this.fetchCurrentEmailState();
+      if (state) {
+        saveEmailState(state);
+        this.logger.info(`Saved initial JMAP state: ${state}`);
       }
       return;
     }
@@ -70,35 +62,27 @@ export class DeliveryPipeline {
       const message = (error as Error).message ?? "";
       if (message.includes("cannotCalculateChanges")) {
         this.logger.warn("cannotCalculateChanges: resetting state");
-        // Fetch fresh state and skip this batch
-        const [result] = await this.ctx.jam.request([
-          "Email/query",
-          {
-            accountId: this.ctx.accountId,
-            filter: {},
-            limit: 1,
-          },
-        ]);
-        const queryState = (result as Record<string, unknown>).queryState as string;
-        if (queryState) saveEmailState(queryState);
+        const state = await this.fetchCurrentEmailState();
+        if (state) saveEmailState(state);
         return;
       }
-      this.logger.error(`Failed to fetch emails: ${message}`);
+      this.logger.error("Failed to fetch emails", message);
       return;
     }
 
     // Filter candidates
-    const candidates = emails.filter((email) => {
-      const isCandidate = isTrackingCandidate({
-        from: email.from,
-        subject: email.subject,
-        textBody: email.textBody,
-      });
-      if (!isCandidate) {
+    const candidates = [];
+    for (const email of emails) {
+      const isCandidate = await isTrackingCandidate(
+        { from: email.from, subject: email.subject, textBody: email.textBody },
+        this.logger,
+      );
+      if (isCandidate) {
+        candidates.push(email);
+      } else {
         this.logger.debug(`Filtered out: "${email.subject}" from ${email.from}`);
       }
-      return isCandidate;
-    });
+    }
 
     if (candidates.length > 0) {
       this.logger.info(
@@ -114,7 +98,8 @@ export class DeliveryPipeline {
         await this.processEmail(email);
       } catch (error) {
         this.logger.error(
-          `Failed to process email "${email.subject}": ${(error as Error).message}`,
+          `Failed to process email "${email.subject}"`,
+          (error as Error).message,
         );
         // Continue with other emails
       }
@@ -172,7 +157,7 @@ export class DeliveryPipeline {
     }
 
     // Skip Amazon — Parcel tracks those via account login
-    if (carrierResult.carrierCode.startsWith("amzl")) {
+    if (isAmazonCarrier(carrierResult.carrierCode)) {
       this.logger.info(
         `Amazon delivery (${carrierResult.carrierCode}), skipping: ${delivery.tracking_number}`,
       );
@@ -199,5 +184,14 @@ export class DeliveryPipeline {
         emailId,
       });
     }
+  }
+
+  /** Get the current Email state via Email/get (compatible with Email/changes sinceState). */
+  private async fetchCurrentEmailState(): Promise<string | undefined> {
+    const [result] = await this.ctx.jam.request([
+      "Email/get",
+      { accountId: this.ctx.accountId, ids: [] },
+    ]);
+    return (result as Record<string, unknown>).state as string | undefined;
   }
 }

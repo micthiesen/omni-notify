@@ -1,3 +1,6 @@
+import type { Logger } from "@micthiesen/mitools/logging";
+import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
+
 const CARRIER_SENDER_DOMAINS = [
   "@amazon.",
   "@ups.com",
@@ -12,6 +15,7 @@ const CARRIER_SENDER_DOMAINS = [
 
 const TRACKING_KEYWORDS = [
   "tracking",
+  "track",
   "shipped",
   "out for delivery",
   "tracking number",
@@ -21,6 +25,8 @@ const TRACKING_KEYWORDS = [
   "estimated delivery",
   "delivery confirmation",
   "package",
+  "delivered",
+  "delivery",
 ];
 
 export interface EmailCandidate {
@@ -29,7 +35,10 @@ export interface EmailCandidate {
   textBody: string;
 }
 
-export function isTrackingCandidate(email: EmailCandidate): boolean {
+export async function isTrackingCandidate(
+  email: EmailCandidate,
+  logger: Logger,
+): Promise<boolean> {
   const fromLower = email.from.toLowerCase();
 
   // Tier 1: Known carrier/shipping sender domains auto-pass
@@ -39,5 +48,12 @@ export function isTrackingCandidate(email: EmailCandidate): boolean {
 
   // Tier 2: Keyword match in subject or body
   const searchText = `${email.subject} ${email.textBody}`.toLowerCase();
-  return TRACKING_KEYWORDS.some((keyword) => searchText.includes(keyword));
+  if (TRACKING_KEYWORDS.some((keyword) => searchText.includes(keyword))) {
+    return true;
+  }
+
+  // Tier 3: Non-Amazon carrier name mentioned (word-boundary match)
+  const patterns = await getCarrierNamePatterns(logger);
+  const fullText = `${email.subject} ${email.textBody}`;
+  return patterns.some((pattern) => pattern.test(fullText));
 }

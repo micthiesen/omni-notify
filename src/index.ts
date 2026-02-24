@@ -32,7 +32,7 @@ let cleanupParcelTracker: (() => void) | undefined;
 try {
   cleanupParcelTracker = await startParcelTracker(logger);
 } catch (error) {
-  logger.error(`Failed to start parcel tracker: ${(error as Error).message}`);
+  logger.error("Failed to start parcel tracker", (error as Error).message);
 }
 
 // Start scheduler (runs tasks immediately, then on their schedules)

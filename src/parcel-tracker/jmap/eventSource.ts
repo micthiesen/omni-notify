@@ -48,7 +48,7 @@ export async function createEventSource(
       }
       consecutiveErrors = 0;
     } catch (error) {
-      logger.error(`Failed to parse state change event: ${(error as Error).message}`);
+      logger.error("Failed to parse state change event", (error as Error).message);
     }
   });
 
@@ -58,13 +58,16 @@ export async function createEventSource(
     const message = (event as { message?: string }).message ?? "Unknown error";
 
     if (code === 401 || code === 403) {
-      logger.error(`EventSource auth error (${code}): ${message}. Closing connection.`);
+      logger.error(
+        "EventSource auth error, closing connection",
+        `Code ${code}: ${message}`,
+      );
       es.close();
       return;
     }
 
     if (consecutiveErrors >= 10) {
-      logger.error(`EventSource error (${consecutiveErrors} consecutive): ${message}`);
+      logger.error(`EventSource error (${consecutiveErrors} consecutive)`, message);
     } else if (consecutiveErrors >= 3) {
       logger.warn(`EventSource error (${consecutiveErrors} consecutive): ${message}`);
     } else {

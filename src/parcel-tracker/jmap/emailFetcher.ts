@@ -30,7 +30,8 @@ export async function fetchNewEmails(
     const emails = t.Email.get({
       accountId,
       ids: changes.$ref("/created"),
-      properties: ["id", "subject", "from", "textBody", "receivedAt"],
+      properties: ["id", "subject", "from", "textBody", "bodyValues", "receivedAt"],
+      fetchTextBodyValues: true,
     });
 
     return { changes, emails };
@@ -46,13 +47,22 @@ export async function fetchNewEmails(
     return { emails: [], newState };
   }
 
-  const fetched: FetchedEmail[] = emailList.map((e) => ({
-    id: e.id as string,
-    subject: (e.subject as string) ?? "",
-    from: formatFrom(e.from),
-    textBody: extractTextBody(e),
-    receivedAt: (e.receivedAt as string) ?? "",
-  }));
+  const fetched: FetchedEmail[] = emailList.map((e) => {
+    const email: FetchedEmail = {
+      id: e.id as string,
+      subject: (e.subject as string) ?? "",
+      from: formatFrom(e.from),
+      textBody: extractTextBody(e),
+      receivedAt: (e.receivedAt as string) ?? "",
+    };
+    logger.debug(
+      `Email: "${email.subject}" from=${email.from} ` +
+        `bodyParts=${JSON.stringify(e.textBody)} ` +
+        `bodyValues=${JSON.stringify(e.bodyValues)} ` +
+        `textBody=${JSON.stringify(email.textBody.slice(0, 200))}`,
+    );
+    return email;
+  });
 
   logger.debug(`Fetched ${fetched.length} new email(s)`);
   return { emails: fetched, newState };
@@ -65,7 +75,10 @@ function formatFrom(from: unknown): string {
 }
 
 function extractTextBody(email: Record<string, unknown>): string {
-  const parts = email.textBody as { value?: string; partId?: string }[] | undefined;
-  if (!parts || parts.length === 0) return "";
-  return parts.map((p) => p.value ?? "").join("\n");
+  const parts = email.textBody as { partId?: string }[] | undefined;
+  const bodyValues = email.bodyValues as Record<string, { value?: string }> | undefined;
+  if (!parts || !bodyValues) return "";
+  return parts
+    .map((p) => (p.partId ? (bodyValues[p.partId]?.value ?? "") : ""))
+    .join("\n");
 }
