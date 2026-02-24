@@ -30,9 +30,6 @@ export class StreamFilterService {
   }
 
   public logFilterStatus(channels: ChannelInfo[]): void {
-    const withFilters: string[] = [];
-    const withoutFilters: string[] = [];
-
     for (const { username, displayName, platform } of channels) {
       const filter = this.getFilter(platform, username);
       const label =
@@ -40,17 +37,8 @@ export class StreamFilterService {
 
       if (filter) {
         const fallback = filter.defaultOnError ? "notify" : "skip";
-        withFilters.push(`${label} [${platform}, fallback: ${fallback}]`);
-      } else {
-        withoutFilters.push(label);
+        this.logger.info(`Filter for ${label} [${platform}, fallback: ${fallback}]`);
       }
-    }
-
-    if (withFilters.length > 0) {
-      this.logger.info(`Channels with filters: ${withFilters.join(", ")}`);
-    }
-    if (withoutFilters.length > 0) {
-      this.logger.info(`Channels without filters: ${withoutFilters.join(", ")}`);
     }
   }
 
