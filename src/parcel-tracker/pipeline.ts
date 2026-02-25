@@ -168,7 +168,7 @@ export class DeliveryPipeline {
     }
 
     // Submit to Parcel
-    const success = await submitDelivery(
+    const result = await submitDelivery(
       {
         trackingNumber: delivery.tracking_number,
         carrierCode: delivery.carrier_code,
@@ -178,13 +178,20 @@ export class DeliveryPipeline {
       this.logger,
     );
 
-    if (!success) {
+    if (result.status === "error") {
       this.logger.warn(
-        `Failed to submit ${delivery.tracking_number} (${delivery.carrier_code}), delivery dropped`,
+        `Failed to submit ${delivery.tracking_number} (${delivery.carrier_code}), will retry later`,
       );
       return;
     }
 
+    if (result.status === "rejected") {
+      this.logger.warn(
+        `Parcel rejected ${delivery.tracking_number} (${delivery.carrier_code}) with ${result.statusCode}, recording to prevent retry`,
+      );
+    }
+
+    // Record on success OR rejection to prevent retrying hopeless submissions
     recordSubmittedDelivery({
       trackingNumber: delivery.tracking_number,
       carrierCode: delivery.carrier_code,

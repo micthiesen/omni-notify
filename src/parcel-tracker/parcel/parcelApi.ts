@@ -3,6 +3,11 @@ import got, { type HTTPError } from "got";
 
 const API_URL = "https://api.parcel.app/external/add-delivery/";
 
+export type SubmitResult =
+  | { status: "success" }
+  | { status: "rejected"; statusCode: number }
+  | { status: "error" };
+
 export async function submitDelivery(
   params: {
     trackingNumber: string;
@@ -11,7 +16,7 @@ export async function submitDelivery(
   },
   apiKey: string,
   logger: Logger,
-): Promise<boolean> {
+): Promise<SubmitResult> {
   const payload = {
     tracking_number: params.trackingNumber,
     carrier_code: params.carrierCode,
@@ -31,13 +36,17 @@ export async function submitDelivery(
     logger.info(
       `Submitted delivery: ${params.trackingNumber} (${params.carrierCode}) → ${response.statusCode}`,
     );
-    return true;
+    return { status: "success" };
   } catch (error) {
+    const statusCode = (error as HTTPError).response?.statusCode;
     const body = (error as HTTPError).response?.body ?? "no response body";
     logger.error(
       `Failed to submit delivery ${params.trackingNumber}`,
       `${(error as Error).message}\nResponse: ${body}`,
     );
-    return false;
+    if (statusCode && statusCode >= 400 && statusCode < 500) {
+      return { status: "rejected", statusCode };
+    }
+    return { status: "error" };
   }
 }
