@@ -4,7 +4,9 @@ export const deliveryExtractionSchema = z.object({
   deliveries: z.array(
     z.object({
       tracking_number: z.string().describe("The package tracking number"),
-      carrier: z.string().describe("The shipping carrier name (e.g. FedEx, UPS, USPS)"),
+      carrier_code: z
+        .string()
+        .describe("The carrier code from the provided carrier list"),
       description: z
         .string()
         .describe(

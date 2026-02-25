@@ -7,7 +7,7 @@ describe("deliveryExtractionSchema", () => {
       deliveries: [
         {
           tracking_number: "1Z999AA10123456784",
-          carrier: "UPS",
+          carrier_code: "ups",
           description: "Electronics order",
         },
       ],
@@ -26,12 +26,12 @@ describe("deliveryExtractionSchema", () => {
       deliveries: [
         {
           tracking_number: "1Z999AA10123456784",
-          carrier: "UPS",
+          carrier_code: "ups",
           description: "Order 1",
         },
         {
           tracking_number: "9400111899223100315842",
-          carrier: "USPS",
+          carrier_code: "usps",
           description: "Order 2",
         },
       ],
@@ -42,12 +42,12 @@ describe("deliveryExtractionSchema", () => {
   it("should reject missing tracking_number", () => {
     expect(() =>
       deliveryExtractionSchema.parse({
-        deliveries: [{ carrier: "UPS", description: "Test" }],
+        deliveries: [{ carrier_code: "ups", description: "Test" }],
       }),
     ).toThrow();
   });
 
-  it("should reject missing carrier", () => {
+  it("should reject missing carrier_code", () => {
     expect(() =>
       deliveryExtractionSchema.parse({
         deliveries: [{ tracking_number: "1Z999AA10123456784", description: "Test" }],

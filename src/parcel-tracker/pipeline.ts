@@ -1,5 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { isAmazonCarrier, resolveCarrierCode } from "./carriers/carrierMap.js";
+import { isAmazonCarrier, isValidCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
 import { isTrackingCandidate } from "./filter/keywords.js";
 import type { JmapContext } from "./jmap/client.js";
@@ -135,7 +135,11 @@ export class DeliveryPipeline {
   }
 
   private async processDelivery(
-    delivery: { tracking_number: string; carrier: string; description: string },
+    delivery: {
+      tracking_number: string;
+      carrier_code: string;
+      description: string;
+    },
     emailId: string,
   ): Promise<void> {
     // Dedup check
@@ -146,20 +150,19 @@ export class DeliveryPipeline {
       return;
     }
 
-    // Resolve carrier code
-    const carrierResult = await resolveCarrierCode(delivery.carrier, this.logger);
-    if (!carrierResult.resolved) {
+    // Validate carrier code
+    const valid = await isValidCarrierCode(delivery.carrier_code, this.logger);
+    if (!valid) {
       this.logger.warn(
-        `Unknown carrier "${delivery.carrier}" for tracking ${delivery.tracking_number}. ` +
-          "Add it to the carrier alias table.",
+        `Invalid carrier code "${delivery.carrier_code}" for tracking ${delivery.tracking_number}, skipping`,
       );
       return;
     }
 
     // Skip Amazon — Parcel tracks those via account login
-    if (isAmazonCarrier(carrierResult.carrierCode)) {
+    if (isAmazonCarrier(delivery.carrier_code)) {
       this.logger.info(
-        `Amazon delivery (${carrierResult.carrierCode}), skipping: ${delivery.tracking_number}`,
+        `Amazon delivery (${delivery.carrier_code}), skipping: ${delivery.tracking_number}`,
       );
       return;
     }
@@ -168,22 +171,27 @@ export class DeliveryPipeline {
     const success = await submitDelivery(
       {
         trackingNumber: delivery.tracking_number,
-        carrierCode: carrierResult.carrierCode,
+        carrierCode: delivery.carrier_code,
         description: delivery.description,
       },
       this.parcelApiKey,
       this.logger,
     );
 
-    if (success) {
-      recordSubmittedDelivery({
-        trackingNumber: delivery.tracking_number,
-        carrierCode: carrierResult.carrierCode,
-        description: delivery.description,
-        submittedAt: Date.now(),
-        emailId,
-      });
+    if (!success) {
+      this.logger.warn(
+        `Failed to submit ${delivery.tracking_number} (${delivery.carrier_code}), delivery dropped`,
+      );
+      return;
     }
+
+    recordSubmittedDelivery({
+      trackingNumber: delivery.tracking_number,
+      carrierCode: delivery.carrier_code,
+      description: delivery.description,
+      submittedAt: Date.now(),
+      emailId,
+    });
   }
 
   /** Get the current Email state via Email/get (compatible with Email/changes sinceState). */

@@ -31,6 +31,7 @@
     "got": "^14.6.6",
     "gray-matter": "^4.0.3",
     "html-entities": "^2.6.0",
+    "html-to-text": "^9.0.5",
     "jmap-jam": "^0.13.1",
     "linkedom": "^0.18.12",
     "node-cron": "^4.2.1",
@@ -44,6 +45,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
     "@dotenvx/dotenvx": "^1.51.4",
+    "@types/html-to-text": "^9.0.4",
     "@types/node": "22.19.7",
     "@types/nodemailer": "^7.0.9",
     "@types/turndown": "^5.0.6",

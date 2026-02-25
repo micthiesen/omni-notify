@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { htmlToText } from "../htmlToText.js";
 import type { JmapContext } from "./client.js";
 
 export interface FetchedEmail {
@@ -75,10 +76,15 @@ function formatFrom(from: unknown): string {
 }
 
 function extractTextBody(email: Record<string, unknown>): string {
-  const parts = email.textBody as { partId?: string }[] | undefined;
+  const parts = email.textBody as { partId?: string; type?: string }[] | undefined;
   const bodyValues = email.bodyValues as Record<string, { value?: string }> | undefined;
   if (!parts || !bodyValues) return "";
   return parts
-    .map((p) => (p.partId ? (bodyValues[p.partId]?.value ?? "") : ""))
+    .map((p) => {
+      if (!p.partId) return "";
+      const value = bodyValues[p.partId]?.value ?? "";
+      if (!value) return "";
+      return p.type !== "text/plain" ? htmlToText(value) : value;
+    })
     .join("\n");
 }
