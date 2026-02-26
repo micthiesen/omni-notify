@@ -1,8 +1,18 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
 
-const CARRIER_SENDER_DOMAINS = [
+const BLACKLISTED_SENDERS = [
   "@amazon.",
+  "@uber.com",
+  "@doordash.com",
+  "@skipthedishes.com",
+  "@instacart.com",
+  "@fantuan.ca",
+  "@ritual.co",
+  "@toogoodtogo.com",
+];
+
+const CARRIER_SENDER_DOMAINS = [
   "@ups.com",
   "@fedex.com",
   "@usps.com",
@@ -41,6 +51,11 @@ export async function isTrackingCandidate(
 ): Promise<boolean> {
   const fromLower = email.from.toLowerCase();
 
+  // Blacklisted senders are always rejected
+  if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) {
+    return false;
+  }
+
   // Tier 1: Known carrier/shipping sender domains auto-pass
   if (CARRIER_SENDER_DOMAINS.some((domain) => fromLower.includes(domain))) {
     return true;
@@ -52,7 +67,7 @@ export async function isTrackingCandidate(
     return true;
   }
 
-  // Tier 3: Non-Amazon carrier name mentioned (word-boundary match)
+  // Tier 3: Carrier name mentioned (word-boundary match)
   const patterns = await getCarrierNamePatterns(logger);
   const fullText = `${email.subject} ${email.textBody}`;
   return patterns.some((pattern) => pattern.test(fullText));

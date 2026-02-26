@@ -1,5 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { isAmazonCarrier, isValidCarrierCode } from "./carriers/carrierMap.js";
+import { isValidCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
 import { isTrackingCandidate } from "./filter/keywords.js";
 import type { JmapContext } from "./jmap/client.js";
@@ -155,14 +155,6 @@ export class DeliveryPipeline {
     if (!valid) {
       this.logger.warn(
         `Invalid carrier code "${delivery.carrier_code}" for tracking ${delivery.tracking_number}, skipping`,
-      );
-      return;
-    }
-
-    // Skip Amazon — Parcel tracks those via account login
-    if (isAmazonCarrier(delivery.carrier_code)) {
-      this.logger.info(
-        `Amazon delivery (${delivery.carrier_code}), skipping: ${delivery.tracking_number}`,
       );
       return;
     }

@@ -11,17 +11,17 @@ const mockLogger = {
 } as unknown as Logger;
 
 describe("isTrackingCandidate", () => {
-  it("should match known carrier sender domains", async () => {
+  it("should reject blacklisted amazon senders", async () => {
     expect(
       await isTrackingCandidate(
         {
           from: "shipment-tracking@amazon.com",
-          subject: "Your order",
+          subject: "Your order has shipped",
           textBody: "Here is your order confirmation.",
         },
         mockLogger,
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("should match UPS sender domain", async () => {
@@ -33,7 +33,7 @@ describe("isTrackingCandidate", () => {
     ).toBe(true);
   });
 
-  it("should match amazon subdomains", async () => {
+  it("should reject blacklisted amazon subdomains", async () => {
     expect(
       await isTrackingCandidate(
         {
@@ -43,7 +43,7 @@ describe("isTrackingCandidate", () => {
         },
         mockLogger,
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("should match tracking keywords in subject", async () => {
@@ -83,6 +83,28 @@ describe("isTrackingCandidate", () => {
         mockLogger,
       ),
     ).toBe(true);
+  });
+
+  it("should reject blacklisted senders even with tracking keywords", async () => {
+    const blacklisted = [
+      "noreply@uber.com",
+      "no-reply@doordash.com",
+      "orders@skipthedishes.com",
+      "noreply@instacart.com",
+    ];
+    for (const from of blacklisted) {
+      expect(
+        await isTrackingCandidate(
+          {
+            from,
+            subject: "Your delivery is in transit",
+            textBody: "Track your shipment",
+          },
+          mockLogger,
+        ),
+        `Expected ${from} to be rejected`,
+      ).toBe(false);
+    }
   });
 
   it("should reject unrelated emails", async () => {
