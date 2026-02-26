@@ -88,7 +88,7 @@ export class BriefingAgentTask extends ScheduledTask {
         google: { thinkingConfig: { thinkingLevel: "high" as const } },
       },
       tools,
-      stopWhen: stepCountIs(10),
+      stopWhen: stepCountIs(20),
       onStepFinish: ({ text, toolCalls, toolResults }) => {
         if (text) this.logger.debug(`Step text: ${text}`);
         for (const call of toolCalls) {
