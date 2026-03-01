@@ -72,3 +72,35 @@ jobs:
 
       - name: Logout from GitHub Container Registry
         run: docker logout ghcr.io
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, build-and-publish]
+    if: always() && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Send Pushover notification
+        env:
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+        run: |
+          if [ "${{ needs.build-and-publish.result }}" = "success" ]; then
+            TITLE="omni-notify deployed"
+            MESSAGE="Container pushed successfully"
+          else
+            TITLE="omni-notify CI failed"
+            FAILED=""
+            [ "${{ needs.lint-and-test.result }}" != "success" ] && FAILED="lint-and-test"
+            [ "${{ needs.build-and-publish.result }}" != "success" ] && FAILED="${FAILED:+$FAILED, }build-and-publish"
+            MESSAGE="Failed jobs: ${FAILED}"
+            PRIORITY=1
+          fi
+          curl -s -o /dev/null \
+            --form-string "token=$PUSHOVER_TOKEN" \
+            --form-string "user=$PUSHOVER_USER" \
+            --form-string "title=$TITLE" \
+            --form-string "message=$MESSAGE" \
+            --form-string "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --form-string "url_title=View run" \
+            ${PRIORITY:+--form-string "priority=$PRIORITY"} \
+            https://api.pushover.net/1/messages.json
