@@ -31,6 +31,7 @@ const configSchema = baseConfigSchema
     ANTHROPIC_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
     TAVILY_API_KEY: z.string().optional(),
+    LOGS_PATH: z.string().optional(),
     CHANNELS_CONFIG_PATH: z.string().optional(),
     BRIEFINGS_PATH: z.string().optional(),
     FASTMAIL_API_TOKEN: z.string().optional(),

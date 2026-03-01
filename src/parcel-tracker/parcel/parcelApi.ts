@@ -1,3 +1,4 @@
+import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import got, { type HTTPError } from "got";
 
@@ -16,6 +17,7 @@ export async function submitDelivery(
   },
   apiKey: string,
   logger: Logger,
+  rejectionLog?: LogFile,
 ): Promise<SubmitResult> {
   const payload = {
     tracking_number: params.trackingNumber,
@@ -45,6 +47,10 @@ export async function submitDelivery(
       `${(error as Error).message}\nResponse: ${body}`,
     );
     if (statusCode && statusCode >= 400 && statusCode < 500) {
+      rejectionLog?.section(
+        `Rejected: ${params.trackingNumber} (${statusCode})`,
+        `**Request:**\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n\n**Response:**\n\`\`\`\n${body}\n\`\`\``,
+      );
       return { status: "rejected", statusCode };
     }
     return { status: "error" };

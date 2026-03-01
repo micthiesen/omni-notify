@@ -1,4 +1,6 @@
+import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
+import { LogLevel } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { generateText, stepCountIs, tool } from "ai";
 import { z } from "zod";
@@ -44,11 +46,31 @@ export class BriefingAgentTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
+    const logFile = config.LOGS_PATH
+      ? new LogFile(
+          `${config.LOGS_PATH}/briefings/${this.name}-latest.log`,
+          "overwrite",
+        )
+      : undefined;
+
     const resolvedPrompt = resolveAllPlaceholders(this.prompt, this.name);
     const { model, modelId } = getBriefingModel();
-    this.logger.info(
-      `Starting briefing agent (${modelId}) with prompt:\n${resolvedPrompt}`,
-    );
+
+    if (logFile) {
+      logFile.log(
+        this.logger,
+        LogLevel.INFO,
+        `Briefing Prompt (${modelId})`,
+        resolvedPrompt,
+        {
+          consoleSummary: `Starting briefing agent (${modelId}) [${resolvedPrompt.length} chars]`,
+        },
+      );
+    } else {
+      this.logger.info(
+        `Starting briefing agent (${modelId}) with prompt:\n${resolvedPrompt}`,
+      );
+    }
 
     const tools = {
       web_search: webSearch,
@@ -90,7 +112,10 @@ export class BriefingAgentTask extends ScheduledTask {
       tools,
       stopWhen: stepCountIs(20),
       onStepFinish: ({ text, toolCalls, toolResults }) => {
-        if (text) this.logger.debug(`Step text: ${text}`);
+        if (text) {
+          logFile?.section("Step Text", text);
+          this.logger.debug(`Step text: ${text}`);
+        }
         for (const call of toolCalls) {
           if (call.toolName === "web_search") {
             const input = call.input as { query?: string };
@@ -101,7 +126,10 @@ export class BriefingAgentTask extends ScheduledTask {
           } else if (call.toolName !== "send_notification") {
             this.logger.info(`Tool call: ${call.toolName}`, call.input);
           }
-          // send_notification already logged in execute callback
+          logFile?.section(
+            `Tool Call: ${call.toolName}`,
+            `\`\`\`json\n${JSON.stringify(call.input, null, 2)}\n\`\`\``,
+          );
         }
         for (const result of toolResults) {
           if (result.toolName === "web_search") {
@@ -121,11 +149,24 @@ export class BriefingAgentTask extends ScheduledTask {
           } else if (result.toolName !== "send_notification") {
             this.logger.info(`Tool result: ${result.toolName}`, result.output);
           }
+          logFile?.section(
+            `Tool Result: ${result.toolName}`,
+            `\`\`\`json\n${JSON.stringify(result.output, null, 2).slice(0, 5000)}\n\`\`\``,
+          );
         }
       },
       prompt: resolvedPrompt,
     });
 
-    this.logger.info(`Agent completed in ${steps.length} steps`);
+    if (logFile) {
+      logFile.log(
+        this.logger,
+        LogLevel.INFO,
+        "Result",
+        `Completed in ${steps.length} steps`,
+      );
+    } else {
+      this.logger.info(`Agent completed in ${steps.length} steps`);
+    }
   }
 }

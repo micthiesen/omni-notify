@@ -1,4 +1,6 @@
+import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
+import config from "../utils/config.js";
 import { isValidCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
 import { isTrackingCandidate } from "./filter/keywords.js";
@@ -17,11 +19,19 @@ export class DeliveryPipeline {
   private ctx: JmapContext;
   private parcelApiKey: string;
   private processing = false;
+  private runLog?: LogFile;
+  private rejectionLog?: LogFile;
 
   constructor(ctx: JmapContext, parcelApiKey: string, logger: Logger) {
     this.ctx = ctx;
     this.parcelApiKey = parcelApiKey;
     this.logger = logger;
+
+    if (config.LOGS_PATH) {
+      const dir = `${config.LOGS_PATH}/parcel-tracker`;
+      this.runLog = new LogFile(`${dir}/latest-run.log`, "overwrite");
+      this.rejectionLog = new LogFile(`${dir}/rejections.log`, "append");
+    }
   }
 
   async onEmailStateChange(): Promise<void> {
@@ -120,6 +130,7 @@ export class DeliveryPipeline {
     const deliveries = await extractDeliveries(
       { subject: email.subject, from: email.from, textBody: email.textBody },
       this.logger,
+      this.runLog,
     );
 
     if (deliveries.length === 0) {
@@ -168,6 +179,7 @@ export class DeliveryPipeline {
       },
       this.parcelApiKey,
       this.logger,
+      this.rejectionLog,
     );
 
     if (result.status === "error") {

@@ -1,4 +1,6 @@
+import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
+import { LogLevel } from "@micthiesen/mitools/logging";
 import { generateText, Output } from "ai";
 import { getExtractionModel } from "../../ai/registry.js";
 import { getCarrierCodesForPrompt } from "../carriers/carrierMap.js";
@@ -9,6 +11,7 @@ const MAX_BODY_CHARS = 3000;
 export async function extractDeliveries(
   email: { subject: string; from: string; textBody: string },
   logger: Logger,
+  logFile?: LogFile,
 ): Promise<{ tracking_number: string; carrier_code: string; description: string }[]> {
   const { model, modelId } = getExtractionModel();
   const carrierCodes = await getCarrierCodesForPrompt(logger);
@@ -28,7 +31,13 @@ Subject: ${email.subject}
 
 ${body}`;
 
-  logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
+  if (logFile) {
+    logFile.log(logger, LogLevel.INFO, `Extraction Prompt (${modelId})`, prompt, {
+      consoleSummary: `Extraction prompt (${modelId}) [${prompt.length} chars]`,
+    });
+  } else {
+    logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
+  }
 
   const result = await generateText({
     model,
@@ -36,7 +45,12 @@ ${body}`;
     prompt,
   });
 
-  logger.info(`Extraction response: ${JSON.stringify(result.output)}`);
+  const response = JSON.stringify(result.output);
+  if (logFile) {
+    logFile.log(logger, LogLevel.INFO, "Extraction Response", response);
+  } else {
+    logger.info(`Extraction response: ${response}`);
+  }
   logger.info(
     `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
   );
