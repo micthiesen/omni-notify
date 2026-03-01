@@ -19,6 +19,10 @@ export async function extractDeliveries(
 For carrier_code, use the short code (left of the colon) from this list — not the display name. If the carrier is not in this list, omit that tracking number entirely.
 ${carrierCodes}
 
+Carrier guidance:
+- Dragonfly: Always use carrier code "intelc" (Dragonfly is Intelcom's brand).
+- Tracking numbers starting with "JY" (e.g. JY25CA10A002279541): Use carrier code "uniuni". These are UniUni last-mile deliveries, often from AliExpress shipments. Prefer "uniuni" over any AliExpress carrier.
+
 From: ${email.from}
 Subject: ${email.subject}
 

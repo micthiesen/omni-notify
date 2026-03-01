@@ -159,6 +159,38 @@ const BLACKLISTED_CARRIERS = new Set([
   "fastnz", // Fastway NZ
   "pbt", // PBT New Zealand
   "parcelpnt", // ParcelPoint (AU)
+
+  // Spain (domestic last-mile)
+  "acs", // ACS Courier (Greece)
+  "asmred", // GLS Spain
+  "celeritas", // Celeritas
+  "chrexp", // Correos Express
+  "cor", // Correos
+  "envia", // Ontime - Envialia
+  "mrw", // MRW
+  "nacex", // Nacex
+  "seur", // SEUR
+  "tipsac", // Tipsa
+  "tourline", // CTT Express (Spain/Portugal)
+  "zel", // Zeleris
+
+  // Italy (domestic last-mile)
+  "bartol", // Bartolini
+  "glsit", // GLS Italy
+
+  // Malta / Turkey / Pakistan
+  "malta", // MaltaPost
+  "turk", // PTT (Turkey)
+  "pk", // Pakistan Post
+
+  // UK / Germany heavy goods & niche
+  "arrowxl", // Arrow XL (UK heavy goods)
+  "dx", // DX (UK)
+  "her2mann", // Hermes 2-Mann-Handling (German heavy goods)
+
+  // Niche cargo
+  "hawai", // Hawaiian Air Cargo
+  "koreanair", // Korean Air Cargo
 ]);
 
 function isBlacklistedCarrier(code: string): boolean {
