@@ -3,6 +3,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { generateText, Output } from "ai";
 import { getExtractionModel } from "../../ai/registry.js";
+import { codeBlock } from "../../utils/markdown.js";
 import { getCarrierCodesForPrompt } from "../carriers/carrierMap.js";
 import { deliveryExtractionSchema } from "./schema.js";
 
@@ -32,9 +33,13 @@ Subject: ${email.subject}
 ${body}`;
 
   if (logFile) {
-    logFile.log(logger, LogLevel.INFO, `Extraction Prompt (${modelId})`, prompt, {
-      consoleSummary: `Extraction prompt (${modelId}) [${prompt.length} chars]`,
-    });
+    logFile.log(
+      logger,
+      LogLevel.INFO,
+      `Extraction Prompt (${modelId})`,
+      codeBlock(prompt),
+      { consoleSummary: `Extraction prompt (${modelId}) [${prompt.length} chars]` },
+    );
   } else {
     logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
   }
@@ -45,9 +50,14 @@ ${body}`;
     prompt,
   });
 
-  const response = JSON.stringify(result.output);
+  const response = JSON.stringify(result.output, null, 2);
   if (logFile) {
-    logFile.log(logger, LogLevel.INFO, "Extraction Response", response);
+    logFile.log(
+      logger,
+      LogLevel.INFO,
+      "Extraction Response",
+      codeBlock(response, "json"),
+    );
   } else {
     logger.info(`Extraction response: ${response}`);
   }

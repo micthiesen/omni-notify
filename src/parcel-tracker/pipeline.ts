@@ -19,7 +19,6 @@ export class DeliveryPipeline {
   private ctx: JmapContext;
   private parcelApiKey: string;
   private processing = false;
-  private runLog?: LogFile;
   private rejectionLog?: LogFile;
 
   constructor(ctx: JmapContext, parcelApiKey: string, logger: Logger) {
@@ -29,8 +28,7 @@ export class DeliveryPipeline {
 
     if (config.LOGS_PATH) {
       const dir = `${config.LOGS_PATH}/parcel-tracker`;
-      this.runLog = new LogFile(`${dir}/latest-run.log`, "overwrite");
-      this.rejectionLog = new LogFile(`${dir}/rejections.log`, "append");
+      this.rejectionLog = new LogFile(`${dir}/rejections.md`, "append");
     }
   }
 
@@ -102,10 +100,15 @@ export class DeliveryPipeline {
       this.logger.debug(`No tracking candidates in ${emails.length} new email(s)`);
     }
 
+    // Create a fresh run log per batch
+    const runLog = config.LOGS_PATH
+      ? new LogFile(`${config.LOGS_PATH}/parcel-tracker/latest-run.md`, "overwrite")
+      : undefined;
+
     // Process each candidate
     for (const email of candidates) {
       try {
-        await this.processEmail(email);
+        await this.processEmail(email, runLog);
       } catch (error) {
         this.logger.error(
           `Failed to process email "${email.subject}"`,
@@ -119,18 +122,21 @@ export class DeliveryPipeline {
     saveEmailState(newState);
   }
 
-  private async processEmail(email: {
-    id: string;
-    subject: string;
-    from: string;
-    textBody: string;
-  }): Promise<void> {
+  private async processEmail(
+    email: {
+      id: string;
+      subject: string;
+      from: string;
+      textBody: string;
+    },
+    runLog?: LogFile,
+  ): Promise<void> {
     this.logger.info(`Extracting from: "${email.subject}" (from: ${email.from})`);
 
     const deliveries = await extractDeliveries(
       { subject: email.subject, from: email.from, textBody: email.textBody },
       this.logger,
-      this.runLog,
+      runLog,
     );
 
     if (deliveries.length === 0) {

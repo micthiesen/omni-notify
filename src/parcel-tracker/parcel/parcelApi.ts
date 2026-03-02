@@ -1,6 +1,7 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import got, { type HTTPError } from "got";
+import { codeBlock } from "../../utils/markdown.js";
 
 const API_URL = "https://api.parcel.app/external/add-delivery/";
 
@@ -48,8 +49,8 @@ export async function submitDelivery(
     );
     if (statusCode && statusCode >= 400 && statusCode < 500) {
       rejectionLog?.section(
-        `Rejected: ${params.trackingNumber} (${statusCode})`,
-        `**Request:**\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n\n**Response:**\n\`\`\`\n${body}\n\`\`\``,
+        `Rejected: ${params.trackingNumber} (${statusCode}) — ${new Date().toISOString()}`,
+        `**Request:**\n${codeBlock(JSON.stringify(payload, null, 2), "json")}\n\n**Response:**\n${codeBlock(String(body))}`,
       );
       return { status: "rejected", statusCode };
     }

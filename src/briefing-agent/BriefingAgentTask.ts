@@ -9,6 +9,7 @@ import { fetchUrl } from "../ai/tools/fetchUrl.js";
 import { webSearch } from "../ai/tools/webSearch.js";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
 import config from "../utils/config.js";
+import { codeBlock } from "../utils/markdown.js";
 import { addBriefingNotification } from "./persistence.js";
 import { resolveAllPlaceholders } from "./placeholders.js";
 
@@ -47,10 +48,7 @@ export class BriefingAgentTask extends ScheduledTask {
 
   public async run(): Promise<void> {
     const logFile = config.LOGS_PATH
-      ? new LogFile(
-          `${config.LOGS_PATH}/briefings/${this.name}-latest.log`,
-          "overwrite",
-        )
+      ? new LogFile(`${config.LOGS_PATH}/briefings/${this.name}-latest.md`, "overwrite")
       : undefined;
 
     const resolvedPrompt = resolveAllPlaceholders(this.prompt, this.name);
@@ -61,7 +59,7 @@ export class BriefingAgentTask extends ScheduledTask {
         this.logger,
         LogLevel.INFO,
         `Briefing Prompt (${modelId})`,
-        resolvedPrompt,
+        codeBlock(resolvedPrompt),
         {
           consoleSummary: `Starting briefing agent (${modelId}) [${resolvedPrompt.length} chars]`,
         },
@@ -128,7 +126,7 @@ export class BriefingAgentTask extends ScheduledTask {
           }
           logFile?.section(
             `Tool Call: ${call.toolName}`,
-            `\`\`\`json\n${JSON.stringify(call.input, null, 2)}\n\`\`\``,
+            codeBlock(JSON.stringify(call.input, null, 2), "json"),
           );
         }
         for (const result of toolResults) {
@@ -151,7 +149,7 @@ export class BriefingAgentTask extends ScheduledTask {
           }
           logFile?.section(
             `Tool Result: ${result.toolName}`,
-            `\`\`\`json\n${JSON.stringify(result.output, null, 2).slice(0, 5000)}\n\`\`\``,
+            codeBlock(JSON.stringify(result.output, null, 2).slice(0, 5000), "json"),
           );
         }
       },
