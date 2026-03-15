@@ -2,7 +2,8 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import config from "../../utils/config.js";
 import type { CalendarEventExtraction } from "../extraction/schema.js";
 
-const CALDAV_BASE = "https://caldav.fastmail.com/dav/calendars";
+const CALDAV_HOST = "https://caldav.fastmail.com";
+const CALDAV_BASE = `${CALDAV_HOST}/dav/calendars`;
 
 type CreateResult =
   | { status: "success"; eventUid: string }
@@ -59,8 +60,9 @@ export async function discoverCalendarUrl(logger: Logger): Promise<string> {
     (c) => c.name.toLowerCase() === "default" || c.name.toLowerCase() === "personal",
   );
   const selected = preferred ?? calendarUrls[0];
-  logger.info(`Using calendar: ${selected.name} (${selected.href})`);
-  return selected.href;
+  const calendarUrl = `${CALDAV_HOST}${selected.href}`;
+  logger.info(`Using calendar: ${selected.name} (${calendarUrl})`);
+  return calendarUrl;
 }
 
 /** Create a calendar event via CalDAV PUT with an iCalendar body. */
