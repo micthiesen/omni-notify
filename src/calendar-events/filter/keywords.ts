@@ -10,6 +10,8 @@ const BLACKLISTED_SENDERS = [
   "@reddit.com",
   "noreply@github.com",
   "@medium.com",
+  "@substack.com",
+  "@patreon.com",
   "newsletter@",
   "marketing@",
   "promo@",
