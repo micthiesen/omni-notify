@@ -2,10 +2,14 @@ import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
+import { createCalendarPipeline } from "./calendar-events/index.js";
+import { createJmapClient } from "./jmap/client.js";
+import type { StateChangeHandler } from "./jmap/eventSource.js";
+import { createEventSource } from "./jmap/eventSource.js";
 import { loadChannelsConfig } from "./live-check/filters/index.js";
 import { Platform } from "./live-check/platforms/index.js";
 import LiveCheckTask from "./live-check/task.js";
-import { startParcelTracker } from "./parcel-tracker/index.js";
+import { createParcelPipeline } from "./parcel-tracker/index.js";
 import { Scheduler } from "./scheduling/Scheduler.js";
 import config from "./utils/config.js";
 
@@ -27,12 +31,12 @@ for (const config of loadBriefingConfigs(logger)) {
   if (task) scheduler.register(task);
 }
 
-// Start parcel tracker (push-based, not cron-scheduled)
-let cleanupParcelTracker: (() => void) | undefined;
+// Start JMAP-based features (parcel tracker + calendar events)
+let cleanupEventSource: (() => void) | undefined;
 try {
-  cleanupParcelTracker = await startParcelTracker(logger);
+  cleanupEventSource = await startJmapFeatures(logger);
 } catch (error) {
-  logger.error("Failed to start parcel tracker", (error as Error).message);
+  logger.error("Failed to start JMAP features", (error as Error).message);
 }
 
 // Start scheduler (runs tasks immediately, then on their schedules)
@@ -46,7 +50,7 @@ async function shutdown(signal: string): Promise<void> {
   isShuttingDown = true;
 
   logger.info(`Received ${signal}, shutting down gracefully...`);
-  cleanupParcelTracker?.();
+  cleanupEventSource?.();
   await scheduler.shutdown();
   logger.info("Shutdown complete");
   process.exit(0);
@@ -54,3 +58,33 @@ async function shutdown(signal: string): Promise<void> {
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+async function startJmapFeatures(
+  parentLogger: Logger,
+): Promise<(() => void) | undefined> {
+  if (!config.FASTMAIL_APP_PASSWORD) {
+    parentLogger.info("JMAP features disabled: missing FASTMAIL_APP_PASSWORD");
+    return undefined;
+  }
+
+  const jmapLogger = parentLogger.extend("JMAP");
+  const ctx = await createJmapClient(config.FASTMAIL_APP_PASSWORD, jmapLogger);
+
+  // Create pipelines
+  const handlers: StateChangeHandler[] = [];
+
+  const parcelHandler = createParcelPipeline(ctx, parentLogger);
+  if (parcelHandler) handlers.push(parcelHandler);
+
+  const calendarHandler = createCalendarPipeline(ctx, parentLogger);
+  if (calendarHandler) handlers.push(calendarHandler);
+
+  if (handlers.length === 0) {
+    jmapLogger.info("No JMAP pipelines active");
+    return undefined;
+  }
+
+  const closeEventSource = await createEventSource(ctx, handlers, jmapLogger);
+  jmapLogger.info(`Started with ${handlers.length} pipeline(s)`);
+  return closeEventSource;
+}

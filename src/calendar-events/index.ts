@@ -2,20 +2,20 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import type { JmapContext } from "../jmap/client.js";
 import type { StateChangeHandler } from "../jmap/eventSource.js";
 import config from "../utils/config.js";
-import { DeliveryPipeline } from "./pipeline.js";
+import { CalendarEventPipeline } from "./pipeline.js";
 
-export function createParcelPipeline(
+export function createCalendarPipeline(
   ctx: JmapContext,
   parentLogger: Logger,
 ): StateChangeHandler | undefined {
-  const logger = parentLogger.extend("ParcelTracker");
+  const logger = parentLogger.extend("CalendarEvents");
 
-  if (!config.PARCEL_API_KEY) {
-    logger.info("Disabled: missing PARCEL_API_KEY");
+  if (!config.FASTMAIL_USERNAME) {
+    logger.info("Disabled: missing FASTMAIL_USERNAME (required for CalDAV)");
     return undefined;
   }
 
-  const pipeline = new DeliveryPipeline(ctx, config.PARCEL_API_KEY, logger);
+  const pipeline = new CalendarEventPipeline(ctx, logger);
 
   logger.info("Pipeline created");
   return () => {

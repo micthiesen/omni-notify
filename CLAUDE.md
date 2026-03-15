@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**omni-notify** monitors livestream platforms (YouTube, Twitch) and sends Pushover notifications when channels go live or offline. Runs on a 20-second cron schedule with random jitter.
+**omni-notify** monitors livestream platforms (YouTube, Twitch), emails (via Fastmail JMAP), and more — sending Pushover notifications and taking automated actions. Features include live-check notifications, AI briefing agents, parcel tracking from emails, and automatic calendar event creation from emails.
 
 ## Quick Reference
 
@@ -46,6 +46,26 @@ src/
 ├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
 │   ├── BriefingAgentTask.ts # Config-driven task class
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
+├── jmap/                    # Shared Fastmail JMAP infrastructure
+│   ├── client.ts            # JMAP session + account resolution
+│   ├── eventSource.ts       # SSE for real-time email state changes
+│   ├── emailFetcher.ts      # Fetch new emails via JMAP changes API
+│   └── htmlToText.ts        # HTML email body → plain text
+├── parcel-tracker/          # Auto-submit tracking numbers from emails to Parcel.app
+│   ├── index.ts             # Pipeline factory
+│   ├── pipeline.ts          # Email → filter → LLM extract → Parcel API
+│   ├── persistence.ts       # Dedup gate + JMAP state (SQLite)
+│   ├── extraction/          # LLM tracking number extraction
+│   ├── filter/              # Email candidate filtering (keywords, carriers)
+│   ├── carriers/            # Parcel API carrier list + blacklist
+│   └── parcel/              # Parcel.app API client
+├── calendar-events/         # Auto-create calendar events from emails via CalDAV
+│   ├── index.ts             # Pipeline factory
+│   ├── pipeline.ts          # Email → filter → LLM extract → CalDAV PUT
+│   ├── persistence.ts       # Dedup gate + JMAP state (SQLite)
+│   ├── extraction/          # LLM calendar event extraction
+│   ├── filter/              # Email candidate filtering (booking/travel keywords)
+│   └── fastmail/            # CalDAV calendar API (raw iCalendar over HTTP)
 ├── emails/                  # Email utilities (general purpose)
 └── utils/
     └── config.ts            # Environment config with zod validation
@@ -212,16 +232,23 @@ PUSHOVER_USER=xxx
 PUSHOVER_TOKEN=xxx                      # Fallback for all notification types
 PUSHOVER_LIVE_TOKEN=xxx                 # Optional: override for live-check notifications
 PUSHOVER_BRIEFING_TOKEN=xxx             # Optional: override for briefing notifications
+PUSHOVER_PARCEL_TOKEN=xxx               # Optional: override for parcel notifications
+PUSHOVER_CALENDAR_TOKEN=xxx             # Optional: override for calendar notifications
 YT_CHANNEL_NAMES=@channel1,@channel2    # YouTube handles
 TWITCH_CHANNEL_NAMES=user1,user2        # Twitch usernames
 OFFLINE_NOTIFICATIONS=true|false
 BRIEFING_MODEL=google:gemini-3-pro-preview  # Model for briefing agents (provider:model)
 FILTER_MODEL=google:gemini-3-flash-preview  # Model for stream notification filters
+EXTRACTION_MODEL=google:gemini-3-flash-preview  # Model for email extraction (parcel + calendar)
 GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Required for google: models
 ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
 OPENAI_API_KEY=xxx                      # Required for openai: models
 TAVILY_API_KEY=tvly-xxx                 # Tavily web search (for briefing agents)
 BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
+FASTMAIL_APP_PASSWORD=xxx               # Fastmail app password (JMAP + CalDAV)
+FASTMAIL_USERNAME=user@fastmail.com     # Fastmail username
+PARCEL_API_KEY=xxx                      # Parcel.app API key (enables parcel tracking)
+FASTMAIL_CALENDAR_ID=xxx                # Optional: CalDAV calendar ID (auto-discovers default)
 ```
 
 ## External Dependencies
@@ -253,6 +280,15 @@ BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
 - Query: `user(login:"xxx"){stream{title viewersCount}}`
 - Zod validates response schema
 - More stable than YouTube scraping
+
+### Fastmail Integration (JMAP + CalDAV)
+
+Both parcel-tracker and calendar-events share the same JMAP infrastructure (`src/jmap/`):
+- **JMAP** (via `jmap-jam`): Email monitoring — SSE event source triggers both pipelines on new emails
+- **CalDAV** (raw HTTP): Calendar event creation — `PUT` iCalendar files to Fastmail's CalDAV endpoint
+- Auth: Single `FASTMAIL_APP_PASSWORD` (Fastmail app password) used as bearer token for JMAP and basic auth for CalDAV
+- Each pipeline maintains its own JMAP email state cursor (independent processing)
+- `jmap-jam` only supports email methods; calendar uses raw `fetch()` against `https://caldav.fastmail.com/dav/calendars/`
 
 ## Common Tasks
 

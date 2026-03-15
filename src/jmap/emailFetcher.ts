@@ -1,6 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { htmlToText } from "../htmlToText.js";
 import type { JmapContext } from "./client.js";
+import { htmlToText } from "./htmlToText.js";
 
 export interface FetchedEmail {
   id: string;

@@ -1,11 +1,11 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
+import type { JmapContext } from "../jmap/client.js";
+import { fetchNewEmails } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
 import { isValidCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
 import { isTrackingCandidate } from "./filter/keywords.js";
-import type { JmapContext } from "./jmap/client.js";
-import { fetchNewEmails } from "./jmap/emailFetcher.js";
 import { submitDelivery } from "./parcel/parcelApi.js";
 import {
   getEmailState,
