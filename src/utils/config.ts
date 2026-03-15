@@ -34,6 +34,7 @@ const configSchema = baseConfigSchema
     LOGS_PATH: z.string().optional(),
     CHANNELS_CONFIG_PATH: z.string().optional(),
     BRIEFINGS_PATH: z.string().optional(),
+    FASTMAIL_API_TOKEN: z.string().optional(),
     FASTMAIL_APP_PASSWORD: z.string().optional(),
     FASTMAIL_USERNAME: z.string().optional(),
     PARCEL_API_KEY: z.string().optional(),

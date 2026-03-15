@@ -62,13 +62,13 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 async function startJmapFeatures(
   parentLogger: Logger,
 ): Promise<(() => void) | undefined> {
-  if (!config.FASTMAIL_APP_PASSWORD) {
-    parentLogger.info("JMAP features disabled: missing FASTMAIL_APP_PASSWORD");
+  if (!config.FASTMAIL_API_TOKEN) {
+    parentLogger.info("JMAP features disabled: missing FASTMAIL_API_TOKEN");
     return undefined;
   }
 
   const jmapLogger = parentLogger.extend("JMAP");
-  const ctx = await createJmapClient(config.FASTMAIL_APP_PASSWORD, jmapLogger);
+  const ctx = await createJmapClient(config.FASTMAIL_API_TOKEN, jmapLogger);
 
   // Create pipelines
   const handlers: StateChangeHandler[] = [];

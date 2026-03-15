@@ -245,7 +245,8 @@ ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
 OPENAI_API_KEY=xxx                      # Required for openai: models
 TAVILY_API_KEY=tvly-xxx                 # Tavily web search (for briefing agents)
 BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
-FASTMAIL_APP_PASSWORD=xxx               # Fastmail app password (JMAP + CalDAV)
+FASTMAIL_API_TOKEN=xxx                  # Fastmail API token (JMAP email monitoring)
+FASTMAIL_APP_PASSWORD=xxx               # Fastmail app password (CalDAV calendar creation)
 FASTMAIL_USERNAME=user@fastmail.com     # Fastmail username
 PARCEL_API_KEY=xxx                      # Parcel.app API key (enables parcel tracking)
 FASTMAIL_CALENDAR_ID=xxx                # Optional: CalDAV calendar ID (auto-discovers default)
@@ -286,7 +287,7 @@ FASTMAIL_CALENDAR_ID=xxx                # Optional: CalDAV calendar ID (auto-dis
 Both parcel-tracker and calendar-events share the same JMAP infrastructure (`src/jmap/`):
 - **JMAP** (via `jmap-jam`): Email monitoring — SSE event source triggers both pipelines on new emails
 - **CalDAV** (raw HTTP): Calendar event creation — `PUT` iCalendar files to Fastmail's CalDAV endpoint
-- Auth: Single `FASTMAIL_APP_PASSWORD` (Fastmail app password) used as bearer token for JMAP and basic auth for CalDAV
+- Auth: `FASTMAIL_API_TOKEN` (bearer token for JMAP), `FASTMAIL_APP_PASSWORD` (basic auth for CalDAV)
 - Each pipeline maintains its own JMAP email state cursor (independent processing)
 - `jmap-jam` only supports email methods; calendar uses raw `fetch()` against `https://caldav.fastmail.com/dav/calendars/`
 
