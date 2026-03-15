@@ -6,7 +6,7 @@ export type StateChangeHandler = (accountId: string) => void;
 
 const MIN_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
-const HEARTBEAT_TIMEOUT_MS = 3 * 60_000;
+const HEARTBEAT_TIMEOUT_MS = 5 * 60_000;
 
 export async function createEventSource(
   ctx: JmapContext,

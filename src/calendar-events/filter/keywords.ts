@@ -40,6 +40,8 @@ const AUTO_PASS_SENDERS = [
   "@jetblue.com",
   "@alaskaair.com",
   "@spirit.com",
+  "@porterairlines.com",
+  "@flyflair.com",
   // Hotels
   "@marriott.com",
   "@hilton.com",
@@ -50,6 +52,7 @@ const AUTO_PASS_SENDERS = [
   "@booking.com",
   "@hotels.com",
   "@expedia.com",
+  "@fairmonthotels.com",
   // Events
   "@eventbrite.com",
   "@ticketmaster.com",
@@ -60,6 +63,11 @@ const AUTO_PASS_SENDERS = [
   // Medical
   "@zocdoc.com",
   "@healthgrades.com",
+  // Ferries
+  "@bcferries.com",
+  // Restaurants
+  "@opentable.com",
+  "@resy.com",
   // Travel
   "@kayak.com",
   "@google.com",
