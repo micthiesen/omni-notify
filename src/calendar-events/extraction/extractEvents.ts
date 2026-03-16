@@ -91,6 +91,10 @@ ${body}`;
     messages: [{ role: "user", content }],
   });
 
+  if (result.reasoningText && logFile) {
+    logFile.log(logger, LogLevel.INFO, "Reasoning", codeBlock(result.reasoningText));
+  }
+
   const response = JSON.stringify(result.output, null, 2);
   if (logFile) {
     logFile.log(

@@ -109,7 +109,11 @@ export class BriefingAgentTask extends ScheduledTask {
       },
       tools,
       stopWhen: stepCountIs(20),
-      onStepFinish: ({ text, toolCalls, toolResults }) => {
+      onStepFinish: ({ text, reasoning, toolCalls, toolResults }) => {
+        if (reasoning.length > 0) {
+          const reasoningText = reasoning.map((r) => r.text).join("\n");
+          logFile?.section("Reasoning", codeBlock(reasoningText));
+        }
         if (text) {
           logFile?.section("Step Text", text);
           this.logger.debug(`Step text: ${text}`);
