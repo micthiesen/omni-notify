@@ -2,13 +2,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import type { JmapContext } from "../../jmap/client.js";
 import type { EmailAttachment } from "../../jmap/emailFetcher.js";
 
-const ALLOWED_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/gif",
-  "image/webp",
-]);
+const ALLOWED_MIME_TYPES = new Set(["application/pdf"]);
 
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024; // 5 MB
 

@@ -37,6 +37,7 @@ Guidelines:
 - For flights: create one event per flight segment (outbound, return, connections)
 - For hotel stays: create one event spanning check-in to check-out
 - For appointments: use the appointment time, not the "arrive by" time
+- Always extract endTime when a time range is given (e.g. "8:00 a.m. – 5:00 p.m." → startTime 08:00, endTime 17:00). Do not omit the end time
 - Infer timezone from location context when not explicitly stated (e.g. JFK airport → America/New_York, a restaurant in London → Europe/London, a hotel in Tokyo → Asia/Tokyo). Only leave timeZone empty if there are no geographic clues at all
 - If only a date is mentioned with no time, set allDay to true
 - Extract events even when details are partial — include what's available (e.g. a date in the subject line with no time → allDay event)
