@@ -1,9 +1,10 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
-import { generateText, Output } from "ai";
+import { generateText, Output, type UserContent } from "ai";
 import { getExtractionModel } from "../../ai/registry.js";
 import { codeBlock } from "../../utils/markdown.js";
+import type { DownloadedAttachment } from "./attachments.js";
 import {
   type CalendarEventExtraction,
   calendarEventExtractionSchema,
@@ -15,6 +16,7 @@ export async function extractCalendarEvents(
   email: { subject: string; from: string; textBody: string },
   logger: Logger,
   logFile?: LogFile,
+  attachments?: DownloadedAttachment[],
 ): Promise<CalendarEventExtraction["events"]> {
   const { model, modelId } = getExtractionModel();
   const body = email.textBody.slice(0, MAX_BODY_CHARS);
@@ -26,17 +28,20 @@ export async function extractCalendarEvents(
     day: "numeric",
   });
 
-  const prompt = `Extract calendar events from this email that the recipient would want on their personal calendar. Return an empty events array if no actionable events are found.
+  const promptText = `Extract calendar events from this email that the recipient would want on their personal calendar. Return an empty events array if no actionable events are found.
 
 Guidelines:
-- Only extract real, scheduled events: appointments, flights, hotel stays, concert tickets, reservations, meetings, etc.
-- Do NOT extract: sale deadlines, marketing urgency ("offer expires"), subscription renewals, shipping delivery windows, password expiration warnings, generic reminders without specific dates
+- Extract real, scheduled events: appointments, flights, hotel stays, concert tickets, reservations, meetings, building maintenance/shutdowns, move-in/out dates, etc.
+- Also extract building/strata notices (water shutdowns, power outages, maintenance windows, fire alarm tests) — these affect the recipient's schedule
+- Do NOT extract: sale deadlines, marketing urgency ("offer expires"), subscription renewals, password expiration warnings
 - For flights: create one event per flight segment (outbound, return, connections)
 - For hotel stays: create one event spanning check-in to check-out
 - For appointments: use the appointment time, not the "arrive by" time
 - Infer timezone from location context when not explicitly stated (e.g. JFK airport → America/New_York, a restaurant in London → Europe/London, a hotel in Tokyo → Asia/Tokyo). Only leave timeZone empty if there are no geographic clues at all
 - If only a date is mentioned with no time, set allDay to true
-- Prefer explicit information over inference. If the email doesn't clearly state when something happens, don't guess
+- Extract events even when details are partial — include what's available (e.g. a date in the subject line with no time → allDay event)
+- Look for dates in subject lines, headers, and filenames mentioned in the email, not just the body text
+- If attachments are included, extract event details from them as well (PDFs, images with text)
 - Title should be concise and descriptive in Title Case (e.g. "Dentist Appointment", "Flight YYZ → YVR", "Hamilton at Princess of Wales Theatre")
 
 Today's date: ${currentDate}
@@ -46,22 +51,43 @@ Subject: ${email.subject}
 
 ${body}`;
 
+  const attachmentNames = attachments?.map((a) => a.name).join(", ");
+  const logSummary = attachmentNames
+    ? `Extraction prompt (${modelId}) [${promptText.length} chars, attachments: ${attachmentNames}]`
+    : `Extraction prompt (${modelId}) [${promptText.length} chars]`;
+
   if (logFile) {
     logFile.log(
       logger,
       LogLevel.INFO,
       `Extraction Prompt (${modelId})`,
-      codeBlock(prompt),
-      { consoleSummary: `Extraction prompt (${modelId}) [${prompt.length} chars]` },
+      codeBlock(promptText),
+      {
+        consoleSummary: logSummary,
+      },
     );
   } else {
-    logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
+    logger.info(logSummary);
+  }
+
+  // Build content parts: text + optional file attachments
+  const content: UserContent = [{ type: "text", text: promptText }];
+
+  if (attachments && attachments.length > 0) {
+    for (const attachment of attachments) {
+      content.push({
+        type: "file",
+        data: attachment.data,
+        mediaType: attachment.mimeType,
+      });
+    }
+    logger.info(`Including ${attachments.length} attachment(s): ${attachmentNames}`);
   }
 
   const result = await generateText({
     model,
     output: Output.object({ schema: calendarEventExtractionSchema }),
-    prompt,
+    messages: [{ role: "user", content }],
   });
 
   const response = JSON.stringify(result.output, null, 2);

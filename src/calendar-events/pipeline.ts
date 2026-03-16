@@ -2,8 +2,10 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import type { JmapContext } from "../jmap/client.js";
+import type { EmailAttachment } from "../jmap/emailFetcher.js";
 import { fetchNewEmails } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
+import { downloadSupportedAttachments } from "./extraction/attachments.js";
 import { extractCalendarEvents } from "./extraction/extractEvents.js";
 import { createCalendarEvent, discoverCalendarUrl } from "./fastmail/calendarApi.js";
 import { isCalendarCandidate } from "./filter/keywords.js";
@@ -128,11 +130,24 @@ export class CalendarEventPipeline {
   }
 
   private async processEmail(
-    email: { id: string; subject: string; from: string; textBody: string },
+    email: {
+      id: string;
+      subject: string;
+      from: string;
+      textBody: string;
+      attachments: EmailAttachment[];
+    },
     runLog?: LogFile,
   ): Promise<void> {
     this.logger.info(
       `Extracting events from: "${email.subject}" (from: ${email.from})`,
+    );
+
+    // Download supported attachments (PDFs, images)
+    const downloaded = await downloadSupportedAttachments(
+      this.ctx,
+      email.attachments,
+      this.logger,
     );
 
     let events: Awaited<ReturnType<typeof extractCalendarEvents>>;
@@ -141,6 +156,7 @@ export class CalendarEventPipeline {
         { subject: email.subject, from: email.from, textBody: email.textBody },
         this.logger,
         runLog,
+        downloaded.length > 0 ? downloaded : undefined,
       );
     } catch (error) {
       this.logger.error(

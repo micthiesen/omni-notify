@@ -72,6 +72,8 @@ const AUTO_PASS_SENDERS = [
   "@kayak.com",
   "@google.com",
   "@tripadvisor.com",
+  // Building/strata management
+  "@tribemgmt.com",
   // Scheduling
   "@calendly.com",
   "@acuityscheduling.com",
@@ -110,6 +112,13 @@ const CALENDAR_KEYWORDS = [
   "dr.",
   "clinic",
   "dental",
+  // Building/strata
+  "shutdown",
+  "maintenance",
+  "strata",
+  "building notice",
+  "power outage",
+  "water shutoff",
   // General
   "calendar",
   "invite",

@@ -2,12 +2,20 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import type { JmapContext } from "./client.js";
 import { htmlToText } from "./htmlToText.js";
 
+export interface EmailAttachment {
+  blobId: string;
+  name: string;
+  type: string; // MIME type
+  size: number;
+}
+
 export interface FetchedEmail {
   id: string;
   subject: string;
   from: string;
   textBody: string;
   receivedAt: string;
+  attachments: EmailAttachment[];
 }
 
 export interface FetchResult {
@@ -31,7 +39,15 @@ export async function fetchNewEmails(
     const emails = t.Email.get({
       accountId,
       ids: changes.$ref("/created"),
-      properties: ["id", "subject", "from", "textBody", "bodyValues", "receivedAt"],
+      properties: [
+        "id",
+        "subject",
+        "from",
+        "textBody",
+        "bodyValues",
+        "receivedAt",
+        "attachments",
+      ],
       fetchTextBodyValues: true,
     });
 
@@ -55,12 +71,14 @@ export async function fetchNewEmails(
       from: formatFrom(e.from),
       textBody: extractTextBody(e),
       receivedAt: (e.receivedAt as string) ?? "",
+      attachments: extractAttachments(e),
     };
     logger.debug(
       `Email: "${email.subject}" from=${email.from} ` +
         `bodyParts=${JSON.stringify(e.textBody)} ` +
         `bodyValues=${JSON.stringify(e.bodyValues)} ` +
-        `textBody=${JSON.stringify(email.textBody.slice(0, 200))}`,
+        `textBody=${JSON.stringify(email.textBody.slice(0, 200))} ` +
+        `attachments=${email.attachments.length}`,
     );
     return email;
   });
@@ -87,4 +105,21 @@ function extractTextBody(email: Record<string, unknown>): string {
       return p.type !== "text/plain" ? htmlToText(value) : value;
     })
     .join("\n");
+}
+
+function extractAttachments(email: Record<string, unknown>): EmailAttachment[] {
+  const attachments = email.attachments as
+    | { blobId?: string; name?: string; type?: string; size?: number }[]
+    | undefined;
+  if (!attachments) return [];
+  return attachments
+    .filter(
+      (a): a is typeof a & { blobId: string; type: string } => !!a.blobId && !!a.type,
+    )
+    .map((a) => ({
+      blobId: a.blobId,
+      name: a.name ?? "unnamed",
+      type: a.type,
+      size: a.size ?? 0,
+    }));
 }
