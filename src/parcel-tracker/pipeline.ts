@@ -3,6 +3,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import type { JmapContext } from "../jmap/client.js";
 import { fetchNewEmails } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
+import { logTimestamp } from "../utils/markdown.js";
 import { isValidCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
 import { isTrackingCandidate } from "./filter/keywords.js";
@@ -102,7 +103,10 @@ export class DeliveryPipeline {
 
     // Create a fresh run log per batch
     const runLog = config.LOGS_PATH
-      ? new LogFile(`${config.LOGS_PATH}/parcel-tracker/latest-run.md`, "overwrite")
+      ? new LogFile(
+          `${config.LOGS_PATH}/parcel-tracker/${logTimestamp()}.md`,
+          "overwrite",
+        )
       : undefined;
 
     // Process each candidate

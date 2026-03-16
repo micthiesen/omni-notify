@@ -5,6 +5,7 @@ import type { JmapContext } from "../jmap/client.js";
 import type { EmailAttachment } from "../jmap/emailFetcher.js";
 import { fetchNewEmails } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
+import { logTimestamp } from "../utils/markdown.js";
 import { downloadSupportedAttachments } from "./extraction/attachments.js";
 import { extractCalendarEvents } from "./extraction/extractEvents.js";
 import { createCalendarEvent, discoverCalendarUrl } from "./fastmail/calendarApi.js";
@@ -97,7 +98,10 @@ export class CalendarEventPipeline {
 
     // Create a fresh run log per batch
     const runLog = config.LOGS_PATH
-      ? new LogFile(`${config.LOGS_PATH}/calendar-events/latest-run.md`, "overwrite")
+      ? new LogFile(
+          `${config.LOGS_PATH}/calendar-events/${logTimestamp()}.md`,
+          "overwrite",
+        )
       : undefined;
 
     // Discover calendar URL once (lazy init + cache)

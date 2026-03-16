@@ -9,7 +9,7 @@ import { fetchUrl } from "../ai/tools/fetchUrl.js";
 import { webSearch } from "../ai/tools/webSearch.js";
 import { ScheduledTask } from "../scheduling/ScheduledTask.js";
 import config from "../utils/config.js";
-import { codeBlock } from "../utils/markdown.js";
+import { codeBlock, logTimestamp } from "../utils/markdown.js";
 import { addBriefingNotification } from "./persistence.js";
 import { resolveAllPlaceholders } from "./placeholders.js";
 
@@ -48,7 +48,10 @@ export class BriefingAgentTask extends ScheduledTask {
 
   public async run(): Promise<void> {
     const logFile = config.LOGS_PATH
-      ? new LogFile(`${config.LOGS_PATH}/briefings/${this.name}-latest.md`, "overwrite")
+      ? new LogFile(
+          `${config.LOGS_PATH}/briefings/${this.name}-${logTimestamp()}.md`,
+          "overwrite",
+        )
       : undefined;
 
     const resolvedPrompt = resolveAllPlaceholders(this.prompt, this.name);
