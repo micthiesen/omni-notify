@@ -4,7 +4,6 @@ import type { JmapContext } from "./client.js";
 
 export type StateChangeHandler = (accountId: string) => void;
 
-const FETCH_TIMEOUT_MS = 30_000;
 const MAX_CONNECTION_AGE_MS = 30 * 60_000;
 
 /**
@@ -14,10 +13,8 @@ const MAX_CONNECTION_AGE_MS = 30 * 60_000;
  * so the `eventsource` library's built-in auto-reconnect handles the polling loop.
  * Each cycle: connect → receive state → connection closes → auto-reconnect.
  *
- * Two resilience mechanisms guard against silent connection death:
- * 1. Fetch timeout: prevents hanging reconnect attempts (DNS issues, network problems)
- * 2. Max connection age: forces a reconnect every 30 min so idle connections don't go
- *    stale undetected (Fastmail doesn't send pings despite the ping parameter)
+ * Max connection age forces a reconnect every 30 min so idle connections don't go
+ * stale undetected (Fastmail doesn't send pings despite the ping parameter).
  */
 export async function createEventSource(
   ctx: JmapContext,
@@ -53,11 +50,7 @@ export async function createEventSource(
       fetch: (input, init) => {
         const headers = (init?.headers ?? {}) as Record<string, string>;
         headers.Authorization = bearerToken;
-        return globalThis.fetch(input, {
-          ...init,
-          headers,
-          signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        });
+        return globalThis.fetch(input, { ...init, headers });
       },
     });
 
