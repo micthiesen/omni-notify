@@ -80,7 +80,11 @@ export class BriefingAgentTask extends ScheduledTask {
         description:
           "Send a push notification to the user with your briefing. Call this once you have something interesting to share.",
         inputSchema: z.object({
-          title: z.string().describe("Short title for the notification"),
+          title: z
+            .string()
+            .describe(
+              "Short title for the notification, prefixed with a relevant emoji (e.g. '🌸 Cherry Blossom Festival in Vancouver')",
+            ),
           message: z.string().describe("The notification body with your summary"),
           url: z.string().url().describe("URL to the source"),
           url_title: z.string().describe("Link text for the URL (e.g. 'Read more')"),

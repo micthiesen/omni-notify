@@ -46,7 +46,7 @@ Guidelines:
 - Extract events even when details are partial — include what's available (e.g. a date in the subject line with no time → allDay event)
 - Look for dates in subject lines, headers, and filenames mentioned in the email, not just the body text
 - If attachments are included, extract event details from them as well (PDFs, images with text)
-- Title should be concise and descriptive in Title Case (e.g. "Dentist Appointment", "Flight YYZ → YVR", "Hamilton at Princess of Wales Theatre")
+- Title should be prefixed with a relevant emoji and be concise and descriptive in Title Case (e.g. "🦷 Dentist Appointment", "✈️ Flight YYZ → YVR", "🎭 Hamilton at Princess of Wales Theatre")
 
 Today's date: ${currentDate}
 

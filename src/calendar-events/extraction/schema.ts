@@ -6,7 +6,7 @@ export const calendarEventExtractionSchema = z.object({
       title: z
         .string()
         .describe(
-          "Short event title in Title Case (e.g. 'Dentist Appointment', 'Flight to Vancouver')",
+          "Short event title prefixed with a relevant emoji in Title Case (e.g. '🦷 Dentist Appointment', '✈️ Flight to Vancouver')",
         ),
       startDate: z.string().describe("ISO 8601 date, e.g. 2026-03-20"),
       endDate: z

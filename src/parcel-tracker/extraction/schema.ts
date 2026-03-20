@@ -10,7 +10,7 @@ export const deliveryExtractionSchema = z.object({
       description: z
         .string()
         .describe(
-          "Short title for the package in Title Case (e.g. 'Running Shoes', 'Kitchen Knife Set')",
+          "Short title for the package prefixed with a relevant emoji in Title Case (e.g. '👟 Running Shoes', '🔪 Kitchen Knife Set')",
         ),
     }),
   ),
