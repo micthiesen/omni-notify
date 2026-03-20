@@ -10,6 +10,7 @@ import { isTrackingCandidate } from "./filter/keywords.js";
 import { submitDelivery } from "./parcel/parcelApi.js";
 import {
   getEmailState,
+  getRecentTrackingNumbers,
   hasSubmittedDelivery,
   recordSubmittedDelivery,
   saveEmailState,
@@ -101,6 +102,26 @@ export class DeliveryPipeline {
       this.logger.debug(`No tracking candidates in ${emails.length} new email(s)`);
     }
 
+    // Pre-filter: skip emails that mention already-submitted tracking numbers
+    const knownNumbers = getRecentTrackingNumbers();
+    const newCandidates = candidates.filter((email) => {
+      const text = `${email.subject} ${email.textBody}`;
+      const match = [...knownNumbers].find((num) => text.includes(num));
+      if (match) {
+        this.logger.debug(
+          `Skipping "${email.subject}" — contains known tracking number ${match}`,
+        );
+        return false;
+      }
+      return true;
+    });
+
+    if (newCandidates.length < candidates.length) {
+      this.logger.info(
+        `Skipped ${candidates.length - newCandidates.length} email(s) with known tracking numbers`,
+      );
+    }
+
     // Create a fresh run log per batch
     const runLog = config.LOGS_PATH
       ? new LogFile(
@@ -110,7 +131,7 @@ export class DeliveryPipeline {
       : undefined;
 
     // Process each candidate
-    for (const email of candidates) {
+    for (const email of newCandidates) {
       try {
         await this.processEmail(email, runLog);
       } catch (error) {

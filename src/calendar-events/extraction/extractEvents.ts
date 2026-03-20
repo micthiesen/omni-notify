@@ -33,7 +33,10 @@ export async function extractCalendarEvents(
 Guidelines:
 - Extract real, scheduled events: appointments, flights, hotel stays, concert tickets, reservations, meetings, building maintenance/shutdowns, move-in/out dates, etc.
 - Also extract building/strata notices (water shutdowns, power outages, maintenance windows, fire alarm tests) — these affect the recipient's schedule
-- Do NOT extract: sale deadlines, marketing urgency ("offer expires"), subscription renewals, password expiration warnings
+- Also extract upcoming billing/renewal deadlines where the recipient may want a reminder before being charged (e.g. domain renewals, annual plan renewals, trial expirations)
+- Do NOT extract: terms of service updates, privacy policy changes, or other legal/policy notices
+- Do NOT extract: sale deadlines, marketing urgency ("offer expires"), routine subscription renewals (e.g. monthly Netflix), password expiration warnings
+- Do NOT extract: package delivery or shipping notifications (these are handled by a separate parcel tracking system)
 - For flights: create one event per flight segment (outbound, return, connections)
 - For hotel stays: create one event spanning check-in to check-out
 - For appointments: use the appointment time, not the "arrive by" time

@@ -2,6 +2,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
 
 const BLACKLISTED_SENDERS = [
+  // Food delivery
   "@amazon.",
   "@uber.com",
   "@doordash.com",
@@ -10,6 +11,27 @@ const BLACKLISTED_SENDERS = [
   "@fantuan.ca",
   "@ritual.co",
   "@toogoodtogo.com",
+  // Newsletters & content
+  "@substack.com",
+  "@medium.com",
+  "@patreon.com",
+  // Marketing & SaaS
+  "@coderabbit.ai",
+  "@vercel.com",
+  "@cloudflare.com",
+  "@squarespace.com",
+  // Finance
+  "@wealthsimple.com",
+  // Cloud platforms
+  "cloudplatform-noreply@google.com",
+  // Social media
+  "@facebook.com",
+  "@twitter.com",
+  "@x.com",
+  "@linkedin.com",
+  "@instagram.com",
+  "@reddit.com",
+  "noreply@github.com",
 ];
 
 const CARRIER_SENDER_DOMAINS = [
