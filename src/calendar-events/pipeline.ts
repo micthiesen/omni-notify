@@ -101,6 +101,7 @@ export class CalendarEventPipeline implements EmailHandler {
         this.logger,
         runLog,
         downloaded.length > 0 ? downloaded : undefined,
+        config.TZ,
       );
     } catch (error) {
       this.logger.error(

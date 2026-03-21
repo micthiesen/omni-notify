@@ -150,9 +150,14 @@ function buildICalendar(
     lines.push(`DESCRIPTION:${escapeIcal(event.description)}`);
   }
 
-  // Default reminder: 30 minutes before
+  // Reminder alarm (LLM-chosen or default 30 min)
   if (!event.allDay) {
-    lines.push("BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", "END:VALARM");
+    const mins = event.reminderMinutes ?? 30;
+    const trigger =
+      mins >= 60
+        ? `PT${Math.floor(mins / 60)}H${mins % 60 ? `${mins % 60}M` : ""}`
+        : `PT${mins}M`;
+    lines.push("BEGIN:VALARM", `TRIGGER:-${trigger}`, "ACTION:DISPLAY", "END:VALARM");
   }
 
   lines.push("END:VEVENT", "END:VCALENDAR");

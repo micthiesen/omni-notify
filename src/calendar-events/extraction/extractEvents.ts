@@ -17,6 +17,7 @@ export async function extractCalendarEvents(
   logger: Logger,
   logFile?: LogFile,
   attachments?: DownloadedAttachment[],
+  localTimeZone?: string,
 ): Promise<CalendarEventExtraction["events"]> {
   const { model, modelId } = getExtractionModel();
   const body = email.textBody.slice(0, MAX_BODY_CHARS);
@@ -26,6 +27,7 @@ export async function extractCalendarEvents(
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: localTimeZone,
   });
 
   const promptText = `Extract calendar events from this email that the recipient would want on their personal calendar. Return an empty events array if no actionable events are found.
@@ -41,12 +43,13 @@ Guidelines:
 - For hotel stays: create one event spanning check-in to check-out
 - For appointments: use the appointment time, not the "arrive by" time
 - Always extract endTime when a time range is given (e.g. "8:00 a.m. – 5:00 p.m." → startTime 08:00, endTime 17:00). Do not omit the end time
-- Infer timezone from location context when not explicitly stated (e.g. JFK airport → America/New_York, a restaurant in London → Europe/London, a hotel in Tokyo → Asia/Tokyo). Only leave timeZone empty if there are no geographic clues at all
+- Infer timezone from location context when not explicitly stated (e.g. JFK airport → America/New_York, a restaurant in London → Europe/London, a hotel in Tokyo → Asia/Tokyo)${localTimeZone ? `. When there are no geographic clues, use the recipient's local timezone: ${localTimeZone}` : ". Only leave timeZone empty if there are no geographic clues at all"}
 - If only a date is mentioned with no time, set allDay to true
 - Extract events even when details are partial — include what's available (e.g. a date in the subject line with no time → allDay event)
 - Look for dates in subject lines, headers, and filenames mentioned in the email, not just the body text
 - If attachments are included, extract event details from them as well (PDFs, images with text)
 - Title should be prefixed with a relevant emoji and be concise and descriptive in Title Case (e.g. "🦷 Dentist Appointment", "✈️ Flight YYZ → YVR", "🎭 Hamilton at Princess of Wales Theatre")
+- Set reminderMinutes for events that benefit from advance preparation. Examples: flights/travel (1440 = day before), building shutoffs/maintenance (720 = night before), appointments/reservations (60 = 1 hour). Omit for events where the default 30-minute reminder is fine
 
 Today's date: ${currentDate}
 

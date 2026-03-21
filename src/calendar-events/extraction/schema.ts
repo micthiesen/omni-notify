@@ -39,6 +39,12 @@ export const calendarEventExtractionSchema = z.object({
       allDay: z
         .boolean()
         .describe("True if this is an all-day event with no specific time"),
+      reminderMinutes: z
+        .number()
+        .optional()
+        .describe(
+          "Minutes before the event to send a reminder. Use for events that benefit from advance preparation (e.g. 720 for a water shutoff the night before, 1440 for a flight the day before, 60 for appointments). Omit to use the default 30-minute reminder",
+        ),
     }),
   ),
 });
