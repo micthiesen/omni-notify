@@ -23,8 +23,8 @@ importers:
         specifier: ^3.0.29
         version: 3.0.29(zod@3.25.76)
       '@micthiesen/mitools':
-        specifier: ^1.4.0
-        version: 1.4.0
+        specifier: ^1.5.0
+        version: 1.5.0
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
@@ -379,8 +379,8 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@micthiesen/mitools@1.4.0':
-    resolution: {integrity: sha512-x1v/5TK8uPFYLKtdL4i0b5unWiMGZJ1Prtfp7JSNABjz9KX/c91sP3p362DrDYGQwT6FvZ4S1kyUdMYA3PIVBQ==}
+  '@micthiesen/mitools@1.5.0':
+    resolution: {integrity: sha512-jqY6gyBLBEw9ch7uUTKLnlVbxGLTHj7mdAALrcH/TqCEn/ViKWco3dw2cDzI1reLd7mH+5knpq0WE4VCiex2Vg==}
     engines: {node: 24.13.0, pnpm: 10.28.2}
 
   '@mixmark-io/domino@2.2.0':
@@ -1494,7 +1494,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@micthiesen/mitools@1.4.0':
+  '@micthiesen/mitools@1.5.0':
     dependencies:
       better-sqlite3: 11.5.0
       cbor: 9.0.2
