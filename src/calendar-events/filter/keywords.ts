@@ -117,6 +117,15 @@ const CALENDAR_KEYWORDS = [
   "building notice",
   "power outage",
   "water shutoff",
+  // Cancellations/changes
+  "cancelled",
+  "canceled",
+  "cancellation",
+  "rescheduled",
+  "reschedule",
+  "schedule change",
+  "time change",
+  "date change",
   // General
   "calendar",
   "invite",

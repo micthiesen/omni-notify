@@ -3,6 +3,11 @@ import { z } from "zod";
 export const calendarEventExtractionSchema = z.object({
   events: z.array(
     z.object({
+      action: z
+        .enum(["create", "cancel", "update"])
+        .describe(
+          "'create' for new events, 'cancel' for cancelled events, 'update' for rescheduled/modified events",
+        ),
       title: z
         .string()
         .describe(

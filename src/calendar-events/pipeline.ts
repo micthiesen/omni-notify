@@ -7,14 +7,28 @@ import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
 import { logTimestamp } from "../utils/markdown.js";
 import { downloadSupportedAttachments } from "./extraction/attachments.js";
-import { extractCalendarEvents } from "./extraction/extractEvents.js";
-import { createCalendarEvent, discoverCalendarUrl } from "./fastmail/calendarApi.js";
+import {
+  type ExistingEventContext,
+  extractCalendarEvents,
+} from "./extraction/extractEvents.js";
+import type { CalendarEventExtraction } from "./extraction/schema.js";
+import {
+  createCalendarEvent,
+  deleteCalendarEvent,
+  discoverCalendarUrl,
+  updateCalendarEvent,
+} from "./fastmail/calendarApi.js";
 import { filterCalendarCandidate } from "./filter/keywords.js";
 import {
   computeEventHash,
+  findEvent,
+  getRecentEvents,
   hasCreatedEvent,
+  markEventCancelled,
   recordCreatedEvent,
 } from "./persistence.js";
+
+type ExtractedEvent = CalendarEventExtraction["events"][number];
 
 export class CalendarEventPipeline implements EmailHandler {
   public readonly name = "CalendarEvents";
@@ -94,15 +108,23 @@ export class CalendarEventPipeline implements EmailHandler {
       this.logger,
     );
 
+    // Provide existing events as context for cancel/update matching
+    const existingEvents: ExistingEventContext[] = getRecentEvents().map((e) => ({
+      title: e.title,
+      startDate: e.startDate,
+      startTime: e.startTime,
+    }));
+
     let events: Awaited<ReturnType<typeof extractCalendarEvents>>;
     try {
-      events = await extractCalendarEvents(
-        { subject: email.subject, from: email.from, textBody: email.textBody },
-        this.logger,
-        runLog,
-        downloaded.length > 0 ? downloaded : undefined,
-        config.TZ,
-      );
+      events = await extractCalendarEvents({
+        email: { subject: email.subject, from: email.from, textBody: email.textBody },
+        logger: this.logger,
+        logFile: runLog,
+        attachments: downloaded.length > 0 ? downloaded : undefined,
+        localTimeZone: config.TZ,
+        existingEvents,
+      });
     } catch (error) {
       this.logger.error(
         `Extraction failed for "${email.subject}" from ${email.from}`,
@@ -120,20 +142,27 @@ export class CalendarEventPipeline implements EmailHandler {
 
     for (const event of events) {
       try {
-        await this.processEvent(event, email.id);
+        switch (event.action) {
+          case "create":
+            await this.handleCreate(event, email.id);
+            break;
+          case "cancel":
+            await this.handleCancel(event);
+            break;
+          case "update":
+            await this.handleUpdate(event, email.id);
+            break;
+        }
       } catch (error) {
         this.logger.error(
-          `Failed to create event "${event.title}"`,
+          `Failed to process event "${event.title}" (${event.action})`,
           (error as Error).message,
         );
       }
     }
   }
 
-  private async processEvent(
-    event: Awaited<ReturnType<typeof extractCalendarEvents>>[number],
-    emailId: string,
-  ): Promise<void> {
+  private async handleCreate(event: ExtractedEvent, emailId: string): Promise<void> {
     const eventHash = computeEventHash(event.title, event.startDate, event.startTime);
 
     if (hasCreatedEvent(eventHash)) {
@@ -163,11 +192,95 @@ export class CalendarEventPipeline implements EmailHandler {
       calendarEventId: result.eventUid,
       title: event.title,
       startDate: event.startDate,
+      startTime: event.startTime,
       createdAt: Date.now(),
     });
 
-    // Send notification
-    const dateStr = event.startDate;
+    await this.sendNotification("Calendar Event Created", event);
+    this.logger.info(`Created: "${event.title}" on ${event.startDate}`);
+  }
+
+  private async handleCancel(event: ExtractedEvent): Promise<void> {
+    const record = findEvent(event.title, event.startDate);
+
+    if (!record) {
+      this.logger.warn(
+        `Cancel requested for unknown event: "${event.title}" (skipping)`,
+      );
+      return;
+    }
+
+    if (!this.calendarUrl) {
+      this.logger.error("Calendar URL not discovered, cannot cancel event");
+      return;
+    }
+
+    const result = await deleteCalendarEvent(
+      this.calendarUrl,
+      record.calendarEventId,
+      this.logger,
+    );
+
+    if (result.status === "error") {
+      this.logger.error(
+        `Failed to delete calendar event "${event.title}": ${result.message}`,
+      );
+      return;
+    }
+
+    markEventCancelled(record.eventHash);
+
+    await this.sendNotification("Calendar Event Cancelled", event);
+    this.logger.info(`Cancelled: "${event.title}" on ${record.startDate}`);
+  }
+
+  private async handleUpdate(event: ExtractedEvent, emailId: string): Promise<void> {
+    const record = findEvent(event.title, event.startDate);
+
+    if (!record) {
+      this.logger.warn(
+        `Update requested for unknown event: "${event.title}", treating as create`,
+      );
+      return this.handleCreate(event, emailId);
+    }
+
+    if (!this.calendarUrl) {
+      this.logger.error("Calendar URL not discovered, cannot update event");
+      return;
+    }
+
+    const result = await updateCalendarEvent(
+      this.calendarUrl,
+      event,
+      record.calendarEventId,
+      this.logger,
+    );
+
+    if (result.status === "error") {
+      this.logger.error(
+        `Failed to update calendar event "${event.title}": ${result.message}`,
+      );
+      return;
+    }
+
+    // Mark old record as cancelled, create new one with updated hash
+    markEventCancelled(record.eventHash);
+    const newHash = computeEventHash(event.title, event.startDate, event.startTime);
+    recordCreatedEvent({
+      eventHash: newHash,
+      emailId,
+      calendarEventId: record.calendarEventId,
+      title: event.title,
+      startDate: event.startDate,
+      startTime: event.startTime,
+      createdAt: Date.now(),
+    });
+
+    await this.sendNotification("Calendar Event Updated", event);
+    this.logger.info(`Updated: "${event.title}" on ${event.startDate}`);
+  }
+
+  private async sendNotification(title: string, event: ExtractedEvent): Promise<void> {
     const timePart = event.allDay
       ? "(all day)"
       : event.startTime
@@ -175,16 +288,12 @@ export class CalendarEventPipeline implements EmailHandler {
         : "";
     try {
       await notify({
-        title: "Calendar Event Created",
-        message: `${event.title}\n${dateStr}${timePart ? ` ${timePart}` : ""}${event.location ? `\n${event.location}` : ""}`,
+        title,
+        message: `${event.title}\n${event.startDate}${timePart ? ` ${timePart}` : ""}${event.location ? `\n${event.location}` : ""}`,
         token: config.PUSHOVER_CALENDAR_TOKEN,
       });
     } catch (error) {
       this.logger.warn("Failed to send notification", (error as Error).message);
     }
-
-    this.logger.info(
-      `Created: "${event.title}" on ${dateStr}${timePart ? ` ${timePart}` : ""}`,
-    );
   }
 }

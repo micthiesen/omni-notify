@@ -12,13 +12,26 @@ import {
 
 const MAX_BODY_CHARS = 3000;
 
+export interface ExistingEventContext {
+  title: string;
+  startDate: string;
+  startTime?: string;
+}
+
+export interface ExtractCalendarEventsOptions {
+  email: { subject: string; from: string; textBody: string };
+  logger: Logger;
+  logFile?: LogFile;
+  attachments?: DownloadedAttachment[];
+  localTimeZone?: string;
+  existingEvents?: ExistingEventContext[];
+}
+
 export async function extractCalendarEvents(
-  email: { subject: string; from: string; textBody: string },
-  logger: Logger,
-  logFile?: LogFile,
-  attachments?: DownloadedAttachment[],
-  localTimeZone?: string,
+  options: ExtractCalendarEventsOptions,
 ): Promise<CalendarEventExtraction["events"]> {
+  const { email, logger, logFile, attachments, localTimeZone, existingEvents } =
+    options;
   const { model, modelId } = getExtractionModel();
   const body = email.textBody.slice(0, MAX_BODY_CHARS);
 
@@ -51,6 +64,14 @@ Guidelines:
 - Title should be prefixed with a relevant emoji and be concise and descriptive in Title Case (e.g. "🦷 Dentist Appointment", "✈️ Flight YYZ → YVR", "🎭 Hamilton at Princess of Wales Theatre")
 - Set reminderMinutes for events that benefit from advance preparation. Examples: flights/travel (1440 = day before), building shutoffs/maintenance (720 = night before), appointments/reservations (60 = 1 hour). Omit for events where the default 30-minute reminder is fine
 
+Action classification:
+- Use "create" for new events not already in the existing events list below
+- Use "cancel" if the email indicates an existing event has been cancelled, voided, or is no longer happening. Use the EXACT title from the existing events list
+- Use "update" if the email indicates an existing event has been rescheduled, moved, or had details changed (new time, location, etc.). Use the same title as the existing event
+- If an update fundamentally changes the event (e.g. rebooked to a completely different flight), emit a "cancel" for the old event and a "create" for the new one
+- Do NOT generate "cancel" or "update" for events not in the existing events list
+- When in doubt, prefer "create"
+${existingEvents && existingEvents.length > 0 ? `\nExisting calendar events (created by this system):\n${existingEvents.map((e) => `- "${e.title}" on ${e.startDate}${e.startTime ? ` at ${e.startTime}` : " (all day)"}`).join("\n")}\n` : ""}
 Today's date: ${currentDate}
 
 From: ${email.from}

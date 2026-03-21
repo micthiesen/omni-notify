@@ -9,6 +9,11 @@ type CreateResult =
   | { status: "success"; eventUid: string }
   | { status: "error"; message: string };
 
+type DeleteResult =
+  | { status: "success" }
+  | { status: "not_found" }
+  | { status: "error"; message: string };
+
 /**
  * Discover the default calendar URL via CalDAV PROPFIND.
  * Returns the URL path to use for creating events.
@@ -96,6 +101,79 @@ export async function createCalendarEvent(
   logger.error(
     `CalDAV PUT failed: ${response.status} ${response.statusText}`,
     `URL: ${eventUrl}\nBody:\n${icsBody}\nResponse:\n${text}`,
+  );
+  return {
+    status: "error",
+    message: `CalDAV ${response.status}: ${response.statusText}`,
+  };
+}
+
+/** Update an existing calendar event via CalDAV PUT (overwrites). */
+export async function updateCalendarEvent(
+  calendarUrl: string,
+  event: CalendarEventExtraction["events"][number],
+  existingUid: string,
+  logger: Logger,
+): Promise<CreateResult> {
+  const icsBody = buildICalendar(event, existingUid);
+  const eventUrl = `${calendarUrl}${existingUid}.ics`;
+
+  logger.debug(`CalDAV PUT (update) ${eventUrl}\n${icsBody}`);
+
+  const response = await fetch(eventUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "text/calendar; charset=utf-8",
+      Authorization: caldavAuth(),
+    },
+    body: icsBody,
+  });
+
+  if (response.status === 201 || response.status === 204) {
+    logger.info(`Updated calendar event: ${event.title} (${existingUid})`);
+    return { status: "success", eventUid: existingUid };
+  }
+
+  const text = await response.text();
+  logger.error(
+    `CalDAV PUT (update) failed: ${response.status} ${response.statusText}`,
+    `URL: ${eventUrl}\nBody:\n${icsBody}\nResponse:\n${text}`,
+  );
+  return {
+    status: "error",
+    message: `CalDAV ${response.status}: ${response.statusText}`,
+  };
+}
+
+/** Delete a calendar event via CalDAV DELETE. */
+export async function deleteCalendarEvent(
+  calendarUrl: string,
+  uid: string,
+  logger: Logger,
+): Promise<DeleteResult> {
+  const eventUrl = `${calendarUrl}${uid}.ics`;
+
+  logger.debug(`CalDAV DELETE ${eventUrl}`);
+
+  const response = await fetch(eventUrl, {
+    method: "DELETE",
+    headers: { Authorization: caldavAuth() },
+  });
+
+  if (response.status === 204 || response.status === 200) {
+    logger.info(`Deleted calendar event: ${uid}`);
+    return { status: "success" };
+  }
+
+  if (response.status === 404) {
+    logger.info(`Calendar event already gone: ${uid}`);
+    return { status: "not_found" };
+  }
+
+  const text = await response.text();
+  logger.error(
+    `CalDAV DELETE failed: ${response.status} ${response.statusText}`,
+    `URL: ${eventUrl}\nResponse:\n${text}`,
   );
   return {
     status: "error",
