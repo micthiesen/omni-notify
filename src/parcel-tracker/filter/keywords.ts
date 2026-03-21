@@ -67,30 +67,39 @@ export interface EmailCandidate {
   textBody: string;
 }
 
-export async function isTrackingCandidate(
+export type FilterResult =
+  | { pass: true; reason: string }
+  | { pass: false; reason: string };
+
+export async function filterTrackingCandidate(
   email: EmailCandidate,
   logger: Logger,
-): Promise<boolean> {
+): Promise<FilterResult> {
   const fromLower = email.from.toLowerCase();
 
   // Blacklisted senders are always rejected
   if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) {
-    return false;
+    return { pass: false, reason: "blacklisted sender" };
   }
 
   // Tier 1: Known carrier/shipping sender domains auto-pass
   if (CARRIER_SENDER_DOMAINS.some((domain) => fromLower.includes(domain))) {
-    return true;
+    return { pass: true, reason: "carrier sender" };
   }
 
   // Tier 2: Keyword match in subject or body
   const searchText = `${email.subject} ${email.textBody}`.toLowerCase();
-  if (TRACKING_KEYWORDS.some((keyword) => searchText.includes(keyword))) {
-    return true;
+  const matchedKeyword = TRACKING_KEYWORDS.find((kw) => searchText.includes(kw));
+  if (matchedKeyword) {
+    return { pass: true, reason: `keyword "${matchedKeyword}"` };
   }
 
   // Tier 3: Carrier name mentioned (word-boundary match)
   const patterns = await getCarrierNamePatterns(logger);
   const fullText = `${email.subject} ${email.textBody}`;
-  return patterns.some((pattern) => pattern.test(fullText));
+  if (patterns.some((pattern) => pattern.test(fullText))) {
+    return { pass: true, reason: "carrier name match" };
+  }
+
+  return { pass: false, reason: "no keyword match" };
 }

@@ -1,5 +1,3 @@
-import type { Logger } from "@micthiesen/mitools/logging";
-
 const BLACKLISTED_SENDERS = [
   "@facebook.com",
   "@twitter.com",
@@ -133,26 +131,29 @@ export interface EmailCandidate {
   textBody: string;
 }
 
-export function isCalendarCandidate(email: EmailCandidate, logger: Logger): boolean {
+export type FilterResult =
+  | { pass: true; reason: string }
+  | { pass: false; reason: string };
+
+export function filterCalendarCandidate(email: EmailCandidate): FilterResult {
   const fromLower = email.from.toLowerCase();
 
   // Blacklisted senders are always rejected
   if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) {
-    logger.debug(`Calendar filter: blacklisted sender ${email.from}`);
-    return false;
+    return { pass: false, reason: "blacklisted sender" };
   }
 
   // Tier 1: Known booking/travel/event sender domains auto-pass
   if (AUTO_PASS_SENDERS.some((domain) => fromLower.includes(domain))) {
-    logger.debug(`Calendar filter: auto-pass sender ${email.from}`);
-    return true;
+    return { pass: true, reason: "known sender" };
   }
 
   // Tier 2: Keyword match in subject or body
   const searchText = `${email.subject} ${email.textBody}`.toLowerCase();
-  if (CALENDAR_KEYWORDS.some((keyword) => searchText.includes(keyword))) {
-    return true;
+  const matchedKeyword = CALENDAR_KEYWORDS.find((kw) => searchText.includes(kw));
+  if (matchedKeyword) {
+    return { pass: true, reason: `keyword "${matchedKeyword}"` };
   }
 
-  return false;
+  return { pass: false, reason: "no keyword match" };
 }

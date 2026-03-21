@@ -2,26 +2,24 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import type { JmapContext } from "../jmap/client.js";
-import type { EmailAttachment } from "../jmap/emailFetcher.js";
-import { fetchNewEmails } from "../jmap/emailFetcher.js";
+import type { EmailHandler } from "../jmap/dispatcher.js";
+import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
 import { logTimestamp } from "../utils/markdown.js";
 import { downloadSupportedAttachments } from "./extraction/attachments.js";
 import { extractCalendarEvents } from "./extraction/extractEvents.js";
 import { createCalendarEvent, discoverCalendarUrl } from "./fastmail/calendarApi.js";
-import { isCalendarCandidate } from "./filter/keywords.js";
+import { filterCalendarCandidate } from "./filter/keywords.js";
 import {
   computeEventHash,
-  getCalendarEmailState,
   hasCreatedEvent,
   recordCreatedEvent,
-  saveCalendarEmailState,
 } from "./persistence.js";
 
-export class CalendarEventPipeline {
+export class CalendarEventPipeline implements EmailHandler {
+  public readonly name = "CalendarEvents";
   private logger: Logger;
   private ctx: JmapContext;
-  private processing = false;
   private calendarUrl?: string;
 
   constructor(ctx: JmapContext, logger: Logger) {
@@ -29,71 +27,25 @@ export class CalendarEventPipeline {
     this.logger = logger;
   }
 
-  async onEmailStateChange(): Promise<void> {
-    if (this.processing) {
-      this.logger.debug("Pipeline already processing, skipping");
-      return;
-    }
-
-    this.processing = true;
-    try {
-      await this.processStateChange();
-    } finally {
-      this.processing = false;
-    }
-  }
-
-  private async processStateChange(): Promise<void> {
-    const sinceState = getCalendarEmailState();
-
-    if (!sinceState) {
-      this.logger.info("First run: fetching current JMAP state (skipping history)");
-      const state = await this.fetchCurrentEmailState();
-      if (state) {
-        saveCalendarEmailState(state);
-        this.logger.info(`Saved initial JMAP state: ${state}`);
-      }
-      return;
-    }
-
-    let emails: Awaited<ReturnType<typeof fetchNewEmails>>["emails"];
-    let newState: string;
-    try {
-      const result = await fetchNewEmails(this.ctx, sinceState, this.logger);
-      emails = result.emails;
-      newState = result.newState;
-    } catch (error) {
-      const message = (error as Error).message ?? "";
-      if (message.includes("cannotCalculateChanges")) {
-        this.logger.warn("cannotCalculateChanges: resetting state");
-        const state = await this.fetchCurrentEmailState();
-        if (state) saveCalendarEmailState(state);
-        return;
-      }
-      this.logger.error("Failed to fetch emails", message);
-      return;
-    }
-
+  async handleEmails(emails: FetchedEmail[]): Promise<void> {
     // Filter candidates
     const candidates = [];
     for (const email of emails) {
-      const candidate = isCalendarCandidate(
-        { from: email.from, subject: email.subject, textBody: email.textBody },
-        this.logger,
-      );
-      if (candidate) {
+      const result = filterCalendarCandidate({
+        from: email.from,
+        subject: email.subject,
+        textBody: email.textBody,
+      });
+      if (result.pass) {
+        this.logger.info(
+          `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
+        );
         candidates.push(email);
       } else {
-        this.logger.info(`Filtered out: "${email.subject}" from ${email.from}`);
+        this.logger.info(
+          `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
+        );
       }
-    }
-
-    if (candidates.length > 0) {
-      this.logger.info(
-        `${candidates.length} calendar candidate(s) from ${emails.length} new email(s)`,
-      );
-    } else if (emails.length > 0) {
-      this.logger.info(`No calendar candidates in ${emails.length} new email(s)`);
     }
 
     // Create a fresh run log per batch
@@ -113,7 +65,6 @@ export class CalendarEventPipeline {
           "Failed to discover calendar URL, skipping batch",
           (error as Error).message,
         );
-        saveCalendarEmailState(newState);
         return;
       }
     }
@@ -129,20 +80,9 @@ export class CalendarEventPipeline {
         );
       }
     }
-
-    saveCalendarEmailState(newState);
   }
 
-  private async processEmail(
-    email: {
-      id: string;
-      subject: string;
-      from: string;
-      textBody: string;
-      attachments: EmailAttachment[];
-    },
-    runLog?: LogFile,
-  ): Promise<void> {
+  private async processEmail(email: FetchedEmail, runLog?: LogFile): Promise<void> {
     this.logger.info(
       `Extracting events from: "${email.subject}" (from: ${email.from})`,
     );
@@ -245,13 +185,5 @@ export class CalendarEventPipeline {
     this.logger.info(
       `Created: "${event.title}" on ${dateStr}${timePart ? ` ${timePart}` : ""}`,
     );
-  }
-
-  private async fetchCurrentEmailState(): Promise<string | undefined> {
-    const [result] = await this.ctx.jam.request([
-      "Email/get",
-      { accountId: this.ctx.accountId, ids: [] },
-    ]);
-    return (result as Record<string, unknown>).state as string | undefined;
   }
 }

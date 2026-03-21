@@ -48,8 +48,10 @@ src/
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
 ├── jmap/                    # Shared Fastmail JMAP infrastructure
 │   ├── client.ts            # JMAP session + account resolution
+│   ├── dispatcher.ts        # EmailDispatcher: fetch-once fan-out to EmailHandlers
 │   ├── eventSource.ts       # SSE for real-time email state changes
 │   ├── emailFetcher.ts      # Fetch new emails via JMAP changes API
+│   ├── persistence.ts       # Shared JMAP email state cursor (SQLite)
 │   └── htmlToText.ts        # HTML email body → plain text
 ├── parcel-tracker/          # Auto-submit tracking numbers from emails to Parcel.app
 │   ├── index.ts             # Pipeline factory
@@ -285,10 +287,11 @@ FASTMAIL_CALENDAR_ID=xxx                # Optional: CalDAV calendar ID (auto-dis
 ### Fastmail Integration (JMAP + CalDAV)
 
 Both parcel-tracker and calendar-events share the same JMAP infrastructure (`src/jmap/`):
-- **JMAP** (via `jmap-jam`): Email monitoring — SSE event source triggers both pipelines on new emails
+- **JMAP** (via `jmap-jam`): Email monitoring via SSE event source
+- **EmailDispatcher**: Fetches emails once per state change, fans out to registered `EmailHandler`s (parcel-tracker, calendar-events). Owns the shared JMAP state cursor.
 - **CalDAV** (raw HTTP): Calendar event creation — `PUT` iCalendar files to Fastmail's CalDAV endpoint
 - Auth: `FASTMAIL_API_TOKEN` (bearer token for JMAP), `FASTMAIL_APP_PASSWORD` (basic auth for CalDAV)
-- Each pipeline maintains its own JMAP email state cursor (independent processing)
+- Each pipeline implements `EmailHandler` with a `handleEmails(emails)` method for filtering and processing
 - `jmap-jam` only supports email methods; calendar uses raw `fetch()` against `https://caldav.fastmail.com/dav/calendars/`
 
 ## Common Tasks

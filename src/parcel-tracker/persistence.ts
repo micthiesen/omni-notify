@@ -27,27 +27,3 @@ export function getRecentTrackingNumbers(limit = 100): Set<string> {
 export function recordSubmittedDelivery(data: SubmittedDeliveryData): void {
   SubmittedDeliveryEntity.upsert(data);
 }
-
-// Singleton: persists JMAP state so we can resume after restart
-export type EmailStateData = {
-  key: "singleton";
-  state: string;
-  updatedAt: number;
-};
-
-export const EmailStateEntity = new Entity<EmailStateData, ["key"]>(
-  "parcel-email-state",
-  ["key"],
-);
-
-export function getEmailState(): string | undefined {
-  return EmailStateEntity.get({ key: "singleton" })?.state;
-}
-
-export function saveEmailState(state: string): void {
-  EmailStateEntity.upsert({
-    key: "singleton",
-    state,
-    updatedAt: Date.now(),
-  });
-}

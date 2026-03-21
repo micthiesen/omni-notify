@@ -2,14 +2,14 @@ import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
-import { createCalendarPipeline } from "./calendar-events/index.js";
+import { createCalendarHandler } from "./calendar-events/index.js";
 import { createJmapClient } from "./jmap/client.js";
-import type { StateChangeHandler } from "./jmap/eventSource.js";
+import { EmailDispatcher } from "./jmap/dispatcher.js";
 import { createEventSource } from "./jmap/eventSource.js";
 import { loadChannelsConfig } from "./live-check/filters/index.js";
 import { Platform } from "./live-check/platforms/index.js";
 import LiveCheckTask from "./live-check/task.js";
-import { createParcelPipeline } from "./parcel-tracker/index.js";
+import { createParcelHandler } from "./parcel-tracker/index.js";
 import { Scheduler } from "./scheduling/Scheduler.js";
 import config from "./utils/config.js";
 
@@ -70,21 +70,25 @@ async function startJmapFeatures(
   const jmapLogger = parentLogger.extend("JMAP");
   const ctx = await createJmapClient(config.FASTMAIL_API_TOKEN, jmapLogger);
 
-  // Create pipelines
-  const handlers: StateChangeHandler[] = [];
+  // Create dispatcher and register handlers
+  const dispatcher = new EmailDispatcher(ctx, jmapLogger);
 
-  const parcelHandler = createParcelPipeline(ctx, parentLogger);
-  if (parcelHandler) handlers.push(parcelHandler);
+  const parcel = createParcelHandler(parentLogger);
+  if (parcel) dispatcher.register(parcel);
 
-  const calendarHandler = createCalendarPipeline(ctx, parentLogger);
-  if (calendarHandler) handlers.push(calendarHandler);
+  const calendar = createCalendarHandler(ctx, parentLogger);
+  if (calendar) dispatcher.register(calendar);
 
-  if (handlers.length === 0) {
+  if (dispatcher.handlerCount === 0) {
     jmapLogger.info("No JMAP pipelines active");
     return undefined;
   }
 
-  const closeEventSource = await createEventSource(ctx, handlers, jmapLogger);
-  jmapLogger.info(`Started with ${handlers.length} pipeline(s)`);
+  const closeEventSource = await createEventSource(
+    ctx,
+    () => dispatcher.onStateChange(),
+    jmapLogger,
+  );
+  jmapLogger.info(`Started with ${dispatcher.handlerCount} pipeline(s)`);
   return closeEventSource;
 }

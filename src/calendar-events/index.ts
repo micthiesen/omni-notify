@@ -1,13 +1,13 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import type { JmapContext } from "../jmap/client.js";
-import type { StateChangeHandler } from "../jmap/eventSource.js";
+import type { EmailHandler } from "../jmap/dispatcher.js";
 import config from "../utils/config.js";
 import { CalendarEventPipeline } from "./pipeline.js";
 
-export function createCalendarPipeline(
+export function createCalendarHandler(
   ctx: JmapContext,
   parentLogger: Logger,
-): StateChangeHandler | undefined {
+): EmailHandler | undefined {
   const logger = parentLogger.extend("CalendarEvents");
 
   if (!config.FASTMAIL_USERNAME) {
@@ -15,12 +15,6 @@ export function createCalendarPipeline(
     return undefined;
   }
 
-  const pipeline = new CalendarEventPipeline(ctx, logger);
-
   logger.info("Pipeline created");
-  return () => {
-    pipeline.onEmailStateChange().catch((error) => {
-      logger.error("Pipeline error", (error as Error).message);
-    });
-  };
+  return new CalendarEventPipeline(ctx, logger);
 }

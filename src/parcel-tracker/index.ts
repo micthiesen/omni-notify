@@ -1,13 +1,9 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import type { JmapContext } from "../jmap/client.js";
-import type { StateChangeHandler } from "../jmap/eventSource.js";
+import type { EmailHandler } from "../jmap/dispatcher.js";
 import config from "../utils/config.js";
 import { DeliveryPipeline } from "./pipeline.js";
 
-export function createParcelPipeline(
-  ctx: JmapContext,
-  parentLogger: Logger,
-): StateChangeHandler | undefined {
+export function createParcelHandler(parentLogger: Logger): EmailHandler | undefined {
   const logger = parentLogger.extend("ParcelTracker");
 
   if (!config.PARCEL_API_KEY) {
@@ -15,12 +11,6 @@ export function createParcelPipeline(
     return undefined;
   }
 
-  const pipeline = new DeliveryPipeline(ctx, config.PARCEL_API_KEY, logger);
-
   logger.info("Pipeline created");
-  return () => {
-    pipeline.onEmailStateChange().catch((error) => {
-      logger.error("Pipeline error", (error as Error).message);
-    });
-  };
+  return new DeliveryPipeline(config.PARCEL_API_KEY, logger);
 }

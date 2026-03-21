@@ -1,29 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
 
-// Tracks JMAP email state for the calendar pipeline (separate from parcel-tracker)
-export type CalendarEmailStateData = {
-  key: "singleton";
-  state: string;
-  updatedAt: number;
-};
-
-export const CalendarEmailStateEntity = new Entity<CalendarEmailStateData, ["key"]>(
-  "calendar-email-state",
-  ["key"],
-);
-
-export function getCalendarEmailState(): string | undefined {
-  return CalendarEmailStateEntity.get({ key: "singleton" })?.state;
-}
-
-export function saveCalendarEmailState(state: string): void {
-  CalendarEmailStateEntity.upsert({
-    key: "singleton",
-    state,
-    updatedAt: Date.now(),
-  });
-}
-
 // Dedup gate: tracks created calendar events by content hash
 export type CreatedCalendarEventData = {
   eventHash: string;

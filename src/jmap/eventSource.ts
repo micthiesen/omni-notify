@@ -2,8 +2,6 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { EventSource } from "eventsource";
 import type { JmapContext } from "./client.js";
 
-export type StateChangeHandler = (accountId: string) => void;
-
 const MAX_CONNECTION_AGE_MS = 30 * 60_000;
 
 /**
@@ -18,15 +16,12 @@ const MAX_CONNECTION_AGE_MS = 30 * 60_000;
  */
 export async function createEventSource(
   ctx: JmapContext,
-  onEmailStateChange: StateChangeHandler | StateChangeHandler[],
+  onEmailStateChange: () => void,
   logger: Logger,
 ): Promise<() => void> {
   const session = await ctx.jam.session;
   const url = `${session.eventSourceUrl}?types=Email&closeafter=no&ping=60`;
   const bearerToken = ctx.jam.authHeader;
-  const handlers = Array.isArray(onEmailStateChange)
-    ? onEmailStateChange
-    : [onEmailStateChange];
 
   let es: EventSource | null = null;
   let maxAgeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -71,17 +66,12 @@ export async function createEventSource(
           changed: Record<string, Record<string, string>>;
         };
 
-        for (const [accountId, changes] of Object.entries(data.changed)) {
-          if ("Email" in changes) {
-            logger.debug(`Email state change for account ${accountId}`);
-            for (const handler of handlers) {
-              try {
-                handler(accountId);
-              } catch (error) {
-                logger.error("Handler error", (error as Error).message);
-              }
-            }
-          }
+        const hasEmailChange = Object.values(data.changed).some(
+          (changes) => "Email" in changes,
+        );
+        if (hasEmailChange) {
+          logger.debug("Email state change detected");
+          onEmailStateChange();
         }
       } catch (error) {
         logger.error("Failed to parse state change event", (error as Error).message);

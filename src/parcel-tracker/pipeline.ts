@@ -1,30 +1,26 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
-import type { JmapContext } from "../jmap/client.js";
-import { fetchNewEmails } from "../jmap/emailFetcher.js";
+import type { EmailHandler } from "../jmap/dispatcher.js";
+import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
 import { logTimestamp } from "../utils/markdown.js";
 import { isValidCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
-import { isTrackingCandidate } from "./filter/keywords.js";
+import { filterTrackingCandidate } from "./filter/keywords.js";
 import { submitDelivery } from "./parcel/parcelApi.js";
 import {
-  getEmailState,
   getRecentTrackingNumbers,
   hasSubmittedDelivery,
   recordSubmittedDelivery,
-  saveEmailState,
 } from "./persistence.js";
 
-export class DeliveryPipeline {
+export class DeliveryPipeline implements EmailHandler {
+  public readonly name = "ParcelTracker";
   private logger: Logger;
-  private ctx: JmapContext;
   private parcelApiKey: string;
-  private processing = false;
   private rejectionLog?: LogFile;
 
-  constructor(ctx: JmapContext, parcelApiKey: string, logger: Logger) {
-    this.ctx = ctx;
+  constructor(parcelApiKey: string, logger: Logger) {
     this.parcelApiKey = parcelApiKey;
     this.logger = logger;
 
@@ -34,72 +30,24 @@ export class DeliveryPipeline {
     }
   }
 
-  async onEmailStateChange(): Promise<void> {
-    if (this.processing) {
-      this.logger.debug("Pipeline already processing, skipping");
-      return;
-    }
-
-    this.processing = true;
-    try {
-      await this.processStateChange();
-    } finally {
-      this.processing = false;
-    }
-  }
-
-  private async processStateChange(): Promise<void> {
-    const sinceState = getEmailState();
-
-    if (!sinceState) {
-      // First run: save current Email state without processing
-      this.logger.info("First run: fetching current JMAP state (skipping history)");
-      const state = await this.fetchCurrentEmailState();
-      if (state) {
-        saveEmailState(state);
-        this.logger.info(`Saved initial JMAP state: ${state}`);
-      }
-      return;
-    }
-
-    let emails: Awaited<ReturnType<typeof fetchNewEmails>>["emails"];
-    let newState: string;
-    try {
-      const result = await fetchNewEmails(this.ctx, sinceState, this.logger);
-      emails = result.emails;
-      newState = result.newState;
-    } catch (error) {
-      const message = (error as Error).message ?? "";
-      if (message.includes("cannotCalculateChanges")) {
-        this.logger.warn("cannotCalculateChanges: resetting state");
-        const state = await this.fetchCurrentEmailState();
-        if (state) saveEmailState(state);
-        return;
-      }
-      this.logger.error("Failed to fetch emails", message);
-      return;
-    }
-
+  async handleEmails(emails: FetchedEmail[]): Promise<void> {
     // Filter candidates
     const candidates = [];
     for (const email of emails) {
-      const isCandidate = await isTrackingCandidate(
+      const result = await filterTrackingCandidate(
         { from: email.from, subject: email.subject, textBody: email.textBody },
         this.logger,
       );
-      if (isCandidate) {
+      if (result.pass) {
+        this.logger.info(
+          `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
+        );
         candidates.push(email);
       } else {
-        this.logger.info(`Filtered out: "${email.subject}" from ${email.from}`);
+        this.logger.info(
+          `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
+        );
       }
-    }
-
-    if (candidates.length > 0) {
-      this.logger.info(
-        `${candidates.length} tracking candidate(s) from ${emails.length} new email(s)`,
-      );
-    } else if (emails.length > 0) {
-      this.logger.info(`No tracking candidates in ${emails.length} new email(s)`);
     }
 
     // Pre-filter: skip emails that mention already-submitted tracking numbers
@@ -142,9 +90,6 @@ export class DeliveryPipeline {
         // Continue with other emails
       }
     }
-
-    // Save state after processing (crash-safe: dedup prevents double-submit)
-    saveEmailState(newState);
   }
 
   private async processEmail(
@@ -234,14 +179,5 @@ export class DeliveryPipeline {
       submittedAt: Date.now(),
       emailId,
     });
-  }
-
-  /** Get the current Email state via Email/get (compatible with Email/changes sinceState). */
-  private async fetchCurrentEmailState(): Promise<string | undefined> {
-    const [result] = await this.ctx.jam.request([
-      "Email/get",
-      { accountId: this.ctx.accountId, ids: [] },
-    ]);
-    return (result as Record<string, unknown>).state as string | undefined;
   }
 }
