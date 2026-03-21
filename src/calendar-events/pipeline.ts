@@ -84,7 +84,7 @@ export class CalendarEventPipeline {
       if (candidate) {
         candidates.push(email);
       } else {
-        this.logger.debug(`Filtered out: "${email.subject}" from ${email.from}`);
+        this.logger.info(`Filtered out: "${email.subject}" from ${email.from}`);
       }
     }
 
@@ -93,7 +93,7 @@ export class CalendarEventPipeline {
         `${candidates.length} calendar candidate(s) from ${emails.length} new email(s)`,
       );
     } else if (emails.length > 0) {
-      this.logger.debug(`No calendar candidates in ${emails.length} new email(s)`);
+      this.logger.info(`No calendar candidates in ${emails.length} new email(s)`);
     }
 
     // Create a fresh run log per batch
@@ -171,7 +171,7 @@ export class CalendarEventPipeline {
     }
 
     if (events.length === 0) {
-      this.logger.debug(`No calendar events found in "${email.subject}"`);
+      this.logger.info(`No calendar events found in "${email.subject}"`);
       return;
     }
 

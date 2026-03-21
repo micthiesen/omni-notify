@@ -90,7 +90,7 @@ export class DeliveryPipeline {
       if (isCandidate) {
         candidates.push(email);
       } else {
-        this.logger.debug(`Filtered out: "${email.subject}" from ${email.from}`);
+        this.logger.info(`Filtered out: "${email.subject}" from ${email.from}`);
       }
     }
 
@@ -99,7 +99,7 @@ export class DeliveryPipeline {
         `${candidates.length} tracking candidate(s) from ${emails.length} new email(s)`,
       );
     } else if (emails.length > 0) {
-      this.logger.debug(`No tracking candidates in ${emails.length} new email(s)`);
+      this.logger.info(`No tracking candidates in ${emails.length} new email(s)`);
     }
 
     // Pre-filter: skip emails that mention already-submitted tracking numbers
@@ -108,7 +108,7 @@ export class DeliveryPipeline {
       const text = `${email.subject} ${email.textBody}`;
       const match = [...knownNumbers].find((num) => text.includes(num));
       if (match) {
-        this.logger.debug(
+        this.logger.info(
           `Skipping "${email.subject}" — contains known tracking number ${match}`,
         );
         return false;
@@ -165,7 +165,7 @@ export class DeliveryPipeline {
     );
 
     if (deliveries.length === 0) {
-      this.logger.debug(`No tracking numbers found in "${email.subject}"`);
+      this.logger.info(`No tracking numbers found in "${email.subject}"`);
       return;
     }
 
