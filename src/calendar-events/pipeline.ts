@@ -24,6 +24,7 @@ import {
   findEvent,
   getRecentEvents,
   hasCreatedEvent,
+  hasEventChanged,
   markEventCancelled,
   recordCreatedEvent,
 } from "./persistence.js";
@@ -113,6 +114,11 @@ export class CalendarEventPipeline implements EmailHandler {
       title: e.title,
       startDate: e.startDate,
       startTime: e.startTime,
+      endDate: e.endDate,
+      endTime: e.endTime,
+      allDay: e.allDay,
+      location: e.location,
+      timeZone: e.timeZone,
     }));
 
     let events: Awaited<ReturnType<typeof extractCalendarEvents>>;
@@ -193,6 +199,11 @@ export class CalendarEventPipeline implements EmailHandler {
       title: event.title,
       startDate: event.startDate,
       startTime: event.startTime,
+      endDate: event.endDate,
+      endTime: event.endTime,
+      allDay: event.allDay,
+      location: event.location,
+      timeZone: event.timeZone,
       createdAt: Date.now(),
     });
 
@@ -244,6 +255,14 @@ export class CalendarEventPipeline implements EmailHandler {
       return this.handleCreate(event, emailId);
     }
 
+    // Skip if nothing meaningful changed
+    if (!hasEventChanged(record, event)) {
+      this.logger.info(
+        `No changes detected for "${event.title}" on ${event.startDate} (skipping update)`,
+      );
+      return;
+    }
+
     if (!this.calendarUrl) {
       this.logger.error("Calendar URL not discovered, cannot update event");
       return;
@@ -273,6 +292,11 @@ export class CalendarEventPipeline implements EmailHandler {
       title: event.title,
       startDate: event.startDate,
       startTime: event.startTime,
+      endDate: event.endDate,
+      endTime: event.endTime,
+      allDay: event.allDay,
+      location: event.location,
+      timeZone: event.timeZone,
       createdAt: Date.now(),
     });
 

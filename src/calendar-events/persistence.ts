@@ -8,6 +8,11 @@ export type CreatedCalendarEventData = {
   title: string;
   startDate: string;
   startTime?: string;
+  endDate?: string;
+  endTime?: string;
+  allDay: boolean;
+  location?: string;
+  timeZone?: string;
   createdAt: number;
   status?: "cancelled";
 };
@@ -69,6 +74,30 @@ export function findEvent(
   );
 
   return active.find((e) => e.startDate === startDate) ?? active[0];
+}
+
+/** Check if an extracted event has meaningful changes compared to the stored record. */
+export function hasEventChanged(
+  record: CreatedCalendarEventData,
+  event: {
+    startDate: string;
+    startTime?: string;
+    endDate?: string;
+    endTime?: string;
+    allDay: boolean;
+    location?: string;
+    timeZone?: string;
+  },
+): boolean {
+  return (
+    record.startDate !== event.startDate ||
+    (record.startTime ?? undefined) !== (event.startTime ?? undefined) ||
+    (record.endDate ?? undefined) !== (event.endDate ?? undefined) ||
+    (record.endTime ?? undefined) !== (event.endTime ?? undefined) ||
+    record.allDay !== event.allDay ||
+    (record.location ?? undefined) !== (event.location ?? undefined) ||
+    (record.timeZone ?? undefined) !== (event.timeZone ?? undefined)
+  );
 }
 
 /** Mark an existing event as cancelled (preserves record to prevent re-creation). */

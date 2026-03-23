@@ -16,6 +16,11 @@ export interface ExistingEventContext {
   title: string;
   startDate: string;
   startTime?: string;
+  endDate?: string;
+  endTime?: string;
+  allDay: boolean;
+  location?: string;
+  timeZone?: string;
 }
 
 export interface ExtractCalendarEventsOptions {
@@ -25,6 +30,18 @@ export interface ExtractCalendarEventsOptions {
   attachments?: DownloadedAttachment[];
   localTimeZone?: string;
   existingEvents?: ExistingEventContext[];
+}
+
+function formatExistingEvent(e: ExistingEventContext): string {
+  const parts = [`- "${e.title}" on ${e.startDate}`];
+  if (e.allDay) {
+    parts.push("(all day)");
+  } else if (e.startTime) {
+    parts.push(e.endTime ? `${e.startTime}–${e.endTime}` : `at ${e.startTime}`);
+  }
+  if (e.timeZone) parts.push(`(${e.timeZone})`);
+  if (e.location) parts.push(`@ ${e.location}`);
+  return parts.join(" ");
 }
 
 export async function extractCalendarEvents(
@@ -70,8 +87,10 @@ Action classification:
 - Use "update" if the email indicates an existing event has been rescheduled, moved, or had details changed (new time, location, etc.). Use the same title as the existing event
 - If an update fundamentally changes the event (e.g. rebooked to a completely different flight), emit a "cancel" for the old event and a "create" for the new one
 - Do NOT generate "cancel" or "update" for events not in the existing events list
+- If an email is just a reminder or confirmation for an existing event with no actual changes (same date, time, location), return an empty events array. Do NOT emit an "update" unless something has actually changed
+- For updates, include ALL event fields (startTime, endTime, location, timeZone, etc.), not just the changed ones. The update replaces the entire event
 - When in doubt, prefer "create"
-${existingEvents && existingEvents.length > 0 ? `\nExisting calendar events (created by this system):\n${existingEvents.map((e) => `- "${e.title}" on ${e.startDate}${e.startTime ? ` at ${e.startTime}` : " (all day)"}`).join("\n")}\n` : ""}
+${existingEvents && existingEvents.length > 0 ? `\nExisting calendar events (created by this system):\n${existingEvents.map((e) => formatExistingEvent(e)).join("\n")}\n` : ""}
 Today's date: ${currentDate}
 
 From: ${email.from}
