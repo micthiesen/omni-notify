@@ -1,6 +1,4 @@
 import { defineConfig } from "vitest/config";
-export default defineConfig({
-    test: {
-        exclude: ["**/node_modules/**", "**/dist/**"],
-    },
-});
+import { baseVitestConfig } from "@micthiesen/mitools/vitest";
+
+export default defineConfig(baseVitestConfig);

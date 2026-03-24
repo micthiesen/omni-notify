@@ -46,7 +46,7 @@ export async function generateStructuredOutput<T extends z.ZodType>({
         throw new Error("LLM returned no structured output");
       }
 
-      return { output, attempts: attempt };
+      return { output: output as z.infer<T>, attempts: attempt };
     } catch (error) {
       lastError = error;
 
