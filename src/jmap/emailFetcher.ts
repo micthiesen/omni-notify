@@ -44,11 +44,13 @@ export async function fetchNewEmails(
         "subject",
         "from",
         "textBody",
+        "htmlBody",
         "bodyValues",
         "receivedAt",
         "attachments",
       ],
       fetchTextBodyValues: true,
+      fetchHTMLBodyValues: true,
     });
 
     return { changes, emails };
@@ -93,15 +95,52 @@ function formatFrom(from: unknown): string {
   return first.email ?? first.name ?? "";
 }
 
+interface BodyPart {
+  partId: string;
+  type?: string;
+}
+
+function isBodyPartArray(value: unknown): value is BodyPart[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (p) => typeof p === "object" && p !== null && typeof p.partId === "string",
+    )
+  );
+}
+
+function isBodyValues(value: unknown): value is Record<string, { value?: string }> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function extractTextBody(email: Record<string, unknown>): string {
-  const parts = email.textBody as { partId?: string; type?: string }[] | undefined;
-  const bodyValues = email.bodyValues as Record<string, { value?: string }> | undefined;
-  if (!parts || !bodyValues) return "";
+  if (!isBodyValues(email.bodyValues)) return "";
+  const bodyValues = email.bodyValues;
+
+  // Prefer HTML body: it's typically more complete than plain text (some senders
+  // render fields like appointment times only in HTML, leaving "undefined" in text).
+  if (isBodyPartArray(email.htmlBody)) {
+    const html = extractParts(email.htmlBody, bodyValues, true);
+    if (html) return html;
+  }
+
+  if (isBodyPartArray(email.textBody)) {
+    return extractParts(email.textBody, bodyValues, false);
+  }
+
+  return "";
+}
+
+function extractParts(
+  parts: BodyPart[],
+  bodyValues: Record<string, { value?: string }>,
+  convertHtml: boolean,
+): string {
   return parts
     .map((p) => {
-      if (!p.partId) return "";
       const value = bodyValues[p.partId]?.value ?? "";
       if (!value) return "";
+      if (convertHtml) return htmlToText(value);
       return p.type !== "text/plain" ? htmlToText(value) : value;
     })
     .join("\n");

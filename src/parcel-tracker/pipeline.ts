@@ -70,16 +70,14 @@ export class DeliveryPipeline implements EmailHandler {
       );
     }
 
-    // Create a fresh run log per batch
-    const runLog = config.LOGS_PATH
-      ? new LogFile(
-          `${config.LOGS_PATH}/parcel-tracker/${logTimestamp()}.md`,
-          "overwrite",
-        )
-      : undefined;
-
     // Process each candidate
     for (const email of newCandidates) {
+      const runLog = config.LOGS_PATH
+        ? new LogFile(
+            `${config.LOGS_PATH}/parcel-tracker/${logTimestamp()}.md`,
+            "overwrite",
+          )
+        : undefined;
       try {
         await this.processEmail(email, runLog);
       } catch (error) {

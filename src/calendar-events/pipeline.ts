@@ -63,14 +63,6 @@ export class CalendarEventPipeline implements EmailHandler {
       }
     }
 
-    // Create a fresh run log per batch
-    const runLog = config.LOGS_PATH
-      ? new LogFile(
-          `${config.LOGS_PATH}/calendar-events/${logTimestamp()}.md`,
-          "overwrite",
-        )
-      : undefined;
-
     // Discover calendar URL once (lazy init + cache)
     if (candidates.length > 0 && !this.calendarUrl) {
       try {
@@ -86,6 +78,12 @@ export class CalendarEventPipeline implements EmailHandler {
 
     // Process each candidate
     for (const email of candidates) {
+      const runLog = config.LOGS_PATH
+        ? new LogFile(
+            `${config.LOGS_PATH}/calendar-events/${logTimestamp()}.md`,
+            "overwrite",
+          )
+        : undefined;
       try {
         await this.processEmail(email, runLog);
       } catch (error) {
