@@ -1,7 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
+import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { formatDistance, formatDistanceToNow } from "date-fns";
-import { ScheduledTask } from "../scheduling/ScheduledTask.js";
 import appConfig from "../utils/config.js";
 import { type ChannelsConfig, StreamFilterService } from "./filters/index.js";
 import { ViewerMetricsService } from "./metrics/index.js";

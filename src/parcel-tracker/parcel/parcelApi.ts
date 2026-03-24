@@ -1,7 +1,7 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
+import { codeBlock } from "@micthiesen/mitools/markdown";
 import got, { type HTTPError } from "got";
-import { codeBlock } from "../../utils/markdown.js";
 
 const API_URL = "https://api.parcel.app/external/add-delivery/";
 

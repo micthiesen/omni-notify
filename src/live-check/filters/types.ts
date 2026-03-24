@@ -37,7 +37,10 @@ const channelConfigSchema = z.object({
   filter: channelFilterSchema.optional(),
 });
 
-export const channelsConfigSchema = z.record(z.string(), z.record(z.string(), channelConfigSchema));
+export const channelsConfigSchema = z.record(
+  z.string(),
+  z.record(z.string(), channelConfigSchema),
+);
 
 // Stream context passed to filter service
 export type StreamContext = {

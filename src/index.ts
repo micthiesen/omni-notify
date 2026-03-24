@@ -1,5 +1,6 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
+import { Scheduler } from "@micthiesen/mitools/scheduling";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { createCalendarHandler } from "./calendar-events/index.js";
@@ -10,7 +11,6 @@ import { loadChannelsConfig } from "./live-check/filters/index.js";
 import { Platform } from "./live-check/platforms/index.js";
 import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
-import { Scheduler } from "./scheduling/Scheduler.js";
 import config from "./utils/config.js";
 
 Injector.configure({ config });

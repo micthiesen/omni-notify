@@ -1,11 +1,11 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
+import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
 import type { JmapContext } from "../jmap/client.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
-import { logTimestamp } from "../utils/markdown.js";
 import { downloadSupportedAttachments } from "./extraction/attachments.js";
 import {
   type ExistingEventContext,

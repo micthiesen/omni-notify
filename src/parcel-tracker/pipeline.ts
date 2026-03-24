@@ -1,9 +1,9 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
+import { logTimestamp } from "@micthiesen/mitools/markdown";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
-import { logTimestamp } from "../utils/markdown.js";
 import { isValidCarrierCode } from "./carriers/carrierMap.js";
 import { extractDeliveries } from "./extraction/extractDeliveries.js";
 import { filterTrackingCandidate } from "./filter/keywords.js";

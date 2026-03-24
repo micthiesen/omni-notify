@@ -22,7 +22,7 @@
     "@ai-sdk/anthropic": "^3.0.63",
     "@ai-sdk/google": "^3.0.53",
     "@ai-sdk/openai": "^3.0.48",
-    "@micthiesen/mitools": "^2.0.0",
+    "@micthiesen/mitools": "^2.1.0",
     "@mozilla/readability": "^0.6.0",
     "ai": "^6.0.137",
     "date-fns": "^4.1.0",

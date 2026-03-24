@@ -1,9 +1,9 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
+import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output, type UserContent } from "ai";
 import { getExtractionModel } from "../../ai/registry.js";
-import { codeBlock } from "../../utils/markdown.js";
 import type { DownloadedAttachment } from "./attachments.js";
 import {
   type CalendarEventExtraction,
