@@ -58,7 +58,17 @@ interface ChartDataPoint {
   timestamp: string;
   epoch: number;
   weight: number;
+  smoothed?: number;
   trend?: number;
+}
+
+function ewma(values: number[], alpha: number): number[] {
+  if (values.length === 0) return [];
+  const result = [values[0]];
+  for (let i = 1; i < values.length; i++) {
+    result.push(alpha * values[i] + (1 - alpha) * result[i - 1]);
+  }
+  return result;
 }
 
 function linearRegression(points: { x: number; y: number }[]): {
@@ -123,10 +133,16 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
   const { slope, intercept, r2 } = linearRegression(regressionPoints);
   const slopePerWeek = slope * 7;
 
-  const data: ChartDataPoint[] = baseData.map((d) => {
+  const smoothed = ewma(
+    baseData.map((d) => d.weight),
+    0.15,
+  );
+
+  const data: ChartDataPoint[] = baseData.map((d, i) => {
     const xDays = (d.epoch - t0) / MS_PER_DAY;
     return {
       ...d,
+      smoothed: Math.round(smoothed[i] * 100) / 100,
       trend: Math.round((intercept + slope * xDays) * 100) / 100,
     };
   });
@@ -229,6 +245,16 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                 strokeWidth={2}
                 dot={{ r: data.length <= 60 ? 3 : 0, fill: color, strokeWidth: 0 }}
                 activeDot={{ r: 5, fill: color, stroke: "#1a1a2e", strokeWidth: 2 }}
+              />
+              <Line
+                type="monotoneX"
+                dataKey="smoothed"
+                stroke="#ffffff"
+                strokeWidth={2}
+                strokeOpacity={0.6}
+                dot={false}
+                activeDot={false}
+                name="Smoothed"
               />
               <Line
                 type="linear"
