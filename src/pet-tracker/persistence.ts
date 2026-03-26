@@ -46,8 +46,8 @@ export function upsertPet(pet: PetRow): void {
   getPetsTable().upsert(pet);
 }
 
-export function insertWeightReading(reading: WeightHistoryRow): void {
-  getWeightHistoryTable().insert(reading);
+export function insertWeightReading(reading: WeightHistoryRow): boolean {
+  return getWeightHistoryTable().insert(reading);
 }
 
 export function getAllPets(): PetRow[] {

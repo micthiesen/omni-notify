@@ -55,7 +55,11 @@ const configSchema = baseConfigSchema
       .transform((s) => {
         if (!s) return undefined;
         const [email, ...rest] = s.split(":");
-        return { email, password: rest.join(":") };
+        const password = rest.join(":");
+        if (!email || !password) {
+          throw new Error("WHISKER_CREDENTIALS must be email:password");
+        }
+        return { email, password };
       }),
     FRONTEND_PORT: z.coerce.number().optional().default(3000),
   })

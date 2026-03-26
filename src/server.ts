@@ -4,6 +4,10 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
 import { getAllPetsWithHistory, getWeightHistory } from "./pet-tracker/persistence.js";
 
+function round(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
 export function startServer(port: number, logger: Logger): () => void {
   const app = new Hono();
 
@@ -12,10 +16,10 @@ export function startServer(port: number, logger: Logger): () => void {
     const response = pets.map((pet) => ({
       petId: pet.pet_id,
       name: pet.name,
-      currentWeight: pet.current_weight,
+      currentWeight: round(pet.current_weight),
       weightHistory: pet.weightHistory.map((entry) => ({
         timestamp: entry.timestamp,
-        weight: entry.weight,
+        weight: round(entry.weight),
       })),
     }));
     return c.json(response);

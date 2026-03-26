@@ -61,9 +61,13 @@ interface ChartDataPoint {
   trend?: number;
 }
 
-function linearRegression(points: { x: number; y: number }[]): { slope: number; intercept: number } {
+function linearRegression(points: { x: number; y: number }[]): {
+  slope: number;
+  intercept: number;
+  r2: number;
+} {
   const n = points.length;
-  if (n < 2) return { slope: 0, intercept: points[0]?.y ?? 0 };
+  if (n < 2) return { slope: 0, intercept: points[0]?.y ?? 0, r2: 0 };
 
   let sumX = 0;
   let sumY = 0;
@@ -77,11 +81,22 @@ function linearRegression(points: { x: number; y: number }[]): { slope: number; 
   }
 
   const denom = n * sumXX - sumX * sumX;
-  if (denom === 0) return { slope: 0, intercept: sumY / n };
+  if (denom === 0) return { slope: 0, intercept: sumY / n, r2: 0 };
 
   const slope = (n * sumXY - sumX * sumY) / denom;
   const intercept = (sumY - slope * sumX) / n;
-  return { slope, intercept };
+
+  const meanY = sumY / n;
+  let ssRes = 0;
+  let ssTot = 0;
+  for (const p of points) {
+    const predicted = intercept + slope * p.x;
+    ssRes += (p.y - predicted) ** 2;
+    ssTot += (p.y - meanY) ** 2;
+  }
+  const r2 = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
+
+  return { slope, intercept, r2 };
 }
 
 function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
@@ -99,13 +114,22 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
     weight: e.weight,
   }));
 
-  const regressionPoints = baseData.map((d, i) => ({ x: i, y: d.weight }));
-  const { slope, intercept } = linearRegression(regressionPoints);
-
-  const data: ChartDataPoint[] = baseData.map((d, i) => ({
-    ...d,
-    trend: Math.round((intercept + slope * i) * 100) / 100,
+  const t0 = baseData.length > 0 ? new Date(baseData[0].timestamp).getTime() : 0;
+  const MS_PER_DAY = 86_400_000;
+  const regressionPoints = baseData.map((d) => ({
+    x: (new Date(d.timestamp).getTime() - t0) / MS_PER_DAY,
+    y: d.weight,
   }));
+  const { slope, intercept, r2 } = linearRegression(regressionPoints);
+  const slopePerWeek = slope * 7;
+
+  const data: ChartDataPoint[] = baseData.map((d) => {
+    const xDays = (new Date(d.timestamp).getTime() - t0) / MS_PER_DAY;
+    return {
+      ...d,
+      trend: Math.round((intercept + slope * xDays) * 100) / 100,
+    };
+  });
 
   const weights = data.map((d) => d.weight);
   const minW = weights.length > 0 ? Math.min(...weights) : 0;
@@ -128,6 +152,15 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
         <div>
           <span className="pet-name">{pet.name}</span>
           <span className="pet-weight"> — {pet.currentWeight} lbs</span>
+          {baseData.length >= 2 && (
+            <span
+              className={`pet-trend ${slopePerWeek >= 0 ? "up" : "down"}`}
+              title={`R² = ${r2.toFixed(3)} (${r2 >= 0.7 ? "strong" : r2 >= 0.3 ? "moderate" : "weak"} fit)`}
+            >
+              {slopePerWeek >= 0 ? "+" : ""}
+              {slopePerWeek.toFixed(2)} lbs/wk
+            </span>
+          )}
         </div>
         <div className="range-controls">
           <a href={exportUrl} className="export-btn" title="Export CSV">

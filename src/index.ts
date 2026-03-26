@@ -29,7 +29,9 @@ function buildTasks(): ScheduledTask[] {
   ];
   const channelsConfig = loadChannelsConfig(logger);
   tasks.push(new LiveCheckTask(channels, channelsConfig, logger));
-  tasks.push(new PetTrackerTask(logger));
+  if (config.WHISKER_CREDENTIALS) {
+    tasks.push(new PetTrackerTask(config.WHISKER_CREDENTIALS, logger));
+  }
 
   for (const config of loadBriefingConfigs(logger)) {
     const task = BriefingAgentTask.create(config, logger);

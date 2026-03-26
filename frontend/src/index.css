@@ -78,6 +78,20 @@ h1 {
   font-weight: 400;
 }
 
+.pet-trend {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+.pet-trend.up {
+  color: #81c784;
+}
+
+.pet-trend.down {
+  color: #e57373;
+}
+
 .range-controls {
   display: flex;
   align-items: center;
