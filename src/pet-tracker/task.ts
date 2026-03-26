@@ -20,7 +20,7 @@ export default class PetTrackerTask extends ScheduledTask {
   constructor(credentials: Credentials, logger: Logger) {
     super();
     this.credentials = credentials;
-    this.logger = logger;
+    this.logger = logger.extend("PetTracker");
   }
 
   public async run(): Promise<void> {

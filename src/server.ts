@@ -8,7 +8,8 @@ function round(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-export function startServer(port: number, logger: Logger): () => void {
+export function startServer(port: number, parentLogger: Logger): () => void {
+  const logger = parentLogger.extend("Server");
   const app = new Hono();
 
   app.get("/api/pets", async (c) => {
