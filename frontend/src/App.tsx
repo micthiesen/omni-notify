@@ -56,7 +56,7 @@ function formatTooltipDate(timestamp: string): string {
 
 interface ChartDataPoint {
   timestamp: string;
-  date: string;
+  epoch: number;
   weight: number;
   trend?: number;
 }
@@ -110,21 +110,21 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
 
   const baseData = filtered.map((e) => ({
     timestamp: e.timestamp,
-    date: formatDate(e.timestamp),
+    epoch: new Date(e.timestamp).getTime(),
     weight: e.weight,
   }));
 
-  const t0 = baseData.length > 0 ? new Date(baseData[0].timestamp).getTime() : 0;
+  const t0 = baseData.length > 0 ? baseData[0].epoch : 0;
   const MS_PER_DAY = 86_400_000;
   const regressionPoints = baseData.map((d) => ({
-    x: (new Date(d.timestamp).getTime() - t0) / MS_PER_DAY,
+    x: (d.epoch - t0) / MS_PER_DAY,
     y: d.weight,
   }));
   const { slope, intercept, r2 } = linearRegression(regressionPoints);
   const slopePerWeek = slope * 7;
 
   const data: ChartDataPoint[] = baseData.map((d) => {
-    const xDays = (new Date(d.timestamp).getTime() - t0) / MS_PER_DAY;
+    const xDays = (d.epoch - t0) / MS_PER_DAY;
     return {
       ...d,
       trend: Math.round((intercept + slope * xDays) * 100) / 100,
@@ -188,12 +188,15 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={data} margin={{ top: 8, right: 16, left: 4, bottom: showBrush ? 28 : 8 }}>
               <XAxis
-                dataKey="date"
+                dataKey="epoch"
+                type="number"
+                scale="time"
+                domain={["dataMin", "dataMax"]}
                 tick={{ fill: "#8888a8", fontSize: 12 }}
                 tickLine={{ stroke: "#3a3a5a" }}
                 axisLine={{ stroke: "#3a3a5a" }}
-                interval="preserveStartEnd"
-                minTickGap={40}
+                tickFormatter={(v: number) => formatDate(new Date(v).toISOString())}
+                minTickGap={50}
               />
               <YAxis
                 domain={[yMin, yMax]}
@@ -211,20 +214,16 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                   color: "#e0e0e0",
                   fontSize: 13,
                 }}
-                labelFormatter={(_, payload) => {
-                  if (payload.length > 0) {
-                    const point = payload[0].payload as ChartDataPoint;
-                    return formatTooltipDate(point.timestamp);
-                  }
-                  return "";
-                }}
+                labelFormatter={(value: number) =>
+                  formatTooltipDate(new Date(value).toISOString())
+                }
                 formatter={(value: number, name: string) => [
                   `${value} lbs`,
                   name === "trend" ? "Trend" : "Weight",
                 ]}
               />
               <Line
-                type="monotone"
+                type="monotoneX"
                 dataKey="weight"
                 stroke={color}
                 strokeWidth={2}
@@ -232,7 +231,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                 activeDot={{ r: 5, fill: color, stroke: "#1a1a2e", strokeWidth: 2 }}
               />
               <Line
-                type="monotone"
+                type="linear"
                 dataKey="trend"
                 stroke={color}
                 strokeWidth={1.5}
@@ -244,7 +243,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
               />
               {showBrush && (
                 <Brush
-                  dataKey="date"
+                  dataKey="epoch"
                   height={24}
                   stroke="#4a6fa5"
                   fill="#16213e"
