@@ -1,5 +1,6 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
+import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Scheduler } from "@micthiesen/mitools/scheduling";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
@@ -18,6 +19,50 @@ import config from "./utils/config.js";
 Injector.configure({ config });
 
 const logger = new Logger("Main");
+
+function buildTasks(): ScheduledTask[] {
+  const tasks: ScheduledTask[] = [];
+
+  const channels: [Platform, { username: string; displayName: string }[]][] = [
+    [Platform.YouTube, config.YT_CHANNEL_NAMES],
+    [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
+  ];
+  const channelsConfig = loadChannelsConfig(logger);
+  tasks.push(new LiveCheckTask(channels, channelsConfig, logger));
+  tasks.push(new PetTrackerTask(logger));
+
+  for (const config of loadBriefingConfigs(logger)) {
+    const task = BriefingAgentTask.create(config, logger);
+    if (task) tasks.push(task);
+  }
+
+  return tasks;
+}
+
+// --run-task <name>: run a single task once and exit
+const runTaskIndex = process.argv.indexOf("--run-task");
+if (runTaskIndex !== -1) {
+  const taskName = process.argv[runTaskIndex + 1];
+  if (!taskName) {
+    logger.error("Usage: --run-task <TaskName>");
+    process.exit(1);
+  }
+
+  const tasks = buildTasks();
+  const task = tasks.find((t) => t.name.toLowerCase() === taskName.toLowerCase());
+  if (!task) {
+    const names = tasks.map((t) => t.name).join(", ");
+    logger.error(`Unknown task "${taskName}". Available: ${names}`);
+    process.exit(1);
+  }
+
+  logger.info(`Running task "${task.name}" once...`);
+  await task.run();
+  logger.info(`Task "${task.name}" complete`);
+  process.exit(0);
+}
+
+// --server-only: just the HTTP server, no tasks
 const serverOnly = process.argv.includes("--server-only");
 
 // Start HTTP server
@@ -27,20 +72,8 @@ let cleanupEventSource: (() => void) | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
-
-  // Register tasks
-  const channels: [Platform, { username: string; displayName: string }[]][] = [
-    [Platform.YouTube, config.YT_CHANNEL_NAMES],
-    [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
-  ];
-  const channelsConfig = loadChannelsConfig(logger);
-  scheduler.register(new LiveCheckTask(channels, channelsConfig, logger));
-
-  scheduler.register(new PetTrackerTask(logger));
-
-  for (const config of loadBriefingConfigs(logger)) {
-    const task = BriefingAgentTask.create(config, logger);
-    if (task) scheduler.register(task);
+  for (const task of buildTasks()) {
+    scheduler.register(task);
   }
 
   // Start JMAP-based features (parcel tracker + calendar events)

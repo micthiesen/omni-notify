@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "dev": "dotenvx run -- tsx watch src/index.ts",
+    "run-task": "dotenvx run -- tsx src/index.ts --run-task",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
