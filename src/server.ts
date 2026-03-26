@@ -2,7 +2,11 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
-import { getAllPetsWithHistory, getWeightHistory } from "./pet-tracker/persistence.js";
+import {
+  getAllPetsWithHistory,
+  getPet,
+  getWeightHistory,
+} from "./pet-tracker/persistence.js";
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -46,7 +50,9 @@ export function startServer(port: number, parentLogger: Logger): () => void {
     }
 
     c.header("Content-Type", "text/csv");
-    c.header("Content-Disposition", `attachment; filename="${petId}-weight.csv"`);
+    const pet = getPet(petId);
+    const filename = pet ? `${pet.name.toLowerCase()}-weight.csv` : `${petId}-weight.csv`;
+    c.header("Content-Disposition", `attachment; filename="${filename}"`);
     return c.body(lines.join("\n"));
   });
 

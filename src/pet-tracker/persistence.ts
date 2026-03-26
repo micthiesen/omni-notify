@@ -50,6 +50,10 @@ export function insertWeightReading(reading: WeightHistoryRow): boolean {
   return getWeightHistoryTable().insert(reading);
 }
 
+export function getPet(petId: string): PetRow | undefined {
+  return getPetsTable().query("pet_id = ?", [petId])[0];
+}
+
 export function getAllPets(): PetRow[] {
   return getPetsTable().all();
 }
