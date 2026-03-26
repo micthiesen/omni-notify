@@ -49,6 +49,15 @@ const configSchema = baseConfigSchema
     SMTP_PASS: z.string().optional(),
     EMAIL_FROM: z.string().optional(),
     LOGS_EMAIL_TO: z.string().optional(),
+    WHISKER_CREDENTIALS: z
+      .string()
+      .optional()
+      .transform((s) => {
+        if (!s) return undefined;
+        const [email, ...rest] = s.split(":");
+        return { email, password: rest.join(":") };
+      }),
+    FRONTEND_PORT: z.coerce.number().optional().default(3000),
   })
   .transform((c) => ({
     ...c,

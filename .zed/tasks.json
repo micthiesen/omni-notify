@@ -20,6 +20,15 @@
     "hide": "never"
   },
   {
+    "label": "Dev Server (API Only)",
+    "command": "pnpm run dev -- --server-only",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
     "label": "Build",
     "command": "pnpm run build",
     "cwd": "$ZED_WORKTREE_ROOT",
@@ -73,6 +82,29 @@
   {
     "label": "Docker Build",
     "command": "pnpm run docker:build",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "Frontend Dev",
+    "command": "pnpm --filter frontend dev",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "Frontend Build",
+    "command": "pnpm --filter frontend build",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "Seed Pet Data",
+    "command": "npx dotenvx run -- npx tsx src/pet-tracker/seed.ts",
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
     "hide": "on_success"
