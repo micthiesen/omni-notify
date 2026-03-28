@@ -16,6 +16,11 @@ type Credentials = NonNullable<Config["WHISKER_CREDENTIALS"]>;
 
 const MS_PER_DAY = 86_400_000;
 
+function round(value: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  return (Math.round(value * factor) / factor).toFixed(decimals);
+}
+
 interface PetSyncResult {
   petId: string;
   name: string;
@@ -102,7 +107,7 @@ function formatTitle(names: string[]): string {
 
 function formatPetLine(pet: PetSyncResult): string {
   const history = getRecentWeightHistory(pet.petId, 30);
-  const weight = `${pet.currentWeight.toFixed(1)} lbs`;
+  const weight = `${round(pet.currentWeight, 1)} lbs`;
 
   if (history.length < 2) return `${pet.name}: ${weight}`;
 
@@ -115,7 +120,7 @@ function formatPetLine(pet: PetSyncResult): string {
   const perWeek = slope * 7;
 
   const sign = perWeek >= 0 ? "+" : "";
-  const trend = `${sign}${perWeek.toFixed(2)} lbs/wk`;
+  const trend = `${sign}${round(perWeek, 2)} lbs/wk`;
   const qualifier = r2 < 0.3 ? ", weak trend" : "";
 
   return `${pet.name}: ${weight} (${trend}${qualifier})`;
