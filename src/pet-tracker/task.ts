@@ -102,7 +102,7 @@ function formatTitle(names: string[]): string {
 
 function formatPetLine(pet: PetSyncResult): string {
   const history = getRecentWeightHistory(pet.petId, 30);
-  const weight = `${pet.currentWeight} lbs`;
+  const weight = `${pet.currentWeight.toFixed(1)} lbs`;
 
   if (history.length < 2) return `${pet.name}: ${weight}`;
 
