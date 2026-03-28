@@ -5,13 +5,26 @@ import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import config, { type Config } from "../utils/config.js";
 import { fetchPetsByUser } from "./api.js";
 import { authenticateWhisker } from "./auth.js";
-import { insertWeightReading, upsertPet } from "./persistence.js";
+import { linearRegression } from "./math.js";
+import {
+  getRecentWeightHistory,
+  insertWeightReading,
+  upsertPet,
+} from "./persistence.js";
 
 type Credentials = NonNullable<Config["WHISKER_CREDENTIALS"]>;
 
+const MS_PER_DAY = 86_400_000;
+
+interface PetSyncResult {
+  petId: string;
+  name: string;
+  currentWeight: number;
+}
+
 export default class PetTrackerTask extends ScheduledTask {
   public readonly name = "PetTracker";
-  public readonly schedule = "0 0 */2 * * *";
+  public readonly schedule = "0 */10 * * * *";
   public readonly runOnStartup = true;
 
   private readonly logger: Logger;
@@ -31,8 +44,8 @@ export default class PetTrackerTask extends ScheduledTask {
 
     const pets = await fetchPetsByUser(idToken, userId);
 
-    let newReadings = 0;
-    let totalReadings = 0;
+    const affectedPets: PetSyncResult[] = [];
+    let totalNew = 0;
     const now = new Date().toISOString();
 
     for (const pet of pets) {
@@ -43,6 +56,7 @@ export default class PetTrackerTask extends ScheduledTask {
         updated_at: now,
       });
 
+      let newReadings = 0;
       for (const reading of pet.weightHistory) {
         const isNew = insertWeightReading({
           pet_id: pet.petId,
@@ -50,20 +64,59 @@ export default class PetTrackerTask extends ScheduledTask {
           weight: reading.weight,
         });
         if (isNew) newReadings++;
-        totalReadings++;
+      }
+      totalNew += newReadings;
+
+      if (newReadings > 0) {
+        affectedPets.push({
+          petId: pet.petId,
+          name: pet.name,
+          currentWeight: pet.weight,
+        });
       }
     }
 
     this.logger.info(
-      `Synced ${pets.length} pets, ${newReadings} new / ${totalReadings} total readings`,
+      `Synced ${pets.length} pets, ${totalNew} new / ${pets.reduce((s, p) => s + p.weightHistory.length, 0)} total readings`,
     );
 
-    if (newReadings > 0) {
+    if (affectedPets.length > 0) {
+      const title = formatTitle(affectedPets.map((p) => p.name));
+      const message = affectedPets.map((p) => formatPetLine(p)).join("\n");
+
       await notify({
-        title: "Pet Tracker",
-        message: `${newReadings} new weight reading${newReadings === 1 ? "" : "s"} from ${pets.length} pet${pets.length === 1 ? "" : "s"}`,
+        title,
+        message,
         token: config.PUSHOVER_TOKEN,
       });
     }
   }
+}
+
+function formatTitle(names: string[]): string {
+  if (names.length === 1) return `${names[0]} weighed in`;
+  if (names.length === 2) return `${names[0]} & ${names[1]} weighed in`;
+  const last = names.pop()!;
+  return `${names.join(", ")} & ${last} weighed in`;
+}
+
+function formatPetLine(pet: PetSyncResult): string {
+  const history = getRecentWeightHistory(pet.petId, 30);
+  const weight = `${pet.currentWeight} lbs`;
+
+  if (history.length < 2) return `${pet.name}: ${weight}`;
+
+  const t0 = new Date(history[0].timestamp).getTime();
+  const points = history.map((h) => ({
+    x: (new Date(h.timestamp).getTime() - t0) / MS_PER_DAY,
+    y: h.weight,
+  }));
+  const { slope, r2 } = linearRegression(points);
+  const perWeek = slope * 7;
+
+  const sign = perWeek >= 0 ? "+" : "";
+  const trend = `${sign}${perWeek.toFixed(2)} lbs/wk`;
+  const qualifier = r2 < 0.3 ? ", weak trend" : "";
+
+  return `${pet.name}: ${weight} (${trend}${qualifier})`;
 }

@@ -51,7 +51,9 @@ export function startServer(port: number, parentLogger: Logger): () => void {
 
     c.header("Content-Type", "text/csv");
     const pet = getPet(petId);
-    const filename = pet ? `${pet.name.toLowerCase()}-weight.csv` : `${petId}-weight.csv`;
+    const filename = pet
+      ? `${pet.name.toLowerCase()}-weight.csv`
+      : `${petId}-weight.csv`;
     c.header("Content-Disposition", `attachment; filename="${filename}"`);
     return c.body(lines.join("\n"));
   });

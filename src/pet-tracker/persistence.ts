@@ -62,6 +62,18 @@ export function getWeightHistory(petId: string): WeightHistoryRow[] {
   return getWeightHistoryTable().query("pet_id = ? ORDER BY timestamp ASC", [petId]);
 }
 
+export function getRecentWeightHistory(
+  petId: string,
+  days: number,
+): WeightHistoryRow[] {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  return getWeightHistoryTable().query(
+    "pet_id = ? AND timestamp >= ? ORDER BY timestamp ASC",
+    [petId, cutoff.toISOString()],
+  );
+}
+
 export function getAllPetsWithHistory(): Array<
   PetRow & { weightHistory: WeightHistoryRow[] }
 > {

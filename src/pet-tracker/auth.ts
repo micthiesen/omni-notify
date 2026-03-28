@@ -10,15 +10,24 @@ const CLIENT_ID = "4552ujeu3aic90nf8qn53levmn";
 
 const logger = new Logger("WhiskerAuth");
 
+const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // Re-auth 5 min before expiry
+
 const userPool = new CognitoUserPool({
   UserPoolId: USER_POOL_ID,
   ClientId: CLIENT_ID,
 });
 
+let cachedAuth: { idToken: string; userId: string; expiresAt: number } | null = null;
+
 export async function authenticateWhisker(
   email: string,
   password: string,
 ): Promise<{ idToken: string; userId: string }> {
+  if (cachedAuth && Date.now() < cachedAuth.expiresAt - TOKEN_EXPIRY_BUFFER_MS) {
+    logger.debug("Using cached credentials");
+    return { idToken: cachedAuth.idToken, userId: cachedAuth.userId };
+  }
+
   const authDetails = new AuthenticationDetails({
     Username: email,
     Password: password,
@@ -44,7 +53,11 @@ export async function authenticateWhisker(
     throw new Error("Missing 'mid' claim in id token");
   }
 
-  logger.debug("Authenticated", { userId });
+  const exp = payload.exp;
+  const expiresAt = typeof exp === "number" ? exp * 1000 : Date.now() + 60 * 60 * 1000;
+
+  cachedAuth = { idToken, userId, expiresAt };
+  logger.debug("Authenticated (fresh)", { userId });
   return { idToken, userId };
 }
 
