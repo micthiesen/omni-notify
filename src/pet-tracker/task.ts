@@ -81,9 +81,8 @@ export default class PetTrackerTask extends ScheduledTask {
       }
     }
 
-    this.logger.info(
-      `Synced ${pets.length} pets, ${totalNew} new / ${pets.reduce((s, p) => s + p.weightHistory.length, 0)} total readings`,
-    );
+    const syncMsg = `Synced ${pets.length} pets, ${totalNew} new / ${pets.reduce((s, p) => s + p.weightHistory.length, 0)} total readings`;
+    this.logger[totalNew > 0 ? "info" : "debug"](syncMsg);
 
     if (affectedPets.length > 0) {
       const title = formatTitle(affectedPets.map((p) => p.name));
