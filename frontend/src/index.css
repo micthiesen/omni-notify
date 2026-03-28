@@ -143,6 +143,30 @@ h1 {
   margin-top: 0.5rem;
 }
 
+.custom-tooltip {
+  background: #1a1a2e;
+  border: 1px solid #3a3a5a;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  color: #e0e0e0;
+  font-size: 13px;
+}
+
+.tooltip-label {
+  margin-bottom: 0.3rem;
+  color: #a0a0c0;
+}
+
+.tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tooltip-swatch {
+  flex-shrink: 0;
+}
+
 .no-data {
   display: flex;
   align-items: center;

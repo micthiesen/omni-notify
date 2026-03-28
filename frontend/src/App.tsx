@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Brush,
   Line,
@@ -111,7 +111,19 @@ function linearRegression(points: { x: number; y: number }[]): {
 
 function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
   const [range, setRange] = useState<Range>("30d");
+  const [tooltipActive, setTooltipActive] = useState(false);
+  const chartRef = useRef<HTMLDivElement>(null);
   const color = COLORS[colorIndex % COLORS.length];
+
+  useEffect(() => {
+    function handlePointerDown(e: PointerEvent) {
+      if (chartRef.current && !chartRef.current.contains(e.target as Node)) {
+        setTooltipActive(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
 
   const sorted = [...pet.weightHistory].sort(
     (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
@@ -200,9 +212,14 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
       {data.length === 0 ? (
         <div className="no-data">No weight data for this range</div>
       ) : (
-        <div className="chart-container">
+        <div className="chart-container" ref={chartRef}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={data} margin={{ top: 8, right: 16, left: 4, bottom: showBrush ? 28 : 8 }}>
+            <LineChart
+              data={data}
+              margin={{ top: 8, right: 16, left: 4, bottom: showBrush ? 28 : 8 }}
+              onMouseMove={() => setTooltipActive(true)}
+              onMouseLeave={() => setTooltipActive(false)}
+            >
               <XAxis
                 dataKey="epoch"
                 type="number"
@@ -223,20 +240,39 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                 width={40}
               />
               <Tooltip
-                contentStyle={{
-                  background: "#1a1a2e",
-                  border: "1px solid #3a3a5a",
-                  borderRadius: 8,
-                  color: "#e0e0e0",
-                  fontSize: 13,
+                content={({ active, payload, label }) => {
+                  if (!active || !tooltipActive || !payload?.length) return null;
+                  const lineStyles: Record<string, { stroke: string; width: number; dash?: string; opacity?: number; label: string }> = {
+                    weight: { stroke: color, width: 2, label: "Weight" },
+                    smoothed: { stroke: "#ffffff", width: 2, opacity: 0.6, label: "Smoothed" },
+                    trend: { stroke: color, width: 1.5, dash: "4 3", opacity: 0.5, label: "Trend" },
+                  };
+                  return (
+                    <div className="custom-tooltip">
+                      <div className="tooltip-label">
+                        {formatTooltipDate(new Date(label as number).toISOString())}
+                      </div>
+                      {payload.map((entry) => {
+                        const style = lineStyles[entry.dataKey as string];
+                        if (!style) return null;
+                        return (
+                          <div key={entry.dataKey} className="tooltip-row">
+                            <svg width="20" height="12" className="tooltip-swatch">
+                              <line
+                                x1="0" y1="6" x2="20" y2="6"
+                                stroke={style.stroke}
+                                strokeWidth={style.width}
+                                strokeDasharray={style.dash}
+                                strokeOpacity={style.opacity ?? 1}
+                              />
+                            </svg>
+                            <span>{style.label}: {entry.value} lbs</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
                 }}
-                labelFormatter={(value: number) =>
-                  formatTooltipDate(new Date(value).toISOString())
-                }
-                formatter={(value: number, name: string) => [
-                  `${value} lbs`,
-                  name === "trend" ? "Trend" : "Weight",
-                ]}
               />
               <Line
                 type="monotoneX"
