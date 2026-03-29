@@ -98,10 +98,10 @@ export default class PetTrackerTask extends ScheduledTask {
 }
 
 function formatTitle(names: string[]): string {
-  if (names.length === 1) return `${names[0]} weighed in`;
-  if (names.length === 2) return `${names[0]} & ${names[1]} weighed in`;
+  if (names.length === 1) return `${names[0]} Weighed In`;
+  if (names.length === 2) return `${names[0]} & ${names[1]} Weighed In`;
   const last = names.pop()!;
-  return `${names.join(", ")} & ${last} weighed in`;
+  return `${names.join(", ")} & ${last} Weighed In`;
 }
 
 function formatPetLine(pet: PetSyncResult): string {
