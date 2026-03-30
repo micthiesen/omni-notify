@@ -92,6 +92,20 @@ h1 {
   color: #e57373;
 }
 
+.pet-visits {
+  font-size: 0.8rem;
+  color: #8888a8;
+  margin-left: 0.5rem;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 0.25rem;
+  margin-right: 0.4rem;
+  padding-right: 0.6rem;
+  border-right: 1px solid #3a3a5a;
+}
+
 .range-controls {
   display: flex;
   align-items: center;

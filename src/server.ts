@@ -4,6 +4,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
 import {
   getAllPetsWithHistory,
+  getDailyVisitCounts,
   getPet,
   getWeightHistory,
 } from "./pet-tracker/persistence.js";
@@ -26,6 +27,7 @@ export function startServer(port: number, parentLogger: Logger): () => void {
         timestamp: entry.timestamp,
         weight: round(entry.weight),
       })),
+      dailyVisits: getDailyVisitCounts(pet.pet_id),
     }));
     return c.json(response);
   });

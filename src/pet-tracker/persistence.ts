@@ -83,6 +83,23 @@ export function getAllPetsWithHistory(): Array<
   }));
 }
 
+export interface DailyVisitCount {
+  date: string; // "YYYY-MM-DD"
+  count: number;
+}
+
+export function getDailyVisitCounts(petId: string): DailyVisitCount[] {
+  const history = getWeightHistory(petId);
+  const counts = new Map<string, number>();
+  for (const row of history) {
+    const date = row.timestamp.slice(0, 10);
+    counts.set(date, (counts.get(date) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export function clearAllData(): void {
   getWeightHistoryTable().clear();
   getPetsTable().clear();

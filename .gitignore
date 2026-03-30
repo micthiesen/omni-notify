@@ -5,3 +5,5 @@ dist
 *.db
 *.db-shm
 *.db-wal
+*._*.ts
+*._*.js
