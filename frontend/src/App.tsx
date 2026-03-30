@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Brush,
   Line,
@@ -295,36 +295,59 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, []);
 
-  const sorted = [...pet.weightHistory].sort(
-    (a, b) =>
-      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+  const sorted = useMemo(
+    () =>
+      [...pet.weightHistory].sort(
+        (a, b) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+      ),
+    [pet.weightHistory],
   );
-  const filteredWeight = filterByRange(sorted, range);
-  const filteredVisits = filterVisitsByRange(pet.dailyVisits, range);
 
-  const weightResult = buildChartConfig(
-    {
-      dataKey: "weight",
-      label: "Weight",
-      unit: "lbs",
-      points: filteredWeight.map((e) => ({
-        timestamp: e.timestamp,
-        value: e.weight,
-      })),
-    },
-    range,
-    color,
+  const filteredWeight = useMemo(
+    () => filterByRange(sorted, range),
+    [sorted, range],
   );
-  const visitResult = buildChartConfig(
-    {
-      dataKey: "count",
-      label: "Visits",
-      unit: "visits",
-      yMinZero: true,
-      points: filteredVisits.map((v) => ({ timestamp: v.date, value: v.count })),
-    },
-    range,
-    color,
+  const filteredVisits = useMemo(
+    () => filterVisitsByRange(pet.dailyVisits, range),
+    [pet.dailyVisits, range],
+  );
+
+  const weightResult = useMemo(
+    () =>
+      buildChartConfig(
+        {
+          dataKey: "weight",
+          label: "Weight",
+          unit: "lbs",
+          points: filteredWeight.map((e) => ({
+            timestamp: e.timestamp,
+            value: e.weight,
+          })),
+        },
+        range,
+        color,
+      ),
+    [filteredWeight, range, color],
+  );
+
+  const visitResult = useMemo(
+    () =>
+      buildChartConfig(
+        {
+          dataKey: "count",
+          label: "Visits",
+          unit: "visits",
+          yMinZero: true,
+          points: filteredVisits.map((v) => ({
+            timestamp: v.date,
+            value: v.count,
+          })),
+        },
+        range,
+        color,
+      ),
+    [filteredVisits, range, color],
   );
 
   const { slopePerWeek, r2 } = weightResult;
