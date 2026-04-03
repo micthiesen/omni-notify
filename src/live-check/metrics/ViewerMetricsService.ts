@@ -1,6 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import config from "../../utils/config.js";
 import { getNotificationUrlFields, type Platform } from "../platforms/index.js";
 import { getViewerMetrics, upsertViewerMetrics } from "./persistence.js";
 import {
@@ -15,11 +14,18 @@ import { calculateWindowMax, pruneBuckets, updateDailyBucket } from "./windows.j
 const HYSTERESIS = 0.95; // Peak confirmed when viewers drop below peak × 0.95
 const MAX_BUCKET_AGE_DAYS = 100;
 
+export type TokenResolver = (
+  platform: Platform,
+  username: string,
+) => string | undefined;
+
 export class ViewerMetricsService {
   private logger: Logger;
   private channelStates = new Map<string, ChannelPeakState>();
+  private resolveToken: TokenResolver;
 
-  constructor(parentLogger: Logger) {
+  constructor(resolveToken: TokenResolver, parentLogger: Logger) {
+    this.resolveToken = resolveToken;
     this.logger = parentLogger.extend("ViewerMetrics");
   }
 
@@ -196,7 +202,7 @@ export class ViewerMetricsService {
     await notify({
       title,
       message,
-      token: config.PUSHOVER_LIVE_TOKEN,
+      token: this.resolveToken(platform, username),
       ...getNotificationUrlFields(platform, username),
     });
   }

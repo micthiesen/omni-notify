@@ -37,6 +37,7 @@ export default class LiveCheckTask extends ScheduledTask {
 
   private logger: Logger;
   private consecutiveUnknowns = new Map<string, number>();
+  private channelsConfig: ChannelsConfig;
   private metricsService: ViewerMetricsService;
   private filterService: StreamFilterService;
 
@@ -57,7 +58,11 @@ export default class LiveCheckTask extends ScheduledTask {
     }
 
     this.logger = parentLogger.extend("LiveCheckTask");
-    this.metricsService = new ViewerMetricsService(parentLogger);
+    this.channelsConfig = channelsConfig;
+    this.metricsService = new ViewerMetricsService(
+      (platform, username) => this.getPushoverToken(platform, username),
+      parentLogger,
+    );
     this.filterService = new StreamFilterService(channelsConfig, parentLogger);
 
     this.filterService.logFilterStatus(
@@ -222,7 +227,7 @@ export default class LiveCheckTask extends ScheduledTask {
     await notify({
       title: `${displayName} is LIVE on ${config.displayName}!`,
       message,
-      token: appConfig.PUSHOVER_LIVE_TOKEN,
+      token: this.getPushoverToken(config.platform, username),
       ...getNotificationUrlFields(config.platform, username),
     });
 
@@ -257,7 +262,7 @@ export default class LiveCheckTask extends ScheduledTask {
       await notify({
         title: `${displayName} is now offline`,
         message,
-        token: appConfig.PUSHOVER_LIVE_TOKEN,
+        token: this.getPushoverToken(config.platform, username),
       });
     }
 
@@ -305,7 +310,7 @@ export default class LiveCheckTask extends ScheduledTask {
       await notify({
         title: `${displayName} is LIVE on ${config.displayName}!`,
         message,
-        token: appConfig.PUSHOVER_LIVE_TOKEN,
+        token: this.getPushoverToken(config.platform, username),
         ...getNotificationUrlFields(config.platform, username),
       });
 
@@ -317,7 +322,7 @@ export default class LiveCheckTask extends ScheduledTask {
     await notify({
       title: `${displayName} changed title`,
       message: title,
-      token: appConfig.PUSHOVER_LIVE_TOKEN,
+      token: this.getPushoverToken(config.platform, username),
       ...getNotificationUrlFields(config.platform, username),
     });
 
@@ -325,6 +330,13 @@ export default class LiveCheckTask extends ScheduledTask {
       ...previousStatus,
       title,
     });
+  }
+
+  private getPushoverToken(platform: Platform, username: string): string | undefined {
+    return (
+      this.channelsConfig[platform]?.[username]?.pushoverToken ??
+      appConfig.PUSHOVER_LIVE_TOKEN
+    );
   }
 
   private updateMaxViewerCount(

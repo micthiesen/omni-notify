@@ -17,6 +17,7 @@ export type ChannelFilter = {
 
 // Channel config
 export type ChannelConfig = {
+  pushoverToken?: string;
   filter?: ChannelFilter;
 };
 
@@ -34,6 +35,7 @@ const channelFilterSchema = z.object({
 });
 
 const channelConfigSchema = z.object({
+  pushoverToken: z.string().optional(),
   filter: channelFilterSchema.optional(),
 });
 
