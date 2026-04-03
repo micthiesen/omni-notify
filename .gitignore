@@ -7,3 +7,4 @@ dist
 *.db-wal
 *._*.ts
 *._*.js
+.pushover-icons

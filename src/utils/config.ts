@@ -39,7 +39,6 @@ const configSchema = baseConfigSchema
     FASTMAIL_USERNAME: z.string().optional(),
     PARCEL_API_KEY: z.string().optional(),
     EXTRACTION_MODEL: z.string().optional(),
-    PUSHOVER_PARCEL_TOKEN: z.string().optional(),
     FASTMAIL_CALENDAR_ID: z.string().optional(),
     TZ: z.string().optional().default("America/Vancouver"),
     PUSHOVER_CALENDAR_TOKEN: z.string().optional(),
@@ -67,7 +66,6 @@ const configSchema = baseConfigSchema
     ...c,
     PUSHOVER_LIVE_TOKEN: c.PUSHOVER_LIVE_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
-    PUSHOVER_PARCEL_TOKEN: c.PUSHOVER_PARCEL_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_CALENDAR_TOKEN: c.PUSHOVER_CALENDAR_TOKEN ?? c.PUSHOVER_TOKEN,
   }));
 

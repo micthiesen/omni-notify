@@ -1,8 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 
-import config, { type Config } from "../utils/config.js";
+import type { Config } from "../utils/config.js";
 import { fetchPetsByUser } from "./api.js";
 import { authenticateWhisker } from "./auth.js";
 import { linearRegression } from "./math.js";
@@ -85,23 +84,10 @@ export default class PetTrackerTask extends ScheduledTask {
     this.logger[totalNew > 0 ? "info" : "debug"](syncMsg);
 
     if (affectedPets.length > 0) {
-      const title = formatTitle(affectedPets.map((p) => p.name));
-      const message = affectedPets.map((p) => formatPetLine(p)).join("\n");
-
-      await notify({
-        title,
-        message,
-        token: config.PUSHOVER_TOKEN,
-      });
+      const lines = affectedPets.map((p) => formatPetLine(p));
+      this.logger.info(lines.join(", "));
     }
   }
-}
-
-function formatTitle(names: string[]): string {
-  if (names.length === 1) return `${names[0]} Weighed In`;
-  if (names.length === 2) return `${names[0]} & ${names[1]} Weighed In`;
-  const last = names.pop()!;
-  return `${names.join(", ")} & ${last} Weighed In`;
 }
 
 function formatPetLine(pet: PetSyncResult): string {
