@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// Creates a new Pushover application.
+// Creates a new Pushover application and opens the app page in the browser.
 // Usage: node pushover-create-app.mjs <cookie> <name> [icon-path] [description]
 //
-// Prints JSON to stdout: { "token": "...", "url": "..." }
+// Prints the app URL to stdout and opens it in the default browser.
 
 import { readFileSync } from "fs";
 import { basename } from "path";
@@ -64,15 +64,7 @@ if (res.status !== 302) {
 const appUrl = res.headers.get("location");
 const fullUrl = appUrl.startsWith("http") ? appUrl : "https://pushover.net" + appUrl;
 
-// Follow redirect to get the API token
-const appPage = await fetch(fullUrl, {
-  headers: { Cookie: cookie },
-});
-const html = await appPage.text();
-const tokenMatch = html.match(/<code>([a-z0-9]{30})<\/code>/);
-
-if (!tokenMatch) {
-  throw new Error("App created but could not extract API token from page");
-}
-
-console.log(JSON.stringify({ token: tokenMatch[1], url: fullUrl }));
+// Open the app page in the browser so the user can grab the API token
+const { execSync } = await import("child_process");
+execSync(`open ${JSON.stringify(fullUrl)}`);
+console.log(fullUrl);

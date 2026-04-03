@@ -41,15 +41,25 @@ const pngPath = join(ICONS_DIR, `${baseName}.png`);
 
 writeFileSync(srcPath, buf);
 
+// Warn if source is too small to produce a good 128x128 icon
+if (ext !== ".svg") {
+  const info = execSync(`sips -g pixelWidth -g pixelHeight "${srcPath}" 2>&1`).toString();
+  const w = parseInt(info.match(/pixelWidth:\s*(\d+)/)?.[1] || "0");
+  const h = parseInt(info.match(/pixelHeight:\s*(\d+)/)?.[1] || "0");
+  if (w < 64 || h < 64) {
+    console.error(`WARNING: Source image is ${w}x${h} — upscaling to 128x128 will look blurry`);
+  }
+}
+
 if (ext === ".svg") {
   execSync(`rsvg-convert -w 128 -h 128 "${srcPath}" -o "${pngPath}"`);
   unlinkSync(srcPath);
 } else if (ext !== ".png") {
   execSync(`sips -s format png "${srcPath}" --out "${pngPath}" 2>&1`);
-  execSync(`sips --resampleWidth 128 --resampleHeight 128 "${pngPath}" 2>&1`);
+  execSync(`sips -z 128 128 "${pngPath}" 2>&1`);
   unlinkSync(srcPath);
 } else {
-  execSync(`sips --resampleWidth 128 --resampleHeight 128 "${pngPath}" 2>&1`);
+  execSync(`sips -z 128 128 "${pngPath}" 2>&1`);
 }
 
 console.log(pngPath);

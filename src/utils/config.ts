@@ -24,6 +24,7 @@ const configSchema = baseConfigSchema
       .default("true")
       .transform(stringBoolean),
     PUSHOVER_LIVE_TOKEN: z.string().optional(),
+    PUSHOVER_CALENDAR_TOKEN: z.string().optional(),
     PUSHOVER_BRIEFING_TOKEN: z.string().optional(),
     BRIEFING_MODEL: z.string().optional(),
     FILTER_MODEL: z.string().optional(),
@@ -41,7 +42,6 @@ const configSchema = baseConfigSchema
     EXTRACTION_MODEL: z.string().optional(),
     FASTMAIL_CALENDAR_ID: z.string().optional(),
     TZ: z.string().optional().default("America/Vancouver"),
-    PUSHOVER_CALENDAR_TOKEN: z.string().optional(),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().optional().default(587),
     SMTP_USER: z.string().optional(),
