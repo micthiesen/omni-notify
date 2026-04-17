@@ -30,7 +30,6 @@ const configSchema = baseConfigSchema
     PUSHOVER_CALENDAR_TOKEN: z.string().optional(),
     PUSHOVER_BRIEFING_TOKEN: z.string().optional(),
     BRIEFING_MODEL: z.string().optional(),
-    FILTER_MODEL: z.string().optional(),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),

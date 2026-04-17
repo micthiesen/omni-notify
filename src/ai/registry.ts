@@ -13,10 +13,6 @@ export function getBriefingModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(config.BRIEFING_MODEL, "google:gemini-3-pro-preview");
 }
 
-export function getFilterModel(): { model: LanguageModel; modelId: string } {
-  return resolveModel(config.FILTER_MODEL, "google:gemini-3-flash-preview");
-}
-
 export function getExtractionModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(config.EXTRACTION_MODEL, "google:gemini-3-flash-preview");
 }

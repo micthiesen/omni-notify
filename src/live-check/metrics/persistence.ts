@@ -1,21 +1,15 @@
 import { Entity } from "@micthiesen/mitools/entities";
-import type { Platform } from "../platforms/index.js";
 import type { ViewerMetricsData } from "./types.js";
 
-export const ViewerMetricsEntity = new Entity<
-  ViewerMetricsData,
-  ["platform", "username"]
->("viewer-metrics", ["platform", "username"]);
+export const ViewerMetricsEntity = new Entity<ViewerMetricsData, ["streamerId"]>(
+  "streamer-viewer-metrics",
+  ["streamerId"],
+);
 
-export function getViewerMetrics(
-  username: string,
-  platform: Platform,
-): ViewerMetricsData {
-  const metrics = ViewerMetricsEntity.get({ platform, username });
+export function getViewerMetrics(streamerId: string): ViewerMetricsData {
   return (
-    metrics ?? {
-      username,
-      platform,
+    ViewerMetricsEntity.get({ streamerId }) ?? {
+      streamerId,
       dailyBuckets: [],
       allTimeMax: 0,
       allTimeMaxTimestamp: 0,

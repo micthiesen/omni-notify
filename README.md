@@ -21,45 +21,31 @@ services:
 
 Channel format is `username:DisplayName`. The display name is optional and defaults to the username.
 
+**Same display name = same streamer.** Entries across platforms that share a display name (case-insensitive, whitespace-trimmed) merge into a single streamer. You get **one** "went live" notification when they start streaming on any platform and **one** "went offline" notification when all platforms go offline — no double-pings for multistreams.
+
 ## How It Works
 
-Checks every 20 seconds (with random jitter) whether monitored channels are live. Sends a notification on status transitions (offline to live, or live to offline). State is persisted in SQLite so it survives restarts.
+Checks every 20 seconds (with random jitter) whether monitored channels are live. Sends a notification on aggregate status transitions (offline-everywhere → live-anywhere, or live-anywhere → offline-everywhere). State is persisted in SQLite so it survives restarts.
 
 - **YouTube**: Scrapes the channel's `/live` page HTML. No API key needed, but could break if YouTube changes its page structure.
 - **Twitch**: Uses Twitch's public GraphQL API. No authentication required. More stable than YouTube scraping.
 - **Kick**: Uses Kick's official public API (`api.kick.com/public/v1/channels`). Requires registering an app at [dev.kick.com](https://dev.kick.com) and providing `KICK_CLIENT_ID` + `KICK_CLIENT_SECRET` (scope: `channel:read`). The app-only access token is cached and refreshed automatically.
 
+**Primary binding.** When a streamer is live on multiple platforms, one binding is chosen as the "primary" for the notification URL and title. The first platform to go live wins, and sticks for the rest of the session. If they go live simultaneously, priority order is YouTube → Twitch → Kick.
+
 Set `OFFLINE_NOTIFICATIONS=false` to only get notified when channels go live.
 
-## Stream Filtering
+## Per-Streamer Overrides
 
-Per-channel LLM-based filtering to only get notified for streams matching your interests. Create a `channels.json` (or set `CHANNELS_CONFIG_PATH`):
+Optionally provide a `channels.json` (or set `CHANNELS_CONFIG_PATH`) to override the Pushover token for specific streamers. The key is the display name (case-insensitive):
 
 ```json
 {
-  "twitch": {
-    "shroud": {
-      "filter": {
-        "prompt": "I like FPS games. Skip mobile games and sponsored streams.",
-        "defaultOnError": true
-      }
-    }
-  },
-  "kick": {
-    "destiny": {
-      "filter": {
-        "prompt": "Only notify for political debates or long-form commentary.",
-        "defaultOnError": true
-      }
-    }
+  "Destiny": {
+    "pushoverToken": "app-token-for-destiny"
   }
 }
 ```
-
-- **`prompt`**: Describe what streams you care about
-- **`defaultOnError`**: Whether to notify (`true`) or skip (`false`) if the LLM call fails
-
-Channels without a filter always send notifications.
 
 ## Briefing Agents
 
@@ -100,7 +86,6 @@ Models are configured via environment variables using `provider:model` format. S
 | Variable | Default | Used for |
 |---|---|---|
 | `BRIEFING_MODEL` | `google:gemini-3-pro-preview` | Briefing agents |
-| `FILTER_MODEL` | `google:gemini-3-flash-preview` | Stream notification filters |
 
 Examples:
 
@@ -123,13 +108,12 @@ BRIEFING_MODEL=openai:gpt-4.1
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
 | `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3-pro-preview`) |
-| `FILTER_MODEL` | No | AI model for stream filters (default: `google:gemini-3-flash-preview`) |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Required for `google:` models |
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |
 | `TAVILY_API_KEY` | No | Tavily web search (required for briefings) |
 | `BRIEFINGS_PATH` | No | Folder containing `.md` briefing configs |
-| `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` for stream filters |
+| `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` for per-streamer overrides |
 | `LOG_LEVEL` | No | `debug`, `info`, `warn`, or `error` |
 
 ## Development

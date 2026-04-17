@@ -3,25 +3,21 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import appConfig from "../utils/config.js";
-import { type ChannelsConfig, StreamFilterService } from "./filters/index.js";
 import { ViewerMetricsService } from "./metrics/index.js";
 import {
-  type ChannelStatusLive,
-  type ChannelStatusOffline,
-  getChannelStatus,
-  upsertChannelStatus,
+  getStreamerStatus,
+  type StreamerStatus,
+  type StreamerStatusLive,
+  type StreamerStatusOffline,
+  upsertStreamerStatus,
 } from "./persistence.js";
+import { getNotificationUrlFields, platformConfigs } from "./platforms/index.js";
+import type { PlatformBinding, Streamer } from "./streamers.js";
 import {
-  type FetchedStatus,
-  type FetchedStatusLive,
-  getNotificationUrlFields,
-  LiveStatus,
-  type Platform,
-  type PlatformConfig,
-  platformConfigs,
-} from "./platforms/index.js";
-
-type ChannelInfo = { username: string; displayName: string };
+  type BindingFetchResult,
+  decideTransition,
+  type TickDecision,
+} from "./transitions.js";
 
 export default class LiveCheckTask extends ScheduledTask {
   public readonly name = "LiveCheckTask";
@@ -29,339 +25,216 @@ export default class LiveCheckTask extends ScheduledTask {
   public override readonly jitterMs = 3000;
   public override readonly runOnStartup = true;
 
-  private channels: {
-    username: string;
-    displayName: string;
-    config: PlatformConfig;
-  }[] = [];
-
   private logger: Logger;
+  private streamers: Streamer[];
   private consecutiveUnknowns = new Map<string, number>();
-  private channelsConfig: ChannelsConfig;
   private metricsService: ViewerMetricsService;
-  private filterService: StreamFilterService;
 
-  public constructor(
-    channels: [Platform, ChannelInfo[]][],
-    channelsConfig: ChannelsConfig,
-    parentLogger: Logger,
-  ) {
+  public constructor(streamers: Streamer[], parentLogger: Logger) {
     super();
-
-    this.validateNoDuplicateUsernames(channels);
-
-    for (const [platform, channelList] of channels) {
-      const config = platformConfigs[platform];
-      for (const { username, displayName } of channelList) {
-        this.channels.push({ username, displayName, config });
-      }
-    }
-
+    this.streamers = streamers;
     this.logger = parentLogger.extend("LiveCheckTask");
-    this.channelsConfig = channelsConfig;
     this.metricsService = new ViewerMetricsService(
-      (platform, username) => this.getPushoverToken(platform, username),
+      (streamerId) => this.getPushoverToken(streamerId),
       parentLogger,
     );
-    this.filterService = new StreamFilterService(channelsConfig, parentLogger);
-
-    this.filterService.logFilterStatus(
-      this.channels.map(({ username, displayName, config }) => ({
-        username,
-        displayName,
-        platform: config.platform,
-      })),
-    );
+    this.logStreamers();
   }
 
-  private validateNoDuplicateUsernames(channels: [Platform, ChannelInfo[]][]): void {
-    const seen = new Map<string, Platform>();
-
-    for (const [platform, entries] of channels) {
-      for (const { username } of entries) {
-        const existing = seen.get(username);
-        if (existing) {
-          throw new Error(
-            `Duplicate username "${username}" found on ${existing} and ${platform}. ` +
-              "Each username must be unique across all platforms due to database key constraints.",
-          );
-        }
-        seen.set(username, platform);
-      }
+  private logStreamers(): void {
+    for (const s of this.streamers) {
+      const bindings = s.bindings.map((b) => `${b.platform}:${b.username}`).join(", ");
+      this.logger.info(`Streamer "${s.displayName}" → ${bindings}`);
     }
   }
 
   public async run(): Promise<void> {
-    await Promise.all(
-      this.channels.map(async ({ username, displayName, config }) => {
-        const channelKey = `${config.platform}:${username}`;
-        const fetchedStatus = await config.fetchLiveStatus({ username });
-        const previousStatus = getChannelStatus(username, config.platform);
-
-        this.logStatus(displayName, fetchedStatus);
-
-        if (fetchedStatus.status === LiveStatus.Unknown) {
-          this.handleUnknownStatus(channelKey, fetchedStatus.error);
-          return;
-        }
-
-        // Clear consecutive unknowns on successful fetch
-        this.consecutiveUnknowns.delete(channelKey);
-
-        if (fetchedStatus.status === LiveStatus.Live && !previousStatus.isLive) {
-          await this.handleLiveEvent(
-            fetchedStatus,
-            previousStatus,
-            displayName,
-            config,
-          );
-        } else if (fetchedStatus.status === LiveStatus.Live && previousStatus.isLive) {
-          if (fetchedStatus.title !== previousStatus.title) {
-            await this.handleTitleChangeEvent(
-              fetchedStatus,
-              previousStatus,
-              displayName,
-              config,
-            );
-          }
-        } else if (
-          fetchedStatus.status === LiveStatus.Offline &&
-          previousStatus.isLive
-        ) {
-          await this.handleOfflineEvent(previousStatus, displayName, config);
-        }
-
-        if (fetchedStatus.status === LiveStatus.Live) {
-          this.updateMaxViewerCount(username, config.platform, fetchedStatus);
-          // Record viewer count for metrics tracking (peak confirmation system)
-          if (fetchedStatus.viewerCount !== undefined) {
-            await this.metricsService.recordViewerCount({
-              username,
-              displayName,
-              platform: config.platform,
-              viewerCount: fetchedStatus.viewerCount,
-            });
-          }
-        }
-      }),
-    );
+    await Promise.all(this.streamers.map((s) => this.tickStreamer(s)));
   }
 
-  private logStatus(username: string, status: FetchedStatus): void {
-    switch (status.status) {
-      case LiveStatus.Live:
-        this.logger.debug(`${username} is live: "${status.title}"`);
+  private async tickStreamer(streamer: Streamer): Promise<void> {
+    const results = await Promise.all(
+      streamer.bindings.map<Promise<BindingFetchResult>>(async (binding) => ({
+        binding,
+        status: await platformConfigs[binding.platform].fetchLiveStatus({
+          username: binding.username,
+        }),
+      })),
+    );
+
+    for (const r of results) this.logBindingStatus(streamer.displayName, r);
+
+    const previous = getStreamerStatus(streamer.id);
+    const decision = decideTransition(streamer.id, previous, results);
+
+    switch (decision.kind) {
+      case "all-unknown":
+        this.handleAllUnknown(streamer, decision.errors);
+        return;
+      case "partial-unknown-keep":
+        this.consecutiveUnknowns.delete(streamer.id);
+        return;
+      case "went-live":
+        this.consecutiveUnknowns.delete(streamer.id);
+        await this.handleWentLive(streamer, previous, decision);
+        return;
+      case "went-offline":
+        this.consecutiveUnknowns.delete(streamer.id);
+        await this.handleWentOffline(streamer, decision.previousLive, decision.next);
+        return;
+      case "still-live":
+        this.consecutiveUnknowns.delete(streamer.id);
+        await this.handleStillLive(streamer, decision);
+        return;
+    }
+  }
+
+  private logBindingStatus(displayName: string, r: BindingFetchResult): void {
+    const where = `${displayName} [${r.binding.platform}:${r.binding.username}]`;
+    switch (r.status.status) {
+      case "live":
+        this.logger.debug(`${where} is live: "${r.status.title}"`);
         break;
-      case LiveStatus.Offline:
-        this.logger.debug(`${username} is offline`);
+      case "offline":
+        this.logger.debug(`${where} is offline`);
         break;
-      case LiveStatus.Unknown:
-        this.logger.debug(`${username} status unknown: ${status.error}`);
+      case "unknown":
+        this.logger.debug(`${where} unknown: ${r.status.error}`);
         break;
     }
   }
 
-  private handleUnknownStatus(channelKey: string, error: string): void {
-    const count = (this.consecutiveUnknowns.get(channelKey) ?? 0) + 1;
-    this.consecutiveUnknowns.set(channelKey, count);
+  private handleAllUnknown(streamer: Streamer, errors: string[]): void {
+    const count = (this.consecutiveUnknowns.get(streamer.id) ?? 0) + 1;
+    this.consecutiveUnknowns.set(streamer.id, count);
+    const summary = errors.filter(Boolean).join("; ").slice(0, 300);
 
-    // Escalate logging after repeated failures
     if (count >= 10) {
       this.logger.error(
-        `${channelKey}: ${count} consecutive unknown statuses: ${error}`,
+        `${streamer.displayName}: ${count} consecutive all-unknown ticks: ${summary}`,
       );
     } else if (count >= 3) {
       this.logger.warn(
-        `${channelKey}: ${count} consecutive unknown statuses: ${error}`,
+        `${streamer.displayName}: ${count} consecutive all-unknown ticks: ${summary}`,
       );
     }
   }
 
-  private async handleLiveEvent(
-    { title, category }: FetchedStatusLive,
-    { username, lastEndedAt, lastStartedAt, lastViewerCount }: ChannelStatusOffline,
-    displayName: string,
-    config: PlatformConfig,
+  private async handleWentLive(
+    streamer: Streamer,
+    previous: StreamerStatus,
+    decision: Extract<TickDecision, { kind: "went-live" }>,
   ): Promise<void> {
-    this.logger.info(`${displayName} is now live on ${config.displayName}`);
-
-    // Check filter before sending notification
-    const filterResult = await this.filterService.shouldNotify({
-      username,
-      displayName,
-      platform: config.platform,
-      title,
-      category,
-    });
-
-    if (!filterResult.shouldNotify) {
-      this.logger.info(`Filtered: ${filterResult.reason}`);
-      upsertChannelStatus({
-        username,
-        platform: config.platform,
-        isLive: true,
-        startedAt: new Date(),
-        title,
-        notifiedForStream: false,
-      });
-      return;
-    }
-
-    const lastLiveMessage = (() => {
-      if (!lastEndedAt) return null;
-      const ago = formatDistanceToNow(lastEndedAt);
-      const duration = formatDistance(lastEndedAt, lastStartedAt);
-      const text = `Last live ${ago} ago for ${duration}`;
-      return lastViewerCount
-        ? `${text} with ${formatCount(lastViewerCount)}.`
-        : `${text}.`;
-    })();
-    const detailParts = [category ? `${category}.` : null, lastLiveMessage].filter(
-      Boolean,
+    const { next, summedViewerCount } = decision;
+    this.logger.info(
+      `${streamer.displayName} is now LIVE (primary ${next.primary.platform}:${next.primary.username})`,
     );
-    const details = detailParts.length > 0 ? detailParts.join(" ") : null;
-    const filterReason = filterResult.wasFiltered ? filterResult.reason : null;
-    const messageParts = [title, details, filterReason].filter(Boolean);
-    const message = messageParts.join("\n\n");
+
+    const message = buildLiveMessage(next.primaryTitle, previous);
 
     await notify({
-      title: `${displayName} is LIVE on ${config.displayName}!`,
+      title: `${streamer.displayName} is LIVE!`,
       message,
-      token: this.getPushoverToken(config.platform, username),
-      ...getNotificationUrlFields(config.platform, username),
+      token: this.getPushoverToken(streamer.id),
+      ...getNotificationUrlFields(next.primary.platform, next.primary.username),
     });
 
-    upsertChannelStatus({
-      username,
-      platform: config.platform,
-      isLive: true,
-      startedAt: new Date(),
-      title,
-      notifiedForStream: true,
-    });
+    upsertStreamerStatus(next);
+    await this.recordViewersIfAny(streamer, next.primary, summedViewerCount);
   }
 
-  private async handleOfflineEvent(
-    { username, startedAt, maxViewerCount }: ChannelStatusLive,
-    displayName: string,
-    config: PlatformConfig,
+  private async handleStillLive(
+    streamer: Streamer,
+    decision: Extract<TickDecision, { kind: "still-live" }>,
   ): Promise<void> {
-    const lastEndedAt = new Date();
-    this.logger.info(`${displayName} is now offline on ${config.displayName}`);
+    const { next, summedViewerCount, titleChanged, primarySwitched } = decision;
 
-    // Flush any pending peak records
-    await this.metricsService.flushPendingPeaks(username, displayName, config.platform);
+    if (primarySwitched) {
+      this.logger.info(
+        `${streamer.displayName} primary switched to ${next.primary.platform}:${next.primary.username}`,
+      );
+    }
+
+    if (titleChanged) {
+      this.logger.info(`${streamer.displayName} changed title`);
+      await notify({
+        title: `${streamer.displayName} changed title`,
+        message: next.primaryTitle,
+        token: this.getPushoverToken(streamer.id),
+        ...getNotificationUrlFields(next.primary.platform, next.primary.username),
+      });
+    }
+
+    upsertStreamerStatus(next);
+    await this.recordViewersIfAny(streamer, next.primary, summedViewerCount);
+  }
+
+  private async handleWentOffline(
+    streamer: Streamer,
+    previousLive: StreamerStatusLive,
+    next: StreamerStatusOffline,
+  ): Promise<void> {
+    this.logger.info(`${streamer.displayName} is now offline`);
+
+    await this.metricsService.flushPendingPeaks({
+      streamerId: streamer.id,
+      displayName: streamer.displayName,
+      urlFields: getNotificationUrlFields(
+        previousLive.primary.platform,
+        previousLive.primary.username,
+      ),
+    });
 
     if (appConfig.OFFLINE_NOTIFICATIONS) {
-      const duration = formatDistance(lastEndedAt, startedAt);
-      const durationText = `Streamed for ${duration}`;
-      const message = maxViewerCount
-        ? `${durationText} with ${formatCount(maxViewerCount)}.`
-        : `${durationText}.`;
+      const duration = formatDistance(new Date(), previousLive.startedAt);
+      const baseText = `Streamed for ${duration}`;
+      const message =
+        previousLive.maxViewerCount > 0
+          ? `${baseText} with ${formatCount(previousLive.maxViewerCount)}.`
+          : `${baseText}.`;
 
       await notify({
-        title: `${displayName} is now offline`,
+        title: `${streamer.displayName} is now offline`,
         message,
-        token: this.getPushoverToken(config.platform, username),
+        token: this.getPushoverToken(streamer.id),
       });
     }
 
-    upsertChannelStatus({
-      username,
-      platform: config.platform,
-      isLive: false,
-      lastEndedAt,
-      lastStartedAt: startedAt,
-      lastViewerCount: maxViewerCount,
-    });
+    upsertStreamerStatus(next);
   }
 
-  private async handleTitleChangeEvent(
-    { title, category }: FetchedStatusLive,
-    previousStatus: ChannelStatusLive,
-    displayName: string,
-    config: PlatformConfig,
+  private async recordViewersIfAny(
+    streamer: Streamer,
+    primary: PlatformBinding,
+    summedViewerCount: number,
   ): Promise<void> {
-    const { username } = previousStatus;
-    this.logger.info(`${displayName} changed title on ${config.displayName}`);
-
-    // If we haven't notified for this stream yet (was filtered), re-check the filter
-    // This catches streams that become interesting mid-stream
-    // Note: check explicitly for false, not falsy, to handle legacy streams without this field
-    if (previousStatus.notifiedForStream === false) {
-      const filterResult = await this.filterService.shouldNotify({
-        username,
-        displayName,
-        platform: config.platform,
-        title,
-        category,
-      });
-
-      if (!filterResult.shouldNotify) {
-        this.logger.info(`Still filtered after title change: ${filterResult.reason}`);
-        upsertChannelStatus({ ...previousStatus, title });
-        return;
-      }
-
-      // Stream now passes filter - send live notification instead of title change
-      this.logger.info(`Stream now passes filter: ${filterResult.reason}`);
-      const filterReason = filterResult.wasFiltered ? filterResult.reason : null;
-      const message = filterReason ? `${title}\n\n${filterReason}` : title;
-      await notify({
-        title: `${displayName} is LIVE on ${config.displayName}!`,
-        message,
-        token: this.getPushoverToken(config.platform, username),
-        ...getNotificationUrlFields(config.platform, username),
-      });
-
-      upsertChannelStatus({ ...previousStatus, title, notifiedForStream: true });
-      return;
-    }
-
-    // Normal title change notification
-    await notify({
-      title: `${displayName} changed title`,
-      message: title,
-      token: this.getPushoverToken(config.platform, username),
-      ...getNotificationUrlFields(config.platform, username),
-    });
-
-    upsertChannelStatus({
-      ...previousStatus,
-      title,
+    if (summedViewerCount <= 0) return;
+    await this.metricsService.recordViewerCount({
+      streamerId: streamer.id,
+      displayName: streamer.displayName,
+      viewerCount: summedViewerCount,
+      urlFields: getNotificationUrlFields(primary.platform, primary.username),
     });
   }
 
-  private getPushoverToken(platform: Platform, username: string): string | undefined {
-    return (
-      this.channelsConfig[platform]?.[username]?.pushoverToken ??
-      appConfig.PUSHOVER_LIVE_TOKEN
-    );
-  }
-
-  private updateMaxViewerCount(
-    username: string,
-    platform: Platform,
-    fetchedStatus: FetchedStatusLive,
-  ): void {
-    if (fetchedStatus.viewerCount === undefined) return;
-
-    const currentStatus = getChannelStatus(username, platform);
-    if (!currentStatus.isLive) return;
-
-    if (
-      currentStatus.maxViewerCount === undefined ||
-      fetchedStatus.viewerCount > currentStatus.maxViewerCount
-    ) {
-      currentStatus.maxViewerCount = fetchedStatus.viewerCount;
-      upsertChannelStatus(currentStatus);
-      this.logger.debug(
-        `Updated max viewer count for ${username} to ${fetchedStatus.viewerCount}`,
-      );
-    }
+  private getPushoverToken(streamerId: string): string | undefined {
+    const streamer = this.streamers.find((s) => s.id === streamerId);
+    return streamer?.pushoverToken ?? appConfig.PUSHOVER_LIVE_TOKEN;
   }
 }
 
 function formatCount(count: number): string {
   return `${count.toLocaleString()} viewers`;
+}
+
+function buildLiveMessage(primaryTitle: string, previous: StreamerStatus): string {
+  if (previous.isLive || !previous.lastEndedAt || !previous.lastStartedAt) {
+    return primaryTitle;
+  }
+  const ago = formatDistanceToNow(previous.lastEndedAt);
+  const duration = formatDistance(previous.lastEndedAt, previous.lastStartedAt);
+  const suffix = previous.lastMaxViewerCount
+    ? `Last live ${ago} ago for ${duration} with ${formatCount(previous.lastMaxViewerCount)}.`
+    : `Last live ${ago} ago for ${duration}.`;
+  return `${primaryTitle}\n\n${suffix}`;
 }

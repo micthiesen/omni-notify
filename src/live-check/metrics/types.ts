@@ -1,5 +1,3 @@
-import type { Platform } from "../platforms/index.js";
-
 export enum MetricWindow {
   SevenDays = "7d",
   ThirtyDays = "30d",
@@ -8,9 +6,9 @@ export enum MetricWindow {
 }
 
 export type WindowConfig = {
-  days: number | null; // null for all-time
+  days: number | null;
   label: string;
-  priority: number; // higher = more important
+  priority: number;
 };
 
 export const WINDOW_CONFIGS: Record<MetricWindow, WindowConfig> = {
@@ -21,14 +19,13 @@ export const WINDOW_CONFIGS: Record<MetricWindow, WindowConfig> = {
 };
 
 export type DailyBucket = {
-  date: string; // YYYY-MM-DD
+  date: string;
   maxViewers: number;
-  timestamp: number; // when the max was recorded
+  timestamp: number;
 };
 
 export type ViewerMetricsData = {
-  username: string;
-  platform: Platform;
+  streamerId: string;
   dailyBuckets: DailyBucket[];
   allTimeMax: number;
   allTimeMaxTimestamp: number;

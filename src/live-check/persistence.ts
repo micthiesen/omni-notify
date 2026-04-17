@@ -1,44 +1,44 @@
 import { Entity } from "@micthiesen/mitools/entities";
 import type { Platform } from "./platforms/index.js";
 
-export type ChannelStatusLive = {
-  username: string;
+export type StreamerLiveBinding = {
   platform: Platform;
-  isLive: true;
+  username: string;
   title: string;
-  startedAt: Date;
-  maxViewerCount?: number;
-  notifiedForStream?: boolean;
+  viewerCount?: number;
 };
-export type ChannelStatusOffline =
+
+export type StreamerStatusLive = {
+  streamerId: string;
+  isLive: true;
+  primary: { platform: Platform; username: string };
+  primaryTitle: string;
+  startedAt: Date;
+  maxViewerCount: number;
+  bindings: StreamerLiveBinding[];
+};
+
+export type StreamerStatusOffline =
+  | { streamerId: string; isLive: false; lastEndedAt?: undefined }
   | {
-      username: string;
-      platform: Platform;
-      isLive: false;
-      lastEndedAt?: undefined;
-      lastStartedAt?: undefined;
-      lastViewerCount?: undefined;
-    }
-  | {
-      username: string;
-      platform: Platform;
+      streamerId: string;
       isLive: false;
       lastEndedAt: Date;
       lastStartedAt: Date;
-      lastViewerCount?: number;
+      lastMaxViewerCount?: number;
     };
-export type ChannelStatus = ChannelStatusLive | ChannelStatusOffline;
 
-export const ChannelStatusEntity = new Entity<ChannelStatus, ["username"]>(
-  "channel-status",
-  ["username"],
+export type StreamerStatus = StreamerStatusLive | StreamerStatusOffline;
+
+export const StreamerStatusEntity = new Entity<StreamerStatus, ["streamerId"]>(
+  "streamer-status",
+  ["streamerId"],
 );
 
-export function getChannelStatus(username: string, platform: Platform): ChannelStatus {
-  const status = ChannelStatusEntity.get({ username });
-  return status ?? { username, platform, isLive: false };
+export function getStreamerStatus(streamerId: string): StreamerStatus {
+  return StreamerStatusEntity.get({ streamerId }) ?? { streamerId, isLive: false };
 }
 
-export function upsertChannelStatus(status: ChannelStatus): void {
-  ChannelStatusEntity.upsert(status);
+export function upsertStreamerStatus(status: StreamerStatus): void {
+  StreamerStatusEntity.upsert(status);
 }

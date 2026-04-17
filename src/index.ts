@@ -8,8 +8,9 @@ import { createCalendarHandler } from "./calendar-events/index.js";
 import { createJmapClient } from "./jmap/client.js";
 import { EmailDispatcher } from "./jmap/dispatcher.js";
 import { createEventSource } from "./jmap/eventSource.js";
-import { loadChannelsConfig } from "./live-check/filters/index.js";
+import { loadChannelsConfig } from "./live-check/channelsConfig.js";
 import { Platform } from "./live-check/platforms/index.js";
+import { buildStreamers } from "./live-check/streamers.js";
 import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
 import PetTrackerTask from "./pet-tracker/task.js";
@@ -29,13 +30,15 @@ function buildTasks(): ScheduledTask[] {
       "Kick channels configured but KICK_CLIENT_ID/KICK_CLIENT_SECRET missing; skipping Kick",
     );
   }
-  const channels: [Platform, { username: string; displayName: string }[]][] = [
+  const sources: [Platform, { username: string; displayName: string }[]][] = [
     [Platform.YouTube, config.YT_CHANNEL_NAMES],
     [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
     [Platform.Kick, kickConfigured ? config.KICK_CHANNEL_NAMES : []],
   ];
-  const channelsConfig = loadChannelsConfig(logger);
-  tasks.push(new LiveCheckTask(channels, channelsConfig, logger));
+  const streamers = buildStreamers(sources, loadChannelsConfig(logger));
+  if (streamers.length > 0) {
+    tasks.push(new LiveCheckTask(streamers, logger));
+  }
   if (config.WHISKER_CREDENTIALS) {
     tasks.push(new PetTrackerTask(config.WHISKER_CREDENTIALS, logger));
   }

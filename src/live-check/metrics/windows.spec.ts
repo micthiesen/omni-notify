@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Platform } from "../platforms/index.js";
 import { MetricWindow, type ViewerMetricsData, WINDOW_CONFIGS } from "./types.js";
 import { calculateWindowMax, pruneBuckets, updateDailyBucket } from "./windows.js";
 
@@ -102,8 +101,7 @@ describe("calculateWindowMax", () => {
   });
 
   const baseMetrics: ViewerMetricsData = {
-    username: "test",
-    platform: Platform.Twitch,
+    streamerId: "test",
     dailyBuckets: [
       { date: "2024-06-15", maxViewers: 1000, timestamp: 100 }, // today
       { date: "2024-06-10", maxViewers: 1500, timestamp: 80 }, // 5 days ago

@@ -26,19 +26,21 @@ src/
 │   ├── Scheduler.ts         # Cron management, graceful shutdown
 │   └── ScheduledTask.ts     # Abstract base class for tasks
 ├── live-check/              # Livestream monitoring feature
-│   ├── task.ts              # LiveCheckTask: status transitions, notifications
-│   ├── persistence.ts       # Channel live/offline state (SQLite)
+│   ├── task.ts              # LiveCheckTask: aggregate per-streamer loop
+│   ├── transitions.ts       # Pure state machine: decides live/offline/title edges
+│   ├── streamers.ts         # Streamer model: merges bindings by display name
+│   ├── channelsConfig.ts    # Loads per-streamer overrides from channels.json
+│   ├── persistence.ts       # Streamer live/offline state (SQLite)
 │   ├── platforms/           # Platform implementations
 │   │   ├── index.ts         # Platform enum, types, config registry
 │   │   ├── common.ts        # Shared fetch utilities
 │   │   ├── youtube.ts       # YouTube HTML scraping
 │   │   ├── twitch.ts        # Twitch GQL API
 │   │   └── kick.ts          # Kick official public API (OAuth client credentials)
-│   ├── metrics/             # Viewer metrics with rolling windows
-│   │   ├── ViewerMetricsService.ts  # Peak confirmation state machine
-│   │   ├── persistence.ts   # ViewerMetricsEntity (daily buckets)
-│   │   └── windows.ts       # Rolling window calculation helpers
-│   └── filters/             # Stream notification filtering
+│   └── metrics/             # Viewer metrics with rolling windows (per streamer)
+│       ├── ViewerMetricsService.ts  # Peak confirmation state machine
+│       ├── persistence.ts   # ViewerMetricsEntity (daily buckets, keyed on streamerId)
+│       └── windows.ts       # Rolling window calculation helpers
 ├── ai/                      # AI model configuration and shared tools
 │   ├── registry.ts          # Provider registry (Google, Anthropic, OpenAI)
 │   └── tools/               # Shared AI agent tools (reusable across any agent)
@@ -105,7 +107,8 @@ enum LiveStatus {
    - Add `{PLATFORM}_CHANNEL_NAMES: commaSeparatedString`
 
 4. Update `src/index.ts`:
-   - Add to `channels` array passed to `LiveCheckTask`
+   - Add to the `sources` array passed to `buildStreamers`
+   - Add to `PLATFORM_PRIORITY` in `src/live-check/streamers.ts` (decides tiebreak order when multiple platforms go live in the same tick)
 
 5. Update `.env.example` and `README.md`
 
@@ -186,8 +189,20 @@ History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
 ### Persistence
 
 Uses `@micthiesen/mitools` Entity system with SQLite (`docstore.db`):
-- `ChannelStatusEntity`: Current live/offline state, timestamps, max viewers per stream
-- `ViewerMetricsEntity`: Daily viewer buckets for rolling window calculations, all-time max
+- `StreamerStatusEntity`: Aggregate live/offline state per streamer (one row per merged identity, keyed on `streamerId`). Holds the sticky primary binding, summed max viewer count, and the per-binding titles for the current live session.
+- `ViewerMetricsEntity`: Daily viewer buckets + all-time max, keyed on `streamerId`. Recorded viewer count is the **sum across currently-live bindings**.
+
+### Streamer Model
+
+A `Streamer` is the identity unit: display name (normalized, case-insensitive) collapses multiple `(platform, username)` bindings into one. Notifications fire on the aggregate edges:
+- **went-live**: offline everywhere → live somewhere (one notification)
+- **went-offline**: live somewhere → offline everywhere (one notification)
+- **title change**: only when the primary binding is unchanged AND its title changed
+- **primary switch** (e.g., original primary drops but another is still live): silent
+
+Primary election is **first-to-go-live wins**, sticky for the session. Priority tiebreak when multiple go live simultaneously: YouTube → Twitch → Kick (see `PLATFORM_PRIORITY` in `src/live-check/streamers.ts`).
+
+The pure transition logic lives in `src/live-check/transitions.ts` (`decideTransition`) for easy testing.
 
 ### Viewer Metrics System
 
@@ -195,6 +210,7 @@ Tracks viewer records across rolling time windows (7d, 30d, 90d, all-time) using
 - Records are only confirmed when viewer count drops 5% below peak (prevents spam during climbs)
 - Pending peaks are flushed when stream goes offline
 - Only sends one notification for the highest-priority window when multiple records are broken
+- Recorded value is the **sum of viewer counts across a streamer's currently-live bindings**, so multistream metrics reflect total reach
 
 ## Code Style
 
@@ -244,7 +260,6 @@ KICK_CLIENT_ID=xxx                      # OAuth client (dev.kick.com) — requir
 KICK_CLIENT_SECRET=xxx
 OFFLINE_NOTIFICATIONS=true|false
 BRIEFING_MODEL=google:gemini-3-pro-preview  # Model for briefing agents (provider:model)
-FILTER_MODEL=google:gemini-3-flash-preview  # Model for stream notification filters
 EXTRACTION_MODEL=google:gemini-3-flash-preview  # Model for email extraction (parcel + calendar)
 GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Required for google: models
 ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
