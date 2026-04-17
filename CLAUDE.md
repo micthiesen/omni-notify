@@ -32,7 +32,8 @@ src/
 │   │   ├── index.ts         # Platform enum, types, config registry
 │   │   ├── common.ts        # Shared fetch utilities
 │   │   ├── youtube.ts       # YouTube HTML scraping
-│   │   └── twitch.ts        # Twitch GQL API
+│   │   ├── twitch.ts        # Twitch GQL API
+│   │   └── kick.ts          # Kick official public API (OAuth client credentials)
 │   ├── metrics/             # Viewer metrics with rolling windows
 │   │   ├── ViewerMetricsService.ts  # Peak confirmation state machine
 │   │   ├── persistence.ts   # ViewerMetricsEntity (daily buckets)
@@ -238,6 +239,9 @@ PUSHOVER_PARCEL_TOKEN=xxx               # Optional: override for parcel notifica
 PUSHOVER_CALENDAR_TOKEN=xxx             # Optional: override for calendar notifications
 YT_CHANNEL_NAMES=@channel1,@channel2    # YouTube handles
 TWITCH_CHANNEL_NAMES=user1,user2        # Twitch usernames
+KICK_CHANNEL_NAMES=slug1,slug2          # Kick channel slugs
+KICK_CLIENT_ID=xxx                      # OAuth client (dev.kick.com) — required if KICK_CHANNEL_NAMES set
+KICK_CLIENT_SECRET=xxx
 OFFLINE_NOTIFICATIONS=true|false
 BRIEFING_MODEL=google:gemini-3-pro-preview  # Model for briefing agents (provider:model)
 FILTER_MODEL=google:gemini-3-flash-preview  # Model for stream notification filters

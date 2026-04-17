@@ -1,3 +1,4 @@
+import { fetchKickLiveStatus, getKickLiveUrl } from "./kick.js";
 import { fetchTwitchLiveStatus, getTwitchLiveUrl } from "./twitch.js";
 import { fetchYouTubeLiveStatus, getYouTubeLiveUrl } from "./youtube.js";
 
@@ -31,6 +32,7 @@ export type FetchedStatus =
 export enum Platform {
   YouTube = "youtube",
   Twitch = "twitch",
+  Kick = "kick",
 }
 
 export interface PlatformConfig {
@@ -52,6 +54,12 @@ export const platformConfigs: Record<Platform, PlatformConfig> = {
     displayName: "Twitch",
     getLiveUrl: getTwitchLiveUrl,
     fetchLiveStatus: fetchTwitchLiveStatus,
+  },
+  [Platform.Kick]: {
+    platform: Platform.Kick,
+    displayName: "Kick",
+    getLiveUrl: getKickLiveUrl,
+    fetchLiveStatus: fetchKickLiveStatus,
   },
 };
 

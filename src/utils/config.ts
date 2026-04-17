@@ -18,6 +18,9 @@ const configSchema = baseConfigSchema
   .extend({
     YT_CHANNEL_NAMES: channelList,
     TWITCH_CHANNEL_NAMES: channelList,
+    KICK_CHANNEL_NAMES: channelList,
+    KICK_CLIENT_ID: z.string().optional(),
+    KICK_CLIENT_SECRET: z.string().optional(),
     OFFLINE_NOTIFICATIONS: z
       .string()
       .optional()

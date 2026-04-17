@@ -1,6 +1,6 @@
 # Omni Notify
 
-Monitors YouTube and Twitch channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs AI-powered briefing agents that search the web on a schedule and send notification summaries.
+Monitors YouTube, Twitch, and Kick channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs AI-powered briefing agents that search the web on a schedule and send notification summaries.
 
 ## Quick Start
 
@@ -13,6 +13,9 @@ services:
       - PUSHOVER_USER=xxx
       - YT_CHANNEL_NAMES=@mkbhd:MKBHD,@pewdiepie:PewDiePie
       - TWITCH_CHANNEL_NAMES=shroud:Shroud,xqc:xQc
+      - KICK_CHANNEL_NAMES=destiny:Destiny
+      - KICK_CLIENT_ID=xxx
+      - KICK_CLIENT_SECRET=xxx
     restart: unless-stopped
 ```
 
@@ -24,6 +27,7 @@ Checks every 20 seconds (with random jitter) whether monitored channels are live
 
 - **YouTube**: Scrapes the channel's `/live` page HTML. No API key needed, but could break if YouTube changes its page structure.
 - **Twitch**: Uses Twitch's public GraphQL API. No authentication required. More stable than YouTube scraping.
+- **Kick**: Uses Kick's official public API (`api.kick.com/public/v1/channels`). Requires registering an app at [dev.kick.com](https://dev.kick.com) and providing `KICK_CLIENT_ID` + `KICK_CLIENT_SECRET` (scope: `channel:read`). The app-only access token is cached and refreshed automatically.
 
 Set `OFFLINE_NOTIFICATIONS=false` to only get notified when channels go live.
 
@@ -37,6 +41,14 @@ Per-channel LLM-based filtering to only get notified for streams matching your i
     "shroud": {
       "filter": {
         "prompt": "I like FPS games. Skip mobile games and sponsored streams.",
+        "defaultOnError": true
+      }
+    }
+  },
+  "kick": {
+    "destiny": {
+      "filter": {
+        "prompt": "Only notify for political debates or long-form commentary.",
         "defaultOnError": true
       }
     }
@@ -106,6 +118,9 @@ BRIEFING_MODEL=openai:gpt-4.1
 | `PUSHOVER_TOKEN` | Yes | Pushover app token |
 | `YT_CHANNEL_NAMES` | No | YouTube channels (`@handle:Name,...`) |
 | `TWITCH_CHANNEL_NAMES` | No | Twitch channels (`username:Name,...`) |
+| `KICK_CHANNEL_NAMES` | No | Kick channels (`slug:Name,...`). Requires `KICK_CLIENT_ID`/`KICK_CLIENT_SECRET`. |
+| `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)) |
+| `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
 | `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3-pro-preview`) |
 | `FILTER_MODEL` | No | AI model for stream filters (default: `google:gemini-3-flash-preview`) |

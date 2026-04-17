@@ -23,9 +23,16 @@ const logger = new Logger("Main");
 function buildTasks(): ScheduledTask[] {
   const tasks: ScheduledTask[] = [];
 
+  const kickConfigured = config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET;
+  if (config.KICK_CHANNEL_NAMES.length > 0 && !kickConfigured) {
+    logger.warn(
+      "Kick channels configured but KICK_CLIENT_ID/KICK_CLIENT_SECRET missing; skipping Kick",
+    );
+  }
   const channels: [Platform, { username: string; displayName: string }[]][] = [
     [Platform.YouTube, config.YT_CHANNEL_NAMES],
     [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
+    [Platform.Kick, kickConfigured ? config.KICK_CHANNEL_NAMES : []],
   ];
   const channelsConfig = loadChannelsConfig(logger);
   tasks.push(new LiveCheckTask(channels, channelsConfig, logger));
