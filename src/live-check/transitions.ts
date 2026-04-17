@@ -1,5 +1,4 @@
 import type {
-  StreamerLiveBinding,
   StreamerStatus,
   StreamerStatusLive,
   StreamerStatusOffline,
@@ -14,7 +13,7 @@ export type BindingFetchResult = {
 
 export type TickDecision =
   | { kind: "all-unknown"; errors: string[] }
-  | { kind: "partial-unknown-keep" }
+  | { kind: "no-change" }
   | {
       kind: "went-live";
       next: StreamerStatusLive;
@@ -65,18 +64,11 @@ export function decideTransition(
     };
   }
 
-  // Partial info: some unknown, none live → don't transition to offline
-  // (we might still be live on the unknown bindings).
-  if (!anyLive && anyUnknown) {
-    return { kind: "partial-unknown-keep" };
-  }
-
   if (!anyLive) {
-    // All bindings confirmed offline.
-    if (!previous.isLive) {
-      // Already offline; keep as-is, no edge.
-      return { kind: "partial-unknown-keep" };
-    }
+    // Either some unknown + no lives (keep previous — might still be live on
+    // the unknown bindings), or fully offline. Either way, no transition
+    // unless previously live.
+    if (!previous.isLive || anyUnknown) return { kind: "no-change" };
     const next: StreamerStatusOffline = {
       streamerId,
       isLive: false,
@@ -92,13 +84,6 @@ export function decideTransition(
     (acc, l) => acc + (l.status.viewerCount ?? 0),
     0,
   );
-  const liveBindings: StreamerLiveBinding[] = lives.map((l) => ({
-    platform: l.binding.platform,
-    username: l.binding.username,
-    title: l.status.title,
-    viewerCount: l.status.viewerCount,
-  }));
-
   const pickByPriority = (): PlatformBinding => {
     const sorted = [...lives].sort((a, b) =>
       comparePlatformPriority(a.binding.platform, b.binding.platform),
@@ -106,53 +91,44 @@ export function decideTransition(
     return sorted[0].binding;
   };
 
+  let primary: PlatformBinding;
+  let primarySwitched = false;
   if (!previous.isLive) {
-    // Fresh go-live. Primary = highest-priority among currently-live bindings.
-    const primary = pickByPriority();
-    const primaryLive = lives.find(
+    primary = pickByPriority();
+  } else {
+    // Sticky primary unless the previous primary fell offline.
+    const previousPrimaryStillLive = lives.some(
       (l) =>
-        l.binding.platform === primary.platform &&
-        l.binding.username === primary.username,
+        l.binding.platform === previous.primary.platform &&
+        l.binding.username === previous.primary.username,
     );
-    if (!primaryLive) {
-      throw new Error("unreachable: primary must be present in lives");
+    if (previousPrimaryStillLive) {
+      primary = previous.primary;
+    } else {
+      primary = pickByPriority();
+      primarySwitched = true;
     }
-    const next: StreamerStatusLive = {
-      streamerId,
-      isLive: true,
-      primary,
-      primaryTitle: primaryLive.status.title,
-      startedAt: now,
-      maxViewerCount: summedViewerCount,
-      bindings: liveBindings,
-    };
-    return { kind: "went-live", next, summedViewerCount };
   }
 
-  // Live → Live. Sticky primary unless previous primary fell offline.
-  const previousPrimaryStillLive = lives.find(
-    (l) =>
-      l.binding.platform === previous.primary.platform &&
-      l.binding.username === previous.primary.username,
-  );
-  let primary: PlatformBinding;
-  let primarySwitched: boolean;
-  if (previousPrimaryStillLive) {
-    primary = previous.primary;
-    primarySwitched = false;
-  } else {
-    primary = pickByPriority();
-    primarySwitched = true;
-  }
   const primaryLive = lives.find(
     (l) =>
       l.binding.platform === primary.platform &&
       l.binding.username === primary.username,
   );
-  if (!primaryLive) {
-    throw new Error("unreachable: primary must be present in lives");
-  }
+  if (!primaryLive) throw new Error("unreachable: primary must be in lives");
   const primaryTitle = primaryLive.status.title;
+
+  if (!previous.isLive) {
+    const next: StreamerStatusLive = {
+      streamerId,
+      isLive: true,
+      primary,
+      primaryTitle,
+      startedAt: now,
+      maxViewerCount: summedViewerCount,
+    };
+    return { kind: "went-live", next, summedViewerCount };
+  }
 
   const next: StreamerStatusLive = {
     streamerId,
@@ -161,15 +137,7 @@ export function decideTransition(
     primaryTitle,
     startedAt: previous.startedAt,
     maxViewerCount: Math.max(previous.maxViewerCount, summedViewerCount),
-    bindings: liveBindings,
   };
-
   const titleChanged = !primarySwitched && primaryTitle !== previous.primaryTitle;
-  return {
-    kind: "still-live",
-    next,
-    summedViewerCount,
-    titleChanged,
-    primarySwitched,
-  };
+  return { kind: "still-live", next, summedViewerCount, titleChanged, primarySwitched };
 }

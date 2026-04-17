@@ -1,8 +1,8 @@
 export type {
-  ChannelPeakState,
   ConfirmedPeak,
   DailyBucket,
   PendingPeak,
+  StreamerPeakState,
   ViewerMetricsData,
   WindowConfig,
 } from "./types.js";

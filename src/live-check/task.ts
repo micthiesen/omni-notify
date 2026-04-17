@@ -27,12 +27,14 @@ export default class LiveCheckTask extends ScheduledTask {
 
   private logger: Logger;
   private streamers: Streamer[];
+  private streamersById: Map<string, Streamer>;
   private consecutiveUnknowns = new Map<string, number>();
   private metricsService: ViewerMetricsService;
 
   public constructor(streamers: Streamer[], parentLogger: Logger) {
     super();
     this.streamers = streamers;
+    this.streamersById = new Map(streamers.map((s) => [s.id, s]));
     this.logger = parentLogger.extend("LiveCheckTask");
     this.metricsService = new ViewerMetricsService(
       (streamerId) => this.getPushoverToken(streamerId),
@@ -67,23 +69,21 @@ export default class LiveCheckTask extends ScheduledTask {
     const previous = getStreamerStatus(streamer.id);
     const decision = decideTransition(streamer.id, previous, results);
 
+    if (decision.kind === "all-unknown") {
+      this.handleAllUnknown(streamer, decision.errors);
+      return;
+    }
+    this.consecutiveUnknowns.delete(streamer.id);
     switch (decision.kind) {
-      case "all-unknown":
-        this.handleAllUnknown(streamer, decision.errors);
-        return;
-      case "partial-unknown-keep":
-        this.consecutiveUnknowns.delete(streamer.id);
+      case "no-change":
         return;
       case "went-live":
-        this.consecutiveUnknowns.delete(streamer.id);
         await this.handleWentLive(streamer, previous, decision);
         return;
       case "went-offline":
-        this.consecutiveUnknowns.delete(streamer.id);
         await this.handleWentOffline(streamer, decision.previousLive, decision.next);
         return;
       case "still-live":
-        this.consecutiveUnknowns.delete(streamer.id);
         await this.handleStillLive(streamer, decision);
         return;
     }
@@ -218,8 +218,9 @@ export default class LiveCheckTask extends ScheduledTask {
   }
 
   private getPushoverToken(streamerId: string): string | undefined {
-    const streamer = this.streamers.find((s) => s.id === streamerId);
-    return streamer?.pushoverToken ?? appConfig.PUSHOVER_LIVE_TOKEN;
+    return (
+      this.streamersById.get(streamerId)?.pushoverToken ?? appConfig.PUSHOVER_LIVE_TOKEN
+    );
   }
 }
 

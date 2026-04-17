@@ -36,7 +36,7 @@ export type PendingPeak = {
   previousMax: number;
 };
 
-export type ChannelPeakState = {
+export type StreamerPeakState = {
   pendingPeaks: Map<MetricWindow, PendingPeak>;
 };
 

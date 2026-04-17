@@ -34,14 +34,6 @@ const liveStatus = (
   primaryTitle,
   startedAt: earlier,
   maxViewerCount,
-  bindings: [
-    {
-      platform: primary.platform,
-      username: primary.username,
-      title: primaryTitle,
-      viewerCount: maxViewerCount,
-    },
-  ],
 });
 
 describe("decideTransition", () => {
@@ -63,7 +55,7 @@ describe("decideTransition", () => {
       { binding: KI, status: offline() },
     ];
     const d = decideTransition("s", liveStatus(KI), results, now);
-    expect(d.kind).toBe("partial-unknown-keep");
+    expect(d.kind).toBe("no-change");
   });
 
   it("fires went-live when offline → any live (priority tiebreak)", () => {
@@ -157,6 +149,15 @@ describe("decideTransition", () => {
       expect(d.summedViewerCount).toBe(2500);
       expect(d.next.primary).toEqual(YT);
     }
+  });
+
+  it("returns no-change when already offline and all bindings still offline", () => {
+    const results: BindingFetchResult[] = [
+      { binding: YT, status: offline() },
+      { binding: KI, status: offline() },
+    ];
+    const d = decideTransition("s", offlineStatus, results, now);
+    expect(d.kind).toBe("no-change");
   });
 
   it("treats unknown + live as live (keeps streamer live)", () => {

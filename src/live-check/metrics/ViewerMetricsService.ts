@@ -2,10 +2,10 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { getViewerMetrics, upsertViewerMetrics } from "./persistence.js";
 import {
-  type ChannelPeakState,
   type ConfirmedPeak,
   MetricWindow,
   type PendingPeak,
+  type StreamerPeakState,
   WINDOW_CONFIGS,
 } from "./types.js";
 import { calculateWindowMax, pruneBuckets, updateDailyBucket } from "./windows.js";
@@ -26,7 +26,7 @@ export type ViewerObservation = {
 
 export class ViewerMetricsService {
   private logger: Logger;
-  private channelStates = new Map<string, ChannelPeakState>();
+  private streamerStates = new Map<string, StreamerPeakState>();
   private resolveToken: TokenResolver;
 
   constructor(resolveToken: TokenResolver, parentLogger: Logger) {
@@ -41,7 +41,7 @@ export class ViewerMetricsService {
     urlFields,
   }: ViewerObservation): Promise<void> {
     const metrics = getViewerMetrics(streamerId);
-    const state = this.getOrCreateChannelState(streamerId);
+    const state = this.getOrCreateStreamerState(streamerId);
 
     metrics.dailyBuckets = updateDailyBucket(metrics.dailyBuckets, viewerCount);
 
@@ -102,7 +102,7 @@ export class ViewerMetricsService {
     displayName,
     urlFields,
   }: Omit<ViewerObservation, "viewerCount">): Promise<void> {
-    const state = this.channelStates.get(streamerId);
+    const state = this.streamerStates.get(streamerId);
     if (!state || state.pendingPeaks.size === 0) return;
 
     const metrics = getViewerMetrics(streamerId);
@@ -133,11 +133,11 @@ export class ViewerMetricsService {
     }
   }
 
-  private getOrCreateChannelState(streamerId: string): ChannelPeakState {
-    let state = this.channelStates.get(streamerId);
+  private getOrCreateStreamerState(streamerId: string): StreamerPeakState {
+    let state = this.streamerStates.get(streamerId);
     if (!state) {
       state = { pendingPeaks: new Map<MetricWindow, PendingPeak>() };
-      this.channelStates.set(streamerId, state);
+      this.streamerStates.set(streamerId, state);
     }
     return state;
   }
