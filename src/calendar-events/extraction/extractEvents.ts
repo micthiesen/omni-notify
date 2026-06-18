@@ -65,12 +65,12 @@ export async function extractCalendarEvents(
 Guidelines:
 - Extract real, scheduled events: appointments, flights, hotel stays, concert tickets, reservations, meetings, building maintenance/shutdowns, move-in/out dates, etc.
 - Also extract building/strata notices (water shutdowns, power outages, maintenance windows, fire alarm tests) — these affect the recipient's schedule
-- Also extract upcoming billing/renewal deadlines where the recipient may want a reminder before being charged (e.g. domain renewals, annual plan renewals, trial expirations)
 - Do NOT extract: terms of service updates, privacy policy changes, or other legal/policy notices
-- Do NOT extract: sale deadlines, marketing urgency ("offer expires"), routine subscription renewals (e.g. monthly Netflix), password expiration warnings
+- Do NOT extract: sale deadlines, marketing urgency ("offer expires"), password expiration warnings
 - Do NOT extract: package delivery or shipping notifications (these are handled by a separate parcel tracking system)
+- Do NOT extract any billing, payment, or subscription event — subscription renewals, recurring or auto-pay charges (e.g. iCloud+, Netflix, a PayPal automatic-payment setup), domain/plan renewals, invoices, or payment due dates — regardless of cadence (monthly, annual, or one-off). These are auto-charged and not actionable. This exclusion is about money charged or owed; genuine action-required deadlines that are NOT about payment (e.g. securing API keys by a date, renewing a passport) should still be extracted
 - For flights: create one event per flight segment (outbound, return, connections)
-- For hotel stays: create one event spanning check-in to check-out
+- For multi-day events (hotel stays, retreats, conferences, trips): create one event spanning the first day to the last (set endDate), not separate events per day
 - For appointments: use the appointment time, not the "arrive by" time
 - Always extract endTime when a time range is given (e.g. "8:00 a.m. – 5:00 p.m." → startTime 08:00, endTime 17:00). Do not omit the end time
 - Infer timezone from location context when not explicitly stated (e.g. JFK airport → America/New_York, a restaurant in London → Europe/London, a hotel in Tokyo → Asia/Tokyo)${localTimeZone ? `. When there are no geographic clues, use the recipient's local timezone: ${localTimeZone}` : ". Only leave timeZone empty if there are no geographic clues at all"}
