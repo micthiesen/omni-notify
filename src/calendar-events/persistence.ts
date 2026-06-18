@@ -90,6 +90,9 @@ export function hasEventChanged(
     allDay: boolean;
     location?: string;
     timeZone?: string;
+    description?: string;
+    duration?: string;
+    reminderMinutes?: number;
   },
 ): boolean {
   return (
@@ -99,7 +102,10 @@ export function hasEventChanged(
     (record.endTime ?? undefined) !== (event.endTime ?? undefined) ||
     record.allDay !== event.allDay ||
     (record.location ?? undefined) !== (event.location ?? undefined) ||
-    (record.timeZone ?? undefined) !== (event.timeZone ?? undefined)
+    (record.timeZone ?? undefined) !== (event.timeZone ?? undefined) ||
+    (record.description ?? undefined) !== (event.description ?? undefined) ||
+    (record.duration ?? undefined) !== (event.duration ?? undefined) ||
+    (record.reminderMinutes ?? undefined) !== (event.reminderMinutes ?? undefined)
   );
 }
 

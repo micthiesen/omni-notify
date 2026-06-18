@@ -256,8 +256,19 @@ export class CalendarEventPipeline implements EmailHandler {
       return this.handleCreate(event, emailId);
     }
 
+    // The model can't see description/duration/reminderMinutes (they aren't in the
+    // existing-event context), so a full-PUT update would silently drop them. Backfill
+    // from the stored record for any field the model didn't restate, then compare the
+    // merged result so an unseen field never reads as a spurious change.
+    const merged: ExtractedEvent = {
+      ...event,
+      description: event.description ?? record.description,
+      duration: event.duration ?? record.duration,
+      reminderMinutes: event.reminderMinutes ?? record.reminderMinutes,
+    };
+
     // Skip if nothing meaningful changed
-    if (!hasEventChanged(record, event)) {
+    if (!hasEventChanged(record, merged)) {
       this.logger.info(
         `No changes detected for "${event.title}" on ${event.startDate} (skipping update)`,
       );
@@ -268,16 +279,6 @@ export class CalendarEventPipeline implements EmailHandler {
       this.logger.error("Calendar URL not discovered, cannot update event");
       return;
     }
-
-    // The model can't see description/duration/reminderMinutes (they aren't in the
-    // existing-event context), so a full-PUT update would silently drop them. Backfill
-    // from the stored record for any field the model didn't restate.
-    const merged: ExtractedEvent = {
-      ...event,
-      description: event.description ?? record.description,
-      duration: event.duration ?? record.duration,
-      reminderMinutes: event.reminderMinutes ?? record.reminderMinutes,
-    };
 
     const result = await updateCalendarEvent(
       this.calendarUrl,
