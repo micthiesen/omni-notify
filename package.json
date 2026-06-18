@@ -20,13 +20,13 @@
     "docker:dev": "docker run -p 3000:3000 --rm --name omni-notify omni-notify"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.63",
-    "@ai-sdk/google": "^3.0.53",
-    "@ai-sdk/openai": "^3.0.48",
+    "@ai-sdk/anthropic": "^3.0.85",
+    "@ai-sdk/google": "^3.0.83",
+    "@ai-sdk/openai": "^3.0.73",
     "@hono/node-server": "^1.19.11",
     "@micthiesen/mitools": "^2.3.2",
     "@mozilla/readability": "^0.6.0",
-    "ai": "^6.0.137",
+    "ai": "^6.0.208",
     "amazon-cognito-identity-js": "^6.3.16",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",

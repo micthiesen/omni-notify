@@ -85,12 +85,13 @@ Models are configured via environment variables using `provider:model` format. S
 
 | Variable | Default | Used for |
 |---|---|---|
-| `BRIEFING_MODEL` | `google:gemini-3-pro-preview` | Briefing agents |
+| `BRIEFING_MODEL` | `google:gemini-3.5-flash` | Briefing agents |
+| `EXTRACTION_MODEL` | `google:gemini-3.1-flash-lite` | Email extraction (parcel + calendar) |
 
 Examples:
 
 ```bash
-BRIEFING_MODEL=google:gemini-3-pro-preview
+BRIEFING_MODEL=google:gemini-3.5-flash
 BRIEFING_MODEL=anthropic:claude-sonnet-4
 BRIEFING_MODEL=openai:gpt-4.1
 ```
@@ -107,7 +108,8 @@ BRIEFING_MODEL=openai:gpt-4.1
 | `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)) |
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
-| `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3-pro-preview`) |
+| `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3.5-flash`) |
+| `EXTRACTION_MODEL` | No | AI model for email extraction (default: `google:gemini-3.1-flash-lite`) |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Required for `google:` models |
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |

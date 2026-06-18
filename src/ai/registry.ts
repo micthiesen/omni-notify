@@ -10,11 +10,11 @@ type RegisteredModelId = Parameters<typeof modelRegistry.languageModel>[0];
 export const modelRegistry = createProviderRegistry({ anthropic, google, openai });
 
 export function getBriefingModel(): { model: LanguageModel; modelId: string } {
-  return resolveModel(config.BRIEFING_MODEL, "google:gemini-3-pro-preview");
+  return resolveModel(config.BRIEFING_MODEL, "google:gemini-3.5-flash");
 }
 
 export function getExtractionModel(): { model: LanguageModel; modelId: string } {
-  return resolveModel(config.EXTRACTION_MODEL, "google:gemini-3-flash-preview");
+  return resolveModel(config.EXTRACTION_MODEL, "google:gemini-3.1-flash-lite");
 }
 
 function resolveModel(configured: string | undefined, fallback: RegisteredModelId) {
