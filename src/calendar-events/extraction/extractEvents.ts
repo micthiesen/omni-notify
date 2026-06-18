@@ -10,7 +10,7 @@ import {
   calendarEventExtractionSchema,
 } from "./schema.js";
 
-const MAX_BODY_CHARS = 3000;
+const MAX_BODY_CHARS = 12000;
 
 export interface ExistingEventContext {
   title: string;

@@ -13,6 +13,9 @@ export type CreatedCalendarEventData = {
   allDay: boolean;
   location?: string;
   timeZone?: string;
+  description?: string;
+  duration?: string;
+  reminderMinutes?: number;
   createdAt: number;
   status?: "cancelled";
 };

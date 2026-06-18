@@ -202,6 +202,9 @@ export class CalendarEventPipeline implements EmailHandler {
       allDay: event.allDay,
       location: event.location,
       timeZone: event.timeZone,
+      description: event.description,
+      duration: event.duration,
+      reminderMinutes: event.reminderMinutes,
       createdAt: Date.now(),
     });
 
@@ -266,9 +269,19 @@ export class CalendarEventPipeline implements EmailHandler {
       return;
     }
 
+    // The model can't see description/duration/reminderMinutes (they aren't in the
+    // existing-event context), so a full-PUT update would silently drop them. Backfill
+    // from the stored record for any field the model didn't restate.
+    const merged: ExtractedEvent = {
+      ...event,
+      description: event.description ?? record.description,
+      duration: event.duration ?? record.duration,
+      reminderMinutes: event.reminderMinutes ?? record.reminderMinutes,
+    };
+
     const result = await updateCalendarEvent(
       this.calendarUrl,
-      event,
+      merged,
       record.calendarEventId,
       this.logger,
     );
@@ -282,23 +295,26 @@ export class CalendarEventPipeline implements EmailHandler {
 
     // Mark old record as cancelled, create new one with updated hash
     markEventCancelled(record.eventHash);
-    const newHash = computeEventHash(event.title, event.startDate, event.startTime);
+    const newHash = computeEventHash(merged.title, merged.startDate, merged.startTime);
     recordCreatedEvent({
       eventHash: newHash,
       emailId,
       calendarEventId: record.calendarEventId,
-      title: event.title,
-      startDate: event.startDate,
-      startTime: event.startTime,
-      endDate: event.endDate,
-      endTime: event.endTime,
-      allDay: event.allDay,
-      location: event.location,
-      timeZone: event.timeZone,
+      title: merged.title,
+      startDate: merged.startDate,
+      startTime: merged.startTime,
+      endDate: merged.endDate,
+      endTime: merged.endTime,
+      allDay: merged.allDay,
+      location: merged.location,
+      timeZone: merged.timeZone,
+      description: merged.description,
+      duration: merged.duration,
+      reminderMinutes: merged.reminderMinutes,
       createdAt: Date.now(),
     });
 
-    await this.sendNotification("Calendar Event Updated", event);
+    await this.sendNotification("Calendar Event Updated", merged);
     this.logger.info(`Updated: "${event.title}" on ${event.startDate}`);
   }
 
