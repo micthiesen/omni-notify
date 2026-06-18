@@ -76,9 +76,23 @@ export function getRecentEvents(futureDays = 90): CreatedCalendarEventData[] {
 }
 
 /**
+ * From active candidates sharing a normalized title, pick the one on `startDate`. If none
+ * match the date, fall back to a *lone* candidate only — never arbitrarily pick among
+ * several, so a date mismatch can't cancel/update the wrong same-title event.
+ */
+export function pickByStartDate(
+  active: CreatedCalendarEventData[],
+  startDate: string,
+): CreatedCalendarEventData | undefined {
+  const exact = active.find((e) => e.startDate === startDate);
+  if (exact) return exact;
+  return active.length === 1 ? active[0] : undefined;
+}
+
+/**
  * Find an active event by normalized title + startDate.
  * Matches on both to handle recurring events with the same title on different dates.
- * Falls back to title-only if no title+date match is found.
+ * Falls back to a lone title-only match when no title+date match is found.
  */
 export function findEvent(
   title: string,
@@ -90,7 +104,7 @@ export function findEvent(
     (e) => e.status !== "cancelled" && normalizeTitle(e.title) === normalized,
   );
 
-  return active.find((e) => e.startDate === startDate) ?? active[0];
+  return pickByStartDate(active, startDate);
 }
 
 /**

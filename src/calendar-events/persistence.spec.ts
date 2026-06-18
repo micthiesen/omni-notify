@@ -4,6 +4,7 @@ import {
   computeEventHash,
   hasEventChanged,
   normalizeTitle,
+  pickByStartDate,
   resolveEventReference,
 } from "./persistence.js";
 
@@ -96,6 +97,27 @@ describe("hasEventChanged", () => {
     expect(hasEventChanged(base, { ...base, title: "Dentist Appointment!" })).toBe(
       false,
     );
+  });
+});
+
+describe("pickByStartDate", () => {
+  const a = rec({ eventHash: "a", startDate: "2026-06-17" });
+  const b = rec({ eventHash: "b", startDate: "2026-09-01" });
+
+  it("returns the exact startDate match when present", () => {
+    expect(pickByStartDate([a, b], "2026-09-01")).toBe(b);
+  });
+
+  it("returns a lone candidate when no date matches", () => {
+    expect(pickByStartDate([a], "2099-01-01")).toBe(a);
+  });
+
+  it("fails closed (undefined) when several share the title and none match the date", () => {
+    expect(pickByStartDate([a, b], "2099-01-01")).toBeUndefined();
+  });
+
+  it("returns undefined for no candidates", () => {
+    expect(pickByStartDate([], "2026-06-17")).toBeUndefined();
   });
 });
 

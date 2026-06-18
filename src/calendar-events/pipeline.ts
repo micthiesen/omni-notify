@@ -315,11 +315,19 @@ export class CalendarEventPipeline implements EmailHandler {
       return;
     }
 
-    // Mark old record as cancelled, create new one with updated hash
-    markEventCancelled(record.eventHash);
+    // Re-key the local record to the updated identity. If that key is already taken by a
+    // *different* tracked event, re-keying would clobber it — keep the existing key in
+    // that rare case (the CalDAV event is already updated regardless).
     const newHash = computeEventHash(merged.title, merged.startDate, merged.startTime);
+    const collides = newHash !== record.eventHash && hasCreatedEvent(newHash);
+    if (collides) {
+      this.logger.warn(
+        `Update for "${merged.title}" collides with another tracked event's key; keeping existing key`,
+      );
+    }
+    markEventCancelled(record.eventHash);
     recordCreatedEvent({
-      eventHash: newHash,
+      eventHash: collides ? record.eventHash : newHash,
       emailId,
       calendarEventId: record.calendarEventId,
       title: merged.title,
