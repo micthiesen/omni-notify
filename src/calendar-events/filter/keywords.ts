@@ -84,7 +84,6 @@ const CALENDAR_KEYWORDS = [
   "reservation",
   "booking",
   "booked",
-  "reserved",
   // Travel
   "itinerary",
   "flight",
@@ -99,9 +98,7 @@ const CALENDAR_KEYWORDS = [
   "your visit",
   "reminder",
   // Events
-  "ticket",
   "your event",
-  "concert",
   "show time",
   "game day",
   "admission",
@@ -144,6 +141,13 @@ export type FilterResult =
   | { pass: true; reason: string }
   | { pass: false; reason: string };
 
+/** Domain portion of an email address (handles the +tag and angle-bracket forms). */
+function senderDomain(fromLower: string): string {
+  const at = fromLower.lastIndexOf("@");
+  const domain = at >= 0 ? fromLower.slice(at + 1) : fromLower;
+  return domain.replace(/[>\s].*$/, "");
+}
+
 export function filterCalendarCandidate(email: EmailCandidate): FilterResult {
   const fromLower = email.from.toLowerCase();
 
@@ -152,13 +156,24 @@ export function filterCalendarCandidate(email: EmailCandidate): FilterResult {
     return { pass: false, reason: "blacklisted sender" };
   }
 
-  // Tier 1: Known booking/travel/event sender domains auto-pass
-  if (AUTO_PASS_SENDERS.some((domain) => fromLower.includes(domain))) {
+  // Tier 1: Known booking/travel/event domains auto-pass. Match on the sender's
+  // domain (incl. subdomains) so transactional subdomains like
+  // "noreply@reminder.eventbrite.com" still resolve to "eventbrite.com".
+  const domain = senderDomain(fromLower);
+  if (
+    AUTO_PASS_SENDERS.some((entry) => {
+      const bare = entry.replace(/^@/, "");
+      return domain === bare || domain.endsWith(`.${bare}`);
+    })
+  ) {
     return { pass: true, reason: "known sender" };
   }
 
-  // Tier 2: Keyword match in subject or body
-  const searchText = `${email.subject} ${email.textBody}`.toLowerCase();
+  // Tier 2: Keyword match in subject or body. Strip the ubiquitous "all rights
+  // reserved" footer first so it can never masquerade as a booking signal.
+  const searchText = `${email.subject} ${email.textBody}`
+    .toLowerCase()
+    .replaceAll("all rights reserved", "");
   const matchedKeyword = CALENDAR_KEYWORDS.find((kw) => searchText.includes(kw));
   if (matchedKeyword) {
     return { pass: true, reason: `keyword "${matchedKeyword}"` };
