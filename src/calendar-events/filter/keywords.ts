@@ -141,11 +141,17 @@ export type FilterResult =
   | { pass: true; reason: string }
   | { pass: false; reason: string };
 
-/** Domain portion of an email address (handles the +tag and angle-bracket forms). */
+/**
+ * Domain portion of a sender address. In production `from` is a bare address
+ * (`user@host`), but this also tolerates the display-name form `Name <user@host>` by
+ * preferring the bracketed address. `+tags` live in the local part and are dropped with
+ * everything before the last `@`.
+ */
 function senderDomain(fromLower: string): string {
-  const at = fromLower.lastIndexOf("@");
-  const domain = at >= 0 ? fromLower.slice(at + 1) : fromLower;
-  return domain.replace(/[>\s].*$/, "");
+  const bracketed = fromLower.match(/<([^>]*)>/);
+  const addr = (bracketed ? bracketed[1] : fromLower).trim();
+  const at = addr.lastIndexOf("@");
+  return at >= 0 ? addr.slice(at + 1).trim() : addr;
 }
 
 export function filterCalendarCandidate(email: EmailCandidate): FilterResult {

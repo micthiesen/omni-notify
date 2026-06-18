@@ -40,6 +40,13 @@ describe("filterCalendarCandidate", () => {
       expect(result).toEqual({ pass: true, reason: "known sender" });
     });
 
+    it("passes a known domain wrapped in a display-name angle-bracket form", () => {
+      const result = filterCalendarCandidate(
+        make('"Eventbrite Reminders" <noreply@reminder.eventbrite.com>', "anything"),
+      );
+      expect(result).toEqual({ pass: true, reason: "known sender" });
+    });
+
     it("does not pass a lookalike domain that merely ends with the same letters", () => {
       const result = filterCalendarCandidate(
         make("noreply@noteventbrite.com", "Updates to Our Privacy Policy"),

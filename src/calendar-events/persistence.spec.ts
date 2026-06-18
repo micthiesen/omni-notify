@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CreatedCalendarEventData,
   computeEventHash,
+  hasEventChanged,
   normalizeTitle,
   resolveEventReference,
 } from "./persistence.js";
@@ -37,6 +38,12 @@ describe("normalizeTitle", () => {
       normalizeTitle("🛂 Passport Renewal"),
     );
   });
+
+  it("does not collapse same-token titles that differ only in order", () => {
+    expect(normalizeTitle("✈️ Flight YYZ → YVR")).not.toBe(
+      normalizeTitle("✈️ Flight YVR → YYZ"),
+    );
+  });
 });
 
 describe("computeEventHash", () => {
@@ -53,11 +60,51 @@ describe("computeEventHash", () => {
   });
 });
 
+describe("hasEventChanged", () => {
+  const base = rec({
+    title: "🦷 Dentist Appointment",
+    startDate: "2026-06-17",
+    startTime: "14:30",
+    location: "Clinic",
+    description: "Bring insurance card",
+    reminderMinutes: 60,
+  });
+
+  it("returns false when nothing meaningful changed", () => {
+    expect(hasEventChanged(base, { ...base })).toBe(false);
+  });
+
+  it("treats matching undefined optional fields as unchanged", () => {
+    const a = rec({ title: "X", startDate: "2026-06-17", allDay: true });
+    expect(
+      hasEventChanged(a, { title: "X", startDate: "2026-06-17", allDay: true }),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["title (semantic)", { title: "🦷 Dentist Checkup" }],
+    ["startTime", { startTime: "15:00" }],
+    ["location", { location: "New Clinic" }],
+    ["description", { description: "Changed" }],
+    ["duration", { duration: "PT2H" }],
+    ["reminderMinutes", { reminderMinutes: 1440 }],
+  ])("detects a change to %s", (_label, patch) => {
+    expect(hasEventChanged(base, { ...base, ...patch })).toBe(true);
+  });
+
+  it("ignores cosmetic title drift (emoji/punctuation)", () => {
+    expect(hasEventChanged(base, { ...base, title: "Dentist Appointment!" })).toBe(
+      false,
+    );
+  });
+});
+
 describe("resolveEventReference", () => {
-  it("resolves by eventId handle when present and known, ignoring the title", () => {
+  it("prefers the eventId handle over a fallback that would also match", () => {
     const target = rec({ eventHash: "by-id", calendarEventId: "cal-1" });
+    const other = rec({ eventHash: "by-fallback", calendarEventId: "cal-2" });
     const byId = new Map([["evt_2", target]]);
-    const fallback = vi.fn();
+    const fallback = vi.fn().mockReturnValue(other);
 
     const result = resolveEventReference(
       {
@@ -71,6 +118,17 @@ describe("resolveEventReference", () => {
 
     expect(result).toBe(target);
     expect(fallback).not.toHaveBeenCalled();
+  });
+
+  it("tolerates a handle echoed back with surrounding brackets", () => {
+    const target = rec({ eventHash: "by-id" });
+    const result = resolveEventReference(
+      { eventId: "[evt_2]", title: "x", startDate: "2026-06-17" },
+      new Map([["evt_2", target]]),
+      () => undefined,
+    );
+
+    expect(result).toBe(target);
   });
 
   it("falls back to title+startDate when eventId is missing", () => {

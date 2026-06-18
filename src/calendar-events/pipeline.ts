@@ -26,6 +26,7 @@ import {
   hasCreatedEvent,
   hasEventChanged,
   markEventCancelled,
+  reconcileEventHashes,
   recordCreatedEvent,
   resolveEventReference,
 } from "./persistence.js";
@@ -41,6 +42,10 @@ export class CalendarEventPipeline implements EmailHandler {
   constructor(ctx: JmapContext, logger: Logger) {
     this.ctx = ctx;
     this.logger = logger;
+    const rekeyed = reconcileEventHashes();
+    if (rekeyed > 0) {
+      this.logger.info(`Reconciled ${rekeyed} calendar event hash(es) to new scheme`);
+    }
   }
 
   async handleEmails(emails: FetchedEmail[]): Promise<void> {

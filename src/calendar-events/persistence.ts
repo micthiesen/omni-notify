@@ -108,7 +108,10 @@ export function resolveEventReference(
   ) => CreatedCalendarEventData | undefined = findEvent,
 ): CreatedCalendarEventData | undefined {
   if (ref.eventId) {
-    const matched = byId.get(ref.eventId);
+    // Tolerate the model echoing the handle with its surrounding brackets/whitespace
+    // (e.g. "[evt_2]") — the map is keyed on the bare "evt_2".
+    const handle = ref.eventId.replace(/[^a-z0-9_]/gi, "");
+    const matched = byId.get(handle);
     if (matched) return matched;
   }
   return fallback(ref.title, ref.startDate);
@@ -118,6 +121,7 @@ export function resolveEventReference(
 export function hasEventChanged(
   record: CreatedCalendarEventData,
   event: {
+    title: string;
     startDate: string;
     startTime?: string;
     endDate?: string;
@@ -131,6 +135,7 @@ export function hasEventChanged(
   },
 ): boolean {
   return (
+    normalizeTitle(record.title) !== normalizeTitle(event.title) ||
     record.startDate !== event.startDate ||
     (record.startTime ?? undefined) !== (event.startTime ?? undefined) ||
     (record.endDate ?? undefined) !== (event.endDate ?? undefined) ||
@@ -142,6 +147,24 @@ export function hasEventChanged(
     (record.duration ?? undefined) !== (event.duration ?? undefined) ||
     (record.reminderMinutes ?? undefined) !== (event.reminderMinutes ?? undefined)
   );
+}
+
+/**
+ * One-time idempotent migration: re-key any stored event whose persisted eventHash
+ * predates the current computeEventHash normalization, so create-dedup keeps matching it.
+ * Safe to run on every startup — once re-keyed, recomputed hashes match and it's a no-op.
+ * Returns the number of rows re-keyed.
+ */
+export function reconcileEventHashes(): number {
+  let rekeyed = 0;
+  for (const row of CreatedCalendarEventEntity.getAll()) {
+    const expected = computeEventHash(row.title, row.startDate, row.startTime);
+    if (row.eventHash === expected) continue;
+    CreatedCalendarEventEntity.upsert({ ...row, eventHash: expected });
+    CreatedCalendarEventEntity.delete({ eventHash: row.eventHash });
+    rekeyed++;
+  }
+  return rekeyed;
 }
 
 /** Mark an existing event as cancelled (preserves record to prevent re-creation). */

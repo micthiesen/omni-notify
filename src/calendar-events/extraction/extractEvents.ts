@@ -69,9 +69,9 @@ Guidelines:
 - Do NOT extract: terms of service updates, privacy policy changes, or other legal/policy notices
 - Do NOT extract: sale deadlines, marketing urgency ("offer expires"), password expiration warnings
 - Do NOT extract: package delivery or shipping notifications (these are handled by a separate parcel tracking system)
-- Do NOT extract any billing, payment, or subscription event — subscription renewals, recurring or auto-pay charges (e.g. iCloud+, Netflix, a PayPal automatic-payment setup), domain/plan renewals, invoices, or payment due dates — regardless of cadence (monthly, annual, or one-off). These are auto-charged and not actionable. This exclusion is about money charged or owed; genuine action-required deadlines that are NOT about payment (e.g. securing API keys by a date, renewing a passport) should still be extracted
+- Do NOT extract any billing, payment, or subscription event — subscription renewals, recurring or auto-pay charges (e.g. iCloud+, Netflix, a PayPal automatic-payment setup), domain/plan renewals, invoices, or payment due dates — regardless of cadence (monthly, annual, or one-off). These are auto-charged and not actionable. This exclusion is about money charged or owed; genuine action-required deadlines that are NOT about payment (e.g. securing API keys by a date, renewing a passport) should still be extracted. A receipt or confirmation for a real scheduled event (a paid concert ticket, a flight or hotel booking) IS still extractable — put the event on the calendar, just never the payment/charge itself
 - For flights: create one event per flight segment (outbound, return, connections)
-- For multi-day events (hotel stays, retreats, conferences, trips): create one event spanning the first day to the last (set endDate), not separate events per day
+- For multi-day events (hotel stays, retreats, conferences): create one event spanning the first day to the last (set endDate), not separate events per day
 - For appointments: use the appointment time, not the "arrive by" time
 - Always extract endTime when a time range is given (e.g. "8:00 a.m. – 5:00 p.m." → startTime 08:00, endTime 17:00). Do not omit the end time
 - Infer timezone from location context when not explicitly stated (e.g. JFK airport → America/New_York, a restaurant in London → Europe/London, a hotel in Tokyo → Asia/Tokyo)${localTimeZone ? `. When there are no geographic clues, use the recipient's local timezone: ${localTimeZone}` : ". Only leave timeZone empty if there are no geographic clues at all"}
@@ -86,7 +86,7 @@ Action classification:
 - Use "create" for new events not already in the existing events list below. Omit eventId
 - Use "cancel" if the email indicates an existing event has been cancelled, voided, or is no longer happening
 - Use "update" if the email indicates an existing event has been rescheduled, moved, or had details changed (new time, location, etc.)
-- For "cancel" and "update", set eventId to the bracketed id (e.g. evt_2) shown next to the existing event you are acting on, and copy that id exactly. Only use an id from the list; never invent one. Keep the same title as that existing event
+- For "cancel" and "update", set eventId to the id shown in square brackets next to the existing event you are acting on, WITHOUT the brackets (for [evt_2], use evt_2). Copy it exactly. Only use an id from the list; never invent one. Keep the same title and startDate as that existing event
 - If an update fundamentally changes the event (e.g. rebooked to a completely different flight), emit a "cancel" for the old event (with its eventId) and a "create" for the new one
 - Do NOT generate "cancel" or "update" for events not in the existing events list
 - If an email is just a reminder or confirmation for an existing event with no actual changes (same date, time, location), return an empty events array. Do NOT emit an "update" unless something has actually changed

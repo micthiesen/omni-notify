@@ -12,7 +12,7 @@ export const calendarEventExtractionSchema = z.object({
         .string()
         .optional()
         .describe(
-          "For 'cancel' and 'update' only: the bracketed id (e.g. evt_2) shown next to the existing event this action refers to. Copy it exactly from the existing events list. Omit for 'create'",
+          "For 'cancel' and 'update' only: the id shown in square brackets next to the existing event this action refers to, WITHOUT the brackets (for [evt_2], use evt_2). Copy it exactly from the existing events list. Omit for 'create'",
         ),
       title: z
         .string()
