@@ -79,6 +79,27 @@ export function findEvent(
   return active.find((e) => e.startDate === startDate) ?? active[0];
 }
 
+/**
+ * Resolve which stored event a cancel/update action refers to. Prefers the stable
+ * per-prompt handle (eventId) the model was shown in the existing-events list; falls
+ * back to title+startDate matching when the handle is absent or unrecognized (e.g. the
+ * model omitted or hallucinated it). The title is thus cosmetic, not the identity key.
+ */
+export function resolveEventReference(
+  ref: { eventId?: string; title: string; startDate: string },
+  byId: Map<string, CreatedCalendarEventData>,
+  fallback: (
+    title: string,
+    startDate: string,
+  ) => CreatedCalendarEventData | undefined = findEvent,
+): CreatedCalendarEventData | undefined {
+  if (ref.eventId) {
+    const matched = byId.get(ref.eventId);
+    if (matched) return matched;
+  }
+  return fallback(ref.title, ref.startDate);
+}
+
 /** Check if an extracted event has meaningful changes compared to the stored record. */
 export function hasEventChanged(
   record: CreatedCalendarEventData,

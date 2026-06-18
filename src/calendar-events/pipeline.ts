@@ -20,13 +20,14 @@ import {
 } from "./fastmail/calendarApi.js";
 import { filterCalendarCandidate } from "./filter/keywords.js";
 import {
+  type CreatedCalendarEventData,
   computeEventHash,
-  findEvent,
   getRecentEvents,
   hasCreatedEvent,
   hasEventChanged,
   markEventCancelled,
   recordCreatedEvent,
+  resolveEventReference,
 } from "./persistence.js";
 
 type ExtractedEvent = CalendarEventExtraction["events"][number];
@@ -107,17 +108,25 @@ export class CalendarEventPipeline implements EmailHandler {
       this.logger,
     );
 
-    // Provide existing events as context for cancel/update matching
-    const existingEvents: ExistingEventContext[] = getRecentEvents().map((e) => ({
-      title: e.title,
-      startDate: e.startDate,
-      startTime: e.startTime,
-      endDate: e.endDate,
-      endTime: e.endTime,
-      allDay: e.allDay,
-      location: e.location,
-      timeZone: e.timeZone,
-    }));
+    // Provide existing events as context for cancel/update matching, each tagged with a
+    // stable per-prompt handle (evt_N) the model echoes back to identify its target —
+    // decoupling matching from the regenerated title.
+    const existingById = new Map<string, CreatedCalendarEventData>();
+    const existingEvents: ExistingEventContext[] = getRecentEvents().map((e, i) => {
+      const id = `evt_${i + 1}`;
+      existingById.set(id, e);
+      return {
+        id,
+        title: e.title,
+        startDate: e.startDate,
+        startTime: e.startTime,
+        endDate: e.endDate,
+        endTime: e.endTime,
+        allDay: e.allDay,
+        location: e.location,
+        timeZone: e.timeZone,
+      };
+    });
 
     let events: Awaited<ReturnType<typeof extractCalendarEvents>>;
     try {
@@ -151,10 +160,10 @@ export class CalendarEventPipeline implements EmailHandler {
             await this.handleCreate(event, email.id);
             break;
           case "cancel":
-            await this.handleCancel(event);
+            await this.handleCancel(event, existingById);
             break;
           case "update":
-            await this.handleUpdate(event, email.id);
+            await this.handleUpdate(event, existingById, email.id);
             break;
         }
       } catch (error) {
@@ -212,8 +221,11 @@ export class CalendarEventPipeline implements EmailHandler {
     this.logger.info(`Created: "${event.title}" on ${event.startDate}`);
   }
 
-  private async handleCancel(event: ExtractedEvent): Promise<void> {
-    const record = findEvent(event.title, event.startDate);
+  private async handleCancel(
+    event: ExtractedEvent,
+    existingById: Map<string, CreatedCalendarEventData>,
+  ): Promise<void> {
+    const record = resolveEventReference(event, existingById);
 
     if (!record) {
       this.logger.warn(
@@ -246,8 +258,12 @@ export class CalendarEventPipeline implements EmailHandler {
     this.logger.info(`Cancelled: "${event.title}" on ${record.startDate}`);
   }
 
-  private async handleUpdate(event: ExtractedEvent, emailId: string): Promise<void> {
-    const record = findEvent(event.title, event.startDate);
+  private async handleUpdate(
+    event: ExtractedEvent,
+    existingById: Map<string, CreatedCalendarEventData>,
+    emailId: string,
+  ): Promise<void> {
+    const record = resolveEventReference(event, existingById);
 
     if (!record) {
       this.logger.warn(

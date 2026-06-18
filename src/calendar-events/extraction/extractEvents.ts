@@ -13,6 +13,7 @@ import {
 const MAX_BODY_CHARS = 12000;
 
 export interface ExistingEventContext {
+  id: string;
   title: string;
   startDate: string;
   startTime?: string;
@@ -33,7 +34,7 @@ export interface ExtractCalendarEventsOptions {
 }
 
 function formatExistingEvent(e: ExistingEventContext): string {
-  const parts = [`- "${e.title}" on ${e.startDate}`];
+  const parts = [`- [${e.id}] "${e.title}" on ${e.startDate}`];
   if (e.allDay) {
     parts.push("(all day)");
   } else if (e.startTime) {
@@ -82,10 +83,11 @@ Guidelines:
 - Set reminderMinutes for events that benefit from advance preparation. Examples: flights/travel (1440 = day before), building shutoffs/maintenance (720 = night before), appointments/reservations (60 = 1 hour). Omit for events where the default 30-minute reminder is fine
 
 Action classification:
-- Use "create" for new events not already in the existing events list below
-- Use "cancel" if the email indicates an existing event has been cancelled, voided, or is no longer happening. Use the EXACT title from the existing events list
-- Use "update" if the email indicates an existing event has been rescheduled, moved, or had details changed (new time, location, etc.). Use the same title as the existing event
-- If an update fundamentally changes the event (e.g. rebooked to a completely different flight), emit a "cancel" for the old event and a "create" for the new one
+- Use "create" for new events not already in the existing events list below. Omit eventId
+- Use "cancel" if the email indicates an existing event has been cancelled, voided, or is no longer happening
+- Use "update" if the email indicates an existing event has been rescheduled, moved, or had details changed (new time, location, etc.)
+- For "cancel" and "update", set eventId to the bracketed id (e.g. evt_2) shown next to the existing event you are acting on, and copy that id exactly. Only use an id from the list; never invent one. Keep the same title as that existing event
+- If an update fundamentally changes the event (e.g. rebooked to a completely different flight), emit a "cancel" for the old event (with its eventId) and a "create" for the new one
 - Do NOT generate "cancel" or "update" for events not in the existing events list
 - If an email is just a reminder or confirmation for an existing event with no actual changes (same date, time, location), return an empty events array. Do NOT emit an "update" unless something has actually changed
 - For updates, include ALL event fields (startTime, endTime, location, timeZone, etc.), not just the changed ones. The update replaces the entire event

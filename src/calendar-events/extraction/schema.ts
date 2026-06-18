@@ -8,6 +8,12 @@ export const calendarEventExtractionSchema = z.object({
         .describe(
           "'create' for new events, 'cancel' for cancelled events, 'update' for rescheduled/modified events",
         ),
+      eventId: z
+        .string()
+        .optional()
+        .describe(
+          "For 'cancel' and 'update' only: the bracketed id (e.g. evt_2) shown next to the existing event this action refers to. Copy it exactly from the existing events list. Omit for 'create'",
+        ),
       title: z
         .string()
         .describe(
