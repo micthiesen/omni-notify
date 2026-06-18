@@ -34,12 +34,26 @@ export function recordCreatedEvent(data: CreatedCalendarEventData): void {
   CreatedCalendarEventEntity.upsert(data);
 }
 
+/**
+ * Normalize a title for identity comparison. Strips emoji, arrows, and other
+ * punctuation and collapses casing/whitespace, so the same event re-extracted with a
+ * slightly different title (e.g. "✈️ Flight YYZ → YVR" vs "Flight YYZ -> YVR") still
+ * dedups. Distinct wording still differs, so genuinely different events don't merge.
+ */
+export function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function computeEventHash(
   title: string,
   startDate: string,
   startTime?: string,
 ): string {
-  const key = `${title.toLowerCase().trim()}|${startDate}|${startTime ?? "allday"}`;
+  const key = `${normalizeTitle(title)}|${startDate}|${startTime ?? "allday"}`;
   return key;
 }
 
@@ -62,7 +76,7 @@ export function getRecentEvents(futureDays = 90): CreatedCalendarEventData[] {
 }
 
 /**
- * Find an active event by title + startDate (case-insensitive title).
+ * Find an active event by normalized title + startDate.
  * Matches on both to handle recurring events with the same title on different dates.
  * Falls back to title-only if no title+date match is found.
  */
@@ -71,9 +85,9 @@ export function findEvent(
   startDate: string,
 ): CreatedCalendarEventData | undefined {
   const all = CreatedCalendarEventEntity.getAll();
-  const normalized = title.toLowerCase().trim();
+  const normalized = normalizeTitle(title);
   const active = all.filter(
-    (e) => e.status !== "cancelled" && e.title.toLowerCase().trim() === normalized,
+    (e) => e.status !== "cancelled" && normalizeTitle(e.title) === normalized,
   );
 
   return active.find((e) => e.startDate === startDate) ?? active[0];
