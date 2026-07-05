@@ -1,6 +1,13 @@
 packages:
   - frontend
 
-onlyBuiltDependencies:
-  - better-sqlite3
-  - esbuild
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+
+peerDependencyRules:
+  ignoreMissing:
+    - "@types/node"
+
+patchedDependencies:
+  jmap-rfc-types@0.1.3: patches/jmap-rfc-types@0.1.3.patch

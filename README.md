@@ -92,8 +92,8 @@ Examples:
 
 ```bash
 BRIEFING_MODEL=google:gemini-3.5-flash
-BRIEFING_MODEL=anthropic:claude-sonnet-4
-BRIEFING_MODEL=openai:gpt-4.1
+BRIEFING_MODEL=anthropic:claude-sonnet-5
+BRIEFING_MODEL=openai:gpt-5.5
 ```
 
 ## Environment Variables

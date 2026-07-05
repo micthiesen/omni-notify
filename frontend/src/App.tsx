@@ -437,6 +437,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
         <div className="chart-container" ref={chartRef}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
+              accessibilityLayer={false}
               data={chartConfig.data}
               margin={{
                 top: 8,
@@ -485,7 +486,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                         );
                         if (!style) return null;
                         return (
-                          <div key={entry.dataKey} className="tooltip-row">
+                          <div key={style.dataKey} className="tooltip-row">
                             <svg
                               width="20"
                               height="12"

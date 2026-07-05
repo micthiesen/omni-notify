@@ -1,12 +1,12 @@
-FROM node:24.14.0-slim
+FROM node:24.18.0-slim
 
-RUN corepack enable
+RUN npm install -g pnpm@11.10.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches/ patches/
 COPY frontend/package.json frontend/
-RUN corepack prepare pnpm@10.28.0 --activate && pnpm install
+RUN pnpm install
 
 COPY . .
 RUN pnpm run build && pnpm --filter frontend run build

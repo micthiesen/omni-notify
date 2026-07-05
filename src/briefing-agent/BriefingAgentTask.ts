@@ -4,7 +4,7 @@ import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock, logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { generateText, stepCountIs, tool } from "ai";
+import { generateText, isStepCount, tool } from "ai";
 import { z } from "zod";
 import { getBriefingModel } from "../ai/registry.js";
 import { fetchUrl } from "../ai/tools/fetchUrl.js";
@@ -115,10 +115,11 @@ export class BriefingAgentTask extends ScheduledTask {
         google: { thinkingConfig: { thinkingLevel: "high" as const } },
       },
       tools,
-      stopWhen: stepCountIs(20),
+      stopWhen: isStepCount(20),
       onStepFinish: ({ text, reasoning, toolCalls, toolResults }) => {
-        if (reasoning.length > 0) {
-          const reasoningText = reasoning.map((r) => r.text).join("\n");
+        const reasoningParts = reasoning.filter((r) => r.type === "reasoning");
+        if (reasoningParts.length > 0) {
+          const reasoningText = reasoningParts.map((r) => r.text).join("\n");
           logFile?.section("Reasoning", codeBlock(reasoningText));
         }
         if (text) {
