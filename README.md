@@ -79,6 +79,30 @@ Do not cover topics from past notifications above.
 
 History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
 
+## Media Recommendations
+
+A scheduled pipeline (default: Mon/Wed/Fri at 5pm) that picks at most one movie or TV title per run, adds it to your watchlist, and sends a Pushover notification explaining the pick. Enabled when `TMDB_API_KEY`, `OPENAI_API_KEY`, and `TAVILY_API_KEY` are all set.
+
+Each run:
+
+1. Polls the local media library and watchlist, and labels outcomes of past recommendations (watched, abandoned, ignored) from watch history alone. There is no explicit feedback: watching a recommendation is the signal.
+2. Builds a candidate pool from TMDB (recommendations seeded by recent watches, genre discovery, trending, plus a novelty bucket outside your usual genres).
+3. Hard-filters in code: anything watched, in progress, on the watchlist, or recently recommended is dropped before a model sees it.
+4. Scores the pool with a cheap model (`RECS_SHORTLIST_MODEL`) and keeps the top 5.
+5. Researches the finalists with web search, then a strong model (`RECS_SELECTION_MODEL`) picks exactly one title or decides to add nothing that day.
+
+The local media library and watchlist integrations are stubs (`src/recommendations/mediaLibrary.ts`, `src/recommendations/watchlist.ts`) until a backend is chosen; runs are skipped with a clear log line until they are implemented.
+
+## Web UI
+
+The built-in server (port `FRONTEND_PORT`, default 3000) serves a management dashboard:
+
+- `/` shows every scheduled task with its cron schedule, next/last run, and a "Run now" button, plus recent task-run history.
+- `/pets` is the pet weight tracker.
+- `/recommendations` lists every recommendation with poster, status (pending/notified/watched/abandoned/ignored/failed), and reasoning.
+
+Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
+
 ## AI Model Configuration
 
 Models are configured via environment variables using `provider:model` format. Supported providers: `google`, `anthropic`, `openai`. You only need an API key for the provider you're using.
@@ -87,6 +111,8 @@ Models are configured via environment variables using `provider:model` format. S
 |---|---|---|
 | `BRIEFING_MODEL` | `google:gemini-3.5-flash` | Briefing agents |
 | `EXTRACTION_MODEL` | `google:gemini-3.1-flash-lite` | Email extraction (parcel + calendar) |
+| `RECS_SHORTLIST_MODEL` | `openai:gpt-5-mini` | Recommendation shortlist scoring |
+| `RECS_SELECTION_MODEL` | `openai:gpt-5` | Recommendation research + final pick |
 
 Examples:
 
@@ -113,9 +139,14 @@ BRIEFING_MODEL=openai:gpt-5.5
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Required for `google:` models |
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |
-| `TAVILY_API_KEY` | No | Tavily web search (required for briefings) |
+| `TAVILY_API_KEY` | No | Tavily web search (required for briefings + recommendations) |
 | `BRIEFINGS_PATH` | No | Folder containing `.md` briefing configs |
 | `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` for per-streamer overrides |
+| `TMDB_API_KEY` | No | TMDB API key (required for recommendations; v3 key or v4 read token) |
+| `RECS_SCHEDULE` | No | Recommendation cron (default: `0 0 17 * * 1,3,5`) |
+| `PUSHOVER_RECS_TOKEN` | No | Pushover token for recommendations (falls back to `PUSHOVER_TOKEN`) |
+| `MEDIA_SERVER_URL` / `MEDIA_SERVER_TOKEN` | No | Local media library bridge (stub, not yet implemented) |
+| `WATCHLIST_SERVICE_URL` / `WATCHLIST_SERVICE_TOKEN` | No | Watchlist service (stub, not yet implemented) |
 | `LOG_LEVEL` | No | `debug`, `info`, `warn`, or `error` |
 
 ## Development

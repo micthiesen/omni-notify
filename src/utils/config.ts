@@ -43,6 +43,15 @@ const configSchema = baseConfigSchema
     PARCEL_API_KEY: z.string().optional(),
     EXTRACTION_MODEL: z.string().optional(),
     FASTMAIL_CALENDAR_ID: z.string().optional(),
+    TMDB_API_KEY: z.string().optional(),
+    RECS_SHORTLIST_MODEL: z.string().optional(),
+    RECS_SELECTION_MODEL: z.string().optional(),
+    RECS_SCHEDULE: z.string().optional().default("0 0 17 * * 1,3,5"),
+    PUSHOVER_RECS_TOKEN: z.string().optional(),
+    MEDIA_SERVER_URL: z.string().optional(),
+    MEDIA_SERVER_TOKEN: z.string().optional(),
+    WATCHLIST_SERVICE_URL: z.string().optional(),
+    WATCHLIST_SERVICE_TOKEN: z.string().optional(),
     TZ: z.string().optional().default("America/Vancouver"),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().optional().default(587),
@@ -69,6 +78,7 @@ const configSchema = baseConfigSchema
     PUSHOVER_LIVE_TOKEN: c.PUSHOVER_LIVE_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_CALENDAR_TOKEN: c.PUSHOVER_CALENDAR_TOKEN ?? c.PUSHOVER_TOKEN,
+    PUSHOVER_RECS_TOKEN: c.PUSHOVER_RECS_TOKEN ?? c.PUSHOVER_TOKEN,
   }));
 
 export type Config = z.infer<typeof configSchema>;

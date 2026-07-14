@@ -14,7 +14,9 @@ import { buildStreamers } from "./live-check/streamers.js";
 import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
 import PetTrackerTask from "./pet-tracker/task.js";
+import { RecommendationTask } from "./recommendations/task.js";
 import { startServer } from "./server.js";
+import { TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
 
 Injector.configure({ config });
@@ -48,6 +50,9 @@ function buildTasks(): ScheduledTask[] {
     if (task) tasks.push(task);
   }
 
+  const recommendations = RecommendationTask.create(logger);
+  if (recommendations) tasks.push(recommendations);
+
   return tasks;
 }
 
@@ -77,15 +82,17 @@ if (runTaskIndex !== -1) {
 // --server-only: just the HTTP server, no tasks
 const serverOnly = process.argv.includes("--server-only");
 
+const registry = new TaskRegistry(logger);
+
 // Start HTTP server
-const closeServer = startServer(config.FRONTEND_PORT, logger);
+const closeServer = startServer(config.FRONTEND_PORT, logger, registry);
 
 let cleanupEventSource: (() => void) | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
   for (const task of buildTasks()) {
-    scheduler.register(task);
+    scheduler.register(registry.track(task));
   }
 
   // Start JMAP-based features (parcel tracker + calendar events)
