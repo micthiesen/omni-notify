@@ -1,6 +1,13 @@
 .env
+.git
+.github
 node_modules
 dist
+frontend/dist
+frontend/tsconfig.tsbuildinfo
+**/*.spec.ts
+README.md
+CLAUDE.md
 *.db
 *.db-shm
 *.db-wal

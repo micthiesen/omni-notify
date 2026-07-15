@@ -74,8 +74,8 @@ src/
 ├── recommendations/         # AI media recommendations → watchlist + Pushover
 │   ├── task.ts              # RecommendationTask (cron, default Mon/Wed/Fri 5pm)
 │   ├── pipeline.ts          # Poll state → outcomes → candidates → filter → shortlist → select → commit
-│   ├── mediaLibrary.ts      # STUB: server-scoped library bridge (history/in-progress/library)
-│   ├── watchlist.ts         # STUB: account-scoped watchlist client (get/add)
+│   ├── mediaLibrary.ts      # Plex history/in-progress/library bridge
+│   ├── watchlist.ts         # Combined Radarr/Sonarr tracked-state + acquisition bridge
 │   ├── tmdb/                # TMDB client (canonical identity + candidate sources)
 │   ├── identity.ts          # GUID → tmdb:{type}:{id} resolution, cached in SQLite
 │   ├── outcomes.ts          # Pure outcome labeling (watched ≥80% / abandoned / ignored 30d)
@@ -96,15 +96,16 @@ src/
     └── config.ts            # Environment config with zod validation
 ```
 
-Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server pushes a full snapshot (tasks + streamers + recent runs) on every task-run start/finish; the client falls back to polling `/api/snapshot` when the stream is down and shows the connection state in the nav bar. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
+Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
 
 ### Recommendations Design Invariants
 
-- Taste inputs derive ONLY from ground-truth watch history. Outcome labels (ignored/abandoned) are bookkeeping for cooldowns and the UI — never fed into prompts.
+- Taste inputs use ground-truth Plex watch history plus explicit good-pick/not-for-me feedback. Passive outcome labels remain bookkeeping only.
 - "Watched" requires ≥80% completion (`WATCHED_COMPLETION_THRESHOLD`); partial starts that stall become "abandoned" (a negative signal for exclusions, not prompts).
-- The RecommendationEntity row is written as `pending` BEFORE the watchlist add, flipped to `notified` after Pushover; stale pending rows are reconciled on the next run (re-notify if the add landed, else mark failed).
-- Local-service clients are split along the real auth boundary (library vs watchlist) and return three-state FetchResults; "unavailable" aborts the run rather than being read as empty state.
-- Cooldown: 180 days for re-recommendation; watched/abandoned are excluded permanently.
+- Each recommendation attempt has a unique `recommendationId`; `canonicalId` remains content identity for cooldowns and exclusions.
+- The RecommendationEntity row is written as `pending` before acquisition, then flipped to `notified` after Pushover. Stale pending rows are reconciled only when acquisition demonstrably landed or the title was already available in Plex.
+- Plex availability, Radarr/Sonarr tracked state, and explicit user feedback are separate concepts. Unavailable service reads abort the run rather than being treated as empty state.
+- Cooldown: 180 days for re-recommendation; watched, abandoned, not-for-me, and already-watched titles are excluded permanently unless newer explicit feedback corrects the choice.
 
 ## Key Patterns
 
@@ -294,7 +295,7 @@ EXTRACTION_MODEL=google:gemini-3.1-flash-lite  # Model for email extraction (par
 GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Required for google: models
 ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
 OPENAI_API_KEY=xxx                      # Required for openai: models
-TAVILY_API_KEY=tvly-xxx                 # Tavily web search (for briefing agents)
+TAVILY_API_KEY=tvly-xxx                 # Tavily web search (briefings + recommendations)
 BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
 FASTMAIL_API_TOKEN=xxx                  # Fastmail API token (JMAP email monitoring)
 FASTMAIL_APP_PASSWORD=xxx               # Fastmail app password (CalDAV calendar creation)
@@ -304,12 +305,10 @@ FASTMAIL_CALENDAR_ID=xxx                # Optional: CalDAV calendar ID (auto-dis
 TMDB_API_KEY=xxx                        # TMDB (enables recommendations; v3 key or v4 read token)
 RECS_SHORTLIST_MODEL=openai:gpt-5-mini  # Model for recommendation shortlist scoring
 RECS_SELECTION_MODEL=openai:gpt-5       # Model for recommendation research + final pick
+TASTE_REFLECTION_MODEL=openai:gpt-5-mini # Model for versioned taste reflection
+TASTE_REFLECTION_SCHEDULE=0 0 4 * * 0    # Weekly taste reflection (Sunday 4am)
 RECS_SCHEDULE=0 0 17 * * 1,3,5          # Recommendation cron (default Mon/Wed/Fri 5pm)
 PUSHOVER_RECS_TOKEN=xxx                 # Optional: override for recommendation notifications
-MEDIA_SERVER_URL=xxx                    # Media library bridge (stub, not yet implemented)
-MEDIA_SERVER_TOKEN=xxx
-WATCHLIST_SERVICE_URL=xxx               # Watchlist service (stub, not yet implemented)
-WATCHLIST_SERVICE_TOKEN=xxx
 ```
 
 ## External Dependencies

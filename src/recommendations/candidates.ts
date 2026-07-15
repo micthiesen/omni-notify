@@ -1,7 +1,9 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import PQueue from "p-queue";
 import {
   discoverTitles,
   fetchRecommendationsFor,
+  fetchTitleDetails,
   fetchTrending,
   getGenreMap,
 } from "./tmdb/client.js";
@@ -190,15 +192,33 @@ export function assemblePool(
 export async function enrichCandidates(
   pool: PooledCandidate[],
   libraryIds: Set<string>,
+  logger?: Logger,
 ): Promise<Candidate[]> {
   const [movieGenres, tvGenres] = await Promise.all([
     getGenreMap(MediaType.Movie),
     getGenreMap(MediaType.Tv),
   ]);
-  return pool.map(({ genreIds, ...c }) => {
+  const detailsQueue = new PQueue({ concurrency: 6 });
+  const details = await Promise.all(
+    pool.map((candidate) =>
+      detailsQueue.add(async () => {
+        try {
+          return await fetchTitleDetails(candidate.mediaType, candidate.tmdbId);
+        } catch (error) {
+          logger?.warn(
+            `TMDB details fetch failed for ${candidate.canonicalId}`,
+            (error as Error).message,
+          );
+          return undefined;
+        }
+      }),
+    ),
+  );
+  return pool.map(({ genreIds, ...c }, index) => {
     const genreMap = c.mediaType === MediaType.Movie ? movieGenres : tvGenres;
     return {
       ...c,
+      ...details[index],
       genres: genreIds
         .map((id) => genreMap.get(id))
         .filter((g): g is string => g !== undefined),

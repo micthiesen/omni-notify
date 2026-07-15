@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { z } from "zod";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
@@ -13,7 +14,13 @@ import {
   getPet,
   getWeightHistory,
 } from "./pet-tracker/persistence.js";
-import { getAllRecommendations } from "./recommendations/persistence.js";
+import {
+  getAllRecommendations,
+  getRecommendation,
+  type RecommendationData,
+  setRecommendationFeedback,
+} from "./recommendations/persistence.js";
+import { getLatestTasteProfile } from "./recommendations/taste/index.js";
 import { taskRunBus } from "./task-runs/events.js";
 import { getRuns, type TaskRunData } from "./task-runs/persistence.js";
 import {
@@ -38,6 +45,49 @@ function serializeRun(run: TaskRunData) {
     status: run.status,
     error: run.error ?? null,
     summary: run.summary ?? null,
+  };
+}
+
+function serializeRecommendation(rec: RecommendationData) {
+  return {
+    recommendationId: rec.recommendationId,
+    canonicalId: rec.canonicalId,
+    tmdbId: rec.tmdbId,
+    mediaType: rec.mediaType,
+    title: rec.title,
+    year: rec.year ?? null,
+    posterPath: rec.posterPath ?? null,
+    status: rec.status,
+    whyForUser: rec.whyForUser ?? null,
+    caveats: rec.caveats ?? [],
+    runDate: rec.runDate,
+    recommendedAt: rec.recommendedAt,
+    notifiedAt: rec.notifiedAt ?? null,
+    startedAt: rec.startedAt ?? null,
+    resolvedAt: rec.resolvedAt ?? null,
+    watchlistResult: rec.watchlistResult ?? null,
+    confidence: rec.confidence ?? null,
+    feedback: rec.feedback ?? null,
+    feedbackAt: rec.feedbackAt ?? null,
+    source: rec.source ?? null,
+    genres: rec.genres ?? [],
+    runtimeMinutes: rec.runtimeMinutes ?? null,
+    seasonCount: rec.seasonCount ?? null,
+    episodeCount: rec.episodeCount ?? null,
+    seriesStatus: rec.seriesStatus ?? null,
+    originalLanguage: rec.originalLanguage ?? null,
+    originCountries: rec.originCountries ?? [],
+    creators: rec.creators ?? [],
+    cast: rec.cast ?? [],
+    keywords: rec.keywords ?? [],
+    certification: rec.certification ?? null,
+    shortlistScores: rec.shortlistScores ?? null,
+    links: {
+      tmdb: `https://www.themoviedb.org/${rec.mediaType}/${rec.tmdbId}`,
+      plex: "http://plex.boris/web/index.html#!/",
+      manager:
+        rec.mediaType === "movie" ? "http://radarr.boris/" : "http://sonarr.boris/",
+    },
   };
 }
 
@@ -93,6 +143,26 @@ export function startServer(
 ): () => void {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
+
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+      const origin = c.req.header("Origin");
+      const host = c.req.header("Host");
+      let sameOrigin = true;
+      if (origin) {
+        try {
+          sameOrigin = Boolean(host) && new URL(origin).host === host;
+        } catch {
+          sameOrigin = false;
+        }
+      }
+      if (!sameOrigin) {
+        return c.json({ error: "Cross-origin mutations are not allowed" }, 403);
+      }
+    }
+    await next();
+    c.header("X-Content-Type-Options", "nosniff");
+  });
 
   const buildSnapshot = () => ({
     tasks: registry.list().map((task) => ({
@@ -211,25 +281,37 @@ export function startServer(
   });
 
   app.get("/api/recommendations", (c) => {
-    const recommendations = getAllRecommendations().map((rec) => ({
-      canonicalId: rec.canonicalId,
-      tmdbId: rec.tmdbId,
-      mediaType: rec.mediaType,
-      title: rec.title,
-      year: rec.year ?? null,
-      posterPath: rec.posterPath ?? null,
-      status: rec.status,
-      whyForUser: rec.whyForUser ?? null,
-      caveats: rec.caveats ?? [],
-      runDate: rec.runDate,
-      recommendedAt: rec.recommendedAt,
-      notifiedAt: rec.notifiedAt ?? null,
-      resolvedAt: rec.resolvedAt ?? null,
-      watchlistResult: rec.watchlistResult ?? null,
-      confidence: rec.confidence ?? null,
-    }));
+    const recommendations = getAllRecommendations().map(serializeRecommendation);
     return c.json({ recommendations });
   });
+
+  app.get("/api/recommendations/taste-profile", (c) =>
+    c.json({ profile: getLatestTasteProfile() ?? null }),
+  );
+
+  const feedbackSchema = z.object({
+    feedback: z.enum(["good_pick", "not_for_me", "already_watched"]),
+  });
+
+  app.post("/api/recommendations/:id/feedback", async (c) => {
+    const parsed = feedbackSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: "Invalid recommendation feedback" }, 400);
+    }
+    const existing = getRecommendation(c.req.param("id"));
+    if (!existing) return c.json({ error: "Recommendation not found" }, 404);
+    if (existing.status === "pending" || existing.status === "failed") {
+      return c.json({ error: "Undelivered recommendations cannot be rated" }, 409);
+    }
+    const recommendation = setRecommendationFeedback(
+      c.req.param("id"),
+      parsed.data.feedback,
+    );
+    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
+    return c.json({ recommendation: serializeRecommendation(recommendation) });
+  });
+
+  app.get("/api/health", (c) => c.json({ status: "ok" }));
 
   app.get("/api/pets", async (c) => {
     const pets = getAllPetsWithHistory();

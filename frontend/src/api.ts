@@ -76,9 +76,14 @@ export type RecommendationStatus =
   | "abandoned"
   | "ignored"
   | "failed";
-export type WatchlistResult = "added" | "already_exists" | "skipped" | "error";
+export type WatchlistResult = "added" | "already_exists" | "available" | "error";
+export type RecommendationFeedback =
+  | "good_pick"
+  | "not_for_me"
+  | "already_watched";
 
 export interface Recommendation {
+  recommendationId: string;
   canonicalId: string;
   tmdbId: number;
   mediaType: MediaType;
@@ -91,9 +96,81 @@ export interface Recommendation {
   runDate: string;
   recommendedAt: number;
   notifiedAt: number | null;
+  startedAt: number | null;
   resolvedAt: number | null;
   watchlistResult: WatchlistResult | null;
   confidence: number | null;
+  feedback: RecommendationFeedback | null;
+  feedbackAt: number | null;
+  source: string | null;
+  genres: string[];
+  runtimeMinutes: number | null;
+  seasonCount: number | null;
+  episodeCount: number | null;
+  seriesStatus: string | null;
+  originalLanguage: string | null;
+  originCountries: string[];
+  creators: string[];
+  cast: string[];
+  keywords: string[];
+  certification: string | null;
+  shortlistScores: {
+    tasteMatch: number;
+    novelty: number;
+    effortFit: number;
+    composite: number;
+    risks: string[];
+  } | null;
+  links: { tmdb: string; plex: string; manager: string };
+}
+
+export interface TasteClaim {
+  claim: string;
+  confidence: number;
+  evidenceIds: string[];
+}
+
+export interface TasteBehaviorStats {
+  completedMovies: number;
+  completedSeries: number;
+  rewatchedTitles: number;
+  recommendations: {
+    total: number;
+    watched: number;
+    abandoned: number;
+    ignored: number;
+    failed: number;
+    awaitingOutcome: number;
+  };
+  feedback: {
+    goodPick: number;
+    notForMe: number;
+    alreadyWatched: number;
+  };
+  averageHoursToStart?: number;
+  sourcePerformance: Record<
+    string,
+    { total: number; watched: number; goodPick: number; notForMe: number }
+  >;
+}
+
+export interface TasteProfile {
+  profileId: string;
+  version: number;
+  generatedAt: number;
+  summary: string;
+  stablePreferences: TasteClaim[];
+  conditionalPreferences: TasteClaim[];
+  aversions: TasteClaim[];
+  currentSaturation: TasteClaim[];
+  explorationTargets: TasteClaim[];
+  uncertainties: TasteClaim[];
+  commitmentPreferences: {
+    movies: { preference: string; confidence: number; evidenceIds: string[] };
+    limitedSeries: { preference: string; confidence: number; evidenceIds: string[] };
+    longSeries: { preference: string; confidence: number; evidenceIds: string[] };
+  };
+  stats: TasteBehaviorStats;
 }
 
 export class ApiError extends Error {
@@ -131,8 +208,16 @@ export async function apiGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function apiPost<T>(path: string): Promise<T> {
-  const res = await fetch(path, { method: "POST" });
+export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+  });
   if (!res.ok) {
     throw new ApiError(res.status, await extractErrorMessage(res));
   }
@@ -170,4 +255,20 @@ export function fetchRecommendations(): Promise<{
   recommendations: Recommendation[];
 }> {
   return apiGet<{ recommendations: Recommendation[] }>("/api/recommendations");
+}
+
+export function fetchTasteProfile(): Promise<{ profile: TasteProfile | null }> {
+  return apiGet<{ profile: TasteProfile | null }>(
+    "/api/recommendations/taste-profile",
+  );
+}
+
+export function sendRecommendationFeedback(
+  recommendationId: string,
+  feedback: RecommendationFeedback,
+): Promise<{ recommendation: Recommendation }> {
+  return apiPost<{ recommendation: Recommendation }>(
+    `/api/recommendations/${encodeURIComponent(recommendationId)}/feedback`,
+    { feedback },
+  );
 }

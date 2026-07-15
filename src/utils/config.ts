@@ -14,6 +14,11 @@ const channelList = z
     });
   });
 
+const optionalPositiveInt = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.coerce.number().int().positive().optional(),
+);
+
 const configSchema = baseConfigSchema
   .extend({
     YT_CHANNEL_NAMES: channelList,
@@ -46,12 +51,22 @@ const configSchema = baseConfigSchema
     TMDB_API_KEY: z.string().optional(),
     RECS_SHORTLIST_MODEL: z.string().optional(),
     RECS_SELECTION_MODEL: z.string().optional(),
+    TASTE_REFLECTION_MODEL: z.string().optional(),
+    TASTE_REFLECTION_SCHEDULE: z.string().optional().default("0 0 4 * * 0"),
     RECS_SCHEDULE: z.string().optional().default("0 0 17 * * 1,3,5"),
+    RECS_PUBLIC_URL: z.string().optional().default("http://omni.boris"),
     PUSHOVER_RECS_TOKEN: z.string().optional(),
-    MEDIA_SERVER_URL: z.string().optional(),
-    MEDIA_SERVER_TOKEN: z.string().optional(),
-    WATCHLIST_SERVICE_URL: z.string().optional(),
-    WATCHLIST_SERVICE_TOKEN: z.string().optional(),
+    PLEX_URL: z.string().optional(),
+    PLEX_TOKEN: z.string().optional(),
+    PLEX_ACCOUNT_ID: optionalPositiveInt,
+    RADARR_URL: z.string().optional(),
+    RADARR_API_KEY: z.string().optional(),
+    RADARR_ROOT_FOLDER_PATH: z.string().optional(),
+    RADARR_QUALITY_PROFILE_ID: optionalPositiveInt,
+    SONARR_URL: z.string().optional(),
+    SONARR_API_KEY: z.string().optional(),
+    SONARR_ROOT_FOLDER_PATH: z.string().optional(),
+    SONARR_QUALITY_PROFILE_ID: optionalPositiveInt,
     TZ: z.string().optional().default("America/Vancouver"),
     SMTP_HOST: z.string().optional(),
     SMTP_PORT: z.coerce.number().optional().default(587),

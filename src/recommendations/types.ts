@@ -68,6 +68,19 @@ export interface Candidate {
   voteCount: number;
   popularity: number;
   posterPath?: string;
+  /** Typical runtime for a movie or episode, when TMDB reports it. */
+  runtimeMinutes?: number;
+  /** TV commitment information. */
+  seasonCount?: number;
+  episodeCount?: number;
+  seriesStatus?: string;
+  originalLanguage?: string;
+  originCountries?: string[];
+  creators?: string[];
+  cast?: string[];
+  keywords?: string[];
+  /** US content certification (for example PG-13 or TV-MA), when available. */
+  certification?: string;
   source: CandidateSource;
   /** Present in the local media library (positive signal, not an exclusion). */
   inLibrary: boolean;

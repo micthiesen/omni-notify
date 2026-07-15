@@ -25,6 +25,10 @@ export function getRecsSelectionModel(): { model: LanguageModel; modelId: string
   return resolveModel(config.RECS_SELECTION_MODEL, "openai:gpt-5");
 }
 
+export function getTasteReflectionModel(): { model: LanguageModel; modelId: string } {
+  return resolveModel(config.TASTE_REFLECTION_MODEL, "openai:gpt-5-mini");
+}
+
 function resolveModel(configured: string | undefined, fallback: RegisteredModelId) {
   const modelId = (configured ?? fallback) as RegisteredModelId;
   return { model: modelRegistry.languageModel(modelId), modelId };

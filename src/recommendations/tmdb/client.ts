@@ -6,11 +6,16 @@ import {
   detailsSchema,
   findResponseSchema,
   genreListSchema,
+  movieDetailsSchema,
   movieListSchema,
   normalizeMovie,
+  normalizeMovieDetails,
   normalizeTv,
+  normalizeTvDetails,
   type TmdbTitle,
+  type TmdbTitleDetails,
   trendingListSchema,
+  tvDetailsSchema,
   tvListSchema,
 } from "./types.js";
 
@@ -141,6 +146,22 @@ export async function fetchTitleGenreIds(
 ): Promise<number[]> {
   const data = await tmdbGet(`/${mediaType}/${tmdbId}`, detailsSchema);
   return data.genres.map((g) => g.id);
+}
+
+export async function fetchTitleDetails(
+  mediaType: MediaType,
+  tmdbId: number,
+): Promise<TmdbTitleDetails> {
+  if (mediaType === MediaType.Movie) {
+    const data = await tmdbGet(`/movie/${tmdbId}`, movieDetailsSchema, {
+      append_to_response: "credits,keywords,release_dates",
+    });
+    return normalizeMovieDetails(data);
+  }
+  const data = await tmdbGet(`/tv/${tmdbId}`, tvDetailsSchema, {
+    append_to_response: "credits,keywords,content_ratings",
+  });
+  return normalizeTvDetails(data);
 }
 
 const genreCache = new Map<MediaType, Map<number, string>>();

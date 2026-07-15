@@ -81,17 +81,21 @@ History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
 
 ## Media Recommendations
 
-A scheduled pipeline (default: Mon/Wed/Fri at 5pm) that picks at most one movie or TV title per run, adds it to your watchlist, and sends a Pushover notification explaining the pick. Enabled when `TMDB_API_KEY`, `OPENAI_API_KEY`, and `TAVILY_API_KEY` are all set.
+A scheduled pipeline (default: Mon/Wed/Fri at 5pm) that picks at most one movie or TV title per run, acquires missing titles through Radarr or Sonarr, and sends a Pushover notification explaining the pick. Titles already available in Plex are recommended without another acquisition request.
 
 Each run:
 
-1. Polls the local media library and watchlist, and labels outcomes of past recommendations (watched, abandoned, ignored) from watch history alone. There is no explicit feedback: watching a recommendation is the signal.
+1. Polls Plex history, series-level progress, local availability, and the Radarr/Sonarr tracked catalog. It labels passive outcomes (started, watched, abandoned, ignored) and incorporates explicit "good pick" or "not for me" feedback.
 2. Builds a candidate pool from TMDB (recommendations seeded by recent watches, genre discovery, trending, plus a novelty bucket outside your usual genres).
-3. Hard-filters in code: anything watched, in progress, on the watchlist, or recently recommended is dropped before a model sees it.
-4. Scores the pool with a cheap model (`RECS_SHORTLIST_MODEL`) and keeps the top 5.
+3. Hard-filters in code: anything watched, in progress, tracked by Radarr/Sonarr, explicitly rejected, or recently recommended is dropped before a model sees it.
+4. Enriches candidates with structured TMDB commitment and creative metadata, then scores the pool with a cheap model (`RECS_SHORTLIST_MODEL`) and keeps the top 5.
 5. Researches the finalists with web search, then a strong model (`RECS_SELECTION_MODEL`) picks exactly one title or decides to add nothing that day.
 
-The local media library and watchlist integrations are stubs (`src/recommendations/mediaLibrary.ts`, `src/recommendations/watchlist.ts`) until a backend is chosen; runs are skipped with a clear log line until they are implemented.
+Plex is the source of watch history, in-progress state, and local availability. Radarr handles movie acquisition and Sonarr handles TV acquisition. All reads fail closed: an unavailable service skips the run instead of treating missing state as an empty library.
+
+A separate weekly `TasteReflection` task maintains a versioned taste profile. It converts Plex observations and recommendation outcomes into an idempotent evidence ledger, computes behavioral statistics, and performs a bounded draft-and-critic reflection. Every learned claim must cite stored evidence. The latest profile is added to recommendation context and shown in the UI; code, prompts, and scoring rules are never self-modified. If no evidence changed, reflection exits without a model call.
+
+See [the recommendation review checkpoint](docs/recommendations-review.md) for the decisions intentionally deferred until enough real recommendations have outcomes.
 
 ## Web UI
 
@@ -99,7 +103,7 @@ The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify 
 
 - `/` shows live streamer status (who's live now, title, uptime, peak viewers), a stat strip, every scheduled task with its cron schedule, ticking next-run countdown, "Run now" button and expandable run history, plus a recent-activity feed with per-task filtering.
 - `/pets` is the pet weight tracker.
-- `/recommendations` lists every recommendation with poster, status (pending/notified/watched/abandoned/ignored/failed), reasoning, and status filters.
+- `/recommendations` lists every recommendation with poster, status, reasoning, service links, explicit feedback controls, filters, the current evidence-backed taste profile, and recent pipeline activity. Pushover notifications deep-link to the relevant recommendation.
 
 Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port — no extra ports needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
 
@@ -119,6 +123,7 @@ Models are configured via environment variables using `provider:model` format. S
 | `EXTRACTION_MODEL` | `google:gemini-3.1-flash-lite` | Email extraction (parcel + calendar) |
 | `RECS_SHORTLIST_MODEL` | `openai:gpt-5-mini` | Recommendation shortlist scoring |
 | `RECS_SELECTION_MODEL` | `openai:gpt-5` | Recommendation research + final pick |
+| `TASTE_REFLECTION_MODEL` | `openai:gpt-5-mini` | Weekly evidence-backed taste reflection |
 
 Examples:
 
@@ -150,9 +155,16 @@ BRIEFING_MODEL=openai:gpt-5.5
 | `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` for per-streamer overrides |
 | `TMDB_API_KEY` | No | TMDB API key (required for recommendations; v3 key or v4 read token) |
 | `RECS_SCHEDULE` | No | Recommendation cron (default: `0 0 17 * * 1,3,5`) |
+| `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-5-mini`) |
+| `TASTE_REFLECTION_SCHEDULE` | No | Taste-profile reflection cron (default: `0 0 4 * * 0`, Sunday 4am) |
+| `RECS_PUBLIC_URL` | No | Public/LAN Omni base URL used by notification links (default: `http://omni.boris`) |
 | `PUSHOVER_RECS_TOKEN` | No | Pushover token for recommendations (falls back to `PUSHOVER_TOKEN`) |
-| `MEDIA_SERVER_URL` / `MEDIA_SERVER_TOKEN` | No | Local media library bridge (stub, not yet implemented) |
-| `WATCHLIST_SERVICE_URL` / `WATCHLIST_SERVICE_TOKEN` | No | Watchlist service (stub, not yet implemented) |
+| `PLEX_URL` / `PLEX_TOKEN` | For recommendations | Plex server URL and token |
+| `PLEX_ACCOUNT_ID` | For shared Plex servers | Account ID used to scope viewing history; multiple detected accounts fail closed without it |
+| `RADARR_URL` / `RADARR_API_KEY` | For recommendations | Radarr v3 API connection |
+| `RADARR_ROOT_FOLDER_PATH` / `RADARR_QUALITY_PROFILE_ID` | For recommendations | Defaults for acquired movies |
+| `SONARR_URL` / `SONARR_API_KEY` | For recommendations | Sonarr v3 API connection |
+| `SONARR_ROOT_FOLDER_PATH` / `SONARR_QUALITY_PROFILE_ID` | For recommendations | Defaults for acquired series |
 | `LOG_LEVEL` | No | `debug`, `info`, `warn`, or `error` |
 
 ## Development

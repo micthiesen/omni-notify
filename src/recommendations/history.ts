@@ -8,7 +8,7 @@ export function completedWatches(watched: WatchedItem[]): WatchedItem[] {
   return watched
     .filter((w) =>
       w.completion === undefined
-        ? w.viewCount >= 1
+        ? w.mediaType === "movie" && w.viewCount >= 1
         : w.completion >= WATCHED_COMPLETION_THRESHOLD,
     )
     .sort((a, b) => b.viewedAt - a.viewedAt);

@@ -19,6 +19,7 @@ import {
   RecommendationEntity,
   RecommendationStatus,
 } from "../recommendations/persistence.js";
+import { TasteProfileEntity } from "../recommendations/taste/index.js";
 import { MediaType } from "../recommendations/types.js";
 import { startServer } from "../server.js";
 import { TaskRunEntity } from "../task-runs/persistence.js";
@@ -177,10 +178,14 @@ seedRun("Recommendations", now - 22 * HOUR, 96_000, "success", {
   trigger: "manual",
   summary: "Picked The Iron Harvest (2025); added to watchlist.",
 });
+seedRun("Recommendations", now - 46 * HOUR, 71_000, "success", {
+  summary: "no_add: finalists were weaker than the current taste evidence",
+});
 
 // --- Recommendations ---------------------------------------------------------
 
 RecommendationEntity.upsert({
+  recommendationId: "preview-iron-harvest",
   canonicalId: "tmdb:movie:100001",
   tmdbId: 100001,
   mediaType: MediaType.Movie,
@@ -197,6 +202,7 @@ RecommendationEntity.upsert({
   watchlistResult: "added",
 });
 RecommendationEntity.upsert({
+  recommendationId: "preview-harbor-lights",
   canonicalId: "tmdb:tv:200002",
   tmdbId: 200002,
   mediaType: MediaType.Tv,
@@ -212,6 +218,7 @@ RecommendationEntity.upsert({
   watchlistResult: "added",
 });
 RecommendationEntity.upsert({
+  recommendationId: "preview-static-bloom",
   canonicalId: "tmdb:movie:300003",
   tmdbId: 300003,
   mediaType: MediaType.Movie,
@@ -226,6 +233,98 @@ RecommendationEntity.upsert({
   notifiedAt: now - 46 * 24 * HOUR + MIN,
   resolvedAt: now - 16 * 24 * HOUR,
   watchlistResult: "already_exists",
+});
+
+TasteProfileEntity.upsert({
+  profileId: "v3:preview",
+  version: 3,
+  generatedAt: now - 2 * 24 * HOUR,
+  evidenceFingerprint: "preview",
+  evidenceCount: 84,
+  modelId: "openai:gpt-5-mini",
+  promptVersion: "taste-reflection-v1",
+  summary:
+    "Strong preference for tightly constructed speculative stories and character-driven mysteries, with less patience for long, repetitive seasons.",
+  stablePreferences: [
+    {
+      claim: "Cerebral science fiction with a human emotional core",
+      confidence: 0.88,
+      evidenceIds: ["preview-1", "preview-2", "preview-3"],
+    },
+  ],
+  conditionalPreferences: [
+    {
+      claim: "Slow burns work when the ending rewards the setup",
+      confidence: 0.72,
+      evidenceIds: ["preview-4", "preview-5"],
+    },
+  ],
+  aversions: [
+    {
+      claim: "Avoid padded multi-season commitments",
+      confidence: 0.76,
+      evidenceIds: ["preview-6", "preview-7"],
+    },
+  ],
+  currentSaturation: [
+    {
+      claim: "Superhero stories",
+      confidence: 0.7,
+      evidenceIds: ["preview-8", "preview-9"],
+    },
+  ],
+  explorationTargets: [
+    {
+      claim: "International speculative drama",
+      confidence: 0.68,
+      evidenceIds: ["preview-1"],
+    },
+    {
+      claim: "Compact dark comedy",
+      confidence: 0.6,
+      evidenceIds: ["preview-4"],
+    },
+  ],
+  uncertainties: [
+    {
+      claim: "Musicals and unscripted series",
+      confidence: 0.5,
+      evidenceIds: ["preview-10"],
+    },
+  ],
+  commitmentPreferences: {
+    movies: {
+      preference: "positive",
+      confidence: 0.9,
+      evidenceIds: ["preview-1", "preview-2"],
+    },
+    limitedSeries: {
+      preference: "positive",
+      confidence: 0.82,
+      evidenceIds: ["preview-3", "preview-4"],
+    },
+    longSeries: {
+      preference: "negative",
+      confidence: 0.76,
+      evidenceIds: ["preview-6", "preview-7"],
+    },
+  },
+  stats: {
+    completedMovies: 61,
+    completedSeries: 23,
+    rewatchedTitles: 9,
+    recommendations: {
+      total: 14,
+      watched: 6,
+      abandoned: 1,
+      ignored: 3,
+      failed: 1,
+      awaitingOutcome: 3,
+    },
+    feedback: { goodPick: 5, notForMe: 2, alreadyWatched: 1 },
+    averageHoursToStart: 31.5,
+    sourcePerformance: {},
+  },
 });
 
 // --- Pet ----------------------------------------------------------------------

@@ -14,12 +14,15 @@ import { buildStreamers, type Streamer } from "./live-check/streamers.js";
 import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
 import PetTrackerTask from "./pet-tracker/task.js";
+import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
 import { RecommendationTask } from "./recommendations/task.js";
+import { TasteReflectionTask } from "./recommendations/taste/task.js";
 import { startServer } from "./server.js";
 import { TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
 
 Injector.configure({ config });
+migrateLegacyRecommendations();
 
 const logger = new Logger("Main");
 
@@ -55,6 +58,8 @@ function buildTasks(streamers: Streamer[]): ScheduledTask[] {
 
   const recommendations = RecommendationTask.create(logger);
   if (recommendations) tasks.push(recommendations);
+  const tasteReflection = TasteReflectionTask.create(logger);
+  if (tasteReflection) tasks.push(tasteReflection);
 
   return tasks;
 }

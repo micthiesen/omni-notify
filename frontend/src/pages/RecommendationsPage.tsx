@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { fetchRecommendations } from "../api";
+import {
+  fetchRecommendations,
+  fetchTaskRuns,
+  fetchTasteProfile,
+  sendRecommendationFeedback,
+} from "../api";
 import type {
   Recommendation,
+  RecommendationFeedback,
   RecommendationStatus,
+  TaskRun,
+  TasteClaim,
+  TasteProfile,
   WatchlistResult,
 } from "../api";
 import { Toast, useToast } from "../components/Toast";
 import { useLiveData } from "../live";
-import { formatDateOnly } from "../utils/format";
+import { formatAbsolute, formatDateOnly, formatRelative } from "../utils/format";
 
 const TASK_NAME = "Recommendations";
+const TASTE_TASK_NAME = "TasteReflection";
 
 const STATUS_LABELS: Record<RecommendationStatus, string> = {
   pending: "pending",
@@ -32,9 +42,15 @@ const STATUS_ORDER: RecommendationStatus[] = [
 const WATCHLIST_LABELS: Record<WatchlistResult, string> = {
   added: "added to watchlist",
   already_exists: "already on watchlist",
-  skipped: "watchlist skipped",
+  available: "available in Plex",
   error: "watchlist error",
 };
+
+const FEEDBACK_ACTIONS: { value: RecommendationFeedback; label: string }[] = [
+  { value: "good_pick", label: "Good pick" },
+  { value: "not_for_me", label: "Not for me" },
+  { value: "already_watched", label: "Already watched" },
+];
 
 function Poster({ rec }: { rec: Recommendation }) {
   const [broken, setBroken] = useState(false);
@@ -70,9 +86,23 @@ function Poster({ rec }: { rec: Recommendation }) {
   );
 }
 
-function RecommendationCard({ rec }: { rec: Recommendation }) {
+function RecommendationCard({
+  rec,
+  saving,
+  highlighted,
+  onFeedback,
+}: {
+  rec: Recommendation;
+  saving: boolean;
+  highlighted: boolean;
+  onFeedback: (feedback: RecommendationFeedback) => void;
+}) {
+  const canRate = rec.status !== "pending" && rec.status !== "failed";
   return (
-    <div className="rec-card">
+    <div
+      id={`recommendation-${rec.recommendationId}`}
+      className={`rec-card ${highlighted ? "rec-card-highlighted" : ""}`}
+    >
       <Poster rec={rec} />
       <div className="rec-body">
         <div className="rec-title-row">
@@ -108,8 +138,244 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
             </span>
           )}
         </div>
+        <div className="rec-links">
+          <a href={rec.links.tmdb} target="_blank" rel="noreferrer">
+            TMDB
+          </a>
+          <a href={rec.links.plex} target="_blank" rel="noreferrer">
+            Plex
+          </a>
+          <a href={rec.links.manager} target="_blank" rel="noreferrer">
+            {rec.mediaType === "movie" ? "Radarr" : "Sonarr"}
+          </a>
+        </div>
+        {canRate && (
+          <div className="rec-feedback" aria-label="Recommendation feedback">
+            {FEEDBACK_ACTIONS.map((action) => (
+              <button
+                key={action.value}
+                type="button"
+                className={`feedback-btn ${rec.feedback === action.value ? "active" : ""}`}
+                aria-pressed={rec.feedback === action.value}
+                disabled={saving}
+                onClick={() => onFeedback(action.value)}
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function ClaimList({ claims }: { claims: TasteClaim[] }) {
+  return (
+    <ul className="taste-claim-list">
+      {claims.map((item) => (
+        <li key={item.claim}>
+          <span>{item.claim}</span>
+          <span
+            className="taste-confidence"
+            title={`${item.evidenceIds.length} supporting evidence item${item.evidenceIds.length === 1 ? "" : "s"}`}
+          >
+            {Math.round(item.confidence * 100)}%
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TasteBrain({
+  profile,
+  loading,
+  error,
+}: {
+  profile: TasteProfile | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const stats = profile
+    ? [
+        ["Completed movies", profile.stats.completedMovies],
+        ["Completed series", profile.stats.completedSeries],
+        ["Rewatched titles", profile.stats.rewatchedTitles],
+        [
+          "Recommendations watched",
+          `${profile.stats.recommendations.watched}/${profile.stats.recommendations.total}`,
+        ],
+        ["Good picks", profile.stats.feedback.goodPick],
+        [
+          "Average time to start",
+          profile.stats.averageHoursToStart === undefined
+            ? "Not enough data"
+            : `${profile.stats.averageHoursToStart.toFixed(1)}h`,
+        ],
+      ]
+    : [];
+
+  return (
+    <section className="page-section taste-brain">
+      <div className="taste-heading">
+        <div>
+          <h2 className="section-title">Taste brain</h2>
+          <div className="muted taste-subtitle">
+            Watching and feedback are reflected into a versioned taste profile.
+          </div>
+        </div>
+        {profile && (
+          <span
+            className="taste-version"
+            title={formatAbsolute(profile.generatedAt)}
+          >
+            v{profile.version} · {formatRelative(profile.generatedAt)}
+          </span>
+        )}
+      </div>
+
+      {loading && <div className="loading-inline">Loading taste profile…</div>}
+      {!loading && error && (
+        <div className="error-inline">Taste profile unavailable: {error}</div>
+      )}
+      {!loading && !error && profile === null && (
+        <div className="taste-empty">
+          No profile yet. The reflection task will build one from Plex watching and
+          recommendation feedback.
+        </div>
+      )}
+      {profile && (
+        <div className="taste-card">
+          <p className="taste-summary">{profile.summary}</p>
+          {stats.length > 0 && (
+            <div className="taste-stats">
+              {stats.map(([name, value]) => (
+                <div className="taste-stat" key={String(name)}>
+                  <span>{name}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="taste-columns">
+            {profile.stablePreferences.length > 0 && (
+              <div>
+                <h3>Reliable preferences</h3>
+                <ClaimList claims={profile.stablePreferences} />
+              </div>
+            )}
+            {profile.conditionalPreferences.length > 0 && (
+              <div>
+                <h3>Depends on context</h3>
+                <ClaimList claims={profile.conditionalPreferences} />
+              </div>
+            )}
+            {profile.aversions.length > 0 && (
+              <div>
+                <h3>Avoid</h3>
+                <ClaimList claims={profile.aversions} />
+              </div>
+            )}
+            {profile.uncertainties.length > 0 && (
+              <div>
+                <h3>Still learning</h3>
+                <ClaimList claims={profile.uncertainties} />
+              </div>
+            )}
+          </div>
+          {(profile.explorationTargets.length > 0 ||
+            profile.currentSaturation.length > 0) && (
+            <div className="taste-tags-row">
+              {profile.explorationTargets.length > 0 && (
+                <div>
+                  <span className="taste-tags-label">Explore</span>
+                  <div className="taste-tags">
+                    {profile.explorationTargets.map((target) => (
+                      <span
+                        className="taste-tag taste-tag-explore"
+                        key={target.claim}
+                        title={`${target.evidenceIds.length} supporting evidence item(s)`}
+                      >
+                        {target.claim}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {profile.currentSaturation.length > 0 && (
+                <div>
+                  <span className="taste-tags-label">Currently saturated</span>
+                  <div className="taste-tags">
+                    {profile.currentSaturation.map((target) => (
+                      <span
+                        className="taste-tag"
+                        key={target.claim}
+                        title={`${target.evidenceIds.length} supporting evidence item(s)`}
+                      >
+                        {target.claim}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <div className="taste-commitments">
+            <span>Commitment fit</span>
+            <span>Movies: {profile.commitmentPreferences.movies.preference}</span>
+            <span>
+              Limited series: {profile.commitmentPreferences.limitedSeries.preference}
+            </span>
+            <span>
+              Long series: {profile.commitmentPreferences.longSeries.preference}
+            </span>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function runOutcome(run: TaskRun): { label: string; tone: string } {
+  if (run.status === "running") return { label: "Running", tone: "running" };
+  if (run.status === "error") return { label: "Error", tone: "error" };
+  if (run.summary?.startsWith("no_add:")) {
+    return { label: "No pick", tone: "no-add" };
+  }
+  return { label: "Completed", tone: "success" };
+}
+
+function RecommendationActivity({ runs }: { runs: TaskRun[] }) {
+  return (
+    <section className="page-section rec-activity-section">
+      <h2 className="section-title">Recent recommendation runs</h2>
+      {runs.length === 0 ? (
+        <div className="muted">No recommendation runs recorded yet.</div>
+      ) : (
+        <div className="rec-run-list">
+          {runs.map((run) => {
+            const outcome = runOutcome(run);
+            return (
+              <div className="rec-run-row" key={run.runId}>
+                <span className={`rec-run-outcome rec-run-${outcome.tone}`}>
+                  {outcome.label}
+                </span>
+                <span
+                  className="rec-run-time"
+                  title={formatAbsolute(run.startedAt)}
+                >
+                  {formatRelative(run.startedAt)}
+                </span>
+                <span className={run.error ? "run-error" : "run-summary"}>
+                  {run.error ?? run.summary ?? "Run completed without a summary"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -117,6 +383,11 @@ export default function RecommendationsPage() {
   const [recs, setRecs] = useState<Recommendation[] | null>(null);
   const [recsError, setRecsError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<RecommendationStatus | "">("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
+  const [tasteLoading, setTasteLoading] = useState(true);
+  const [tasteError, setTasteError] = useState<string | null>(null);
+  const [recommendationRuns, setRecommendationRuns] = useState<TaskRun[]>([]);
   const { snapshot, runTask } = useLiveData();
   const { toast, showToast } = useToast();
 
@@ -128,6 +399,10 @@ export default function RecommendationsPage() {
   // Once the snapshot has loaded, a missing Recommendations task means it's
   // disabled server-side (missing API keys) — don't offer a doomed Run button.
   const taskAvailable = snapshot === null || recTask !== null;
+  const latestTasteRunId =
+    snapshot?.runs.find((run) => run.taskName === TASTE_TASK_NAME)?.runId ?? null;
+  const latestRecommendationRunId =
+    snapshot?.runs.find((run) => run.taskName === TASK_NAME)?.runId ?? null;
 
   // Load once, then reload whenever the Recommendations task finishes running
   // so freshly generated picks appear without a manual refresh.
@@ -151,10 +426,77 @@ export default function RecommendationsPage() {
     };
   }, [running]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchTasteProfile()
+      .then((data) => {
+        if (cancelled) return;
+        setTasteProfile(data.profile);
+        setTasteError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setTasteError(
+          err instanceof Error ? err.message : "Failed to fetch taste profile",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setTasteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [latestTasteRunId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTaskRuns({ task: TASK_NAME, limit: 6 })
+      .then((data) => {
+        if (!cancelled) setRecommendationRuns(data.runs);
+      })
+      .catch(() => {
+        // Recommendation cards remain useful if activity history is unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [latestRecommendationRunId]);
+
   const handleRun = async () => {
     const result = await runTask(TASK_NAME);
     showToast(result.message, result.ok ? "info" : "error");
   };
+
+  const handleFeedback = async (
+    recommendationId: string,
+    feedback: RecommendationFeedback,
+  ) => {
+    setSavingId(recommendationId);
+    try {
+      const result = await sendRecommendationFeedback(recommendationId, feedback);
+      setRecs((current) =>
+        current?.map((rec) =>
+          rec.recommendationId === recommendationId ? result.recommendation : rec,
+        ) ?? null,
+      );
+      showToast("Feedback saved", "info");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Failed to save feedback", "error");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const highlightedId = new URLSearchParams(window.location.search).get(
+    "recommendation",
+  );
+
+  useEffect(() => {
+    if (!highlightedId || recs === null) return;
+    document
+      .getElementById(`recommendation-${highlightedId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedId, recs]);
 
   const statusCounts = useMemo(() => {
     const counts = new Map<RecommendationStatus, number>();
@@ -199,6 +541,14 @@ export default function RecommendationsPage() {
       </div>
       <Toast toast={toast} />
 
+      <TasteBrain
+        profile={tasteProfile}
+        loading={tasteLoading}
+        error={tasteError}
+      />
+
+      <RecommendationActivity runs={recommendationRuns} />
+
       {recs !== null && recs.length > 0 && (
         <div className="rec-filters">
           <button
@@ -234,15 +584,24 @@ export default function RecommendationsPage() {
         <div className="rec-empty">
           <div className="rec-empty-title">No recommendations yet</div>
           <div className="muted">
-            The Recommendations task hasn&apos;t produced any picks. Hit
-            &ldquo;Run now&rdquo; to generate the first batch.
+            {taskAvailable
+              ? "The Recommendations task hasn’t produced any picks. Run it to generate the first one."
+              : "Add the required recommendation service credentials to enable the first run."}
           </div>
         </div>
       )}
       {visible !== null && visible.length > 0 && (
         <div className="rec-list">
           {visible.map((rec) => (
-            <RecommendationCard key={rec.canonicalId} rec={rec} />
+            <RecommendationCard
+              key={rec.recommendationId}
+              rec={rec}
+              saving={savingId === rec.recommendationId}
+              highlighted={highlightedId === rec.recommendationId}
+              onFeedback={(feedback) =>
+                void handleFeedback(rec.recommendationId, feedback)
+              }
+            />
           ))}
         </div>
       )}

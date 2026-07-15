@@ -127,12 +127,13 @@ function buildPrompt(candidates: Candidate[], historyDigest: string): string {
     const genres = c.genres.length > 0 ? c.genres.join("/") : "unknown genres";
     const library = c.inLibrary ? " | IN LOCAL LIBRARY" : "";
     const overview = c.overview.replace(/\s+/g, " ").slice(0, 180);
-    return `[${c.canonicalId}] ${c.title}${year} [${c.mediaType}] ${genres} | rating ${c.voteAverage.toFixed(1)} (${c.voteCount} votes) | source=${c.source}${library}\n  ${overview}`;
+    const details = formatCandidateDetails(c, false);
+    return `[${c.canonicalId}] ${c.title}${year} [${c.mediaType}] ${genres} | rating ${c.voteAverage.toFixed(1)} (${c.voteCount} votes) | source=${c.source}${library}${details}\n  ${overview}`;
   });
 
   return `You are a conservative recommendation scorer for one person's media watchlist. You are NOT choosing a winner — you are scoring each candidate from the supplied facts only. Do not invent metadata or use knowledge that contradicts the provided facts.
 
-THE USER'S WATCH HISTORY (ground truth for their taste):
+THE USER'S TASTE EVIDENCE (watch history is ground truth; explicit good/not-for-me feedback is direct preference evidence):
 ${historyDigest}
 
 SCORING DIMENSIONS (0-100 each):
@@ -146,4 +147,40 @@ Score every candidate. Return JSON only.
 
 CANDIDATES:
 ${candidateLines.join("\n")}`;
+}
+
+export function formatCandidateDetails(
+  candidate: Candidate,
+  includeCreativeContext = true,
+): string {
+  const details: string[] = [];
+  if (candidate.runtimeMinutes) {
+    details.push(
+      candidate.mediaType === "tv"
+        ? `${candidate.runtimeMinutes} min/episode`
+        : `${candidate.runtimeMinutes} min`,
+    );
+  }
+  if (candidate.seasonCount) details.push(`${candidate.seasonCount} seasons`);
+  if (candidate.episodeCount) details.push(`${candidate.episodeCount} episodes`);
+  if (candidate.seriesStatus) details.push(candidate.seriesStatus);
+  if (candidate.certification) details.push(candidate.certification);
+  if (candidate.originalLanguage && candidate.originalLanguage !== "en") {
+    details.push(`language=${candidate.originalLanguage}`);
+  }
+  if (candidate.originCountries?.length) {
+    details.push(`origin=${candidate.originCountries.join(",")}`);
+  }
+  if (includeCreativeContext) {
+    if (candidate.creators?.length) {
+      details.push(`creator=${candidate.creators.join(", ")}`);
+    }
+    if (candidate.cast?.length) {
+      details.push(`cast=${candidate.cast.slice(0, 4).join(", ")}`);
+    }
+    if (candidate.keywords?.length) {
+      details.push(`themes=${candidate.keywords.slice(0, 6).join(", ")}`);
+    }
+  }
+  return details.length > 0 ? ` | ${details.join(" | ")}` : "";
 }
