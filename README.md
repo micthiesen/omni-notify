@@ -95,13 +95,19 @@ The local media library and watchlist integrations are stubs (`src/recommendatio
 
 ## Web UI
 
-The built-in server (port `FRONTEND_PORT`, default 3000) serves a management dashboard:
+The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify dashboard:
 
-- `/` shows every scheduled task with its cron schedule, next/last run, and a "Run now" button, plus recent task-run history.
+- `/` shows live streamer status (who's live now, title, uptime, peak viewers), a stat strip, every scheduled task with its cron schedule, ticking next-run countdown, "Run now" button and expandable run history, plus a recent-activity feed with per-task filtering.
 - `/pets` is the pet weight tracker.
-- `/recommendations` lists every recommendation with poster, status (pending/notified/watched/abandoned/ignored/failed), and reasoning.
+- `/recommendations` lists every recommendation with poster, status (pending/notified/watched/abandoned/ignored/failed), reasoning, and status filters.
 
-Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
+Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port — no extra ports needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
+
+To iterate on the frontend without real credentials, `src/tools/preview-server.ts` boots the real server with fake tasks, streamers, runs, recommendations, and a pet:
+
+```bash
+DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts
+```
 
 ## AI Model Configuration
 

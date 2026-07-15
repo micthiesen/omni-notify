@@ -10,7 +10,7 @@ import { EmailDispatcher } from "./jmap/dispatcher.js";
 import { createEventSource } from "./jmap/eventSource.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
 import { Platform } from "./live-check/platforms/index.js";
-import { buildStreamers } from "./live-check/streamers.js";
+import { buildStreamers, type Streamer } from "./live-check/streamers.js";
 import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
 import PetTrackerTask from "./pet-tracker/task.js";
@@ -23,9 +23,7 @@ Injector.configure({ config });
 
 const logger = new Logger("Main");
 
-function buildTasks(): ScheduledTask[] {
-  const tasks: ScheduledTask[] = [];
-
+function loadStreamers(): Streamer[] {
   const kickConfigured = config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET;
   if (config.KICK_CHANNEL_NAMES.length > 0 && !kickConfigured) {
     logger.warn(
@@ -37,7 +35,12 @@ function buildTasks(): ScheduledTask[] {
     [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
     [Platform.Kick, kickConfigured ? config.KICK_CHANNEL_NAMES : []],
   ];
-  const streamers = buildStreamers(sources, loadChannelsConfig(logger));
+  return buildStreamers(sources, loadChannelsConfig(logger));
+}
+
+function buildTasks(streamers: Streamer[]): ScheduledTask[] {
+  const tasks: ScheduledTask[] = [];
+
   if (streamers.length > 0) {
     tasks.push(new LiveCheckTask(streamers, logger));
   }
@@ -65,7 +68,7 @@ if (runTaskIndex !== -1) {
     process.exit(1);
   }
 
-  const tasks = buildTasks();
+  const tasks = buildTasks(loadStreamers());
   const task = tasks.find((t) => t.name.toLowerCase() === taskName.toLowerCase());
   if (!task) {
     const names = tasks.map((t) => t.name).join(", ");
@@ -83,15 +86,16 @@ if (runTaskIndex !== -1) {
 const serverOnly = process.argv.includes("--server-only");
 
 const registry = new TaskRegistry(logger);
+const streamers = loadStreamers();
 
 // Start HTTP server
-const closeServer = startServer(config.FRONTEND_PORT, logger, registry);
+const closeServer = startServer(config.FRONTEND_PORT, logger, registry, streamers);
 
 let cleanupEventSource: (() => void) | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
-  for (const task of buildTasks()) {
+  for (const task of buildTasks(streamers)) {
     scheduler.register(registry.track(task));
   }
 

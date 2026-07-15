@@ -2,6 +2,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import cron, { type ScheduledTask as CronScheduledTask } from "node-cron";
 import PQueue from "p-queue";
+import { taskRunBus } from "./events.js";
 import {
   getLastRun,
   makeRunId,
@@ -110,6 +111,7 @@ export class TaskRegistry {
     await entry.queue.add(async () => {
       const run = recordRunStart(name, trigger, runId);
       this.running.add(name);
+      taskRunBus.emit({ type: "run-started", taskName: name });
       try {
         await entry.task.run();
         recordRunEnd(run.runId, {
@@ -126,6 +128,7 @@ export class TaskRegistry {
         throw error;
       } finally {
         this.running.delete(name);
+        taskRunBus.emit({ type: "run-finished", taskName: name });
       }
     });
   }

@@ -6,7 +6,7 @@ import type {
   WatchlistResult,
 } from "../api";
 import { Toast, useToast } from "../components/Toast";
-import { useTasks } from "../hooks/useTasks";
+import { useLiveData } from "../live";
 import { formatDateOnly } from "../utils/format";
 
 const TASK_NAME = "Recommendations";
@@ -19,6 +19,15 @@ const STATUS_LABELS: Record<RecommendationStatus, string> = {
   ignored: "ignored",
   failed: "failed",
 };
+
+const STATUS_ORDER: RecommendationStatus[] = [
+  "notified",
+  "pending",
+  "watched",
+  "abandoned",
+  "ignored",
+  "failed",
+];
 
 const WATCHLIST_LABELS: Record<WatchlistResult, string> = {
   added: "added to watchlist",
@@ -69,9 +78,7 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
         <div className="rec-title-row">
           <span className="rec-title">
             {rec.title}
-            {rec.year !== null && (
-              <span className="rec-year"> ({rec.year})</span>
-            )}
+            {rec.year !== null && <span className="rec-year"> ({rec.year})</span>}
           </span>
           <span className={`media-badge media-${rec.mediaType}`}>
             {rec.mediaType === "tv" ? "TV" : "Movie"}
@@ -109,17 +116,18 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
 export default function RecommendationsPage() {
   const [recs, setRecs] = useState<Recommendation[] | null>(null);
   const [recsError, setRecsError] = useState<string | null>(null);
-  const { tasks, runTask } = useTasks();
+  const [statusFilter, setStatusFilter] = useState<RecommendationStatus | "">("");
+  const { snapshot, runTask } = useLiveData();
   const { toast, showToast } = useToast();
 
   const recTask = useMemo(
-    () => tasks?.find((t) => t.name === TASK_NAME) ?? null,
-    [tasks],
+    () => snapshot?.tasks.find((t) => t.name === TASK_NAME) ?? null,
+    [snapshot],
   );
   const running = recTask?.running ?? false;
-  // Once tasks have loaded, a missing Recommendations task means it's
+  // Once the snapshot has loaded, a missing Recommendations task means it's
   // disabled server-side (missing API keys) — don't offer a doomed Run button.
-  const taskAvailable = tasks === null || recTask !== null;
+  const taskAvailable = snapshot === null || recTask !== null;
 
   // Load once, then reload whenever the Recommendations task finishes running
   // so freshly generated picks appear without a manual refresh.
@@ -147,6 +155,21 @@ export default function RecommendationsPage() {
     const result = await runTask(TASK_NAME);
     showToast(result.message, result.ok ? "info" : "error");
   };
+
+  const statusCounts = useMemo(() => {
+    const counts = new Map<RecommendationStatus, number>();
+    for (const rec of recs ?? []) {
+      counts.set(rec.status, (counts.get(rec.status) ?? 0) + 1);
+    }
+    return counts;
+  }, [recs]);
+
+  const visible = useMemo(() => {
+    if (recs === null) return null;
+    return statusFilter === ""
+      ? recs
+      : recs.filter((r) => r.status === statusFilter);
+  }, [recs, statusFilter]);
 
   return (
     <>
@@ -176,9 +199,31 @@ export default function RecommendationsPage() {
       </div>
       <Toast toast={toast} />
 
-      {recs === null && recsError === null && (
-        <div className="loading">Loading…</div>
+      {recs !== null && recs.length > 0 && (
+        <div className="rec-filters">
+          <button
+            type="button"
+            className={`chip-btn ${statusFilter === "" ? "active" : ""}`}
+            onClick={() => setStatusFilter("")}
+          >
+            All ({recs.length})
+          </button>
+          {STATUS_ORDER.filter((s) => statusCounts.has(s)).map((status) => (
+            <button
+              key={status}
+              type="button"
+              className={`chip-btn ${statusFilter === status ? "active" : ""}`}
+              onClick={() =>
+                setStatusFilter((prev) => (prev === status ? "" : status))
+              }
+            >
+              {STATUS_LABELS[status]} ({statusCounts.get(status)})
+            </button>
+          ))}
+        </div>
       )}
+
+      {recs === null && recsError === null && <div className="loading">Loading…</div>}
       {recsError && recs === null && (
         <div className="error">
           <div>Failed to load recommendations</div>
@@ -194,9 +239,9 @@ export default function RecommendationsPage() {
           </div>
         </div>
       )}
-      {recs !== null && recs.length > 0 && (
+      {visible !== null && visible.length > 0 && (
         <div className="rec-list">
-          {recs.map((rec) => (
+          {visible.map((rec) => (
             <RecommendationCard key={rec.canonicalId} rec={rec} />
           ))}
         </div>

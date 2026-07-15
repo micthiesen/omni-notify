@@ -41,6 +41,35 @@ export function formatDuration(ms: number): string {
   return `${mins}m ${secs}s`;
 }
 
+/** Ticking countdown: "2h 05m", "3m 12s", "42s", "now". */
+export function formatCountdown(ms: number): string {
+  if (ms <= 0) return "now";
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${pad2(m)}m`;
+  if (m > 0) return `${m}m ${pad2(s)}s`;
+  return `${s}s`;
+}
+
+/** Coarse elapsed time for stream uptime: "1h 23m", "23m", "45s". */
+export function formatUptime(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${totalSec}s`;
+}
+
+export function formatCompactNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1_000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
 export function formatAbsolute(epochMs: number): string {
   return new Date(epochMs).toLocaleString("en-US", {
     month: "short",

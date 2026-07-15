@@ -2,6 +2,10 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
+import { getStreamerStatus } from "./live-check/persistence.js";
+import { platformConfigs } from "./live-check/platforms/index.js";
+import type { PlatformBinding, Streamer } from "./live-check/streamers.js";
 import {
   getAllPetsWithHistory,
   getDailyVisitCounts,
@@ -9,6 +13,7 @@ import {
   getWeightHistory,
 } from "./pet-tracker/persistence.js";
 import { getAllRecommendations } from "./recommendations/persistence.js";
+import { taskRunBus } from "./task-runs/events.js";
 import { getRuns, type TaskRunData } from "./task-runs/persistence.js";
 import {
   TaskAlreadyRunningError,
@@ -35,13 +40,67 @@ function serializeRun(run: TaskRunData) {
   };
 }
 
+// Entity data round-trips through JSON, so Date fields come back as ISO
+// strings at runtime regardless of their declared type.
+function toEpochMs(value: Date | string): number {
+  return new Date(value).getTime();
+}
+
+function serializeBinding(binding: PlatformBinding) {
+  return {
+    platform: binding.platform,
+    username: binding.username,
+    url: platformConfigs[binding.platform].getLiveUrl(binding.username),
+  };
+}
+
+function serializeStreamer(streamer: Streamer) {
+  const status = getStreamerStatus(streamer.id);
+  const base = {
+    id: streamer.id,
+    displayName: streamer.displayName,
+    bindings: streamer.bindings.map(serializeBinding),
+  };
+  if (status.isLive) {
+    return {
+      ...base,
+      live: true as const,
+      title: status.primaryTitle,
+      startedAt: toEpochMs(status.startedAt),
+      maxViewerCount: status.maxViewerCount,
+      primary: serializeBinding(status.primary),
+    };
+  }
+  return {
+    ...base,
+    live: false as const,
+    lastStartedAt: status.lastStartedAt ? toEpochMs(status.lastStartedAt) : null,
+    lastEndedAt: status.lastEndedAt ? toEpochMs(status.lastEndedAt) : null,
+    lastMaxViewerCount: status.lastMaxViewerCount ?? null,
+  };
+}
+
+const SNAPSHOT_RUN_LIMIT = 30;
+const SSE_DEBOUNCE_MS = 150;
+const SSE_HEARTBEAT_MS = 25_000;
+
 export function startServer(
   port: number,
   parentLogger: Logger,
   registry: TaskRegistry,
+  streamers: Streamer[],
 ): () => void {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
+
+  const buildSnapshot = () => ({
+    tasks: registry.list().map((task) => ({
+      ...task,
+      lastRun: task.lastRun ? serializeRun(task.lastRun) : null,
+    })),
+    streamers: streamers.map(serializeStreamer),
+    runs: getRuns(undefined, SNAPSHOT_RUN_LIMIT).map(serializeRun),
+  });
 
   app.get("/api/tasks", (c) =>
     c.json({
@@ -49,6 +108,63 @@ export function startServer(
         ...task,
         lastRun: task.lastRun ? serializeRun(task.lastRun) : null,
       })),
+    }),
+  );
+
+  app.get("/api/streamers", (c) =>
+    c.json({ streamers: streamers.map(serializeStreamer) }),
+  );
+
+  // Full dashboard state in one payload; also the polling fallback when the
+  // SSE stream is unavailable.
+  app.get("/api/snapshot", (c) => c.json(buildSnapshot()));
+
+  // Realtime dashboard updates. Pushes a fresh snapshot on connect and
+  // whenever any task run starts or finishes (debounced to coalesce bursts).
+  app.get("/api/events", (c) =>
+    streamSSE(c, async (stream) => {
+      let eventId = 0;
+      let sending = false;
+      let resend = false;
+      const send = async (): Promise<void> => {
+        if (sending) {
+          resend = true;
+          return;
+        }
+        sending = true;
+        try {
+          await stream.writeSSE({
+            event: "snapshot",
+            data: JSON.stringify(buildSnapshot()),
+            id: String(eventId++),
+          });
+        } finally {
+          sending = false;
+          if (resend) {
+            resend = false;
+            void send();
+          }
+        }
+      };
+
+      let debounce: NodeJS.Timeout | undefined;
+      const unsubscribe = taskRunBus.subscribe(() => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => void send(), SSE_DEBOUNCE_MS);
+      });
+      const heartbeat = setInterval(() => {
+        void stream.writeSSE({ event: "ping", data: String(Date.now()) });
+      }, SSE_HEARTBEAT_MS);
+
+      await send();
+      await new Promise<void>((resolve) => {
+        stream.onAbort(() => {
+          unsubscribe();
+          clearInterval(heartbeat);
+          clearTimeout(debounce);
+          resolve();
+        });
+      });
     }),
   );
 
@@ -148,5 +264,9 @@ export function startServer(
     logger.info(`Server listening on port ${port}`);
   });
 
-  return () => server.close();
+  return () => {
+    server.close();
+    // Open SSE streams would otherwise keep the process alive indefinitely.
+    if ("closeAllConnections" in server) server.closeAllConnections();
+  };
 }

@@ -20,6 +20,41 @@ export interface TaskInfo {
   lastRun: TaskRun | null;
 }
 
+export interface StreamerBinding {
+  platform: string;
+  username: string;
+  url: string;
+}
+
+interface StreamerBase {
+  id: string;
+  displayName: string;
+  bindings: StreamerBinding[];
+}
+
+export type LiveStreamer = StreamerBase & {
+  live: true;
+  title: string;
+  startedAt: number;
+  maxViewerCount: number;
+  primary: StreamerBinding;
+};
+
+export type OfflineStreamer = StreamerBase & {
+  live: false;
+  lastStartedAt: number | null;
+  lastEndedAt: number | null;
+  lastMaxViewerCount: number | null;
+};
+
+export type StreamerView = LiveStreamer | OfflineStreamer;
+
+export interface Snapshot {
+  tasks: TaskInfo[];
+  streamers: StreamerView[];
+  runs: TaskRun[];
+}
+
 export type MediaType = "movie" | "tv";
 export type RecommendationStatus =
   | "pending"
@@ -93,6 +128,10 @@ export async function apiPost<T>(path: string): Promise<T> {
 
 export function fetchTasks(): Promise<{ tasks: TaskInfo[] }> {
   return apiGet<{ tasks: TaskInfo[] }>("/api/tasks");
+}
+
+export function fetchSnapshot(): Promise<Snapshot> {
+  return apiGet<Snapshot>("/api/snapshot");
 }
 
 export function fetchTaskRuns(options?: {

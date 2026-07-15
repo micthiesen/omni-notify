@@ -85,14 +85,18 @@ src/
 │   └── selection.ts         # Strong-model research (Tavily tools) + structured decision
 ├── task-runs/               # Generic task-run tracking (powers the web UI)
 │   ├── persistence.ts       # TaskRunEntity (last 50 runs/task), interrupted-run repair
+│   ├── events.ts            # taskRunBus: run start/finish pub/sub (drives SSE pushes)
 │   └── registry.ts          # TaskRegistry: tracked wrapper, manual runs, next-run times
 ├── emails/                  # Email utilities (general purpose)
-├── server.ts                # Hono API (/api/tasks, /api/task-runs, /api/recommendations, /api/pets) + SPA
+├── tools/
+│   └── preview-server.ts    # Dev harness: real server + fake data for frontend work
+├── server.ts                # Hono API (/api/tasks, /api/task-runs, /api/recommendations,
+│                            #   /api/pets, /api/streamers, /api/snapshot) + SSE (/api/events) + SPA
 └── utils/
     └── config.ts            # Environment config with zod validation
 ```
 
-Frontend (`frontend/`): React SPA with client-side path routing — `/` task dashboard (run now buttons, run history), `/pets` weight tracker, `/recommendations` recommendation list.
+Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server pushes a full snapshot (tasks + streamers + recent runs) on every task-run start/finish; the client falls back to polling `/api/snapshot` when the stream is down and shows the connection state in the nav bar. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
 
 ### Recommendations Design Invariants
 
