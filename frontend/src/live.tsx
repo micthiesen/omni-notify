@@ -40,9 +40,11 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let closed = false;
+    let live = false;
     let source: EventSource | null = null;
     let reconnectTimer: number | undefined;
     let pollTimer: number | undefined;
+    let pollInFlight = false;
 
     const stopPolling = () => {
       window.clearTimeout(pollTimer);
@@ -50,22 +52,32 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     };
 
     const poll = async () => {
+      if (closed || pollInFlight) return;
+      stopPolling();
+      pollInFlight = true;
       try {
         const snap = await fetchSnapshot();
         if (closed) return;
-        setSnapshot(snap);
-        setError(null);
+        // A fetch that resolves after the stream came up is stale relative to
+        // the SSE snapshot; don't let it clobber newer data.
+        if (!live) {
+          setSnapshot(snap);
+          setError(null);
+        }
       } catch (err) {
         if (closed) return;
         setError(err instanceof Error ? err.message : "Failed to fetch snapshot");
+      } finally {
+        pollInFlight = false;
       }
-      if (!closed) pollTimer = window.setTimeout(() => void poll(), POLL_MS);
+      if (!closed && !live) pollTimer = window.setTimeout(() => void poll(), POLL_MS);
     };
 
     const connect = () => {
       source = new EventSource("/api/events");
       source.addEventListener("snapshot", (event) => {
         if (closed) return;
+        live = true;
         stopPolling();
         setConnection("live");
         setError(null);
@@ -75,8 +87,9 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
         if (closed) return;
         // EventSource retries transient failures itself; only rebuild the
         // connection when it gives up. Poll while disconnected either way.
+        live = false;
         setConnection("polling");
-        if (pollTimer === undefined) void poll();
+        void poll();
         if (source?.readyState === EventSource.CLOSED) {
           source.close();
           reconnectTimer = window.setTimeout(connect, RECONNECT_MS);
@@ -85,6 +98,10 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     };
 
     connect();
+    // First paint must not be hostage to the SSE connection: a stalled (but
+    // not yet failed) stream fires no error, so fetch a snapshot in parallel
+    // and keep polling until the stream delivers.
+    void poll();
     return () => {
       closed = true;
       source?.close();

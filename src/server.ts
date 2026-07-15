@@ -119,54 +119,55 @@ export function startServer(
   // SSE stream is unavailable.
   app.get("/api/snapshot", (c) => c.json(buildSnapshot()));
 
-  // Realtime dashboard updates. Pushes a fresh snapshot on connect and
-  // whenever any task run starts or finishes (debounced to coalesce bursts).
-  app.get("/api/events", (c) =>
-    streamSSE(c, async (stream) => {
+  // Realtime dashboard updates. The snapshot is built and serialized once per
+  // bus event (debounced to coalesce bursts) and fanned out to every connected
+  // client; per-client writes are chained so a slow consumer can't interleave
+  // SSE frames. Identical consecutive payloads are skipped.
+  interface SseClient {
+    write(payload: string): void;
+    ping(): void;
+  }
+  const clients = new Set<SseClient>();
+  let lastBroadcast: string | undefined;
+  let debounce: NodeJS.Timeout | undefined;
+  const broadcast = () => {
+    const payload = JSON.stringify(buildSnapshot());
+    if (payload === lastBroadcast) return;
+    lastBroadcast = payload;
+    for (const client of clients) client.write(payload);
+  };
+  const unsubscribe = taskRunBus.subscribe(() => {
+    clearTimeout(debounce);
+    debounce = setTimeout(broadcast, SSE_DEBOUNCE_MS);
+  });
+  const heartbeat = setInterval(() => {
+    for (const client of clients) client.ping();
+  }, SSE_HEARTBEAT_MS);
+
+  app.get("/api/events", (c) => {
+    // nginx-family proxies honor this and pass the stream through unbuffered.
+    c.header("X-Accel-Buffering", "no");
+    return streamSSE(c, async (stream) => {
       let eventId = 0;
-      let sending = false;
-      let resend = false;
-      const send = async (): Promise<void> => {
-        if (sending) {
-          resend = true;
-          return;
-        }
-        sending = true;
-        try {
-          await stream.writeSSE({
-            event: "snapshot",
-            data: JSON.stringify(buildSnapshot()),
-            id: String(eventId++),
-          });
-        } finally {
-          sending = false;
-          if (resend) {
-            resend = false;
-            void send();
-          }
-        }
+      let queue: Promise<void> = Promise.resolve();
+      const enqueue = (frame: Parameters<typeof stream.writeSSE>[0]) => {
+        queue = queue.then(() => stream.writeSSE(frame)).catch(() => {});
       };
-
-      let debounce: NodeJS.Timeout | undefined;
-      const unsubscribe = taskRunBus.subscribe(() => {
-        clearTimeout(debounce);
-        debounce = setTimeout(() => void send(), SSE_DEBOUNCE_MS);
-      });
-      const heartbeat = setInterval(() => {
-        void stream.writeSSE({ event: "ping", data: String(Date.now()) });
-      }, SSE_HEARTBEAT_MS);
-
-      await send();
+      const client: SseClient = {
+        write: (payload) =>
+          enqueue({ event: "snapshot", data: payload, id: String(eventId++) }),
+        ping: () => enqueue({ event: "ping", data: String(Date.now()) }),
+      };
+      clients.add(client);
+      client.write(JSON.stringify(buildSnapshot()));
       await new Promise<void>((resolve) => {
         stream.onAbort(() => {
-          unsubscribe();
-          clearInterval(heartbeat);
-          clearTimeout(debounce);
+          clients.delete(client);
           resolve();
         });
       });
-    }),
-  );
+    });
+  });
 
   app.post("/api/tasks/:name/run", (c) => {
     const name = c.req.param("name");
@@ -257,6 +258,16 @@ export function startServer(
     return c.body(lines.join("\n"));
   });
 
+  // Vite content-hashes asset filenames, so they can be cached forever; the
+  // HTML must revalidate so deploys pick up new asset hashes.
+  app.use("*", async (c, next) => {
+    await next();
+    if (c.req.path.startsWith("/assets/")) {
+      c.res.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+    } else if (c.res.headers.get("Content-Type")?.includes("text/html")) {
+      c.res.headers.set("Cache-Control", "no-cache");
+    }
+  });
   app.use("*", serveStatic({ root: "./frontend/dist" }));
   app.use("*", serveStatic({ root: "./frontend/dist", path: "index.html" }));
 
@@ -265,6 +276,9 @@ export function startServer(
   });
 
   return () => {
+    unsubscribe();
+    clearInterval(heartbeat);
+    clearTimeout(debounce);
     server.close();
     // Open SSE streams would otherwise keep the process alive indefinitely.
     if ("closeAllConnections" in server) server.closeAllConnections();
