@@ -21,10 +21,11 @@ export function usePath(): string {
 interface LinkProps {
   to: string;
   className?: string;
+  title?: string;
   children: ReactNode;
 }
 
-export function Link({ to, className, children }: LinkProps) {
+export function Link({ to, className, title, children }: LinkProps) {
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (
       e.defaultPrevented ||
@@ -41,7 +42,7 @@ export function Link({ to, className, children }: LinkProps) {
   };
 
   return (
-    <a href={to} className={className} onClick={onClick}>
+    <a href={to} className={className} title={title} onClick={onClick}>
       {children}
     </a>
   );

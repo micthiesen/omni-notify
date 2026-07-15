@@ -9,6 +9,8 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { ViewerMetricsEntity } from "../live-check/metrics/persistence.js";
+import type { DailyBucket } from "../live-check/metrics/types.js";
 import { StreamerStatusEntity } from "../live-check/persistence.js";
 import { Platform } from "../live-check/platforms/index.js";
 import type { Streamer } from "../live-check/streamers.js";
@@ -97,6 +99,38 @@ StreamerStatusEntity.upsert({
   lastEndedAt: new Date(now - 26 * HOUR),
   lastMaxViewerCount: 1890,
 });
+
+// --- Viewer metrics ------------------------------------------------------------
+
+// Deterministic pseudo-random daily peaks with off days, so the streamer
+// detail page has realistic history to render.
+function seedViewerMetrics(streamerId: string, base: number, days: number): void {
+  const buckets: DailyBucket[] = [];
+  for (let day = days; day >= 0; day--) {
+    if ((day * 7919) % 7 < 2) continue; // ~2 off days a week
+    const wave = 0.75 + 0.25 * Math.sin(day / 5);
+    const jitter = (((day * 104729) % 23) / 23) * 0.3;
+    const t = now - day * 24 * HOUR;
+    buckets.push({
+      date: new Date(t).toISOString().slice(0, 10),
+      maxViewers: Math.round(base * (wave + jitter)),
+      timestamp: t,
+    });
+  }
+  const bucketMax = Math.max(...buckets.map((b) => b.maxViewers));
+  ViewerMetricsEntity.upsert({
+    streamerId,
+    dailyBuckets: buckets,
+    // Slightly above the buckets and older than them, so the all-time tile
+    // shows a record that predates the retained window.
+    allTimeMax: Math.round(bucketMax * 1.15),
+    allTimeMaxTimestamp: now - (days + 30) * 24 * HOUR,
+  });
+}
+
+seedViewerMetrics("pixeldust", 4200, 95);
+seedViewerMetrics("novabyte", 850, 60);
+seedViewerMetrics("retrorex", 1900, 25);
 
 // --- Task run history ----------------------------------------------------------
 

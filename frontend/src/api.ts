@@ -49,6 +49,19 @@ export type OfflineStreamer = StreamerBase & {
 
 export type StreamerView = LiveStreamer | OfflineStreamer;
 
+export interface DailyViewerBucket {
+  /** YYYY-MM-DD (UTC) */
+  date: string;
+  maxViewers: number;
+  timestamp: number;
+}
+
+export interface StreamerMetrics {
+  dailyBuckets: DailyViewerBucket[];
+  allTimeMax: number;
+  allTimeMaxTimestamp: number;
+}
+
 export interface Snapshot {
   tasks: TaskInfo[];
   streamers: StreamerView[];
@@ -147,6 +160,10 @@ export function fetchTaskRuns(options?: {
 
 export function runTaskRequest(name: string): Promise<{ runId: string }> {
   return apiPost<{ runId: string }>(`/api/tasks/${encodeURIComponent(name)}/run`);
+}
+
+export function fetchStreamerMetrics(id: string): Promise<StreamerMetrics> {
+  return apiGet<StreamerMetrics>(`/api/streamers/${encodeURIComponent(id)}/metrics`);
 }
 
 export function fetchRecommendations(): Promise<{

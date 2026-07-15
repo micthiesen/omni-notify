@@ -3,6 +3,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
 import type { PlatformBinding, Streamer } from "./live-check/streamers.js";
@@ -114,6 +115,21 @@ export function startServer(
   app.get("/api/streamers", (c) =>
     c.json({ streamers: streamers.map(serializeStreamer) }),
   );
+
+  // Viewer metrics history for the streamer detail page: daily peak-viewer
+  // buckets (~100 days retained) plus the all-time record.
+  app.get("/api/streamers/:id/metrics", (c) => {
+    const id = c.req.param("id");
+    if (!streamers.some((s) => s.id === id)) {
+      return c.json({ error: "Unknown streamer" }, 404);
+    }
+    const metrics = getViewerMetrics(id);
+    return c.json({
+      dailyBuckets: metrics.dailyBuckets,
+      allTimeMax: metrics.allTimeMax,
+      allTimeMaxTimestamp: metrics.allTimeMaxTimestamp,
+    });
+  });
 
   // Full dashboard state in one payload; also the polling fallback when the
   // SSE stream is unavailable.

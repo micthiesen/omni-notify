@@ -1,5 +1,6 @@
 import type { LiveStreamer, OfflineStreamer, StreamerView } from "../api";
 import { useNow } from "../hooks/useNow";
+import { Link } from "../router";
 import {
   formatCompactNumber,
   formatDuration,
@@ -8,15 +9,14 @@ import {
 } from "../utils/format";
 import { PlatformIcon } from "./PlatformIcon";
 
+function streamerPath(id: string): string {
+  return `/streamers/${encodeURIComponent(id)}`;
+}
+
 function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
   const now = useNow(1000);
   return (
-    <a
-      className="live-card"
-      href={streamer.primary.url}
-      target="_blank"
-      rel="noreferrer"
-    >
+    <Link className="live-card" to={streamerPath(streamer.id)}>
       <div className="live-card-header">
         <PlatformIcon platform={streamer.primary.platform} size={16} />
         <span className="live-name">{streamer.displayName}</span>
@@ -32,12 +32,11 @@ function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
           <span>{formatCompactNumber(streamer.maxViewerCount)} peak viewers</span>
         )}
       </div>
-    </a>
+    </Link>
   );
 }
 
 function OfflinePill({ streamer }: { streamer: OfflineStreamer }) {
-  const url = streamer.bindings[0]?.url;
   const lastLive =
     streamer.lastEndedAt !== null ? formatRelative(streamer.lastEndedAt) : null;
   const title =
@@ -52,19 +51,13 @@ function OfflinePill({ streamer }: { streamer: OfflineStreamer }) {
       : "No streams seen yet";
 
   return (
-    <a
-      className="offline-pill"
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      title={title}
-    >
+    <Link className="offline-pill" to={streamerPath(streamer.id)} title={title}>
       {streamer.bindings[0] && (
         <PlatformIcon platform={streamer.bindings[0].platform} size={12} />
       )}
       <span className="offline-name">{streamer.displayName}</span>
       {lastLive && <span className="offline-when">{lastLive}</span>}
-    </a>
+    </Link>
   );
 }
 

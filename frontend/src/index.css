@@ -1214,3 +1214,70 @@ button {
     padding-left: 0;
   }
 }
+
+/* ===== Streamer detail page ===== */
+
+.back-link {
+  display: inline-block;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  margin-bottom: 0.9rem;
+}
+
+.back-link:hover {
+  color: var(--accent);
+}
+
+.streamer-header {
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.streamer-header h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.4rem;
+}
+
+.streamer-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.9rem;
+  max-width: 60ch;
+}
+
+.streamer-title-text {
+  color: var(--text-secondary);
+}
+
+.streamer-bindings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.binding-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.75rem;
+  text-decoration: none;
+}
+
+.binding-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.section-title .range-buttons {
+  margin-left: auto;
+}

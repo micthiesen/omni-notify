@@ -6,8 +6,9 @@ import HomePage from "./pages/HomePage";
 import RecommendationsPage from "./pages/RecommendationsPage";
 import { usePath } from "./router";
 
-// PetsPage pulls in recharts (~500kB minified); keep it out of the main chunk.
+// These pages pull in recharts (~500kB minified); keep it out of the main chunk.
 const PetsPage = lazy(() => import("./pages/PetsPage"));
+const StreamerPage = lazy(() => import("./pages/StreamerPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
@@ -28,20 +29,29 @@ export default function App() {
   }, [path]);
 
   let page: ReactNode;
-  switch (path) {
-    case "/pets":
-      page = (
-        <Suspense fallback={<div className="loading">Loading…</div>}>
-          <PetsPage />
-        </Suspense>
-      );
-      break;
-    case "/recommendations":
-      page = <RecommendationsPage />;
-      break;
-    default:
-      page = <HomePage />;
-      break;
+  if (path.startsWith("/streamers/")) {
+    const streamerId = decodeURIComponent(path.slice("/streamers/".length));
+    page = (
+      <Suspense fallback={<div className="loading">Loading…</div>}>
+        <StreamerPage key={streamerId} streamerId={streamerId} />
+      </Suspense>
+    );
+  } else {
+    switch (path) {
+      case "/pets":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <PetsPage />
+          </Suspense>
+        );
+        break;
+      case "/recommendations":
+        page = <RecommendationsPage />;
+        break;
+      default:
+        page = <HomePage />;
+        break;
+    }
   }
 
   return (
