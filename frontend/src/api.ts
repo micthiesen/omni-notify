@@ -204,6 +204,7 @@ export type PodcastRecommendationStatus =
   | "ignored"
   | "failed";
 export type PodcastFeedback = "good_pick" | "not_for_me";
+export type PodcastQueueResult = "queued" | "already_queued" | "not_queued";
 
 export interface PodcastRecommendation {
   recommendationId: string;
@@ -229,6 +230,7 @@ export interface PodcastRecommendation {
   sourceUrl?: string;
   recommendedAt: number;
   notifiedAt?: number;
+  queueResult?: PodcastQueueResult | null;
   feedback?: PodcastFeedback;
   feedbackAt?: number;
 }

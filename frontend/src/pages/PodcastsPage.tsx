@@ -120,6 +120,14 @@ function PodcastCard({
           <span className="muted" title={formatAbsolute(rec.recommendedAt)}>
             &middot; recommended {formatRelative(rec.recommendedAt)}
           </span>
+          {(rec.queueResult === "queued" || rec.queueResult === "already_queued") && (
+            <span
+              className="podrec-queued"
+              title="This episode is waiting in your Castro queue"
+            >
+              &middot; 🎧 in Castro queue
+            </span>
+          )}
         </div>
         {(rec.episodeUrl || rec.sourceUrl) && (
           <div className="rec-links">

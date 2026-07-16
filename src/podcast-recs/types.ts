@@ -52,6 +52,8 @@ export interface EpisodeCandidate {
   itunesId?: number;
   artworkUrl?: string;
   episodeGuid: string;
+  /** Enclosure (audio) URL — the reliable key for matching against Castro. */
+  mediaUrl?: string;
   /** Web page for the episode, when the feed provides one. */
   episodeUrl?: string;
   /** Verified from the show's RSS feed — never trusted from search snippets. */

@@ -87,18 +87,18 @@ src/
 │   ├── task.ts              # PodcastRecommendationTask (cron, default Mon/Thu 11am;
 │   │                        #   PODCAST_TASTE_PATH doubles as the feature flag)
 │   ├── pipeline.ts          # Subscriptions → outcomes → discovery → verify → filter →
-│   │                        #   shortlist → research/select loop → commit (pending→notify)
+│   │                        #   shortlist → research/select → commit (pending→enqueue→notify)
 │   ├── account.ts           # PodcastAccountClient bridge contract
 │   ├── castro/              # Castro private-sync client (auth.ts, api.ts, protocol.ts, client.ts)
 │   ├── discovery.ts         # Tavily multi-angle search → cheap-model candidate extraction
-│   ├── candidates.ts        # iTunes Search + RSS resolution (deterministic date verify)
+│   ├── candidates.ts        # iTunes Search (Castro-search fallback) + RSS resolution
 │   ├── itunes.ts            # Keyless iTunes Search API client
 │   ├── rss.ts               # RSS episode parsing (linkedom)
 │   ├── subscriptions.ts     # Castro-account subscription resolution (three-state)
 │   ├── filters.ts           # Pure hard filters (7d recency, subscribed/cooldown/excluded)
 │   ├── shortlist.ts         # Cheap-model scoring, composite computed in code
 │   ├── selection.ts         # Strong-model research + structured one-pick decision
-│   ├── outcomes.ts          # Pure outcome labeling (needs listen history; dormant until Castro)
+│   ├── outcomes.ts          # Pure listen-history outcome labeling
 │   ├── taste.ts             # Seed profile file + subscriptions + feedback digest
 │   └── persistence.ts       # PodcastRecommendationEntity, exclusions, feedback
 ├── task-runs/               # Generic task-run tracking (powers the web UI)
@@ -136,8 +136,8 @@ Deliberately a sibling system to media recommendations (same architecture, separ
 - Hard recency window: episodes older than 7 days are ineligible (`filters.ts`).
 - Episodes are excluded permanently once delivered; shows get a 30-day cooldown; not-for-me feedback excludes the show permanently unless newer feedback corrects it.
 - Subscribed shows are excluded (hard-filtered from the Castro account when configured, prompt-excluded via the seed profile otherwise) and double as the main taste evidence. **The exclusion is load-bearing**: a failed Castro subscription read aborts the run rather than risk recommending a followed show (three-state rule in `subscriptions.ts`).
-- Castro is behind the `PodcastAccountClient` bridge (`account.ts`), implemented against its captured private sync protocol (`castro/`, credentials `CASTRO_ACCESS_ID`/`CASTRO_SECRET_KEY`) — see `docs/castro-sync.md`. It provides subscriptions and 180 days of listen history (outcome labeling); when unconfigured the pipeline degrades to the seed profile + explicit feedback. **Acquisition stays a deep link, not a Castro enqueue**: Castro's write endpoints only act on episodes of already-subscribed shows, and recommendations are unsubscribed by definition. Auto-enqueue needs an RSS-URL → podcast-UUID resolver Castro has not exposed yet.
-- Commit protocol mirrors media recs: `pending` row before the Pushover notification, flipped to `notified` after; stale pending rows are marked failed (24h retry exclusion) since notification delivery cannot be verified after the fact.
+- Castro is behind the `PodcastAccountClient` bridge (`account.ts`), implemented against its captured private sync protocol (`castro/`, credentials `CASTRO_ACCESS_ID`/`CASTRO_SECRET_KEY`); see `docs/castro-sync.md`. It provides subscriptions, 180 days of listen history, general podcast/episode search, direct RSS resolution, subscription writes, and queue writes. Selected recommendations are resolved by exact RSS URL or iTunes ID and auto-enqueued at Queue Last before notification; resolution or enqueue failure keeps the deep-link fallback. Episode matching against Castro uses the enclosure/media URL, not the RSS guid, which hosting platforms rewrite (see `docs/castro-sync.md`). When unconfigured the pipeline degrades to the seed profile + explicit feedback.
+- Commit protocol mirrors media recs: write `pending` before Castro enqueue and Pushover, then flip to `notified`; stale pending rows become failed with a 24h retry exclusion. Enqueue is idempotent, so a retry observes `already_exists` if that effect landed before a crash, while notification delivery remains unverifiable.
 - The old `PodcastPicks` briefing (`briefings/PodcastPicks.md` on the deploy host) is superseded by this feature and should be disabled when `PODCAST_TASTE_PATH` is configured.
 
 ## Key Patterns

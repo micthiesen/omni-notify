@@ -109,7 +109,7 @@ Each run:
 4. Hard-filters in code: older than 7 days, already recommended, show on 30-day cooldown, rejected via "not for me", or already subscribed.
 5. Scores the survivors with a cheap model, researches finalists with web search, then a strong model picks one episode at a time or decides to add nothing.
 
-Recommended episodes are never repeated. When Castro credentials are set, listen history labels outcomes (listened / abandoned / ignored) automatically; the good-pick/not-for-me feedback buttons in the web UI are always available.
+Recommended episodes are never repeated. When Castro credentials are set, listen history labels outcomes (listened / abandoned / ignored) automatically and each selected episode is resolved by RSS URL and added to the end of the Castro queue before notification. Resolution or enqueue failure falls back safely to the recommendation deep link. The good-pick/not-for-me feedback buttons in the web UI are always available.
 
 The same Castro credentials enable an independent `CastroQueueCleanup` task.
 It runs hourly and silently clears queued episodes whose description begins

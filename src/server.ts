@@ -126,6 +126,7 @@ function serializePodcastRecommendation(rec: PodcastRecommendationData) {
     sourceUrl: rec.sourceUrl ?? null,
     recommendedAt: rec.recommendedAt,
     notifiedAt: rec.notifiedAt ?? null,
+    queueResult: rec.queueResult ?? null,
     feedback: rec.feedback ?? null,
     feedbackAt: rec.feedbackAt ?? null,
   };

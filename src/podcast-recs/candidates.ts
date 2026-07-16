@@ -1,6 +1,8 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import PQueue from "p-queue";
+import type { PodcastAccountClient } from "./account.js";
+import { normalizeTitle } from "./filters.js";
 import { pickBestShowMatch, searchItunesPodcasts } from "./itunes.js";
 import { fetchFeedEpisodes, findEpisodeByTitle } from "./rss.js";
 import type { DiscoveredEpisode, EpisodeCandidate } from "./types.js";
@@ -8,9 +10,19 @@ import { makeEpisodeId, makeShowId } from "./types.js";
 
 const RESOLVE_CONCURRENCY = 3;
 
+/** A show resolved to a feed URL and identity, ready for RSS episode lookup. */
+interface ResolvedShow {
+  title: string;
+  feedUrl: string;
+  itunesId?: number;
+  artworkUrl?: string;
+  genres: string[];
+}
+
 /**
  * Resolve discovered episodes into verified candidates: show identity via the
- * iTunes Search API, then the episode itself (and its authoritative release
+ * iTunes Search API (falling back to Castro's podcast search when iTunes can't
+ * place the show), then the episode itself (and its authoritative release
  * date) from the show's actual RSS feed. Anything that cannot be verified is
  * dropped with a logged reason — an unverifiable candidate is never
  * recommendable, which is the deterministic version of the old briefing's
@@ -18,6 +30,7 @@ const RESOLVE_CONCURRENCY = 3;
  */
 export async function resolveCandidates(
   discovered: DiscoveredEpisode[],
+  account: PodcastAccountClient | undefined,
   logger: Logger,
   logFile?: LogFile,
 ): Promise<EpisodeCandidate[]> {
@@ -28,7 +41,7 @@ export async function resolveCandidates(
     discovered.map((item) =>
       queue.add(async () => {
         try {
-          return await resolveOne(item);
+          return await resolveOne(item, account);
         } catch (error) {
           dropped.push(
             `- ${item.showTitle} — ${item.episodeTitle}: ${(error as Error).message}`,
@@ -54,11 +67,12 @@ export async function resolveCandidates(
   return candidates;
 }
 
-async function resolveOne(item: DiscoveredEpisode): Promise<EpisodeCandidate> {
-  const shows = await searchItunesPodcasts(item.showTitle);
-  const show = pickBestShowMatch(shows, item.showTitle);
-  if (!show) throw new Error("show not found on iTunes");
-  if (!show.feedUrl) throw new Error("iTunes result has no feed URL");
+async function resolveOne(
+  item: DiscoveredEpisode,
+  account: PodcastAccountClient | undefined,
+): Promise<EpisodeCandidate> {
+  const show = await resolveShow(item.showTitle, account);
+  if (!show) throw new Error("show not found on iTunes or Castro");
 
   const episodes = await fetchFeedEpisodes(show.feedUrl, { maxEpisodes: 30 });
   const episode = findEpisodeByTitle(episodes, item.episodeTitle);
@@ -76,6 +90,7 @@ async function resolveOne(item: DiscoveredEpisode): Promise<EpisodeCandidate> {
     itunesId: show.itunesId,
     artworkUrl: show.artworkUrl,
     episodeGuid: episode.guid,
+    mediaUrl: episode.enclosureUrl,
     episodeUrl: episode.link,
     publishedAt: episode.publishedAt,
     durationMinutes: episode.durationMinutes,
@@ -84,4 +99,52 @@ async function resolveOne(item: DiscoveredEpisode): Promise<EpisodeCandidate> {
     discoveredVia: item.context,
     sourceUrl: item.sourceUrl,
   };
+}
+
+/**
+ * Place a discovered show on a feed URL. iTunes is the primary index; Castro's
+ * podcast search is a fallback that catches private feeds and niche shows
+ * iTunes misses (Castro-resolved shows carry no genre metadata).
+ */
+async function resolveShow(
+  showTitle: string,
+  account: PodcastAccountClient | undefined,
+): Promise<ResolvedShow | undefined> {
+  const itunes = pickBestShowMatch(await searchItunesPodcasts(showTitle), showTitle);
+  if (itunes?.feedUrl) {
+    return {
+      title: itunes.title,
+      feedUrl: itunes.feedUrl,
+      itunesId: itunes.itunesId,
+      artworkUrl: itunes.artworkUrl,
+      genres: itunes.genres,
+    };
+  }
+
+  if (!account) return undefined;
+  const result = await account.searchPodcasts(showTitle);
+  if (result.status !== "ok") return undefined;
+  const match = pickBestByTitle(result.value, showTitle);
+  if (!match?.feedUrl) return undefined;
+  return {
+    title: match.title,
+    feedUrl: match.feedUrl,
+    itunesId: match.itunesId,
+    artworkUrl: match.artworkUrl,
+    genres: [],
+  };
+}
+
+/** Loose title match shared by the Castro fallback: exact, then containment. */
+export function pickBestByTitle<T extends { title: string }>(
+  items: T[],
+  showTitle: string,
+): T | undefined {
+  const target = normalizeTitle(showTitle);
+  const exact = items.find((item) => normalizeTitle(item.title) === target);
+  if (exact) return exact;
+  return items.find((item) => {
+    const candidate = normalizeTitle(item.title);
+    return candidate.includes(target) || target.includes(candidate);
+  });
 }

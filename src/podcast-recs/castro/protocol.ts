@@ -103,6 +103,41 @@ export const castroQueueSchema = z.object({
 });
 export type CastroQueue = z.infer<typeof castroQueueSchema>;
 
+export const castroPodcastSearchResultSchema = z.object({
+  artwork_url: z.object({
+    large: z.string().url(),
+    medium: z.string().url(),
+    small: z.string().url(),
+  }),
+  author: z.string().nullable(),
+  explicit: z.string(),
+  feed_url: z.string().url(),
+  itunes_id: z.number().int(),
+  last_episode_date: z.string().nullable(),
+  result_position: z.number().int().nonnegative(),
+  summary: z.string().nullable(),
+  tentacles_id: z.string().uuid(),
+  title: z.string(),
+});
+export const castroPodcastSearchResultsSchema = z.array(
+  castroPodcastSearchResultSchema,
+);
+export type CastroPodcastSearchResult = z.infer<typeof castroPodcastSearchResultSchema>;
+
+export const castroEpisodeSearchResultSchema = z.object({
+  artwork_url: z.string().url().nullable(),
+  author: z.string().nullable(),
+  podcast_artwork_url: z.string().url().nullable(),
+  podcast_name: z.string(),
+  published_at: z.string(),
+  tentacles_id: z.string().uuid(),
+  title: z.string(),
+});
+export const castroEpisodeSearchResultsSchema = z.array(
+  castroEpisodeSearchResultSchema,
+);
+export type CastroEpisodeSearchResult = z.infer<typeof castroEpisodeSearchResultSchema>;
+
 export const castroEpisodeSchema = z.object({
   guid: z.string(),
   public_id: z.string().uuid(),

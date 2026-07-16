@@ -7,12 +7,16 @@ import {
   type EnqueueEpisodeRequest,
   type ListenedEpisode,
   type PodcastAccountClient,
+  type PodcastEpisodeSearchResult,
   PodcastQueuePosition,
+  type PodcastSearchResult,
   type PodcastSubscription,
   type PodcastWriteResult,
   type QueuedEpisode,
   type SubscribeToShowRequest,
 } from "../account.js";
+import { normalizeTitle } from "../rss.js";
+import { normalizeFeedUrl } from "../types.js";
 import { CastroApi } from "./api.js";
 import {
   type CastroAction,
@@ -20,16 +24,20 @@ import {
   CastroActionType,
   type CastroEpisode,
   type CastroPodcast,
-  type CastroProfileSubscription,
+  type CastroPodcastSearchResult,
 } from "./protocol.js";
 
 const HISTORY_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
 const READ_CONCURRENCY = 8;
 
-class CastroClient implements PodcastAccountClient {
+export class CastroClient implements PodcastAccountClient {
   public readonly name = "Castro";
   private readonly podcastCache = new Map<string, Promise<CastroPodcast>>();
   private readonly episodeCache = new Map<string, Promise<CastroEpisode>>();
+  private readonly searchCache = new Map<
+    string,
+    Promise<CastroPodcastSearchResult[]>
+  >();
   private nextActionId = Date.now();
 
   public constructor(
@@ -45,10 +53,22 @@ class CastroClient implements PodcastAccountClient {
         READ_CONCURRENCY,
         ({ podcast_id }) => this.fetchPodcast(podcast_id),
       );
-      return {
-        status: "ok",
-        value: podcasts.map((podcast) => ({ title: podcast.title })),
-      };
+      const enriched = await mapConcurrent(
+        podcasts,
+        READ_CONCURRENCY,
+        async (podcast): Promise<PodcastSubscription> => {
+          const match = await this.findPodcastSearchResult(
+            podcast.title,
+            (result) => result.tentacles_id === podcast.public_id,
+          ).catch(() => undefined);
+          return {
+            title: podcast.title,
+            feedUrl: match?.feed_url,
+            itunesId: match?.itunes_id,
+          };
+        },
+      );
+      return { status: "ok", value: enriched };
     } catch (error) {
       return unavailable(error);
     }
@@ -136,16 +156,60 @@ class CastroClient implements PodcastAccountClient {
     }
   }
 
+  public async searchPodcasts(
+    query: string,
+  ): Promise<FetchResult<PodcastSearchResult[]>> {
+    try {
+      const results = await this.searchPodcastMetadata(query);
+      return {
+        status: "ok",
+        value: results.map((result) => ({
+          clientId: result.tentacles_id,
+          title: result.title,
+          author: result.author ?? undefined,
+          feedUrl: result.feed_url,
+          itunesId: result.itunes_id,
+          summary: result.summary ?? undefined,
+          artworkUrl: result.artwork_url.large,
+        })),
+      };
+    } catch (error) {
+      return unavailable(error);
+    }
+  }
+
+  public async searchEpisodes(
+    query: string,
+  ): Promise<FetchResult<PodcastEpisodeSearchResult[]>> {
+    try {
+      const results = await this.api.searchEpisodes(query);
+      return {
+        status: "ok",
+        value: results.map((result) => {
+          const publishedAt = Date.parse(result.published_at);
+          return {
+            clientId: result.tentacles_id,
+            title: result.title,
+            showTitle: result.podcast_name,
+            author: result.author ?? undefined,
+            publishedAt: Number.isFinite(publishedAt) ? publishedAt : undefined,
+            artworkUrl: result.artwork_url ?? result.podcast_artwork_url ?? undefined,
+          };
+        }),
+      };
+    } catch (error) {
+      return unavailable(error);
+    }
+  }
+
   public async enqueueEpisode(
     request: EnqueueEpisodeRequest,
   ): Promise<PodcastWriteResult> {
     try {
-      const subscriptions = await this.api.fetchSubscriptions();
-      const match = await this.findPodcastByTitle(subscriptions, request.showTitle);
-      if (!match) return "not_found";
-      const episode = match.episodes.find(
-        (candidate) => candidate.guid === request.episodeGuid,
-      );
+      const resolved = await this.resolvePodcast(request);
+      if (!resolved) return "not_found";
+      const podcast = await this.fetchPodcast(resolved.tentacles_id);
+      const episode = matchEpisode(podcast.episodes, request);
       if (!episode) return "not_found";
 
       const queue = await this.api.fetchQueue();
@@ -178,13 +242,22 @@ class CastroClient implements PodcastAccountClient {
     request: SubscribeToShowRequest,
   ): Promise<PodcastWriteResult> {
     try {
+      const resolved = await this.resolvePodcast(request);
+      if (!resolved) return "not_found";
       const subscriptions = await this.api.fetchSubscriptions();
-      if (await this.findPodcastByTitle(subscriptions, request.title)) {
+      if (
+        subscriptions.some(
+          (subscription) => subscription.podcast_id === resolved.tentacles_id,
+        )
+      ) {
         return "already_exists";
       }
-      // The mutation accepts a Castro podcast UUID. No captured endpoint yet
-      // resolves an arbitrary RSS URL to that UUID.
-      return "unavailable";
+      const response = await this.api.subscribe([resolved.tentacles_id]);
+      return response.subscribed.some(
+        (subscription) => subscription.feed_id === resolved.tentacles_id,
+      )
+        ? "added"
+        : "error";
     } catch (error) {
       this.logger.error("Castro subscribe lookup failed", (error as Error).message);
       return "error";
@@ -240,17 +313,37 @@ class CastroClient implements PodcastAccountClient {
     return pending;
   }
 
-  private async findPodcastByTitle(
-    subscriptions: CastroProfileSubscription[],
-    title: string,
-  ): Promise<CastroPodcast | undefined> {
-    const normalized = normalizeTitle(title);
-    const podcasts = await mapConcurrent(
-      subscriptions,
-      READ_CONCURRENCY,
-      ({ podcast_id }) => this.fetchPodcast(podcast_id),
+  private searchPodcastMetadata(query: string): Promise<CastroPodcastSearchResult[]> {
+    const cacheKey = query.trim().toLocaleLowerCase();
+    const cached = this.searchCache.get(cacheKey);
+    if (cached) return cached;
+    const pending = this.api.searchPodcasts(query).catch((error) => {
+      this.searchCache.delete(cacheKey);
+      throw error;
+    });
+    this.searchCache.set(cacheKey, pending);
+    return pending;
+  }
+
+  private async findPodcastSearchResult(
+    query: string,
+    predicate: (result: CastroPodcastSearchResult) => boolean,
+  ): Promise<CastroPodcastSearchResult | undefined> {
+    const results = await this.searchPodcastMetadata(query);
+    return results.find(predicate);
+  }
+
+  private async resolvePodcast(request: {
+    feedUrl: string;
+    itunesId?: number;
+  }): Promise<CastroPodcastSearchResult | undefined> {
+    const normalizedFeedUrl = normalizeFeedUrl(request.feedUrl);
+    return this.findPodcastSearchResult(
+      request.feedUrl,
+      (result) =>
+        normalizeFeedUrl(result.feed_url) === normalizedFeedUrl ||
+        (request.itunesId !== undefined && result.itunes_id === request.itunesId),
     );
-    return podcasts.find((podcast) => normalizeTitle(podcast.title) === normalized);
   }
 
   private action(
@@ -271,17 +364,54 @@ class CastroClient implements PodcastAccountClient {
   }
 }
 
-function normalizeTitle(title: string): string {
-  return title
-    .toLocaleLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
 function compareFractionalPositions(a: string, b: string): number {
   if (a < b) return -1;
   if (a > b) return 1;
   return 0;
+}
+
+/**
+ * Match a requested episode against a Castro podcast's episodes. RSS `<guid>`
+ * is unreliable — hosting platforms (Simplecast, Megaphone) rewrite it, so
+ * Castro's stored `guid` (equal to its own `public_id`) frequently differs
+ * from the feed's guid. The enclosure/media URL is shared across both and is
+ * the strongest key; a unique title match is the last resort.
+ */
+export function matchEpisode(
+  episodes: CastroEpisode[],
+  request: EnqueueEpisodeRequest,
+): CastroEpisode | undefined {
+  const byGuid = episodes.find((episode) => episode.guid === request.episodeGuid);
+  if (byGuid) return byGuid;
+
+  const mediaKey = normalizeMediaUrl(request.mediaUrl);
+  if (mediaKey) {
+    const byMedia = episodes.find(
+      (episode) => normalizeMediaUrl(episode.media_url) === mediaKey,
+    );
+    if (byMedia) return byMedia;
+  }
+
+  // Title is ambiguous when a show reuses episode titles, so only accept it
+  // when exactly one episode matches.
+  const titleKey = normalizeTitle(request.episodeTitle);
+  if (titleKey) {
+    const byTitle = episodes.filter(
+      (episode) => normalizeTitle(episode.title) === titleKey,
+    );
+    if (byTitle.length === 1) return byTitle[0];
+  }
+  return undefined;
+}
+
+/** Compare enclosure URLs by host+path, ignoring protocol and query params. */
+export function normalizeMediaUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim().toLowerCase();
+  if (!trimmed) return undefined;
+  const noProtocol = trimmed.replace(/^https?:\/\//, "");
+  const queryIndex = noProtocol.indexOf("?");
+  return queryIndex === -1 ? noProtocol : noProtocol.slice(0, queryIndex);
 }
 
 async function mapConcurrent<T, R>(

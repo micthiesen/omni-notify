@@ -3,7 +3,9 @@ import {
   CastroActionSource,
   CastroActionType,
   castroActionBatchSchema,
+  castroEpisodeSearchResultsSchema,
   castroLastPlayedEventDataSchema,
+  castroPodcastSearchResultsSchema,
   castroPodcastStateSchema,
   castroProfileSubscriptionsSchema,
   castroProgressEventDataSchema,
@@ -139,5 +141,41 @@ describe("Castro sync protocol", () => {
         ],
       }).episode_states[0],
     ).toMatchObject({ progress_seconds: 42.5, is_starred: true });
+  });
+
+  it("parses captured podcast and episode search results", () => {
+    expect(
+      castroPodcastSearchResultsSchema.parse([
+        {
+          artwork_url: {
+            large: "https://example.com/large.jpg",
+            medium: "https://example.com/medium.jpg",
+            small: "https://example.com/small.jpg",
+          },
+          author: "Example Author",
+          explicit: "clean",
+          feed_url: "https://example.com/feed.xml",
+          itunes_id: 1234,
+          last_episode_date: null,
+          result_position: 0,
+          summary: "Example podcast",
+          tentacles_id: "33333333-3333-4333-8333-333333333333",
+          title: "Example Podcast",
+        },
+      ]),
+    ).toHaveLength(1);
+    expect(
+      castroEpisodeSearchResultsSchema.parse([
+        {
+          artwork_url: "https://example.com/episode.jpg",
+          author: "Example Author",
+          podcast_artwork_url: "https://example.com/podcast.jpg",
+          podcast_name: "Example Podcast",
+          published_at: "2026-07-16T17:30:00.000Z",
+          tentacles_id: EPISODE_ID,
+          title: "Example Episode",
+        },
+      ]),
+    ).toHaveLength(1);
   });
 });

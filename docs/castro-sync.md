@@ -3,9 +3,9 @@
 Status: **authenticated client implemented and live-read verified**.
 `src/podcast-recs/castro/client.ts` reads subscriptions, the ordered queue, and
 180 days of playback history. It can enqueue a resolvable episode at the front
-or back of the queue. Arbitrary-show subscription is the remaining bonus gap
-because the mutation requires a Castro UUID and no feed-URL resolver has been
-captured yet.
+or back of the queue, search podcasts and episodes, resolve direct RSS feeds,
+and subscribe to arbitrary shows. Podcast recommendations use this resolver to
+auto-enqueue episodes from shows that are not already subscribed.
 
 This document separates directly observed behavior from inference. Typed schemas
 for captured payloads live in `src/podcast-recs/castro/protocol.ts`; HMAC signing
@@ -26,7 +26,7 @@ primitives live in `src/podcast-recs/castro/auth.ts`.
 
 Sources:
 - https://castro.fm/blog/device-sync-and-ipad (sync architecture + keychain credentials)
-- https://support.supertop.co/ (support site; OPML export docs)
+- https://support.supertop.co/ (Castro support site)
 
 ## Implications
 
@@ -87,6 +87,8 @@ credential is sufficient on its own.
 | `GET /profile/sync/podcast_settings/<podcast-id>` | 404 for a show without custom settings |
 | `GET /podcasts/<podcast-id>` | Public podcast metadata plus its episode records |
 | `GET /episodes/<episode-id>` | Full metadata for one episode, including RSS GUID and duration |
+| `GET /search?search_term=<query>` | Up to 25 podcast results with RSS URL, iTunes ID, and Castro `tentacles_id`; a direct RSS URL resolves to one exact result |
+| `GET /episode_search?search_term=<query>` | Up to 25 episode results with episode `tentacles_id`, podcast name, artwork, and publication time |
 | `GET /podcast_notes/<podcast-id>` | `{ notes: string }` |
 | `GET /transcripts/<episode-id>` | 404 for both captured episodes |
 | `GET /download/<short-id>` | 302 to episode media |
@@ -108,8 +110,17 @@ author_name, link_url, duration.seconds, description, published_at,
 predecessor_public_id, season_number, episode_number, episode_type, people
 ```
 
-This provides the mapping needed by the public contract: Castro `public_id` is
-the native episode ID, while `guid` maps to the RSS item GUID.
+Castro `public_id` is the native episode ID. **`guid` is NOT reliably the RSS
+`<guid>`.** For feeds hosted on platforms that rewrite guids (Simplecast,
+Megaphone), Castro's stored `guid` equals its own `public_id` and differs from
+the feed's `<guid>` entirely. Verified against Radiolab (Simplecast): for the
+episode "The Builders", `castro.guid = 689112f0-…` (== `public_id`) while the
+feed's `<guid> = a9adfa38-…`; none of the feed's recent guids appeared among
+Castro's 661 stored episodes. The reliable cross-system episode key is the
+**enclosure/media URL** — `castro.media_url` equals the RSS `<enclosure url>`
+(both carry the same `awEpisodeId`). Episode matching in `client.ts`
+(`matchEpisode`) therefore tries guid, then normalized media URL (host+path,
+query stripped), then a unique title match.
 
 Live probing after authentication found populated `podcast_state` responses.
 Each `episode_states` item has:
@@ -175,6 +186,29 @@ uses the `fractional-indexing` package. A live reversible smoke test added an
 already-played episode at Queue Next, confirmed it became the first item, and
 dequeued it again, restoring the original 29-item queue.
 
+### Search and RSS resolution
+
+Podcast and episode search use the same signed request flow as all other reads:
+
+```http
+GET /search?search_term=<RFC-3986-encoded query>
+GET /episode_search?search_term=<RFC-3986-encoded query>
+```
+
+Podcast results contain `tentacles_id`, `feed_url`, `itunes_id`, title, author,
+summary, artwork variants, and result position. Searching with a complete RSS
+URL returned one result whose `feed_url` matched exactly. The client resolves a
+write target only when the normalized feed URL or supplied iTunes ID matches,
+then fetches `/podcasts/<tentacles-id>` to map the RSS episode GUID to Castro's
+episode UUID.
+
+General podcast and episode searches are exposed through
+`PodcastAccountClient.searchPodcasts` and `searchEpisodes`. Live verification
+returned 25 results from each endpoint. Subscription reads also use podcast
+search to enrich identities when `tentacles_id` matches; 33 of the current 39
+subscriptions resolved to exact RSS and iTunes identities, while the remaining
+six safely retain title-only identity.
+
 ### Subscription mutations
 
 Subscribe and unsubscribe both accept a Castro podcast/feed UUID, not an RSS
@@ -209,16 +243,11 @@ On launch, Castro called `POST /unlock/subscription` with App Store
 to refresh Castro Plus entitlement and is not required for the account-client
 contract. Never log or commit those identifiers.
 
-## Unknowns required for a complete client
+## Remaining protocol unknown
 
-1. Identify the endpoint that resolves an RSS feed URL to Castro's
-   podcast/feed UUID. Subscription and enqueue requests cannot use the public
-   contract's RSS identity without this mapping. Enqueue currently uses a
-   normalized show-title match among subscriptions, then an RSS GUID match in
-   that podcast's metadata.
-2. Capture populated incremental `events` and `user_events` payloads. They are
-   no longer required for account snapshots because dedicated live read routes
-   were discovered, but documenting them would complete the protocol picture.
+Capture populated incremental `events` and `user_events` payloads. They are
+no longer required for account snapshots because dedicated live read routes
+were discovered, but documenting them would complete the protocol picture.
 
 ## Credential extraction and durability
 
@@ -299,11 +328,7 @@ queue item untouched.
 
 | Capability | Fallback |
 |---|---|
-| Subscriptions | OPML remains the fallback when the live account read is unavailable |
+| Subscriptions | Recommendation run aborts when a configured live account read is unavailable |
 | Listen history | Explicit feedback remains available if the account read is unavailable |
 | Enqueue episode | Deep link remains the fallback when the show/GUID cannot be resolved |
-| Subscribe to show | Manual deep link until RSS URL to Castro UUID resolution is implemented |
-
-To refresh the OPML: Castro → Settings → User Data → Export Subscriptions, then
-drop the file at the path `PODCAST_SUBSCRIPTIONS_PATH` points to. Staleness is
-tolerable — it only weakens already-subscribed exclusions slightly.
+| Subscribe to show | Returns `not_found` unless Castro search exactly resolves feed URL or iTunes ID |

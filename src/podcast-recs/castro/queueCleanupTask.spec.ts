@@ -22,6 +22,8 @@ function accountWithQueue(queue: QueuedEpisode[]): PodcastAccountClient {
     fetchSubscriptions: vi.fn(async () => ({ status: "ok" as const, value: [] })),
     fetchListenHistory: vi.fn(async () => ({ status: "ok" as const, value: [] })),
     fetchQueue: vi.fn(async () => ({ status: "ok" as const, value: queue })),
+    searchPodcasts: vi.fn(async () => ({ status: "ok" as const, value: [] })),
+    searchEpisodes: vi.fn(async () => ({ status: "ok" as const, value: [] })),
     enqueueEpisode: vi.fn(async () => "added" as const),
     dequeueEpisode: vi.fn(async () => "removed" as const),
     subscribeToShow: vi.fn(async () => "added" as const),

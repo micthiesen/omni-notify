@@ -18,6 +18,13 @@ export enum PodcastRecommendationStatus {
 
 export type PodcastFeedback = "good_pick" | "not_for_me";
 
+/**
+ * Outcome of the Castro auto-enqueue at commit time. `not_queued` collapses
+ * every non-success (no account, show/episode unresolvable, API error) — the
+ * notification deep link is the fallback in all of those cases.
+ */
+export type PodcastQueueResult = "queued" | "already_queued" | "not_queued";
+
 export type PodcastRecommendationData = {
   recommendationId: string;
   episodeId: CanonicalEpisodeId;
@@ -28,6 +35,7 @@ export type PodcastRecommendationData = {
   itunesId?: number;
   artworkUrl?: string;
   episodeGuid: string;
+  mediaUrl?: string;
   episodeUrl?: string;
   publishedAt: number;
   durationMinutes?: number;
@@ -49,6 +57,8 @@ export type PodcastRecommendationData = {
   runDate: string;
   recommendedAt: number;
   notifiedAt?: number;
+  /** Whether the episode was placed in the Castro queue at commit time. */
+  queueResult?: PodcastQueueResult;
   /** When a terminal outcome (listened/abandoned/ignored) was assigned. */
   resolvedAt?: number;
   feedback?: PodcastFeedback;

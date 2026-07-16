@@ -11,7 +11,8 @@ import { createCastroClient } from "./castro/client.js";
  * the observed endpoints, authentication details, and remaining limitations.
  * Subscriptions and listen history are read from the account; when it is
  * unconfigured the pipeline degrades to the seed taste profile plus explicit
- * feedback, and acquisition remains a deep link in the notification.
+ * feedback. Recommendations are auto-enqueued when Castro resolves their RSS
+ * identity, with the notification deep link retained as a fallback.
  *
  * Contract notes for implementers:
  *   - Reads return FetchResult: `unavailable` MUST be distinguishable from an
@@ -32,6 +33,27 @@ export interface PodcastSubscription {
   feedUrl?: string;
   /** Apple Podcasts collection id, when known. */
   itunesId?: number;
+}
+
+export interface PodcastSearchResult {
+  /** Stable identifier assigned by the podcast client. */
+  clientId: string;
+  title: string;
+  author?: string;
+  feedUrl: string;
+  itunesId?: number;
+  summary?: string;
+  artworkUrl?: string;
+}
+
+export interface PodcastEpisodeSearchResult {
+  /** Stable identifier assigned by the podcast client. */
+  clientId: string;
+  title: string;
+  showTitle: string;
+  author?: string;
+  publishedAt?: number;
+  artworkUrl?: string;
 }
 
 /** A playback event/state for one episode, newest state wins. */
@@ -76,8 +98,15 @@ export enum PodcastQueuePosition {
 
 export interface EnqueueEpisodeRequest {
   feedUrl: string;
+  itunesId?: number;
   /** RSS item GUID of the episode to queue. */
   episodeGuid: string;
+  /**
+   * Enclosure (audio) URL. Preferred episode key: hosting platforms rewrite
+   * RSS guids so `episodeGuid` often will not match the client's stored guid,
+   * but the enclosure URL is shared across both.
+   */
+  mediaUrl?: string;
   showTitle: string;
   episodeTitle: string;
   /** Where to place the episode in clients that support ordered insertion. */
@@ -101,6 +130,8 @@ export interface PodcastAccountClient {
    */
   fetchListenHistory(): Promise<FetchResult<ListenedEpisode[]>>;
   fetchQueue(): Promise<FetchResult<QueuedEpisode[]>>;
+  searchPodcasts(query: string): Promise<FetchResult<PodcastSearchResult[]>>;
+  searchEpisodes(query: string): Promise<FetchResult<PodcastEpisodeSearchResult[]>>;
 
   /** Add one episode to the play queue. Idempotency: report already_exists. */
   enqueueEpisode(request: EnqueueEpisodeRequest): Promise<PodcastWriteResult>;

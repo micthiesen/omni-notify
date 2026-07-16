@@ -15,6 +15,13 @@ export interface FeedEpisode {
   durationMinutes?: number;
   description: string;
   link?: string;
+  /**
+   * Enclosure (audio) URL. The most reliable cross-system episode key: RSS
+   * `<guid>` is frequently rewritten by hosting platforms (Simplecast,
+   * Megaphone) and will not match a podcast client's stored guid, but the
+   * enclosure URL is shared. Used to match episodes against Castro.
+   */
+  enclosureUrl?: string;
 }
 
 /**
@@ -75,7 +82,19 @@ export function parseFeedEpisodes(
 
     const link = firstText(item, "link")?.trim() || undefined;
 
-    episodes.push({ guid, title, publishedAt, durationMinutes, description, link });
+    const enclosureUrl =
+      item.getElementsByTagName("enclosure")[0]?.getAttribute("url")?.trim() ||
+      undefined;
+
+    episodes.push({
+      guid,
+      title,
+      publishedAt,
+      durationMinutes,
+      description,
+      link,
+      enclosureUrl,
+    });
   }
 
   episodes.sort((a, b) => b.publishedAt - a.publishedAt);

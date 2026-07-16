@@ -4,8 +4,10 @@ import { type CastroCredentials, createCastroAuthHeaders } from "./auth.js";
 import {
   type CastroAction,
   type CastroEpisode,
+  type CastroEpisodeSearchResult,
   type CastroEventsResponse,
   type CastroPodcast,
+  type CastroPodcastSearchResult,
   type CastroPodcastState,
   type CastroProfileSubscription,
   type CastroQueue,
@@ -13,8 +15,10 @@ import {
   type CastroSyncStatus,
   type CastroUserEventsResponse,
   castroEpisodeSchema,
+  castroEpisodeSearchResultsSchema,
   castroEventsResponseSchema,
   castroPodcastSchema,
+  castroPodcastSearchResultsSchema,
   castroPodcastStateSchema,
   castroProfileSubscriptionsSchema,
   castroQueueSchema,
@@ -26,6 +30,13 @@ import {
 const CASTRO_ORIGIN = "https://tentacles.castro.fm";
 const CASTRO_ACCEPT = "application/vnd.tentacles.supertop.co+json; version=8";
 const CASTRO_USER_AGENT = "Castro/2396 CFNetwork/3890.100.1 Darwin/27.0.0";
+
+export function encodeCastroQueryValue(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
 
 interface CastroRequestOptions<T> {
   method?: "GET" | "POST";
@@ -69,6 +80,25 @@ export class CastroApi {
     return this.request(`/episodes/${encodeURIComponent(publicId)}`, {
       responseSchema: castroEpisodeSchema,
     });
+  }
+
+  public async searchPodcasts(
+    searchTerm: string,
+  ): Promise<CastroPodcastSearchResult[]> {
+    return this.request(`/search?search_term=${encodeCastroQueryValue(searchTerm)}`, {
+      responseSchema: castroPodcastSearchResultsSchema,
+    });
+  }
+
+  public async searchEpisodes(
+    searchTerm: string,
+  ): Promise<CastroEpisodeSearchResult[]> {
+    return this.request(
+      `/episode_search?search_term=${encodeCastroQueryValue(searchTerm)}`,
+      {
+        responseSchema: castroEpisodeSearchResultsSchema,
+      },
+    );
   }
 
   public async fetchSubscriptions(): Promise<CastroProfileSubscription[]> {

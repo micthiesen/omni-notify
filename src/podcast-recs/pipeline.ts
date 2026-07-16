@@ -2,7 +2,12 @@ import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import config from "../utils/config.js";
-import { resolvePodcastAccount } from "./account.js";
+import {
+  type PodcastAccountClient,
+  PodcastQueuePosition,
+  type PodcastWriteResult,
+  resolvePodcastAccount,
+} from "./account.js";
 import { resolveCandidates } from "./candidates.js";
 import { discoverEpisodes } from "./discovery.js";
 import { filterEligibleEpisodes } from "./filters.js";
@@ -11,6 +16,7 @@ import {
   formatRecentRecommendationsDigest,
   getOpenPodcastRecommendations,
   getPodcastExclusions,
+  type PodcastQueueResult,
   PodcastRecommendationEntity,
   PodcastRecommendationStatus,
 } from "./persistence.js";
@@ -62,7 +68,7 @@ export async function runPodcastPipeline(
 
   // 2. Outcome sync — only possible with real listen history (Castro bridge).
   //    Without a data source every open rec would drift to "ignored".
-  await syncOutcomes(logger, logFile);
+  await syncOutcomes(account, logger, logFile);
 
   reconcileStalePending(logger);
 
@@ -73,7 +79,7 @@ export async function runPodcastPipeline(
   // 4. Discovery (web search) → verified candidates (iTunes + RSS).
   const discovered = await discoverEpisodes(tasteDigest, recentDigest, logger, logFile);
   if (discovered.length === 0) return "discovery surfaced no episodes";
-  const pool = await resolveCandidates(discovered, logger, logFile);
+  const pool = await resolveCandidates(discovered, account, logger, logFile);
 
   // 5. Hard filters (pure code, before any model call).
   const { kept, dropped } = filterEligibleEpisodes(pool, {
@@ -149,9 +155,14 @@ export async function runPodcastPipeline(
       continue;
     }
 
-    // 8. Commit: pending row BEFORE the notification so a crash between the
-    //    two is reconcilable (mirrors the media recs commit protocol).
-    const committed = await commitRecommendation(selected, decision.selected, logger);
+    // 8. Commit: pending row BEFORE enqueue and notification so a crash between
+    //    external effects is reconcilable (mirrors the media recs protocol).
+    const committed = await commitRecommendation(
+      selected,
+      decision.selected,
+      account,
+      logger,
+    );
     if (!committed) {
       throw new Error("Podcast recommendation notification failed");
     }
@@ -166,8 +177,11 @@ export async function runPodcastPipeline(
   );
 }
 
-async function syncOutcomes(logger: Logger, logFile?: LogFile): Promise<void> {
-  const account = resolvePodcastAccount(logger);
+async function syncOutcomes(
+  account: PodcastAccountClient | undefined,
+  logger: Logger,
+  logFile?: LogFile,
+): Promise<void> {
   if (!account) return;
   const history = await account.fetchListenHistory();
   if (history.status === "unavailable") {
@@ -195,10 +209,10 @@ async function syncOutcomes(logger: Logger, logFile?: LogFile): Promise<void> {
 }
 
 /**
- * Repair rows left pending by a crash between the entity write and the
- * notification. The notification is the only external effect and its delivery
- * cannot be verified after the fact, so stale pending rows are marked failed
- * (a 24h retry exclusion, then the episode becomes eligible again).
+ * Repair rows left pending by a crash during commit. Castro enqueue is
+ * idempotent, but notification delivery cannot be verified after the fact, so
+ * stale pending rows are marked failed (a 24h retry exclusion, then a retry
+ * will observe already_exists if the enqueue landed).
  */
 function reconcileStalePending(logger: Logger): void {
   const stale = PodcastRecommendationEntity.getAll().filter(
@@ -220,6 +234,7 @@ function reconcileStalePending(logger: Logger): void {
 async function commitRecommendation(
   scored: ScoredEpisode,
   pick: PodcastSelectionPick,
+  account: PodcastAccountClient | undefined,
   logger: Logger,
 ): Promise<boolean> {
   const { candidate } = scored;
@@ -234,6 +249,7 @@ async function commitRecommendation(
     itunesId: candidate.itunesId,
     artworkUrl: candidate.artworkUrl,
     episodeGuid: candidate.episodeGuid,
+    mediaUrl: candidate.mediaUrl,
     episodeUrl: candidate.episodeUrl,
     publishedAt: candidate.publishedAt,
     durationMinutes: candidate.durationMinutes,
@@ -254,16 +270,33 @@ async function commitRecommendation(
     recommendedAt: Date.now(),
   });
 
-  // Acquisition is the notification deep link, not a Castro enqueue: Castro's
-  // write endpoints only operate on episodes of already-subscribed shows, and
-  // recommendations are by definition unsubscribed. Auto-enqueue becomes
-  // possible once Castro exposes an RSS-URL → podcast-UUID resolver (see the
-  // remaining-gaps note in docs/castro-sync.md).
+  let queueResult: PodcastQueueResult = "not_queued";
+  if (account) {
+    const enqueueResult = await account.enqueueEpisode({
+      feedUrl: candidate.feedUrl,
+      itunesId: candidate.itunesId,
+      episodeGuid: candidate.episodeGuid,
+      mediaUrl: candidate.mediaUrl,
+      showTitle: candidate.showTitle,
+      episodeTitle: candidate.episodeTitle,
+      position: PodcastQueuePosition.Last,
+    });
+    queueResult = toQueueResult(enqueueResult);
+    if (queueResult === "not_queued") {
+      logger.info(
+        `Castro enqueue ${enqueueResult}; continuing with recommendation deep link`,
+      );
+    } else {
+      logger.info(
+        `Castro queue ${queueResult === "queued" ? "added" : "already contained"}: ${candidate.showTitle} - ${candidate.episodeTitle}`,
+      );
+    }
+  }
 
   try {
     await notify({
       title: pick.notification.title,
-      message: pick.notification.message,
+      message: appendQueueNote(pick.notification.message, queueResult),
       url: getRecommendationUrl(recommendationId),
       url_title: "View recommendation",
       token: config.PUSHOVER_PODCAST_TOKEN,
@@ -278,10 +311,26 @@ async function commitRecommendation(
 
   PodcastRecommendationEntity.patch(
     { recommendationId },
-    { status: PodcastRecommendationStatus.Notified, notifiedAt: Date.now() },
+    {
+      status: PodcastRecommendationStatus.Notified,
+      notifiedAt: Date.now(),
+      queueResult,
+    },
   );
   logger.info(`Recommended ${candidate.showTitle} — ${candidate.episodeTitle}`);
   return true;
+}
+
+export function toQueueResult(writeResult: PodcastWriteResult): PodcastQueueResult {
+  if (writeResult === "added") return "queued";
+  if (writeResult === "already_exists") return "already_queued";
+  return "not_queued";
+}
+
+/** Tell the listener the episode is already waiting in Castro, when it is. */
+function appendQueueNote(message: string, queueResult: PodcastQueueResult): string {
+  if (queueResult === "not_queued") return message;
+  return `${message}\n\n🎧 Added to your Castro queue.`;
 }
 
 function getRecommendationUrl(recommendationId: string): string {
