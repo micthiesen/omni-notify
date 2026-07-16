@@ -1,0 +1,17 @@
+{
+  "project": "omni-notify",
+  "peers": {
+    "mitools": {
+      "path": "../mitools",
+      "notes": "Upstream shared library (@micthiesen/mitools) this project consumes; its upkeep skill was adapted from this repo's."
+    }
+  },
+  "resources": [
+    {
+      "path": ".claude/skills/upkeep/",
+      "peers": ["mitools"],
+      "mode": "judgment",
+      "notes": "Shared shape only (sync remote -> survey -> research majors -> apply -> verify -> ship). Steps are environment-specific: this repo has a frontend workspace, Dockerfile, and LLM model IDs; mitools is a published library whose CI publishes to npm on a version bump. Port procedure improvements, never the project-specific steps."
+    }
+  ]
+}
