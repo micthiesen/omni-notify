@@ -126,6 +126,7 @@ class CastroClient implements PodcastAccountClient {
             showTitle: podcast.title,
             episodeTitle: episode.title,
             episodeGuid: episode.guid || episode.public_id,
+            description: episode.description,
           };
         },
       );
@@ -186,6 +187,33 @@ class CastroClient implements PodcastAccountClient {
       return "unavailable";
     } catch (error) {
       this.logger.error("Castro subscribe lookup failed", (error as Error).message);
+      return "error";
+    }
+  }
+
+  public async dequeueEpisode(episodeGuid: string): Promise<PodcastWriteResult> {
+    try {
+      const queue = await this.api.fetchQueue();
+      const episodes = await mapConcurrent(
+        queue.queue_items,
+        READ_CONCURRENCY,
+        async (item) => ({
+          item,
+          episode: await this.fetchEpisode(item.episode_id),
+        }),
+      );
+      const match = episodes.find(
+        ({ episode }) => (episode.guid || episode.public_id) === episodeGuid,
+      );
+      if (!match) return "not_found";
+      const now = Date.now();
+      await this.api.postActions([
+        this.action(match.item.episode_id, CastroActionType.EpisodeDequeued, now),
+        this.action(match.item.episode_id, CastroActionType.ClearEpisodeNew, now),
+      ]);
+      return "removed";
+    } catch (error) {
+      this.logger.error("Castro dequeue failed", (error as Error).message);
       return "error";
     }
   }

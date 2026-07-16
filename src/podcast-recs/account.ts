@@ -56,12 +56,14 @@ export interface QueuedEpisode {
   episodeTitle: string;
   episodeGuid?: string;
   feedUrl?: string;
+  description?: string;
   /** Epoch ms the episode was queued, when known. */
   addedAt?: number;
 }
 
 export type PodcastWriteResult =
   | "added"
+  | "removed"
   | "already_exists"
   | "not_found"
   | "unavailable"
@@ -102,6 +104,8 @@ export interface PodcastAccountClient {
 
   /** Add one episode to the play queue. Idempotency: report already_exists. */
   enqueueEpisode(request: EnqueueEpisodeRequest): Promise<PodcastWriteResult>;
+  /** Remove one episode from the play queue. Idempotency: report not_found. */
+  dequeueEpisode(episodeGuid: string): Promise<PodcastWriteResult>;
   subscribeToShow(request: SubscribeToShowRequest): Promise<PodcastWriteResult>;
 }
 
