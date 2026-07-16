@@ -308,21 +308,21 @@ Watch for credentials rotating when sync re-keys, app updates changing the
 schema, and rate limiting. Transport failures are returned as `unavailable`,
 never as empty state, per the project's three-state rule.
 
-## Hourly queue cleanup
+## Hourly Inbox cleanup
 
-`CastroQueueCleanupTask` runs at `0 * * * *` whenever the Castro credentials are
-configured. It reads the live ordered queue and removes an episode only when
-its description begins exactly with:
+`CastroInboxCleanupTask` runs at `0 * * * *` whenever the Castro credentials are
+configured. It reads each subscribed podcast's `podcast_state`, resolves only
+episodes where `is_new` is true, and clears an episode only when its description
+begins exactly with:
 
 ```text
 This is a free preview
 ```
 
 The comparison is case-sensitive and does not match the phrase later in a
-description. Removal posts the captured `episode_dequeued` followed by
-`clear_episode_new`. Normal runs use task logs only and send no notification.
-The first live run removed one matching preview episode and left every other
-queue item untouched.
+description. Cleanup posts only `clear_episode_new`; it does not post
+`episode_dequeued`, so an episode already in the Queue remains there. Normal
+runs use task logs only and send no notification.
 
 ## Remaining fallbacks
 

@@ -111,10 +111,11 @@ Each run:
 
 Recommended episodes are never repeated. When Castro credentials are set, listen history labels outcomes (listened / abandoned / ignored) automatically and each selected episode is resolved by RSS URL and added to the end of the Castro queue before notification. Resolution or enqueue failure falls back safely to the recommendation deep link. The good-pick/not-for-me feedback buttons in the web UI are always available.
 
-The same Castro credentials enable an independent `CastroQueueCleanup` task.
-It runs hourly and silently clears queued episodes whose description begins
-with `This is a free preview`, the standard marker used by Substack preview
-episodes. Matching is deliberately case-sensitive and prefix-only.
+The same Castro credentials enable an independent `CastroInboxCleanup` task.
+It runs hourly and silently clears Inbox episodes whose description begins with
+`This is a free preview`, the standard marker used by Substack preview
+episodes. It changes only the Inbox `is_new` state and never removes an episode
+from the Queue. Matching is deliberately case-sensitive and prefix-only.
 
 ## Web UI
 
@@ -182,7 +183,7 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `PODCAST_TASTE_PATH` | No | Markdown listener profile (required to enable podcast recommendations) |
 | `PODCAST_RECS_SCHEDULE` | No | Podcast recommendation cron (default: `0 0 11 * * 1,4`) |
 | `PUSHOVER_PODCAST_TOKEN` | No | Pushover token for podcast recs (falls back to `PUSHOVER_TOKEN`) |
-| `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and hourly preview cleanup) |
+| `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and hourly Inbox cleanup) |
 | `PLEX_URL` / `PLEX_TOKEN` | For recommendations | Plex server URL and token |
 | `PLEX_ACCOUNT_ID` | For shared Plex servers | Account ID used to scope viewing history; multiple detected accounts fail closed without it |
 | `RADARR_URL` / `RADARR_API_KEY` | For recommendations | Radarr v3 API connection |

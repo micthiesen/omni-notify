@@ -133,6 +133,66 @@ describe("CastroClient search-backed writes", () => {
   });
 });
 
+describe("CastroClient Inbox", () => {
+  it("returns only is_new episodes and clears them without dequeueing", async () => {
+    const api = {
+      ...fakeApi(),
+      fetchSubscriptions: vi.fn(async () => [
+        { podcast_id: PODCAST_ID, private: false, will_notify_device: true },
+      ]),
+      fetchPodcastState: vi.fn(async () => ({
+        public_id: PODCAST_ID,
+        episode_states: [
+          {
+            episode_id: EPISODE_ID,
+            is_new: true,
+            is_starred: false,
+            is_played: false,
+            last_played: null,
+            progress_seconds: 0,
+          },
+          {
+            episode_id: "22222222-2222-4222-8222-222222222222",
+            is_new: false,
+            is_starred: false,
+            is_played: false,
+            last_played: null,
+            progress_seconds: 0,
+          },
+        ],
+      })),
+      fetchEpisode: vi.fn(async () =>
+        castroEpisode({
+          public_id: EPISODE_ID,
+          guid: "rss-guid",
+          title: "Preview Episode",
+          description: "This is a free preview of a paid post.",
+        }),
+      ),
+    };
+    const client = new CastroClient(api as unknown as CastroApi, logger);
+
+    await expect(client.fetchInbox()).resolves.toMatchObject({
+      status: "ok",
+      value: [
+        {
+          clientEpisodeId: EPISODE_ID,
+          episodeGuid: "rss-guid",
+          episodeTitle: "Preview Episode",
+        },
+      ],
+    });
+    await expect(client.clearInboxEpisode(EPISODE_ID)).resolves.toBe("removed");
+    expect(api.fetchQueue).not.toHaveBeenCalled();
+    expect(api.postActions).toHaveBeenLastCalledWith([
+      expect.objectContaining({
+        episode_id: EPISODE_ID,
+        action_type: CastroActionType.ClearEpisodeNew,
+      }),
+    ]);
+  });
+});
+
 function castroEpisode(overrides: Partial<CastroEpisode>): CastroEpisode {
   return {
     guid: "castro-guid",

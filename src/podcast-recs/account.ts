@@ -83,6 +83,16 @@ export interface QueuedEpisode {
   addedAt?: number;
 }
 
+/** An episode currently visible in the podcast client's Inbox. */
+export interface InboxEpisode {
+  /** Stable client-native ID used for state mutations. */
+  clientEpisodeId: string;
+  showTitle: string;
+  episodeTitle: string;
+  episodeGuid?: string;
+  description?: string;
+}
+
 export type PodcastWriteResult =
   | "added"
   | "removed"
@@ -135,6 +145,7 @@ export interface PodcastAccountClient {
    */
   fetchListenHistory(sinceMs?: number): Promise<FetchResult<ListenedEpisode[]>>;
   fetchQueue(): Promise<FetchResult<QueuedEpisode[]>>;
+  fetchInbox(): Promise<FetchResult<InboxEpisode[]>>;
   searchPodcasts(query: string): Promise<FetchResult<PodcastSearchResult[]>>;
   searchEpisodes(query: string): Promise<FetchResult<PodcastEpisodeSearchResult[]>>;
 
@@ -142,6 +153,8 @@ export interface PodcastAccountClient {
   enqueueEpisode(request: EnqueueEpisodeRequest): Promise<PodcastWriteResult>;
   /** Remove one episode from the play queue. Idempotency: report not_found. */
   dequeueEpisode(episodeGuid: string): Promise<PodcastWriteResult>;
+  /** Clear an episode's new state so it no longer appears in the Inbox. */
+  clearInboxEpisode(clientEpisodeId: string): Promise<PodcastWriteResult>;
   subscribeToShow(request: SubscribeToShowRequest): Promise<PodcastWriteResult>;
 }
 

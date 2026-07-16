@@ -5,6 +5,7 @@ import config from "../../utils/config.js";
 import { type FetchResult, unavailable } from "../../utils/fetchResult.js";
 import {
   type EnqueueEpisodeRequest,
+  type InboxEpisode,
   type ListenedEpisode,
   type PodcastAccountClient,
   type PodcastEpisodeSearchResult,
@@ -179,6 +180,45 @@ export class CastroClient implements PodcastAccountClient {
     }
   }
 
+  public async fetchInbox(): Promise<FetchResult<InboxEpisode[]>> {
+    try {
+      const subscriptions = await this.getSubscriptions();
+      const states = await mapConcurrent(
+        subscriptions,
+        READ_CONCURRENCY,
+        async (subscription) => ({
+          podcastId: subscription.podcast_id,
+          state: await this.api.fetchPodcastState(subscription.podcast_id),
+        }),
+      );
+      const newEpisodes = states.flatMap(({ podcastId, state }) =>
+        state.episode_states
+          .filter((episodeState) => episodeState.is_new)
+          .map((episodeState) => ({ podcastId, episodeState })),
+      );
+      const inbox = await mapConcurrent(
+        newEpisodes,
+        READ_CONCURRENCY,
+        async ({ podcastId, episodeState }): Promise<InboxEpisode> => {
+          const [podcast, episode] = await Promise.all([
+            this.fetchPodcast(podcastId),
+            this.fetchEpisode(episodeState.episode_id),
+          ]);
+          return {
+            clientEpisodeId: episode.public_id,
+            showTitle: podcast.title,
+            episodeTitle: episode.title,
+            episodeGuid: episode.guid || episode.public_id,
+            description: episode.description,
+          };
+        },
+      );
+      return { status: "ok", value: inbox };
+    } catch (error) {
+      return unavailable(error);
+    }
+  }
+
   public async searchPodcasts(
     query: string,
   ): Promise<FetchResult<PodcastSearchResult[]>> {
@@ -310,6 +350,18 @@ export class CastroClient implements PodcastAccountClient {
       return "removed";
     } catch (error) {
       this.logger.error("Castro dequeue failed", (error as Error).message);
+      return "error";
+    }
+  }
+
+  public async clearInboxEpisode(clientEpisodeId: string): Promise<PodcastWriteResult> {
+    try {
+      await this.api.postActions([
+        this.action(clientEpisodeId, CastroActionType.ClearEpisodeNew, Date.now()),
+      ]);
+      return "removed";
+    } catch (error) {
+      this.logger.error("Castro inbox clear failed", (error as Error).message);
       return "error";
     }
   }
