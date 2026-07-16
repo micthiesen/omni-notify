@@ -666,6 +666,11 @@ button {
   border-color: rgba(251, 191, 36, 0.35);
 }
 
+.trigger-catchup {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
 /* Task history accordion */
 
 .history-toggle {

@@ -167,7 +167,7 @@ function seedRun(
   durationMs: number,
   status: "success" | "error",
   extra: {
-    trigger?: "schedule" | "manual" | "startup";
+    trigger?: "schedule" | "manual" | "startup" | "catchup";
     error?: string;
     summary?: string;
   } = {},

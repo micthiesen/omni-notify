@@ -2,6 +2,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import cron, { type ScheduledTask as CronScheduledTask } from "node-cron";
 import PQueue from "p-queue";
+import { decideCatchUp } from "./catchUp.js";
 import { taskRunBus } from "./events.js";
 import {
   finishRunLogCapture,
@@ -10,8 +11,10 @@ import {
 } from "./logCapture.js";
 import {
   getLastRun,
+  getTaskScheduleState,
   makeRunId,
   markInterruptedRuns,
+  markScheduleEvaluated,
   recordRunEnd,
   recordRunStart,
   type TaskRunData,
@@ -98,10 +101,62 @@ export class TaskRegistry {
     return { runId };
   }
 
+  /** Recover the newest eligible cron occurrence for each infrequent task. */
+  public async recoverMissedTasks(now = Date.now()): Promise<void> {
+    const recoveries: { name: string; scheduledFor: number }[] = [];
+
+    for (const [name, entry] of this.tasks) {
+      const state = getTaskScheduleState(name);
+      if (state && state.schedule !== entry.task.schedule) {
+        this.logger.info(
+          `Schedule changed for "${name}"; starting a new recovery baseline`,
+        );
+        markScheduleEvaluated(name, entry.task.schedule, now);
+        continue;
+      }
+
+      const evaluatedThrough = state?.evaluatedThrough ?? getLastRun(name)?.startedAt;
+      if (evaluatedThrough === undefined || entry.task.runOnStartup) {
+        markScheduleEvaluated(name, entry.task.schedule, now);
+        continue;
+      }
+
+      const decision = decideCatchUp(entry.task.schedule, evaluatedThrough, now);
+      switch (decision.kind) {
+        case "run":
+          recoveries.push({ name, scheduledFor: decision.scheduledFor });
+          break;
+        case "stale":
+          this.logger.info(
+            `Skipping stale missed run of "${name}" from ${new Date(decision.scheduledFor).toISOString()}`,
+          );
+          markScheduleEvaluated(name, entry.task.schedule, now);
+          break;
+        case "disabled":
+        case "none":
+          markScheduleEvaluated(name, entry.task.schedule, now);
+          break;
+      }
+    }
+
+    // Recover sequentially so a reboot cannot unleash several expensive tasks at once.
+    for (const recovery of recoveries) {
+      this.logger.info(
+        `Recovering missed run of "${recovery.name}" from ${new Date(recovery.scheduledFor).toISOString()}`,
+      );
+      try {
+        await this.execute(recovery.name, "catchup", undefined, recovery.scheduledFor);
+      } catch (error) {
+        this.logger.error(`Catch-up run of "${recovery.name}" failed`, error);
+      }
+    }
+  }
+
   private async execute(
     name: string,
     trigger: TaskRunTrigger,
     runId?: string,
+    scheduledFor?: number,
   ): Promise<void> {
     const entry = this.tasks.get(name);
     if (!entry) throw new TaskNotFoundError(name);
@@ -114,7 +169,10 @@ export class TaskRegistry {
     this.hasRun.add(name);
 
     await entry.queue.add(async () => {
-      const run = recordRunStart(name, trigger, runId);
+      // Once an execution starts it counts as this occurrence's attempt, even if
+      // it fails or the process exits partway through.
+      markScheduleEvaluated(name, entry.task.schedule, scheduledFor ?? Date.now());
+      const run = recordRunStart(name, trigger, runId, scheduledFor);
       this.running.add(name);
       startRunLogCapture(run.runId, name);
       taskRunBus.emit({ type: "run-started", taskName: name });

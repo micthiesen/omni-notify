@@ -28,6 +28,7 @@
     "@mozilla/readability": "^0.6.0",
     "ai": "^7.0.28",
     "amazon-cognito-identity-js": "^6.3.20",
+    "cron-parser": "^4.9.0",
     "date-fns": "^4.4.0",
     "date-fns-tz": "^3.2.0",
     "eventsource": "^4.1.0",

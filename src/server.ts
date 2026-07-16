@@ -46,6 +46,7 @@ function serializeRun(run: TaskRunData) {
     runId: run.runId,
     taskName: run.taskName,
     trigger: run.trigger,
+    scheduledFor: run.scheduledFor ?? null,
     startedAt: run.startedAt,
     finishedAt: run.finishedAt ?? null,
     status: run.status,

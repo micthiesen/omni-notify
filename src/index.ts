@@ -115,6 +115,9 @@ if (!serverOnly) {
 
   // Start scheduler (runs opted-in tasks immediately, then all tasks on schedule)
   scheduler.start();
+  const recoveryPromise = registry.recoverMissedTasks().catch((error) => {
+    logger.error("Failed to recover missed task runs", error);
+  });
 
   // Graceful shutdown handling
   let isShuttingDown = false;
@@ -127,6 +130,7 @@ if (!serverOnly) {
     closeServer();
     cleanupEventSource?.();
     await scheduler.shutdown();
+    await recoveryPromise;
     logger.info("Shutdown complete");
     process.exit(0);
   }

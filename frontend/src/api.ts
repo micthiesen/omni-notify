@@ -1,10 +1,11 @@
-export type TaskTrigger = "schedule" | "manual" | "startup";
+export type TaskTrigger = "schedule" | "manual" | "startup" | "catchup";
 export type TaskRunStatus = "running" | "success" | "error";
 
 export interface TaskRun {
   runId: string;
   taskName: string;
   trigger: TaskTrigger;
+  scheduledFor: number | null;
   startedAt: number;
   finishedAt: number | null;
   status: TaskRunStatus;

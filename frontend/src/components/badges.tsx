@@ -4,6 +4,7 @@ const TRIGGER_LABELS: Record<TaskTrigger, string> = {
   schedule: "schedule",
   manual: "manual",
   startup: "startup",
+  catchup: "catch-up",
 };
 
 export function TriggerBadge({ trigger }: { trigger: TaskTrigger }) {

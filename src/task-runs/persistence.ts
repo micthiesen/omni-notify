@@ -3,13 +3,15 @@ import { Logger, type LogLevel } from "@micthiesen/mitools/logging";
 
 const logger = new Logger("TaskRuns");
 
-export type TaskRunTrigger = "schedule" | "manual" | "startup";
+export type TaskRunTrigger = "schedule" | "manual" | "startup" | "catchup";
 export type TaskRunStatus = "running" | "success" | "error";
 
 export type TaskRunData = {
   runId: string;
   taskName: string;
   trigger: TaskRunTrigger;
+  /** Cron occurrence this run is recovering, for catch-up runs. */
+  scheduledFor?: number;
   startedAt: number;
   finishedAt?: number;
   status: TaskRunStatus;
@@ -19,6 +21,17 @@ export type TaskRunData = {
 };
 
 export const TaskRunEntity = new Entity<TaskRunData, ["runId"]>("task-run", ["runId"]);
+
+export type TaskScheduleStateData = {
+  taskName: string;
+  schedule: string;
+  evaluatedThrough: number;
+};
+
+export const TaskScheduleStateEntity = new Entity<TaskScheduleStateData, ["taskName"]>(
+  "task-schedule-state",
+  ["taskName"],
+);
 
 export type TaskRunLogLine = {
   /** Epoch ms of the log call */
@@ -52,17 +65,33 @@ export function recordRunStart(
   taskName: string,
   trigger: TaskRunTrigger,
   runId: string = makeRunId(taskName),
+  scheduledFor?: number,
 ): TaskRunData {
   const run: TaskRunData = {
     runId,
     taskName,
     trigger,
+    scheduledFor,
     startedAt: Date.now(),
     status: "running",
   };
   TaskRunEntity.upsert(run);
   pruneRuns(taskName);
   return run;
+}
+
+export function getTaskScheduleState(
+  taskName: string,
+): TaskScheduleStateData | undefined {
+  return TaskScheduleStateEntity.get({ taskName }) ?? undefined;
+}
+
+export function markScheduleEvaluated(
+  taskName: string,
+  schedule: string,
+  evaluatedThrough: number,
+): void {
+  TaskScheduleStateEntity.upsert({ taskName, schedule, evaluatedThrough });
 }
 
 export function recordRunEnd(
