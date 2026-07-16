@@ -1,7 +1,11 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { describe, expect, it, vi } from "vitest";
 import type { PodcastAccountClient } from "./account.js";
-import { pickBestByTitle, resolveCandidates } from "./candidates.js";
+import {
+  pickBestByTitle,
+  podcastIndexToCandidate,
+  resolveCandidates,
+} from "./candidates.js";
 import { pickBestShowMatch, searchItunesPodcasts } from "./itunes.js";
 import { fetchFeedEpisodes, findEpisodeByTitle } from "./rss.js";
 import type { DiscoveredEpisode } from "./types.js";
@@ -111,5 +115,39 @@ describe("pickBestByTitle", () => {
 
   it("returns undefined when nothing matches", () => {
     expect(pickBestByTitle(shows, "Hardcore History")).toBeUndefined();
+  });
+});
+
+describe("podcastIndexToCandidate", () => {
+  const episode = {
+    title: "The Guest Episode",
+    feedTitle: "Some Show",
+    feedUrl: "https://feeds.example.com/show",
+    feedItunesId: 42,
+    guid: "guid-abc",
+    enclosureUrl: "https://cdn/audio.mp3",
+    episodeUrl: "https://show/ep",
+    publishedAt: 1_700_000_000_000,
+    durationMinutes: 55,
+    description: "A conversation.",
+    artworkUrl: "https://art",
+  };
+
+  it("maps a PI episode to a candidate tagged with the voice", () => {
+    const c = podcastIndexToCandidate(episode, "Jesse Singal");
+    expect(c).toMatchObject({
+      showId: "itunes:42",
+      episodeId: "itunes:42#guid-abc",
+      showTitle: "Some Show",
+      feedUrl: "https://feeds.example.com/show",
+      mediaUrl: "https://cdn/audio.mp3",
+      matchedVoices: ["Jesse Singal"],
+      discoveredVia: "guest: Jesse Singal (Podcast Index)",
+    });
+  });
+
+  it("falls back to a feed-based show id when no iTunes id", () => {
+    const c = podcastIndexToCandidate({ ...episode, feedItunesId: undefined }, "X");
+    expect(c?.showId).toBe("feed:feeds.example.com/show");
   });
 });

@@ -61,6 +61,12 @@ const configSchema = baseConfigSchema
     PUSHOVER_PODCAST_TOKEN: z.string().optional(),
     CASTRO_ACCESS_ID: z.string().uuid().optional(),
     CASTRO_SECRET_KEY: z.string().optional(),
+    PODCASTINDEX_KEY: z.string().optional(),
+    PODCASTINDEX_SECRET: z.string().optional(),
+    /** Max followed voices person-searched per run (rotates across runs). */
+    PODCAST_VOICE_ROTATION_MAX: optionalPositiveInt.default(12),
+    /** Cap on Tier-1 guest-appearance picks per run (bursts like book tours). */
+    PODCAST_MAX_GUEST_PICKS: optionalPositiveInt.default(6),
     PLEX_URL: z.string().optional(),
     PLEX_TOKEN: z.string().optional(),
     PLEX_ACCOUNT_ID: optionalPositiveInt,

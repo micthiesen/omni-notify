@@ -102,6 +102,11 @@ function PodcastCard({
           </span>
         </div>
         <div className="podrec-show">{rec.showTitle}</div>
+        {rec.matchedVoices && rec.matchedVoices.length > 0 && (
+          <div className="podrec-featuring">
+            🎙️ featuring {rec.matchedVoices.join(", ")}
+          </div>
+        )}
         {rec.whyForUser && <p className="rec-why">{rec.whyForUser}</p>}
         {rec.caveats && rec.caveats.length > 0 && (
           <ul className="rec-caveats">

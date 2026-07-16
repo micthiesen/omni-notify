@@ -10,12 +10,15 @@ import {
 } from "./account.js";
 import { resolveCandidates } from "./candidates.js";
 import { discoverEpisodes } from "./discovery.js";
-import { filterEligibleEpisodes } from "./filters.js";
+import { filterEligibleEpisodes, type PodcastFilterContext } from "./filters.js";
+import { selectGuestAppearances } from "./guestSelection.js";
+import { discoverGuestAppearances } from "./guests.js";
 import { decideEpisodeOutcomes } from "./outcomes.js";
 import {
   formatRecentRecommendationsDigest,
   getOpenPodcastRecommendations,
   getPodcastExclusions,
+  nextVoiceBatch,
   type PodcastQueueResult,
   type PodcastRecommendationData,
   PodcastRecommendationEntity,
@@ -30,35 +33,47 @@ import { FINALIST_COUNT, type ScoredEpisode, shortlistEpisodes } from "./shortli
 import { resolveSubscriptions } from "./subscriptions.js";
 import { buildTasteDigest } from "./taste.js";
 import type { EpisodeCandidate } from "./types.js";
+import { loadVoices } from "./voices.js";
 
 /** A pending row older than this from a previous run needs reconciliation. */
 const STALE_PENDING_MS = 60 * 60 * 1000;
 export const MAX_PODCAST_RECOMMENDATIONS_PER_RUN = 5;
 const FINALISTS_PER_REQUESTED_PICK = 2;
+/** Above this many guest picks, skip the topic/drama fill to avoid flooding. */
+const TOPIC_SUPPRESS_THRESHOLD = 3;
 /** Small cushion before the oldest open delivery, for timestamp skew. */
 const LISTEN_HISTORY_BUFFER_MS = 24 * 60 * 60 * 1000;
 
 export interface PodcastPipelineOptions {
   dryRun?: boolean;
+  /** Cap on Tier-2 (topic/drama) picks; Tier-1 guest picks use their own cap. */
   maxRecommendations?: number;
 }
 
-/** Runs the full podcast recommendation pipeline. Returns a one-line summary. */
+/**
+ * Two-tier podcast recommendation run:
+ *  - Tier 1: episodes where a followed VOICE guests somewhere new (the point of
+ *    the feature) — default-include, capped generously for press-tour weeks.
+ *  - Tier 2: standout topic/drama episodes — conservative fill, suppressed when
+ *    Tier 1 already delivered plenty.
+ * Returns a one-line summary.
+ */
 export async function runPodcastPipeline(
   logger: Logger,
   logFile?: LogFile,
   options: PodcastPipelineOptions = {},
 ): Promise<string> {
-  const maxRecommendations = options.maxRecommendations ?? 2;
+  const topicTargetMax = options.maxRecommendations ?? 2;
   if (
-    !Number.isInteger(maxRecommendations) ||
-    maxRecommendations < 1 ||
-    maxRecommendations > MAX_PODCAST_RECOMMENDATIONS_PER_RUN
+    !Number.isInteger(topicTargetMax) ||
+    topicTargetMax < 1 ||
+    topicTargetMax > MAX_PODCAST_RECOMMENDATIONS_PER_RUN
   ) {
     throw new RangeError(
       `maxRecommendations must be an integer from 1 to ${MAX_PODCAST_RECOMMENDATIONS_PER_RUN}`,
     );
   }
+  const dryRun = options.dryRun ?? false;
 
   // 1. Local state. Subscriptions follow the three-state rule: a configured
   //    source that fails aborts the run rather than weakening exclusions.
@@ -69,33 +84,144 @@ export async function runPodcastPipeline(
     return `skipped: ${subscriptions.reason}`;
   }
 
-  // 2. Outcome sync — only possible with real listen history (Castro bridge).
-  //    Without a data source every open rec would drift to "ignored".
+  // 2. Outcome sync + stale-pending reconciliation.
   await syncOutcomes(account, logger, logFile);
-
   reconcileStalePending(logger);
 
   // 3. Taste inputs: seed profile + subscribed shows + explicit feedback.
   const tasteDigest = buildTasteDigest(subscriptions.value);
   const recentDigest = formatRecentRecommendationsDigest();
-
-  // 4. Discovery (web search) → verified candidates (iTunes + RSS).
-  const discovered = await discoverEpisodes(tasteDigest, recentDigest, logger, logFile);
-  if (discovered.length === 0) return "discovery surfaced no episodes";
-  const pool = await resolveCandidates(discovered, account, logger, logFile);
-
-  // 5. Hard filters (pure code, before any model call).
-  const { kept, dropped } = filterEligibleEpisodes(pool, {
+  const filterContext = (): PodcastFilterContext => ({
     now: Date.now(),
     subscribedShowIds: subscriptions.value.showIds,
     subscribedShowTitles: subscriptions.value.normalizedTitles,
     exclusions: getPodcastExclusions(Date.now()),
   });
-  logger.info(`Candidates: ${pool.length} resolved, ${kept.length} eligible`);
-  if (dropped.length > 0) {
+
+  // 4a. Tier 1 — guest appearances of followed voices (rotated batch/run).
+  const voices = nextVoiceBatch(loadVoices(), config.PODCAST_VOICE_ROTATION_MAX);
+  const guestPool = await discoverGuestAppearances(voices, account, logger, logFile);
+  const guestEligible = logFiltered(
+    filterEligibleEpisodes(guestPool, filterContext()),
+    "Guest filtered out",
+    logFile,
+  );
+
+  // 4b. Tier 2 — topic/drama discovery (secondary fill).
+  const topicDiscovered = await discoverEpisodes(
+    tasteDigest,
+    recentDigest,
+    logger,
+    logFile,
+  );
+  const topicPool = topicDiscovered.length
+    ? await resolveCandidates(topicDiscovered, account, logger, logFile)
+    : [];
+  const guestIds = new Set(guestEligible.map((c) => c.episodeId));
+  const topicEligible = logFiltered(
+    filterEligibleEpisodes(topicPool, filterContext()),
+    "Topic filtered out",
+    logFile,
+  ).filter((c) => !guestIds.has(c.episodeId));
+
+  logger.info(`Eligible: ${guestEligible.length} guest, ${topicEligible.length} topic`);
+  if (guestEligible.length === 0 && topicEligible.length === 0) {
+    return "no eligible candidates after filtering";
+  }
+
+  const recommended: EpisodeCandidate[] = [];
+  const commitOrCollect = async (
+    candidate: EpisodeCandidate,
+    pick: PodcastSelectionPick,
+    scores: ShortlistScores | undefined,
+  ): Promise<void> => {
+    if (dryRun) {
+      recommended.push(candidate);
+      return;
+    }
+    const committed = await commit(candidate, pick, scores, account, logger);
+    if (!committed) throw new Error("Podcast recommendation notification failed");
+    recommended.push(candidate);
+  };
+
+  // 5. Tier 1: gate (default-include) and commit up to the guest cap.
+  if (guestEligible.length > 0) {
+    const guestPicks = await selectGuestAppearances(
+      guestEligible,
+      tasteDigest,
+      logger,
+      logFile,
+      config.PODCAST_MAX_GUEST_PICKS,
+    );
+    for (const { candidate, pick } of guestPicks) {
+      await commitOrCollect(candidate, pick, undefined);
+    }
+  }
+  const guestCount = recommended.length;
+
+  // 6. Tier 2: conservative topic/drama fill, suppressed after a rich guest week.
+  const topicTarget = guestCount >= TOPIC_SUPPRESS_THRESHOLD ? 0 : topicTargetMax;
+  let stopReason: string | undefined;
+  if (topicTarget > 0 && topicEligible.length > 0) {
+    const finalists = await shortlistEpisodes(
+      topicEligible,
+      tasteDigest,
+      logger,
+      logFile,
+      Math.max(FINALIST_COUNT, topicTarget * FINALISTS_PER_REQUESTED_PICK),
+    );
+    const research = finalists.length
+      ? await researchFinalists(finalists, logger, logFile)
+      : new Map<string, string>();
+    const remaining = new Map<string, ScoredEpisode>(
+      finalists.map((finalist) => [finalist.candidate.episodeId, finalist]),
+    );
+    while (recommended.length - guestCount < topicTarget && remaining.size > 0) {
+      const decision = await selectEpisode(
+        [...remaining.values()],
+        tasteDigest,
+        research,
+        logger,
+        logFile,
+      );
+      if (!decision) {
+        stopReason = "selection model returned no decision";
+        break;
+      }
+      if (decision.decision === "no_add" || !decision.selected) {
+        stopReason = `no_add: ${(decision.no_add_reason ?? "no reason given").slice(0, 120)}`;
+        break;
+      }
+      const selected = remaining.get(decision.selected.candidate_id);
+      if (!selected) {
+        stopReason = "selection returned an unknown candidate id";
+        break;
+      }
+      remaining.delete(selected.candidate.episodeId);
+      await commitOrCollect(selected.candidate, decision.selected, {
+        tasteMatch: selected.tasteMatch,
+        novelty: selected.novelty,
+        composite: selected.composite,
+        risks: selected.risks,
+      });
+    }
+  }
+
+  return formatBatchSummary(recommended, guestCount, dryRun, stopReason);
+}
+
+type ShortlistScores = NonNullable<PodcastRecommendationData["shortlistScores"]>;
+
+/** Filter, logging the dropped candidates, and return the kept list. */
+function logFiltered(
+  result: ReturnType<typeof filterEligibleEpisodes>,
+  section: string,
+  logFile?: LogFile,
+): EpisodeCandidate[] {
+  if (result.dropped.length > 0) {
     logFile?.section(
-      "Filtered Out",
-      dropped
+      section,
+      result.dropped
         .map(
           (d) =>
             `- ${d.candidate.showTitle} — ${d.candidate.episodeTitle}: ${d.reason}`,
@@ -103,81 +229,7 @@ export async function runPodcastPipeline(
         .join("\n"),
     );
   }
-  if (kept.length === 0) return "no eligible candidates after filtering";
-
-  // 6. Cheap-model shortlist.
-  const finalists = await shortlistEpisodes(
-    kept,
-    tasteDigest,
-    logger,
-    logFile,
-    Math.max(FINALIST_COUNT, maxRecommendations * FINALISTS_PER_REQUESTED_PICK),
-  );
-  if (finalists.length === 0) return "shortlist returned no scorable candidates";
-
-  // 7. Research once, then repeatedly ask the one-pick selector against a
-  //    shrinking set. A no_add decision ends the batch.
-  const research = await researchFinalists(finalists, logger, logFile);
-  const remaining = new Map<string, ScoredEpisode>(
-    finalists.map((finalist) => [finalist.candidate.episodeId, finalist]),
-  );
-  const recommended: EpisodeCandidate[] = [];
-  let stopReason: string | undefined;
-
-  while (recommended.length < maxRecommendations && remaining.size > 0) {
-    const decision = await selectEpisode(
-      [...remaining.values()],
-      tasteDigest,
-      research,
-      logger,
-      logFile,
-    );
-    if (!decision) {
-      stopReason = "selection model returned no decision";
-      break;
-    }
-    if (decision.decision === "no_add" || !decision.selected) {
-      const reason = decision.no_add_reason ?? "no reason given";
-      logger.info(`No further podcast recommendation today: ${reason}`);
-      stopReason = `no_add: ${reason.slice(0, 120)}`;
-      break;
-    }
-
-    const selected = remaining.get(decision.selected.candidate_id);
-    if (!selected) {
-      logger.warn(
-        `Selection returned unknown candidate id: ${decision.selected.candidate_id}`,
-      );
-      stopReason = "selection returned an unknown candidate id";
-      break;
-    }
-    remaining.delete(selected.candidate.episodeId);
-
-    if (options.dryRun) {
-      recommended.push(selected.candidate);
-      continue;
-    }
-
-    // 8. Commit: pending row BEFORE enqueue and notification so a crash between
-    //    external effects is reconcilable (mirrors the media recs protocol).
-    const committed = await commitRecommendation(
-      selected,
-      decision.selected,
-      account,
-      logger,
-    );
-    if (!committed) {
-      throw new Error("Podcast recommendation notification failed");
-    }
-    recommended.push(selected.candidate);
-  }
-
-  return formatBatchSummary(
-    recommended,
-    maxRecommendations,
-    options.dryRun ?? false,
-    stopReason,
-  );
+  return result.kept;
 }
 
 async function syncOutcomes(
@@ -259,13 +311,13 @@ function reconcileStalePending(logger: Logger): void {
   }
 }
 
-async function commitRecommendation(
-  scored: ScoredEpisode,
+async function commit(
+  candidate: EpisodeCandidate,
   pick: PodcastSelectionPick,
+  shortlistScores: ShortlistScores | undefined,
   account: PodcastAccountClient | undefined,
   logger: Logger,
 ): Promise<boolean> {
-  const { candidate } = scored;
   const recommendationId = crypto.randomUUID();
   PodcastRecommendationEntity.upsert({
     recommendationId,
@@ -288,12 +340,8 @@ async function commitRecommendation(
     showGenres: candidate.showGenres,
     discoveredVia: candidate.discoveredVia,
     sourceUrl: candidate.sourceUrl,
-    shortlistScores: {
-      tasteMatch: scored.tasteMatch,
-      novelty: scored.novelty,
-      composite: scored.composite,
-      risks: scored.risks,
-    },
+    matchedVoices: candidate.matchedVoices,
+    shortlistScores,
     runDate: new Date().toISOString().slice(0, 10),
     recommendedAt: Date.now(),
   });
@@ -370,19 +418,18 @@ function getRecommendationUrl(recommendationId: string): string {
 
 function formatBatchSummary(
   recommended: EpisodeCandidate[],
-  requested: number,
+  guestCount: number,
   dryRun: boolean,
   stopReason?: string,
 ): string {
   if (recommended.length === 0) {
-    return stopReason ?? "no_add: no remaining finalists";
+    return stopReason ?? "no eligible picks";
   }
   const titles = recommended
     .map((c) => `${c.showTitle} — ${c.episodeTitle}`)
     .join(", ");
-  if (dryRun) {
-    return `dry_run: would recommend ${recommended.length}/${requested}: ${titles}`;
-  }
+  const breakdown = `${guestCount} guest, ${recommended.length - guestCount} topic`;
+  const prefix = dryRun ? "dry_run: would recommend" : "recommended";
   const stopped = stopReason ? `; stopped: ${stopReason}` : "";
-  return `recommended ${recommended.length}/${requested}: ${titles}${stopped}`;
+  return `${prefix} ${recommended.length} (${breakdown}): ${titles}${stopped}`;
 }

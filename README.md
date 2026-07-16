@@ -99,15 +99,14 @@ See [the recommendation review checkpoint](docs/recommendations-review.md) for t
 
 ## Podcast Recommendations
 
-A sibling pipeline (default: Mon/Thu at 11am, enabled by setting `PODCAST_TASTE_PATH`) that recommends up to two fresh podcast **episodes** per run from shows you don't already follow, and sends a Pushover notification per pick.
+A sibling pipeline (default: Mon/Thu at 11am, enabled by setting `PODCAST_TASTE_PATH`) that recommends fresh podcast **episodes** from shows you don't already follow, and sends a Pushover notification per pick. It's **people-first**: the main goal is surfacing episodes where a voice you follow guests somewhere new (see [docs/podcast-recs.md](docs/podcast-recs.md)).
 
 Each run:
 
-1. Reads subscribed shows and listen history from the Castro account (see [docs/castro-sync.md](docs/castro-sync.md)). Subscribed shows are excluded from recommendations and double as taste evidence alongside the seed profile and explicit feedback; a failed account read aborts the run rather than risk recommending a followed show. Without Castro credentials the pipeline still runs off the seed profile and feedback alone.
-2. Discovers episodes being discussed this week via multi-angle web search, then extracts specific candidates with a cheap model.
-3. Verifies every candidate in code: show identity via the iTunes Search API, episode and release date from the show's actual RSS feed. Unverifiable episodes are dropped — release dates are never trusted from search snippets.
-4. Hard-filters in code: older than 7 days, already recommended, show on 30-day cooldown, rejected via "not for me", or already subscribed.
-5. Scores the survivors with a cheap model, researches finalists with web search, then a strong model picks one episode at a time or decides to add nothing.
+1. Reads subscribed shows and listen history from the Castro account (see [docs/castro-sync.md](docs/castro-sync.md)). Subscribed shows are excluded and double as taste evidence alongside the seed profile and explicit feedback; a failed account read aborts the run. Without Castro credentials it runs off the seed profile and feedback alone.
+2. **Tier 1 — guest appearances.** For a rotating batch of the people in your profile's `## Voices` list, finds recent episodes featuring them as guests via Podcast Index (`byperson`, free) with a Tavily person-search fallback for non-podcasters. A model gate default-includes them (following the person is the signal), capped so a press-tour week can surface several.
+3. **Tier 2 — topic/drama.** Multi-angle web search → cheap shortlist → strong-model one-pick, conservative and suppressed once Tier 1 delivered enough.
+4. Verifies every candidate's release date against the show's actual RSS feed (or Podcast Index's resolved data), and hard-filters in code: older than 7 days, already recommended, show on 30-day cooldown, rejected, or subscribed.
 
 Recommended episodes are never repeated. When Castro credentials are set, listen history labels outcomes (listened / abandoned / ignored) automatically and each selected episode is resolved by RSS URL and added to the end of the Castro queue before notification. Resolution or enqueue failure falls back safely to the recommendation deep link. The good-pick/not-for-me feedback buttons in the web UI are always available.
 
@@ -184,6 +183,8 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `PODCAST_RECS_SCHEDULE` | No | Podcast recommendation cron (default: `0 0 11 * * 1,4`) |
 | `PUSHOVER_PODCAST_TOKEN` | No | Pushover token for podcast recs (falls back to `PUSHOVER_TOKEN`) |
 | `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and hourly Inbox cleanup) |
+| `PODCASTINDEX_KEY` / `PODCASTINDEX_SECRET` | No | Podcast Index API (guest-appearance discovery; quote the secret — it contains `#`) |
+| `PODCAST_VOICE_ROTATION_MAX` / `PODCAST_MAX_GUEST_PICKS` | No | Voices searched per run (default 12) / Tier-1 guest cap (default 6) |
 | `PLEX_URL` / `PLEX_TOKEN` | For recommendations | Plex server URL and token |
 | `PLEX_ACCOUNT_ID` | For shared Plex servers | Account ID used to scope viewing history; multiple detected accounts fail closed without it |
 | `RADARR_URL` / `RADARR_API_KEY` | For recommendations | Radarr v3 API connection |

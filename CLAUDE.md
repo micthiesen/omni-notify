@@ -86,18 +86,22 @@ src/
 ├── podcast-recs/            # AI podcast-episode recommendations → Pushover
 │   ├── task.ts              # PodcastRecommendationTask (cron, default Mon/Thu 11am;
 │   │                        #   PODCAST_TASTE_PATH doubles as the feature flag)
-│   ├── pipeline.ts          # Subscriptions → outcomes → discovery → verify → filter →
-│   │                        #   shortlist → research/select → commit (pending→enqueue→notify)
+│   ├── pipeline.ts          # Two-tier: guest appearances (Tier 1) + topic/drama (Tier 2)
+│   │                        #   → verify → filter → gate/select → commit (pending→enqueue→notify)
 │   ├── account.ts           # PodcastAccountClient bridge contract
 │   ├── castro/              # Castro private-sync client + hourly Inbox cleanup
-│   ├── discovery.ts         # Tavily multi-angle search → cheap-model candidate extraction
-│   ├── candidates.ts        # iTunes Search (Castro-search fallback) + RSS resolution
+│   ├── voices.ts            # Parse ## Voices (followed people) from the taste md
+│   ├── guests.ts            # Tier-1 discovery: PI byperson + Tavily person-search fallback
+│   ├── guestSelection.ts    # Tier-1 default-include gate (capped, for press-tour weeks)
+│   ├── podcastindex/        # Podcast Index API client (byperson guest search)
+│   ├── discovery.ts         # Tier-2 Tavily multi-angle (topic/drama) → candidate extraction
+│   ├── candidates.ts        # iTunes (Castro fallback) + RSS resolution; PI→candidate mapping
 │   ├── itunes.ts            # Keyless iTunes Search API client
 │   ├── rss.ts               # RSS episode parsing (linkedom)
 │   ├── subscriptions.ts     # Castro-account subscription resolution (three-state)
 │   ├── filters.ts           # Pure hard filters (7d recency, subscribed/cooldown/excluded)
-│   ├── shortlist.ts         # Cheap-model scoring, composite computed in code
-│   ├── selection.ts         # Strong-model research + structured one-pick decision
+│   ├── shortlist.ts         # Tier-2 cheap-model scoring, composite computed in code
+│   ├── selection.ts         # Tier-2 strong-model research + structured one-pick decision
 │   ├── outcomes.ts          # Pure listen-history outcome labeling
 │   ├── taste.ts             # Seed profile file + subscriptions + feedback digest
 │   └── persistence.ts       # PodcastRecommendationEntity, exclusions, feedback
@@ -131,6 +135,8 @@ Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing 
 
 Deliberately a sibling system to media recommendations (same architecture, separate implementation — the domains differ too much for shared types): episode-level, freshness-critical, and centered on shows the user does NOT already follow.
 
+- **People-first, two-tier** (see `docs/podcast-recs.md`). Tier 1 is the point: episodes where a followed **voice** (from the taste md's `## Voices` section, parsed by `voices.ts`) guests somewhere new. Discovery (`guests.ts`) is Podcast Index `byperson` first (free, structured, pre-resolved) then a Tavily person-search fallback for voices it missed (covers non-podcasters). Voices rotate `PODCAST_VOICE_ROTATION_MAX`/run via a persisted cursor (`nextVoiceBatch`). Tier 1 uses a default-include gate (`guestSelection.ts`) capped at `PODCAST_MAX_GUEST_PICKS` (bursts like book tours). Tier 2 is the original topic/drama shortlist→select, conservative and suppressed once Tier 1 delivers ≥3.
+- Drama/debate is a positive (Blocked-and-Reported anchor), handled prompt-side, not by filters. The line is bad-faith grift/rage-farming = out, gossip/beef/debate from sharp people = in.
 - Identity: shows are `itunes:{id}` (fallback `feed:{normalized url}`), episodes are `{showId}#{rss guid}` (`types.ts`).
 - Release dates are verified from the show's actual RSS feed in code — never trusted from search snippets or model output. Unverifiable candidates are dropped.
 - Hard recency window: episodes older than 7 days are ineligible (`filters.ts`).
@@ -359,6 +365,10 @@ PODCAST_RECS_SCHEDULE=0 0 11 * * 1,4    # Podcast recs cron (default Mon/Thu 11a
 PUSHOVER_PODCAST_TOKEN=xxx              # Optional: override for podcast notifications
 CASTRO_ACCESS_ID=xxx                    # Optional: Castro device credential UUID (subscriptions + history)
 CASTRO_SECRET_KEY=xxx                   # Optional: Castro device HMAC secret
+PODCASTINDEX_KEY=xxx                    # Optional: Podcast Index API key (guest-appearance discovery)
+PODCASTINDEX_SECRET=xxx                 # Optional: Podcast Index secret (QUOTE in .env — contains #)
+PODCAST_VOICE_ROTATION_MAX=12           # Optional: voices person-searched per run (rotates)
+PODCAST_MAX_GUEST_PICKS=6               # Optional: Tier-1 guest picks cap per run
 ```
 
 ## External Dependencies

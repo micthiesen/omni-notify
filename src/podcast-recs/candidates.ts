@@ -4,6 +4,7 @@ import PQueue from "p-queue";
 import type { PodcastAccountClient } from "./account.js";
 import { normalizeTitle } from "./filters.js";
 import { pickBestShowMatch, searchItunesPodcasts } from "./itunes.js";
+import type { PodcastIndexEpisode } from "./podcastindex/types.js";
 import { fetchFeedEpisodes, findEpisodeByTitle } from "./rss.js";
 import type { DiscoveredEpisode, EpisodeCandidate } from "./types.js";
 import { makeEpisodeId, makeShowId } from "./types.js";
@@ -98,6 +99,7 @@ async function resolveOne(
     showGenres: show.genres,
     discoveredVia: item.context,
     sourceUrl: item.sourceUrl,
+    matchedVoices: item.matchedVoices,
   };
 }
 
@@ -132,6 +134,41 @@ async function resolveShow(
     itunesId: match.itunesId,
     artworkUrl: match.artworkUrl,
     genres: [],
+  };
+}
+
+/**
+ * A Podcast Index episode is already fully resolved (feed URL, guid, enclosure,
+ * verified publish date), so it maps straight to a candidate — no iTunes/RSS
+ * round-trip needed. `voice` is the followed person whose byperson search
+ * surfaced it.
+ */
+export function podcastIndexToCandidate(
+  episode: PodcastIndexEpisode,
+  voice: string,
+): EpisodeCandidate | undefined {
+  const showId = makeShowId({
+    itunesId: episode.feedItunesId,
+    feedUrl: episode.feedUrl,
+  });
+  if (!showId) return undefined;
+  return {
+    episodeId: makeEpisodeId(showId, episode.guid),
+    showId,
+    showTitle: episode.feedTitle,
+    episodeTitle: episode.title,
+    feedUrl: episode.feedUrl,
+    itunesId: episode.feedItunesId,
+    artworkUrl: episode.artworkUrl,
+    episodeGuid: episode.guid,
+    mediaUrl: episode.enclosureUrl,
+    episodeUrl: episode.episodeUrl,
+    publishedAt: episode.publishedAt,
+    durationMinutes: episode.durationMinutes,
+    description: episode.description,
+    showGenres: [],
+    discoveredVia: `guest: ${voice} (Podcast Index)`,
+    matchedVoices: [voice],
   };
 }
 

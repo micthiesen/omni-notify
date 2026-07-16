@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computePodcastExclusions,
+  computeVoiceBatch,
   formatPodcastFeedbackDigestFrom,
   type PodcastRecommendationData,
   PodcastRecommendationStatus,
@@ -108,5 +109,43 @@ describe("formatPodcastFeedbackDigestFrom", () => {
     expect(formatPodcastFeedbackDigestFrom([])).toBe(
       "No explicit podcast feedback yet.",
     );
+  });
+});
+
+describe("computeVoiceBatch", () => {
+  const voices = ["A", "B", "C", "D", "E"];
+
+  it("returns all voices (cursor reset) when the list fits in one batch", () => {
+    expect(computeVoiceBatch(voices, 10, 3)).toEqual({
+      batch: ["A", "B", "C", "D", "E"],
+      nextCursor: 0,
+    });
+  });
+
+  it("returns a bounded batch and advances the cursor", () => {
+    expect(computeVoiceBatch(voices, 2, 0)).toEqual({
+      batch: ["A", "B"],
+      nextCursor: 2,
+    });
+    expect(computeVoiceBatch(voices, 2, 2)).toEqual({
+      batch: ["C", "D"],
+      nextCursor: 4,
+    });
+  });
+
+  it("wraps around and covers every voice across runs", () => {
+    let cursor = 0;
+    const seen = new Set<string>();
+    for (let run = 0; run < 3; run++) {
+      const { batch, nextCursor } = computeVoiceBatch(voices, 2, cursor);
+      for (const v of batch) seen.add(v);
+      cursor = nextCursor;
+    }
+    expect(seen).toEqual(new Set(voices));
+  });
+
+  it("handles empty voices and non-positive max", () => {
+    expect(computeVoiceBatch([], 3, 0).batch).toEqual([]);
+    expect(computeVoiceBatch(voices, 0, 0).batch).toEqual([]);
   });
 });

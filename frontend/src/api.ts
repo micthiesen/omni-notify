@@ -253,6 +253,7 @@ export interface PodcastRecommendation {
   };
   discoveredVia?: string;
   sourceUrl?: string;
+  matchedVoices?: string[];
   recommendedAt: number;
   notifiedAt?: number;
   queueResult?: PodcastQueueResult | null;

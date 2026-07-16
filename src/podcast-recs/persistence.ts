@@ -47,6 +47,8 @@ export type PodcastRecommendationData = {
   showGenres?: string[];
   discoveredVia?: string;
   sourceUrl?: string;
+  /** Followed voices featured as guests (Tier-1 guest-appearance picks). */
+  matchedVoices?: string[];
   shortlistScores?: {
     tasteMatch: number;
     novelty: number;
@@ -202,4 +204,46 @@ export function formatRecentRecommendationsDigest(limit = 15): string {
         `- ${r.showTitle} — ${r.episodeTitle} (${new Date(r.recommendedAt).toISOString().slice(0, 10)})`,
     ),
   ].join("\n");
+}
+
+/**
+ * Persisted cursor for rotating through the voices list. Person-searching every
+ * voice each run would be costly, so we cover a bounded batch per run and pick
+ * up where we left off next time.
+ */
+type PodcastRunStateData = { id: "singleton"; voiceCursor: number };
+
+const PodcastRunStateEntity = new Entity<PodcastRunStateData, ["id"]>(
+  "podcast-run-state",
+  ["id"],
+);
+
+/** Pure rotation core: the batch to search now and the cursor to store next. */
+export function computeVoiceBatch(
+  voices: string[],
+  max: number,
+  cursor: number,
+): { batch: string[]; nextCursor: number } {
+  if (voices.length === 0 || max <= 0) return { batch: [], nextCursor: cursor };
+  if (voices.length <= max) return { batch: [...voices], nextCursor: 0 };
+  const start = ((cursor % voices.length) + voices.length) % voices.length;
+  const batch: string[] = [];
+  for (let i = 0; i < max; i++) {
+    batch.push(voices[(start + i) % voices.length] as string);
+  }
+  return { batch, nextCursor: (start + max) % voices.length };
+}
+
+/**
+ * Returns the next batch of up to `max` voices to person-search this run and
+ * advances the persisted cursor (wrapping). Order-stable input → full coverage
+ * across runs.
+ */
+export function nextVoiceBatch(voices: string[], max: number): string[] {
+  const cursor = PodcastRunStateEntity.get({ id: "singleton" })?.voiceCursor ?? 0;
+  const { batch, nextCursor } = computeVoiceBatch(voices, max, cursor);
+  if (voices.length > max) {
+    PodcastRunStateEntity.upsert({ id: "singleton", voiceCursor: nextCursor });
+  }
+  return batch;
 }

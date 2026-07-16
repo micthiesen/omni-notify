@@ -40,6 +40,8 @@ export interface DiscoveredEpisode {
   context: string;
   /** Where it was being discussed, when known. */
   sourceUrl?: string;
+  /** Followed voices this episode features as guests, when guest-driven. */
+  matchedVoices?: string[];
 }
 
 /** A fully resolved candidate: identity, verified release date, metadata. */
@@ -63,4 +65,10 @@ export interface EpisodeCandidate {
   showGenres: string[];
   discoveredVia: string;
   sourceUrl?: string;
+  /**
+   * Followed voices (from the taste profile) appearing as guests on this
+   * episode. Non-empty marks a Tier-1 "guest of someone I follow" candidate,
+   * which the scorer boosts heavily and the pipeline near-auto-includes.
+   */
+  matchedVoices?: string[];
 }

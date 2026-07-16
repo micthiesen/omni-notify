@@ -31,6 +31,11 @@ const DISCOVERY_QUERIES: {
     query: "notable new podcast episode economics policy skepticism debate",
     timeRange: "week",
   },
+  {
+    query: "podcast drama beef debate media gossip this week discussed",
+    topic: "news",
+    timeRange: "week",
+  },
 ];
 
 const extractionSchema = z.object({

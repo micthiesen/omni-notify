@@ -130,6 +130,7 @@ function serializePodcastRecommendation(rec: PodcastRecommendationData) {
     shortlistScores: rec.shortlistScores ?? null,
     discoveredVia: rec.discoveredVia ?? null,
     sourceUrl: rec.sourceUrl ?? null,
+    matchedVoices: rec.matchedVoices ?? [],
     recommendedAt: rec.recommendedAt,
     notifiedAt: rec.notifiedAt ?? null,
     queueResult: rec.queueResult ?? null,
