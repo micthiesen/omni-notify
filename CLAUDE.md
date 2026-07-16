@@ -84,7 +84,7 @@ src/
 │   ├── shortlist.ts         # Cheap-model scoring, composite computed in code
 │   └── selection.ts         # Strong-model research (Tavily tools) + structured decision
 ├── podcast-recs/            # AI podcast-episode recommendations → Pushover
-│   ├── task.ts              # PodcastRecommendationTask (cron, default Mon/Thu 11am;
+│   ├── task.ts              # PodcastRecommendationTask (cron, default Mon/Wed/Fri 11am;
 │   │                        #   PODCAST_TASTE_PATH doubles as the feature flag)
 │   ├── pipeline.ts          # Two-tier: guest appearances (Tier 1) + topic/drama (Tier 2)
 │   │                        #   → verify → filter → gate/select → commit (pending→enqueue→notify)
@@ -361,7 +361,7 @@ TASTE_REFLECTION_SCHEDULE=0 0 4 * * 0    # Weekly taste reflection (Sunday 4am)
 RECS_SCHEDULE=0 0 17 * * 1,3,5          # Recommendation cron (default Mon/Wed/Fri 5pm)
 PUSHOVER_RECS_TOKEN=xxx                 # Optional: override for recommendation notifications
 PODCAST_TASTE_PATH=/path/to/taste.md    # Podcast listener profile (enables podcast recs)
-PODCAST_RECS_SCHEDULE=0 0 11 * * 1,4    # Podcast recs cron (default Mon/Thu 11am)
+PODCAST_RECS_SCHEDULE=0 0 11 * * 1,3,5  # Podcast recs cron (default Mon/Wed/Fri 11am)
 PUSHOVER_PODCAST_TOKEN=xxx              # Optional: override for podcast notifications
 CASTRO_ACCESS_ID=xxx                    # Optional: Castro device credential UUID (subscriptions + history)
 CASTRO_SECRET_KEY=xxx                   # Optional: Castro device HMAC secret

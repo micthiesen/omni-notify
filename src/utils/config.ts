@@ -56,7 +56,7 @@ const configSchema = baseConfigSchema
     RECS_SCHEDULE: z.string().optional().default("0 0 17 * * 1,3,5"),
     RECS_PUBLIC_URL: z.string().optional().default("http://omni.boris"),
     PUSHOVER_RECS_TOKEN: z.string().optional(),
-    PODCAST_RECS_SCHEDULE: z.string().optional().default("0 0 11 * * 1,4"),
+    PODCAST_RECS_SCHEDULE: z.string().optional().default("0 0 11 * * 1,3,5"),
     PODCAST_TASTE_PATH: z.string().optional(),
     PUSHOVER_PODCAST_TOKEN: z.string().optional(),
     CASTRO_ACCESS_ID: z.string().uuid().optional(),

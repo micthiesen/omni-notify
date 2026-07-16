@@ -99,7 +99,7 @@ See [the recommendation review checkpoint](docs/recommendations-review.md) for t
 
 ## Podcast Recommendations
 
-A sibling pipeline (default: Mon/Thu at 11am, enabled by setting `PODCAST_TASTE_PATH`) that recommends fresh podcast **episodes** from shows you don't already follow, and sends a Pushover notification per pick. It's **people-first**: the main goal is surfacing episodes where a voice you follow guests somewhere new (see [docs/podcast-recs.md](docs/podcast-recs.md)).
+A sibling pipeline (default: Mon/Wed/Fri at 11am, enabled by setting `PODCAST_TASTE_PATH`) that recommends fresh podcast **episodes** from shows you don't already follow, and sends a Pushover notification per pick. It's **people-first**: the main goal is surfacing episodes where a voice you follow guests somewhere new (see [docs/podcast-recs.md](docs/podcast-recs.md)).
 
 Each run:
 
@@ -180,7 +180,7 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `RECS_PUBLIC_URL` | No | Public/LAN Omni base URL used by notification links (default: `http://omni.boris`) |
 | `PUSHOVER_RECS_TOKEN` | No | Pushover token for recommendations (falls back to `PUSHOVER_TOKEN`) |
 | `PODCAST_TASTE_PATH` | No | Markdown listener profile (required to enable podcast recommendations) |
-| `PODCAST_RECS_SCHEDULE` | No | Podcast recommendation cron (default: `0 0 11 * * 1,4`) |
+| `PODCAST_RECS_SCHEDULE` | No | Podcast recommendation cron (default: `0 0 11 * * 1,3,5`) |
 | `PUSHOVER_PODCAST_TOKEN` | No | Pushover token for podcast recs (falls back to `PUSHOVER_TOKEN`) |
 | `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and hourly Inbox cleanup) |
 | `PODCASTINDEX_KEY` / `PODCASTINDEX_SECRET` | No | Podcast Index API (guest-appearance discovery; quote the secret — it contains `#`) |
