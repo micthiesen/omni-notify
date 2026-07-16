@@ -8,6 +8,7 @@ import { runRecommendationPipeline } from "./pipeline.js";
 export class RecommendationTask extends ScheduledTask {
   public readonly name = "Recommendations";
   public readonly schedule = config.RECS_SCHEDULE;
+  public override readonly runOnStartup = false;
 
   private logger: Logger;
   private lastRunSummary?: string;

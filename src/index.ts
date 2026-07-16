@@ -18,10 +18,12 @@ import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
 import { RecommendationTask } from "./recommendations/task.js";
 import { TasteReflectionTask } from "./recommendations/taste/task.js";
 import { startServer } from "./server.js";
+import { installLogCapture } from "./task-runs/logCapture.js";
 import { TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
 
 Injector.configure({ config });
+installLogCapture();
 migrateLegacyRecommendations();
 
 const logger = new Logger("Main");
@@ -111,7 +113,7 @@ if (!serverOnly) {
     logger.error("Failed to start JMAP features", (error as Error).message);
   }
 
-  // Start scheduler (runs tasks immediately, then on their schedules)
+  // Start scheduler (runs opted-in tasks immediately, then all tasks on schedule)
   scheduler.start();
 
   // Graceful shutdown handling

@@ -24,7 +24,7 @@
     "@ai-sdk/google": "^4.0.8",
     "@ai-sdk/openai": "^4.0.7",
     "@hono/node-server": "^2.0.8",
-    "@micthiesen/mitools": "^2.3.4",
+    "@micthiesen/mitools": "^2.4.0",
     "@mozilla/readability": "^0.6.0",
     "ai": "^7.0.15",
     "amazon-cognito-identity-js": "^6.3.18",

@@ -4,6 +4,11 @@ import cron, { type ScheduledTask as CronScheduledTask } from "node-cron";
 import PQueue from "p-queue";
 import { taskRunBus } from "./events.js";
 import {
+  finishRunLogCapture,
+  runWithLogCapture,
+  startRunLogCapture,
+} from "./logCapture.js";
+import {
   getLastRun,
   makeRunId,
   markInterruptedRuns,
@@ -111,9 +116,10 @@ export class TaskRegistry {
     await entry.queue.add(async () => {
       const run = recordRunStart(name, trigger, runId);
       this.running.add(name);
+      startRunLogCapture(run.runId, name);
       taskRunBus.emit({ type: "run-started", taskName: name });
       try {
-        await entry.task.run();
+        await runWithLogCapture(run.runId, () => entry.task.run());
         recordRunEnd(run.runId, {
           status: "success",
           summary: providesRunSummary(entry.task)
@@ -127,6 +133,8 @@ export class TaskRegistry {
         });
         throw error;
       } finally {
+        // After recordRunEnd, so log-stream clients see the settled status.
+        finishRunLogCapture(run.runId);
         this.running.delete(name);
         taskRunBus.emit({ type: "run-finished", taskName: name });
       }

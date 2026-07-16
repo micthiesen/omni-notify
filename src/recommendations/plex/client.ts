@@ -43,6 +43,7 @@ interface PlexMetadata {
   viewedLeafCount?: number;
   accountID?: number;
   grandparentRatingKey?: string;
+  grandparentKey?: string;
   grandparentGuid?: string;
   grandparentTitle?: string;
   grandparentYear?: number;
@@ -110,7 +111,11 @@ function mediaItem(
 }
 
 function seriesKey(metadata: PlexMetadata): string | undefined {
-  return metadata.grandparentRatingKey ?? metadata.grandparentGuid;
+  return (
+    metadata.grandparentRatingKey ??
+    metadata.grandparentKey?.match(/^\/library\/metadata\/(\d+)(?:\/|$)/)?.[1] ??
+    metadata.grandparentGuid
+  );
 }
 
 function episodeSeries(

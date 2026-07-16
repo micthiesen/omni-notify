@@ -84,14 +84,16 @@ src/
 │   ├── shortlist.ts         # Cheap-model scoring, composite computed in code
 │   └── selection.ts         # Strong-model research (Tavily tools) + structured decision
 ├── task-runs/               # Generic task-run tracking (powers the web UI)
-│   ├── persistence.ts       # TaskRunEntity (last 50 runs/task), interrupted-run repair
-│   ├── events.ts            # taskRunBus: run start/finish pub/sub (drives SSE pushes)
+│   ├── persistence.ts       # TaskRunEntity + TaskRunLogEntity (last 50 runs/task), interrupted-run repair
+│   ├── events.ts            # taskRunBus (run start/finish) + runLogBus (per-line log events)
+│   ├── logCapture.ts        # Logger.onLog tap + AsyncLocalStorage run attribution
 │   └── registry.ts          # TaskRegistry: tracked wrapper, manual runs, next-run times
 ├── emails/                  # Email utilities (general purpose)
 ├── tools/
 │   └── preview-server.ts    # Dev harness: real server + fake data for frontend work
 ├── server.ts                # Hono API (/api/tasks, /api/task-runs, /api/recommendations,
-│                            #   /api/pets, /api/streamers, /api/snapshot) + SSE (/api/events) + SPA
+│                            #   /api/pets, /api/streamers, /api/snapshot) + SSE (/api/events,
+│                            #   /api/task-runs/:runId/logs/stream) + SPA
 └── utils/
     └── config.ts            # Environment config with zod validation
 ```
@@ -216,6 +218,16 @@ History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
 - `LiveCheckTask` tracks consecutive unknowns per channel
 - Escalating log levels: debug (1-2) → warn (3-9) → error (10+)
 - Logger `warn`/`error` go to Pushover via @micthiesen/mitools
+
+### Task Run Logs
+
+Every log line emitted during a task run is captured and viewable in the web UI (click a task card's last-run line, a history row, or an activity row). How it works:
+
+- `installLogCapture()` (called at boot) sets the global `Logger.onLog` tap from mitools ≥2.4.0. The tap fires for **every** log call regardless of `LOG_LEVEL`, so DEBUG lines reach the UI while console/compose output still respects the threshold.
+- `TaskRegistry.execute` wraps `task.run()` in an `AsyncLocalStorage` context carrying the `runId`; the tap attributes lines to the active run (across awaits, sub-loggers, and concurrent tasks). Lines logged outside any run (server, JMAP pipelines) are ignored.
+- In-flight lines live in a per-run memory buffer (capped at 2000 lines / 4KB per line, oldest dropped) and are broadcast on `runLogBus`. On run end the buffer is persisted as one `TaskRunLogEntity` row, pruned alongside `TaskRunEntity`'s 50-runs-per-task retention.
+- API: `GET /api/task-runs/:runId/logs` (buffer if running, else stored row); `GET /api/task-runs/:runId/logs/stream` (SSE live tail: `init` replays the buffer, `line` frames follow, `done` carries the settled run). Logs never ride the dashboard snapshot stream.
+- Frontend: `LogViewer.tsx` modal — level filter chips (debug hidden by default), stick-to-bottom tailing, LIVE badge while streaming.
 
 ### Persistence
 

@@ -11,3 +11,6 @@ peerDependencyRules:
 
 patchedDependencies:
   jmap-rfc-types@0.1.3: patches/jmap-rfc-types@0.1.3.patch
+
+minimumReleaseAgeExclude:
+  - '@micthiesen/mitools@2.4.0'

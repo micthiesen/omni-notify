@@ -20,6 +20,24 @@ export interface TaskInfo {
   lastRun: TaskRun | null;
 }
 
+export type RunLogLevel = "debug" | "info" | "warn" | "error";
+
+export interface RunLogLine {
+  /** Epoch ms of the log call */
+  t: number;
+  level: RunLogLevel;
+  /** Logger name, e.g. "Main:LiveCheck" */
+  logger: string;
+  msg: string;
+}
+
+export interface RunLogs {
+  run: TaskRun;
+  lines: RunLogLine[];
+  /** Oldest lines dropped once the per-run cap was hit. */
+  dropped: number;
+}
+
 export interface StreamerBinding {
   platform: string;
   username: string;
@@ -241,6 +259,14 @@ export function fetchTaskRuns(options?: {
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
   return apiGet<{ runs: TaskRun[] }>(`/api/task-runs${query ? `?${query}` : ""}`);
+}
+
+export function fetchRunLogs(runId: string): Promise<RunLogs> {
+  return apiGet<RunLogs>(`/api/task-runs/${encodeURIComponent(runId)}/logs`);
+}
+
+export function runLogStreamUrl(runId: string): string {
+  return `/api/task-runs/${encodeURIComponent(runId)}/logs/stream`;
 }
 
 export function runTaskRequest(name: string): Promise<{ runId: string }> {

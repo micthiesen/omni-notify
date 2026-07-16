@@ -41,7 +41,7 @@ describe("PlexClient", () => {
             {
               type: "episode",
               ratingKey: "701",
-              grandparentRatingKey: "77",
+              grandparentKey: "/library/metadata/77",
               grandparentTitle: "A Show",
               duration: 100,
               viewOffset: 80,
@@ -51,7 +51,7 @@ describe("PlexClient", () => {
             {
               type: "episode",
               ratingKey: "702",
-              grandparentRatingKey: "77",
+              grandparentKey: "/library/metadata/77",
               grandparentTitle: "A Show",
               duration: 100,
               viewOffset: 100,

@@ -17,7 +17,7 @@ const MAX_WATCH_EVIDENCE = 160;
 export class TasteReflectionTask extends ScheduledTask {
   public readonly name = "TasteReflection";
   public readonly schedule = config.TASTE_REFLECTION_SCHEDULE;
-  public override readonly runOnStartup = true;
+  public override readonly runOnStartup = false;
 
   private lastRunSummary?: string;
   private readonly logger: Logger;

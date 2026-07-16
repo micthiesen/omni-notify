@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import type { LogLevel } from "@micthiesen/mitools/logging";
 
 export type TaskRunTrigger = "schedule" | "manual" | "startup";
 export type TaskRunStatus = "running" | "success" | "error";
@@ -16,6 +17,28 @@ export type TaskRunData = {
 };
 
 export const TaskRunEntity = new Entity<TaskRunData, ["runId"]>("task-run", ["runId"]);
+
+export type TaskRunLogLine = {
+  /** Epoch ms of the log call */
+  t: number;
+  level: LogLevel;
+  /** Logger name, e.g. "Main:LiveCheck" */
+  logger: string;
+  msg: string;
+};
+
+export type TaskRunLogData = {
+  runId: string;
+  taskName: string;
+  lines: TaskRunLogLine[];
+  /** Oldest lines dropped once the per-run cap was hit. */
+  dropped: number;
+};
+
+/** One row per finished run; written once at run end, pruned with the run. */
+export const TaskRunLogEntity = new Entity<TaskRunLogData, ["runId"]>("task-run-log", [
+  "runId",
+]);
 
 const KEEP_PER_TASK = 50;
 
@@ -82,6 +105,19 @@ export function getLastRun(taskName: string): TaskRunData | undefined {
   return getRuns(taskName, 1)[0];
 }
 
+export function getRun(runId: string): TaskRunData | undefined {
+  return TaskRunEntity.get({ runId });
+}
+
+export function saveRunLogs(data: TaskRunLogData): void {
+  if (data.lines.length === 0 && data.dropped === 0) return;
+  TaskRunLogEntity.upsert(data);
+}
+
+export function getRunLogs(runId: string): TaskRunLogData | undefined {
+  return TaskRunLogEntity.get({ runId });
+}
+
 /** Runs beyond the newest `keep` for their task, i.e. the ones to delete. */
 export function selectRunsToPrune(
   runs: TaskRunData[],
@@ -98,5 +134,6 @@ function pruneRuns(taskName: string): void {
   const stale = selectRunsToPrune(TaskRunEntity.getAll(), taskName, KEEP_PER_TASK);
   for (const run of stale) {
     TaskRunEntity.delete({ runId: run.runId });
+    TaskRunLogEntity.delete({ runId: run.runId });
   }
 }

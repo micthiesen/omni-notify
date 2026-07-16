@@ -22,14 +22,18 @@ import {
 import { TasteProfileEntity } from "../recommendations/taste/index.js";
 import { MediaType } from "../recommendations/types.js";
 import { startServer } from "../server.js";
+import { installLogCapture } from "../task-runs/logCapture.js";
 import { TaskRunEntity } from "../task-runs/persistence.js";
 import { TaskRegistry } from "../task-runs/registry.js";
 import config from "../utils/config.js";
 
 Injector.configure({ config });
+installLogCapture();
 const logger = new Logger("Preview");
 
 class FakeTask extends ScheduledTask {
+  private readonly taskLogger: Logger;
+
   public constructor(
     public readonly name: string,
     public readonly schedule: string,
@@ -38,11 +42,32 @@ class FakeTask extends ScheduledTask {
     private readonly fail = false,
   ) {
     super();
+    this.taskLogger = logger.extend(name);
   }
 
+  // Emits a spread of levels over the fake duration so the log viewer has
+  // something realistic to tail.
   public async run(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, this.durationMs));
-    if (this.fail) throw new Error("Simulated failure: upstream returned 503");
+    const steps = Math.max(3, Math.round(this.durationMs / 400));
+    this.taskLogger.info(`Starting ${this.name} (${steps} steps)`);
+    for (let i = 1; i <= steps; i++) {
+      await new Promise((resolve) => setTimeout(resolve, this.durationMs / steps));
+      if (i % 4 === 0) {
+        this.taskLogger.info(`Step ${i}/${steps}: fetched upstream page ${i}`);
+      } else if (i % 7 === 0) {
+        this.taskLogger.warn(`Step ${i}/${steps}: upstream slow, retrying`);
+      } else {
+        this.taskLogger.debug(`Step ${i}/${steps}: processed batch`, {
+          items: i * 3,
+        });
+      }
+    }
+    if (this.fail) {
+      // .warn, not .error: the error hook would send a real Pushover.
+      this.taskLogger.warn("Upstream returned 503 after retries, giving up");
+      throw new Error("Simulated failure: upstream returned 503");
+    }
+    this.taskLogger.info(`Finished ${this.name}`);
   }
 
   public getLastRunSummary(): string | undefined {

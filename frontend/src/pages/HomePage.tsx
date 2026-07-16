@@ -1,5 +1,8 @@
+import { useState } from "react";
+import type { TaskRun } from "../api";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { LiveNow } from "../components/LiveNow";
+import { LogViewer } from "../components/LogViewer";
 import { StatStrip } from "../components/StatStrip";
 import { TaskCard } from "../components/TaskCard";
 import { Toast, useToast } from "../components/Toast";
@@ -8,6 +11,7 @@ import { useLiveData } from "../live";
 export default function HomePage() {
   const { snapshot, error, runTask } = useLiveData();
   const { toast, showToast } = useToast();
+  const [logRun, setLogRun] = useState<TaskRun | null>(null);
 
   const handleRun = async (name: string) => {
     const result = await runTask(name);
@@ -45,7 +49,12 @@ export default function HomePage() {
         ) : (
           <div className="task-grid">
             {snapshot.tasks.map((task) => (
-              <TaskCard key={task.name} task={task} onRun={handleRun} />
+              <TaskCard
+                key={task.name}
+                task={task}
+                onRun={handleRun}
+                onViewLogs={setLogRun}
+              />
             ))}
           </div>
         )}
@@ -53,8 +62,10 @@ export default function HomePage() {
 
       <section className="page-section">
         <h2 className="section-title">Activity</h2>
-        <ActivityFeed snapshot={snapshot} />
+        <ActivityFeed snapshot={snapshot} onViewLogs={setLogRun} />
       </section>
+
+      {logRun && <LogViewer run={logRun} onClose={() => setLogRun(null)} />}
     </>
   );
 }

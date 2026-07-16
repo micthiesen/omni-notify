@@ -18,12 +18,23 @@ export function runDuration(run: TaskRun, now = Date.now()): string {
   return formatDuration(end - run.startedAt);
 }
 
-function LastRunSummary({ run }: { run: TaskRun | null }) {
+function LastRunSummary({
+  run,
+  onViewLogs,
+}: {
+  run: TaskRun | null;
+  onViewLogs: (run: TaskRun) => void;
+}) {
   if (!run) {
     return <div className="task-last-run muted">No runs yet</div>;
   }
   return (
-    <div className="task-last-run">
+    <button
+      type="button"
+      className="task-last-run row-btn"
+      onClick={() => onViewLogs(run)}
+      title="View logs"
+    >
       <div className="task-last-run-meta">
         <StatusDot status={run.status} />
         <span className={`run-status-text run-status-${run.status}`}>
@@ -37,18 +48,30 @@ function LastRunSummary({ run }: { run: TaskRun | null }) {
       </div>
       {run.error && <div className="run-error">{run.error}</div>}
       {!run.error && run.summary && <div className="run-summary">{run.summary}</div>}
-    </div>
+    </button>
   );
 }
 
-function HistoryList({ runs }: { runs: TaskRun[] }) {
+function HistoryList({
+  runs,
+  onViewLogs,
+}: {
+  runs: TaskRun[];
+  onViewLogs: (run: TaskRun) => void;
+}) {
   if (runs.length === 0) {
     return <div className="muted history-empty">No recorded runs.</div>;
   }
   return (
     <div className="history-list">
       {runs.map((run) => (
-        <div key={run.runId} className="history-row">
+        <button
+          key={run.runId}
+          type="button"
+          className="history-row row-btn"
+          onClick={() => onViewLogs(run)}
+          title="View logs"
+        >
           <StatusDot status={run.status} />
           <span className="history-time" title={formatAbsolute(run.startedAt)}>
             {formatRelative(run.startedAt)}
@@ -62,7 +85,7 @@ function HistoryList({ runs }: { runs: TaskRun[] }) {
               {run.error ?? run.summary}
             </span>
           )}
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -71,9 +94,11 @@ function HistoryList({ runs }: { runs: TaskRun[] }) {
 export function TaskCard({
   task,
   onRun,
+  onViewLogs,
 }: {
   task: TaskInfo;
   onRun: (name: string) => void;
+  onViewLogs: (run: TaskRun) => void;
 }) {
   const now = useNow(1000);
   const [expanded, setExpanded] = useState(false);
@@ -139,7 +164,7 @@ export function TaskCard({
           <span className="muted">not scheduled</span>
         )}
       </div>
-      <LastRunSummary run={task.lastRun} />
+      <LastRunSummary run={task.lastRun} onViewLogs={onViewLogs} />
       <button
         type="button"
         className="history-toggle"
@@ -156,7 +181,7 @@ export function TaskCard({
           {historyError && (
             <div className="error-inline history-empty">{historyError}</div>
           )}
-          {history !== null && <HistoryList runs={history} />}
+          {history !== null && <HistoryList runs={history} onViewLogs={onViewLogs} />}
         </div>
       )}
     </div>

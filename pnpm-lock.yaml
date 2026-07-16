@@ -24,8 +24,8 @@ importers:
         specifier: ^2.0.8
         version: 2.0.8(hono@4.12.27)
       '@micthiesen/mitools':
-        specifier: ^2.3.4
-        version: 2.3.4
+        specifier: ^2.4.0
+        version: 2.4.0
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
@@ -433,8 +433,8 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@micthiesen/mitools@2.3.4':
-    resolution: {integrity: sha512-jXCPt1K3YuN1VPr/2+k1rmYlbk6rjVqRS33WdcaEnBiI57RyQfoCboj61qvGgtKRMk5VB1TZLJdA8EdwfgTGQQ==}
+  '@micthiesen/mitools@2.4.0':
+    resolution: {integrity: sha512-50o5+2X1vh8xbUMvvZiVu0efsebT1VJWKpEwKYGpiITlYEeHix//9RiLbGX7Lj2EAgdlceie2LsR8k46RlUJZQ==}
     engines: {node: 24.14.0, pnpm: 10.28.2}
 
   '@mixmark-io/domino@2.2.0':
@@ -1425,10 +1425,6 @@ packages:
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
 
-  picomatch@4.0.4:
-    resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
-    engines: {node: '>=12'}
-
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
@@ -2039,7 +2035,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@micthiesen/mitools@2.3.4':
+  '@micthiesen/mitools@2.4.0':
     dependencies:
       better-sqlite3: 12.11.1
       cbor: 10.0.12
@@ -2581,10 +2577,6 @@ snapshots:
 
   fast-uri@3.1.3: {}
 
-  fdir@6.5.0(picomatch@4.0.4):
-    optionalDependencies:
-      picomatch: 4.0.4
-
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
@@ -2921,8 +2913,6 @@ snapshots:
 
   picocolors@1.1.1: {}
 
-  picomatch@4.0.4: {}
-
   picomatch@4.0.5: {}
 
   pkg-up@3.1.0:
@@ -3133,8 +3123,8 @@ snapshots:
 
   tinyglobby@0.2.17:
     dependencies:
-      fdir: 6.5.0(picomatch@4.0.4)
-      picomatch: 4.0.4
+      fdir: 6.5.0(picomatch@4.0.5)
+      picomatch: 4.0.5
 
   tinyrainbow@3.1.0: {}
 
@@ -3207,7 +3197,7 @@ snapshots:
   vite@8.1.3(@types/node@24.13.2)(esbuild@0.28.1)(tsx@4.23.0):
     dependencies:
       lightningcss: 1.32.0
-      picomatch: 4.0.4
+      picomatch: 4.0.5
       postcss: 8.5.16
       rolldown: 1.1.4
       tinyglobby: 0.2.17
@@ -3220,7 +3210,7 @@ snapshots:
   vite@8.1.3(@types/node@25.9.3)(esbuild@0.28.1)(tsx@4.23.0):
     dependencies:
       lightningcss: 1.32.0
-      picomatch: 4.0.4
+      picomatch: 4.0.5
       postcss: 8.5.16
       rolldown: 1.1.4
       tinyglobby: 0.2.17

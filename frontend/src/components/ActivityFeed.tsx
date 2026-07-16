@@ -35,12 +35,23 @@ export function groupRuns(runs: TaskRun[]): ActivityGroup[] {
   return groups;
 }
 
-function GroupRow({ group }: { group: ActivityGroup }) {
+function GroupRow({
+  group,
+  onViewLogs,
+}: {
+  group: ActivityGroup;
+  onViewLogs: (run: TaskRun) => void;
+}) {
   const newest = group.runs[0];
   const oldest = group.runs[group.runs.length - 1];
   const count = group.runs.length;
   return (
-    <div className="activity-row">
+    <button
+      type="button"
+      className="activity-row row-btn"
+      onClick={() => onViewLogs(newest)}
+      title="View logs"
+    >
       <StatusDot status={newest.status} />
       <span className="activity-task">{newest.taskName}</span>
       {count > 1 && (
@@ -63,11 +74,17 @@ function GroupRow({ group }: { group: ActivityGroup }) {
           {newest.error ?? newest.summary}
         </span>
       )}
-    </div>
+    </button>
   );
 }
 
-export function ActivityFeed({ snapshot }: { snapshot: Snapshot }) {
+export function ActivityFeed({
+  snapshot,
+  onViewLogs,
+}: {
+  snapshot: Snapshot;
+  onViewLogs: (run: TaskRun) => void;
+}) {
   const [filterTask, setFilterTask] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(false);
   const [fetched, setFetched] = useState<TaskRun[] | null>(null);
@@ -148,7 +165,7 @@ export function ActivityFeed({ snapshot }: { snapshot: Snapshot }) {
       {visible !== null && visible.length > 0 && (
         <div className="activity-list">
           {visible.map((group) => (
-            <GroupRow key={group.key} group={group} />
+            <GroupRow key={group.key} group={group} onViewLogs={onViewLogs} />
           ))}
         </div>
       )}

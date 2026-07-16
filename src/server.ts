@@ -21,8 +21,14 @@ import {
   setRecommendationFeedback,
 } from "./recommendations/persistence.js";
 import { getLatestTasteProfile } from "./recommendations/taste/index.js";
-import { taskRunBus } from "./task-runs/events.js";
-import { getRuns, type TaskRunData } from "./task-runs/persistence.js";
+import { runLogBus, taskRunBus } from "./task-runs/events.js";
+import { getActiveRunLogs } from "./task-runs/logCapture.js";
+import {
+  getRun,
+  getRunLogs,
+  getRuns,
+  type TaskRunData,
+} from "./task-runs/persistence.js";
 import {
   TaskAlreadyRunningError,
   TaskNotFoundError,
@@ -278,6 +284,86 @@ export function startServer(
     const limit =
       Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : 50;
     return c.json({ runs: getRuns(task || undefined, limit).map(serializeRun) });
+  });
+
+  // In-flight runs read from the live capture buffer, finished runs from the
+  // persisted row (absent when the run logged nothing or predates capture).
+  const collectRunLogs = (runId: string) =>
+    getActiveRunLogs(runId) ?? getRunLogs(runId) ?? { lines: [], dropped: 0 };
+
+  app.get("/api/task-runs/:runId/logs", (c) => {
+    const runId = c.req.param("runId");
+    const run = getRun(runId);
+    if (!run) return c.json({ error: "Unknown run" }, 404);
+    const logs = collectRunLogs(runId);
+    return c.json({ run: serializeRun(run), lines: logs.lines, dropped: logs.dropped });
+  });
+
+  // Live log tail for one run, opened on demand while a log viewer is up:
+  // an "init" frame replaying what's buffered so far, "line" frames as the
+  // task logs, and a "done" frame carrying the settled run. For finished runs
+  // init and done arrive back to back. Reconnects are safe: init re-sends the
+  // full buffer and the client replaces (not appends) its state.
+  app.get("/api/task-runs/:runId/logs/stream", (c) => {
+    const runId = c.req.param("runId");
+    const run = getRun(runId);
+    if (!run) return c.json({ error: "Unknown run" }, 404);
+    c.header("X-Accel-Buffering", "no");
+    return streamSSE(c, async (stream) => {
+      let eventId = 0;
+      let queue: Promise<void> = Promise.resolve();
+      const enqueue = (frame: Parameters<typeof stream.writeSSE>[0]) => {
+        queue = queue.then(() => stream.writeSSE(frame)).catch(() => {});
+      };
+      let resolveDone!: () => void;
+      const done = new Promise<void>((resolve) => {
+        resolveDone = resolve;
+      });
+      const sendDone = () => {
+        const settled = getRun(runId) ?? run;
+        enqueue({
+          event: "done",
+          data: JSON.stringify(serializeRun(settled)),
+          id: String(eventId++),
+        });
+        resolveDone();
+      };
+      const unsubscribe = runLogBus.subscribe((event) => {
+        if (event.runId !== runId) return;
+        if (event.type === "line") {
+          enqueue({
+            event: "line",
+            data: JSON.stringify(event.line),
+            id: String(eventId++),
+          });
+        } else {
+          sendDone();
+        }
+      });
+      // Same synchronous block as the subscribe above, so no line can slip
+      // between the snapshot and the subscription.
+      const logs = collectRunLogs(runId);
+      enqueue({
+        event: "init",
+        data: JSON.stringify({
+          run: serializeRun(run),
+          lines: logs.lines,
+          dropped: logs.dropped,
+        }),
+        id: String(eventId++),
+      });
+      if (run.status !== "running") sendDone();
+      const pingTimer = setInterval(
+        () => enqueue({ event: "ping", data: String(Date.now()) }),
+        SSE_HEARTBEAT_MS,
+      );
+      stream.onAbort(() => resolveDone());
+      await done;
+      clearInterval(pingTimer);
+      unsubscribe();
+      // Flush queued frames (the final "done") before the stream closes.
+      await queue;
+    });
   });
 
   app.get("/api/recommendations", (c) => {
