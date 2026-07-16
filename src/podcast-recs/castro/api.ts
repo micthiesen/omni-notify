@@ -1,4 +1,5 @@
 import got from "got";
+import PQueue from "p-queue";
 import type { z } from "zod";
 import { type CastroCredentials, createCastroAuthHeaders } from "./auth.js";
 import {
@@ -31,6 +32,14 @@ const CASTRO_ORIGIN = "https://tentacles.castro.fm";
 const CASTRO_ACCEPT = "application/vnd.tentacles.supertop.co+json; version=8";
 const CASTRO_USER_AGENT = "Castro/2396 CFNetwork/3890.100.1 Darwin/27.0.0";
 
+// Global pacing so we stay a well-behaved client regardless of which method
+// fans out. Every request (including nested per-episode fetches) funnels
+// through one queue, capping both simultaneous connections and requests per
+// second. Values sit comfortably under what a power user's app would burst.
+const MAX_CONCURRENT_REQUESTS = 4;
+const MAX_REQUESTS_PER_INTERVAL = 8;
+const RATE_INTERVAL_MS = 1000;
+
 export function encodeCastroQueryValue(value: string): string {
   return encodeURIComponent(value).replace(
     /[!'()*]/g,
@@ -47,6 +56,12 @@ interface CastroRequestOptions<T> {
 
 /** Low-level client for the observed Castro Tentacles protocol. */
 export class CastroApi {
+  private readonly queue = new PQueue({
+    concurrency: MAX_CONCURRENT_REQUESTS,
+    interval: RATE_INTERVAL_MS,
+    intervalCap: MAX_REQUESTS_PER_INTERVAL,
+  });
+
   public constructor(private readonly credentials: CastroCredentials) {}
 
   public async getSyncStatus(): Promise<CastroSyncStatus> {
@@ -150,26 +165,34 @@ export class CastroApi {
   ): Promise<T> {
     const method = options.method ?? "GET";
     const body = options.body === undefined ? "" : JSON.stringify(options.body);
-    const date = new Date().toUTCString();
-    const authHeaders = createCastroAuthHeaders(this.credentials, {
-      method,
-      pathAndQuery,
-      date,
-      body,
-    });
 
-    const response = await got(`${CASTRO_ORIGIN}${pathAndQuery}`, {
-      method,
-      body: method === "POST" ? body : undefined,
-      headers: {
-        ...authHeaders,
-        Accept: CASTRO_ACCEPT,
-        "User-Agent": CASTRO_USER_AGENT,
-        "X-Tentacles-App": "castro-ios",
-        "X-Tentacles-Platform": "iOS",
-      },
-      retry: { limit: method === "GET" ? 2 : 0 },
-      timeout: { request: 15_000 },
+    // Sign inside the queued task, not before it: the HMAC covers the Date
+    // header, and under queue backlog the send can be seconds behind enqueue.
+    // Computing the date at send time keeps the signature's Date honest.
+    // POST retry is 0 — writes to /profile/sync/actions are non-idempotent at
+    // the HTTP level; got already excludes POST from its default retry methods,
+    // so this is belt-and-suspenders against a future default change.
+    const response = await this.queue.add(() => {
+      const date = new Date().toUTCString();
+      const authHeaders = createCastroAuthHeaders(this.credentials, {
+        method,
+        pathAndQuery,
+        date,
+        body,
+      });
+      return got(`${CASTRO_ORIGIN}${pathAndQuery}`, {
+        method,
+        body: method === "POST" ? body : undefined,
+        headers: {
+          ...authHeaders,
+          Accept: CASTRO_ACCEPT,
+          "User-Agent": CASTRO_USER_AGENT,
+          "X-Tentacles-App": "castro-ios",
+          "X-Tentacles-Platform": "iOS",
+        },
+        retry: { limit: method === "GET" ? 2 : 0 },
+        timeout: { request: 15_000 },
+      });
     });
 
     if (options.emptyResponse) return undefined as T;

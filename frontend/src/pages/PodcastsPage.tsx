@@ -112,7 +112,7 @@ function PodcastCard({
         )}
         <div className="rec-meta">
           <span>Released {formatDateOnly(rec.publishedAt)}</span>
-          {rec.durationMinutes !== undefined && (
+          {rec.durationMinutes != null && (
             <span className="muted">
               &middot; {formatEpisodeDuration(rec.durationMinutes)}
             </span>

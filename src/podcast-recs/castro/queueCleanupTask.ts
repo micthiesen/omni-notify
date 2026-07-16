@@ -16,6 +16,9 @@ export class CastroQueueCleanupTask extends ScheduledTask {
   public readonly name = "CastroQueueCleanup";
   public readonly schedule = "0 * * * *";
   public override readonly runOnStartup = false;
+  // Drift off the exact top of the hour — an on-the-dot hourly hit is the most
+  // obvious "this is a bot" signature.
+  public override readonly jitterMs = 5 * 60 * 1000;
 
   private lastRunSummary?: string;
 

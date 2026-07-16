@@ -127,8 +127,13 @@ export interface PodcastAccountClient {
   /**
    * Playback history, newest first. Completion fractions power outcome
    * labeling (listened ≥80% vs abandoned), so include them when available.
+   *
+   * `sinceMs` (epoch) bounds how far back to look. Callers should pass the
+   * tightest window they can — resolving every episode's metadata is the
+   * heaviest thing this client does, so a narrow window keeps us a
+   * well-behaved API consumer. Omitted means the implementation's default.
    */
-  fetchListenHistory(): Promise<FetchResult<ListenedEpisode[]>>;
+  fetchListenHistory(sinceMs?: number): Promise<FetchResult<ListenedEpisode[]>>;
   fetchQueue(): Promise<FetchResult<QueuedEpisode[]>>;
   searchPodcasts(query: string): Promise<FetchResult<PodcastSearchResult[]>>;
   searchEpisodes(query: string): Promise<FetchResult<PodcastEpisodeSearchResult[]>>;

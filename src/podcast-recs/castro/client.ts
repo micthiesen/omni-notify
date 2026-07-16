@@ -25,6 +25,7 @@ import {
   type CastroEpisode,
   type CastroPodcast,
   type CastroPodcastSearchResult,
+  type CastroProfileSubscription,
 } from "./protocol.js";
 
 const HISTORY_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
@@ -38,6 +39,7 @@ export class CastroClient implements PodcastAccountClient {
     string,
     Promise<CastroPodcastSearchResult[]>
   >();
+  private subscriptionsCache?: Promise<CastroProfileSubscription[]>;
   private nextActionId = Date.now();
 
   public constructor(
@@ -45,9 +47,22 @@ export class CastroClient implements PodcastAccountClient {
     private readonly logger: Logger,
   ) {}
 
+  // Subscriptions are read by fetchSubscriptions, fetchListenHistory, and
+  // subscribeToShow; memoize for the client's (per-run) lifetime so a single
+  // run makes one GET /profile/subscriptions instead of several.
+  private getSubscriptions(): Promise<CastroProfileSubscription[]> {
+    if (this.subscriptionsCache) return this.subscriptionsCache;
+    const pending = this.api.fetchSubscriptions().catch((error) => {
+      this.subscriptionsCache = undefined;
+      throw error;
+    });
+    this.subscriptionsCache = pending;
+    return pending;
+  }
+
   public async fetchSubscriptions(): Promise<FetchResult<PodcastSubscription[]>> {
     try {
-      const subscriptions = await this.api.fetchSubscriptions();
+      const subscriptions = await this.getSubscriptions();
       const podcasts = await mapConcurrent(
         subscriptions,
         READ_CONCURRENCY,
@@ -74,9 +89,11 @@ export class CastroClient implements PodcastAccountClient {
     }
   }
 
-  public async fetchListenHistory(): Promise<FetchResult<ListenedEpisode[]>> {
+  public async fetchListenHistory(
+    sinceMs?: number,
+  ): Promise<FetchResult<ListenedEpisode[]>> {
     try {
-      const subscriptions = await this.api.fetchSubscriptions();
+      const subscriptions = await this.getSubscriptions();
       const states = await mapConcurrent(
         subscriptions,
         READ_CONCURRENCY,
@@ -88,7 +105,13 @@ export class CastroClient implements PodcastAccountClient {
           return { podcast, state };
         },
       );
-      const cutoff = Date.now() - HISTORY_WINDOW_MS;
+      // Never look back further than the caller asked; default to the full
+      // window. Resolving each episode's metadata is the heaviest call this
+      // client makes, so a tight cutoff keeps request volume low.
+      const cutoff = Math.max(
+        Date.now() - HISTORY_WINDOW_MS,
+        sinceMs ?? Number.NEGATIVE_INFINITY,
+      );
       const recent = states.flatMap(({ podcast, state }) =>
         state.episode_states
           .filter(
@@ -244,7 +267,7 @@ export class CastroClient implements PodcastAccountClient {
     try {
       const resolved = await this.resolvePodcast(request);
       if (!resolved) return "not_found";
-      const subscriptions = await this.api.fetchSubscriptions();
+      const subscriptions = await this.getSubscriptions();
       if (
         subscriptions.some(
           (subscription) => subscription.podcast_id === resolved.tentacles_id,
@@ -432,6 +455,22 @@ async function mapConcurrent<T, R>(
   return results;
 }
 
+// One CastroApi (and thus one rate-limit queue) for the whole process. The
+// recommendation pipeline builds a fresh client per run and the cleanup task
+// holds a long-lived one; sharing the underlying API means every request from
+// either — including runs that overlap — funnels through a single pacing
+// queue, so the per-second/concurrency caps are actually enforced device-wide.
+// Only the HTTP layer is shared; each CastroClient keeps its own (per-run)
+// metadata caches so a long-lived instance never serves a stale episode list.
+let sharedApi: CastroApi | undefined;
+
+function sharedCastroApi(accessId: string, secret: string): CastroApi {
+  if (!sharedApi) {
+    sharedApi = new CastroApi({ accessId, secret: Buffer.from(secret, "utf8") });
+  }
+  return sharedApi;
+}
+
 /** Returns the configured Castro client, or null when no credentials are set. */
 export function createCastroClient(logger: Logger): PodcastAccountClient | null {
   const { CASTRO_ACCESS_ID: accessId, CASTRO_SECRET_KEY: secret } = config;
@@ -440,8 +479,5 @@ export function createCastroClient(logger: Logger): PodcastAccountClient | null 
     logger.warn("Castro requires both CASTRO_ACCESS_ID and CASTRO_SECRET_KEY");
     return null;
   }
-  return new CastroClient(
-    new CastroApi({ accessId, secret: Buffer.from(secret, "utf8") }),
-    logger,
-  );
+  return new CastroClient(sharedCastroApi(accessId, secret), logger);
 }

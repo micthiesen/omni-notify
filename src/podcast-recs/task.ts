@@ -13,6 +13,9 @@ export class PodcastRecommendationTask extends ScheduledTask {
   public readonly name = "PodcastRecs";
   public readonly schedule = config.PODCAST_RECS_SCHEDULE;
   public override readonly runOnStartup = false;
+  // Fire a few minutes off the scheduled instant so we don't hit Castro at a
+  // predictable round time.
+  public override readonly jitterMs = 5 * 60 * 1000;
 
   private logger: Logger;
   private lastRunSummary?: string;

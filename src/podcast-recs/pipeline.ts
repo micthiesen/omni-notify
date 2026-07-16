@@ -17,6 +17,7 @@ import {
   getOpenPodcastRecommendations,
   getPodcastExclusions,
   type PodcastQueueResult,
+  type PodcastRecommendationData,
   PodcastRecommendationEntity,
   PodcastRecommendationStatus,
 } from "./persistence.js";
@@ -34,6 +35,8 @@ import type { EpisodeCandidate } from "./types.js";
 const STALE_PENDING_MS = 60 * 60 * 1000;
 export const MAX_PODCAST_RECOMMENDATIONS_PER_RUN = 5;
 const FINALISTS_PER_REQUESTED_PICK = 2;
+/** Small cushion before the oldest open delivery, for timestamp skew. */
+const LISTEN_HISTORY_BUFFER_MS = 24 * 60 * 60 * 1000;
 
 export interface PodcastPipelineOptions {
   dryRun?: boolean;
@@ -183,16 +186,18 @@ async function syncOutcomes(
   logFile?: LogFile,
 ): Promise<void> {
   if (!account) return;
-  const history = await account.fetchListenHistory();
+  const open = getOpenPodcastRecommendations();
+  // Outcome labeling is the only consumer of listen history, and it only acts
+  // on open recommendations. With none open, the (expensive) history read is
+  // pure waste — skip it entirely.
+  if (open.length === 0) return;
+
+  const history = await account.fetchListenHistory(listenHistorySince(open));
   if (history.status === "unavailable") {
     logger.warn(`Listen history unavailable (${history.reason}); skipping outcomes`);
     return;
   }
-  const changes = decideEpisodeOutcomes(
-    getOpenPodcastRecommendations(),
-    history.value,
-    Date.now(),
-  );
+  const changes = decideEpisodeOutcomes(open, history.value, Date.now());
   for (const change of changes) {
     PodcastRecommendationEntity.patch(
       { recommendationId: change.recommendationId },
@@ -206,6 +211,29 @@ async function syncOutcomes(
       changes.map((c) => `- ${c.episodeId} → ${c.status} (${c.reason})`).join("\n"),
     );
   }
+}
+
+/**
+ * Listen-history look-back cutoff: just before the oldest open delivery, so
+ * the window always covers every open recommendation's post-delivery activity.
+ *
+ * It must NOT be capped shorter than the oldest delivery — a cutoff that
+ * post-dates a delivery hides real playback and mislabels a listened episode
+ * as ignored. Under gap-free polling the oldest open rec is only ~30-44 days
+ * old; a longer window only occurs after a sync gap (e.g. a Castro outage),
+ * where fetching the backlog to label it correctly is exactly what we want.
+ * The Castro client's own 180-day window (`HISTORY_WINDOW_MS`) is the only
+ * hard bound.
+ */
+export function listenHistorySince(
+  open: PodcastRecommendationData[],
+  now = Date.now(),
+): number {
+  if (open.length === 0) return now;
+  const oldestDelivery = Math.min(
+    ...open.map((rec) => rec.notifiedAt ?? rec.recommendedAt),
+  );
+  return oldestDelivery - LISTEN_HISTORY_BUFFER_MS;
 }
 
 /**

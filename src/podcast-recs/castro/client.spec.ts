@@ -156,6 +156,135 @@ function enqueueRequest(
   };
 }
 
+describe("CastroClient.fetchListenHistory", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const iso = (msAgo: number) => new Date(Date.now() - msAgo).toISOString();
+  const EP_PLAYED = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const EP_PARTIAL = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const EP_OLD = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+  function historyApi(episodeStates: unknown[]) {
+    const episodes: Record<string, unknown> = {
+      [EP_PLAYED]: {
+        public_id: EP_PLAYED,
+        guid: "guid-played",
+        title: "Played Ep",
+        media_url: "u1",
+        duration: { seconds: 1000 },
+        description: "",
+      },
+      [EP_PARTIAL]: {
+        public_id: EP_PARTIAL,
+        guid: "guid-partial",
+        title: "Partial Ep",
+        media_url: "u2",
+        duration: { seconds: 100 },
+        description: "",
+      },
+      [EP_OLD]: {
+        public_id: EP_OLD,
+        guid: "guid-old",
+        title: "Old Ep",
+        media_url: "u3",
+        duration: { seconds: 100 },
+        description: "",
+      },
+    };
+    return {
+      fetchSubscriptions: vi.fn(async () => [
+        { podcast_id: PODCAST_ID, private: false, will_notify_device: true },
+      ]),
+      fetchPodcast: vi.fn(async () => ({
+        public_id: PODCAST_ID,
+        title: "Example Podcast",
+        episodes: [],
+      })),
+      fetchPodcastState: vi.fn(async () => ({
+        podcast_id: PODCAST_ID,
+        episode_states: episodeStates,
+      })),
+      fetchEpisode: vi.fn(async (id: string) => episodes[id]),
+    };
+  }
+
+  it("computes completion and honors the sinceMs cutoff", async () => {
+    const api = historyApi([
+      {
+        episode_id: EP_PLAYED,
+        is_new: false,
+        is_starred: true,
+        is_played: true,
+        last_played: iso(2 * DAY),
+        progress_seconds: 0,
+      },
+      {
+        episode_id: EP_PARTIAL,
+        is_new: false,
+        is_starred: false,
+        is_played: false,
+        last_played: iso(2 * DAY),
+        progress_seconds: 30,
+      },
+      {
+        episode_id: EP_OLD,
+        is_new: false,
+        is_starred: false,
+        is_played: false,
+        last_played: iso(100 * DAY),
+        progress_seconds: 10,
+      },
+    ]);
+    const client = new CastroClient(api as unknown as CastroApi, logger);
+
+    const result = await client.fetchListenHistory(Date.now() - 10 * DAY);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    // The 100-day-old play is excluded by the cutoff.
+    expect(result.value).toHaveLength(2);
+    const played = result.value.find((e) => e.episodeGuid === "guid-played");
+    const partial = result.value.find((e) => e.episodeGuid === "guid-partial");
+    expect(played?.completion).toBe(1);
+    expect(played?.starred).toBe(true);
+    expect(partial?.completion).toBeCloseTo(0.3);
+  });
+
+  it("clamps completion to 1 when progress exceeds duration", async () => {
+    const api = historyApi([
+      {
+        episode_id: EP_PARTIAL,
+        is_new: false,
+        is_starred: false,
+        is_played: false,
+        last_played: iso(DAY),
+        progress_seconds: 500,
+      },
+    ]);
+    const client = new CastroClient(api as unknown as CastroApi, logger);
+
+    const result = await client.fetchListenHistory();
+    if (result.status !== "ok") throw new Error("expected ok");
+    expect(result.value[0]?.completion).toBe(1);
+  });
+
+  it("skips episodes that were never played (null last_played)", async () => {
+    const api = historyApi([
+      {
+        episode_id: EP_PLAYED,
+        is_new: true,
+        is_starred: false,
+        is_played: false,
+        last_played: null,
+        progress_seconds: 0,
+      },
+    ]);
+    const client = new CastroClient(api as unknown as CastroApi, logger);
+
+    const result = await client.fetchListenHistory();
+    if (result.status !== "ok") throw new Error("expected ok");
+    expect(result.value).toHaveLength(0);
+  });
+});
+
 describe("normalizeMediaUrl", () => {
   it("ignores protocol and query params", () => {
     expect(normalizeMediaUrl("HTTPS://cdn.x.com/a/ep.mp3?token=1")).toBe(
