@@ -5,17 +5,54 @@ import {
   fetchDataRows,
   type DataEntity,
   type DataRow,
+  type DataStorageSummary,
   type DataValue,
 } from "../api";
 import { Toast, useToast } from "../components/Toast";
 
 type SortDirection = "asc" | "desc";
 
+const MALFORMED_ROW_KEY = "__dataManagerMalformed";
+
+type MalformedRowMetadata = {
+  rawKey: string;
+  error: string;
+};
+
+function getMalformedMetadata(row: DataRow): MalformedRowMetadata | null {
+  const value = row[MALFORMED_ROW_KEY];
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    typeof value.rawKey !== "string" ||
+    typeof value.error !== "string"
+  ) {
+    return null;
+  }
+  return { rawKey: value.rawKey, error: value.error };
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = units[0];
+  for (const next of units.slice(1)) {
+    if (value < 1024) break;
+    value /= 1024;
+    unit = next;
+  }
+  return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
+}
+
 function json(value: DataValue | DataRow): string {
   return JSON.stringify(value);
 }
 
 function keyFor(row: DataRow, primaryKey: string[]): DataRow {
+  const malformed = getMalformedMetadata(row);
+  if (malformed) return { [MALFORMED_ROW_KEY]: malformed };
   return Object.fromEntries(primaryKey.map((property) => [property, row[property]]));
 }
 
@@ -117,6 +154,7 @@ function RowDetail({
 
 export default function DataPage() {
   const [entities, setEntities] = useState<DataEntity[]>([]);
+  const [storage, setStorage] = useState<DataStorageSummary | null>(null);
   const [selectedSlug, setSelectedSlug] = useState<string>("");
   const [rows, setRows] = useState<DataRow[]>([]);
   const [loadingEntities, setLoadingEntities] = useState(true);
@@ -133,9 +171,10 @@ export default function DataPage() {
   useEffect(() => {
     let cancelled = false;
     void fetchDataEntities()
-      .then(({ entities: fetched }) => {
+      .then(({ entities: fetched, storage: fetchedStorage }) => {
         if (cancelled) return;
         setEntities(fetched);
+        setStorage(fetchedStorage);
         setSelectedSlug((current) => current || fetched[0]?.slug || "");
         setError(null);
       })
@@ -191,12 +230,20 @@ export default function DataPage() {
       }
     }
     const rest = [...frequency.keys()]
-      .filter((property) => !selected.primaryKey.includes(property))
+      .filter(
+        (property) =>
+          !selected.primaryKey.includes(property) &&
+          property !== MALFORMED_ROW_KEY,
+      )
       .sort(
         (a, b) =>
           (frequency.get(b) ?? 0) - (frequency.get(a) ?? 0) || a.localeCompare(b),
       );
-    return [...selected.primaryKey, ...rest];
+    return [
+      ...selected.primaryKey,
+      ...(frequency.has(MALFORMED_ROW_KEY) ? [MALFORMED_ROW_KEY] : []),
+      ...rest,
+    ];
   }, [rows, selected]);
 
   const visibleRows = useMemo(() => {
@@ -225,7 +272,7 @@ export default function DataPage() {
   const deleteRow = async (row: DataRow) => {
     if (!selected) return;
     const key = keyFor(row, selected.primaryKey);
-    const label = json(key);
+    const label = getMalformedMetadata(row)?.rawKey ?? json(key);
     if (
       !window.confirm(
         `Delete ${selected.label} row ${label}? This cannot be undone.`,
@@ -251,6 +298,12 @@ export default function DataPage() {
       );
       setDetailRow(null);
       showToast("Row deleted", "info");
+      void fetchDataEntities()
+        .then(({ entities: fetched, storage: fetchedStorage }) => {
+          setEntities(fetched);
+          setStorage(fetchedStorage);
+        })
+        .catch(() => {});
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : "Failed to delete row",
@@ -273,14 +326,34 @@ export default function DataPage() {
             Browse and remove records stored by mitools Entities.
           </p>
         </div>
-        <button
-          className="run-btn"
-          type="button"
-          onClick={() => void loadRows()}
-          disabled={loadingRows}
-        >
-          {loadingRows ? "Refreshing…" : "Refresh"}
-        </button>
+        <div className="data-header-actions">
+          {storage && (
+            <div className="data-storage-summary">
+              <span title="SQLite allocated pages, including relational tables and indexes">
+                <strong>{formatBytes(storage.databaseSizeBytes)}</strong> database
+              </span>
+              <span title="Encoded payload bytes across registered mitools Entities">
+                <strong>{formatBytes(storage.entityStorageBytes)}</strong> entities
+              </span>
+            </div>
+          )}
+          <button
+            className="run-btn"
+            type="button"
+            onClick={() => {
+              void loadRows();
+              void fetchDataEntities()
+                .then(({ entities: fetched, storage: fetchedStorage }) => {
+                  setEntities(fetched);
+                  setStorage(fetchedStorage);
+                })
+                .catch(() => {});
+            }}
+            disabled={loadingRows}
+          >
+            {loadingRows ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       <div className="data-layout">
@@ -311,8 +384,11 @@ export default function DataPage() {
                 type="button"
                 onClick={() => setSelectedSlug(entity.slug)}
               >
-                <span>{entity.label}</span>
-                <span className="data-entity-count">{entity.count}</span>
+                <span className="data-entity-name">{entity.label}</span>
+                <span className="data-entity-meta">
+                  <span>{formatBytes(entity.storageBytes)}</span>
+                  <span className="data-entity-count">{entity.count}</span>
+                </span>
               </button>
             ))}
           </div>
@@ -327,6 +403,9 @@ export default function DataPage() {
                   <p>{selected.description}</p>
                 </div>
                 <code>{selected.slug}</code>
+                <span className="data-selected-size">
+                  {formatBytes(selected.storageBytes)} payload
+                </span>
               </div>
               {selected.warning && (
                 <div className="data-warning">{selected.warning}</div>
@@ -372,7 +451,9 @@ export default function DataPage() {
                             }
                           >
                             <button type="button" onClick={() => selectSort(column)}>
-                              {column}
+                              {column === MALFORMED_ROW_KEY
+                                ? "Malformed record"
+                                : column}
                               {sortColumn === column && (
                                 <span>
                                   {sortDirection === "asc" ? " ↑" : " ↓"}
@@ -389,9 +470,25 @@ export default function DataPage() {
                     <tbody>
                       {visibleRows.map((row) => {
                         const id = rowId(row, selected.primaryKey);
+                        const malformed = getMalformedMetadata(row);
                         return (
-                          <tr key={id} onClick={() => setDetailRow(row)}>
+                          <tr
+                            key={id}
+                            className={malformed ? "data-row-malformed" : ""}
+                            onClick={() => setDetailRow(row)}
+                          >
                             {columns.map((column) => {
+                              if (column === MALFORMED_ROW_KEY && malformed) {
+                                return (
+                                  <td
+                                    key={column}
+                                    className="data-malformed-cell"
+                                    title={malformed.error}
+                                  >
+                                    Malformed: {malformed.error}
+                                  </td>
+                                );
+                              }
                               const value = displayValue(row[column]);
                               return (
                                 <td key={column} title={value.title}>

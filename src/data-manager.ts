@@ -1,3 +1,4 @@
+import { deleteDoc, getDb, getDoc } from "@micthiesen/mitools/docstore";
 import type { Entity } from "@micthiesen/mitools/entities";
 import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
@@ -30,6 +31,15 @@ export interface ManagedEntitySummary {
   warning?: string;
   primaryKey: string[];
   count: number;
+  /** Encoded CBOR payload bytes, excluding SQLite indexes and page overhead. */
+  storageBytes: number;
+}
+
+export interface ManagedDataSummary {
+  /** SQLite page allocation, including all Entity and relational table data. */
+  databaseSizeBytes: number;
+  /** Encoded payload bytes belonging to registered mitools Entities. */
+  entityStorageBytes: number;
 }
 
 interface EntityOptions<Data> {
@@ -40,8 +50,9 @@ interface EntityOptions<Data> {
   afterDelete?: (row: Data) => void;
 }
 
-interface ManagedEntity extends Omit<ManagedEntitySummary, "count"> {
+interface ManagedEntity extends Omit<ManagedEntitySummary, "count" | "storageBytes"> {
   count(): number;
+  storageBytes(): number;
   rows(): DataRow[];
   delete(key: DataRowKey): DeleteResult;
 }
@@ -51,6 +62,42 @@ export type DeleteResult =
   | { status: "invalid-key" }
   | { status: "not-found" }
   | { status: "blocked"; reason: string };
+
+export const MALFORMED_ROW_KEY = "__dataManagerMalformed";
+
+export type MalformedRowMetadata = {
+  rawKey: string;
+  error: string;
+};
+
+function decodeError(error: unknown): string {
+  return error instanceof Error ? error.message : "Stored data could not be decoded";
+}
+
+function malformedRow(rawKey: string, error: unknown): DataRow {
+  return {
+    [MALFORMED_ROW_KEY]: {
+      rawKey,
+      error: decodeError(error),
+    } satisfies MalformedRowMetadata,
+  };
+}
+
+function getMalformedMetadata(key: DataRowKey): MalformedRowMetadata | undefined {
+  if (Object.keys(key).length !== 1) return undefined;
+  const value = key[MALFORMED_ROW_KEY];
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("rawKey" in value) ||
+    typeof value.rawKey !== "string" ||
+    !("error" in value) ||
+    typeof value.error !== "string"
+  ) {
+    return undefined;
+  }
+  return { rawKey: value.rawKey, error: value.error };
+}
 
 export function createManagedEntity<
   Data extends object,
@@ -77,8 +124,36 @@ export function createManagedEntity<
     warning: options.warning,
     primaryKey,
     count: () => entity.count(),
-    rows: () => entity.getAll() as DataRow[],
+    storageBytes: () => {
+      const row = getDb()
+        .prepare(
+          "SELECT COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM blobs WHERE pk LIKE ?",
+        )
+        .get(`$${entity.name}#%`) as { bytes: number };
+      return row.bytes;
+    },
+    rows: () => {
+      const rows: DataRow[] = [];
+      for (const rawKey of entity.keys()) {
+        try {
+          const row = getDoc<Data>(rawKey);
+          if (row) rows.push(row as DataRow);
+        } catch (error) {
+          rows.push(malformedRow(rawKey, error));
+        }
+      }
+      return rows;
+    },
     delete: (key) => {
+      const malformed = getMalformedMetadata(key);
+      if (malformed) {
+        if (!entity.keys().includes(malformed.rawKey)) return { status: "not-found" };
+        if (!deleteDoc(malformed.rawKey)) return { status: "not-found" };
+        return {
+          status: "deleted",
+          row: malformedRow(malformed.rawKey, malformed.error),
+        };
+      }
       const normalized = normalizeKey(key);
       if (!normalized) return { status: "invalid-key" };
       const row = entity.get(normalized);
@@ -178,7 +253,23 @@ export function listManagedEntities(): ManagedEntitySummary[] {
     warning: entity.warning,
     primaryKey: entity.primaryKey,
     count: entity.count(),
+    storageBytes: entity.storageBytes(),
   }));
+}
+
+export function getManagedDataSummary(
+  entities: ManagedEntitySummary[] = listManagedEntities(),
+): ManagedDataSummary {
+  const db = getDb();
+  const pageCount = db.pragma("page_count", { simple: true }) as number;
+  const pageSize = db.pragma("page_size", { simple: true }) as number;
+  return {
+    databaseSizeBytes: pageCount * pageSize,
+    entityStorageBytes: entities.reduce(
+      (total, entity) => total + entity.storageBytes,
+      0,
+    ),
+  };
 }
 
 export function getManagedEntity(
@@ -195,6 +286,7 @@ export function getManagedEntity(
       warning: entity.warning,
       primaryKey: entity.primaryKey,
       count: rows.length,
+      storageBytes: entity.storageBytes(),
     },
     rows,
   };

@@ -1,8 +1,9 @@
 import { Injector } from "@micthiesen/mitools/config";
+import { getDb } from "@micthiesen/mitools/docstore";
 import { Entity } from "@micthiesen/mitools/entities";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createManagedEntity } from "./data-manager.js";
+import { createManagedEntity, MALFORMED_ROW_KEY } from "./data-manager.js";
 
 Injector.configure({
   config: {
@@ -39,6 +40,7 @@ describe("managed entities", () => {
 
     expect(managed.primaryKey).toEqual(["group", "id"]);
     expect(managed.count()).toBe(1);
+    expect(managed.storageBytes()).toBeGreaterThan(0);
     expect(managed.rows()).toEqual([
       { group: "a#b", id: "1", status: "ready", value: 42 },
     ]);
@@ -82,5 +84,23 @@ describe("managed entities", () => {
     });
     expect(managed.delete({ group: "a", id: "2" }).status).toBe("deleted");
     expect(cleaned).toEqual(["2"]);
+  });
+
+  it("isolates malformed blobs and allows exact raw-key deletion", () => {
+    TestEntity.upsert({ group: "a", id: "1", status: "ready", value: 1 });
+    const rawKey = TestEntity.getPk({ group: "a", id: "1" });
+    getDb()
+      .prepare("UPDATE blobs SET data = ? WHERE pk = ?")
+      .run(Buffer.alloc(0), rawKey);
+    const managed = createManagedEntity(TestEntity, {
+      label: "Test rows",
+      description: "Test data",
+    });
+
+    const rows = managed.rows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.[MALFORMED_ROW_KEY]).toMatchObject({ rawKey });
+    expect(managed.delete(rows[0] ?? {})).toMatchObject({ status: "deleted" });
+    expect(managed.count()).toBe(0);
   });
 });

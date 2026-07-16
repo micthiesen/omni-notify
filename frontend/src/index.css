@@ -294,6 +294,34 @@ button {
   font-size: 0.84rem;
 }
 
+.data-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.data-storage-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.data-storage-summary span {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.data-storage-summary strong {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .data-layout {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -335,6 +363,23 @@ button {
   cursor: pointer;
   font-size: 0.78rem;
   text-align: left;
+}
+
+.data-entity-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-entity-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .data-entity-item:hover {
@@ -386,6 +431,13 @@ button {
   color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: 0.66rem;
+  white-space: nowrap;
+}
+
+.data-selected-size {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -509,6 +561,17 @@ button {
 .data-table tbody tr:hover td {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.data-table tbody tr.data-row-malformed td {
+  background: rgba(248, 113, 113, 0.06);
+  color: var(--danger);
+}
+
+.data-malformed-cell {
+  min-width: 24rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
 }
 
 .data-actions-column {
@@ -2258,6 +2321,19 @@ button.history-row:last-child {
 
   .data-layout {
     grid-template-columns: 1fr;
+  }
+
+  .data-page-header {
+    align-items: stretch;
+  }
+
+  .data-header-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .data-storage-summary span {
+    text-align: left;
   }
 
   .data-entity-panel {

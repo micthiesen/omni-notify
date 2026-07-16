@@ -108,6 +108,12 @@ export interface DataEntity {
   warning?: string;
   primaryKey: string[];
   count: number;
+  storageBytes: number;
+}
+
+export interface DataStorageSummary {
+  databaseSizeBytes: number;
+  entityStorageBytes: number;
 }
 
 export type MediaType = "movie" | "tv";
@@ -325,8 +331,13 @@ export function fetchSnapshot(): Promise<Snapshot> {
   return apiGet<Snapshot>("/api/snapshot");
 }
 
-export function fetchDataEntities(): Promise<{ entities: DataEntity[] }> {
-  return apiGet<{ entities: DataEntity[] }>("/api/data/entities");
+export function fetchDataEntities(): Promise<{
+  entities: DataEntity[];
+  storage: DataStorageSummary;
+}> {
+  return apiGet<{ entities: DataEntity[]; storage: DataStorageSummary }>(
+    "/api/data/entities",
+  );
 }
 
 export function fetchDataRows(

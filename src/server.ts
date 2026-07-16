@@ -6,6 +6,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import {
   deleteManagedEntityRow,
+  getManagedDataSummary,
   getManagedEntity,
   listManagedEntities,
 } from "./data-manager.js";
@@ -301,7 +302,13 @@ export function startServer(
     });
   });
 
-  app.get("/api/data/entities", (c) => c.json({ entities: listManagedEntities() }));
+  app.get("/api/data/entities", (c) => {
+    const entities = listManagedEntities();
+    return c.json({
+      entities,
+      storage: getManagedDataSummary(entities),
+    });
+  });
 
   app.get("/api/data/entities/:slug", (c) => {
     const data = getManagedEntity(c.req.param("slug"));
