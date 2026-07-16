@@ -20,25 +20,25 @@
     "docker:dev": "docker run -p 3000:3000 --rm --name omni-notify omni-notify"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^4.0.8",
-    "@ai-sdk/google": "^4.0.8",
-    "@ai-sdk/openai": "^4.0.7",
-    "@hono/node-server": "^2.0.8",
-    "@micthiesen/mitools": "^2.4.0",
+    "@ai-sdk/anthropic": "^4.0.15",
+    "@ai-sdk/google": "^4.0.16",
+    "@ai-sdk/openai": "^4.0.14",
+    "@hono/node-server": "^2.0.9",
+    "@micthiesen/mitools": "^2.5.1",
     "@mozilla/readability": "^0.6.0",
-    "ai": "^7.0.15",
-    "amazon-cognito-identity-js": "^6.3.18",
+    "ai": "^7.0.28",
+    "amazon-cognito-identity-js": "^6.3.20",
     "date-fns": "^4.4.0",
     "date-fns-tz": "^3.2.0",
     "eventsource": "^4.1.0",
     "got": "^15.1.0",
     "gray-matter": "^4.0.3",
-    "hono": "^4.12.27",
+    "hono": "^4.12.30",
     "html-entities": "^2.6.0",
     "html-to-text": "^10.0.0",
     "jmap-jam": "^0.13.2",
-    "linkedom": "^0.18.12",
-    "node-cron": "^4.5.0",
+    "linkedom": "^0.18.13",
+    "node-cron": "^4.6.0",
     "node-schedule": "^2.1.1",
     "nodemailer": "^9.0.3",
     "p-queue": "^9.3.1",
@@ -47,19 +47,19 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.2",
-    "@dotenvx/dotenvx": "^2.1.4",
+    "@biomejs/biome": "2.5.4",
+    "@dotenvx/dotenvx": "^2.9.0",
     "@types/html-to-text": "^9.0.4",
-    "@types/node": "24.13.2",
+    "@types/node": "24.13.3",
     "@types/nodemailer": "^8.0.1",
     "@types/turndown": "^5.0.6",
-    "tsx": "^4.23.0",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "tsx": "^4.23.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": "24.18.0",
-    "pnpm": "11.10.0"
+    "pnpm": "11.13.1"
   },
-  "packageManager": "pnpm@11.10.0"
+  "packageManager": "pnpm@11.13.1"
 }

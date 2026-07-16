@@ -18,15 +18,15 @@ export function getExtractionModel(): { model: LanguageModel; modelId: string } 
 }
 
 export function getRecsShortlistModel(): { model: LanguageModel; modelId: string } {
-  return resolveModel(config.RECS_SHORTLIST_MODEL, "openai:gpt-5-mini");
+  return resolveModel(config.RECS_SHORTLIST_MODEL, "openai:gpt-5.6-luna");
 }
 
 export function getRecsSelectionModel(): { model: LanguageModel; modelId: string } {
-  return resolveModel(config.RECS_SELECTION_MODEL, "openai:gpt-5");
+  return resolveModel(config.RECS_SELECTION_MODEL, "openai:gpt-5.6");
 }
 
 export function getTasteReflectionModel(): { model: LanguageModel; modelId: string } {
-  return resolveModel(config.TASTE_REFLECTION_MODEL, "openai:gpt-5-mini");
+  return resolveModel(config.TASTE_REFLECTION_MODEL, "openai:gpt-5.6-luna");
 }
 
 function resolveModel(configured: string | undefined, fallback: RegisteredModelId) {

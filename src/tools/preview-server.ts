@@ -266,7 +266,7 @@ TasteProfileEntity.upsert({
   generatedAt: now - 2 * 24 * HOUR,
   evidenceFingerprint: "preview",
   evidenceCount: 84,
-  modelId: "openai:gpt-5-mini",
+  modelId: "openai:gpt-5.6-luna",
   promptVersion: "taste-reflection-v1",
   summary:
     "Strong preference for tightly constructed speculative stories and character-driven mysteries, with less patience for long, repetitive seasons.",

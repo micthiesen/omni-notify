@@ -121,16 +121,16 @@ Models are configured via environment variables using `provider:model` format. S
 |---|---|---|
 | `BRIEFING_MODEL` | `google:gemini-3.5-flash` | Briefing agents |
 | `EXTRACTION_MODEL` | `google:gemini-3.1-flash-lite` | Email extraction (parcel + calendar) |
-| `RECS_SHORTLIST_MODEL` | `openai:gpt-5-mini` | Recommendation shortlist scoring |
-| `RECS_SELECTION_MODEL` | `openai:gpt-5` | Recommendation research + final pick |
-| `TASTE_REFLECTION_MODEL` | `openai:gpt-5-mini` | Weekly evidence-backed taste reflection |
+| `RECS_SHORTLIST_MODEL` | `openai:gpt-5.6-luna` | Recommendation shortlist scoring |
+| `RECS_SELECTION_MODEL` | `openai:gpt-5.6` | Recommendation research + final pick |
+| `TASTE_REFLECTION_MODEL` | `openai:gpt-5.6-luna` | Weekly evidence-backed taste reflection |
 
 Examples:
 
 ```bash
 BRIEFING_MODEL=google:gemini-3.5-flash
 BRIEFING_MODEL=anthropic:claude-sonnet-5
-BRIEFING_MODEL=openai:gpt-5.5
+BRIEFING_MODEL=openai:gpt-5.6
 ```
 
 ## Environment Variables
@@ -155,7 +155,7 @@ BRIEFING_MODEL=openai:gpt-5.5
 | `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` for per-streamer overrides |
 | `TMDB_API_KEY` | No | TMDB API key (required for recommendations; v3 key or v4 read token) |
 | `RECS_SCHEDULE` | No | Recommendation cron (default: `0 0 17 * * 1,3,5`) |
-| `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-5-mini`) |
+| `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-5.6-luna`) |
 | `TASTE_REFLECTION_SCHEDULE` | No | Taste-profile reflection cron (default: `0 0 4 * * 0`, Sunday 4am) |
 | `RECS_PUBLIC_URL` | No | Public/LAN Omni base URL used by notification links (default: `http://omni.boris`) |
 | `PUSHOVER_RECS_TOKEN` | No | Pushover token for recommendations (falls back to `PUSHOVER_TOKEN`) |

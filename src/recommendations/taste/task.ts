@@ -23,7 +23,7 @@ export class TasteReflectionTask extends ScheduledTask {
   private readonly logger: Logger;
 
   public static create(parentLogger: Logger): TasteReflectionTask | null {
-    const modelId = config.TASTE_REFLECTION_MODEL ?? "openai:gpt-5-mini";
+    const modelId = config.TASTE_REFLECTION_MODEL ?? "openai:gpt-5.6-luna";
     const provider = modelId.split(":", 1)[0];
     const credential =
       provider === "openai"

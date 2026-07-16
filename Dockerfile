@@ -2,7 +2,7 @@ FROM node:24.18.0-slim AS build
 
 ENV CI=true
 
-RUN npm install -g pnpm@11.10.0
+RUN npm install -g pnpm@11.13.1
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
