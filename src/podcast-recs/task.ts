@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
@@ -33,6 +34,17 @@ export class PodcastRecommendationTask extends ScheduledTask {
     if (missing.length > 0) {
       parentLogger.info(
         `Podcast recommendations disabled: missing ${missing.join(", ")}`,
+      );
+      return null;
+    }
+    // PODCAST_TASTE_PATH must point at a readable file, not a directory — a bad
+    // path would otherwise crash every run deep in the pipeline (EISDIR). Fail
+    // here with an actionable message and leave the feature disabled.
+    const tastePath = config.PODCAST_TASTE_PATH as string;
+    const tasteError = describeUnreadableFile(tastePath);
+    if (tasteError) {
+      parentLogger.info(
+        `Podcast recommendations disabled: PODCAST_TASTE_PATH (${tastePath}) ${tasteError}`,
       );
       return null;
     }
@@ -73,6 +85,18 @@ export class PodcastRecommendationTask extends ScheduledTask {
   /** Consumed by the task-run tracking registry. */
   public getLastRunSummary(): string | undefined {
     return this.lastRunSummary;
+  }
+}
+
+/** Undefined if `path` is a readable regular file, else a human-readable reason. */
+export function describeUnreadableFile(path: string): string | undefined {
+  try {
+    if (!statSync(path).isFile()) {
+      return "is not a file (expected a markdown file, not a directory)";
+    }
+    return undefined;
+  } catch (error) {
+    return `could not be read: ${(error as Error).message}`;
   }
 }
 
