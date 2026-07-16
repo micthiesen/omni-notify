@@ -283,10 +283,13 @@ export class CastroClient implements PodcastAccountClient {
         .map((item) => item.fractional_position)
         .sort(compareFractionalPositions);
       const position = request.position ?? PodcastQueuePosition.Next;
+      // "Queue Next" matches the app: insert AFTER the current top item (which
+      // is playing / up next), i.e. as the new 2nd item — not above it. On an
+      // empty or single-item queue this naturally lands first or second.
       const fractionalPosition =
         position === PodcastQueuePosition.Last
           ? generateKeyBetween(positions.at(-1) ?? null, null)
-          : generateKeyBetween(null, positions[0] ?? null);
+          : generateKeyBetween(positions[0] ?? null, positions[1] ?? null);
       const now = Date.now();
       await this.api.postActions([
         this.action(episode.public_id, CastroActionType.EpisodeQueued, now, {

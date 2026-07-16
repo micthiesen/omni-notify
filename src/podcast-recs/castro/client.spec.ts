@@ -60,7 +60,15 @@ function fakeApi() {
     ]),
     fetchPodcast: vi.fn(async () => podcast),
     fetchSubscriptions: vi.fn(async () => []),
-    fetchQueue: vi.fn(async () => ({ queue_items: [] })),
+    fetchQueue: vi.fn(
+      async (): Promise<{
+        queue_items: {
+          episode_id: string;
+          podcast_id: string;
+          fractional_position: string;
+        }[];
+      }> => ({ queue_items: [] }),
+    ),
     postActions: vi.fn(async (_actions: CastroAction[]) => undefined),
     subscribe: vi.fn(async () => ({
       subscribed: [{ feed_id: PODCAST_ID, feed_url: FEED_URL }],
@@ -116,6 +124,31 @@ describe("CastroClient search-backed writes", () => {
     expect(
       api.postActions.mock.calls[0]?.[0].map((action) => action.action_type),
     ).toEqual([CastroActionType.EpisodeQueued, CastroActionType.ClearEpisodeNew]);
+  });
+
+  it("Queue Next inserts after the current top item, not above it", async () => {
+    const api = fakeApi();
+    // A queue whose top item ("a0") is playing/up-next and a second item ("a1").
+    api.fetchQueue = vi.fn(async () => ({
+      queue_items: [
+        { episode_id: "e0", podcast_id: PODCAST_ID, fractional_position: "a0" },
+        { episode_id: "e1", podcast_id: PODCAST_ID, fractional_position: "a1" },
+      ],
+    }));
+    const client = new CastroClient(api as unknown as CastroApi, logger);
+
+    await client.enqueueEpisode({
+      feedUrl: FEED_URL,
+      episodeGuid: "rss-guid",
+      showTitle: "Example Podcast",
+      episodeTitle: "Example Episode",
+      position: PodcastQueuePosition.Next,
+    });
+
+    const queued = api.postActions.mock.calls[0]?.[0][0];
+    const pos = JSON.parse(queued?.event_data ?? "{}").fractional_position as string;
+    // Between the current top ("a0") and the second item ("a1") → new 2nd item.
+    expect(pos > "a0" && pos < "a1").toBe(true);
   });
 
   it("resolves an RSS feed and subscribes by Castro podcast id", async () => {
