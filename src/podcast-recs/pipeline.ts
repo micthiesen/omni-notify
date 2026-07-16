@@ -307,7 +307,9 @@ async function commitRecommendation(
       mediaUrl: candidate.mediaUrl,
       showTitle: candidate.showTitle,
       episodeTitle: candidate.episodeTitle,
-      position: PodcastQueuePosition.Last,
+      // Top of the queue: a ~2/week curated pick should be immediately visible
+      // and one tap to play, not buried under the existing backlog.
+      position: PodcastQueuePosition.Next,
     });
     queueResult = toQueueResult(enqueueResult);
     if (queueResult === "not_queued") {
