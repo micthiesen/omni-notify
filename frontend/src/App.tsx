@@ -10,6 +10,7 @@ import { usePath } from "./router";
 // These pages pull in recharts (~500kB minified); keep it out of the main chunk.
 const PetsPage = lazy(() => import("./pages/PetsPage"));
 const StreamerPage = lazy(() => import("./pages/StreamerPage"));
+const DataPage = lazy(() => import("./pages/DataPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
@@ -20,6 +21,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/pets": "Pets",
   "/recommendations": "Recommendations",
   "/podcasts": "Podcasts",
+  "/data": "Data",
 };
 
 export default function App() {
@@ -50,6 +52,13 @@ export default function App() {
       case "/recommendations":
         page = <RecommendationsPage />;
         break;
+      case "/data":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <DataPage />
+          </Suspense>
+        );
+        break;
       case "/podcasts":
         page = <PodcastsPage />;
         break;
@@ -62,7 +71,7 @@ export default function App() {
   return (
     <LiveDataProvider>
       <NavBar path={path} />
-      <main className="page">{page}</main>
+      <main className={`page ${path === "/data" ? "page-data" : ""}`}>{page}</main>
     </LiveDataProvider>
   );
 }

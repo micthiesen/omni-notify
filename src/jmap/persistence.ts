@@ -6,9 +6,10 @@ type EmailStateData = {
   updatedAt: number;
 };
 
-const EmailStateEntity = new Entity<EmailStateData, ["key"]>("jmap-email-state", [
-  "key",
-]);
+export const EmailStateEntity = new Entity<EmailStateData, ["key"]>(
+  "jmap-email-state",
+  ["key"],
+);
 
 export function getEmailState(): string | undefined {
   return EmailStateEntity.get({ key: "singleton" })?.state;

@@ -4,6 +4,11 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import {
+  deleteManagedEntityRow,
+  getManagedEntity,
+  listManagedEntities,
+} from "./data-manager.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
@@ -294,6 +299,48 @@ export function startServer(
         });
       });
     });
+  });
+
+  app.get("/api/data/entities", (c) => c.json({ entities: listManagedEntities() }));
+
+  app.get("/api/data/entities/:slug", (c) => {
+    const data = getManagedEntity(c.req.param("slug"));
+    if (!data) return c.json({ error: "Unknown entity" }, 404);
+    return c.json(data);
+  });
+
+  app.delete("/api/data/entities/:slug", async (c) => {
+    const body: unknown = await c.req.json().catch(() => null);
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      !("key" in body) ||
+      typeof body.key !== "object" ||
+      body.key === null ||
+      Array.isArray(body.key)
+    ) {
+      return c.json({ error: "A primary key object is required" }, 400);
+    }
+    const result = deleteManagedEntityRow(
+      c.req.param("slug"),
+      body.key as Record<string, unknown>,
+    );
+    if (!result) return c.json({ error: "Unknown entity" }, 404);
+    switch (result.status) {
+      case "invalid-key":
+        return c.json({ error: "The primary key does not match this entity" }, 400);
+      case "not-found":
+        return c.json({ error: "Row not found" }, 404);
+      case "blocked":
+        return c.json({ error: result.reason }, 409);
+      case "deleted":
+        logger.info(
+          `Deleted row from "${c.req.param("slug")}"`,
+          body.key as Record<string, unknown>,
+        );
+        broadcast();
+        return c.json({ deleted: true });
+    }
   });
 
   app.post("/api/tasks/:name/run", (c) => {

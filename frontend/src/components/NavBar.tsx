@@ -6,6 +6,7 @@ const LINKS = [
   { to: "/recommendations", label: "Recommendations" },
   { to: "/podcasts", label: "Podcasts" },
   { to: "/pets", label: "Pets" },
+  { to: "/data", label: "Data" },
 ];
 
 function isActive(path: string, to: string): boolean {

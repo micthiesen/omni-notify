@@ -91,6 +91,25 @@ export interface Snapshot {
   runs: TaskRun[];
 }
 
+export type DataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | DataValue[]
+  | { [key: string]: DataValue };
+
+export type DataRow = Record<string, DataValue>;
+
+export interface DataEntity {
+  slug: string;
+  label: string;
+  description: string;
+  warning?: string;
+  primaryKey: string[];
+  count: number;
+}
+
 export type MediaType = "movie" | "tv";
 export type RecommendationStatus =
   | "pending"
@@ -286,12 +305,46 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+export async function apiDelete<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await extractErrorMessage(res));
+  }
+  return (await res.json()) as T;
+}
+
 export function fetchTasks(): Promise<{ tasks: TaskInfo[] }> {
   return apiGet<{ tasks: TaskInfo[] }>("/api/tasks");
 }
 
 export function fetchSnapshot(): Promise<Snapshot> {
   return apiGet<Snapshot>("/api/snapshot");
+}
+
+export function fetchDataEntities(): Promise<{ entities: DataEntity[] }> {
+  return apiGet<{ entities: DataEntity[] }>("/api/data/entities");
+}
+
+export function fetchDataRows(
+  slug: string,
+): Promise<{ summary: DataEntity; rows: DataRow[] }> {
+  return apiGet<{ summary: DataEntity; rows: DataRow[] }>(
+    `/api/data/entities/${encodeURIComponent(slug)}`,
+  );
+}
+
+export function deleteDataRow(
+  slug: string,
+  key: DataRow,
+): Promise<{ deleted: true }> {
+  return apiDelete<{ deleted: true }>(
+    `/api/data/entities/${encodeURIComponent(slug)}`,
+    { key },
+  );
 }
 
 export function fetchTaskRuns(options?: {
