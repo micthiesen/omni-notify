@@ -132,7 +132,9 @@ function buildPrompt(
     return `[${c.episodeId}] ${c.showTitle} — ${c.episodeTitle} | ${genres} | released ${released}${duration}\n  Surfaced via: ${c.discoveredVia}${risks}\n  ${c.description.replace(/\s+/g, " ").slice(0, 400)}\n  Research:\n${research.get(c.episodeId)}`;
   });
 
-  return `You are choosing at most ONE podcast episode to recommend to one person today. Precision over activity: a skipped day costs nothing; a mediocre pick erodes trust in every future recommendation.
+  return `You are choosing at most ONE standout podcast episode to recommend to one person today. Precision over activity: a skipped day costs nothing; a mediocre pick erodes trust in every future recommendation.
+
+This is the TOPIC/standout tier. The listener's "guest appearances of people I follow" priority is handled by a SEPARATE stage — do NOT penalize a candidate here for lacking a followed voice. Judge purely on whether it's a genuinely strong, on-taste episode worth their time.
 
 THE LISTENER (subscribed shows are ground truth; explicit feedback is direct preference evidence):
 ${tasteDigest}
@@ -142,8 +144,8 @@ ${finalistBlocks.join("\n\n")}
 
 PROCESS:
 1. Evaluate the research for genuine buzz vs promotional noise, host credibility, and whether the episode stands alone for a first-time listener of that show.
-2. Compare against the listener's subscribed shows and feedback — justify against what they demonstrably listen to, not generic acclaim.
-3. Decide: select exactly one, or no_add if the evidence is weak for all finalists. no_add is a respectable outcome, not a failure.
+2. Compare against the listener's subscribed shows and feedback — justify against what they demonstrably listen to, not generic acclaim. A smart, on-taste episode from a show adjacent to what they love is a good pick even without manufactured drama.
+3. Decide: select exactly one, or no_add if the evidence is genuinely weak for all finalists. no_add is respectable, but don't reject a solid on-taste match just because the description doesn't prove sharp conflict.
 
 Return the structured decision. Candidate ids must come from the list above. why_for_user should reference their actual listening patterns. Keep the notification concise and concrete, with a topic-appropriate emoji prefix on the title. For no_add, set selected to null and explain in no_add_reason.`;
 }

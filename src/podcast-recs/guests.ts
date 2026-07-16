@@ -28,10 +28,13 @@ const extractionSchema = z.object({
 
 /**
  * Tier-1 discovery: recent episodes where one of the followed voices appears as
- * a guest. Podcast Index `byperson` (free, structured, RSS person tags) is the
- * primary source; when it has no recent hit for a voice we fall back to a
- * Tavily person-search, which covers non-podcasters and untagged feeds. The
- * two-step keeps the paid Tavily calls to the voices the free source missed.
+ * a guest. Runs BOTH sources per voice and unions them: Podcast Index
+ * `byperson` (free, structured RSS person tags) and a Tavily person-search
+ * (covers non-podcasters and untagged feeds). Both are needed because many
+ * followed voices HOST a subscribed show — PI then returns that own show and,
+ * if we treated any PI hit as "found", we'd never web-search for the guest
+ * spots elsewhere that are the whole point. Tavily volume stays bounded by the
+ * per-run voice rotation.
  *
  * `voices` is expected to already be the rotated per-run batch.
  */
@@ -91,22 +94,30 @@ async function discoverForVoice(
   cutoff: number,
   logger: Logger,
 ): Promise<EpisodeCandidate[]> {
-  if (pi) {
-    try {
-      const episodes = await pi.searchByPerson(voice);
-      const recent = episodes
-        .filter((episode) => episode.publishedAt >= cutoff)
-        .map((episode) => podcastIndexToCandidate(episode, voice))
-        .filter((candidate): candidate is EpisodeCandidate => candidate !== undefined);
-      if (recent.length > 0) return recent;
-    } catch (error) {
-      logger.warn(
-        `Podcast Index byperson failed for ${voice}`,
-        (error as Error).message,
-      );
-    }
+  const [fromPi, fromTavily] = await Promise.all([
+    discoverViaPodcastIndex(voice, pi, cutoff, logger),
+    discoverViaTavily(voice, account, logger),
+  ]);
+  return [...fromPi, ...fromTavily];
+}
+
+async function discoverViaPodcastIndex(
+  voice: string,
+  pi: PodcastIndexClient | null,
+  cutoff: number,
+  logger: Logger,
+): Promise<EpisodeCandidate[]> {
+  if (!pi) return [];
+  try {
+    const episodes = await pi.searchByPerson(voice);
+    return episodes
+      .filter((episode) => episode.publishedAt >= cutoff)
+      .map((episode) => podcastIndexToCandidate(episode, voice))
+      .filter((candidate): candidate is EpisodeCandidate => candidate !== undefined);
+  } catch (error) {
+    logger.warn(`Podcast Index byperson failed for ${voice}`, (error as Error).message);
+    return [];
   }
-  return discoverViaTavily(voice, account, logger);
 }
 
 async function discoverViaTavily(

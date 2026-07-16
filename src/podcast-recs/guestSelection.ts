@@ -137,7 +137,7 @@ function buildPrompt(
     return `[${c.episodeId}] ${c.showTitle} — ${c.episodeTitle} | featuring: ${(c.matchedVoices ?? []).join(", ")} | released ${released}${duration}\n  ${c.description.replace(/\s+/g, " ").slice(0, 300)}`;
   });
 
-  return `You are gating podcast episodes where a voice the listener FOLLOWS appears as a guest. Following the person is a strong positive signal, so DEFAULT TO INCLUDE — only exclude an episode if it is clearly off-taste (grift/guru/outrage/rage-farming/promotional or sponsored) or clearly trivial (a brief mention, a rerun, not a real substantive appearance).
+  return `You are gating podcast episodes where a voice the listener FOLLOWS appears as a guest. Following the person is a strong positive signal, so DEFAULT TO INCLUDE — only exclude an episode if it is clearly off-taste (grift/guru/outrage/rage-farming/promotional or sponsored), clearly trivial (a brief mention, a rerun, not a real substantive appearance), or clearly a NAMESAKE (a different person who happens to share the followed voice's name — e.g. a pastor named Sean Carroll is not the physicist). Exclude namesakes.
 
 THE LISTENER:
 ${tasteDigest}
