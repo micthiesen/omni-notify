@@ -1,5 +1,7 @@
 import { Entity } from "@micthiesen/mitools/entities";
-import type { LogLevel } from "@micthiesen/mitools/logging";
+import { Logger, type LogLevel } from "@micthiesen/mitools/logging";
+
+const logger = new Logger("TaskRuns");
 
 export type TaskRunTrigger = "schedule" | "manual" | "startup";
 export type TaskRunStatus = "running" | "success" | "error";
@@ -115,7 +117,16 @@ export function saveRunLogs(data: TaskRunLogData): void {
 }
 
 export function getRunLogs(runId: string): TaskRunLogData | undefined {
-  return TaskRunLogEntity.get({ runId });
+  try {
+    return TaskRunLogEntity.get({ runId });
+  } catch (err) {
+    // A truncated/corrupt CBOR blob (e.g. a row half-written when the
+    // container was killed mid-deploy) would otherwise 500 the logs endpoint
+    // forever. Drop the unreadable row and treat the run as having no logs.
+    TaskRunLogEntity.delete({ runId });
+    logger.warn(`Dropped unreadable log row for run "${runId}": ${String(err)}`);
+    return undefined;
+  }
 }
 
 /** Runs beyond the newest `keep` for their task, i.e. the ones to delete. */
