@@ -94,4 +94,9 @@ describe("mapEpisode", () => {
   it("returns undefined when datePublished is missing", () => {
     expect(mapEpisode(rawEpisode({ datePublished: undefined }))).toBeUndefined();
   });
+
+  it("returns undefined when guid is missing (episode identity)", () => {
+    expect(mapEpisode(rawEpisode({ guid: undefined }))).toBeUndefined();
+    expect(mapEpisode(rawEpisode({ guid: null }))).toBeUndefined();
+  });
 });

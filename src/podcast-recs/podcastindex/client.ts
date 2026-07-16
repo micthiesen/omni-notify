@@ -42,7 +42,9 @@ export type RawPodcastIndexEpisode = z.infer<typeof rawEpisodeSchema>;
 const searchByPersonResponseSchema = z
   .object({
     status: z.unknown(),
-    items: z.array(rawEpisodeSchema).optional().default([]),
+    // Coerce a null/absent items to [] — PI returns explicit null on some
+    // error/no-result responses, which a plain optional().default() rejects.
+    items: z.preprocess((value) => value ?? [], z.array(rawEpisodeSchema)),
     count: z.unknown(),
   })
   .passthrough();
@@ -50,12 +52,17 @@ const searchByPersonResponseSchema = z
 /**
  * Maps a raw search result to our episode shape. Returns undefined (the skip
  * signal — callers filter these out) when a field we can't do without is
- * missing: feedUrl, enclosureUrl, or datePublished.
+ * missing: feedUrl, enclosureUrl, datePublished, or guid. `guid` is required
+ * because it forms the episode identity (`{showId}#{guid}`); without it two
+ * distinct guid-less episodes of a show would collide on one id — and that id
+ * is the permanent-exclusion key, so a delivery would blackhole the rest.
  */
 export function mapEpisode(
   raw: RawPodcastIndexEpisode,
 ): PodcastIndexEpisode | undefined {
-  if (!raw.feedUrl || !raw.enclosureUrl || !raw.datePublished) return undefined;
+  if (!raw.feedUrl || !raw.enclosureUrl || !raw.datePublished || !raw.guid) {
+    return undefined;
+  }
 
   const artwork = raw.image ?? raw.feedImage ?? undefined;
   return {
@@ -63,7 +70,7 @@ export function mapEpisode(
     feedTitle: raw.feedTitle ?? "",
     feedUrl: raw.feedUrl,
     ...(raw.feedItunesId ? { feedItunesId: raw.feedItunesId } : {}),
-    guid: raw.guid ?? "",
+    guid: raw.guid,
     enclosureUrl: raw.enclosureUrl,
     ...(raw.link ? { episodeUrl: raw.link } : {}),
     publishedAt: raw.datePublished * 1000,

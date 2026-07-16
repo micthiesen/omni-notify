@@ -160,11 +160,16 @@ export async function runPodcastPipeline(
   const guestCount = recommended.length;
 
   // 6. Tier 2: conservative topic/drama fill, suppressed after a rich guest week.
+  // Exclude shows Tier 1 just recommended: eligibility was computed before those
+  // commits, so their 30-day show cooldown isn't in `exclusions` yet, and a
+  // different episode of the same show would otherwise slip through as topic fill.
+  const guestShowIds = new Set(recommended.map((c) => c.showId));
+  const topicRemaining = topicEligible.filter((c) => !guestShowIds.has(c.showId));
   const topicTarget = guestCount >= TOPIC_SUPPRESS_THRESHOLD ? 0 : topicTargetMax;
   let stopReason: string | undefined;
-  if (topicTarget > 0 && topicEligible.length > 0) {
+  if (topicTarget > 0 && topicRemaining.length > 0) {
     const finalists = await shortlistEpisodes(
-      topicEligible,
+      topicRemaining,
       tasteDigest,
       logger,
       logFile,

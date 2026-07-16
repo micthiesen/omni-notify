@@ -56,3 +56,24 @@ describe("parseVoices", () => {
     expect(parseVoices("")).toEqual([]);
   });
 });
+
+describe("parseVoices edge cases", () => {
+  it("preserves hyphenated/apostrophe names and ignores ### subheaders", () => {
+    const md = [
+      "## Voices I follow — recommend their guest spots anywhere",
+      "### Core",
+      "- Jean-Luc Picard",
+      "- Anne-Marie Slaughter",
+      "### More",
+      "- Alex O'Connor",
+      "",
+      "## Taste",
+      "- not a voice",
+    ].join("\n");
+    expect(parseVoices(md)).toEqual([
+      "Jean-Luc Picard",
+      "Anne-Marie Slaughter",
+      "Alex O'Connor",
+    ]);
+  });
+});

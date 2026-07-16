@@ -22,9 +22,61 @@ const decisionSchema = z.object({
   ),
 });
 
+export type GuestDecision = z.infer<typeof decisionSchema>["decisions"][number];
+
 export interface GuestPick {
   candidate: EpisodeCandidate;
   pick: PodcastSelectionPick;
+}
+
+/**
+ * Reduce the model's decisions to committable picks. Pure and defensive against
+ * ragged model output: keep only includes, strongest-confidence first, dedup by
+ * candidate_id (a repeat would otherwise double-commit + double-enqueue the same
+ * episode), drop unknown ids and includes missing their copy, then cap at `max`.
+ */
+export function applyGuestDecisions(
+  decisions: GuestDecision[],
+  candidatesById: Map<string, EpisodeCandidate>,
+  max: number,
+  logger?: Logger,
+): GuestPick[] {
+  const included = decisions
+    .filter((decision) => decision.include)
+    .sort((a, b) => b.confidence - a.confidence);
+
+  const picks: GuestPick[] = [];
+  const seen = new Set<string>();
+  for (const decision of included) {
+    if (picks.length >= max) break;
+    if (seen.has(decision.candidate_id)) continue;
+    seen.add(decision.candidate_id);
+
+    const candidate = candidatesById.get(decision.candidate_id);
+    if (!candidate) {
+      logger?.warn(
+        `Guest gate returned unknown candidate_id: ${decision.candidate_id}`,
+      );
+      continue;
+    }
+    if (!decision.why_for_user || !decision.notification) {
+      logger?.warn(
+        `Guest gate included ${candidate.showTitle} — ${candidate.episodeTitle} without copy; skipping`,
+      );
+      continue;
+    }
+    picks.push({
+      candidate,
+      pick: {
+        candidate_id: decision.candidate_id,
+        why_for_user: decision.why_for_user,
+        caveats: decision.caveats,
+        confidence: decision.confidence,
+        notification: decision.notification,
+      },
+    });
+  }
+  return picks;
 }
 
 /**
@@ -63,22 +115,7 @@ export async function selectGuestAppearances(
   );
 
   const byId = new Map(candidates.map((c) => [c.episodeId, c]));
-  const picks: GuestPick[] = [];
-  for (const decision of result.output?.decisions ?? []) {
-    if (!decision.include || picks.length >= max) continue;
-    const candidate = byId.get(decision.candidate_id);
-    if (!candidate || !decision.why_for_user || !decision.notification) continue;
-    picks.push({
-      candidate,
-      pick: {
-        candidate_id: decision.candidate_id,
-        why_for_user: decision.why_for_user,
-        caveats: decision.caveats,
-        confidence: decision.confidence,
-        notification: decision.notification,
-      },
-    });
-  }
+  const picks = applyGuestDecisions(result.output?.decisions ?? [], byId, max, logger);
 
   logFile?.section(
     "Guest Gate",
