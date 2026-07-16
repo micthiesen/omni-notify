@@ -1,64 +1,47 @@
-import { readFileSync } from "node:fs";
 import type { Logger } from "@micthiesen/mitools/logging";
-import config from "../utils/config.js";
 import type { FetchResult } from "../utils/fetchResult.js";
 import type { PodcastAccountClient, PodcastSubscription } from "./account.js";
 import { normalizeTitle } from "./filters.js";
-import { parseOpmlSubscriptions } from "./opml.js";
 import { type CanonicalShowId, makeShowId } from "./types.js";
 
 export interface SubscriptionState {
   subscriptions: PodcastSubscription[];
   showIds: Set<CanonicalShowId>;
   normalizedTitles: Set<string>;
-  source: "account" | "opml" | "none";
+  source: "account" | "none";
 }
 
 /**
- * Subscribed shows, preferring the live podcast account (Castro, once the
- * bridge exists) and falling back to a static OPML export. Precedence:
+ * Subscribed shows, read exclusively from the podcast account (Castro).
+ * Subscriptions are both the exclusion list and the strongest taste signal,
+ * so a configured account whose read fails must abort the run (three-state
+ * rule) rather than silently proceed with weakened exclusions and risk
+ * recommending an already-followed show.
  *
  * - account read ok → use it
- * - account unavailable/absent → OPML file when configured
- * - OPML configured but unreadable → unavailable (a configured source that
- *   fails must abort, never silently weaken exclusions)
- * - nothing configured → empty with a warning (subscribed-show exclusion is
- *   only as good as the data provided)
+ * - account read unavailable → abort the run
+ * - no account configured → empty with a warning (the seed taste profile still
+ *   drives prompt-level exclusion, but hard subscribed-show filtering is off)
  */
 export async function resolveSubscriptions(
   account: PodcastAccountClient | undefined,
   logger: Logger,
 ): Promise<FetchResult<SubscriptionState>> {
-  if (account) {
-    const result = await account.fetchSubscriptions();
-    if (result.status === "ok") {
-      return { status: "ok", value: buildState(result.value, "account") };
-    }
+  if (!account) {
     logger.warn(
-      `${account.name} subscriptions unavailable (${result.reason}); trying OPML fallback`,
+      "No podcast account configured; subscribed-show exclusion falls back to the taste profile only",
     );
+    return { status: "ok", value: buildState([], "none") };
   }
 
-  const opmlPath = config.PODCAST_SUBSCRIPTIONS_PATH;
-  if (opmlPath) {
-    try {
-      const subscriptions = parseOpmlSubscriptions(readFileSync(opmlPath, "utf8"));
-      if (subscriptions.length === 0) {
-        logger.warn(`No subscriptions parsed from OPML at ${opmlPath}`);
-      }
-      return { status: "ok", value: buildState(subscriptions, "opml") };
-    } catch (error) {
-      return {
-        status: "unavailable",
-        reason: `OPML read failed (${opmlPath}): ${(error as Error).message}`,
-      };
-    }
+  const result = await account.fetchSubscriptions();
+  if (result.status === "unavailable") {
+    return {
+      status: "unavailable",
+      reason: `${account.name} subscriptions unavailable: ${result.reason}`,
+    };
   }
-
-  logger.warn(
-    "No podcast subscription source configured; subscribed-show exclusion disabled",
-  );
-  return { status: "ok", value: buildState([], "none") };
+  return { status: "ok", value: buildState(result.value, "account") };
 }
 
 function buildState(
@@ -78,7 +61,7 @@ function buildState(
 /** Compact digest of subscribed shows for model prompts. */
 export function formatSubscriptionsDigest(state: SubscriptionState): string {
   if (state.subscriptions.length === 0) {
-    return "Subscribed shows: unknown (no subscription source configured).";
+    return "Subscribed shows: unknown (no podcast account configured).";
   }
   const titles = state.subscriptions.map((s) => s.title).sort();
   return `Shows the user already subscribes to (source: ${state.source}) — never recommend these, but they are strong taste evidence:\n${titles.map((t) => `- ${t}`).join("\n")}`;

@@ -6,14 +6,12 @@ import { createCastroClient } from "./castro/client.js";
  * Bridge to the user's podcast client account (Castro). Split read/write
  * surface modeled on the recommendations mediaLibrary/watchlist bridges.
  *
- * Implementation status: Castro has no public API — see docs/castro-sync.md
- * for everything known about its sync architecture and the investigation
- * plan. Until a real client lands, resolvePodcastAccount() returns undefined
- * and the podcast-recs pipeline degrades gracefully:
- *   - subscriptions fall back to an OPML export (PODCAST_SUBSCRIPTIONS_PATH)
- *   - listen-history-driven outcome labeling is skipped entirely (explicit
- *     feedback from the web UI still works)
- *   - "acquisition" is a deep link in the notification instead of enqueueEpisode
+ * Castro has no public API. The implementation uses its captured private sync
+ * protocol with the owner's device credentials. See docs/castro-sync.md for
+ * the observed endpoints, authentication details, and remaining limitations.
+ * Subscriptions and listen history are read from the account; when it is
+ * unconfigured the pipeline degrades to the seed taste profile plus explicit
+ * feedback, and acquisition remains a deep link in the notification.
  *
  * Contract notes for implementers:
  *   - Reads return FetchResult: `unavailable` MUST be distinguishable from an
@@ -69,12 +67,19 @@ export type PodcastWriteResult =
   | "unavailable"
   | "error";
 
+export enum PodcastQueuePosition {
+  Next = "next",
+  Last = "last",
+}
+
 export interface EnqueueEpisodeRequest {
   feedUrl: string;
   /** RSS item GUID of the episode to queue. */
   episodeGuid: string;
   showTitle: string;
   episodeTitle: string;
+  /** Where to place the episode in clients that support ordered insertion. */
+  position?: PodcastQueuePosition;
 }
 
 export interface SubscribeToShowRequest {

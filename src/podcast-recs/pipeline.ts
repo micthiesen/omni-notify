@@ -254,8 +254,11 @@ async function commitRecommendation(
     recommendedAt: Date.now(),
   });
 
-  // Future Castro write path: enqueueEpisode() here once the bridge exists,
-  // between the pending write and the notification (see docs/castro-sync.md).
+  // Acquisition is the notification deep link, not a Castro enqueue: Castro's
+  // write endpoints only operate on episodes of already-subscribed shows, and
+  // recommendations are by definition unsubscribed. Auto-enqueue becomes
+  // possible once Castro exposes an RSS-URL → podcast-UUID resolver (see the
+  // remaining-gaps note in docs/castro-sync.md).
 
   try {
     await notify({

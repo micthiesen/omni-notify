@@ -103,13 +103,13 @@ A sibling pipeline (default: Mon/Thu at 11am, enabled by setting `PODCAST_TASTE_
 
 Each run:
 
-1. Resolves subscribed shows — from the podcast account bridge when implemented (Castro, see [docs/castro-sync.md](docs/castro-sync.md)), else from an OPML export at `PODCAST_SUBSCRIPTIONS_PATH`. Subscribed shows are excluded from recommendations and double as taste evidence alongside the seed profile and explicit feedback.
+1. Reads subscribed shows and listen history from the Castro account (see [docs/castro-sync.md](docs/castro-sync.md)). Subscribed shows are excluded from recommendations and double as taste evidence alongside the seed profile and explicit feedback; a failed account read aborts the run rather than risk recommending a followed show. Without Castro credentials the pipeline still runs off the seed profile and feedback alone.
 2. Discovers episodes being discussed this week via multi-angle web search, then extracts specific candidates with a cheap model.
 3. Verifies every candidate in code: show identity via the iTunes Search API, episode and release date from the show's actual RSS feed. Unverifiable episodes are dropped — release dates are never trusted from search snippets.
 4. Hard-filters in code: older than 7 days, already recommended, show on 30-day cooldown, rejected via "not for me", or already subscribed.
 5. Scores the survivors with a cheap model, researches finalists with web search, then a strong model picks one episode at a time or decides to add nothing.
 
-Recommended episodes are never repeated. Listen-history outcome labeling activates once the Castro bridge lands; until then, feedback buttons in the web UI are the signal.
+Recommended episodes are never repeated. When Castro credentials are set, listen history labels outcomes (listened / abandoned / ignored) automatically; the good-pick/not-for-me feedback buttons in the web UI are always available.
 
 ## Web UI
 
@@ -175,9 +175,9 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `RECS_PUBLIC_URL` | No | Public/LAN Omni base URL used by notification links (default: `http://omni.boris`) |
 | `PUSHOVER_RECS_TOKEN` | No | Pushover token for recommendations (falls back to `PUSHOVER_TOKEN`) |
 | `PODCAST_TASTE_PATH` | No | Markdown listener profile (required to enable podcast recommendations) |
-| `PODCAST_SUBSCRIPTIONS_PATH` | No | OPML export of subscribed shows (subscribed-show exclusion) |
 | `PODCAST_RECS_SCHEDULE` | No | Podcast recommendation cron (default: `0 0 11 * * 1,4`) |
 | `PUSHOVER_PODCAST_TOKEN` | No | Pushover token for podcast recs (falls back to `PUSHOVER_TOKEN`) |
+| `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (subscriptions + listen-history outcomes) |
 | `PLEX_URL` / `PLEX_TOKEN` | For recommendations | Plex server URL and token |
 | `PLEX_ACCOUNT_ID` | For shared Plex servers | Account ID used to scope viewing history; multiple detected accounts fail closed without it |
 | `RADARR_URL` / `RADARR_API_KEY` | For recommendations | Radarr v3 API connection |
