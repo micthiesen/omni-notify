@@ -73,7 +73,12 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ghcr.io/${{ github.repository_owner }}/omni-notify:latest
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/omni-notify:latest
+            ghcr.io/${{ github.repository_owner }}/omni-notify:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/omni-notify:latest
           cache-to: type=inline
 
@@ -84,25 +89,22 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     needs: [lint-and-test, build-and-publish]
-    if: always() && github.ref == 'refs/heads/main'
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      (needs.lint-and-test.result == 'failure' || needs.build-and-publish.result == 'failure')
 
     steps:
-      - name: Send Pushover notification
+      - name: Send CI failure notification
         env:
           PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
           PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
         run: |
-          if [ "${{ needs.build-and-publish.result }}" = "success" ]; then
-            TITLE="omni-notify deployed"
-            MESSAGE="Container pushed successfully"
-          else
-            TITLE="omni-notify CI failed"
-            FAILED=""
-            [ "${{ needs.lint-and-test.result }}" != "success" ] && FAILED="lint-and-test"
-            [ "${{ needs.build-and-publish.result }}" != "success" ] && FAILED="${FAILED:+$FAILED, }build-and-publish"
-            MESSAGE="Failed jobs: ${FAILED}"
-            PRIORITY=1
-          fi
+          TITLE="omni-notify CI failed"
+          FAILED=""
+          [ "${{ needs.lint-and-test.result }}" = "failure" ] && FAILED="lint-and-test"
+          [ "${{ needs.build-and-publish.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }build-and-publish"
+          MESSAGE="Failed jobs: ${FAILED}"
           curl -s -o /dev/null \
             --form-string "token=$PUSHOVER_TOKEN" \
             --form-string "user=$PUSHOVER_USER" \
@@ -110,5 +112,5 @@ jobs:
             --form-string "message=$MESSAGE" \
             --form-string "url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --form-string "url_title=View run" \
-            ${PRIORITY:+--form-string "priority=$PRIORITY"} \
+            --form-string "priority=1" \
             https://api.pushover.net/1/messages.json
