@@ -39,14 +39,7 @@ export interface InProgressItem extends MediaItem {
   lastViewedAt: number;
 }
 
-/**
- * Three-state result for calls to local services, mirroring the live-check
- * LiveStatus.Unknown pattern: an unavailable service must never be
- * interpreted as "empty state" (which would trigger false transitions).
- */
-export type FetchResult<T> =
-  | { status: "ok"; value: T }
-  | { status: "unavailable"; reason: string };
+export type { FetchResult } from "../utils/fetchResult.js";
 
 export type AddToWatchlistResult =
   | "added"
