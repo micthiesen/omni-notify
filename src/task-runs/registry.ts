@@ -26,10 +26,20 @@ interface ProvidesRunSummary {
   getLastRunSummary(): string | undefined;
 }
 
+interface HandlesManualRunInput {
+  runManual(input: unknown): Promise<void>;
+}
+
 function providesRunSummary(
   task: ScheduledTask,
 ): task is ScheduledTask & ProvidesRunSummary {
   return typeof (task as Partial<ProvidesRunSummary>).getLastRunSummary === "function";
+}
+
+function handlesManualRunInput(
+  task: ScheduledTask,
+): task is ScheduledTask & HandlesManualRunInput {
+  return typeof (task as Partial<HandlesManualRunInput>).runManual === "function";
 }
 
 export interface TaskInfo {
@@ -88,14 +98,17 @@ export class TaskRegistry {
   }
 
   /** Queue a manual run. Rejects immediately if the task is already running. */
-  public runNow(name: string): { runId: string } {
+  public runNow(name: string, input?: unknown): { runId: string } {
     const entry = this.tasks.get(name);
     if (!entry) throw new TaskNotFoundError(name);
+    if (input !== undefined && !handlesManualRunInput(entry.task)) {
+      throw new TaskManualInputUnsupportedError(name);
+    }
     if (this.running.has(name) || entry.queue.size + entry.queue.pending > 0) {
       throw new TaskAlreadyRunningError(name);
     }
     const runId = makeRunId(name);
-    void this.execute(name, "manual", runId).catch((error) => {
+    void this.execute(name, "manual", runId, undefined, input).catch((error) => {
       this.logger.error(`Manual run of "${name}" failed`, error);
     });
     return { runId };
@@ -157,6 +170,7 @@ export class TaskRegistry {
     trigger: TaskRunTrigger,
     runId?: string,
     scheduledFor?: number,
+    manualInput?: unknown,
   ): Promise<void> {
     const entry = this.tasks.get(name);
     if (!entry) throw new TaskNotFoundError(name);
@@ -177,7 +191,13 @@ export class TaskRegistry {
       startRunLogCapture(run.runId, name);
       taskRunBus.emit({ type: "run-started", taskName: name });
       try {
-        await runWithLogCapture(run.runId, () => entry.task.run());
+        await runWithLogCapture(run.runId, () =>
+          trigger === "manual" && manualInput !== undefined
+            ? (entry.task as ScheduledTask & HandlesManualRunInput).runManual(
+                manualInput,
+              )
+            : entry.task.run(),
+        );
         recordRunEnd(run.runId, {
           status: "success",
           summary: providesRunSummary(entry.task)
@@ -227,5 +247,11 @@ export class TaskNotFoundError extends Error {
 export class TaskAlreadyRunningError extends Error {
   constructor(name: string) {
     super(`Task "${name}" is already running`);
+  }
+}
+
+export class TaskManualInputUnsupportedError extends Error {
+  constructor(name: string) {
+    super(`Task "${name}" does not accept manual input`);
   }
 }

@@ -538,6 +538,29 @@ button {
   cursor: default;
 }
 
+.rec-run-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.rec-run-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.rec-run-limit select {
+  min-width: 3.25rem;
+  padding: 0.38rem 0.45rem;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.4rem;
+}
+
 .task-schedule {
   display: flex;
   align-items: baseline;

@@ -97,6 +97,7 @@ export async function fetchRecommendationsFor(
 export interface DiscoverOptions {
   withGenres?: number[];
   withoutGenres?: number[];
+  withOriginalLanguage?: string;
   minVoteCount?: number;
   page?: number;
 }
@@ -114,6 +115,9 @@ export async function discoverTitles(
   if (options.withGenres?.length) params.with_genres = options.withGenres.join(",");
   if (options.withoutGenres?.length) {
     params.without_genres = options.withoutGenres.join(",");
+  }
+  if (options.withOriginalLanguage) {
+    params.with_original_language = options.withOriginalLanguage;
   }
   if (mediaType === MediaType.Movie) {
     const data = await tmdbGet("/discover/movie", movieListSchema, params);

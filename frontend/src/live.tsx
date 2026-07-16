@@ -7,7 +7,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { ApiError, fetchSnapshot, runTaskRequest } from "./api";
-import type { Snapshot } from "./api";
+import type { ManualRunOptions, Snapshot } from "./api";
 
 export type ConnectionState = "connecting" | "live" | "polling";
 
@@ -20,7 +20,7 @@ interface LiveDataValue {
   snapshot: Snapshot | null;
   connection: ConnectionState;
   error: string | null;
-  runTask: (name: string) => Promise<RunResult>;
+  runTask: (name: string, options?: ManualRunOptions) => Promise<RunResult>;
 }
 
 const LiveDataContext = createContext<LiveDataValue | null>(null);
@@ -110,9 +110,12 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const runTask = useCallback(async (name: string): Promise<RunResult> => {
+  const runTask = useCallback(async (
+    name: string,
+    options?: ManualRunOptions,
+  ): Promise<RunResult> => {
     try {
-      await runTaskRequest(name);
+      await runTaskRequest(name, options);
       // The SSE snapshot lands ~200ms later; flip the flag now so the button
       // reacts instantly.
       setSnapshot((prev) =>

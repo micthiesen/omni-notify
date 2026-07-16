@@ -18,6 +18,7 @@ function makeTitle(tmdbId: number, mediaType = MediaType.Movie): TmdbTitle {
     voteAverage: 7,
     voteCount: 500,
     popularity: 5,
+    originalLanguage: "en",
   };
 }
 
@@ -96,6 +97,20 @@ describe("assemblePool", () => {
       50,
     );
     expect(pool.length).toBeLessThanOrEqual(50);
+  });
+
+  it("keeps only titles whose original language is English", () => {
+    const english = makeTitle(1);
+    const french = { ...makeTitle(2), originalLanguage: "fr" };
+    const unknown = { ...makeTitle(3), originalLanguage: undefined };
+
+    const pool = assemblePool(
+      [{ source: CandidateSource.Trending, titles: [english, french, unknown] }],
+      20,
+    );
+
+    expect(pool.map((candidate) => candidate.tmdbId)).toEqual([1]);
+    expect(pool[0]?.originalLanguage).toBe("en");
   });
 });
 

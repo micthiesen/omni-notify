@@ -10,7 +10,7 @@ import {
   TaskRunLogEntity,
   TaskScheduleStateEntity,
 } from "./persistence.js";
-import { TaskRegistry } from "./registry.js";
+import { TaskManualInputUnsupportedError, TaskRegistry } from "./registry.js";
 
 Injector.configure({
   config: {
@@ -37,6 +37,14 @@ class FakeTask extends ScheduledTask {
 
   public async run(): Promise<void> {
     this.runs++;
+  }
+}
+
+class ManualInputTask extends FakeTask {
+  public inputs: unknown[] = [];
+
+  public async runManual(input: unknown): Promise<void> {
+    this.inputs.push(input);
   }
 }
 
@@ -119,5 +127,26 @@ describe("TaskRegistry missed-run recovery", () => {
       schedule: task.schedule,
       evaluatedThrough: now,
     });
+  });
+
+  it("passes optional input only to tasks that handle manual runs", async () => {
+    const task = new ManualInputTask("Parameterized", "0 0 5 * * *");
+    const registry = new TaskRegistry(logger);
+    registry.track(task);
+
+    registry.runNow(task.name, { count: 5 });
+
+    await vi.waitFor(() => expect(task.inputs).toEqual([{ count: 5 }]));
+    expect(task.runs).toBe(0);
+  });
+
+  it("rejects manual input for ordinary scheduled tasks", () => {
+    const task = new FakeTask("Ordinary", "0 0 5 * * *");
+    const registry = new TaskRegistry(logger);
+    registry.track(task);
+
+    expect(() => registry.runNow(task.name, { count: 5 })).toThrow(
+      TaskManualInputUnsupportedError,
+    );
   });
 });

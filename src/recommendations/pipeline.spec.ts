@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   enrichCandidates: vi.fn(),
   filterEligible: vi.fn(),
   shortlistCandidates: vi.fn(),
+  researchFinalists: vi.fn(),
   selectRecommendation: vi.fn(),
   notify: vi.fn(),
   upsert: vi.fn(),
@@ -67,8 +68,14 @@ vi.mock("./persistence.js", () => ({
   getExcludedCanonicalIds: () => new Set(),
   getOpenRecommendations: mocks.getOpenRecommendations,
 }));
-vi.mock("./shortlist.js", () => ({ shortlistCandidates: mocks.shortlistCandidates }));
-vi.mock("./selection.js", () => ({ selectRecommendation: mocks.selectRecommendation }));
+vi.mock("./shortlist.js", () => ({
+  FINALIST_COUNT: 5,
+  shortlistCandidates: mocks.shortlistCandidates,
+}));
+vi.mock("./selection.js", () => ({
+  researchFinalists: mocks.researchFinalists,
+  selectRecommendation: mocks.selectRecommendation,
+}));
 vi.mock("./tmdb/client.js", () => ({
   fetchTitleGenreIds: mocks.fetchTitleGenreIds,
 }));
@@ -122,6 +129,21 @@ const scored = {
   composite: 75,
 };
 
+function selection(candidateId: string) {
+  return {
+    decision: "select" as const,
+    selected: {
+      candidate_id: candidateId,
+      why_for_user: "A fit",
+      caveats: [],
+      confidence: 0.9,
+      notification: { title: "Candidate", message: "A fit" },
+    },
+    backup: null,
+    no_add_reason: null,
+  };
+}
+
 const logger = {
   info: vi.fn(),
   warn: vi.fn(),
@@ -147,6 +169,7 @@ describe("recommendation pipeline orchestration", () => {
     mocks.filterEligible.mockReturnValue({ kept: [candidate], dropped: [] });
     mocks.enrichCandidates.mockResolvedValue([enriched]);
     mocks.shortlistCandidates.mockResolvedValue([scored]);
+    mocks.researchFinalists.mockResolvedValue(new Map());
     mocks.selectRecommendation.mockResolvedValue({
       decision: "no_add",
       selected: null,
@@ -220,6 +243,58 @@ describe("recommendation pipeline orchestration", () => {
     ).resolves.toBe("dry_run: would recommend Candidate");
     expect(mocks.addToWatchlist).not.toHaveBeenCalled();
     expect(mocks.notify).not.toHaveBeenCalled();
+  });
+
+  it("researches once and repeatedly selects from the shrinking shortlist", async () => {
+    const finalists = [4, 5, 6].map((tmdbId) => ({
+      ...scored,
+      candidate: {
+        ...enriched,
+        canonicalId: `tmdb:movie:${tmdbId}` as const,
+        tmdbId,
+        title: `Candidate ${tmdbId}`,
+      },
+    }));
+    mocks.shortlistCandidates.mockResolvedValue(finalists);
+    mocks.addToWatchlist.mockResolvedValue("added");
+    mocks.selectRecommendation
+      .mockResolvedValueOnce(selection("tmdb:movie:4"))
+      .mockResolvedValueOnce(selection("tmdb:movie:5"))
+      .mockResolvedValueOnce({
+        decision: "no_add",
+        selected: null,
+        backup: null,
+        no_add_reason: "remaining fit is weak",
+      });
+
+    await expect(
+      runRecommendationPipeline(logger, undefined, { maxRecommendations: 3 }),
+    ).resolves.toBe(
+      "recommended 2/3: Candidate 4, Candidate 5; stopped: no_add: remaining fit is weak",
+    );
+
+    expect(mocks.shortlistCandidates).toHaveBeenCalledWith(
+      [enriched],
+      expect.any(String),
+      logger,
+      undefined,
+      6,
+    );
+    expect(mocks.researchFinalists).toHaveBeenCalledTimes(1);
+    expect(mocks.selectRecommendation.mock.calls.map((call) => call[0])).toEqual([
+      finalists,
+      finalists.slice(1),
+      finalists.slice(2),
+    ]);
+    expect(mocks.addToWatchlist).toHaveBeenCalledTimes(2);
+    expect(mocks.notify).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects batch limits outside 1 through 10", async () => {
+    await expect(
+      runRecommendationPipeline(logger, undefined, { maxRecommendations: 11 }),
+    ).rejects.toThrow("maxRecommendations must be an integer from 1 to 10");
+    expect(mocks.fetchWatchHistory).not.toHaveBeenCalled();
   });
 
   it("records the first passive playback signal", async () => {

@@ -26,6 +26,7 @@ describe("normalizeMovie", () => {
           vote_count: 26000,
           popularity: 88.5,
           poster_path: "/abc.jpg",
+          original_language: "en",
         },
       ],
     });
@@ -41,6 +42,7 @@ describe("normalizeMovie", () => {
       voteCount: 26000,
       popularity: 88.5,
       posterPath: "/abc.jpg",
+      originalLanguage: "en",
     });
   });
 
@@ -68,12 +70,14 @@ describe("normalizeTv", () => {
       vote_count: 12000,
       popularity: 200,
       poster_path: null,
+      original_language: "en",
       adult: false,
     });
     expect(title.mediaType).toBe(MediaType.Tv);
     expect(title.title).toBe("Breaking Bad");
     expect(title.year).toBe(2008);
     expect(title.posterPath).toBeUndefined();
+    expect(title.originalLanguage).toBe("en");
   });
 });
 

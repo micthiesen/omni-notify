@@ -21,6 +21,7 @@ export const TARGET_POOL_SIZE = 80;
 export const MAX_SOURCE_SHARE = 1 / 3;
 const SEED_LIMIT = 8;
 const NOVELTY_SHARE = 0.15;
+const REQUIRED_ORIGINAL_LANGUAGE = "en";
 
 export interface WatchSeed {
   canonicalId: CanonicalId;
@@ -57,10 +58,10 @@ export async function fetchCandidateBuckets(
   ]);
 
   return [
-    { source: CandidateSource.Similar, titles: similar },
-    { source: CandidateSource.Discover, titles: discover },
-    { source: CandidateSource.Trending, titles: trending },
-    { source: CandidateSource.Novelty, titles: novelty },
+    { source: CandidateSource.Similar, titles: englishOnly(similar) },
+    { source: CandidateSource.Discover, titles: englishOnly(discover) },
+    { source: CandidateSource.Trending, titles: englishOnly(trending) },
+    { source: CandidateSource.Novelty, titles: englishOnly(novelty) },
   ];
 }
 
@@ -80,7 +81,9 @@ async function fetchSimilarBucket(
     ),
   );
   // Interleave per-seed results so one seed can't dominate the bucket.
-  return interleave(results.map((r) => r.slice(0, 12)));
+  return interleave(
+    results.map((r) => r.filter(isEligibleOriginalLanguage).slice(0, 12)),
+  );
 }
 
 async function fetchDiscoverBucket(
@@ -90,7 +93,10 @@ async function fetchDiscoverBucket(
   if (topGenres.length === 0) return [];
   const results = await Promise.all(
     [MediaType.Movie, MediaType.Tv].map((mediaType) =>
-      discoverTitles(mediaType, { withGenres: topGenres }).catch((error) => {
+      discoverTitles(mediaType, {
+        withGenres: topGenres,
+        withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
+      }).catch((error) => {
         logger.warn(`TMDB discover failed (${mediaType})`, (error as Error).message);
         return [];
       }),
@@ -107,6 +113,7 @@ async function fetchNoveltyBucket(
     [MediaType.Movie, MediaType.Tv].map((mediaType) =>
       discoverTitles(mediaType, {
         withoutGenres: topGenres,
+        withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
         minVoteCount: 1000,
       }).catch((error) => {
         logger.warn(
@@ -152,6 +159,7 @@ export function assemblePool(
     let taken = 0;
     for (const title of bucket.titles) {
       if (taken >= cap || pool.length >= targetSize) break;
+      if (!isEligibleOriginalLanguage(title)) continue;
       const canonicalId = makeCanonicalId(title.mediaType, title.tmdbId);
       if (seen.has(canonicalId)) continue;
       seen.add(canonicalId);
@@ -167,6 +175,7 @@ export function assemblePool(
         voteCount: title.voteCount,
         popularity: title.popularity,
         posterPath: title.posterPath,
+        originalLanguage: title.originalLanguage,
         source: bucket.source,
       });
       taken++;
@@ -186,6 +195,14 @@ export function assemblePool(
   }
 
   return pool;
+}
+
+export function isEligibleOriginalLanguage(title: TmdbTitle): boolean {
+  return title.originalLanguage === REQUIRED_ORIGINAL_LANGUAGE;
+}
+
+function englishOnly(titles: TmdbTitle[]): TmdbTitle[] {
+  return titles.filter(isEligibleOriginalLanguage);
 }
 
 /** Attach genre names (via the TMDB genre maps) and library presence. */

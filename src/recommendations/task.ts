@@ -3,7 +3,11 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import config from "../utils/config.js";
-import { runRecommendationPipeline } from "./pipeline.js";
+import { MAX_RECOMMENDATIONS_PER_RUN, runRecommendationPipeline } from "./pipeline.js";
+
+export interface RecommendationManualRunInput {
+  maxRecommendations: number;
+}
 
 export class RecommendationTask extends ScheduledTask {
   public readonly name = "Recommendations";
@@ -44,6 +48,15 @@ export class RecommendationTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
+    await this.runPipeline(1);
+  }
+
+  public async runManual(input: unknown): Promise<void> {
+    const maxRecommendations = parseMaxRecommendations(input);
+    await this.runPipeline(maxRecommendations);
+  }
+
+  private async runPipeline(maxRecommendations: number): Promise<void> {
     const logFile = config.LOGS_PATH
       ? new LogFile(
           `${config.LOGS_PATH}/recommendations/${logTimestamp()}.md`,
@@ -51,7 +64,12 @@ export class RecommendationTask extends ScheduledTask {
         )
       : undefined;
 
-    const summary = await runRecommendationPipeline(this.logger, logFile);
+    this.logger.info(
+      `Recommendation run requested up to ${maxRecommendations} item(s)`,
+    );
+    const summary = await runRecommendationPipeline(this.logger, logFile, {
+      maxRecommendations,
+    });
     this.lastRunSummary = summary;
     this.logger.info(`Recommendation run finished: ${summary}`);
   }
@@ -60,6 +78,22 @@ export class RecommendationTask extends ScheduledTask {
   public getLastRunSummary(): string | undefined {
     return this.lastRunSummary;
   }
+}
+
+function parseMaxRecommendations(input: unknown): number {
+  const maxRecommendations = (input as Partial<RecommendationManualRunInput> | null)
+    ?.maxRecommendations;
+  if (
+    !Number.isInteger(maxRecommendations) ||
+    maxRecommendations === undefined ||
+    maxRecommendations < 1 ||
+    maxRecommendations > MAX_RECOMMENDATIONS_PER_RUN
+  ) {
+    throw new RangeError(
+      `maxRecommendations must be an integer from 1 to ${MAX_RECOMMENDATIONS_PER_RUN}`,
+    );
+  }
+  return maxRecommendations;
 }
 
 function requiredModelCredentials(): [string, unknown][] {

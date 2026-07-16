@@ -20,6 +20,7 @@ import {
   type RecommendationData,
   setRecommendationFeedback,
 } from "./recommendations/persistence.js";
+import { MAX_RECOMMENDATIONS_PER_RUN } from "./recommendations/pipeline.js";
 import { getLatestTasteProfile } from "./recommendations/taste/index.js";
 import { runLogBus, taskRunBus } from "./task-runs/events.js";
 import { getActiveRunLogs } from "./task-runs/logCapture.js";
@@ -267,6 +268,39 @@ export function startServer(
     try {
       const { runId } = registry.runNow(name);
       logger.info(`Manual run requested for "${name}"`);
+      return c.json({ runId }, 202);
+    } catch (error) {
+      if (error instanceof TaskNotFoundError) {
+        return c.json({ error: error.message }, 404);
+      }
+      if (error instanceof TaskAlreadyRunningError) {
+        return c.json({ error: error.message }, 409);
+      }
+      throw error;
+    }
+  });
+
+  const recommendationRunSchema = z.object({
+    maxRecommendations: z.number().int().min(1).max(MAX_RECOMMENDATIONS_PER_RUN),
+  });
+
+  app.post("/api/recommendations/run", async (c) => {
+    const parsed = recommendationRunSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: `maxRecommendations must be an integer from 1 to ${MAX_RECOMMENDATIONS_PER_RUN}`,
+        },
+        400,
+      );
+    }
+    try {
+      const { runId } = registry.runNow("Recommendations", parsed.data);
+      logger.info(
+        `Manual recommendation run requested for up to ${parsed.data.maxRecommendations} item(s)`,
+      );
       return c.json({ runId }, 202);
     } catch (error) {
       if (error instanceof TaskNotFoundError) {

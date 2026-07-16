@@ -21,6 +21,10 @@ export interface TaskInfo {
   lastRun: TaskRun | null;
 }
 
+export interface ManualRunOptions {
+  maxRecommendations?: number;
+}
+
 export type RunLogLevel = "debug" | "info" | "warn" | "error";
 
 export interface RunLogLine {
@@ -270,7 +274,15 @@ export function runLogStreamUrl(runId: string): string {
   return `/api/task-runs/${encodeURIComponent(runId)}/logs/stream`;
 }
 
-export function runTaskRequest(name: string): Promise<{ runId: string }> {
+export function runTaskRequest(
+  name: string,
+  options?: ManualRunOptions,
+): Promise<{ runId: string }> {
+  if (options?.maxRecommendations !== undefined) {
+    return apiPost<{ runId: string }>("/api/recommendations/run", {
+      maxRecommendations: options.maxRecommendations,
+    });
+  }
   return apiPost<{ runId: string }>(`/api/tasks/${encodeURIComponent(name)}/run`);
 }
 

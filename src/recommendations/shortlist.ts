@@ -53,6 +53,7 @@ export async function shortlistCandidates(
   historyDigest: string,
   logger: Logger,
   logFile?: LogFile,
+  finalistCount = FINALIST_COUNT,
 ): Promise<ScoredCandidate[]> {
   const { model, modelId } = getRecsShortlistModel();
 
@@ -104,7 +105,7 @@ export async function shortlistCandidates(
   }
 
   scored.sort((a, b) => b.composite - a.composite);
-  const finalists = scored.slice(0, FINALIST_COUNT);
+  const finalists = scored.slice(0, finalistCount);
 
   logFile?.section(
     "Shortlist Result",

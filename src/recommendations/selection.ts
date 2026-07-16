@@ -48,11 +48,11 @@ export type SelectionDecision = z.infer<typeof decisionSchema>;
 export async function selectRecommendation(
   finalists: ScoredCandidate[],
   historyDigest: string,
+  research: Map<string, string>,
   logger: Logger,
   logFile?: LogFile,
 ): Promise<SelectionDecision | undefined> {
   const { model, modelId } = getRecsSelectionModel();
-  const research = await researchFinalists(finalists, logger, logFile);
   const prompt = buildPrompt(finalists, historyDigest, research);
 
   logFile?.log(
@@ -84,7 +84,7 @@ export async function selectRecommendation(
   return decision ?? undefined;
 }
 
-async function researchFinalists(
+export async function researchFinalists(
   finalists: ScoredCandidate[],
   logger: Logger,
   logFile?: LogFile,

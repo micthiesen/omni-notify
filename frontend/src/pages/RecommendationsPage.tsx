@@ -388,6 +388,7 @@ export default function RecommendationsPage() {
   const [tasteLoading, setTasteLoading] = useState(true);
   const [tasteError, setTasteError] = useState<string | null>(null);
   const [recommendationRuns, setRecommendationRuns] = useState<TaskRun[]>([]);
+  const [maxRecommendations, setMaxRecommendations] = useState(1);
   const { snapshot, runTask } = useLiveData();
   const { toast, showToast } = useToast();
 
@@ -463,7 +464,7 @@ export default function RecommendationsPage() {
   }, [latestRecommendationRunId]);
 
   const handleRun = async () => {
-    const result = await runTask(TASK_NAME);
+    const result = await runTask(TASK_NAME, { maxRecommendations });
     showToast(result.message, result.ok ? "info" : "error");
   };
 
@@ -517,27 +518,44 @@ export default function RecommendationsPage() {
     <>
       <div className="page-header">
         <h1>Recommendations</h1>
-        <button
-          type="button"
-          className="run-btn"
-          disabled={running || !taskAvailable}
-          title={
-            taskAvailable
-              ? undefined
-              : "Task disabled: missing TMDB/OpenAI/Tavily API keys"
-          }
-          onClick={handleRun}
-        >
-          {running ? (
-            <>
-              <span className="running-pulse" /> Running…
-            </>
-          ) : taskAvailable ? (
-            "Run now"
-          ) : (
-            "Task disabled"
-          )}
-        </button>
+        <div className="rec-run-controls">
+          <label className="rec-run-limit">
+            <span>Up to</span>
+            <select
+              aria-label="Maximum recommendations"
+              value={maxRecommendations}
+              disabled={running || !taskAvailable}
+              onChange={(event) => setMaxRecommendations(Number(event.target.value))}
+            >
+              {Array.from({ length: 10 }, (_, index) => index + 1).map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="run-btn"
+            disabled={running || !taskAvailable}
+            title={
+              taskAvailable
+                ? undefined
+                : "Task disabled: missing TMDB/OpenAI/Tavily API keys"
+            }
+            onClick={handleRun}
+          >
+            {running ? (
+              <>
+                <span className="running-pulse" /> Running…
+              </>
+            ) : taskAvailable ? (
+              "Run now"
+            ) : (
+              "Task disabled"
+            )}
+          </button>
+        </div>
       </div>
       <Toast toast={toast} />
 

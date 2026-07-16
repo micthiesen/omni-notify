@@ -25,9 +25,16 @@ import {
   RecommendationEntity,
   RecommendationStatus,
 } from "./persistence.js";
-import { type SelectionPick, selectRecommendation } from "./selection.js";
-import type { ScoredCandidate } from "./shortlist.js";
-import { shortlistCandidates } from "./shortlist.js";
+import {
+  researchFinalists,
+  type SelectionPick,
+  selectRecommendation,
+} from "./selection.js";
+import {
+  FINALIST_COUNT,
+  type ScoredCandidate,
+  shortlistCandidates,
+} from "./shortlist.js";
 import { formatTasteProfileDigest } from "./taste/index.js";
 import { fetchTitleGenreIds } from "./tmdb/client.js";
 import type { Candidate, CanonicalId, MediaItem, WatchedItem } from "./types.js";
@@ -38,13 +45,31 @@ const RESOLVE_CONCURRENCY = 4;
 const FULL_RESOLUTION_HISTORY_LIMIT = 60;
 /** A pending row older than this from a previous run needs reconciliation. */
 const STALE_PENDING_MS = 60 * 60 * 1000;
+export const MAX_RECOMMENDATIONS_PER_RUN = 10;
+const FINALISTS_PER_REQUESTED_PICK = 2;
+
+export interface RecommendationPipelineOptions {
+  dryRun?: boolean;
+  maxRecommendations?: number;
+}
 
 /** Runs the full recommendation pipeline. Returns a one-line summary. */
 export async function runRecommendationPipeline(
   logger: Logger,
   logFile?: LogFile,
-  options: { dryRun?: boolean } = {},
+  options: RecommendationPipelineOptions = {},
 ): Promise<string> {
+  const maxRecommendations = options.maxRecommendations ?? 1;
+  if (
+    !Number.isInteger(maxRecommendations) ||
+    maxRecommendations < 1 ||
+    maxRecommendations > MAX_RECOMMENDATIONS_PER_RUN
+  ) {
+    throw new RangeError(
+      `maxRecommendations must be an integer from 1 to ${MAX_RECOMMENDATIONS_PER_RUN}`,
+    );
+  }
+
   // 1. Pull local state. Unavailable history/watchlist aborts the run: never
   //    recommend (or label outcomes) against missing state.
   const [history, inProgress, library, watchlist] = await Promise.all([
@@ -189,68 +214,104 @@ export async function runRecommendationPipeline(
     historyDigest,
     logger,
     logFile,
+    Math.max(FINALIST_COUNT, maxRecommendations * FINALISTS_PER_REQUESTED_PICK),
   );
   if (finalists.length === 0) return "shortlist returned no scorable candidates";
 
-  // 8. Strong-model research + selection.
-  const decision = await selectRecommendation(
-    finalists,
-    historyDigest,
-    logger,
-    logFile,
+  // 8. Research the shortlist once, then ask the unchanged one-pick selector
+  //    repeatedly against a shrinking set. A no_add decision ends the batch.
+  const research = await researchFinalists(finalists, logger, logFile);
+  const remaining = new Map<string, ScoredCandidate>(
+    finalists.map((finalist) => [finalist.candidate.canonicalId, finalist]),
   );
-  if (!decision) return "selection model returned no decision";
-  if (decision.decision === "no_add" || !decision.selected) {
-    const reason = decision.no_add_reason ?? "no reason given";
-    logger.info(`No recommendation today: ${reason}`);
-    return `no_add: ${reason.slice(0, 120)}`;
-  }
+  const recommended: Candidate[] = [];
+  let stopReason: string | undefined;
 
-  // 9. Commit: record pending BEFORE the external write so a crash can be
-  //    reconciled instead of orphaning a real watchlist addition.
-  const byId = new Map<string, ScoredCandidate>(
-    finalists.map((f) => [f.candidate.canonicalId, f]),
-  );
-  const selected = byId.get(decision.selected.candidate_id);
-  if (!selected) {
-    logger.warn(
-      `Selection returned unknown candidate id: ${decision.selected.candidate_id}`,
-    );
-    return "selection returned an unknown candidate id";
-  }
-
-  if (options.dryRun) {
-    return `dry_run: would recommend ${formatTitle(selected.candidate)}`;
-  }
-
-  const commitResult = await commitRecommendation(selected, decision.selected, logger);
-  if (commitResult === "committed") {
-    return `recommended: ${formatTitle(selected.candidate)}`;
-  }
-
-  const backup = decision.backup ? byId.get(decision.backup.candidate_id) : undefined;
-  if (
-    commitResult === "already_exists" &&
-    decision.backup &&
-    backup &&
-    backup.candidate.canonicalId !== selected.candidate.canonicalId
-  ) {
-    logger.info(
-      `Primary already on watchlist; promoting backup ${backup.candidate.title}`,
-    );
-    const backupCommitted = await commitRecommendation(
-      backup,
-      decision.backup,
+  while (recommended.length < maxRecommendations && remaining.size > 0) {
+    const decision = await selectRecommendation(
+      [...remaining.values()],
+      historyDigest,
+      research,
       logger,
-      true,
+      logFile,
     );
-    if (backupCommitted === "committed")
-      return `recommended (backup): ${formatTitle(backup.candidate)}`;
+    if (!decision) {
+      stopReason = "selection model returned no decision";
+      break;
+    }
+    if (decision.decision === "no_add" || !decision.selected) {
+      const reason = decision.no_add_reason ?? "no reason given";
+      logger.info(`No further recommendation today: ${reason}`);
+      stopReason = `no_add: ${reason.slice(0, 120)}`;
+      break;
+    }
+
+    const selected = remaining.get(decision.selected.candidate_id);
+    if (!selected) {
+      logger.warn(
+        `Selection returned unknown candidate id: ${decision.selected.candidate_id}`,
+      );
+      stopReason = "selection returned an unknown candidate id";
+      break;
+    }
+    remaining.delete(selected.candidate.canonicalId);
+
+    if (options.dryRun) {
+      recommended.push(selected.candidate);
+      continue;
+    }
+
+    // 9. Commit: record pending BEFORE the external write so a crash can be
+    //    reconciled instead of orphaning a real watchlist addition.
+    const commitResult = await commitRecommendation(
+      selected,
+      decision.selected,
+      logger,
+    );
+    if (commitResult === "committed") {
+      recommended.push(selected.candidate);
+      continue;
+    }
+    if (commitResult === "failed") {
+      throw new Error("Recommendation acquisition or notification failed");
+    }
+
+    const backup = decision.backup
+      ? remaining.get(decision.backup.candidate_id)
+      : undefined;
+    if (
+      decision.backup &&
+      backup &&
+      backup.candidate.canonicalId !== selected.candidate.canonicalId
+    ) {
+      remaining.delete(backup.candidate.canonicalId);
+      logger.info(
+        `Primary already on watchlist; promoting backup ${backup.candidate.title}`,
+      );
+      const backupCommitted = await commitRecommendation(
+        backup,
+        decision.backup,
+        logger,
+        true,
+      );
+      if (backupCommitted === "committed") {
+        recommended.push(backup.candidate);
+        continue;
+      }
+      if (backupCommitted === "failed") {
+        throw new Error("Recommendation acquisition or notification failed");
+      }
+    }
+    stopReason = "no_add: selected and backup are already tracked";
+    break;
   }
-  if (commitResult === "already_exists") {
-    return "no_add: selected and backup are already tracked";
-  }
-  throw new Error("Recommendation acquisition or notification failed");
+
+  return formatBatchSummary(
+    recommended,
+    maxRecommendations,
+    options.dryRun ?? false,
+    stopReason,
+  );
 }
 
 async function resolveMany(
@@ -523,4 +584,24 @@ function getRecommendationUrl(recommendationId: string): string {
 
 function formatTitle(candidate: Candidate): string {
   return candidate.year ? `${candidate.title} (${candidate.year})` : candidate.title;
+}
+
+function formatBatchSummary(
+  recommended: Candidate[],
+  requested: number,
+  dryRun: boolean,
+  stopReason?: string,
+): string {
+  if (recommended.length === 0) {
+    return stopReason ?? "no_add: no remaining finalists";
+  }
+  const titles = recommended.map(formatTitle).join(", ");
+  if (dryRun) {
+    return requested === 1
+      ? `dry_run: would recommend ${titles}`
+      : `dry_run: would recommend ${recommended.length}/${requested}: ${titles}`;
+  }
+  if (requested === 1) return `recommended: ${titles}`;
+  const stopped = stopReason ? `; stopped: ${stopReason}` : "";
+  return `recommended ${recommended.length}/${requested}: ${titles}${stopped}`;
 }

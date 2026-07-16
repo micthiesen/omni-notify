@@ -13,6 +13,7 @@ export interface TmdbTitle {
   voteCount: number;
   popularity: number;
   posterPath?: string;
+  originalLanguage?: string;
 }
 
 /** Structured title details used to judge fit and viewing commitment. */
@@ -40,6 +41,7 @@ const movieResultSchema = z.object({
   vote_count: z.number().optional().default(0),
   popularity: z.number().optional().default(0),
   poster_path: z.string().nullable().optional(),
+  original_language: z.string().optional(),
   adult: z.boolean().optional().default(false),
 });
 
@@ -53,6 +55,7 @@ const tvResultSchema = z.object({
   vote_count: z.number().optional().default(0),
   popularity: z.number().optional().default(0),
   poster_path: z.string().nullable().optional(),
+  original_language: z.string().optional(),
   adult: z.boolean().optional().default(false),
 });
 
@@ -165,6 +168,7 @@ export function normalizeMovie(result: MovieResult): TmdbTitle {
     voteCount: result.vote_count,
     popularity: result.popularity,
     posterPath: result.poster_path ?? undefined,
+    originalLanguage: nonEmpty(result.original_language),
   };
 }
 
@@ -180,6 +184,7 @@ export function normalizeTv(result: TvResult): TmdbTitle {
     voteCount: result.vote_count,
     popularity: result.popularity,
     posterPath: result.poster_path ?? undefined,
+    originalLanguage: nonEmpty(result.original_language),
   };
 }
 
