@@ -57,7 +57,8 @@ export class PodcastRecommendationTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
-    await this.runPipeline(2);
+    // Topic-tier target per scheduled run; guest picks are on top of this.
+    await this.runPipeline(3);
   }
 
   public async runManual(input: unknown): Promise<void> {

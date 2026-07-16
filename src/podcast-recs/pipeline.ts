@@ -39,8 +39,6 @@ import { loadVoices } from "./voices.js";
 const STALE_PENDING_MS = 60 * 60 * 1000;
 export const MAX_PODCAST_RECOMMENDATIONS_PER_RUN = 5;
 const FINALISTS_PER_REQUESTED_PICK = 2;
-/** Above this many guest picks, skip the topic/drama fill to avoid flooding. */
-const TOPIC_SUPPRESS_THRESHOLD = 3;
 /** Small cushion before the oldest open delivery, for timestamp skew. */
 const LISTEN_HISTORY_BUFFER_MS = 24 * 60 * 60 * 1000;
 
@@ -159,13 +157,14 @@ export async function runPodcastPipeline(
   }
   const guestCount = recommended.length;
 
-  // 6. Tier 2: conservative topic/drama fill, suppressed after a rich guest week.
-  // Exclude shows Tier 1 just recommended: eligibility was computed before those
-  // commits, so their 30-day show cooldown isn't in `exclusions` yet, and a
-  // different episode of the same show would otherwise slip through as topic fill.
+  // 6. Tier 2: topic/drama fill (the listener likes plenty of options, so this
+  // runs regardless of the guest count). Exclude shows Tier 1 just recommended:
+  // eligibility was computed before those commits, so their 30-day show cooldown
+  // isn't in `exclusions` yet, and a different episode of the same show would
+  // otherwise slip through as topic fill.
   const guestShowIds = new Set(recommended.map((c) => c.showId));
   const topicRemaining = topicEligible.filter((c) => !guestShowIds.has(c.showId));
-  const topicTarget = guestCount >= TOPIC_SUPPRESS_THRESHOLD ? 0 : topicTargetMax;
+  const topicTarget = topicTargetMax;
   let stopReason: string | undefined;
   if (topicTarget > 0 && topicRemaining.length > 0) {
     const finalists = await shortlistEpisodes(
