@@ -56,6 +56,10 @@ const configSchema = baseConfigSchema
     RECS_SCHEDULE: z.string().optional().default("0 0 17 * * 1,3,5"),
     RECS_PUBLIC_URL: z.string().optional().default("http://omni.boris"),
     PUSHOVER_RECS_TOKEN: z.string().optional(),
+    PODCAST_RECS_SCHEDULE: z.string().optional().default("0 0 11 * * 1,4"),
+    PODCAST_TASTE_PATH: z.string().optional(),
+    PODCAST_SUBSCRIPTIONS_PATH: z.string().optional(),
+    PUSHOVER_PODCAST_TOKEN: z.string().optional(),
     PLEX_URL: z.string().optional(),
     PLEX_TOKEN: z.string().optional(),
     PLEX_ACCOUNT_ID: optionalPositiveInt,
@@ -94,6 +98,7 @@ const configSchema = baseConfigSchema
     PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_CALENDAR_TOKEN: c.PUSHOVER_CALENDAR_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_RECS_TOKEN: c.PUSHOVER_RECS_TOKEN ?? c.PUSHOVER_TOKEN,
+    PUSHOVER_PODCAST_TOKEN: c.PUSHOVER_PODCAST_TOKEN ?? c.PUSHOVER_TOKEN,
   }));
 
 export type Config = z.infer<typeof configSchema>;

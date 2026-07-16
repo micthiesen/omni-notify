@@ -196,6 +196,43 @@ export interface TasteProfile {
   stats: TasteBehaviorStats;
 }
 
+export type PodcastRecommendationStatus =
+  | "pending"
+  | "notified"
+  | "listened"
+  | "abandoned"
+  | "ignored"
+  | "failed";
+export type PodcastFeedback = "good_pick" | "not_for_me";
+
+export interface PodcastRecommendation {
+  recommendationId: string;
+  showTitle: string;
+  episodeTitle: string;
+  feedUrl: string;
+  itunesId?: number;
+  artworkUrl?: string;
+  episodeUrl?: string;
+  publishedAt: number;
+  durationMinutes?: number;
+  status: PodcastRecommendationStatus;
+  whyForUser?: string;
+  caveats?: string[];
+  confidence?: number;
+  shortlistScores?: {
+    tasteMatch: number;
+    novelty: number;
+    composite: number;
+    risks: string[];
+  };
+  discoveredVia?: string;
+  sourceUrl?: string;
+  recommendedAt: number;
+  notifiedAt?: number;
+  feedback?: PodcastFeedback;
+  feedbackAt?: number;
+}
+
 export class ApiError extends Error {
   public readonly status: number;
 
@@ -308,6 +345,24 @@ export function sendRecommendationFeedback(
 ): Promise<{ recommendation: Recommendation }> {
   return apiPost<{ recommendation: Recommendation }>(
     `/api/recommendations/${encodeURIComponent(recommendationId)}/feedback`,
+    { feedback },
+  );
+}
+
+export function fetchPodcastRecommendations(): Promise<{
+  recommendations: PodcastRecommendation[];
+}> {
+  return apiGet<{ recommendations: PodcastRecommendation[] }>(
+    "/api/podcast-recommendations",
+  );
+}
+
+export function sendPodcastRecommendationFeedback(
+  recommendationId: string,
+  feedback: PodcastFeedback,
+): Promise<{ recommendation: PodcastRecommendation }> {
+  return apiPost<{ recommendation: PodcastRecommendation }>(
+    `/api/podcast-recommendations/${encodeURIComponent(recommendationId)}/feedback`,
     { feedback },
   );
 }

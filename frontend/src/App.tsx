@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { NavBar } from "./components/NavBar";
 import { LiveDataProvider } from "./live";
 import HomePage from "./pages/HomePage";
+import PodcastsPage from "./pages/PodcastsPage";
 import RecommendationsPage from "./pages/RecommendationsPage";
 import { usePath } from "./router";
 
@@ -18,6 +19,7 @@ function normalizePath(path: string): string {
 const PAGE_TITLES: Record<string, string> = {
   "/pets": "Pets",
   "/recommendations": "Recommendations",
+  "/podcasts": "Podcasts",
 };
 
 export default function App() {
@@ -47,6 +49,9 @@ export default function App() {
         break;
       case "/recommendations":
         page = <RecommendationsPage />;
+        break;
+      case "/podcasts":
+        page = <PodcastsPage />;
         break;
       default:
         page = <HomePage />;

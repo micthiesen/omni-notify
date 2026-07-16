@@ -4,6 +4,7 @@ import { Link } from "../router";
 const LINKS = [
   { to: "/", label: "Dashboard" },
   { to: "/recommendations", label: "Recommendations" },
+  { to: "/podcasts", label: "Podcasts" },
   { to: "/pets", label: "Pets" },
 ];
 

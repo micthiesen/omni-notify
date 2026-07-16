@@ -1212,7 +1212,8 @@ button {
   background: var(--accent-soft);
 }
 
-.status-chip-watched {
+.status-chip-watched,
+.status-chip-listened {
   color: var(--success);
   border-color: rgba(74, 222, 128, 0.35);
   background: rgba(74, 222, 128, 0.1);
@@ -1342,6 +1343,30 @@ button {
 .rec-empty-title {
   font-size: 1.05rem;
   font-weight: 650;
+}
+
+/* ===== Podcasts ===== */
+
+.podrec-artwork {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  background: var(--bg-inset);
+}
+
+.podrec-artwork-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.podrec-show {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
 }
 
 /* ===== Pets ===== */
@@ -1505,6 +1530,11 @@ button {
   .rec-poster {
     width: 60px;
     height: 90px;
+  }
+
+  .podrec-artwork {
+    width: 60px;
+    height: 60px;
   }
 
   .activity-detail,

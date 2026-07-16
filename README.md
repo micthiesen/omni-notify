@@ -97,6 +97,20 @@ A separate weekly `TasteReflection` task maintains a versioned taste profile. It
 
 See [the recommendation review checkpoint](docs/recommendations-review.md) for the decisions intentionally deferred until enough real recommendations have outcomes.
 
+## Podcast Recommendations
+
+A sibling pipeline (default: Mon/Thu at 11am, enabled by setting `PODCAST_TASTE_PATH`) that recommends up to two fresh podcast **episodes** per run from shows you don't already follow, and sends a Pushover notification per pick.
+
+Each run:
+
+1. Resolves subscribed shows — from the podcast account bridge when implemented (Castro, see [docs/castro-sync.md](docs/castro-sync.md)), else from an OPML export at `PODCAST_SUBSCRIPTIONS_PATH`. Subscribed shows are excluded from recommendations and double as taste evidence alongside the seed profile and explicit feedback.
+2. Discovers episodes being discussed this week via multi-angle web search, then extracts specific candidates with a cheap model.
+3. Verifies every candidate in code: show identity via the iTunes Search API, episode and release date from the show's actual RSS feed. Unverifiable episodes are dropped — release dates are never trusted from search snippets.
+4. Hard-filters in code: older than 7 days, already recommended, show on 30-day cooldown, rejected via "not for me", or already subscribed.
+5. Scores the survivors with a cheap model, researches finalists with web search, then a strong model picks one episode at a time or decides to add nothing.
+
+Recommended episodes are never repeated. Listen-history outcome labeling activates once the Castro bridge lands; until then, feedback buttons in the web UI are the signal.
+
 ## Web UI
 
 The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify dashboard:
@@ -104,6 +118,7 @@ The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify 
 - `/` shows live streamer status (who's live now, title, uptime, peak viewers), a stat strip, every scheduled task with its cron schedule, ticking next-run countdown, "Run now" button and expandable run history, plus a recent-activity feed with per-task filtering.
 - `/pets` is the pet weight tracker.
 - `/recommendations` lists every recommendation with poster, status, reasoning, service links, explicit feedback controls, filters, the current evidence-backed taste profile, and recent pipeline activity. Pushover notifications deep-link to the relevant recommendation.
+- `/podcasts` lists podcast episode recommendations with show artwork, status filters, episode/discussion links, and good-pick/not-for-me feedback controls. Pushover notifications deep-link here too.
 
 Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port — no extra ports needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
 
@@ -159,6 +174,10 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `TASTE_REFLECTION_SCHEDULE` | No | Taste-profile reflection cron (default: `0 0 4 * * 0`, Sunday 4am) |
 | `RECS_PUBLIC_URL` | No | Public/LAN Omni base URL used by notification links (default: `http://omni.boris`) |
 | `PUSHOVER_RECS_TOKEN` | No | Pushover token for recommendations (falls back to `PUSHOVER_TOKEN`) |
+| `PODCAST_TASTE_PATH` | No | Markdown listener profile (required to enable podcast recommendations) |
+| `PODCAST_SUBSCRIPTIONS_PATH` | No | OPML export of subscribed shows (subscribed-show exclusion) |
+| `PODCAST_RECS_SCHEDULE` | No | Podcast recommendation cron (default: `0 0 11 * * 1,4`) |
+| `PUSHOVER_PODCAST_TOKEN` | No | Pushover token for podcast recs (falls back to `PUSHOVER_TOKEN`) |
 | `PLEX_URL` / `PLEX_TOKEN` | For recommendations | Plex server URL and token |
 | `PLEX_ACCOUNT_ID` | For shared Plex servers | Account ID used to scope viewing history; multiple detected accounts fail closed without it |
 | `RADARR_URL` / `RADARR_API_KEY` | For recommendations | Radarr v3 API connection |

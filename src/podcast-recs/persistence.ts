@@ -1,0 +1,195 @@
+import { Entity } from "@micthiesen/mitools/entities";
+import type { CanonicalEpisodeId, CanonicalShowId } from "./types.js";
+
+export enum PodcastRecommendationStatus {
+  /** Row written, notification not yet confirmed. */
+  Pending = "pending",
+  /** Notification sent; awaiting an outcome. */
+  Notified = "notified",
+  /** Listened past the completion threshold (requires listen-history data). */
+  Listened = "listened",
+  /** Started but bailed below the completion threshold. */
+  Abandoned = "abandoned",
+  /** No engagement within the ignore window. */
+  Ignored = "ignored",
+  /** Run died between the pending write and notification; reconciled later. */
+  Failed = "failed",
+}
+
+export type PodcastFeedback = "good_pick" | "not_for_me";
+
+export type PodcastRecommendationData = {
+  recommendationId: string;
+  episodeId: CanonicalEpisodeId;
+  showId: CanonicalShowId;
+  showTitle: string;
+  episodeTitle: string;
+  feedUrl: string;
+  itunesId?: number;
+  artworkUrl?: string;
+  episodeGuid: string;
+  episodeUrl?: string;
+  publishedAt: number;
+  durationMinutes?: number;
+  status: PodcastRecommendationStatus;
+  whyForUser?: string;
+  caveats?: string[];
+  confidence?: number;
+  /** Selection-time evidence retained for later audit. */
+  showGenres?: string[];
+  discoveredVia?: string;
+  sourceUrl?: string;
+  shortlistScores?: {
+    tasteMatch: number;
+    novelty: number;
+    composite: number;
+    risks: string[];
+  };
+  /** Local date (YYYY-MM-DD) of the run that produced this recommendation. */
+  runDate: string;
+  recommendedAt: number;
+  notifiedAt?: number;
+  /** When a terminal outcome (listened/abandoned/ignored) was assigned. */
+  resolvedAt?: number;
+  feedback?: PodcastFeedback;
+  feedbackAt?: number;
+};
+
+export const PodcastRecommendationEntity = new Entity<
+  PodcastRecommendationData,
+  ["recommendationId"]
+>("podcast-recommendation-attempt", ["recommendationId"]);
+
+export function getAllPodcastRecommendations(): PodcastRecommendationData[] {
+  return PodcastRecommendationEntity.getAll().sort(
+    (a, b) => b.recommendedAt - a.recommendedAt,
+  );
+}
+
+export function getPodcastRecommendation(
+  recommendationId: string,
+): PodcastRecommendationData | undefined {
+  return PodcastRecommendationEntity.get({ recommendationId });
+}
+
+/** Same-show cooldown; episodes themselves are excluded permanently. */
+const SHOW_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+const FAILED_RETRY_MS = 24 * 60 * 60 * 1000;
+
+export interface PodcastExclusions {
+  /** Every episode ever recommended (except failed rows past their retry window). */
+  episodeIds: Set<CanonicalEpisodeId>;
+  /** Shows on cooldown or excluded permanently via not-for-me feedback. */
+  showIds: Set<CanonicalShowId>;
+}
+
+export function getPodcastExclusions(now: number): PodcastExclusions {
+  return computePodcastExclusions(PodcastRecommendationEntity.getAll(), now);
+}
+
+export function computePodcastExclusions(
+  records: PodcastRecommendationData[],
+  now: number,
+): PodcastExclusions {
+  const episodeIds = new Set<CanonicalEpisodeId>();
+  const showIds = new Set<CanonicalShowId>();
+  const latestFeedbackByShow = new Map<CanonicalShowId, PodcastRecommendationData>();
+
+  for (const rec of records) {
+    if (rec.status === PodcastRecommendationStatus.Failed) {
+      if (now - rec.recommendedAt < FAILED_RETRY_MS) episodeIds.add(rec.episodeId);
+    } else {
+      // A delivered episode is never recommended again, regardless of outcome.
+      episodeIds.add(rec.episodeId);
+      if (now - rec.recommendedAt < SHOW_COOLDOWN_MS) showIds.add(rec.showId);
+    }
+
+    const prior = latestFeedbackByShow.get(rec.showId);
+    if (
+      rec.feedback &&
+      (!prior ||
+        (rec.feedbackAt ?? rec.recommendedAt) >
+          (prior.feedbackAt ?? prior.recommendedAt))
+    ) {
+      latestFeedbackByShow.set(rec.showId, rec);
+    }
+  }
+
+  // Not-for-me excludes the whole show permanently unless newer feedback
+  // corrects it (latest feedback wins, mirroring the media recs system).
+  for (const rec of latestFeedbackByShow.values()) {
+    if (rec.feedback === "not_for_me") showIds.add(rec.showId);
+  }
+
+  return { episodeIds, showIds };
+}
+
+/** Recommendations still awaiting an outcome label. */
+export function getOpenPodcastRecommendations(): PodcastRecommendationData[] {
+  return PodcastRecommendationEntity.getAll().filter(
+    (r) =>
+      (r.status === PodcastRecommendationStatus.Notified ||
+        r.status === PodcastRecommendationStatus.Pending) &&
+      r.feedback !== "not_for_me",
+  );
+}
+
+export function setPodcastRecommendationFeedback(
+  recommendationId: string,
+  feedback: PodcastFeedback,
+): PodcastRecommendationData | undefined {
+  const rec = PodcastRecommendationEntity.get({ recommendationId });
+  if (!rec) return undefined;
+  PodcastRecommendationEntity.patch(
+    { recommendationId },
+    { feedback, feedbackAt: Date.now() },
+  );
+  return PodcastRecommendationEntity.get({ recommendationId });
+}
+
+export function formatPodcastFeedbackDigest(): string {
+  return formatPodcastFeedbackDigestFrom(getAllPodcastRecommendations());
+}
+
+export function formatPodcastFeedbackDigestFrom(
+  input: PodcastRecommendationData[],
+): string {
+  const seen = new Set<string>();
+  const records = [...input]
+    .sort(
+      (a, b) => (b.feedbackAt ?? b.recommendedAt) - (a.feedbackAt ?? a.recommendedAt),
+    )
+    .filter((rec) => {
+      if (!rec.feedback || seen.has(rec.showId)) return false;
+      seen.add(rec.showId);
+      return true;
+    })
+    .slice(0, 30);
+  if (records.length === 0) return "No explicit podcast feedback yet.";
+
+  const good = records.filter((rec) => rec.feedback === "good_pick");
+  const bad = records.filter((rec) => rec.feedback === "not_for_me");
+  const lines = ["Explicit feedback on past podcast recommendations:"];
+  if (good.length > 0) {
+    lines.push(
+      `- Good picks: ${good.map((r) => `${r.showTitle} — ${r.episodeTitle}`).join("; ")}`,
+    );
+  }
+  if (bad.length > 0) {
+    lines.push(`- Not for me: ${bad.map((r) => r.showTitle).join("; ")}`);
+  }
+  return lines.join("\n");
+}
+
+/** Recently recommended episodes, for the discovery/selection dedup context. */
+export function formatRecentRecommendationsDigest(limit = 15): string {
+  const recent = getAllPodcastRecommendations().slice(0, limit);
+  if (recent.length === 0) return "No podcast episodes recommended yet.";
+  return [
+    "Recently recommended episodes (never repeat these):",
+    ...recent.map(
+      (r) =>
+        `- ${r.showTitle} — ${r.episodeTitle} (${new Date(r.recommendedAt).toISOString().slice(0, 10)})`,
+    ),
+  ].join("\n");
+}

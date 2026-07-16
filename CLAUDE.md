@@ -83,6 +83,25 @@ src/
 │   ├── filters.ts           # Pure hard filters (pre-model)
 │   ├── shortlist.ts         # Cheap-model scoring, composite computed in code
 │   └── selection.ts         # Strong-model research (Tavily tools) + structured decision
+├── podcast-recs/            # AI podcast-episode recommendations → Pushover
+│   ├── task.ts              # PodcastRecommendationTask (cron, default Mon/Thu 11am;
+│   │                        #   PODCAST_TASTE_PATH doubles as the feature flag)
+│   ├── pipeline.ts          # Subscriptions → outcomes → discovery → verify → filter →
+│   │                        #   shortlist → research/select loop → commit (pending→notify)
+│   ├── account.ts           # PodcastAccountClient bridge contract (Castro, stubbed)
+│   ├── castro/              # Castro client stub — see docs/castro-sync.md
+│   ├── discovery.ts         # Tavily multi-angle search → cheap-model candidate extraction
+│   ├── candidates.ts        # iTunes Search + RSS resolution (deterministic date verify)
+│   ├── itunes.ts            # Keyless iTunes Search API client
+│   ├── rss.ts               # RSS episode parsing (linkedom)
+│   ├── opml.ts              # OPML subscription export parser (fallback source)
+│   ├── subscriptions.ts     # Account → OPML → none subscription resolution
+│   ├── filters.ts           # Pure hard filters (7d recency, subscribed/cooldown/excluded)
+│   ├── shortlist.ts         # Cheap-model scoring, composite computed in code
+│   ├── selection.ts         # Strong-model research + structured one-pick decision
+│   ├── outcomes.ts          # Pure outcome labeling (needs listen history; dormant until Castro)
+│   ├── taste.ts             # Seed profile file + subscriptions + feedback digest
+│   └── persistence.ts       # PodcastRecommendationEntity, exclusions, feedback
 ├── task-runs/               # Generic task-run tracking (powers the web UI)
 │   ├── persistence.ts       # TaskRunEntity + TaskRunLogEntity (last 50 runs/task), interrupted-run repair
 │   ├── events.ts            # taskRunBus (run start/finish) + runLogBus (per-line log events)
@@ -108,6 +127,19 @@ Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing 
 - The RecommendationEntity row is written as `pending` before acquisition, then flipped to `notified` after Pushover. Stale pending rows are reconciled only when acquisition demonstrably landed or the title was already available in Plex.
 - Plex availability, Radarr/Sonarr tracked state, and explicit user feedback are separate concepts. Unavailable service reads abort the run rather than being treated as empty state.
 - Cooldown: 180 days for re-recommendation; watched, abandoned, not-for-me, and already-watched titles are excluded permanently unless newer explicit feedback corrects the choice.
+
+### Podcast Recommendations Design Invariants
+
+Deliberately a sibling system to media recommendations (same architecture, separate implementation — the domains differ too much for shared types): episode-level, freshness-critical, and centered on shows the user does NOT already follow.
+
+- Identity: shows are `itunes:{id}` (fallback `feed:{normalized url}`), episodes are `{showId}#{rss guid}` (`types.ts`).
+- Release dates are verified from the show's actual RSS feed in code — never trusted from search snippets or model output. Unverifiable candidates are dropped.
+- Hard recency window: episodes older than 7 days are ineligible (`filters.ts`).
+- Episodes are excluded permanently once delivered; shows get a 30-day cooldown; not-for-me feedback excludes the show permanently unless newer feedback corrects it.
+- Subscribed shows are excluded (hard-filtered via OPML/account when available, prompt-excluded otherwise) and double as the main taste evidence. **The exclusion is load-bearing**: without a subscription source the pipeline can recommend already-followed shows.
+- Castro is behind the `PodcastAccountClient` bridge (`account.ts`), currently a stub — see `docs/castro-sync.md`. Until it lands: subscriptions come from an OPML export, listen-history outcome labeling is skipped entirely (labels would all drift to "ignored"), and "acquisition" is a deep link in the notification.
+- Commit protocol mirrors media recs: `pending` row before the Pushover notification, flipped to `notified` after; stale pending rows are marked failed (24h retry exclusion) since notification delivery cannot be verified after the fact.
+- The old `PodcastPicks` briefing (`briefings/PodcastPicks.md` on the deploy host) is superseded by this feature and should be disabled when `PODCAST_TASTE_PATH` is configured.
 
 ## Key Patterns
 
@@ -321,6 +353,10 @@ TASTE_REFLECTION_MODEL=openai:gpt-5.6-luna # Model for versioned taste reflectio
 TASTE_REFLECTION_SCHEDULE=0 0 4 * * 0    # Weekly taste reflection (Sunday 4am)
 RECS_SCHEDULE=0 0 17 * * 1,3,5          # Recommendation cron (default Mon/Wed/Fri 5pm)
 PUSHOVER_RECS_TOKEN=xxx                 # Optional: override for recommendation notifications
+PODCAST_TASTE_PATH=/path/to/taste.md    # Podcast listener profile (enables podcast recs)
+PODCAST_SUBSCRIPTIONS_PATH=/path/x.opml # Optional: OPML export of subscribed shows
+PODCAST_RECS_SCHEDULE=0 0 11 * * 1,4    # Podcast recs cron (default Mon/Thu 11am)
+PUSHOVER_PODCAST_TOKEN=xxx              # Optional: override for podcast notifications
 ```
 
 ## External Dependencies

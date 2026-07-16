@@ -14,6 +14,7 @@ import { buildStreamers, type Streamer } from "./live-check/streamers.js";
 import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
 import PetTrackerTask from "./pet-tracker/task.js";
+import { PodcastRecommendationTask } from "./podcast-recs/task.js";
 import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
 import { RecommendationTask } from "./recommendations/task.js";
 import { TasteReflectionTask } from "./recommendations/taste/task.js";
@@ -60,6 +61,8 @@ function buildTasks(streamers: Streamer[]): ScheduledTask[] {
 
   const recommendations = RecommendationTask.create(logger);
   if (recommendations) tasks.push(recommendations);
+  const podcastRecs = PodcastRecommendationTask.create(logger);
+  if (podcastRecs) tasks.push(podcastRecs);
   const tasteReflection = TasteReflectionTask.create(logger);
   if (tasteReflection) tasks.push(tasteReflection);
 

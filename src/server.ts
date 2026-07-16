@@ -15,6 +15,13 @@ import {
   getWeightHistory,
 } from "./pet-tracker/persistence.js";
 import {
+  getAllPodcastRecommendations,
+  getPodcastRecommendation,
+  type PodcastRecommendationData,
+  setPodcastRecommendationFeedback,
+} from "./podcast-recs/persistence.js";
+import { MAX_PODCAST_RECOMMENDATIONS_PER_RUN } from "./podcast-recs/pipeline.js";
+import {
   getAllRecommendations,
   getRecommendation,
   type RecommendationData,
@@ -96,6 +103,31 @@ function serializeRecommendation(rec: RecommendationData) {
       manager:
         rec.mediaType === "movie" ? "http://radarr.boris/" : "http://sonarr.boris/",
     },
+  };
+}
+
+function serializePodcastRecommendation(rec: PodcastRecommendationData) {
+  return {
+    recommendationId: rec.recommendationId,
+    showTitle: rec.showTitle,
+    episodeTitle: rec.episodeTitle,
+    feedUrl: rec.feedUrl,
+    itunesId: rec.itunesId ?? null,
+    artworkUrl: rec.artworkUrl ?? null,
+    episodeUrl: rec.episodeUrl ?? null,
+    publishedAt: rec.publishedAt,
+    durationMinutes: rec.durationMinutes ?? null,
+    status: rec.status,
+    whyForUser: rec.whyForUser ?? null,
+    caveats: rec.caveats ?? [],
+    confidence: rec.confidence ?? null,
+    shortlistScores: rec.shortlistScores ?? null,
+    discoveredVia: rec.discoveredVia ?? null,
+    sourceUrl: rec.sourceUrl ?? null,
+    recommendedAt: rec.recommendedAt,
+    notifiedAt: rec.notifiedAt ?? null,
+    feedback: rec.feedback ?? null,
+    feedbackAt: rec.feedbackAt ?? null,
   };
 }
 
@@ -430,6 +462,72 @@ export function startServer(
     );
     if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
     return c.json({ recommendation: serializeRecommendation(recommendation) });
+  });
+
+  app.get("/api/podcast-recommendations", (c) => {
+    const recommendations = getAllPodcastRecommendations().map(
+      serializePodcastRecommendation,
+    );
+    return c.json({ recommendations });
+  });
+
+  const podcastFeedbackSchema = z.object({
+    feedback: z.enum(["good_pick", "not_for_me"]),
+  });
+
+  app.post("/api/podcast-recommendations/:id/feedback", async (c) => {
+    const parsed = podcastFeedbackSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success) {
+      return c.json({ error: "Invalid recommendation feedback" }, 400);
+    }
+    const existing = getPodcastRecommendation(c.req.param("id"));
+    if (!existing) return c.json({ error: "Recommendation not found" }, 404);
+    if (existing.status === "pending" || existing.status === "failed") {
+      return c.json({ error: "Undelivered recommendations cannot be rated" }, 409);
+    }
+    const recommendation = setPodcastRecommendationFeedback(
+      c.req.param("id"),
+      parsed.data.feedback,
+    );
+    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
+    return c.json({ recommendation: serializePodcastRecommendation(recommendation) });
+  });
+
+  const podcastRunSchema = z.object({
+    maxRecommendations: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_PODCAST_RECOMMENDATIONS_PER_RUN),
+  });
+
+  app.post("/api/podcast-recommendations/run", async (c) => {
+    const parsed = podcastRunSchema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json(
+        {
+          error: `maxRecommendations must be an integer from 1 to ${MAX_PODCAST_RECOMMENDATIONS_PER_RUN}`,
+        },
+        400,
+      );
+    }
+    try {
+      const { runId } = registry.runNow("PodcastRecs", parsed.data);
+      logger.info(
+        `Manual podcast recommendation run requested for up to ${parsed.data.maxRecommendations} episode(s)`,
+      );
+      return c.json({ runId }, 202);
+    } catch (error) {
+      if (error instanceof TaskNotFoundError) {
+        return c.json({ error: error.message }, 404);
+      }
+      if (error instanceof TaskAlreadyRunningError) {
+        return c.json({ error: error.message }, 409);
+      }
+      throw error;
+    }
   });
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
