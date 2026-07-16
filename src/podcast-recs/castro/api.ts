@@ -172,28 +172,42 @@ export class CastroApi {
     // POST retry is 0 — writes to /profile/sync/actions are non-idempotent at
     // the HTTP level; got already excludes POST from its default retry methods,
     // so this is belt-and-suspenders against a future default change.
-    const response = await this.queue.add(() => {
-      const date = new Date().toUTCString();
-      const authHeaders = createCastroAuthHeaders(this.credentials, {
-        method,
-        pathAndQuery,
-        date,
-        body,
+    const response = await this.queue
+      .add(() => {
+        const date = new Date().toUTCString();
+        const authHeaders = createCastroAuthHeaders(this.credentials, {
+          method,
+          pathAndQuery,
+          date,
+          body,
+        });
+        return got(`${CASTRO_ORIGIN}${pathAndQuery}`, {
+          method,
+          body: method === "POST" ? body : undefined,
+          headers: {
+            ...authHeaders,
+            Accept: CASTRO_ACCEPT,
+            "User-Agent": CASTRO_USER_AGENT,
+            "X-Tentacles-App": "castro-ios",
+            "X-Tentacles-Platform": "iOS",
+          },
+          retry: { limit: method === "GET" ? 2 : 0 },
+          timeout: { request: 15_000 },
+        });
+      })
+      .catch((error: unknown) => {
+        // Surface the server's reason (e.g. "Sync is disabled" when the device
+        // credential's sync session is off) — it otherwise hides inside got's
+        // generic "status code 4xx" message and is painful to diagnose.
+        const responseBody = (error as { response?: { body?: unknown } }).response
+          ?.body;
+        if (typeof responseBody === "string" && responseBody.length > 0) {
+          throw new Error(
+            `Castro ${method} ${pathAndQuery} failed: ${(error as Error).message} — ${responseBody.slice(0, 200)}`,
+          );
+        }
+        throw error;
       });
-      return got(`${CASTRO_ORIGIN}${pathAndQuery}`, {
-        method,
-        body: method === "POST" ? body : undefined,
-        headers: {
-          ...authHeaders,
-          Accept: CASTRO_ACCEPT,
-          "User-Agent": CASTRO_USER_AGENT,
-          "X-Tentacles-App": "castro-ios",
-          "X-Tentacles-Platform": "iOS",
-        },
-        retry: { limit: method === "GET" ? 2 : 0 },
-        timeout: { request: 15_000 },
-      });
-    });
 
     if (options.emptyResponse) return undefined as T;
     if (!options.responseSchema) {

@@ -277,6 +277,27 @@ to 0600. Routine requests do not need Proxyman, the iPhone, iCloud access, or a
 new Finder backup. Re-extraction is only expected if Castro revokes or rotates
 the device credential, the account is reset, or the keychain item is deleted.
 
+### The credential must belong to a sync-enabled, dedicated device (learned the hard way)
+
+- **Writes require an active sync session.** With sync disabled for the
+  credential's device, reads keep working (auth is still valid) but every
+  `/profile/sync/actions` write returns `400` with body `Sync is disabled`. The
+  server body is the only tell — it now surfaces in `CastroApi` error messages.
+- **A write from a device that is not a live sync peer does not propagate.**
+  It updates the server's queue projection (so our own `fetchQueue` sees it) but
+  emits no sync event, so no other device ever renders it. Symptom: a queued
+  episode is provably on the server yet never appears in the app, even after a
+  full resync on multiple devices.
+- **Toggling Castro sync off/on re-keys the device.** It disables the session
+  the current credential belongs to and mints a fresh keychain credential for
+  the app, orphaning ours (reads still work, writes say `Sync is disabled`).
+  Do not toggle sync on the device whose credential omni-notify uses.
+- **Use a dedicated device.** The credential in use is from a spare iPad that
+  the owner does not otherwise open. That device is a first-class sync peer, so
+  its writes broadcast to the iPhone; and because nothing else drives it, its
+  sync is never toggled. Enrolling omni-notify as its own device is the durable
+  setup — impersonating an actively-used phone invites exactly the re-key above.
+
 ### Backup database inventory
 
 The one-time backup provided a useful cross-check of the server snapshot:
