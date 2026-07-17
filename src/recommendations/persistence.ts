@@ -61,6 +61,8 @@ export type RecommendationData = {
   /** When a terminal outcome (watched/abandoned/ignored) was assigned. */
   resolvedAt?: number;
   watchlistResult?: WatchlistWriteResult;
+  /** Sonarr's series URL slug, captured at add time (used for UI deep links). */
+  managerSlug?: string;
   feedback?: RecommendationFeedback;
   feedbackAt?: number;
   /** True when this was the backup candidate promoted after already_exists. */

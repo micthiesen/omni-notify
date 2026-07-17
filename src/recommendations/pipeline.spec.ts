@@ -199,7 +199,7 @@ describe("recommendation pipeline orchestration", () => {
       backup: null,
       no_add_reason: null,
     });
-    mocks.addToWatchlist.mockResolvedValue("error");
+    mocks.addToWatchlist.mockResolvedValue({ result: "error" });
 
     await expect(runRecommendationPipeline(logger)).rejects.toThrow(
       "acquisition or notification failed",
@@ -256,7 +256,7 @@ describe("recommendation pipeline orchestration", () => {
       },
     }));
     mocks.shortlistCandidates.mockResolvedValue(finalists);
-    mocks.addToWatchlist.mockResolvedValue("added");
+    mocks.addToWatchlist.mockResolvedValue({ result: "added" });
     mocks.selectRecommendation
       .mockResolvedValueOnce(selection("tmdb:movie:4"))
       .mockResolvedValueOnce(selection("tmdb:movie:5"))

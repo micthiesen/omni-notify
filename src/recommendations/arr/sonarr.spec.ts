@@ -52,9 +52,12 @@ describe("Sonarr adapter", () => {
       .mockResolvedValueOnce(json([]))
       .mockResolvedValueOnce(json([lookup]))
       .mockResolvedValueOnce(json({ id: 12, ...lookup }, 201))
-      .mockResolvedValueOnce(json([{ id: 12, ...lookup }]));
+      .mockResolvedValueOnce(json([{ id: 12, titleSlug: "severance", ...lookup }]));
 
-    await expect(addSonarrSeries(config, 95396, fetchMock)).resolves.toBe("added");
+    await expect(addSonarrSeries(config, 95396, fetchMock)).resolves.toEqual({
+      result: "added",
+      titleSlug: "severance",
+    });
     expect(fetchMock.mock.calls[1][0].toString()).toBe(
       "http://sonarr:8989/api/v3/series/lookup?term=tmdb%3A95396",
     );
@@ -72,14 +75,21 @@ describe("Sonarr adapter", () => {
   });
 
   it("reports already tracked by TMDB without a lookup", async () => {
-    const existing = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        json([{ id: 12, title: "Severance", tvdbId: 371980, tmdbId: 95396 }]),
-      );
-    await expect(addSonarrSeries(config, 95396, existing)).resolves.toBe(
-      "already_exists",
+    const existing = vi.fn<typeof fetch>().mockResolvedValue(
+      json([
+        {
+          id: 12,
+          title: "Severance",
+          titleSlug: "severance",
+          tvdbId: 371980,
+          tmdbId: 95396,
+        },
+      ]),
     );
+    await expect(addSonarrSeries(config, 95396, existing)).resolves.toEqual({
+      result: "already_exists",
+      titleSlug: "severance",
+    });
     expect(existing).toHaveBeenCalledTimes(1);
   });
 
@@ -89,9 +99,10 @@ describe("Sonarr adapter", () => {
       .mockResolvedValueOnce(json([{ id: 12, title: "Severance", tvdbId: 371980 }]))
       .mockResolvedValueOnce(json([{ title: "Severance", tvdbId: 371980 }]));
 
-    await expect(addSonarrSeries(config, 95396, existing)).resolves.toBe(
-      "already_exists",
-    );
+    await expect(addSonarrSeries(config, 95396, existing)).resolves.toEqual({
+      result: "already_exists",
+      titleSlug: undefined,
+    });
     expect(existing).toHaveBeenCalledTimes(2);
   });
 
@@ -100,7 +111,9 @@ describe("Sonarr adapter", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(json([]))
       .mockResolvedValueOnce(json([]));
-    await expect(addSonarrSeries(config, 1, missing)).resolves.toBe("not_found");
+    await expect(addSonarrSeries(config, 1, missing)).resolves.toEqual({
+      result: "not_found",
+    });
   });
 
   it("does not claim success until the write is visible", async () => {
@@ -112,6 +125,8 @@ describe("Sonarr adapter", () => {
       .mockResolvedValueOnce(json({ id: 12, ...lookup }, 201))
       .mockResolvedValueOnce(json([]));
 
-    await expect(addSonarrSeries(config, 95396, fetchMock)).resolves.toBe("error");
+    await expect(addSonarrSeries(config, 95396, fetchMock)).resolves.toEqual({
+      result: "error",
+    });
   });
 });

@@ -77,8 +77,9 @@ function serializeRun(run: TaskRunData) {
 
 // Radarr's movie page slug is the TMDB id, so link straight to it once the movie
 // is in the library; otherwise land on the add-new search pre-filled by tmdb id.
-// Sonarr's detail pages need its own titleSlug (not persisted), so always use the
-// add-new search, which shows an existing series as such and links through to it.
+// Sonarr's detail pages need its own titleSlug, captured at add time as
+// managerSlug; rows from before that was recorded fall back to the add-new
+// search, which shows an existing series as such and links through to it.
 function buildManagerLink(rec: RecommendationData): string {
   if (rec.mediaType === "movie") {
     const inRadarr =
@@ -87,7 +88,9 @@ function buildManagerLink(rec: RecommendationData): string {
       ? `http://radarr.boris/movie/${rec.tmdbId}`
       : `http://radarr.boris/add/new?term=${encodeURIComponent(`tmdb:${rec.tmdbId}`)}`;
   }
-  return `http://sonarr.boris/add/new?term=${encodeURIComponent(rec.title)}`;
+  return rec.managerSlug
+    ? `http://sonarr.boris/series/${rec.managerSlug}`
+    : `http://sonarr.boris/add/new?term=${encodeURIComponent(rec.title)}`;
 }
 
 function serializeRecommendation(rec: RecommendationData) {

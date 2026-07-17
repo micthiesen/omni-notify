@@ -24,6 +24,8 @@ export interface MediaItem {
   year?: number;
   mediaType: MediaType;
   externalIds?: ExternalIds;
+  /** Service-native URL slug (Sonarr), when the backend exposes one. */
+  titleSlug?: string;
 }
 
 export interface WatchedItem extends MediaItem {
@@ -47,6 +49,12 @@ export type AddToWatchlistResult =
   | "not_found"
   | "unavailable"
   | "error";
+
+export interface WatchlistAddOutcome {
+  result: AddToWatchlistResult;
+  /** Sonarr's generated series URL slug, when known (used for UI deep links). */
+  titleSlug?: string;
+}
 
 /** A candidate title assembled from TMDB, pre-scoring. */
 export interface Candidate {

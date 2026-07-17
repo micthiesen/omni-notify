@@ -1,4 +1,4 @@
-import type { AddToWatchlistResult, MediaItem } from "../types.js";
+import type { MediaItem, WatchlistAddOutcome } from "../types.js";
 import { MediaType } from "../types.js";
 import {
   type ArrConfig,
@@ -14,6 +14,7 @@ import {
 interface SonarrSeries extends Record<string, unknown> {
   id?: number;
   title?: string;
+  titleSlug?: string;
   year?: number;
   tvdbId?: number;
   tmdbId?: number;
@@ -48,22 +49,28 @@ export async function fetchSonarrSeries(
             tmdb: optionalNumber(series.tmdbId),
             imdb: optionalString(series.imdbId),
           },
+          titleSlug: optionalString(series.titleSlug),
         },
       ];
     }),
   };
 }
 
+// The titleSlug on outcomes is always read from Sonarr's own series list (the
+// slug is Sonarr-generated), never derived from lookup data or the local title.
 export async function addSonarrSeries(
   config: ArrConfig,
   tmdbId: number,
   fetchImpl?: FetchImplementation,
-): Promise<AddToWatchlistResult> {
-  if (!isConfigured(config)) return "unavailable";
+): Promise<WatchlistAddOutcome> {
+  if (!isConfigured(config)) return { result: "unavailable" };
   const existing = await fetchSonarrSeries(config, fetchImpl);
-  if (existing.status !== "ok") return "unavailable";
-  if (existing.value.some((series) => series.externalIds?.tmdb === tmdbId)) {
-    return "already_exists";
+  if (existing.status !== "ok") return { result: "unavailable" };
+  const trackedByTmdb = existing.value.find(
+    (series) => series.externalIds?.tmdb === tmdbId,
+  );
+  if (trackedByTmdb) {
+    return { result: "already_exists", titleSlug: trackedByTmdb.titleSlug };
   }
 
   const lookup = await requestJson<unknown>(
@@ -72,15 +79,20 @@ export async function addSonarrSeries(
     {},
     fetchImpl,
   );
-  if (lookup.status === "unavailable") return "unavailable";
-  if (lookup.status !== "ok") return "error";
-  if (!Array.isArray(lookup.value) || lookup.value.length === 0) return "not_found";
+  if (lookup.status === "unavailable") return { result: "unavailable" };
+  if (lookup.status !== "ok") return { result: "error" };
+  if (!Array.isArray(lookup.value) || lookup.value.length === 0) {
+    return { result: "not_found" };
+  }
   const series = lookup.value[0] as SonarrSeries;
   if (!optionalString(series.title) || !optionalNumber(series.tvdbId)) {
-    return "not_found";
+    return { result: "not_found" };
   }
-  if (existing.value.some((item) => item.externalIds?.tvdb === series.tvdbId)) {
-    return "already_exists";
+  const trackedByTvdb = existing.value.find(
+    (item) => item.externalIds?.tvdb === series.tvdbId,
+  );
+  if (trackedByTvdb) {
+    return { result: "already_exists", titleSlug: trackedByTvdb.titleSlug };
   }
 
   const added = await requestJson<unknown>(
@@ -96,12 +108,15 @@ export async function addSonarrSeries(
     }),
     fetchImpl,
   );
-  if (added.status === "unavailable") return "unavailable";
-  if (added.status !== "ok") return "error";
+  if (added.status === "unavailable") return { result: "unavailable" };
+  if (added.status !== "ok") return { result: "error" };
 
   const verified = await fetchSonarrSeries(config, fetchImpl);
-  if (verified.status !== "ok") return "unavailable";
-  return verified.value.some((item) => item.externalIds?.tvdb === series.tvdbId)
-    ? "added"
-    : "error";
+  if (verified.status !== "ok") return { result: "unavailable" };
+  const written = verified.value.find(
+    (item) => item.externalIds?.tvdb === series.tvdbId,
+  );
+  return written
+    ? { result: "added", titleSlug: written.titleSlug }
+    : { result: "error" };
 }

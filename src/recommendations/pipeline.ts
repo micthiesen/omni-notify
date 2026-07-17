@@ -39,7 +39,13 @@ import {
 } from "./shortlist.js";
 import { formatTasteProfileDigest } from "./taste/index.js";
 import { fetchTitleGenreIds } from "./tmdb/client.js";
-import type { Candidate, CanonicalId, MediaItem, WatchedItem } from "./types.js";
+import type {
+  AddToWatchlistResult,
+  Candidate,
+  CanonicalId,
+  MediaItem,
+  WatchedItem,
+} from "./types.js";
 import { addToWatchlist, fetchWatchlist } from "./watchlist.js";
 
 const RESOLVE_CONCURRENCY = 4;
@@ -516,21 +522,28 @@ async function commitRecommendation(
     wasBackup,
   });
 
-  const addResult = candidate.inLibrary
-    ? "available"
-    : await addToWatchlist({
-        tmdbId: candidate.tmdbId,
-        mediaType: candidate.mediaType,
-        title: candidate.title,
-        year: candidate.year,
-        externalIds: { tmdb: candidate.tmdbId },
-      });
+  const addOutcome: { result: AddToWatchlistResult | "available"; titleSlug?: string } =
+    candidate.inLibrary
+      ? { result: "available" }
+      : await addToWatchlist({
+          tmdbId: candidate.tmdbId,
+          mediaType: candidate.mediaType,
+          title: candidate.title,
+          year: candidate.year,
+          externalIds: { tmdb: candidate.tmdbId },
+        });
+  const addResult = addOutcome.result;
+  const managerSlug = addOutcome.titleSlug;
 
   if (addResult === "already_exists") {
     logger.warn(`${candidate.title} is already tracked`);
     RecommendationEntity.patch(
       { recommendationId },
-      { status: RecommendationStatus.Failed, watchlistResult: "already_exists" },
+      {
+        status: RecommendationStatus.Failed,
+        watchlistResult: "already_exists",
+        ...(managerSlug ? { managerSlug } : {}),
+      },
     );
     return "already_exists";
   }
@@ -549,7 +562,10 @@ async function commitRecommendation(
   }
 
   const watchlistResult = addResult;
-  RecommendationEntity.patch({ recommendationId }, { watchlistResult });
+  RecommendationEntity.patch(
+    { recommendationId },
+    { watchlistResult, ...(managerSlug ? { managerSlug } : {}) },
+  );
 
   try {
     await notify({

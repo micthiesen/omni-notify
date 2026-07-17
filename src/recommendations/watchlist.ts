@@ -3,10 +3,10 @@ import type { ArrConfig } from "./arr/client.js";
 import { addRadarrMovie, fetchRadarrMovies } from "./arr/radarr.js";
 import { addSonarrSeries, fetchSonarrSeries } from "./arr/sonarr.js";
 import type {
-  AddToWatchlistResult,
   ExternalIds,
   FetchResult,
   MediaItem,
+  WatchlistAddOutcome,
 } from "./types.js";
 import { MediaType } from "./types.js";
 
@@ -42,9 +42,9 @@ export async function fetchWatchlist(): Promise<FetchResult<MediaItem[]>> {
 
 export async function addToWatchlist(
   request: WatchlistAddRequest,
-): Promise<AddToWatchlistResult> {
+): Promise<WatchlistAddOutcome> {
   return request.mediaType === MediaType.Movie
-    ? addRadarrMovie(radarrConfig(), request.tmdbId)
+    ? { result: await addRadarrMovie(radarrConfig(), request.tmdbId) }
     : addSonarrSeries(sonarrConfig(), request.tmdbId);
 }
 
