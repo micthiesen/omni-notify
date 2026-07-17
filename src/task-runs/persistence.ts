@@ -1,3 +1,4 @@
+import { gunzipSync, gzipSync } from "node:zlib";
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger, type LogLevel } from "@micthiesen/mitools/logging";
 
@@ -50,10 +51,22 @@ export type TaskRunLogData = {
   dropped: number;
 };
 
+type StoredTaskRunLog = {
+  runId: string;
+  taskName: string;
+  /** Legacy rows written before compression stored the raw lines. */
+  lines?: TaskRunLogLine[];
+  /** gzip(JSON.stringify(lines)), base64-encoded. */
+  linesGz?: string;
+  /** Oldest lines dropped once the per-run cap was hit. */
+  dropped: number;
+};
+
 /** One row per finished run; written once at run end, pruned with the run. */
-export const TaskRunLogEntity = new Entity<TaskRunLogData, ["runId"]>("task-run-log", [
-  "runId",
-]);
+export const TaskRunLogEntity = new Entity<StoredTaskRunLog, ["runId"]>(
+  "task-run-log",
+  ["runId"],
+);
 
 const KEEP_PER_TASK = 50;
 
@@ -142,12 +155,24 @@ export function getRun(runId: string): TaskRunData | undefined {
 
 export function saveRunLogs(data: TaskRunLogData): void {
   if (data.lines.length === 0 && data.dropped === 0) return;
-  TaskRunLogEntity.upsert(data);
+  TaskRunLogEntity.upsert({
+    runId: data.runId,
+    taskName: data.taskName,
+    linesGz: gzipSync(JSON.stringify(data.lines)).toString("base64"),
+    dropped: data.dropped,
+  });
 }
 
 export function getRunLogs(runId: string): TaskRunLogData | undefined {
   try {
-    return TaskRunLogEntity.get({ runId });
+    const row = TaskRunLogEntity.get({ runId });
+    if (!row) return undefined;
+    const lines = row.linesGz
+      ? (JSON.parse(
+          gunzipSync(Buffer.from(row.linesGz, "base64")).toString("utf8"),
+        ) as TaskRunLogLine[])
+      : (row.lines ?? []);
+    return { runId: row.runId, taskName: row.taskName, lines, dropped: row.dropped };
   } catch (err) {
     // A truncated/corrupt CBOR blob (e.g. a row half-written when the
     // container was killed mid-deploy) would otherwise 500 the logs endpoint

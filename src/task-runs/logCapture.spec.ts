@@ -6,6 +6,8 @@ import {
   finishRunLogCapture,
   getActiveRunLogs,
   installLogCapture,
+  MAX_LINE_LENGTH,
+  MAX_LINES_PER_RUN,
   runWithLogCapture,
   startRunLogCapture,
 } from "./logCapture.js";
@@ -104,25 +106,25 @@ describe("log capture", () => {
   it("drops the oldest lines beyond the per-run cap and counts them", async () => {
     startRunLogCapture("run-cap", "TaskA");
     await runWithLogCapture("run-cap", async () => {
-      for (let i = 0; i < 2100; i++) logger.info(`line ${i}`);
+      for (let i = 0; i < MAX_LINES_PER_RUN + 100; i++) logger.info(`line ${i}`);
     });
 
     const buffer = getActiveRunLogs("run-cap");
-    expect(buffer?.lines).toHaveLength(2000);
+    expect(buffer?.lines).toHaveLength(MAX_LINES_PER_RUN);
     expect(buffer?.dropped).toBe(100);
     expect(buffer?.lines[0]?.msg).toBe("line 100");
-    expect(buffer?.lines.at(-1)?.msg).toBe("line 2099");
+    expect(buffer?.lines.at(-1)?.msg).toBe(`line ${MAX_LINES_PER_RUN + 99}`);
     finishRunLogCapture("run-cap");
   });
 
   it("truncates oversized lines", async () => {
     startRunLogCapture("run-long", "TaskA");
     await runWithLogCapture("run-long", async () => {
-      logger.info("x".repeat(10_000));
+      logger.info("x".repeat(MAX_LINE_LENGTH + 5_000));
     });
 
     const line = getActiveRunLogs("run-long")?.lines[0];
-    expect(line?.msg.length).toBe(4097); // 4096 chars + ellipsis
+    expect(line?.msg.length).toBe(MAX_LINE_LENGTH + 1); // cap + ellipsis
     expect(line?.msg.endsWith("…")).toBe(true);
     finishRunLogCapture("run-long");
   });
@@ -142,6 +144,16 @@ describe("log capture", () => {
     expect(stored?.taskName).toBe("TaskC");
     expect(stored?.lines).toHaveLength(1);
     expect(events.at(-1)).toEqual({ type: "end", runId: "run-3" });
+  });
+
+  it("reads legacy uncompressed log rows", () => {
+    TaskRunLogEntity.upsert({
+      runId: "run-legacy",
+      taskName: "TaskC",
+      lines: [{ t: 1, level: LogLevel.INFO, logger: "Test", msg: "old row" }],
+      dropped: 0,
+    });
+    expect(getRunLogs("run-legacy")?.lines[0]?.msg).toBe("old row");
   });
 
   it("does not persist a row for runs that logged nothing", () => {

@@ -3,8 +3,10 @@ import { Logger } from "@micthiesen/mitools/logging";
 import { runLogBus } from "./events.js";
 import { saveRunLogs, type TaskRunLogLine } from "./persistence.js";
 
-const MAX_LINES_PER_RUN = 2000;
-const MAX_LINE_LENGTH = 4096;
+// Generous ceilings: real runs stay far below them, and persisted rows are
+// gzip-compressed, so the caps only guard against a runaway logging loop.
+export const MAX_LINES_PER_RUN = 20_000;
+export const MAX_LINE_LENGTH = 32_768;
 
 interface RunLogBuffer {
   taskName: string;
