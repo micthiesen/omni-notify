@@ -5,6 +5,11 @@ import { formatDistance, formatDistanceToNow } from "date-fns";
 import appConfig from "../utils/config.js";
 import { ViewerMetricsService } from "./metrics/index.js";
 import {
+  getNotificationPermissions,
+  liveNotificationsEnabled,
+  type NotificationPermissions,
+} from "./notificationPolicy.js";
+import {
   getStreamerStatus,
   type StreamerStatus,
   type StreamerStatusLive,
@@ -132,7 +137,7 @@ export default class LiveCheckTask extends ScheduledTask {
       `${streamer.displayName} is now LIVE (primary ${next.primary.platform}:${next.primary.username})`,
     );
 
-    if (liveNotificationsEnabled(streamer)) {
+    if (this.notificationPermissions(streamer).wentLive) {
       const message = buildLiveMessage(next.primaryTitle, previous);
 
       await notify({
@@ -161,7 +166,7 @@ export default class LiveCheckTask extends ScheduledTask {
 
     if (titleChanged) {
       this.logger.info(`${streamer.displayName} changed title`);
-      if (liveNotificationsEnabled(streamer)) {
+      if (this.notificationPermissions(streamer).titleChange) {
         await notify({
           title: `${streamer.displayName} changed title`,
           message: next.primaryTitle,
@@ -193,7 +198,7 @@ export default class LiveCheckTask extends ScheduledTask {
       ),
     });
 
-    if (appConfig.OFFLINE_NOTIFICATIONS && liveNotificationsEnabled(streamer)) {
+    if (this.notificationPermissions(streamer).wentOffline) {
       const duration = formatDistance(new Date(), previousLive.startedAt);
       const baseText = `Streamed for ${duration}`;
       const message =
@@ -225,15 +230,17 @@ export default class LiveCheckTask extends ScheduledTask {
     });
   }
 
+  private notificationPermissions(streamer: Streamer): NotificationPermissions {
+    return getNotificationPermissions(streamer, {
+      offlineNotifications: appConfig.OFFLINE_NOTIFICATIONS,
+    });
+  }
+
   private getPushoverToken(streamerId: string): string | undefined {
     return (
       this.streamersById.get(streamerId)?.pushoverToken ?? appConfig.PUSHOVER_LIVE_TOKEN
     );
   }
-}
-
-function liveNotificationsEnabled(streamer: Streamer): boolean {
-  return streamer.liveNotifications !== false;
 }
 
 function formatCount(count: number): string {
