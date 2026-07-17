@@ -9,12 +9,20 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { BriefingHistoryEntity } from "../briefing-agent/persistence.js";
+import { EmailActivityEntity } from "../jmap/activity.js";
 import { ViewerMetricsEntity } from "../live-check/metrics/persistence.js";
 import type { DailyBucket } from "../live-check/metrics/types.js";
 import { StreamerStatusEntity } from "../live-check/persistence.js";
 import { Platform } from "../live-check/platforms/index.js";
 import type { Streamer } from "../live-check/streamers.js";
 import { insertWeightReading, upsertPet } from "../pet-tracker/persistence.js";
+import {
+  PodcastRecommendationEntity,
+  PodcastRecommendationStatus,
+} from "../podcast-recs/persistence.js";
+import { PodcastTasteProfileEntity } from "../podcast-recs/reflection/persistence.js";
+import type { CanonicalEpisodeId, CanonicalShowId } from "../podcast-recs/types.js";
 import {
   RecommendationEntity,
   RecommendationStatus,
@@ -32,7 +40,7 @@ installLogCapture();
 const logger = new Logger("Preview");
 
 class FakeTask extends ScheduledTask {
-  private readonly taskLogger: Logger;
+  protected readonly taskLogger: Logger;
 
   public constructor(
     public readonly name: string,
@@ -72,6 +80,14 @@ class FakeTask extends ScheduledTask {
 
   public getLastRunSummary(): string | undefined {
     return this.summary;
+  }
+}
+
+/** Mirrors the real Recommendations task's manual-input support. */
+class FakeRecommendationsTask extends FakeTask {
+  public runManual(input: unknown): Promise<void> {
+    this.taskLogger.info("Manual run input", { input });
+    return this.run();
   }
 }
 
@@ -352,6 +368,201 @@ TasteProfileEntity.upsert({
   },
 });
 
+// --- Podcast recommendations ---------------------------------------------------
+
+PodcastRecommendationEntity.upsert({
+  recommendationId: "preview-pod-signal-drift",
+  episodeId: "itunes:900001#ep-2041" as CanonicalEpisodeId,
+  showId: "itunes:900001" as CanonicalShowId,
+  showTitle: "Signal Drift",
+  episodeTitle: "The grid runs on spreadsheets (with Casey Marlowe)",
+  feedUrl: "https://example.com/signal-drift.xml",
+  itunesId: 900001,
+  episodeGuid: "ep-2041",
+  episodeUrl: "https://example.com/signal-drift/2041",
+  publishedAt: now - 2 * 24 * HOUR,
+  durationMinutes: 94,
+  status: PodcastRecommendationStatus.Notified,
+  whyForUser:
+    "Casey Marlowe guests on a show you don't follow — a deep dive on grid software failures in the style you starred twice last month.",
+  caveats: ["Second half drifts into listener mail"],
+  confidence: 0.79,
+  matchedVoices: ["Casey Marlowe"],
+  discoveredVia: "podcastindex:byperson",
+  runDate: "2026-07-15",
+  recommendedAt: now - 26 * HOUR,
+  notifiedAt: now - 26 * HOUR + MIN,
+  queueResult: "queued",
+});
+PodcastRecommendationEntity.upsert({
+  recommendationId: "preview-pod-cold-open",
+  episodeId: "itunes:900002#ep-88" as CanonicalEpisodeId,
+  showId: "itunes:900002" as CanonicalShowId,
+  showTitle: "Cold Open",
+  episodeTitle: "The sitcom writers' room that sued itself",
+  feedUrl: "https://example.com/cold-open.xml",
+  itunesId: 900002,
+  episodeGuid: "ep-88",
+  publishedAt: now - 9 * 24 * HOUR,
+  durationMinutes: 52,
+  status: PodcastRecommendationStatus.Listened,
+  whyForUser: "Messy showbiz drama told by people who were in the room.",
+  confidence: 0.71,
+  discoveredVia: "tavily:drama",
+  sourceUrl: "https://example.com/discussion",
+  runDate: "2026-07-08",
+  recommendedAt: now - 8 * 24 * HOUR,
+  notifiedAt: now - 8 * 24 * HOUR + MIN,
+  resolvedAt: now - 5 * 24 * HOUR,
+  queueResult: "not_queued",
+});
+
+PodcastTasteProfileEntity.upsert({
+  profileId: "v2:preview-pod",
+  version: 2,
+  generatedAt: now - 3 * 24 * HOUR,
+  evidenceFingerprint: "preview-pod",
+  evidenceCount: 57,
+  modelId: "openai:gpt-5.6-luna",
+  promptVersion: "podcast-taste-reflection-v1",
+  summary:
+    "Gravitates to sharp conversational shows: media gossip argued in good faith, systems deep-dives, and hosts who push back on their guests.",
+  stablePreferences: [
+    {
+      claim: "Well-argued drama and beef between people who know their field",
+      confidence: 0.84,
+      evidenceIds: ["pp-1", "pp-2", "pp-3"],
+    },
+  ],
+  conditionalPreferences: [
+    {
+      claim: "Interview shows work when the host challenges the guest",
+      confidence: 0.7,
+      evidenceIds: ["pp-4", "pp-5"],
+    },
+  ],
+  aversions: [
+    {
+      claim: "Rage-farming and bad-faith culture-war framing",
+      confidence: 0.8,
+      evidenceIds: ["pp-6", "pp-7"],
+    },
+  ],
+  currentSaturation: [
+    { claim: "AI industry recap shows", confidence: 0.66, evidenceIds: ["pp-8"] },
+  ],
+  explorationTargets: [
+    {
+      claim: "Narrative investigative seasons",
+      confidence: 0.6,
+      evidenceIds: ["pp-9"],
+    },
+  ],
+  uncertainties: [
+    {
+      claim: "History deep-dives over two hours",
+      confidence: 0.5,
+      evidenceIds: ["pp-10"],
+    },
+  ],
+  stats: {
+    listenedEpisodes: 214,
+    startedEpisodes: 260,
+    starredEpisodes: 18,
+    distinctShows: 42,
+    recommendations: {
+      total: 9,
+      listened: 4,
+      abandoned: 1,
+      ignored: 2,
+      failed: 0,
+      awaitingOutcome: 2,
+    },
+    feedback: { goodPick: 3, notForMe: 1 },
+  },
+});
+
+// --- Briefing archive ------------------------------------------------------------
+
+BriefingHistoryEntity.upsert({
+  briefingName: "MorningBriefing",
+  notifications: [
+    {
+      title: "Chip exports tighten again",
+      message:
+        "New export rules land Friday; TSMC and ASML both issued guidance. Three takeaways for the homelab GPU market:\n1) 48GB cards keep climbing\n2) grey-market risk\n3) rentals get cheaper.",
+      url: "https://example.com/chip-exports",
+      timestamp: now - 2 * HOUR,
+    },
+    {
+      title: "GPU supply loosens at the mid-range",
+      message:
+        "Street prices for mid-range cards fell 8% this month as the new generation ships in volume.",
+      url: "https://example.com/gpu-supply",
+      timestamp: now - 26 * HOUR,
+    },
+  ],
+});
+BriefingHistoryEntity.upsert({
+  briefingName: "VancouverWeekend",
+  notifications: [
+    {
+      title: "Rain clears Saturday afternoon",
+      message:
+        "Showers through Saturday morning, then sun. Sunday looks dry with a high of 24°C — good window for the seawall.",
+      url: "",
+      timestamp: now - 20 * HOUR,
+    },
+  ],
+});
+
+// --- Email pipeline activity -------------------------------------------------------
+
+EmailActivityEntity.upsert({
+  activityId: "ParcelTracker#preview-1",
+  pipeline: "ParcelTracker",
+  emailId: "preview-1",
+  subject: "Your order has shipped!",
+  from: "orders@example-store.com",
+  receivedAt: now - 3 * HOUR,
+  processedAt: now - 3 * HOUR + 30_000,
+  outcome: "processed",
+  items: ["1Z999AA10123456784 (ups): submitted"],
+});
+EmailActivityEntity.upsert({
+  activityId: "CalendarEvents#preview-2",
+  pipeline: "CalendarEvents",
+  emailId: "preview-2",
+  subject: "Booking confirmed: Dr. Chen, Jul 22 at 2:10 PM",
+  from: "noreply@clinicbookings.example",
+  receivedAt: now - 7 * HOUR,
+  processedAt: now - 7 * HOUR + 45_000,
+  outcome: "processed",
+  items: ["Dr. Chen appointment → Jul 22, 2:10 PM (created)"],
+});
+EmailActivityEntity.upsert({
+  activityId: "ParcelTracker#preview-3",
+  pipeline: "ParcelTracker",
+  emailId: "preview-3",
+  subject: "Weekly newsletter: 10 deals you missed",
+  from: "news@example-store.com",
+  receivedAt: now - 9 * HOUR,
+  processedAt: now - 9 * HOUR + 15_000,
+  outcome: "filtered",
+  detail: "No shipping keywords or carrier hints in subject/body",
+});
+EmailActivityEntity.upsert({
+  activityId: "CalendarEvents#preview-4",
+  pipeline: "CalendarEvents",
+  emailId: "preview-4",
+  subject: "Your flight itinerary — YVR ⇄ NRT",
+  from: "itinerary@airline.example",
+  receivedAt: now - 30 * HOUR,
+  processedAt: now - 30 * HOUR + 60_000,
+  outcome: "error",
+  detail: "CalDAV PUT failed: 507 Insufficient Storage",
+});
+
 // --- Pet ----------------------------------------------------------------------
 
 upsertPet({
@@ -389,7 +600,7 @@ registry.track(
 registry.track(new FakeTask("EveningBriefing", "0 0 21 * * *", 5_000, undefined, true));
 registry.track(new FakeTask("PetTrackerTask", "0 */30 * * * *", 2_500));
 registry.track(
-  new FakeTask(
+  new FakeRecommendationsTask(
     "Recommendations",
     "0 0 17 * * 1,3,5",
     9_000,

@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { type BriefingHistory, fetchBriefings } from "../api";
-
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+import { formatAbsoluteWithYear, toTitleCase } from "../utils/format";
 
 interface FeedEntry {
   briefingName: string;
@@ -57,10 +48,12 @@ export default function BriefingsPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Briefings</h1>
-        <p className="muted">
-          Archive of AI briefing notifications (last 50 per briefing).
-        </p>
+        <div className="page-header-stack">
+          <h1>Briefings</h1>
+          <p className="page-subtitle">
+            Archive of AI briefing notifications (last 50 per briefing).
+          </p>
+        </div>
       </div>
 
       {briefings === null && error === null && (
@@ -79,10 +72,10 @@ export default function BriefingsPage() {
 
       {briefings !== null && briefings.length > 0 && (
         <>
-          <div className="briefing-filters">
+          <div className="rec-filters">
             <button
               type="button"
-              className={`briefing-filter ${filter === null ? "active" : ""}`}
+              className={`chip-btn ${filter === null ? "active" : ""}`}
               onClick={() => setFilter(null)}
             >
               All
@@ -91,13 +84,11 @@ export default function BriefingsPage() {
               <button
                 key={b.name}
                 type="button"
-                className={`briefing-filter ${filter === b.name ? "active" : ""}`}
+                className={`chip-btn ${filter === b.name ? "active" : ""}`}
                 onClick={() => setFilter(filter === b.name ? null : b.name)}
               >
-                {b.name}
-                <span className="briefing-filter-count">
-                  {b.notifications.length}
-                </span>
+                {toTitleCase(b.name)}
+                <span className="chip-btn-count">{b.notifications.length}</span>
               </button>
             ))}
           </div>
@@ -111,11 +102,13 @@ export default function BriefingsPage() {
                 <div className="briefing-card-header">
                   <h2 className="briefing-card-title">{entry.title}</h2>
                   <span className="briefing-card-time">
-                    {formatTimestamp(entry.timestamp)}
+                    {formatAbsoluteWithYear(entry.timestamp)}
                   </span>
                 </div>
                 <div className="briefing-card-meta">
-                  <span className="briefing-badge">{entry.briefingName}</span>
+                  <span className="briefing-badge">
+                    {toTitleCase(entry.briefingName)}
+                  </span>
                   {entry.url && (
                     <a
                       href={entry.url}

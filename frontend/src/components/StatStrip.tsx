@@ -1,6 +1,6 @@
 import type { Snapshot } from "../api";
 import { useNow } from "../hooks/useNow";
-import { formatCountdown } from "../utils/format";
+import { formatCountdown, toTitleCase } from "../utils/format";
 
 interface Tile {
   label: string;
@@ -51,7 +51,7 @@ export function StatStrip({ snapshot }: { snapshot: Snapshot }) {
       ? {
           label: "Next run",
           value: formatCountdown(next.at - now),
-          detail: next.name,
+          detail: toTitleCase(next.name),
         }
       : { label: "Next run", value: "—" },
   );

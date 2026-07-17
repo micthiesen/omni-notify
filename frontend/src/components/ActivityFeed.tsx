@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchTaskRuns } from "../api";
 import type { Snapshot, TaskRun } from "../api";
-import { formatAbsolute, formatRelative } from "../utils/format";
+import { formatAbsolute, formatRelative, toTitleCase } from "../utils/format";
 import { StatusDot, TriggerBadge } from "./badges";
 import { runDuration } from "./TaskCard";
 
@@ -53,7 +53,7 @@ function GroupRow({
       title="View logs"
     >
       <StatusDot status={newest.status} />
-      <span className="activity-task">{newest.taskName}</span>
+      <span className="activity-task">{toTitleCase(newest.taskName)}</span>
       {count > 1 && (
         <span
           className="collapse-badge"
@@ -139,7 +139,7 @@ export function ActivityFeed({
           <option value="">All tasks</option>
           {taskNames.map((name) => (
             <option key={name} value={name}>
-              {name}
+              {toTitleCase(name)}
             </option>
           ))}
         </select>

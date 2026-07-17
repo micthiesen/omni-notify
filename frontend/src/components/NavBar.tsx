@@ -3,7 +3,7 @@ import { Link } from "../router";
 
 const LINKS = [
   { to: "/", label: "Dashboard" },
-  { to: "/recommendations", label: "Recommendations" },
+  { to: "/media", label: "Media" },
   { to: "/podcasts", label: "Podcasts" },
   { to: "/briefings", label: "Briefings" },
   { to: "/emails", label: "Email" },

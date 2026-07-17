@@ -25,6 +25,8 @@
   --live: #fb4d67;
   --radius: 14px;
   --radius-sm: 8px;
+  --radius-xs: 6px;
+  --control-height: 2rem;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.22);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -86,6 +88,25 @@ button {
 
 .muted {
   color: var(--text-muted);
+}
+
+/*
+ * Metadata row: sibling parts separated by a dot that hugs the end of each
+ * part, so wrapped lines never start with a stray separator. Parts wrap as
+ * whole units on narrow screens.
+ */
+.meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.55rem;
+}
+
+.meta-row > *:not(:last-child)::after {
+  content: "·";
+  margin-left: 0.55rem;
+  color: var(--text-muted);
+  font-weight: 700;
 }
 
 .loading,
@@ -278,6 +299,20 @@ button {
   margin-bottom: 1rem;
 }
 
+/* Title + subtitle stacked on the left of a page header. */
+.page-header-stack {
+  margin-bottom: 1rem;
+}
+
+.page-header-stack h1 {
+  margin-bottom: 0.15rem;
+}
+
+.page-subtitle {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
 /* ===== Data manager ===== */
 
 .data-page-header {
@@ -285,13 +320,8 @@ button {
   margin-bottom: 1.25rem;
 }
 
-.data-page-header h1 {
-  margin-bottom: 0.15rem;
-}
-
-.data-page-subtitle {
-  color: var(--text-muted);
-  font-size: 0.84rem;
+.data-page-header .page-header-stack {
+  margin-bottom: 0;
 }
 
 .data-header-actions {
@@ -358,7 +388,7 @@ button {
   padding: 0.42rem 0.55rem;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.78rem;
@@ -422,6 +452,15 @@ button {
   line-height: 1.35;
 }
 
+.data-browser-aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.2rem;
+  flex-shrink: 0;
+  text-align: right;
+}
+
 .data-browser-heading p {
   color: var(--text-muted);
   font-size: 0.76rem;
@@ -445,7 +484,7 @@ button {
   margin: 0 0.9rem 0.7rem;
   padding: 0.38rem 0.55rem;
   border: 1px solid rgba(251, 191, 36, 0.25);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: rgba(251, 191, 36, 0.07);
   color: #d8bd72;
   font-size: 0.73rem;
@@ -467,7 +506,7 @@ button {
   padding: 0.38rem 0.6rem;
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--text);
   font-size: 0.78rem;
   outline: none;
@@ -578,7 +617,9 @@ button {
   position: sticky;
   right: 0;
   z-index: 1;
-  width: 2.4rem !important;
+  /* The 1% width makes the column hug its content in auto table layout, so
+     extra table width never stretches the actions column. */
+  width: 1% !important;
   min-width: 2.4rem;
   max-width: 2.4rem !important;
   padding: 0.15rem !important;
@@ -598,7 +639,7 @@ th.data-actions-column {
   margin: auto;
   background: transparent;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   color: var(--text-muted);
   cursor: pointer;
   font-size: 1.1rem;
@@ -624,7 +665,7 @@ th.data-actions-column {
   display: flex;
   flex-direction: column;
   width: min(900px, 100%);
-  max-height: min(84vh, 100%);
+  max-height: min(82vh, 100%);
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -681,7 +722,7 @@ th.data-actions-column {
   padding: 0.35rem 0.7rem;
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.35);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--danger);
   cursor: pointer;
   font-size: 0.76rem;
@@ -890,11 +931,11 @@ th.data-actions-column {
 
 /* ===== Task cards ===== */
 
+/* Cards stretch to the tallest card in their row so rows read as one unit. */
 .task-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 0.9rem;
-  align-items: start;
 }
 
 .task-card {
@@ -952,12 +993,13 @@ th.data-actions-column {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  height: var(--control-height);
   background: var(--accent-soft);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-sm);
   color: var(--accent);
   font-weight: 600;
-  padding: 0.3rem 0.8rem;
+  padding: 0 0.8rem;
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -990,11 +1032,13 @@ th.data-actions-column {
 
 .rec-run-limit select {
   min-width: 3.25rem;
-  padding: 0.38rem 0.45rem;
+  height: var(--control-height);
+  padding: 0 0.45rem;
+  font-size: 0.8rem;
   color: var(--text);
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
-  border-radius: 0.4rem;
+  border-radius: var(--radius-sm);
 }
 
 .task-schedule {
@@ -1009,7 +1053,7 @@ th.data-actions-column {
   font-size: 0.72rem;
   background: var(--bg-inset);
   border: 1px solid var(--border);
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   padding: 0.1rem 0.4rem;
   color: var(--text-secondary);
 }
@@ -1072,8 +1116,14 @@ th.data-actions-column {
   animation: pulse 1.2s ease-in-out infinite;
 }
 
+.status-dot.status-none {
+  background: var(--text-muted);
+  opacity: 0.35;
+}
+
 .run-status-text {
   font-weight: 550;
+  text-transform: capitalize;
 }
 
 .run-status-success {
@@ -1088,15 +1138,18 @@ th.data-actions-column {
   color: var(--accent);
 }
 
+/* Task output (summaries + errors) reads as log data → monospace everywhere. */
 .run-error {
   color: var(--danger);
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
 
 .run-summary {
   color: var(--text-secondary);
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
 
@@ -1130,27 +1183,44 @@ th.data-actions-column {
   border-color: rgba(251, 191, 36, 0.35);
 }
 
+/* Rows inside a padded card bleed to the card edges so hover highlights
+   fill the full card width. */
+button.task-last-run,
+.task-card .history-row {
+  width: auto;
+  margin-inline: -1.1rem;
+  padding-inline: 1.1rem;
+}
+
 /* Task history accordion */
 
+/* Full-width bottom "tab" of the task card. */
 .history-toggle {
-  align-self: flex-start;
-  display: inline-flex;
+  align-self: stretch;
+  margin-top: auto;
+  margin-inline: -1.1rem;
+  margin-bottom: -1rem;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.35rem;
   background: none;
   border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px);
   color: var(--text-muted);
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
-  padding: 0.15rem 0;
-  transition: color 0.15s ease;
+  padding: 0.5rem 1.1rem 0.55rem;
+  transition: color 0.15s ease, background 0.12s ease;
 }
 
 .history-toggle:hover {
   color: var(--text-secondary);
+  background: var(--bg-hover);
 }
 
 .chevron {
@@ -1241,6 +1311,13 @@ th.data-actions-column {
   background: var(--accent-soft);
   border-color: var(--accent-border);
   color: var(--accent);
+}
+
+.chip-btn-count {
+  margin-left: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .activity-list {
@@ -1439,6 +1516,7 @@ th.data-actions-column {
 
 .taste-claim-list li {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   color: var(--text-secondary);
@@ -1473,13 +1551,15 @@ th.data-actions-column {
   gap: 0.35rem;
 }
 
+/* Tags hold full sentences, so a soft corner beats a stadium pill: long
+   wrapped text would otherwise crowd the curved ends. */
 .taste-tag {
   background: var(--bg-inset);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   font-size: 0.72rem;
-  padding: 0.16rem 0.5rem;
+  padding: 0.2rem 0.55rem;
 }
 
 .taste-tag-explore {
@@ -1504,13 +1584,17 @@ th.data-actions-column {
   font-weight: 600;
 }
 
+/* Outcome / time / summary columns align across all rows via subgrid. */
 .rec-run-list {
   overflow: hidden;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
 }
 
 .rec-run-row {
+  grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: subgrid;
   align-items: center;
   gap: 0.65rem;
   border-bottom: 1px solid var(--bg-hover);
@@ -1622,7 +1706,7 @@ th.data-actions-column {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 0.08rem 0.45rem;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   background: var(--bg-inset);
@@ -1672,7 +1756,7 @@ th.data-actions-column {
 .watchlist-badge {
   font-size: 0.7rem;
   padding: 0.08rem 0.5rem;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border);
   color: var(--text-muted);
 }
@@ -1760,9 +1844,6 @@ th.data-actions-column {
 .rec-meta {
   font-size: 0.78rem;
   color: var(--text-muted);
-  display: flex;
-  gap: 0.35rem;
-  flex-wrap: wrap;
 }
 
 .rec-empty {
@@ -1899,7 +1980,7 @@ th.data-actions-column {
 .range-btn {
   background: var(--bg-inset);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--text-secondary);
   padding: 0.3rem 0.7rem;
   font-size: 0.8rem;
@@ -1968,8 +2049,7 @@ th.data-actions-column {
   .nav-links {
     order: 3;
     flex-basis: 100%;
-    overflow-x: auto;
-    padding-bottom: 0.1rem;
+    flex-wrap: wrap;
   }
 
   .nav-link {
@@ -2000,7 +2080,7 @@ th.data-actions-column {
     flex-direction: column;
   }
 
-  .rec-run-row {
+  .rec-run-list {
     grid-template-columns: auto 1fr;
   }
 
@@ -2133,7 +2213,8 @@ button.history-row:last-child {
   display: flex;
   flex-direction: column;
   width: min(960px, 100%);
-  max-height: min(82vh, 100%);
+  /* Fixed height: a live-tailing modal must not grow as lines stream in. */
+  height: min(82vh, 100%);
   background: var(--bg-card);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -2160,7 +2241,7 @@ button.history-row:last-child {
   font-weight: 650;
 }
 
-.live-badge {
+.log-live-badge {
   font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -2173,9 +2254,6 @@ button.history-row:last-child {
 }
 
 .log-modal-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
   margin-left: auto;
@@ -2367,7 +2445,7 @@ button.history-row:last-child {
     padding: 0.45rem 0.55rem;
     background: var(--bg-inset);
     border: 1px solid var(--border-strong);
-    border-radius: 6px;
+    border-radius: var(--radius-xs);
     color: var(--text);
   }
 
@@ -2402,7 +2480,7 @@ button.history-row:last-child {
   }
 
   .log-modal {
-    max-height: 92vh;
+    height: 92vh;
   }
 
   .log-logger {
@@ -2419,7 +2497,6 @@ button.history-row:last-child {
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  max-width: 46rem;
 }
 
 .mail-row {
@@ -2595,43 +2672,10 @@ button.history-row:last-child {
 
 /* Briefings archive */
 
-.briefing-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  margin-bottom: 1rem;
-}
-
-.briefing-filter {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--text-muted);
-  padding: 0.3rem 0.75rem;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.briefing-filter:hover,
-.briefing-filter.active {
-  border-color: var(--accent);
-  color: var(--text);
-  background: var(--accent-soft);
-}
-
-.briefing-filter-count {
-  color: var(--text-muted);
-  font-size: 0.7rem;
-}
-
 .briefing-feed {
   display: flex;
   flex-direction: column;
   gap: 0.8rem;
-  max-width: 46rem;
 }
 
 .briefing-card {

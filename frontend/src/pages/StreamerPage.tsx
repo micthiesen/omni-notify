@@ -290,10 +290,14 @@ function StreamerHeader({ streamer }: { streamer: StreamerView }) {
         {streamer.live ? (
           <div className="streamer-sub">
             <span className="streamer-title-text">{streamer.title}</span>
-            <span className="muted">
-              {formatUptime(now - streamer.startedAt)}
-              {streamer.maxViewerCount > 0 &&
-                ` · ${formatCompactNumber(streamer.maxViewerCount)} peak viewers this stream`}
+            <span className="muted meta-row">
+              <span>{formatUptime(now - streamer.startedAt)}</span>
+              {streamer.maxViewerCount > 0 && (
+                <span>
+                  {formatCompactNumber(streamer.maxViewerCount)} peak viewers this
+                  stream
+                </span>
+              )}
             </span>
           </div>
         ) : (

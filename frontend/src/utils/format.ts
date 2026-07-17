@@ -79,6 +79,29 @@ export function formatAbsolute(epochMs: number): string {
   });
 }
 
+export function formatAbsoluteWithYear(epochMs: number): string {
+  return new Date(epochMs).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** "Task runs" → "Task Runs", "CastroInboxCleanup" → "Castro Inbox Cleanup". */
+export function toTitleCase(value: string): string {
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((word) => (/^[a-z]/.test(word) ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
 export function formatDateOnly(epochMs: number): string {
   return new Date(epochMs).toLocaleDateString("en-US", {
     month: "short",

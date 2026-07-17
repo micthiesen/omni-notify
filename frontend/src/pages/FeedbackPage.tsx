@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { ImageWithFallback } from "../components/ImageWithFallback";
 import {
   fetchPodcastRecommendation,
   fetchRecommendation,
@@ -32,16 +33,13 @@ const PODCAST_OPTIONS: FeedbackOption<PodcastFeedback>[] = [
 ];
 
 function Art({ src, alt }: { src: string | null; alt: string }) {
-  const [broken, setBroken] = useState(false);
-  if (!src || broken) {
-    return <div className="feedback-art feedback-art-placeholder">🎯</div>;
-  }
   return (
-    <img
-      className="feedback-art"
+    <ImageWithFallback
       src={src}
       alt={alt}
-      onError={() => setBroken(true)}
+      className="feedback-art"
+      placeholderClassName="feedback-art-placeholder"
+      placeholder="🎯"
     />
   );
 }
@@ -155,7 +153,7 @@ function MediaFeedback({ id }: { id: string }) {
       why={rec.whyForUser}
       options={MEDIA_OPTIONS}
       current={rec.feedback}
-      detailsTo={`/recommendations?recommendation=${encodeURIComponent(id)}`}
+      detailsTo={`/media?recommendation=${encodeURIComponent(id)}`}
       onSelect={async (feedback) => {
         const res = await sendRecommendationFeedback(id, feedback);
         setRec(res.recommendation);

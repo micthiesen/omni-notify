@@ -8,6 +8,7 @@ import {
   formatCountdown,
   formatDuration,
   formatRelative,
+  toTitleCase,
 } from "../utils/format";
 import { StatusDot, TriggerBadge } from "./badges";
 
@@ -137,8 +138,17 @@ export function TaskCard({
     <div className="task-card">
       <div className="task-card-header">
         <div className="task-name-wrap">
-          {task.running && <span className="running-pulse" title="Running" />}
-          <span className="task-name">{task.name}</span>
+          {task.running ? (
+            <span className="running-pulse" title="Running" />
+          ) : (
+            <span
+              className={`status-dot status-${task.lastRun?.status ?? "none"}`}
+              title={
+                task.lastRun ? `Last run: ${task.lastRun.status}` : "No runs yet"
+              }
+            />
+          )}
+          <span className="task-name">{toTitleCase(task.name)}</span>
         </div>
         <button
           type="button"
@@ -156,23 +166,18 @@ export function TaskCard({
       <div className="task-next-run">
         <span className="field-label">Next run</span>
         {nextRunMs !== null && !Number.isNaN(nextRunMs) ? (
-          <span className="next-run-value" title={formatAbsolute(nextRunMs)}>
-            {formatCountdown(nextRunMs - now)}
-            <span className="muted"> &middot; {formatAbsolute(nextRunMs)}</span>
+          <span
+            className="next-run-value meta-row"
+            title={formatAbsolute(nextRunMs)}
+          >
+            <span>{formatCountdown(nextRunMs - now)}</span>
+            <span className="muted">{formatAbsolute(nextRunMs)}</span>
           </span>
         ) : (
-          <span className="muted">not scheduled</span>
+          <span className="muted">Not scheduled</span>
         )}
       </div>
       <LastRunSummary run={task.lastRun} onViewLogs={onViewLogs} />
-      <button
-        type="button"
-        className="history-toggle"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        {expanded ? "Hide history" : "History"}
-        <span className={`chevron ${expanded ? "open" : ""}`}>▾</span>
-      </button>
       {expanded && (
         <div className="task-history">
           {history === null && historyError === null && (
@@ -184,6 +189,14 @@ export function TaskCard({
           {history !== null && <HistoryList runs={history} onViewLogs={onViewLogs} />}
         </div>
       )}
+      <button
+        type="button"
+        className="history-toggle"
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {expanded ? "Hide history" : "History"}
+        <span className={`chevron ${expanded ? "open" : ""}`}>▾</span>
+      </button>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   type DataValue,
 } from "../api";
 import { Toast, useToast } from "../components/Toast";
+import { toTitleCase } from "../utils/format";
 
 type SortDirection = "asc" | "desc";
 
@@ -124,7 +125,7 @@ function RowDetail({
       <div className="data-detail-modal">
         <div className="data-detail-header">
           <div>
-            <div className="data-detail-label">{entity.label}</div>
+            <div className="data-detail-label">{toTitleCase(entity.label)}</div>
             <code>{json(keyFor(row, entity.primaryKey))}</code>
           </div>
           <button
@@ -320,9 +321,9 @@ export default function DataPage() {
   return (
     <>
       <div className="page-header data-page-header">
-        <div>
+        <div className="page-header-stack">
           <h1>Data</h1>
-          <p className="data-page-subtitle">
+          <p className="page-subtitle">
             Browse and remove records stored by mitools Entities.
           </p>
         </div>
@@ -372,7 +373,7 @@ export default function DataPage() {
           >
             {entities.map((entity) => (
               <option key={entity.slug} value={entity.slug}>
-                {entity.label} ({entity.count})
+                {toTitleCase(entity.label)} ({entity.count})
               </option>
             ))}
           </select>
@@ -384,7 +385,7 @@ export default function DataPage() {
                 type="button"
                 onClick={() => setSelectedSlug(entity.slug)}
               >
-                <span className="data-entity-name">{entity.label}</span>
+                <span className="data-entity-name">{toTitleCase(entity.label)}</span>
                 <span className="data-entity-meta">
                   <span>{formatBytes(entity.storageBytes)}</span>
                   <span className="data-entity-count">{entity.count}</span>
@@ -399,13 +400,15 @@ export default function DataPage() {
             <>
               <div className="data-browser-heading">
                 <div>
-                  <h2>{selected.label}</h2>
+                  <h2>{toTitleCase(selected.label)}</h2>
                   <p>{selected.description}</p>
                 </div>
-                <code>{selected.slug}</code>
-                <span className="data-selected-size">
-                  {formatBytes(selected.storageBytes)} payload
-                </span>
+                <div className="data-browser-aside">
+                  <code>{selected.slug}</code>
+                  <span className="data-selected-size">
+                    {formatBytes(selected.storageBytes)} payload
+                  </span>
+                </div>
               </div>
               {selected.warning && (
                 <div className="data-warning">{selected.warning}</div>

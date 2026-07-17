@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchRunLogs, runLogStreamUrl } from "../api";
 import type { RunLogLevel, RunLogLine, RunLogs, TaskRun } from "../api";
 import { useNow } from "../hooks/useNow";
-import { formatAbsolute } from "../utils/format";
+import { formatAbsolute, toTitleCase } from "../utils/format";
 import { StatusDot, TriggerBadge } from "./badges";
 import { runDuration } from "./TaskCard";
 
@@ -147,13 +147,12 @@ export function LogViewer({
         <div className="log-modal-header">
           <div className="log-modal-title">
             <StatusDot status={run.status} />
-            <span className="log-modal-task">{run.taskName}</span>
+            <span className="log-modal-task">{toTitleCase(run.taskName)}</span>
             <TriggerBadge trigger={run.trigger} />
-            {live && <span className="live-badge">live</span>}
+            {live && <span className="log-live-badge">live</span>}
           </div>
-          <div className="log-modal-meta muted">
+          <div className="log-modal-meta meta-row muted">
             <span>{formatAbsolute(run.startedAt)}</span>
-            <span>·</span>
             <span>{runDuration(run, now)}</span>
           </div>
           <button

@@ -17,12 +17,14 @@ const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
+  // Legacy alias: old Pushover notifications and bookmarks link here.
+  if (path === "/recommendations") return "/media";
   return path;
 }
 
 const PAGE_TITLES: Record<string, string> = {
   "/pets": "Pets",
-  "/recommendations": "Recommendations",
+  "/media": "Media",
   "/podcasts": "Podcasts",
   "/briefings": "Briefings",
   "/emails": "Email activity",
@@ -61,7 +63,7 @@ export default function App() {
           </Suspense>
         );
         break;
-      case "/recommendations":
+      case "/media":
         page = <RecommendationsPage />;
         break;
       case "/data":

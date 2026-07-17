@@ -10,11 +10,14 @@ import type {
   RecommendationFeedback,
   RecommendationStatus,
   TaskRun,
-  TasteClaim,
   TasteProfile,
   WatchlistResult,
 } from "../api";
+import { ImageWithFallback } from "../components/ImageWithFallback";
+import { StatusFilterChips } from "../components/StatusFilterChips";
+import { TasteBrain } from "../components/TasteBrain";
 import { Toast, useToast } from "../components/Toast";
+import { useRecHighlight } from "../hooks/useRecHighlight";
 import { useLiveData } from "../live";
 import { formatAbsolute, formatDateOnly, formatRelative } from "../utils/format";
 
@@ -22,12 +25,12 @@ const TASK_NAME = "Recommendations";
 const TASTE_TASK_NAME = "TasteReflection";
 
 const STATUS_LABELS: Record<RecommendationStatus, string> = {
-  pending: "pending",
-  notified: "notified",
-  watched: "watched",
-  abandoned: "abandoned",
-  ignored: "ignored",
-  failed: "failed",
+  pending: "Pending",
+  notified: "Notified",
+  watched: "Watched",
+  abandoned: "Abandoned",
+  ignored: "Ignored",
+  failed: "Failed",
 };
 
 const STATUS_ORDER: RecommendationStatus[] = [
@@ -40,10 +43,10 @@ const STATUS_ORDER: RecommendationStatus[] = [
 ];
 
 const WATCHLIST_LABELS: Record<WatchlistResult, string> = {
-  added: "added to watchlist",
-  already_exists: "already on watchlist",
-  available: "available in Plex",
-  error: "watchlist error",
+  added: "Added to watchlist",
+  already_exists: "Already on watchlist",
+  available: "Available in Plex",
+  error: "Watchlist error",
 };
 
 const FEEDBACK_ACTIONS: { value: RecommendationFeedback; label: string }[] = [
@@ -53,11 +56,14 @@ const FEEDBACK_ACTIONS: { value: RecommendationFeedback; label: string }[] = [
 ];
 
 function Poster({ rec }: { rec: Recommendation }) {
-  const [broken, setBroken] = useState(false);
-
-  if (!rec.posterPath || broken) {
-    return (
-      <div className="rec-poster rec-poster-placeholder">
+  return (
+    <ImageWithFallback
+      src={rec.posterPath ? `https://image.tmdb.org/t/p/w185${rec.posterPath}` : null}
+      alt={`${rec.title} poster`}
+      className="rec-poster"
+      placeholderClassName="rec-poster-placeholder"
+      loading="lazy"
+      placeholder={
         <svg
           width="28"
           height="28"
@@ -71,17 +77,7 @@ function Poster({ rec }: { rec: Recommendation }) {
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <path d="M3 9h18M7 4v5M12 4v5M17 4v5" />
         </svg>
-      </div>
-    );
-  }
-
-  return (
-    <img
-      className="rec-poster"
-      src={`https://image.tmdb.org/t/p/w185${rec.posterPath}`}
-      alt={`${rec.title} poster`}
-      loading="lazy"
-      onError={() => setBroken(true)}
+      }
     />
   );
 }
@@ -130,11 +126,11 @@ function RecommendationCard({
             ))}
           </ul>
         )}
-        <div className="rec-meta">
+        <div className="rec-meta meta-row">
           <span>Recommended {formatDateOnly(rec.recommendedAt)}</span>
           {rec.confidence !== null && (
             <span className="muted">
-              &middot; confidence {Math.round(rec.confidence * 100)}%
+              Confidence {Math.round(rec.confidence * 100)}%
             </span>
           )}
         </div>
@@ -170,25 +166,7 @@ function RecommendationCard({
   );
 }
 
-function ClaimList({ claims }: { claims: TasteClaim[] }) {
-  return (
-    <ul className="taste-claim-list">
-      {claims.map((item) => (
-        <li key={item.claim}>
-          <span>{item.claim}</span>
-          <span
-            className="taste-confidence"
-            title={`${item.evidenceIds.length} supporting evidence item${item.evidenceIds.length === 1 ? "" : "s"}`}
-          >
-            {Math.round(item.confidence * 100)}%
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function TasteBrain({
+function MediaTasteBrain({
   profile,
   loading,
   error,
@@ -197,7 +175,7 @@ function TasteBrain({
   loading: boolean;
   error: string | null;
 }) {
-  const stats = profile
+  const stats: [string, React.ReactNode][] = profile
     ? [
         ["Completed movies", profile.stats.completedMovies],
         ["Completed series", profile.stats.completedSeries],
@@ -217,110 +195,15 @@ function TasteBrain({
     : [];
 
   return (
-    <section className="page-section taste-brain">
-      <div className="taste-heading">
-        <div>
-          <h2 className="section-title">Taste brain</h2>
-          <div className="muted taste-subtitle">
-            Watching and feedback are reflected into a versioned taste profile.
-          </div>
-        </div>
-        {profile && (
-          <span
-            className="taste-version"
-            title={formatAbsolute(profile.generatedAt)}
-          >
-            v{profile.version} · {formatRelative(profile.generatedAt)}
-          </span>
-        )}
-      </div>
-
-      {loading && <div className="loading-inline">Loading taste profile…</div>}
-      {!loading && error && (
-        <div className="error-inline">Taste profile unavailable: {error}</div>
-      )}
-      {!loading && !error && profile === null && (
-        <div className="taste-empty">
-          No profile yet. The reflection task will build one from Plex watching and
-          recommendation feedback.
-        </div>
-      )}
-      {profile && (
-        <div className="taste-card">
-          <p className="taste-summary">{profile.summary}</p>
-          {stats.length > 0 && (
-            <div className="taste-stats">
-              {stats.map(([name, value]) => (
-                <div className="taste-stat" key={String(name)}>
-                  <span>{name}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-          <div className="taste-columns">
-            {profile.stablePreferences.length > 0 && (
-              <div>
-                <h3>Reliable preferences</h3>
-                <ClaimList claims={profile.stablePreferences} />
-              </div>
-            )}
-            {profile.conditionalPreferences.length > 0 && (
-              <div>
-                <h3>Depends on context</h3>
-                <ClaimList claims={profile.conditionalPreferences} />
-              </div>
-            )}
-            {profile.aversions.length > 0 && (
-              <div>
-                <h3>Avoid</h3>
-                <ClaimList claims={profile.aversions} />
-              </div>
-            )}
-            {profile.uncertainties.length > 0 && (
-              <div>
-                <h3>Still learning</h3>
-                <ClaimList claims={profile.uncertainties} />
-              </div>
-            )}
-          </div>
-          {(profile.explorationTargets.length > 0 ||
-            profile.currentSaturation.length > 0) && (
-            <div className="taste-tags-row">
-              {profile.explorationTargets.length > 0 && (
-                <div>
-                  <span className="taste-tags-label">Explore</span>
-                  <div className="taste-tags">
-                    {profile.explorationTargets.map((target) => (
-                      <span
-                        className="taste-tag taste-tag-explore"
-                        key={target.claim}
-                        title={`${target.evidenceIds.length} supporting evidence item(s)`}
-                      >
-                        {target.claim}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {profile.currentSaturation.length > 0 && (
-                <div>
-                  <span className="taste-tags-label">Currently saturated</span>
-                  <div className="taste-tags">
-                    {profile.currentSaturation.map((target) => (
-                      <span
-                        className="taste-tag"
-                        key={target.claim}
-                        title={`${target.evidenceIds.length} supporting evidence item(s)`}
-                      >
-                        {target.claim}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+    <TasteBrain
+      profile={profile}
+      loading={loading}
+      error={error}
+      subtitle="Watching and feedback are reflected into a versioned taste profile."
+      emptyText="No profile yet. The reflection task will build one from Plex watching and recommendation feedback."
+      stats={stats}
+      footer={
+        profile && (
           <div className="taste-commitments">
             <span>Commitment fit</span>
             <span>Movies: {profile.commitmentPreferences.movies.preference}</span>
@@ -331,9 +214,9 @@ function TasteBrain({
               Long series: {profile.commitmentPreferences.longSeries.preference}
             </span>
           </div>
-        </div>
-      )}
-    </section>
+        )
+      }
+    />
   );
 }
 
@@ -356,6 +239,7 @@ function RecommendationActivity({ runs }: { runs: TaskRun[] }) {
         <div className="rec-run-list">
           {runs.map((run) => {
             const outcome = runOutcome(run);
+            const detail = run.error ?? run.summary;
             return (
               <div className="rec-run-row" key={run.runId}>
                 <span className={`rec-run-outcome rec-run-${outcome.tone}`}>
@@ -367,9 +251,11 @@ function RecommendationActivity({ runs }: { runs: TaskRun[] }) {
                 >
                   {formatRelative(run.startedAt)}
                 </span>
-                <span className={run.error ? "run-error" : "run-summary"}>
-                  {run.error ?? run.summary ?? "Run completed without a summary"}
-                </span>
+                {detail !== null && (
+                  <span className={run.error ? "run-error" : "run-summary"}>
+                    {detail}
+                  </span>
+                )}
               </div>
             );
           })}
@@ -488,16 +374,7 @@ export default function RecommendationsPage() {
     }
   };
 
-  const highlightedId = new URLSearchParams(window.location.search).get(
-    "recommendation",
-  );
-
-  useEffect(() => {
-    if (!highlightedId || recs === null) return;
-    document
-      .getElementById(`recommendation-${highlightedId}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlightedId, recs]);
+  const highlightedId = useRecHighlight(recs !== null);
 
   const statusCounts = useMemo(() => {
     const counts = new Map<RecommendationStatus, number>();
@@ -517,7 +394,7 @@ export default function RecommendationsPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Recommendations</h1>
+        <h1>Media</h1>
         <div className="rec-run-controls">
           <label className="rec-run-limit">
             <span>Up to</span>
@@ -559,7 +436,7 @@ export default function RecommendationsPage() {
       </div>
       <Toast toast={toast} />
 
-      <TasteBrain
+      <MediaTasteBrain
         profile={tasteProfile}
         loading={tasteLoading}
         error={tasteError}
@@ -568,27 +445,14 @@ export default function RecommendationsPage() {
       <RecommendationActivity runs={recommendationRuns} />
 
       {recs !== null && recs.length > 0 && (
-        <div className="rec-filters">
-          <button
-            type="button"
-            className={`chip-btn ${statusFilter === "" ? "active" : ""}`}
-            onClick={() => setStatusFilter("")}
-          >
-            All ({recs.length})
-          </button>
-          {STATUS_ORDER.filter((s) => statusCounts.has(s)).map((status) => (
-            <button
-              key={status}
-              type="button"
-              className={`chip-btn ${statusFilter === status ? "active" : ""}`}
-              onClick={() =>
-                setStatusFilter((prev) => (prev === status ? "" : status))
-              }
-            >
-              {STATUS_LABELS[status]} ({statusCounts.get(status)})
-            </button>
-          ))}
-        </div>
+        <StatusFilterChips
+          order={STATUS_ORDER}
+          labels={STATUS_LABELS}
+          counts={statusCounts}
+          total={recs.length}
+          active={statusFilter}
+          onChange={setStatusFilter}
+        />
       )}
 
       {recs === null && recsError === null && <div className="loading">Loading…</div>}

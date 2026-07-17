@@ -5,6 +5,7 @@ import {
   type EmailPipeline,
   fetchEmailActivity,
 } from "../api";
+import { formatAbsolute } from "../utils/format";
 
 const PIPELINE_LABELS: Record<EmailPipeline, string> = {
   ParcelTracker: "Parcels",
@@ -18,15 +19,6 @@ const OUTCOME_LABELS: Record<EmailActivityOutcome, string> = {
   processed: "Processed",
   error: "Error",
 };
-
-function formatTimestamp(timestamp: number): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export default function EmailActivityPage() {
   const [activities, setActivities] = useState<EmailActivity[] | null>(null);
@@ -54,16 +46,18 @@ export default function EmailActivityPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Email activity</h1>
-        <p className="muted">
-          What the parcel and calendar pipelines did with each email.
-        </p>
+        <div className="page-header-stack">
+          <h1>Email activity</h1>
+          <p className="page-subtitle">
+            What the parcel and calendar pipelines did with each email.
+          </p>
+        </div>
       </div>
 
-      <div className="briefing-filters">
+      <div className="rec-filters">
         <button
           type="button"
-          className={`briefing-filter ${pipeline === null ? "active" : ""}`}
+          className={`chip-btn ${pipeline === null ? "active" : ""}`}
           onClick={() => setPipeline(null)}
         >
           All
@@ -72,7 +66,7 @@ export default function EmailActivityPage() {
           <button
             key={p}
             type="button"
-            className={`briefing-filter ${pipeline === p ? "active" : ""}`}
+            className={`chip-btn ${pipeline === p ? "active" : ""}`}
             onClick={() => setPipeline(pipeline === p ? null : p)}
           >
             {PIPELINE_LABELS[p]}
@@ -116,7 +110,7 @@ export default function EmailActivityPage() {
                   {activity.from}
                 </span>
                 <span className="mail-time">
-                  {formatTimestamp(activity.processedAt)}
+                  {formatAbsolute(activity.processedAt)}
                 </span>
               </div>
               {activity.detail && <div className="mail-detail">{activity.detail}</div>}
