@@ -40,7 +40,7 @@ describe("toTriggerChannels", () => {
     expect(channels[0]?.type).toBe("youtube");
   });
 
-  it("falls back to twitch when youtube is absent but kick is present", () => {
+  it("prefers twitch over kick for multi-platform streamers", () => {
     const channels = toTriggerChannels([
       streamer("Mixed", [
         { platform: Platform.Kick, username: "mixed" },
@@ -50,10 +50,17 @@ describe("toTriggerChannels", () => {
     expect(channels[0]?.type).toBe("twitch");
   });
 
-  it("omits kick-only streamers", () => {
+  it("maps a kick binding to the channel's universal link", () => {
     const channels = toTriggerChannels([
       streamer("KickOnly", [{ platform: Platform.Kick, username: "kickonly" }]),
     ]);
-    expect(channels).toEqual([]);
+    expect(channels).toEqual([
+      {
+        key: "kickonly",
+        displayName: "KickOnly",
+        type: "kick",
+        url: "https://kick.com/kickonly",
+      },
+    ]);
   });
 });

@@ -1,4 +1,5 @@
 import { Platform } from "./platforms/index.js";
+import { getKickLiveUrl } from "./platforms/kick.js";
 import { getYouTubeLiveUrl } from "./platforms/youtube.js";
 import { comparePlatformPriority, type Streamer } from "./streamers.js";
 
@@ -6,34 +7,43 @@ import { comparePlatformPriority, type Streamer } from "./streamers.js";
 export type TriggerChannel = {
   key: string;
   displayName: string;
-  type: "youtube" | "twitch";
-  /** YouTube only: the channel live page the plugin resolves via yt-dlp. */
+  type: "youtube" | "twitch" | "kick";
+  /**
+   * youtube: the channel live page the plugin resolves via yt-dlp.
+   * kick: the channel's universal link (https://kick.com/<user>) — the plugin
+   * attempts it as a tvOS deep link and falls back to opening the Kick app.
+   */
   url?: string;
 };
 
 /**
- * One trigger channel per streamer, on its highest-priority launchable platform
+ * One trigger channel per streamer, on its highest-priority platform
  * (YouTube preferred: it deep-links straight into the live video on tvOS).
- * Kick-only streamers are omitted — there is no tvOS app to launch.
  */
 export function toTriggerChannels(streamers: Streamer[]): TriggerChannel[] {
   const channels: TriggerChannel[] = [];
   for (const streamer of streamers) {
-    const binding = [...streamer.bindings]
-      .sort((a, b) => comparePlatformPriority(a.platform, b.platform))
-      .find((b) => b.platform === Platform.YouTube || b.platform === Platform.Twitch);
+    const binding = [...streamer.bindings].sort((a, b) =>
+      comparePlatformPriority(a.platform, b.platform),
+    )[0];
     if (!binding) continue;
 
-    channels.push(
-      binding.platform === Platform.YouTube
-        ? {
-            key: streamer.id,
-            displayName: streamer.displayName,
-            type: "youtube",
-            url: getYouTubeLiveUrl(binding.username),
-          }
-        : { key: streamer.id, displayName: streamer.displayName, type: "twitch" },
-    );
+    const base = { key: streamer.id, displayName: streamer.displayName };
+    switch (binding.platform) {
+      case Platform.YouTube:
+        channels.push({
+          ...base,
+          type: "youtube",
+          url: getYouTubeLiveUrl(binding.username),
+        });
+        break;
+      case Platform.Twitch:
+        channels.push({ ...base, type: "twitch" });
+        break;
+      case Platform.Kick:
+        channels.push({ ...base, type: "kick", url: getKickLiveUrl(binding.username) });
+        break;
+    }
   }
   return channels;
 }
