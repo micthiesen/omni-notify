@@ -37,15 +37,21 @@ Set `OFFLINE_NOTIFICATIONS=false` to only get notified when channels go live.
 
 ## Per-Streamer Overrides
 
-Optionally provide a `channels.json` (or set `CHANNELS_CONFIG_PATH`) to override the Pushover token for specific streamers. The key is the display name (case-insensitive):
+Optionally provide a `channels.json` (or set `CHANNELS_CONFIG_PATH`) with per-streamer overrides. The key is the display name (case-insensitive):
 
 ```json
 {
   "Destiny": {
     "pushoverToken": "app-token-for-destiny"
+  },
+  "SomeoneElse": {
+    "liveNotifications": false
   }
 }
 ```
+
+- `pushoverToken`: override the Pushover token for this streamer's notifications.
+- `liveNotifications`: set to `false` to mute live/offline/title-change notifications for a streamer you track but don't watch (e.g. only for the dashboard or external integrations). Viewer-record notifications (7d/30d/90d/all-time highs) still fire, and tracking, the dashboard, and `/api/trigger-channels` are unaffected.
 
 ## Briefing Agents
 

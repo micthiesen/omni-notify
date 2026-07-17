@@ -8,6 +8,7 @@ const DEFAULT_CONFIG_PATH = "./channels.json";
 
 const streamerOverrideSchema = z.object({
   pushoverToken: z.string().optional(),
+  liveNotifications: z.boolean().optional(),
 });
 
 export const channelsConfigSchema = z.record(z.string(), streamerOverrideSchema);

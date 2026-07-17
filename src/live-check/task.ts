@@ -47,7 +47,8 @@ export default class LiveCheckTask extends ScheduledTask {
   private logStreamers(): void {
     for (const s of this.streamers) {
       const bindings = s.bindings.map((b) => `${b.platform}:${b.username}`).join(", ");
-      this.logger.info(`Streamer "${s.displayName}" → ${bindings}`);
+      const muted = liveNotificationsEnabled(s) ? "" : " (live notifications off)";
+      this.logger.info(`Streamer "${s.displayName}" → ${bindings}${muted}`);
     }
   }
 
@@ -131,14 +132,16 @@ export default class LiveCheckTask extends ScheduledTask {
       `${streamer.displayName} is now LIVE (primary ${next.primary.platform}:${next.primary.username})`,
     );
 
-    const message = buildLiveMessage(next.primaryTitle, previous);
+    if (liveNotificationsEnabled(streamer)) {
+      const message = buildLiveMessage(next.primaryTitle, previous);
 
-    await notify({
-      title: `${streamer.displayName} is LIVE!`,
-      message,
-      token: this.getPushoverToken(streamer.id),
-      ...getNotificationUrlFields(next.primary.platform, next.primary.username),
-    });
+      await notify({
+        title: `${streamer.displayName} is LIVE!`,
+        message,
+        token: this.getPushoverToken(streamer.id),
+        ...getNotificationUrlFields(next.primary.platform, next.primary.username),
+      });
+    }
 
     upsertStreamerStatus(next);
     await this.recordViewersIfAny(streamer, next.primary, summedViewerCount);
@@ -158,12 +161,14 @@ export default class LiveCheckTask extends ScheduledTask {
 
     if (titleChanged) {
       this.logger.info(`${streamer.displayName} changed title`);
-      await notify({
-        title: `${streamer.displayName} changed title`,
-        message: next.primaryTitle,
-        token: this.getPushoverToken(streamer.id),
-        ...getNotificationUrlFields(next.primary.platform, next.primary.username),
-      });
+      if (liveNotificationsEnabled(streamer)) {
+        await notify({
+          title: `${streamer.displayName} changed title`,
+          message: next.primaryTitle,
+          token: this.getPushoverToken(streamer.id),
+          ...getNotificationUrlFields(next.primary.platform, next.primary.username),
+        });
+      }
     }
 
     upsertStreamerStatus(next);
@@ -188,7 +193,7 @@ export default class LiveCheckTask extends ScheduledTask {
       ),
     });
 
-    if (appConfig.OFFLINE_NOTIFICATIONS) {
+    if (appConfig.OFFLINE_NOTIFICATIONS && liveNotificationsEnabled(streamer)) {
       const duration = formatDistance(new Date(), previousLive.startedAt);
       const baseText = `Streamed for ${duration}`;
       const message =
@@ -225,6 +230,10 @@ export default class LiveCheckTask extends ScheduledTask {
       this.streamersById.get(streamerId)?.pushoverToken ?? appConfig.PUSHOVER_LIVE_TOKEN
     );
   }
+}
+
+function liveNotificationsEnabled(streamer: Streamer): boolean {
+  return streamer.liveNotifications !== false;
 }
 
 function formatCount(count: number): string {

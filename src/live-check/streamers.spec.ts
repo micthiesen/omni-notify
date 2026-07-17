@@ -75,6 +75,22 @@ describe("buildStreamers", () => {
     expect(result[0].pushoverToken).toBe("tok-abc");
   });
 
+  it("applies liveNotifications override by streamer id (case-insensitive)", () => {
+    const result = buildStreamers(
+      [[Platform.Kick, [{ username: "destiny", displayName: "Destiny" }]]],
+      { DESTINY: { liveNotifications: false } },
+    );
+    expect(result[0].liveNotifications).toBe(false);
+  });
+
+  it("leaves liveNotifications undefined without an override", () => {
+    const result = buildStreamers(
+      [[Platform.Kick, [{ username: "destiny", displayName: "Destiny" }]]],
+      { Destiny: { pushoverToken: "tok" } },
+    );
+    expect(result[0].liveNotifications).toBeUndefined();
+  });
+
   it("ignores overrides for unknown streamers", () => {
     const result = buildStreamers(
       [[Platform.Kick, [{ username: "destiny", displayName: "Destiny" }]]],

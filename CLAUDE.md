@@ -308,6 +308,8 @@ Primary election is **first-to-go-live wins**, sticky for the session. Priority 
 
 The pure transition logic lives in `src/live-check/transitions.ts` (`decideTransition`) for easy testing.
 
+Per-streamer overrides come from `channels.json` (keyed by display name, case-insensitive): `pushoverToken` and `liveNotifications: false` (mutes live/offline/title-change notifications for streamers tracked only for the dashboard/integrations; viewer-record notifications and all tracking still happen).
+
 ### Viewer Metrics System
 
 Tracks viewer records across rolling time windows (7d, 30d, 90d, all-time) using **peak confirmation**:

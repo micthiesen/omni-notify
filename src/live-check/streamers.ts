@@ -17,9 +17,17 @@ export type Streamer = {
   displayName: string;
   bindings: PlatformBinding[];
   pushoverToken?: string;
+  /**
+   * When false, suppresses live/offline/title-change notifications for this
+   * streamer. Viewer-record notifications and all tracking still happen.
+   */
+  liveNotifications?: boolean;
 };
 
-export type StreamerOverride = { pushoverToken?: string };
+export type StreamerOverride = {
+  pushoverToken?: string;
+  liveNotifications?: boolean;
+};
 
 export function normalizeId(displayName: string): string {
   return displayName.trim().toLowerCase();
@@ -57,6 +65,9 @@ export function buildStreamers(
     if (!streamer) continue;
     if (override.pushoverToken !== undefined) {
       streamer.pushoverToken = override.pushoverToken;
+    }
+    if (override.liveNotifications !== undefined) {
+      streamer.liveNotifications = override.liveNotifications;
     }
   }
 
