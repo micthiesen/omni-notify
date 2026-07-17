@@ -5,10 +5,14 @@ import { recordEmailActivity } from "../jmap/activity.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
-import { isValidCarrierCode } from "./carriers/carrierMap.js";
-import { extractDeliveries } from "./extraction/extractDeliveries.js";
+import { selectValidCandidates } from "./carriers/candidates.js";
+import { getValidCarrierCodes } from "./carriers/carrierMap.js";
+import {
+  type ExtractedDelivery,
+  extractDeliveries,
+} from "./extraction/extractDeliveries.js";
 import { filterTrackingCandidate } from "./filter/keywords.js";
-import { submitDelivery } from "./parcel/parcelApi.js";
+import { shouldTryNextCandidate, submitDelivery } from "./parcel/parcelApi.js";
 import {
   getRecentTrackingNumbers,
   hasSubmittedDelivery,
@@ -150,67 +154,104 @@ export class DeliveryPipeline implements EmailHandler {
 
   /** Returns a short result line for the activity record. */
   private async processDelivery(
-    delivery: {
-      tracking_number: string;
-      carrier_code: string;
-      description: string;
-    },
+    delivery: ExtractedDelivery,
     emailId: string,
   ): Promise<string> {
-    const label = `${delivery.tracking_number} (${delivery.carrier_code})`;
+    const { tracking_number: trackingNumber, description } = delivery;
 
     // Dedup check
-    if (hasSubmittedDelivery(delivery.tracking_number)) {
-      this.logger.info(
-        `Duplicate tracking number: ${delivery.tracking_number} (skipping)`,
-      );
-      return `${label}: already submitted`;
+    if (hasSubmittedDelivery(trackingNumber)) {
+      this.logger.info(`Duplicate tracking number: ${trackingNumber} (skipping)`);
+      return `${trackingNumber}: already submitted`;
     }
 
-    // Validate carrier code
-    const valid = await isValidCarrierCode(delivery.carrier_code, this.logger);
-    if (!valid) {
+    // Validate carrier candidates against the live Parcel carrier list
+    const validCodes = await getValidCarrierCodes(this.logger);
+    if (!validCodes) {
       this.logger.warn(
-        `Invalid carrier code "${delivery.carrier_code}" for tracking ${delivery.tracking_number}, skipping`,
+        `Carrier list unavailable, cannot validate candidates for ${trackingNumber}`,
       );
-      return `${label}: invalid carrier code`;
+      return `${trackingNumber}: carrier list unavailable`;
     }
 
-    // Submit to Parcel
-    const result = await submitDelivery(
-      {
-        trackingNumber: delivery.tracking_number,
-        carrierCode: delivery.carrier_code,
-        description: delivery.description,
-      },
-      this.parcelApiKey,
-      this.logger,
-      this.rejectionLog,
+    const { valid: candidates, invalid } = selectValidCandidates(
+      delivery.carrier_candidates,
+      validCodes,
+    );
+    if (invalid.length > 0) {
+      this.logger.warn(
+        `Dropped invalid carrier candidate(s) [${invalid.join(", ")}] for ${trackingNumber}`,
+      );
+    }
+    if (candidates.length === 0) {
+      this.logger.warn(`No valid carrier candidates for ${trackingNumber}, skipping`);
+      return `${trackingNumber}: no valid carrier candidates`;
+    }
+
+    this.logger.info(
+      `Carrier candidates for ${trackingNumber}: [${candidates.join(", ")}]`,
     );
 
-    if (result.status === "error") {
-      this.logger.warn(
-        `Failed to submit ${delivery.tracking_number} (${delivery.carrier_code}), will retry later`,
+    // Try candidates in ranked order; fall back on carrier-shaped rejections.
+    // Dedup is only recorded on a terminal outcome (success or final rejection),
+    // so a failed attempt never blocks the fallback candidates.
+    for (const [index, carrierCode] of candidates.entries()) {
+      const label = `${trackingNumber} (${carrierCode})`;
+      const attempt = `${index + 1}/${candidates.length}`;
+
+      const result = await submitDelivery(
+        { trackingNumber, carrierCode, description },
+        this.parcelApiKey,
+        this.logger,
+        this.rejectionLog,
       );
-      return `${label}: submission failed, will retry`;
+
+      if (result.status === "success") {
+        if (index > 0) {
+          this.logger.info(
+            `Fallback candidate "${carrierCode}" succeeded for ${trackingNumber} (attempt ${attempt})`,
+          );
+        }
+        recordSubmittedDelivery({
+          trackingNumber,
+          carrierCode,
+          description,
+          submittedAt: Date.now(),
+          emailId,
+        });
+        return `${label}: submitted`;
+      }
+
+      if (result.status === "error") {
+        // Transient (network/5xx): don't burn remaining candidates or record dedup
+        this.logger.warn(`Failed to submit ${label}, will retry later`);
+        return `${label}: submission failed, will retry`;
+      }
+
+      // Rejected
+      const nextCandidate = candidates[index + 1];
+      if (shouldTryNextCandidate(result) && nextCandidate !== undefined) {
+        this.logger.warn(
+          `Parcel rejected ${label} with ${result.statusCode} (attempt ${attempt}), trying next candidate "${nextCandidate}"`,
+        );
+        continue;
+      }
+
+      // Terminal rejection: record to prevent retrying hopeless submissions
+      this.logger.warn(
+        `Parcel rejected ${label} with ${result.statusCode} (attempt ${attempt}), recording to prevent retry`,
+      );
+      recordSubmittedDelivery({
+        trackingNumber,
+        carrierCode,
+        description,
+        submittedAt: Date.now(),
+        emailId,
+      });
+      return `${label}: rejected by Parcel (${result.statusCode})`;
     }
 
-    if (result.status === "rejected") {
-      this.logger.warn(
-        `Parcel rejected ${delivery.tracking_number} (${delivery.carrier_code}) with ${result.statusCode}, recording to prevent retry`,
-      );
-    }
-
-    // Record on success OR rejection to prevent retrying hopeless submissions
-    recordSubmittedDelivery({
-      trackingNumber: delivery.tracking_number,
-      carrierCode: delivery.carrier_code,
-      description: delivery.description,
-      submittedAt: Date.now(),
-      emailId,
-    });
-    return result.status === "rejected"
-      ? `${label}: rejected by Parcel (${result.statusCode})`
-      : `${label}: submitted`;
+    // Unreachable: candidates is non-empty and every iteration returns or continues
+    throw new Error(`No submission attempted for ${trackingNumber}`);
   }
 }

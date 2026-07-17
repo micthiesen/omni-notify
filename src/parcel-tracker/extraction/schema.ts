@@ -4,9 +4,12 @@ export const deliveryExtractionSchema = z.object({
   deliveries: z.array(
     z.object({
       tracking_number: z.string().describe("The package tracking number"),
-      carrier_code: z
-        .string()
-        .describe("The carrier code from the provided carrier list"),
+      carrier_candidates: z
+        .array(z.string())
+        .min(1)
+        .describe(
+          "Carrier codes from the provided carrier list, ranked most likely first (up to 3)",
+        ),
       description: z
         .string()
         .describe(

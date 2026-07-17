@@ -15,14 +15,16 @@ export async function getCarrierCodesForPrompt(logger: Logger): Promise<string> 
   return carriers.map((c) => `${c.code}: ${c.name}`).join("\n");
 }
 
-/** Checks if a carrier code exists in the Parcel carrier list. */
-export async function isValidCarrierCode(
-  code: string,
+/**
+ * Returns the set of valid Parcel carrier codes, or undefined when the carrier
+ * list is unavailable (fetch failed and no cache).
+ */
+export async function getValidCarrierCodes(
   logger: Logger,
-): Promise<boolean> {
+): Promise<ReadonlySet<string> | undefined> {
   const carriers = await fetchCarrierList(logger);
-  if (!carriers) return false;
-  return carriers.some((c) => c.code === code);
+  if (!carriers) return undefined;
+  return new Set(carriers.map((c) => c.code));
 }
 
 async function fetchCarrierList(logger: Logger): Promise<CarrierEntry[] | undefined> {

@@ -10,6 +10,22 @@ export type SubmitResult =
   | { status: "rejected"; statusCode: number }
   | { status: "error" };
 
+// Rejections that indicate an auth or rate-limit problem, not a wrong carrier pick.
+const NON_CARRIER_REJECTION_CODES = new Set([401, 403, 429]);
+
+/**
+ * Whether a failed submission plausibly indicates the wrong carrier was picked,
+ * making it worth retrying with the next ranked candidate. 4xx rejections
+ * (except auth/rate-limit) fit — Parcel validates tracking-number/carrier pairs.
+ * Network failures and 5xx are transient, so retrying another carrier would only
+ * mask the real error.
+ */
+export function shouldTryNextCandidate(result: SubmitResult): boolean {
+  return (
+    result.status === "rejected" && !NON_CARRIER_REJECTION_CODES.has(result.statusCode)
+  );
+}
+
 export async function submitDelivery(
   params: {
     trackingNumber: string;
