@@ -1,7 +1,9 @@
-import { createHash } from "node:crypto";
+import { digest } from "../../utils/fingerprint.js";
 import type { ListenedEpisode } from "../account.js";
 import type { PodcastRecommendationData } from "../persistence.js";
 import type { PodcastTasteEvidenceData } from "./types.js";
+
+export { fingerprintEvidence } from "../../utils/fingerprint.js";
 
 export function normalizeShowKey(showTitle: string): string {
   return showTitle.trim().toLowerCase();
@@ -89,25 +91,4 @@ function recommendationFields(recommendation: PodcastRecommendationData) {
     matchedVoices: recommendation.matchedVoices,
     durationMinutes: recommendation.durationMinutes,
   };
-}
-
-/** Fingerprint only immutable evidence payloads, in stable id order. */
-export function fingerprintEvidence(evidence: PodcastTasteEvidenceData[]): string {
-  const stable = [...evidence]
-    .sort((a, b) => a.evidenceId.localeCompare(b.evidenceId))
-    .map((item) => JSON.stringify(sortObject(item)))
-    .join("\n");
-  return digest(stable);
-}
-
-function sortObject(value: PodcastTasteEvidenceData): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, field]) => field !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b)),
-  );
-}
-
-function digest(value: string): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   filterEligibleEpisodes,
-  normalizeTitle,
   type PodcastFilterContext,
   RECENT_EPISODE_WINDOW_MS,
 } from "./filters.js";
+import { normalizeTitle } from "./titles.js";
 import type { EpisodeCandidate } from "./types.js";
 
 const NOW = Date.UTC(2026, 6, 16);

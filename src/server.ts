@@ -1,7 +1,7 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "@micthiesen/mitools/logging";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { getAllBriefingHistories } from "./briefing-agent/persistence.js";
@@ -49,6 +49,7 @@ import {
 } from "./task-runs/persistence.js";
 import {
   TaskAlreadyRunningError,
+  TaskManualInputUnsupportedError,
   TaskNotFoundError,
   type TaskRegistry,
 } from "./task-runs/registry.js";
@@ -186,6 +187,58 @@ function serializeStreamer(streamer: Streamer) {
 const SNAPSHOT_RUN_LIMIT = 30;
 const SSE_DEBOUNCE_MS = 150;
 const SSE_HEARTBEAT_MS = 25_000;
+
+/** Maps manual-run registry errors to responses; anything else rethrows. */
+function taskRunErrorResponse(c: Context, error: unknown): Response {
+  if (error instanceof TaskNotFoundError) {
+    return c.json({ error: error.message }, 404);
+  }
+  if (error instanceof TaskAlreadyRunningError) {
+    return c.json({ error: error.message }, 409);
+  }
+  if (error instanceof TaskManualInputUnsupportedError) {
+    return c.json({ error: error.message }, 400);
+  }
+  throw error;
+}
+
+// Both manual recommendation-run endpoints take the same body, differing
+// only in the per-run cap.
+const runRequestSchema = (max: number) =>
+  z.object({ maxRecommendations: z.number().int().min(1).max(max) });
+const runRequestError = (max: number) =>
+  `maxRecommendations must be an integer from 1 to ${max}`;
+
+/**
+ * Both feedback endpoints share one flow: validate body → look up → reject
+ * undelivered rows → persist → return the serialized recommendation.
+ */
+function feedbackRoute<
+  TData extends { status: string },
+  TFeedback extends string,
+>(options: {
+  schema: z.ZodType<{ feedback: TFeedback }>;
+  get: (id: string) => TData | undefined;
+  setFeedback: (id: string, feedback: TFeedback) => TData | undefined;
+  serialize: (data: TData) => unknown;
+}) {
+  return async (c: Context) => {
+    const parsed = options.schema.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) {
+      return c.json({ error: "Invalid recommendation feedback" }, 400);
+    }
+    // Both routes bind :id, but the generic Context can't prove it.
+    const id = c.req.param("id") ?? "";
+    const existing = options.get(id);
+    if (!existing) return c.json({ error: "Recommendation not found" }, 404);
+    if (existing.status === "pending" || existing.status === "failed") {
+      return c.json({ error: "Undelivered recommendations cannot be rated" }, 409);
+    }
+    const recommendation = options.setFeedback(id, parsed.data.feedback);
+    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
+    return c.json({ recommendation: options.serialize(recommendation) });
+  };
+}
 
 export function startServer(
   port: number,
@@ -372,31 +425,18 @@ export function startServer(
       logger.info(`Manual run requested for "${name}"`);
       return c.json({ runId }, 202);
     } catch (error) {
-      if (error instanceof TaskNotFoundError) {
-        return c.json({ error: error.message }, 404);
-      }
-      if (error instanceof TaskAlreadyRunningError) {
-        return c.json({ error: error.message }, 409);
-      }
-      throw error;
+      return taskRunErrorResponse(c, error);
     }
   });
 
-  const recommendationRunSchema = z.object({
-    maxRecommendations: z.number().int().min(1).max(MAX_RECOMMENDATIONS_PER_RUN),
-  });
+  const recommendationRunSchema = runRequestSchema(MAX_RECOMMENDATIONS_PER_RUN);
 
   app.post("/api/recommendations/run", async (c) => {
     const parsed = recommendationRunSchema.safeParse(
       await c.req.json().catch(() => null),
     );
     if (!parsed.success) {
-      return c.json(
-        {
-          error: `maxRecommendations must be an integer from 1 to ${MAX_RECOMMENDATIONS_PER_RUN}`,
-        },
-        400,
-      );
+      return c.json({ error: runRequestError(MAX_RECOMMENDATIONS_PER_RUN) }, 400);
     }
     try {
       const { runId } = registry.runNow("Recommendations", parsed.data);
@@ -405,13 +445,7 @@ export function startServer(
       );
       return c.json({ runId }, 202);
     } catch (error) {
-      if (error instanceof TaskNotFoundError) {
-        return c.json({ error: error.message }, 404);
-      }
-      if (error instanceof TaskAlreadyRunningError) {
-        return c.json({ error: error.message }, 409);
-      }
-      throw error;
+      return taskRunErrorResponse(c, error);
     }
   });
 
@@ -519,27 +553,17 @@ export function startServer(
     return c.json({ recommendation: serializeRecommendation(recommendation) });
   });
 
-  const feedbackSchema = z.object({
-    feedback: z.enum(["good_pick", "not_for_me", "already_watched"]),
-  });
-
-  app.post("/api/recommendations/:id/feedback", async (c) => {
-    const parsed = feedbackSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) {
-      return c.json({ error: "Invalid recommendation feedback" }, 400);
-    }
-    const existing = getRecommendation(c.req.param("id"));
-    if (!existing) return c.json({ error: "Recommendation not found" }, 404);
-    if (existing.status === "pending" || existing.status === "failed") {
-      return c.json({ error: "Undelivered recommendations cannot be rated" }, 409);
-    }
-    const recommendation = setRecommendationFeedback(
-      c.req.param("id"),
-      parsed.data.feedback,
-    );
-    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
-    return c.json({ recommendation: serializeRecommendation(recommendation) });
-  });
+  app.post(
+    "/api/recommendations/:id/feedback",
+    feedbackRoute({
+      schema: z.object({
+        feedback: z.enum(["good_pick", "not_for_me", "already_watched"]),
+      }),
+      get: getRecommendation,
+      setFeedback: setRecommendationFeedback,
+      serialize: serializeRecommendation,
+    }),
+  );
 
   app.get("/api/podcast-recommendations", (c) => {
     const recommendations = getAllPodcastRecommendations().map(
@@ -559,45 +583,23 @@ export function startServer(
     return c.json({ recommendation: serializePodcastRecommendation(recommendation) });
   });
 
-  const podcastFeedbackSchema = z.object({
-    feedback: z.enum(["good_pick", "not_for_me"]),
-  });
+  app.post(
+    "/api/podcast-recommendations/:id/feedback",
+    feedbackRoute({
+      schema: z.object({ feedback: z.enum(["good_pick", "not_for_me"]) }),
+      get: getPodcastRecommendation,
+      setFeedback: setPodcastRecommendationFeedback,
+      serialize: serializePodcastRecommendation,
+    }),
+  );
 
-  app.post("/api/podcast-recommendations/:id/feedback", async (c) => {
-    const parsed = podcastFeedbackSchema.safeParse(
-      await c.req.json().catch(() => null),
-    );
-    if (!parsed.success) {
-      return c.json({ error: "Invalid recommendation feedback" }, 400);
-    }
-    const existing = getPodcastRecommendation(c.req.param("id"));
-    if (!existing) return c.json({ error: "Recommendation not found" }, 404);
-    if (existing.status === "pending" || existing.status === "failed") {
-      return c.json({ error: "Undelivered recommendations cannot be rated" }, 409);
-    }
-    const recommendation = setPodcastRecommendationFeedback(
-      c.req.param("id"),
-      parsed.data.feedback,
-    );
-    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
-    return c.json({ recommendation: serializePodcastRecommendation(recommendation) });
-  });
-
-  const podcastRunSchema = z.object({
-    maxRecommendations: z
-      .number()
-      .int()
-      .min(1)
-      .max(MAX_PODCAST_RECOMMENDATIONS_PER_RUN),
-  });
+  const podcastRunSchema = runRequestSchema(MAX_PODCAST_RECOMMENDATIONS_PER_RUN);
 
   app.post("/api/podcast-recommendations/run", async (c) => {
     const parsed = podcastRunSchema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json(
-        {
-          error: `maxRecommendations must be an integer from 1 to ${MAX_PODCAST_RECOMMENDATIONS_PER_RUN}`,
-        },
+        { error: runRequestError(MAX_PODCAST_RECOMMENDATIONS_PER_RUN) },
         400,
       );
     }
@@ -608,13 +610,7 @@ export function startServer(
       );
       return c.json({ runId }, 202);
     } catch (error) {
-      if (error instanceof TaskNotFoundError) {
-        return c.json({ error: error.message }, 404);
-      }
-      if (error instanceof TaskAlreadyRunningError) {
-        return c.json({ error: error.message }, 409);
-      }
-      throw error;
+      return taskRunErrorResponse(c, error);
     }
   });
 

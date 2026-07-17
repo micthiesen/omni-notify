@@ -1,6 +1,7 @@
 import got from "got";
 import { decode } from "html-entities";
 import { DOMParser } from "linkedom";
+import { normalizeTitle } from "./titles.js";
 
 const DEFAULT_MAX_EPISODES = 30;
 const DESCRIPTION_MAX_CHARS = 500;
@@ -22,21 +23,6 @@ export interface FeedEpisode {
    * enclosure URL is shared. Used to match episodes against Castro.
    */
   enclosureUrl?: string;
-}
-
-/**
- * Normalizes a title for loose matching: lowercase, strip punctuation and
- * diacritics, collapse whitespace. Shared by itunes.ts (show matching) and
- * findEpisodeByTitle (episode matching).
- */
-export function normalizeTitle(title: string): string {
-  return title
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // strip diacritics (combining marks after NFD)
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ") // strip punctuation
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /** Fetches a podcast's RSS feed and parses its episodes. Errors propagate to the caller. */

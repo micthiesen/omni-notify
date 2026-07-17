@@ -1,4 +1,5 @@
 import type { PodcastExclusions } from "./persistence.js";
+import { normalizeTitle } from "./titles.js";
 import type { CanonicalShowId, EpisodeCandidate } from "./types.js";
 
 /** Only episodes released within this window are recommendable. */
@@ -69,15 +70,4 @@ function disqualify(
     return "already subscribed (title match)";
   }
   return undefined;
-}
-
-/** Shared loose title normalization for cross-system show matching. */
-export function normalizeTitle(title: string): string {
-  return title
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/['’]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
 }

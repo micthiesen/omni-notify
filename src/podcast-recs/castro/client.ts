@@ -16,7 +16,7 @@ import {
   type QueuedEpisode,
   type SubscribeToShowRequest,
 } from "../account.js";
-import { normalizeTitle } from "../rss.js";
+import { normalizeTitle } from "../titles.js";
 import { normalizeFeedUrl } from "../types.js";
 import { CastroApi } from "./api.js";
 import {

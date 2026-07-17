@@ -1,5 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import { toDateStamp } from "../../utils/dates.js";
 import { PodcastRecommendationStatus } from "../persistence.js";
 import {
   deriveListenEvidence,
@@ -253,7 +254,7 @@ function compactEvidence(item: PodcastTasteEvidenceData): Record<string, unknown
       kind: item.kind,
       show: item.showTitle,
       episode: item.episodeTitle,
-      observed_at: new Date(item.observedAt).toISOString().slice(0, 10),
+      observed_at: toDateStamp(item.observedAt),
       completion: item.completion,
       starred: item.starred,
       recommendation_status: item.recommendationStatus,

@@ -1,9 +1,9 @@
 import type { ListenedEpisode } from "./account.js";
-import { normalizeTitle } from "./filters.js";
 import {
   type PodcastRecommendationData,
   PodcastRecommendationStatus,
 } from "./persistence.js";
+import { normalizeTitle } from "./titles.js";
 
 /** Fraction of an episode that counts as actually having listened to it. */
 export const LISTENED_COMPLETION_THRESHOLD = 0.8;

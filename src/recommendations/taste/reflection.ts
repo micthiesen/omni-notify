@@ -1,5 +1,6 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import { toDateStamp } from "../../utils/dates.js";
 import { RecommendationStatus } from "../persistence.js";
 import { MediaType } from "../types.js";
 import {
@@ -285,7 +286,7 @@ function compactEvidence(item: TasteEvidenceData): Record<string, unknown> {
       title: item.title,
       year: item.year,
       media_type: item.mediaType,
-      observed_at: new Date(item.observedAt).toISOString().slice(0, 10),
+      observed_at: toDateStamp(item.observedAt),
       view_count: item.viewCount,
       completion: item.completion,
       recommendation_status: item.recommendationStatus,

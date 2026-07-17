@@ -1,3 +1,4 @@
+import { toDateStamp } from "../utils/dates.js";
 import { WATCHED_COMPLETION_THRESHOLD } from "./outcomes.js";
 import type { InProgressItem, WatchedItem } from "./types.js";
 
@@ -31,7 +32,7 @@ export function formatHistoryDigest(
       const year = item.year ? ` (${item.year})` : "";
       const rewatch = item.viewCount > 1 ? ` — rewatched ${item.viewCount}x` : "";
       lines.push(
-        `- ${item.title}${year} [${item.mediaType}] — ${formatDate(item.viewedAt)}${rewatch}`,
+        `- ${item.title}${year} [${item.mediaType}] — ${toDateStamp(item.viewedAt)}${rewatch}`,
       );
     }
   } else {
@@ -49,8 +50,4 @@ export function formatHistoryDigest(
   }
 
   return lines.join("\n");
-}
-
-function formatDate(epochMs: number): string {
-  return new Date(epochMs).toISOString().slice(0, 10);
 }

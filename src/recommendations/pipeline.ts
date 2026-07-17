@@ -3,6 +3,8 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import PQueue from "p-queue";
 import config from "../utils/config.js";
+import { toDateStamp } from "../utils/dates.js";
+import { feedbackUrl } from "../utils/feedbackUrl.js";
 import {
   assemblePool,
   enrichCandidates,
@@ -426,7 +428,7 @@ async function reconcileStalePending(
       await notify({
         title: `🎬 ${rec.title}${rec.year ? ` (${rec.year})` : ""}`,
         message: rec.whyForUser,
-        url: getFeedbackUrl(rec.recommendationId),
+        url: feedbackUrl("recommendations", rec.recommendationId),
         url_title: "Rate this pick",
         token: config.PUSHOVER_RECS_TOKEN,
       });
@@ -509,7 +511,7 @@ async function commitRecommendation(
       composite: scored.composite,
       risks: scored.risks,
     },
-    runDate: new Date().toISOString().slice(0, 10),
+    runDate: toDateStamp(),
     recommendedAt: Date.now(),
     wasBackup,
   });
@@ -553,7 +555,7 @@ async function commitRecommendation(
     await notify({
       title: pick.notification.title,
       message: pick.notification.message,
-      url: getFeedbackUrl(recommendationId),
+      url: feedbackUrl("recommendations", recommendationId),
       url_title: "Rate this pick",
       token: config.PUSHOVER_RECS_TOKEN,
     });
@@ -575,12 +577,6 @@ async function commitRecommendation(
   );
   logger.info(`Recommended ${candidate.title} (acquisition: ${watchlistResult})`);
   return "committed";
-}
-
-// One-tap rating page; it deep-links onward to the full recommendation view.
-function getFeedbackUrl(recommendationId: string): string {
-  const base = config.RECS_PUBLIC_URL.replace(/\/$/, "");
-  return `${base}/feedback/recommendations/${encodeURIComponent(recommendationId)}`;
 }
 
 function formatTitle(candidate: Candidate): string {

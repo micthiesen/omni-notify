@@ -1,6 +1,6 @@
 import got from "got";
 import { z } from "zod";
-import { normalizeTitle } from "./rss.js";
+import { normalizeTitle } from "./titles.js";
 
 const SEARCH_URL = "https://itunes.apple.com/search";
 const DEFAULT_LIMIT = 5;

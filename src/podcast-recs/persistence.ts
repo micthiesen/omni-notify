@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { toDateStamp } from "../utils/dates.js";
 import type { CanonicalEpisodeId, CanonicalShowId } from "./types.js";
 
 export enum PodcastRecommendationStatus {
@@ -200,8 +201,7 @@ export function formatRecentRecommendationsDigest(limit = 15): string {
   return [
     "Recently recommended episodes (never repeat these):",
     ...recent.map(
-      (r) =>
-        `- ${r.showTitle} — ${r.episodeTitle} (${new Date(r.recommendedAt).toISOString().slice(0, 10)})`,
+      (r) => `- ${r.showTitle} — ${r.episodeTitle} (${toDateStamp(r.recommendedAt)})`,
     ),
   ].join("\n");
 }

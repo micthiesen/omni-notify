@@ -2,10 +2,10 @@ import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import PQueue from "p-queue";
 import type { PodcastAccountClient } from "./account.js";
-import { normalizeTitle } from "./filters.js";
 import { pickBestShowMatch, searchItunesPodcasts } from "./itunes.js";
 import type { PodcastIndexEpisode } from "./podcastindex/types.js";
 import { fetchFeedEpisodes, findEpisodeByTitle } from "./rss.js";
+import { normalizeTitle } from "./titles.js";
 import type { DiscoveredEpisode, EpisodeCandidate } from "./types.js";
 import { makeEpisodeId, makeShowId } from "./types.js";
 

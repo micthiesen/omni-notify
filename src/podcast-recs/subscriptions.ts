@@ -1,7 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import type { FetchResult } from "../utils/fetchResult.js";
 import type { PodcastAccountClient, PodcastSubscription } from "./account.js";
-import { normalizeTitle } from "./filters.js";
+import { normalizeTitle } from "./titles.js";
 import { type CanonicalShowId, makeShowId } from "./types.js";
 
 export interface SubscriptionState {

@@ -5,6 +5,7 @@ import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getRecsShortlistModel } from "../ai/registry.js";
+import { toDateStamp } from "../utils/dates.js";
 import type { EpisodeCandidate } from "./types.js";
 
 export const FINALIST_COUNT = 4;
@@ -121,7 +122,7 @@ function buildPrompt(candidates: EpisodeCandidate[], tasteDigest: string): strin
   const candidateLines = candidates.map((c) => {
     const duration = c.durationMinutes ? ` | ${c.durationMinutes} min` : "";
     const genres = c.showGenres.length > 0 ? c.showGenres.join("/") : "unknown genres";
-    const released = new Date(c.publishedAt).toISOString().slice(0, 10);
+    const released = toDateStamp(c.publishedAt);
     const description = c.description.replace(/\s+/g, " ").slice(0, 220);
     return `[${c.episodeId}] ${c.showTitle} — ${c.episodeTitle} | ${genres} | released ${released}${duration} | surfaced via: ${c.discoveredVia}\n  ${description}`;
   });

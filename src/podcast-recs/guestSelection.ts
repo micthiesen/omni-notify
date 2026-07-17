@@ -5,6 +5,7 @@ import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getRecsSelectionModel } from "../ai/registry.js";
+import { toDateStamp } from "../utils/dates.js";
 import type { PodcastSelectionPick } from "./selection.js";
 import type { EpisodeCandidate } from "./types.js";
 
@@ -132,7 +133,7 @@ function buildPrompt(
   max: number,
 ): string {
   const blocks = candidates.map((c) => {
-    const released = new Date(c.publishedAt).toISOString().slice(0, 10);
+    const released = toDateStamp(c.publishedAt);
     const duration = c.durationMinutes ? ` | ${c.durationMinutes} min` : "";
     return `[${c.episodeId}] ${c.showTitle} — ${c.episodeTitle} | featuring: ${(c.matchedVoices ?? []).join(", ")} | released ${released}${duration}\n  ${c.description.replace(/\s+/g, " ").slice(0, 300)}`;
   });

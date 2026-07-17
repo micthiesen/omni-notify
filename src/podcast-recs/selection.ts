@@ -6,6 +6,7 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getRecsSelectionModel } from "../ai/registry.js";
 import { searchWeb } from "../ai/tools/webSearch.js";
+import { toDateStamp } from "../utils/dates.js";
 import type { ScoredEpisode } from "./shortlist.js";
 
 const notificationSchema = z.object({
@@ -124,7 +125,7 @@ function buildPrompt(
 ): string {
   const finalistBlocks = finalists.map((s) => {
     const c = s.candidate;
-    const released = new Date(c.publishedAt).toISOString().slice(0, 10);
+    const released = toDateStamp(c.publishedAt);
     const duration = c.durationMinutes ? ` | ${c.durationMinutes} min` : "";
     const genres = c.showGenres.join("/") || "unknown genres";
     const risks =

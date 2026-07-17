@@ -2,6 +2,8 @@ import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import config from "../utils/config.js";
+import { toDateStamp } from "../utils/dates.js";
+import { feedbackUrl } from "../utils/feedbackUrl.js";
 import {
   type PodcastAccountClient,
   PodcastQueuePosition,
@@ -346,7 +348,7 @@ async function commit(
     sourceUrl: candidate.sourceUrl,
     matchedVoices: candidate.matchedVoices,
     shortlistScores,
-    runDate: new Date().toISOString().slice(0, 10),
+    runDate: toDateStamp(),
     recommendedAt: Date.now(),
   });
 
@@ -379,7 +381,7 @@ async function commit(
     await notify({
       title: pick.notification.title,
       message: appendQueueNote(pick.notification.message, queueResult),
-      url: getFeedbackUrl(recommendationId),
+      url: feedbackUrl("podcasts", recommendationId),
       url_title: "Rate this pick",
       token: config.PUSHOVER_PODCAST_TOKEN,
     });
@@ -413,12 +415,6 @@ export function toQueueResult(writeResult: PodcastWriteResult): PodcastQueueResu
 function appendQueueNote(message: string, queueResult: PodcastQueueResult): string {
   if (queueResult === "not_queued") return message;
   return `${message}\n\n🎧 Added to your Castro queue.`;
-}
-
-// One-tap rating page; it deep-links onward to the full recommendation view.
-function getFeedbackUrl(recommendationId: string): string {
-  const base = config.RECS_PUBLIC_URL.replace(/\/$/, "");
-  return `${base}/feedback/podcasts/${encodeURIComponent(recommendationId)}`;
 }
 
 function formatBatchSummary(

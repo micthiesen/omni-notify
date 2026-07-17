@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { toDateStamp } from "../utils/dates.js";
 
 // Tracks created calendar events by content hash for dedup and cancel/update matching
 export type CreatedCalendarEventData = {
@@ -66,8 +67,8 @@ export function getRecentEvents(futureDays = 90): CreatedCalendarEventData[] {
   const futureCutoff = new Date(now);
   futureCutoff.setDate(futureCutoff.getDate() + futureDays);
 
-  const pastStr = pastCutoff.toISOString().slice(0, 10);
-  const futureStr = futureCutoff.toISOString().slice(0, 10);
+  const pastStr = toDateStamp(pastCutoff.getTime());
+  const futureStr = toDateStamp(futureCutoff.getTime());
 
   return all.filter(
     (e) =>

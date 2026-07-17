@@ -1,6 +1,8 @@
-import { createHash } from "node:crypto";
+import { digest } from "../../utils/fingerprint.js";
 import type { RecommendationData } from "../persistence.js";
 import type { CanonicalWatchObservation, TasteEvidenceData } from "./types.js";
+
+export { fingerprintEvidence } from "../../utils/fingerprint.js";
 
 export function deriveWatchEvidence(
   observations: CanonicalWatchObservation[],
@@ -101,25 +103,4 @@ function recommendationFields(recommendation: RecommendationData) {
     keywords: recommendation.keywords,
     certification: recommendation.certification,
   };
-}
-
-/** Fingerprint only immutable evidence payloads, in stable id order. */
-export function fingerprintEvidence(evidence: TasteEvidenceData[]): string {
-  const stable = [...evidence]
-    .sort((a, b) => a.evidenceId.localeCompare(b.evidenceId))
-    .map((item) => JSON.stringify(sortObject(item)))
-    .join("\n");
-  return digest(stable);
-}
-
-function sortObject(value: TasteEvidenceData): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, field]) => field !== undefined)
-      .sort(([a], [b]) => a.localeCompare(b)),
-  );
-}
-
-function digest(value: string): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, 24);
 }

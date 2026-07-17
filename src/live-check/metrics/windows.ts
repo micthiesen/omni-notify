@@ -1,11 +1,5 @@
+import { toDateStamp } from "../../utils/dates.js";
 import type { DailyBucket, ViewerMetricsData, WindowConfig } from "./types.js";
-
-/**
- * Get today's date as YYYY-MM-DD string
- */
-export function getTodayDateString(): string {
-  return new Date().toISOString().split("T")[0];
-}
 
 /**
  * Update daily buckets with a new viewer count observation.
@@ -17,7 +11,7 @@ export function updateDailyBucket(
   buckets: DailyBucket[],
   viewerCount: number,
 ): DailyBucket[] {
-  const today = getTodayDateString();
+  const today = toDateStamp();
   const now = Date.now();
 
   const existingIndex = buckets.findIndex((b) => b.date === today);
@@ -45,7 +39,7 @@ export function updateDailyBucket(
 export function pruneBuckets(buckets: DailyBucket[], maxDays: number): DailyBucket[] {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - maxDays);
-  const cutoffString = cutoffDate.toISOString().split("T")[0];
+  const cutoffString = toDateStamp(cutoffDate.getTime());
 
   return buckets.filter((b) => b.date >= cutoffString);
 }
@@ -64,7 +58,7 @@ export function calculateWindowMax(
 
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - window.days);
-  const cutoffString = cutoffDate.toISOString().split("T")[0];
+  const cutoffString = toDateStamp(cutoffDate.getTime());
 
   let max = 0;
   for (const bucket of metrics.dailyBuckets) {
