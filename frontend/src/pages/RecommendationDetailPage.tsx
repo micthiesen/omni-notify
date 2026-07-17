@@ -108,7 +108,10 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
   return (
     <>
       <Link to="/media" className="detail-back">
-        ← All media picks
+        <span className="detail-back-arrow" aria-hidden="true">
+          ←
+        </span>
+        All media picks
       </Link>
       <Toast toast={toast} />
 

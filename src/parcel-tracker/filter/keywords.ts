@@ -2,8 +2,10 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
 
 const BLACKLISTED_SENDERS = [
-  // Food delivery
+  // Intentionally excluded: Parcel has a dedicated Amazon integration that
+  // covers those deliveries, so tracking them here would duplicate.
   "@amazon.",
+  // Food delivery
   "@uber.com",
   "@doordash.com",
   "@skipthedishes.com",

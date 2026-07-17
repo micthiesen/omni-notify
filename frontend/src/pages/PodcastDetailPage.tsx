@@ -107,7 +107,10 @@ export default function PodcastDetailPage({ id }: { id: string }) {
   return (
     <>
       <Link to="/podcasts" className="detail-back">
-        ← All podcast picks
+        <span className="detail-back-arrow" aria-hidden="true">
+          ←
+        </span>
+        All podcast picks
       </Link>
       <Toast toast={toast} />
 

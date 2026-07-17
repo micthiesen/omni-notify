@@ -2,6 +2,7 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { recordEmailActivity } from "../jmap/activity.js";
+import { withEmailLogCapture } from "../jmap/activityLogs.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
@@ -87,7 +88,7 @@ export class DeliveryPipeline implements EmailHandler {
       );
     }
 
-    // Process each candidate
+    // Process each candidate, capturing its log lines for the activity UI
     for (const email of newCandidates) {
       const runLog = config.LOGS_PATH
         ? new LogFile(
@@ -95,28 +96,30 @@ export class DeliveryPipeline implements EmailHandler {
             "overwrite",
           )
         : undefined;
-      try {
-        const items = await this.processEmail(email, runLog);
-        recordEmailActivity({
-          pipeline: this.name,
-          email,
-          outcome: items.length > 0 ? "processed" : "no_matches",
-          detail: items.length > 0 ? undefined : "no tracking numbers found",
-          items: items.length > 0 ? items : undefined,
-        });
-      } catch (error) {
-        this.logger.error(
-          `Failed to process email "${email.subject}"`,
-          (error as Error).message,
-        );
-        recordEmailActivity({
-          pipeline: this.name,
-          email,
-          outcome: "error",
-          detail: (error as Error).message,
-        });
-        // Continue with other emails
-      }
+      await withEmailLogCapture(`${this.name}#${email.id}`, this.name, async () => {
+        try {
+          const items = await this.processEmail(email, runLog);
+          recordEmailActivity({
+            pipeline: this.name,
+            email,
+            outcome: items.length > 0 ? "processed" : "no_matches",
+            detail: items.length > 0 ? undefined : "no tracking numbers found",
+            items: items.length > 0 ? items : undefined,
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to process email "${email.subject}"`,
+            (error as Error).message,
+          );
+          recordEmailActivity({
+            pipeline: this.name,
+            email,
+            outcome: "error",
+            detail: (error as Error).message,
+          });
+          // Continue with other emails
+        }
+      });
     }
   }
 

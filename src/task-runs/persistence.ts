@@ -153,12 +153,23 @@ export function getRun(runId: string): TaskRunData | undefined {
   return TaskRunEntity.get({ runId });
 }
 
+/** gzip(JSON.stringify(lines)) as base64, the stored form of captured logs. */
+export function compressLogLines(lines: TaskRunLogLine[]): string {
+  return gzipSync(JSON.stringify(lines)).toString("base64");
+}
+
+export function decompressLogLines(linesGz: string): TaskRunLogLine[] {
+  return JSON.parse(
+    gunzipSync(Buffer.from(linesGz, "base64")).toString("utf8"),
+  ) as TaskRunLogLine[];
+}
+
 export function saveRunLogs(data: TaskRunLogData): void {
   if (data.lines.length === 0 && data.dropped === 0) return;
   TaskRunLogEntity.upsert({
     runId: data.runId,
     taskName: data.taskName,
-    linesGz: gzipSync(JSON.stringify(data.lines)).toString("base64"),
+    linesGz: compressLogLines(data.lines),
     dropped: data.dropped,
   });
 }
@@ -167,11 +178,7 @@ export function getRunLogs(runId: string): TaskRunLogData | undefined {
   try {
     const row = TaskRunLogEntity.get({ runId });
     if (!row) return undefined;
-    const lines = row.linesGz
-      ? (JSON.parse(
-          gunzipSync(Buffer.from(row.linesGz, "base64")).toString("utf8"),
-        ) as TaskRunLogLine[])
-      : (row.lines ?? []);
+    const lines = row.linesGz ? decompressLogLines(row.linesGz) : (row.lines ?? []);
     return { runId: row.runId, taskName: row.taskName, lines, dropped: row.dropped };
   } catch (err) {
     // A truncated/corrupt CBOR blob (e.g. a row half-written when the

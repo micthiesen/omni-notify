@@ -501,6 +501,20 @@ export function fetchEmailActivity(
   return apiGet<{ activities: EmailActivity[] }>(`/api/email-activity${query}`);
 }
 
+export interface EmailActivityLogs {
+  activity: EmailActivity;
+  lines: RunLogLine[];
+  dropped: number;
+}
+
+export function fetchEmailActivityLogs(
+  activityId: string,
+): Promise<EmailActivityLogs> {
+  return apiGet<EmailActivityLogs>(
+    `/api/email-activity/${encodeURIComponent(activityId)}/logs`,
+  );
+}
+
 export function fetchRecommendation(
   recommendationId: string,
 ): Promise<{ recommendation: Recommendation }> {

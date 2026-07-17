@@ -70,6 +70,18 @@ export function getActiveRunLogs(
 }
 
 /**
+ * Stop buffering for an ad-hoc capture (e.g. per-email pipeline work) and
+ * return the collected lines instead of persisting them as a task run.
+ */
+export function takeRunLogCapture(
+  id: string,
+): { lines: TaskRunLogLine[]; dropped: number } | undefined {
+  const buffer = buffers.get(id);
+  buffers.delete(id);
+  return buffer ? { lines: buffer.lines, dropped: buffer.dropped } : undefined;
+}
+
+/**
  * Persist the run's buffer and tell streaming clients the run is over. Must
  * be called after the run's final status is recorded, so "end" subscribers
  * read a settled run.

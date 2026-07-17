@@ -25,6 +25,28 @@ function shortLoggerName(name: string): string {
   return rest || name;
 }
 
+/** Shared log-line rendering, used by the task-run viewer and email log modal. */
+export function LogLines({ lines }: { lines: RunLogLine[] }) {
+  return (
+    <>
+      {lines.map((line, index) => (
+        <div
+          // Lines are append-only, so a positional key is stable.
+          key={`${line.t}:${index}`}
+          className={`log-line log-line-${line.level}`}
+        >
+          <span className="log-line-meta">
+            <span className="log-time">{formatLogTime(line.t)}</span>
+            <span className={`log-level log-level-${line.level}`}>{line.level}</span>
+            <span className="log-logger">{shortLoggerName(line.logger)}</span>
+          </span>
+          <span className="log-msg">{line.msg}</span>
+        </div>
+      ))}
+    </>
+  );
+}
+
 /**
  * Modal log viewer for one task run. Finished runs load their persisted logs
  * once; a running task opens the per-run SSE stream and tails it live until
@@ -224,22 +246,7 @@ export function LogViewer({
               All {lineCount} lines are hidden by the level filter.
             </div>
           )}
-          {visible.map((line, index) => (
-            <div
-              // Lines are append-only, so a positional key is stable.
-              key={`${line.t}:${index}`}
-              className={`log-line log-line-${line.level}`}
-            >
-              <span className="log-line-meta">
-                <span className="log-time">{formatLogTime(line.t)}</span>
-                <span className={`log-level log-level-${line.level}`}>
-                  {line.level}
-                </span>
-                <span className="log-logger">{shortLoggerName(line.logger)}</span>
-              </span>
-              <span className="log-msg">{line.msg}</span>
-            </div>
-          ))}
+          <LogLines lines={visible} />
         </div>
         {hiddenCount > 0 && visible.length > 0 && (
           <div className="log-modal-footer muted">

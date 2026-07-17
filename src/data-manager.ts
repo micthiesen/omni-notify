@@ -3,6 +3,7 @@ import type { Entity } from "@micthiesen/mitools/entities";
 import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
 import { EmailActivityEntity } from "./jmap/activity.js";
+import { EmailActivityLogEntity } from "./jmap/activityLogs.js";
 import { EmailStateEntity } from "./jmap/persistence.js";
 import { ViewerMetricsEntity } from "./live-check/metrics/persistence.js";
 import { StreamerStatusEntity } from "./live-check/persistence.js";
@@ -259,6 +260,11 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
   createManagedEntity(EmailActivityEntity, {
     label: "Email activity",
     description: "Per-email outcomes from the parcel and calendar pipelines.",
+    afterDelete: (row) => EmailActivityLogEntity.delete({ activityId: row.activityId }),
+  }),
+  createManagedEntity(EmailActivityLogEntity, {
+    label: "Email activity logs",
+    description: "Captured log lines for emails that reached pipeline processing.",
   }),
   createManagedEntity(EmailStateEntity, {
     label: "Email cursor",

@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { EmailActivityLogEntity } from "./activityLogs.js";
 import type { FetchedEmail } from "./emailFetcher.js";
 
 export type EmailPipelineName = "ParcelTracker" | "CalendarEvents";
@@ -76,7 +77,12 @@ export function recordEmailActivity(entry: {
     KEEP_PER_PIPELINE,
   )) {
     EmailActivityEntity.delete({ activityId: stale.activityId });
+    EmailActivityLogEntity.delete({ activityId: stale.activityId });
   }
+}
+
+export function getEmailActivity(activityId: string): EmailActivityData | undefined {
+  return EmailActivityEntity.get({ activityId });
 }
 
 export function getRecentEmailActivity(

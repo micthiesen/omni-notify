@@ -2585,11 +2585,18 @@ button.history-row:last-child {
 }
 
 .detail-back {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   margin-bottom: 1rem;
   color: var(--text-secondary);
   font-size: 0.85rem;
   text-decoration: none;
+}
+
+.detail-back-arrow {
+  line-height: 1;
+  font-size: 1.05em;
 }
 
 .detail-back:hover {
@@ -2765,10 +2772,26 @@ button.history-row:last-child {
 }
 
 .mail-row {
-  padding: 0.7rem 0.9rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+}
+
+.mail-row-btn {
+  display: block;
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  background: none;
+  border: none;
+  border-radius: inherit;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mail-row-btn:hover {
+  background: var(--bg-hover);
 }
 
 .mail-row-top {

@@ -3,6 +3,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
 import { recordEmailActivity } from "../jmap/activity.js";
+import { withEmailLogCapture } from "../jmap/activityLogs.js";
 import type { JmapContext } from "../jmap/client.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
@@ -98,7 +99,7 @@ export class CalendarEventPipeline implements EmailHandler {
       }
     }
 
-    // Process each candidate
+    // Process each candidate, capturing its log lines for the activity UI
     for (const email of candidates) {
       const runLog = config.LOGS_PATH
         ? new LogFile(
@@ -106,20 +107,22 @@ export class CalendarEventPipeline implements EmailHandler {
             "overwrite",
           )
         : undefined;
-      try {
-        await this.processEmail(email, runLog);
-      } catch (error) {
-        this.logger.error(
-          `Failed to process email "${email.subject}"`,
-          (error as Error).message,
-        );
-        recordEmailActivity({
-          pipeline: this.name,
-          email,
-          outcome: "error",
-          detail: (error as Error).message,
-        });
-      }
+      await withEmailLogCapture(`${this.name}#${email.id}`, this.name, async () => {
+        try {
+          await this.processEmail(email, runLog);
+        } catch (error) {
+          this.logger.error(
+            `Failed to process email "${email.subject}"`,
+            (error as Error).message,
+          );
+          recordEmailActivity({
+            pipeline: this.name,
+            email,
+            outcome: "error",
+            detail: (error as Error).message,
+          });
+        }
+      });
     }
   }
 

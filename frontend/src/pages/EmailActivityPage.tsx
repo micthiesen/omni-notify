@@ -1,30 +1,19 @@
 import { useEffect, useState } from "react";
 import {
   type EmailActivity,
-  type EmailActivityOutcome,
   type EmailPipeline,
   fetchEmailActivity,
 } from "../api";
+import { EmailLogModal } from "../components/EmailLogModal";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
+import { OUTCOME_LABELS, PIPELINE_LABELS } from "../utils/emailLabels";
 import { formatAbsolute } from "../utils/format";
-
-const PIPELINE_LABELS: Record<EmailPipeline, string> = {
-  ParcelTracker: "Parcels",
-  CalendarEvents: "Calendar",
-};
-
-const OUTCOME_LABELS: Record<EmailActivityOutcome, string> = {
-  filtered: "Filtered",
-  skipped: "Skipped",
-  no_matches: "No matches",
-  processed: "Processed",
-  error: "Error",
-};
 
 export default function EmailActivityPage() {
   const [activities, setActivities] = useState<EmailActivity[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pipeline, setPipeline] = useState<EmailPipeline | null>(null);
+  const [logsFor, setLogsFor] = useState<EmailActivity | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,38 +90,50 @@ export default function EmailActivityPage() {
         <ul className="mail-list">
           {visible.map((activity) => (
             <li key={activity.activityId} className="mail-row">
-              <div className="mail-row-top">
-                <span className="mail-subject" title={activity.subject}>
-                  {activity.subject || "(no subject)"}
-                </span>
-                <span className={`mail-outcome mail-outcome-${activity.outcome}`}>
-                  {OUTCOME_LABELS[activity.outcome]}
-                </span>
-              </div>
-              <div className="mail-row-meta">
-                <span className="briefing-badge">
-                  {PIPELINE_LABELS[activity.pipeline]}
-                </span>
-                <span className="mail-from" title={activity.from}>
-                  {activity.from}
-                </span>
-                <span className="mail-time">
-                  {formatAbsolute(activity.processedAt)}
-                </span>
-              </div>
-              {activity.detail && <div className="mail-detail">{activity.detail}</div>}
-              {activity.items.length > 0 && (
-                <ul className="mail-items">
-                  {activity.items.map((item, index) => (
-                    <li key={`${index}-${item}`}>{item}</li>
-                  ))}
-                </ul>
-              )}
+              <button
+                type="button"
+                className="mail-row-btn"
+                title="View processing logs"
+                onClick={() => setLogsFor(activity)}
+              >
+                <div className="mail-row-top">
+                  <span className="mail-subject" title={activity.subject}>
+                    {activity.subject || "(no subject)"}
+                  </span>
+                  <span className={`mail-outcome mail-outcome-${activity.outcome}`}>
+                    {OUTCOME_LABELS[activity.outcome]}
+                  </span>
+                </div>
+                <div className="mail-row-meta">
+                  <span className="briefing-badge">
+                    {PIPELINE_LABELS[activity.pipeline]}
+                  </span>
+                  <span className="mail-from" title={activity.from}>
+                    {activity.from}
+                  </span>
+                  <span className="mail-time">
+                    {formatAbsolute(activity.processedAt)}
+                  </span>
+                </div>
+                {activity.detail && (
+                  <div className="mail-detail">{activity.detail}</div>
+                )}
+                {activity.items.length > 0 && (
+                  <ul className="mail-items">
+                    {activity.items.map((item, index) => (
+                      <li key={`${index}-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                )}
+              </button>
             </li>
           ))}
         </ul>
       )}
       {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
+      {logsFor && (
+        <EmailLogModal activity={logsFor} onClose={() => setLogsFor(null)} />
+      )}
     </>
   );
 }

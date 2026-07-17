@@ -11,7 +11,12 @@ import {
   getManagedEntity,
   listManagedEntities,
 } from "./data-manager.js";
-import { type EmailPipelineName, getRecentEmailActivity } from "./jmap/activity.js";
+import {
+  type EmailPipelineName,
+  getEmailActivity,
+  getRecentEmailActivity,
+} from "./jmap/activity.js";
+import { getEmailActivityLogs } from "./jmap/activityLogs.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
@@ -663,6 +668,31 @@ export function startServer(
       items: a.items ?? [],
     }));
     return c.json({ activities });
+  });
+
+  // Captured log lines for one email's processing phase. Filtered/skipped
+  // emails never reach processing, so they legitimately have no lines.
+  app.get("/api/email-activity/:activityId/logs", (c) => {
+    const activityId = c.req.param("activityId");
+    const activity = getEmailActivity(activityId);
+    if (!activity) return c.json({ error: "Unknown activity" }, 404);
+    const logs = getEmailActivityLogs(activityId);
+    return c.json({
+      activity: {
+        activityId: activity.activityId,
+        pipeline: activity.pipeline,
+        emailId: activity.emailId,
+        subject: activity.subject,
+        from: activity.from,
+        receivedAt: activity.receivedAt,
+        processedAt: activity.processedAt,
+        outcome: activity.outcome,
+        detail: activity.detail ?? null,
+        items: activity.items ?? [],
+      },
+      lines: logs?.lines ?? [],
+      dropped: logs?.dropped ?? 0,
+    });
   });
 
   // Stored briefing history (last 50 notifications per briefing), one row per
