@@ -75,6 +75,21 @@ function serializeRun(run: TaskRunData) {
   };
 }
 
+// Radarr's movie page slug is the TMDB id, so link straight to it once the movie
+// is in the library; otherwise land on the add-new search pre-filled by tmdb id.
+// Sonarr's detail pages need its own titleSlug (not persisted), so always use the
+// add-new search, which shows an existing series as such and links through to it.
+function buildManagerLink(rec: RecommendationData): string {
+  if (rec.mediaType === "movie") {
+    const inRadarr =
+      rec.watchlistResult === "added" || rec.watchlistResult === "already_exists";
+    return inRadarr
+      ? `http://radarr.boris/movie/${rec.tmdbId}`
+      : `http://radarr.boris/add/new?term=${encodeURIComponent(`tmdb:${rec.tmdbId}`)}`;
+  }
+  return `http://sonarr.boris/add/new?term=${encodeURIComponent(rec.title)}`;
+}
+
 function serializeRecommendation(rec: RecommendationData) {
   return {
     recommendationId: rec.recommendationId,
@@ -111,9 +126,8 @@ function serializeRecommendation(rec: RecommendationData) {
     shortlistScores: rec.shortlistScores ?? null,
     links: {
       tmdb: `https://www.themoviedb.org/${rec.mediaType}/${rec.tmdbId}`,
-      plex: "http://plex.boris/web/index.html#!/",
-      manager:
-        rec.mediaType === "movie" ? "http://radarr.boris/" : "http://sonarr.boris/",
+      plex: `http://plex.boris/web/index.html#!/search?pivot=top&query=${encodeURIComponent(rec.title)}`,
+      manager: buildManagerLink(rec),
     },
   };
 }
