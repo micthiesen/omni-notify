@@ -371,9 +371,9 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
   return (
     <div className="pet-card">
       <div className="pet-header">
-        <div>
+        <div className="meta-row">
           <span className="pet-name">{pet.name}</span>
-          <span className="pet-weight"> &mdash; {pet.currentWeight} lbs</span>
+          <span className="pet-weight">{pet.currentWeight} lbs</span>
           {filteredWeight.length >= 2 && (
             <span
               className={`pet-trend ${slopePerWeek >= 0 ? "up" : "down"}`}
@@ -383,9 +383,8 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
               {slopePerWeek.toFixed(2)} lbs/wk
             </span>
           )}
-          <span className="pet-visits">
-            {visitsToday} today &middot; avg {avgPerDay.toFixed(1)}/day
-          </span>
+          <span className="pet-visits">{visitsToday} today</span>
+          <span className="pet-visits">avg {avgPerDay.toFixed(1)}/day</span>
         </div>
         <div className="range-controls">
           <div className="mode-toggle">

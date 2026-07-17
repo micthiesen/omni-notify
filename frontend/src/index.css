@@ -585,12 +585,21 @@ button {
   width: 11rem;
   max-width: 18rem;
   padding: 0.3rem 0.65rem;
+  /* Column widths are static per column, set by content class below. */
   border-bottom: 1px solid var(--bg-hover);
   border-right: 1px solid rgba(35, 44, 71, 0.5);
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.data-table .data-col-narrow {
+  width: 6.5rem;
+}
+
+.data-table .data-col-wide {
+  width: 18rem;
 }
 
 .data-table tbody tr {
@@ -1928,7 +1937,6 @@ button.task-last-run,
 .pet-trend {
   font-size: 0.8rem;
   font-weight: 550;
-  margin-left: 0.5rem;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1943,7 +1951,6 @@ button.task-last-run,
 .pet-visits {
   font-size: 0.8rem;
   color: var(--text-muted);
-  margin-left: 0.5rem;
 }
 
 .mode-toggle {

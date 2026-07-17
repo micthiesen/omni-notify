@@ -80,6 +80,29 @@ function displayValue(value: DataValue | undefined): { text: string; title: stri
   return { text: String(value), title: String(value) };
 }
 
+type ColumnWidth = "narrow" | "medium" | "wide";
+
+/**
+ * Size a column by its rendered content (sampled) and header length, so
+ * booleans/counts stay compact while IDs and prose get room. Widths are
+ * static per column — they don't shift as rows are filtered or sorted.
+ */
+function classifyColumnWidth(column: string, rows: DataRow[]): ColumnWidth {
+  // Headers never wrap; a long name needs medium width even for tiny values.
+  let maxLen = Math.ceil(column.length * 0.8);
+  let sampled = 0;
+  for (const row of rows) {
+    const value = row[column];
+    if (value === undefined) continue;
+    const len = displayValue(value).text.length;
+    if (len > maxLen) maxLen = len;
+    if (++sampled >= 50) break;
+  }
+  if (maxLen <= 10) return "narrow";
+  if (maxLen >= 40) return "wide";
+  return "medium";
+}
+
 function compareValues(a: DataValue | undefined, b: DataValue | undefined): number {
   if (typeof a === "number" && typeof b === "number") return a - b;
   return displayValue(a).text.localeCompare(displayValue(b).text, undefined, {
@@ -246,6 +269,16 @@ export default function DataPage() {
       ...rest,
     ];
   }, [rows, selected]);
+
+  const columnWidths = useMemo(
+    () =>
+      new Map(
+        columns
+          .filter((column) => column !== MALFORMED_ROW_KEY)
+          .map((column) => [column, classifyColumnWidth(column, rows)]),
+      ),
+    [columns, rows],
+  );
 
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -447,11 +480,11 @@ export default function DataPage() {
                         {columns.map((column) => (
                           <th
                             key={column}
-                            className={
+                            className={`data-col-${columnWidths.get(column) ?? "medium"} ${
                               selected.primaryKey.includes(column)
                                 ? "data-pk-column"
                                 : ""
-                            }
+                            }`}
                           >
                             <button type="button" onClick={() => selectSort(column)}>
                               {column === MALFORMED_ROW_KEY
@@ -494,7 +527,11 @@ export default function DataPage() {
                               }
                               const value = displayValue(row[column]);
                               return (
-                                <td key={column} title={value.title}>
+                                <td
+                                  key={column}
+                                  className={`data-col-${columnWidths.get(column) ?? "medium"}`}
+                                  title={value.title}
+                                >
                                   {value.text}
                                 </td>
                               );
