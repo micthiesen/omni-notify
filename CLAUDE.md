@@ -119,7 +119,8 @@ src/
 ├── tools/
 │   └── preview-server.ts    # Dev harness: real server + fake data for frontend work
 ├── server.ts                # Hono API (/api/tasks, /api/task-runs, /api/recommendations,
-│                            #   /api/pets, /api/streamers, /api/snapshot) + SSE (/api/events,
+│                            #   /api/pets, /api/streamers, /api/snapshot,
+│                            #   /api/trigger-channels for homebridge-stream-triggers) + SSE (/api/events,
 │                            #   /api/task-runs/:runId/logs/stream) + SPA
 └── utils/
     └── config.ts            # Environment config with zod validation

@@ -17,6 +17,7 @@ import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
 import { getStreamSessions } from "./live-check/sessions.js";
 import type { PlatformBinding, Streamer } from "./live-check/streamers.js";
+import { toTriggerChannels } from "./live-check/triggerChannels.js";
 import {
   getAllPetsWithHistory,
   getDailyVisitCounts,
@@ -289,6 +290,12 @@ export function startServer(
 
   app.get("/api/streamers", (c) =>
     c.json({ streamers: streamers.map(serializeStreamer) }),
+  );
+
+  // Channel list for the homebridge-stream-triggers Homebridge plugin: one
+  // switch per streamer, highest-priority tvOS-launchable platform wins.
+  app.get("/api/trigger-channels", (c) =>
+    c.json({ channels: toTriggerChannels(streamers) }),
   );
 
   // Viewer metrics history for the streamer detail page: daily peak-viewer
