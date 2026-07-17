@@ -525,6 +525,32 @@ button {
   white-space: nowrap;
 }
 
+.data-download-btn,
+.log-download-btn {
+  padding: 0.28rem 0.7rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.data-download-btn:hover:not(:disabled),
+.log-download-btn:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.data-download-btn:disabled,
+.log-download-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .data-table-wrap {
   max-height: calc(100vh - 15rem);
   min-height: 12rem;
@@ -2315,9 +2341,12 @@ button.history-row:last-child {
   opacity: 0.7;
 }
 
+.log-download-btn {
+  margin-left: auto;
+}
+
 .log-dropped-note {
   font-size: 0.75rem;
-  margin-left: auto;
 }
 
 .log-modal-body {

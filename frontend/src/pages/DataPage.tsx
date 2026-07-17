@@ -9,6 +9,7 @@ import {
   type DataValue,
 } from "../api";
 import { Toast, useToast } from "../components/Toast";
+import { downloadFile } from "../utils/download";
 import { toTitleCase } from "../utils/format";
 
 type SortDirection = "asc" | "desc";
@@ -294,6 +295,16 @@ export default function DataPage() {
     return filtered;
   }, [query, rows, sortColumn, sortDirection]);
 
+  const downloadRows = () => {
+    if (!selected) return;
+    const suffix = query.trim() ? "-filtered" : "";
+    downloadFile(
+      `${selected.slug}${suffix}.json`,
+      JSON.stringify(visibleRows, null, 2),
+      "application/json",
+    );
+  };
+
   const selectSort = (column: string) => {
     if (sortColumn === column) {
       setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
@@ -461,6 +472,19 @@ export default function DataPage() {
                     : `${visibleRows.length} of ${rows.length}`} {" "}
                   rows
                 </span>
+                <button
+                  className="data-download-btn"
+                  type="button"
+                  disabled={visibleRows.length === 0}
+                  title={
+                    query.trim()
+                      ? "Download the filtered rows as JSON"
+                      : "Download all rows as JSON"
+                  }
+                  onClick={downloadRows}
+                >
+                  Download JSON
+                </button>
               </div>
 
               {error && <div className="error-inline">{error}</div>}

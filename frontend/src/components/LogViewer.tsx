@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchRunLogs, runLogStreamUrl } from "../api";
 import type { RunLogLevel, RunLogLine, RunLogs, TaskRun } from "../api";
 import { useNow } from "../hooks/useNow";
+import { downloadFile } from "../utils/download";
 import { formatAbsolute, toTitleCase } from "../utils/format";
 import { StatusDot, TriggerBadge } from "./badges";
 import { runDuration } from "./TaskCard";
@@ -135,6 +136,17 @@ export function LogViewer({
   const visible = (lines ?? []).filter((line) => !hiddenLevels.has(line.level));
   const hiddenCount = lineCount - visible.length;
 
+  const downloadLogs = () => {
+    const content = visible
+      .map(
+        (line) =>
+          `${new Date(line.t).toISOString()} ${line.level.toUpperCase().padEnd(5)} ${line.logger} ${line.msg}`,
+      )
+      .join("\n");
+    // runId is "TaskName:startedAt:seq"; colons are unfriendly in filenames.
+    downloadFile(`${runId.replace(/:/g, "-")}.log`, `${content}\n`, "text/plain");
+  };
+
   return (
     <div className="modal-root">
       <button
@@ -177,6 +189,19 @@ export function LogViewer({
               <span className="log-level-count">{counts.get(level) ?? 0}</span>
             </button>
           ))}
+          <button
+            type="button"
+            className="log-download-btn"
+            disabled={visible.length === 0}
+            title={
+              hiddenCount > 0
+                ? "Download the visible lines (level filter applied)"
+                : "Download all lines"
+            }
+            onClick={downloadLogs}
+          >
+            Download
+          </button>
           {dropped > 0 && (
             <span className="muted log-dropped-note">
               {dropped} oldest lines dropped
