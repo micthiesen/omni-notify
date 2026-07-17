@@ -7,8 +7,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchStreamerMetrics } from "../api";
-import type { StreamerMetrics, StreamerView } from "../api";
+import { fetchStreamerMetrics, fetchStreamerSessions } from "../api";
+import type { StreamerMetrics, StreamerView, StreamSession } from "../api";
 import { PlatformIcon } from "../components/PlatformIcon";
 import { useNow } from "../hooks/useNow";
 import { useLiveData } from "../live";
@@ -211,6 +211,67 @@ function ViewerChart({ metrics }: { metrics: StreamerMetrics }) {
   );
 }
 
+const MAX_SESSION_ROWS = 25;
+
+function formatSessionDate(timestamp: number): string {
+  return new Date(timestamp).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatSessionTime(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function RecentSessions({ sessions }: { sessions: StreamSession[] }) {
+  const shown = sessions.slice(0, MAX_SESSION_ROWS);
+  return (
+    <section className="page-section">
+      <h2 className="section-title">
+        Recent streams
+        <span className="section-count">{sessions.length}</span>
+      </h2>
+      <ul className="session-list">
+        {shown.map((session) => (
+          <li key={`${session.startedAt}-${session.endedAt}`} className="session-row">
+            <div className="session-when">
+              <span className="session-date">
+                {formatSessionDate(session.startedAt)}
+              </span>
+              <span className="session-time">
+                {formatSessionTime(session.startedAt)} –{" "}
+                {formatSessionTime(session.endedAt)}
+              </span>
+            </div>
+            <div className="session-title" title={session.title}>
+              <PlatformIcon platform={session.platform} size={13} />
+              <span>{session.title || "Untitled stream"}</span>
+            </div>
+            <div className="session-stats">
+              <span>{formatDuration(session.durationMs)}</span>
+              <span className="session-peak">
+                {session.peakViewers > 0
+                  ? `${formatCompactNumber(session.peakViewers)} peak`
+                  : "—"}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {sessions.length > shown.length && (
+        <div className="muted session-truncated">
+          Showing the {shown.length} most recent sessions.
+        </div>
+      )}
+    </section>
+  );
+}
+
 function StreamerHeader({ streamer }: { streamer: StreamerView }) {
   const now = useNow(1000);
 
@@ -273,6 +334,7 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
   const { snapshot } = useLiveData();
   const [metrics, setMetrics] = useState<StreamerMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<StreamSession[] | null>(null);
 
   const streamer =
     snapshot?.streamers.find((s) => s.id === streamerId) ?? null;
@@ -291,6 +353,21 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : "Failed to load metrics");
         }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [streamerId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchStreamerSessions(streamerId)
+      .then((data) => {
+        if (!cancelled) setSessions(data.sessions);
+      })
+      .catch(() => {
+        // Session history is supplementary; the page stays useful without it.
+        if (!cancelled) setSessions(null);
       });
     return () => {
       cancelled = true;
@@ -340,6 +417,9 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
           <StreamerStats metrics={metrics} />
           <ViewerChart metrics={metrics} />
         </>
+      )}
+      {sessions !== null && sessions.length > 0 && (
+        <RecentSessions sessions={sessions} />
       )}
     </>
   );

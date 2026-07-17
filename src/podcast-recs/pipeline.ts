@@ -379,8 +379,8 @@ async function commit(
     await notify({
       title: pick.notification.title,
       message: appendQueueNote(pick.notification.message, queueResult),
-      url: getRecommendationUrl(recommendationId),
-      url_title: "View recommendation",
+      url: getFeedbackUrl(recommendationId),
+      url_title: "Rate this pick",
       token: config.PUSHOVER_PODCAST_TOKEN,
     });
   } catch (error) {
@@ -415,9 +415,10 @@ function appendQueueNote(message: string, queueResult: PodcastQueueResult): stri
   return `${message}\n\n🎧 Added to your Castro queue.`;
 }
 
-function getRecommendationUrl(recommendationId: string): string {
+// One-tap rating page; it deep-links onward to the full recommendation view.
+function getFeedbackUrl(recommendationId: string): string {
   const base = config.RECS_PUBLIC_URL.replace(/\/$/, "");
-  return `${base}/podcasts?recommendation=${encodeURIComponent(recommendationId)}`;
+  return `${base}/feedback/podcasts/${encodeURIComponent(recommendationId)}`;
 }
 
 function formatBatchSummary(

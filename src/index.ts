@@ -15,6 +15,7 @@ import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
 import PetTrackerTask from "./pet-tracker/task.js";
 import { CastroInboxCleanupTask } from "./podcast-recs/castro/inboxCleanupTask.js";
+import { PodcastTasteReflectionTask } from "./podcast-recs/reflection/index.js";
 import { PodcastRecommendationTask } from "./podcast-recs/task.js";
 import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
 import { RecommendationTask } from "./recommendations/task.js";
@@ -68,6 +69,8 @@ function buildTasks(streamers: Streamer[]): ScheduledTask[] {
   if (castroInboxCleanup) tasks.push(castroInboxCleanup);
   const tasteReflection = TasteReflectionTask.create(logger);
   if (tasteReflection) tasks.push(tasteReflection);
+  const podcastTasteReflection = PodcastTasteReflectionTask.create(logger);
+  if (podcastTasteReflection) tasks.push(podcastTasteReflection);
 
   return tasks;
 }

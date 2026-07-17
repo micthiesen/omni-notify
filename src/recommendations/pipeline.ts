@@ -426,8 +426,8 @@ async function reconcileStalePending(
       await notify({
         title: `🎬 ${rec.title}${rec.year ? ` (${rec.year})` : ""}`,
         message: rec.whyForUser,
-        url: getRecommendationUrl(rec.recommendationId),
-        url_title: "View recommendation",
+        url: getFeedbackUrl(rec.recommendationId),
+        url_title: "Rate this pick",
         token: config.PUSHOVER_RECS_TOKEN,
       });
       RecommendationEntity.patch(
@@ -553,8 +553,8 @@ async function commitRecommendation(
     await notify({
       title: pick.notification.title,
       message: pick.notification.message,
-      url: getRecommendationUrl(recommendationId),
-      url_title: "View recommendation",
+      url: getFeedbackUrl(recommendationId),
+      url_title: "Rate this pick",
       token: config.PUSHOVER_RECS_TOKEN,
     });
   } catch (error) {
@@ -577,9 +577,10 @@ async function commitRecommendation(
   return "committed";
 }
 
-function getRecommendationUrl(recommendationId: string): string {
+// One-tap rating page; it deep-links onward to the full recommendation view.
+function getFeedbackUrl(recommendationId: string): string {
   const base = config.RECS_PUBLIC_URL.replace(/\/$/, "");
-  return `${base}/recommendations?recommendation=${encodeURIComponent(recommendationId)}`;
+  return `${base}/feedback/recommendations/${encodeURIComponent(recommendationId)}`;
 }
 
 function formatTitle(candidate: Candidate): string {

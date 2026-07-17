@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect } from "react";
 import type { ReactNode } from "react";
 import { NavBar } from "./components/NavBar";
 import { LiveDataProvider } from "./live";
+import BriefingsPage from "./pages/BriefingsPage";
+import FeedbackPage, { type FeedbackKind } from "./pages/FeedbackPage";
 import HomePage from "./pages/HomePage";
 import PodcastsPage from "./pages/PodcastsPage";
 import RecommendationsPage from "./pages/RecommendationsPage";
@@ -11,6 +13,7 @@ import { usePath } from "./router";
 const PetsPage = lazy(() => import("./pages/PetsPage"));
 const StreamerPage = lazy(() => import("./pages/StreamerPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
+const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
@@ -21,6 +24,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/pets": "Pets",
   "/recommendations": "Recommendations",
   "/podcasts": "Podcasts",
+  "/briefings": "Briefings",
+  "/emails": "Email activity",
   "/data": "Data",
 };
 
@@ -33,7 +38,14 @@ export default function App() {
   }, [path]);
 
   let page: ReactNode;
-  if (path.startsWith("/streamers/")) {
+  const feedbackMatch = path.match(
+    /^\/feedback\/(recommendations|podcasts)\/([^/]+)$/,
+  );
+  if (feedbackMatch) {
+    const kind = feedbackMatch[1] as FeedbackKind;
+    const id = decodeURIComponent(feedbackMatch[2]);
+    page = <FeedbackPage key={`${kind}/${id}`} kind={kind} id={id} />;
+  } else if (path.startsWith("/streamers/")) {
     const streamerId = decodeURIComponent(path.slice("/streamers/".length));
     page = (
       <Suspense fallback={<div className="loading">Loading…</div>}>
@@ -61,6 +73,16 @@ export default function App() {
         break;
       case "/podcasts":
         page = <PodcastsPage />;
+        break;
+      case "/briefings":
+        page = <BriefingsPage />;
+        break;
+      case "/emails":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <EmailActivityPage />
+          </Suspense>
+        );
         break;
       default:
         page = <HomePage />;

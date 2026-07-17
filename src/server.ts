@@ -4,15 +4,18 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { getAllBriefingHistories } from "./briefing-agent/persistence.js";
 import {
   deleteManagedEntityRow,
   getManagedDataSummary,
   getManagedEntity,
   listManagedEntities,
 } from "./data-manager.js";
+import { type EmailPipelineName, getRecentEmailActivity } from "./jmap/activity.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
+import { getStreamSessions } from "./live-check/sessions.js";
 import type { PlatformBinding, Streamer } from "./live-check/streamers.js";
 import {
   getAllPetsWithHistory,
@@ -27,6 +30,7 @@ import {
   setPodcastRecommendationFeedback,
 } from "./podcast-recs/persistence.js";
 import { MAX_PODCAST_RECOMMENDATIONS_PER_RUN } from "./podcast-recs/pipeline.js";
+import { getLatestPodcastTasteProfile } from "./podcast-recs/reflection/index.js";
 import {
   getAllRecommendations,
   getRecommendation,
@@ -247,6 +251,16 @@ export function startServer(
       allTimeMax: metrics.allTimeMax,
       allTimeMaxTimestamp: metrics.allTimeMaxTimestamp,
     });
+  });
+
+  // Completed live sessions for the streamer detail page, newest first.
+  app.get("/api/streamers/:id/sessions", (c) => {
+    const id = c.req.param("id");
+    if (!streamers.some((s) => s.id === id)) {
+      return c.json({ error: "Unknown streamer" }, 404);
+    }
+    const sessions = [...getStreamSessions(id).sessions].reverse();
+    return c.json({ sessions });
   });
 
   // Full dashboard state in one payload; also the polling fallback when the
@@ -498,6 +512,13 @@ export function startServer(
     c.json({ profile: getLatestTasteProfile() ?? null }),
   );
 
+  // Registered after /taste-profile so the static route keeps precedence.
+  app.get("/api/recommendations/:id", (c) => {
+    const recommendation = getRecommendation(c.req.param("id"));
+    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
+    return c.json({ recommendation: serializeRecommendation(recommendation) });
+  });
+
   const feedbackSchema = z.object({
     feedback: z.enum(["good_pick", "not_for_me", "already_watched"]),
   });
@@ -525,6 +546,17 @@ export function startServer(
       serializePodcastRecommendation,
     );
     return c.json({ recommendations });
+  });
+
+  // Registered before /:id so the static route keeps precedence.
+  app.get("/api/podcast-recommendations/taste-profile", (c) =>
+    c.json({ profile: getLatestPodcastTasteProfile() ?? null }),
+  );
+
+  app.get("/api/podcast-recommendations/:id", (c) => {
+    const recommendation = getPodcastRecommendation(c.req.param("id"));
+    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
+    return c.json({ recommendation: serializePodcastRecommendation(recommendation) });
   });
 
   const podcastFeedbackSchema = z.object({
@@ -584,6 +616,55 @@ export function startServer(
       }
       throw error;
     }
+  });
+
+  // Per-email outcomes recorded by the parcel and calendar pipelines,
+  // newest first.
+  app.get("/api/email-activity", (c) => {
+    const pipelineParam = c.req.query("pipeline");
+    if (
+      pipelineParam !== undefined &&
+      pipelineParam !== "ParcelTracker" &&
+      pipelineParam !== "CalendarEvents"
+    ) {
+      return c.json({ error: "Unknown pipeline" }, 400);
+    }
+    const pipeline = pipelineParam as EmailPipelineName | undefined;
+    const activities = getRecentEmailActivity(pipeline).map((a) => ({
+      activityId: a.activityId,
+      pipeline: a.pipeline,
+      emailId: a.emailId,
+      subject: a.subject,
+      from: a.from,
+      receivedAt: a.receivedAt,
+      processedAt: a.processedAt,
+      outcome: a.outcome,
+      detail: a.detail ?? null,
+      items: a.items ?? [],
+    }));
+    return c.json({ activities });
+  });
+
+  // Stored briefing history (last 50 notifications per briefing), one row per
+  // briefing name; notifications are returned newest-first.
+  app.get("/api/briefings", (c) => {
+    const briefings = getAllBriefingHistories()
+      .map((history) => ({
+        name: history.briefingName,
+        notifications: history.notifications
+          .map((n) => ({
+            title: n.title,
+            message: n.message,
+            url: n.url,
+            timestamp: n.timestamp,
+          }))
+          .sort((a, b) => b.timestamp - a.timestamp),
+      }))
+      .sort(
+        (a, b) =>
+          (b.notifications[0]?.timestamp ?? 0) - (a.notifications[0]?.timestamp ?? 0),
+      );
+    return c.json({ briefings });
   });
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));

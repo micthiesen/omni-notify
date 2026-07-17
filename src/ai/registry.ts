@@ -29,6 +29,13 @@ export function getTasteReflectionModel(): { model: LanguageModel; modelId: stri
   return resolveModel(config.TASTE_REFLECTION_MODEL, "openai:gpt-5.6-luna");
 }
 
+export function getPodcastTasteReflectionModel(): {
+  model: LanguageModel;
+  modelId: string;
+} {
+  return resolveModel(config.PODCAST_TASTE_REFLECTION_MODEL, "openai:gpt-5.6-luna");
+}
+
 function resolveModel(configured: string | undefined, fallback: RegisteredModelId) {
   const modelId = (configured ?? fallback) as RegisteredModelId;
   return { model: modelRegistry.languageModel(modelId), modelId };

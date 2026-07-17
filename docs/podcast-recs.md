@@ -55,6 +55,24 @@ Reported is the anchor) but NOT sensemaker-guru grift or rage-farming. This is a
 prompt-side concern: the taste profile states it as a positive with that anchor,
 and a Tier-2 discovery query targets it. The filters don't special-case it.
 
+## Taste reflection (`reflection/`)
+
+The taste digest fed to every model call has a fourth section beyond the seed
+profile, subscriptions, and explicit feedback: a versioned reflective profile
+built weekly by `PodcastTasteReflectionTask` (Sunday 5am, ±5min Castro jitter).
+It is a deliberate sibling of `recommendations/taste/`: derive append-only
+evidence (Castro listen history over the full 180-day window, plus delivered
+recommendation outcomes and feedback), fingerprint it to skip no-op model calls,
+run a draft pass then a skeptical critic pass, and validate claims in code
+before persisting a checkpoint. Independence is counted in *shows*: stable,
+conditional, and saturation claims need at least two distinct shows behind
+them, while one explicit not-for-me can carry an aversion. Listens count as
+taste-bearing only when finished (≥80%), starred, or reported without
+completion data (the episode's duration was unknown, so no fraction could be
+computed and the bare playback event is taken at face value). The latest profile is served at
+`GET /api/podcast-recommendations/taste-profile` and rendered as the "Taste
+brain" on the Podcasts page.
+
 ## Deferred: self-maintained feeder-feed scan
 
 We deliberately did NOT build a curated "feeder feeds" list (a set of interview

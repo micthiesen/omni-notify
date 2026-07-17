@@ -2,11 +2,17 @@ import { deleteDoc, getDb, getDoc } from "@micthiesen/mitools/docstore";
 import type { Entity } from "@micthiesen/mitools/entities";
 import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
+import { EmailActivityEntity } from "./jmap/activity.js";
 import { EmailStateEntity } from "./jmap/persistence.js";
 import { ViewerMetricsEntity } from "./live-check/metrics/persistence.js";
 import { StreamerStatusEntity } from "./live-check/persistence.js";
+import { StreamSessionsEntity } from "./live-check/sessions.js";
 import { SubmittedDeliveryEntity } from "./parcel-tracker/persistence.js";
 import { PodcastRecommendationEntity } from "./podcast-recs/persistence.js";
+import {
+  PodcastTasteEvidenceEntity,
+  PodcastTasteProfileEntity,
+} from "./podcast-recs/reflection/index.js";
 import {
   IdentityAliasEntity,
   RecommendationEntity,
@@ -191,6 +197,11 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     warning:
       "Deleting live state can cause a fresh went-live transition on the next check.",
   }),
+  createManagedEntity(StreamSessionsEntity, {
+    label: "Stream sessions",
+    description: "Completed live sessions per streamer (start, end, peak, title).",
+    warning: "Deleted session history cannot be reconstructed.",
+  }),
   createManagedEntity(ViewerMetricsEntity, {
     label: "Viewer metrics",
     description: "Daily viewer peaks and all-time records per streamer.",
@@ -206,6 +217,15 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     label: "Podcast recommendations",
     description: "Podcast episode picks, queue state, outcomes, and feedback.",
     warning: "Deleting rows changes episode exclusions and show cooldowns.",
+  }),
+  createManagedEntity(PodcastTasteEvidenceEntity, {
+    label: "Podcast taste evidence",
+    description: "Listen, outcome, and feedback observations for podcast reflection.",
+    warning: "Deleting evidence changes the inputs available to future reflections.",
+  }),
+  createManagedEntity(PodcastTasteProfileEntity, {
+    label: "Podcast taste profiles",
+    description: "Generated checkpoints of the current podcast taste model.",
   }),
   createManagedEntity(TasteEvidenceEntity, {
     label: "Taste evidence",
@@ -235,6 +255,10 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     label: "Created calendar events",
     description: "Calendar events created from email, keyed by normalized content.",
     warning: "This is a deduplication gate. Deleted rows may create duplicate events.",
+  }),
+  createManagedEntity(EmailActivityEntity, {
+    label: "Email activity",
+    description: "Per-email outcomes from the parcel and calendar pipelines.",
   }),
   createManagedEntity(EmailStateEntity, {
     label: "Email cursor",

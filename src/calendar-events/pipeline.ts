@@ -2,6 +2,7 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
+import { recordEmailActivity } from "../jmap/activity.js";
 import type { JmapContext } from "../jmap/client.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
@@ -66,6 +67,12 @@ export class CalendarEventPipeline implements EmailHandler {
         this.logger.info(
           `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
         );
+        recordEmailActivity({
+          pipeline: this.name,
+          email,
+          outcome: "filtered",
+          detail: result.reason,
+        });
       }
     }
 
@@ -78,6 +85,15 @@ export class CalendarEventPipeline implements EmailHandler {
           "Failed to discover calendar URL, skipping batch",
           (error as Error).message,
         );
+        // The JMAP cursor still advances, so these candidates won't be retried.
+        for (const email of candidates) {
+          recordEmailActivity({
+            pipeline: this.name,
+            email,
+            outcome: "error",
+            detail: `calendar discovery failed: ${(error as Error).message}`,
+          });
+        }
         return;
       }
     }
@@ -97,6 +113,12 @@ export class CalendarEventPipeline implements EmailHandler {
           `Failed to process email "${email.subject}"`,
           (error as Error).message,
         );
+        recordEmailActivity({
+          pipeline: this.name,
+          email,
+          outcome: "error",
+          detail: (error as Error).message,
+        });
       }
     }
   }
@@ -148,27 +170,40 @@ export class CalendarEventPipeline implements EmailHandler {
         `Extraction failed for "${email.subject}" from ${email.from}`,
         (error as Error).message,
       );
+      recordEmailActivity({
+        pipeline: this.name,
+        email,
+        outcome: "error",
+        detail: `extraction failed: ${(error as Error).message}`,
+      });
       return;
     }
 
     if (events.length === 0) {
       this.logger.info(`No calendar events found in "${email.subject}"`);
+      recordEmailActivity({
+        pipeline: this.name,
+        email,
+        outcome: "no_matches",
+        detail: "no calendar events found",
+      });
       return;
     }
 
     this.logger.info(`Found ${events.length} event(s) in "${email.subject}"`);
 
+    const items: string[] = [];
     for (const event of events) {
       try {
         switch (event.action) {
           case "create":
-            await this.handleCreate(event, email.id);
+            items.push(await this.handleCreate(event, email.id));
             break;
           case "cancel":
-            await this.handleCancel(event, existingById);
+            items.push(await this.handleCancel(event, existingById));
             break;
           case "update":
-            await this.handleUpdate(event, existingById, email.id);
+            items.push(await this.handleUpdate(event, existingById, email.id));
             break;
         }
       } catch (error) {
@@ -176,23 +211,34 @@ export class CalendarEventPipeline implements EmailHandler {
           `Failed to process event "${event.title}" (${event.action})`,
           (error as Error).message,
         );
+        items.push(
+          `"${event.title}" (${event.action}): failed (${(error as Error).message})`,
+        );
       }
     }
+    recordEmailActivity({
+      pipeline: this.name,
+      email,
+      outcome: "processed",
+      items,
+    });
   }
 
-  private async handleCreate(event: ExtractedEvent, emailId: string): Promise<void> {
+  /** Returns a short result line for the activity record. */
+  private async handleCreate(event: ExtractedEvent, emailId: string): Promise<string> {
     const eventHash = computeEventHash(event.title, event.startDate, event.startTime);
+    const label = `"${event.title}" on ${event.startDate}`;
 
     if (hasCreatedEvent(eventHash)) {
       this.logger.info(
         `Duplicate event: "${event.title}" on ${event.startDate} (skipping)`,
       );
-      return;
+      return `${label}: duplicate, skipped`;
     }
 
     if (!this.calendarUrl) {
       this.logger.error("Calendar URL not discovered, cannot create event");
-      return;
+      return `${label}: failed (calendar URL not discovered)`;
     }
 
     const result = await createCalendarEvent(this.calendarUrl, event, this.logger);
@@ -201,7 +247,7 @@ export class CalendarEventPipeline implements EmailHandler {
       this.logger.error(
         `Failed to create calendar event "${event.title}": ${result.message}`,
       );
-      return;
+      return `${label}: create failed (${result.message})`;
     }
 
     recordCreatedEvent({
@@ -224,24 +270,27 @@ export class CalendarEventPipeline implements EmailHandler {
 
     await this.sendNotification("Calendar Event Created", event);
     this.logger.info(`Created: "${event.title}" on ${event.startDate}`);
+    return `${label}: created`;
   }
 
+  /** Returns a short result line for the activity record. */
   private async handleCancel(
     event: ExtractedEvent,
     existingById: Map<string, CreatedCalendarEventData>,
-  ): Promise<void> {
+  ): Promise<string> {
     const record = resolveEventReference(event, existingById);
+    const label = `"${event.title}"`;
 
     if (!record) {
       this.logger.warn(
         `Cancel requested for unknown event: "${event.title}" (skipping)`,
       );
-      return;
+      return `${label}: cancel requested for unknown event, skipped`;
     }
 
     if (!this.calendarUrl) {
       this.logger.error("Calendar URL not discovered, cannot cancel event");
-      return;
+      return `${label}: cancel failed (calendar URL not discovered)`;
     }
 
     const result = await deleteCalendarEvent(
@@ -254,21 +303,24 @@ export class CalendarEventPipeline implements EmailHandler {
       this.logger.error(
         `Failed to delete calendar event "${event.title}": ${result.message}`,
       );
-      return;
+      return `${label}: cancel failed (${result.message})`;
     }
 
     markEventCancelled(record.eventHash);
 
     await this.sendNotification("Calendar Event Cancelled", event);
     this.logger.info(`Cancelled: "${event.title}" on ${record.startDate}`);
+    return `${label} on ${record.startDate}: cancelled`;
   }
 
+  /** Returns a short result line for the activity record. */
   private async handleUpdate(
     event: ExtractedEvent,
     existingById: Map<string, CreatedCalendarEventData>,
     emailId: string,
-  ): Promise<void> {
+  ): Promise<string> {
     const record = resolveEventReference(event, existingById);
+    const label = `"${event.title}" on ${event.startDate}`;
 
     if (!record) {
       this.logger.warn(
@@ -293,12 +345,12 @@ export class CalendarEventPipeline implements EmailHandler {
       this.logger.info(
         `No changes detected for "${event.title}" on ${event.startDate} (skipping update)`,
       );
-      return;
+      return `${label}: no changes, skipped`;
     }
 
     if (!this.calendarUrl) {
       this.logger.error("Calendar URL not discovered, cannot update event");
-      return;
+      return `${label}: update failed (calendar URL not discovered)`;
     }
 
     const result = await updateCalendarEvent(
@@ -312,7 +364,7 @@ export class CalendarEventPipeline implements EmailHandler {
       this.logger.error(
         `Failed to update calendar event "${event.title}": ${result.message}`,
       );
-      return;
+      return `${label}: update failed (${result.message})`;
     }
 
     // Re-key the local record to the updated identity. If that key is already taken by a
@@ -346,6 +398,7 @@ export class CalendarEventPipeline implements EmailHandler {
 
     await this.sendNotification("Calendar Event Updated", merged);
     this.logger.info(`Updated: "${event.title}" on ${event.startDate}`);
+    return `${label}: updated`;
   }
 
   private async sendNotification(title: string, event: ExtractedEvent): Promise<void> {

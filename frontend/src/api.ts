@@ -85,6 +85,16 @@ export interface StreamerMetrics {
   allTimeMaxTimestamp: number;
 }
 
+export interface StreamSession {
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  peakViewers: number;
+  title: string;
+  platform: string;
+  username: string;
+}
+
 export interface Snapshot {
   tasks: TaskInfo[];
   streamers: StreamerView[];
@@ -221,6 +231,39 @@ export interface TasteProfile {
   stats: TasteBehaviorStats;
 }
 
+export interface PodcastTasteStats {
+  listenedEpisodes: number;
+  startedEpisodes: number;
+  starredEpisodes: number;
+  distinctShows: number;
+  recommendations: {
+    total: number;
+    listened: number;
+    abandoned: number;
+    ignored: number;
+    failed: number;
+    awaitingOutcome: number;
+  };
+  feedback: {
+    goodPick: number;
+    notForMe: number;
+  };
+}
+
+export interface PodcastTasteProfile {
+  profileId: string;
+  version: number;
+  generatedAt: number;
+  summary: string;
+  stablePreferences: TasteClaim[];
+  conditionalPreferences: TasteClaim[];
+  aversions: TasteClaim[];
+  currentSaturation: TasteClaim[];
+  explorationTargets: TasteClaim[];
+  uncertainties: TasteClaim[];
+  stats: PodcastTasteStats;
+}
+
 export type PodcastRecommendationStatus =
   | "pending"
   | "notified"
@@ -259,6 +302,39 @@ export interface PodcastRecommendation {
   queueResult?: PodcastQueueResult | null;
   feedback?: PodcastFeedback;
   feedbackAt?: number;
+}
+
+export type EmailPipeline = "ParcelTracker" | "CalendarEvents";
+export type EmailActivityOutcome =
+  | "filtered"
+  | "skipped"
+  | "no_matches"
+  | "processed"
+  | "error";
+
+export interface EmailActivity {
+  activityId: string;
+  pipeline: EmailPipeline;
+  emailId: string;
+  subject: string;
+  from: string;
+  receivedAt: number;
+  processedAt: number;
+  outcome: EmailActivityOutcome;
+  detail: string | null;
+  items: string[];
+}
+
+export interface BriefingNotification {
+  title: string;
+  message: string;
+  url: string;
+  timestamp: number;
+}
+
+export interface BriefingHistory {
+  name: string;
+  notifications: BriefingNotification[];
 }
 
 export class ApiError extends Error {
@@ -394,6 +470,14 @@ export function fetchStreamerMetrics(id: string): Promise<StreamerMetrics> {
   return apiGet<StreamerMetrics>(`/api/streamers/${encodeURIComponent(id)}/metrics`);
 }
 
+export function fetchStreamerSessions(
+  id: string,
+): Promise<{ sessions: StreamSession[] }> {
+  return apiGet<{ sessions: StreamSession[] }>(
+    `/api/streamers/${encodeURIComponent(id)}/sessions`,
+  );
+}
+
 export function fetchRecommendations(): Promise<{
   recommendations: Recommendation[];
 }> {
@@ -403,6 +487,33 @@ export function fetchRecommendations(): Promise<{
 export function fetchTasteProfile(): Promise<{ profile: TasteProfile | null }> {
   return apiGet<{ profile: TasteProfile | null }>(
     "/api/recommendations/taste-profile",
+  );
+}
+
+export function fetchBriefings(): Promise<{ briefings: BriefingHistory[] }> {
+  return apiGet<{ briefings: BriefingHistory[] }>("/api/briefings");
+}
+
+export function fetchEmailActivity(
+  pipeline?: EmailPipeline,
+): Promise<{ activities: EmailActivity[] }> {
+  const query = pipeline ? `?pipeline=${encodeURIComponent(pipeline)}` : "";
+  return apiGet<{ activities: EmailActivity[] }>(`/api/email-activity${query}`);
+}
+
+export function fetchRecommendation(
+  recommendationId: string,
+): Promise<{ recommendation: Recommendation }> {
+  return apiGet<{ recommendation: Recommendation }>(
+    `/api/recommendations/${encodeURIComponent(recommendationId)}`,
+  );
+}
+
+export function fetchPodcastRecommendation(
+  recommendationId: string,
+): Promise<{ recommendation: PodcastRecommendation }> {
+  return apiGet<{ recommendation: PodcastRecommendation }>(
+    `/api/podcast-recommendations/${encodeURIComponent(recommendationId)}`,
   );
 }
 
@@ -421,6 +532,14 @@ export function fetchPodcastRecommendations(): Promise<{
 }> {
   return apiGet<{ recommendations: PodcastRecommendation[] }>(
     "/api/podcast-recommendations",
+  );
+}
+
+export function fetchPodcastTasteProfile(): Promise<{
+  profile: PodcastTasteProfile | null;
+}> {
+  return apiGet<{ profile: PodcastTasteProfile | null }>(
+    "/api/podcast-recommendations/taste-profile",
   );
 }
 

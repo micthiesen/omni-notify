@@ -5,6 +5,8 @@ const LINKS = [
   { to: "/", label: "Dashboard" },
   { to: "/recommendations", label: "Recommendations" },
   { to: "/podcasts", label: "Podcasts" },
+  { to: "/briefings", label: "Briefings" },
+  { to: "/emails", label: "Email" },
   { to: "/pets", label: "Pets" },
   { to: "/data", label: "Data" },
 ];

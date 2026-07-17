@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchPodcastRecommendations,
+  fetchPodcastTasteProfile,
   sendPodcastRecommendationFeedback,
 } from "../api";
 import type {
   PodcastFeedback,
   PodcastRecommendation,
   PodcastRecommendationStatus,
+  PodcastTasteProfile,
+  TasteClaim,
 } from "../api";
 import { Toast, useToast } from "../components/Toast";
+import { useLiveData } from "../live";
 import { formatAbsolute, formatDateOnly, formatRelative } from "../utils/format";
+
+const TASTE_TASK_NAME = "PodcastTasteReflection";
 
 const STATUS_LABELS: Record<PodcastRecommendationStatus, string> = {
   pending: "pending",
@@ -169,6 +175,156 @@ function PodcastCard({
   );
 }
 
+function TasteClaimList({ claims }: { claims: TasteClaim[] }) {
+  return (
+    <ul className="taste-claim-list">
+      {claims.map((item) => (
+        <li key={item.claim}>
+          <span>{item.claim}</span>
+          <span
+            className="taste-confidence"
+            title={`${item.evidenceIds.length} supporting evidence item${item.evidenceIds.length === 1 ? "" : "s"}`}
+          >
+            {Math.round(item.confidence * 100)}%
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PodcastTasteBrain({
+  profile,
+  loading,
+  error,
+}: {
+  profile: PodcastTasteProfile | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  const stats = profile
+    ? [
+        ["Episodes finished", profile.stats.listenedEpisodes],
+        ["Episodes started", profile.stats.startedEpisodes],
+        ["Starred", profile.stats.starredEpisodes],
+        ["Shows heard", profile.stats.distinctShows],
+        [
+          "Recommendations listened",
+          `${profile.stats.recommendations.listened}/${profile.stats.recommendations.total}`,
+        ],
+        ["Good picks", profile.stats.feedback.goodPick],
+      ]
+    : [];
+
+  return (
+    <section className="page-section taste-brain">
+      <div className="taste-heading">
+        <div>
+          <h2 className="section-title">Taste brain</h2>
+          <div className="muted taste-subtitle">
+            Castro listening and feedback are reflected into a versioned taste
+            profile.
+          </div>
+        </div>
+        {profile && (
+          <span className="taste-version" title={formatAbsolute(profile.generatedAt)}>
+            v{profile.version} · {formatRelative(profile.generatedAt)}
+          </span>
+        )}
+      </div>
+
+      {loading && <div className="loading-inline">Loading taste profile…</div>}
+      {!loading && error && (
+        <div className="error-inline">Taste profile unavailable: {error}</div>
+      )}
+      {!loading && !error && profile === null && (
+        <div className="taste-empty">
+          No profile yet. The reflection task will build one from Castro listen
+          history and recommendation feedback.
+        </div>
+      )}
+      {profile && (
+        <div className="taste-card">
+          <p className="taste-summary">{profile.summary}</p>
+          {stats.length > 0 && (
+            <div className="taste-stats">
+              {stats.map(([name, value]) => (
+                <div className="taste-stat" key={String(name)}>
+                  <span>{name}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="taste-columns">
+            {profile.stablePreferences.length > 0 && (
+              <div>
+                <h3>Reliable preferences</h3>
+                <TasteClaimList claims={profile.stablePreferences} />
+              </div>
+            )}
+            {profile.conditionalPreferences.length > 0 && (
+              <div>
+                <h3>Depends on context</h3>
+                <TasteClaimList claims={profile.conditionalPreferences} />
+              </div>
+            )}
+            {profile.aversions.length > 0 && (
+              <div>
+                <h3>Avoid</h3>
+                <TasteClaimList claims={profile.aversions} />
+              </div>
+            )}
+            {profile.uncertainties.length > 0 && (
+              <div>
+                <h3>Still learning</h3>
+                <TasteClaimList claims={profile.uncertainties} />
+              </div>
+            )}
+          </div>
+          {(profile.explorationTargets.length > 0 ||
+            profile.currentSaturation.length > 0) && (
+            <div className="taste-tags-row">
+              {profile.explorationTargets.length > 0 && (
+                <div>
+                  <span className="taste-tags-label">Explore</span>
+                  <div className="taste-tags">
+                    {profile.explorationTargets.map((target) => (
+                      <span
+                        className="taste-tag taste-tag-explore"
+                        key={target.claim}
+                        title={`${target.evidenceIds.length} supporting evidence item(s)`}
+                      >
+                        {target.claim}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {profile.currentSaturation.length > 0 && (
+                <div>
+                  <span className="taste-tags-label">Currently saturated</span>
+                  <div className="taste-tags">
+                    {profile.currentSaturation.map((target) => (
+                      <span
+                        className="taste-tag"
+                        key={target.claim}
+                        title={`${target.evidenceIds.length} supporting evidence item(s)`}
+                      >
+                        {target.claim}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function PodcastsPage() {
   const [recs, setRecs] = useState<PodcastRecommendation[] | null>(null);
   const [recsError, setRecsError] = useState<string | null>(null);
@@ -176,7 +332,38 @@ export default function PodcastsPage() {
     "",
   );
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [tasteProfile, setTasteProfile] = useState<PodcastTasteProfile | null>(null);
+  const [tasteLoading, setTasteLoading] = useState(true);
+  const [tasteError, setTasteError] = useState<string | null>(null);
   const { toast, showToast } = useToast();
+  const { snapshot } = useLiveData();
+
+  const latestTasteRunId =
+    snapshot?.runs.find((run) => run.taskName === TASTE_TASK_NAME)?.runId ?? null;
+
+  // Load once, then reload whenever a reflection run lands so a fresh profile
+  // version appears without a manual refresh.
+  useEffect(() => {
+    let cancelled = false;
+    fetchPodcastTasteProfile()
+      .then((data) => {
+        if (cancelled) return;
+        setTasteProfile(data.profile);
+        setTasteError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setTasteError(
+          err instanceof Error ? err.message : "Failed to fetch taste profile",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setTasteLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [latestTasteRunId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -307,6 +494,12 @@ export default function PodcastsPage() {
           ))}
         </div>
       )}
+
+      <PodcastTasteBrain
+        profile={tasteProfile}
+        loading={tasteLoading}
+        error={tasteError}
+      />
     </>
   );
 }

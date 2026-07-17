@@ -1,6 +1,7 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
+import { recordEmailActivity } from "../jmap/activity.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
 import config from "../utils/config.js";
@@ -47,6 +48,12 @@ export class DeliveryPipeline implements EmailHandler {
         this.logger.info(
           `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
         );
+        recordEmailActivity({
+          pipeline: this.name,
+          email,
+          outcome: "filtered",
+          detail: result.reason,
+        });
       }
     }
 
@@ -59,6 +66,12 @@ export class DeliveryPipeline implements EmailHandler {
         this.logger.info(
           `Skipping "${email.subject}" — contains known tracking number ${match}`,
         );
+        recordEmailActivity({
+          pipeline: this.name,
+          email,
+          outcome: "skipped",
+          detail: `contains known tracking number ${match}`,
+        });
         return false;
       }
       return true;
@@ -79,17 +92,31 @@ export class DeliveryPipeline implements EmailHandler {
           )
         : undefined;
       try {
-        await this.processEmail(email, runLog);
+        const items = await this.processEmail(email, runLog);
+        recordEmailActivity({
+          pipeline: this.name,
+          email,
+          outcome: items.length > 0 ? "processed" : "no_matches",
+          detail: items.length > 0 ? undefined : "no tracking numbers found",
+          items: items.length > 0 ? items : undefined,
+        });
       } catch (error) {
         this.logger.error(
           `Failed to process email "${email.subject}"`,
           (error as Error).message,
         );
+        recordEmailActivity({
+          pipeline: this.name,
+          email,
+          outcome: "error",
+          detail: (error as Error).message,
+        });
         // Continue with other emails
       }
     }
   }
 
+  /** Returns a short per-delivery result line for each extracted delivery. */
   private async processEmail(
     email: {
       id: string;
@@ -98,7 +125,7 @@ export class DeliveryPipeline implements EmailHandler {
       textBody: string;
     },
     runLog?: LogFile,
-  ): Promise<void> {
+  ): Promise<string[]> {
     this.logger.info(`Extracting from: "${email.subject}" (from: ${email.from})`);
 
     const deliveries = await extractDeliveries(
@@ -109,16 +136,19 @@ export class DeliveryPipeline implements EmailHandler {
 
     if (deliveries.length === 0) {
       this.logger.info(`No tracking numbers found in "${email.subject}"`);
-      return;
+      return [];
     }
 
     this.logger.info(`Found ${deliveries.length} delivery(ies) in "${email.subject}"`);
 
+    const results: string[] = [];
     for (const delivery of deliveries) {
-      await this.processDelivery(delivery, email.id);
+      results.push(await this.processDelivery(delivery, email.id));
     }
+    return results;
   }
 
+  /** Returns a short result line for the activity record. */
   private async processDelivery(
     delivery: {
       tracking_number: string;
@@ -126,13 +156,15 @@ export class DeliveryPipeline implements EmailHandler {
       description: string;
     },
     emailId: string,
-  ): Promise<void> {
+  ): Promise<string> {
+    const label = `${delivery.tracking_number} (${delivery.carrier_code})`;
+
     // Dedup check
     if (hasSubmittedDelivery(delivery.tracking_number)) {
       this.logger.info(
         `Duplicate tracking number: ${delivery.tracking_number} (skipping)`,
       );
-      return;
+      return `${label}: already submitted`;
     }
 
     // Validate carrier code
@@ -141,7 +173,7 @@ export class DeliveryPipeline implements EmailHandler {
       this.logger.warn(
         `Invalid carrier code "${delivery.carrier_code}" for tracking ${delivery.tracking_number}, skipping`,
       );
-      return;
+      return `${label}: invalid carrier code`;
     }
 
     // Submit to Parcel
@@ -160,7 +192,7 @@ export class DeliveryPipeline implements EmailHandler {
       this.logger.warn(
         `Failed to submit ${delivery.tracking_number} (${delivery.carrier_code}), will retry later`,
       );
-      return;
+      return `${label}: submission failed, will retry`;
     }
 
     if (result.status === "rejected") {
@@ -177,5 +209,8 @@ export class DeliveryPipeline implements EmailHandler {
       submittedAt: Date.now(),
       emailId,
     });
+    return result.status === "rejected"
+      ? `${label}: rejected by Parcel (${result.statusCode})`
+      : `${label}: submitted`;
   }
 }

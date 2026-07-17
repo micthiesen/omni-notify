@@ -122,8 +122,11 @@ The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify 
 
 - `/` shows live streamer status (who's live now, title, uptime, peak viewers), a stat strip, every scheduled task with its cron schedule, ticking next-run countdown, "Run now" button and expandable run history, plus a recent-activity feed with per-task filtering.
 - `/pets` is the pet weight tracker.
-- `/recommendations` lists every recommendation with poster, status, reasoning, service links, explicit feedback controls, filters, the current evidence-backed taste profile, and recent pipeline activity. Pushover notifications deep-link to the relevant recommendation.
-- `/podcasts` lists podcast episode recommendations with show artwork, status filters, episode/discussion links, and good-pick/not-for-me feedback controls. Pushover notifications deep-link here too.
+- `/recommendations` lists every recommendation with poster, status, reasoning, service links, explicit feedback controls, filters, the current evidence-backed taste profile, and recent pipeline activity.
+- `/podcasts` lists podcast episode recommendations with show artwork, status filters, episode/discussion links, good-pick/not-for-me feedback controls, and the podcast taste profile.
+- `/feedback/recommendations/:id` and `/feedback/podcasts/:id` are mobile-first one-tap rating pages. Pushover recommendation notifications deep-link here ("Rate this pick"), and the page links onward to the full recommendation view.
+- `/briefings` is a browsable archive of briefing notifications (the last 50 stored per briefing).
+- `/emails` shows what the parcel and calendar email pipelines did with each processed email (filtered and why, extracted, submitted, errored).
 
 Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port — no extra ports needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
 
@@ -185,6 +188,8 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and hourly Inbox cleanup) |
 | `PODCASTINDEX_KEY` / `PODCASTINDEX_SECRET` | No | Podcast Index API (guest-appearance discovery; quote the secret — it contains `#`) |
 | `PODCAST_VOICE_ROTATION_MAX` / `PODCAST_MAX_GUEST_PICKS` | No | Voices searched per run (default 12) / Tier-1 guest cap (default 6) |
+| `PODCAST_TASTE_REFLECTION_MODEL` | No | Model for weekly podcast taste reflection (default: `openai:gpt-5.6-luna`) |
+| `PODCAST_TASTE_REFLECTION_SCHEDULE` | No | Podcast taste reflection cron (default: `0 0 5 * * 0`, Sunday 5am) |
 | `PLEX_URL` / `PLEX_TOKEN` | For recommendations | Plex server URL and token |
 | `PLEX_ACCOUNT_ID` | For shared Plex servers | Account ID used to scope viewing history; multiple detected accounts fail closed without it |
 | `RADARR_URL` / `RADARR_API_KEY` | For recommendations | Radarr v3 API connection |

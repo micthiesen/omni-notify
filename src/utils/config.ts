@@ -58,6 +58,8 @@ const configSchema = baseConfigSchema
     PUSHOVER_RECS_TOKEN: z.string().optional(),
     PODCAST_RECS_SCHEDULE: z.string().optional().default("0 0 11 * * 1,3,5"),
     PODCAST_TASTE_PATH: z.string().optional(),
+    PODCAST_TASTE_REFLECTION_MODEL: z.string().optional(),
+    PODCAST_TASTE_REFLECTION_SCHEDULE: z.string().optional().default("0 0 5 * * 0"),
     PUSHOVER_PODCAST_TOKEN: z.string().optional(),
     CASTRO_ACCESS_ID: z.string().uuid().optional(),
     CASTRO_SECRET_KEY: z.string().optional(),

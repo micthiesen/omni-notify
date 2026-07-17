@@ -12,6 +12,7 @@ import {
   upsertStreamerStatus,
 } from "./persistence.js";
 import { getNotificationUrlFields, platformConfigs } from "./platforms/index.js";
+import { recordCompletedSession } from "./sessions.js";
 import type { PlatformBinding, Streamer } from "./streamers.js";
 import {
   type BindingFetchResult,
@@ -175,6 +176,8 @@ export default class LiveCheckTask extends ScheduledTask {
     next: StreamerStatusOffline,
   ): Promise<void> {
     this.logger.info(`${streamer.displayName} is now offline`);
+
+    recordCompletedSession(previousLive, new Date(next.lastEndedAt ?? Date.now()));
 
     await this.metricsService.flushPendingPeaks({
       streamerId: streamer.id,

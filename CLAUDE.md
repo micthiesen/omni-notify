@@ -28,6 +28,7 @@ src/
 ├── live-check/              # Livestream monitoring feature
 │   ├── task.ts              # LiveCheckTask: aggregate per-streamer loop
 │   ├── transitions.ts       # Pure state machine: decides live/offline/title edges
+│   ├── sessions.ts          # Completed live-session history (start/end/peak/title)
 │   ├── streamers.ts         # Streamer model: merges bindings by display name
 │   ├── channelsConfig.ts    # Loads per-streamer overrides from channels.json
 │   ├── persistence.ts       # Streamer live/offline state (SQLite)
@@ -51,6 +52,7 @@ src/
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
 ├── jmap/                    # Shared Fastmail JMAP infrastructure
 │   ├── client.ts            # JMAP session + account resolution
+│   ├── activity.ts          # Per-email pipeline outcome records (filtered/processed/error)
 │   ├── dispatcher.ts        # EmailDispatcher: fetch-once fan-out to EmailHandlers
 │   ├── eventSource.ts       # SSE for real-time email state changes
 │   ├── emailFetcher.ts      # Fetch new emails via JMAP changes API
@@ -103,7 +105,10 @@ src/
 │   ├── shortlist.ts         # Tier-2 cheap-model scoring, composite computed in code
 │   ├── selection.ts         # Tier-2 strong-model research + structured one-pick decision
 │   ├── outcomes.ts          # Pure listen-history outcome labeling
-│   ├── taste.ts             # Seed profile file + subscriptions + feedback digest
+│   ├── taste.ts             # Seed profile + subscriptions + feedback + reflection digest
+│   ├── reflection/          # Versioned podcast taste reflection (weekly task):
+│   │                        #   Castro listen history + rec outcomes → evidence ledger
+│   │                        #   → draft/critic LLM passes → validated profile checkpoints
 │   └── persistence.ts       # PodcastRecommendationEntity, exclusions, feedback
 ├── task-runs/               # Generic task-run tracking (powers the web UI)
 │   ├── persistence.ts       # TaskRunEntity + TaskRunLogEntity (last 50 runs/task), interrupted-run repair
@@ -120,7 +125,7 @@ src/
     └── config.ts            # Environment config with zod validation
 ```
 
-Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
+Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy), `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
 
 ### Recommendations Design Invariants
 
@@ -142,10 +147,11 @@ Deliberately a sibling system to media recommendations (same architecture, separ
 - Hard recency window: episodes older than 7 days are ineligible (`filters.ts`).
 - Episodes are excluded permanently once delivered; shows get a 30-day cooldown; not-for-me feedback excludes the show permanently unless newer feedback corrects it.
 - Subscribed shows are excluded (hard-filtered from the Castro account when configured, prompt-excluded via the seed profile otherwise) and double as the main taste evidence. **The exclusion is load-bearing**: a failed Castro subscription read aborts the run rather than risk recommending a followed show (three-state rule in `subscriptions.ts`).
+- Taste has a fourth input beyond seed profile/subscriptions/feedback: `PodcastTasteReflectionTask` (weekly, Sunday 5am ±5min jitter) distills the full 180-day Castro listen history plus recommendation outcomes into a versioned profile (`reflection/`, mirroring `recommendations/taste/`): append-only evidence ledger, fingerprint no-op guard, draft + skeptical-critic LLM passes, and code-level claim validation (stable/conditional/saturation claims need ≥2 independent shows; one explicit not-for-me can support an aversion). The latest profile digest is appended to every pipeline prompt via `buildTasteDigest` and surfaced at `GET /api/podcast-recommendations/taste-profile` + the Podcasts page "Taste brain".
 - Castro is behind the `PodcastAccountClient` bridge (`account.ts`), implemented against its captured private sync protocol (`castro/`, credentials `CASTRO_ACCESS_ID`/`CASTRO_SECRET_KEY`); see `docs/castro-sync.md`. It provides subscriptions, 180 days of listen history, general podcast/episode search, direct RSS resolution, subscription writes, and queue writes. Selected recommendations are resolved by exact RSS URL or iTunes ID and auto-enqueued at Queue Next (inserted after the current top item, matching the app) before notification; resolution or enqueue failure keeps the deep-link fallback. Episode matching against Castro uses the enclosure/media URL, not the RSS guid, which hosting platforms rewrite (see `docs/castro-sync.md`). When unconfigured the pipeline degrades to the seed profile + explicit feedback.
 - `CastroInboxCleanup` runs hourly with up to five minutes of jitter. It scans `is_new` episode state and posts only `clear_episode_new` for descriptions beginning exactly with `This is a free preview`; it never dequeues the episode.
 - Commit protocol mirrors media recs: write `pending` before Castro enqueue and Pushover, then flip to `notified`; stale pending rows become failed with a 24h retry exclusion. Enqueue is idempotent, so a retry observes `already_exists` if that effect landed before a crash, while notification delivery remains unverifiable.
-- Well-behaved-client controls (Castro is a private, reverse-engineered API): every request funnels through ONE process-wide rate-limit queue in `CastroApi` (concurrency 4, ≤8 req/s) — `createCastroClient` shares a singleton `CastroApi` so overlapping task runs can't double the ceiling; each request is signed at send time. Scheduled tasks jitter ±5min off their cron instant. Listen-history reads (the heaviest fan-out) are skipped entirely when no recommendation is open, and otherwise bounded to just before the oldest open delivery — never the full 180-day window, but always wide enough to cover every open rec (a shorter cutoff would mislabel a listened episode as ignored).
+- Well-behaved-client controls (Castro is a private, reverse-engineered API): every request funnels through ONE process-wide rate-limit queue in `CastroApi` (concurrency 4, ≤8 req/s) — `createCastroClient` shares a singleton `CastroApi` so overlapping task runs can't double the ceiling; each request is signed at send time. Scheduled tasks jitter ±5min off their cron instant. Listen-history reads for outcome sync (the heaviest fan-out) are skipped entirely when no recommendation is open, and otherwise bounded to just before the oldest open delivery — never the full 180-day window, but always wide enough to cover every open rec (a shorter cutoff would mislabel a listened episode as ignored). The weekly taste-reflection read is the deliberate exception: one full-window read per week, through the same rate-limited singleton.
 - The old `PodcastPicks` briefing (`briefings/PodcastPicks.md` on the deploy host) is superseded by this feature and should be disabled when `PODCAST_TASTE_PATH` is configured.
 
 ## Key Patterns
@@ -369,6 +375,8 @@ PODCASTINDEX_KEY=xxx                    # Optional: Podcast Index API key (guest
 PODCASTINDEX_SECRET=xxx                 # Optional: Podcast Index secret (QUOTE in .env — contains #)
 PODCAST_VOICE_ROTATION_MAX=12           # Optional: voices person-searched per run (rotates)
 PODCAST_MAX_GUEST_PICKS=6               # Optional: Tier-1 guest picks cap per run
+PODCAST_TASTE_REFLECTION_MODEL=openai:gpt-5.6-luna # Model for podcast taste reflection
+PODCAST_TASTE_REFLECTION_SCHEDULE=0 0 5 * * 0      # Weekly podcast taste reflection (Sunday 5am)
 ```
 
 ## External Dependencies

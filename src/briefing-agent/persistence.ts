@@ -28,6 +28,10 @@ export function getBriefingHistory(briefingName: string): BriefingHistoryData {
   );
 }
 
+export function getAllBriefingHistories(): BriefingHistoryData[] {
+  return BriefingHistoryEntity.getAll();
+}
+
 export function addBriefingNotification(
   briefingName: string,
   notification: BriefingNotification,
