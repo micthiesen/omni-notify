@@ -34,11 +34,16 @@ export function formatRelative(epochMs: number, now = Date.now()): string {
 
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
-  const totalSec = ms / 1000;
-  if (totalSec < 60) return `${totalSec.toFixed(1)}s`;
-  const mins = Math.floor(totalSec / 60);
-  const secs = Math.round(totalSec % 60);
-  return `${mins}m ${secs}s`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const totalSec = Math.round(ms / 1000);
+  const totalMin = Math.floor(totalSec / 60);
+  if (totalMin < 60) return `${totalMin}m ${totalSec % 60}s`;
+  const totalHours = Math.floor(totalMin / 60);
+  const mins = totalMin % 60;
+  if (totalHours < 24) return mins > 0 ? `${totalHours}h ${mins}m` : `${totalHours}h`;
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
 }
 
 /** Ticking countdown: "2h 05m", "3m 12s", "42s", "now". */

@@ -153,7 +153,7 @@ function MediaFeedback({ id }: { id: string }) {
       why={rec.whyForUser}
       options={MEDIA_OPTIONS}
       current={rec.feedback}
-      detailsTo={`/media?recommendation=${encodeURIComponent(id)}`}
+      detailsTo={`/media/${encodeURIComponent(id)}`}
       onSelect={async (feedback) => {
         const res = await sendRecommendationFeedback(id, feedback);
         setRec(res.recommendation);
@@ -193,7 +193,7 @@ function PodcastFeedbackCard({ id }: { id: string }) {
       why={rec.whyForUser ?? null}
       options={PODCAST_OPTIONS}
       current={rec.feedback ?? null}
-      detailsTo={`/podcasts?recommendation=${encodeURIComponent(id)}`}
+      detailsTo={`/podcasts/${encodeURIComponent(id)}`}
       onSelect={async (feedback) => {
         const res = await sendPodcastRecommendationFeedback(id, feedback);
         setRec(res.recommendation);

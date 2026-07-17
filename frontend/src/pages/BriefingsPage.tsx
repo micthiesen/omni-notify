@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { type BriefingHistory, fetchBriefings } from "../api";
+import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { formatAbsoluteWithYear, toTitleCase } from "../utils/format";
 
 interface FeedEntry {
@@ -44,6 +45,7 @@ export default function BriefingsPage() {
     () => (briefings ? buildFeed(briefings, filter) : []),
     [briefings, filter],
   );
+  const { visible, hasMore, remaining, showMore } = useShowMore(feed, 20, filter);
 
   return (
     <>
@@ -94,7 +96,7 @@ export default function BriefingsPage() {
           </div>
 
           <div className="briefing-feed">
-            {feed.map((entry, index) => (
+            {visible.map((entry, index) => (
               <article
                 key={`${index}-${entry.briefingName}-${entry.timestamp}`}
                 className="briefing-card"
@@ -127,6 +129,7 @@ export default function BriefingsPage() {
               <div className="muted">No notifications for this briefing yet.</div>
             )}
           </div>
+          {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
         </>
       )}
     </>

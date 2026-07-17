@@ -11,37 +11,21 @@ import type {
   PodcastTasteProfile,
 } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
+import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
 import { TasteBrain } from "../components/TasteBrain";
 import { Toast, useToast } from "../components/Toast";
 import { useRecHighlight } from "../hooks/useRecHighlight";
 import { useLiveData } from "../live";
+import { Link } from "../router";
 import { formatAbsolute, formatDateOnly, formatRelative } from "../utils/format";
+import {
+  PODCAST_FEEDBACK_ACTIONS as FEEDBACK_ACTIONS,
+  PODCAST_STATUS_LABELS as STATUS_LABELS,
+  PODCAST_STATUS_ORDER as STATUS_ORDER,
+} from "../utils/recLabels";
 
 const TASTE_TASK_NAME = "PodcastTasteReflection";
-
-const STATUS_LABELS: Record<PodcastRecommendationStatus, string> = {
-  pending: "Pending",
-  notified: "Notified",
-  listened: "Listened",
-  abandoned: "Abandoned",
-  ignored: "Ignored",
-  failed: "Failed",
-};
-
-const STATUS_ORDER: PodcastRecommendationStatus[] = [
-  "notified",
-  "pending",
-  "listened",
-  "abandoned",
-  "ignored",
-  "failed",
-];
-
-const FEEDBACK_ACTIONS: { value: PodcastFeedback; label: string }[] = [
-  { value: "good_pick", label: "Good pick" },
-  { value: "not_for_me", label: "Not for me" },
-];
 
 function formatEpisodeDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -98,7 +82,13 @@ function PodcastCard({
       <Artwork rec={rec} />
       <div className="rec-body">
         <div className="rec-title-row">
-          <span className="rec-title">{rec.episodeTitle}</span>
+          <Link
+            to={`/podcasts/${encodeURIComponent(rec.recommendationId)}`}
+            className="rec-title rec-title-link"
+            title="View details"
+          >
+            {rec.episodeTitle}
+          </Link>
           <span className={`status-chip status-chip-${rec.status}`}>
             {STATUS_LABELS[rec.status]}
           </span>
@@ -305,6 +295,13 @@ export default function PodcastsPage() {
       : recs.filter((r) => r.status === statusFilter);
   }, [recs, statusFilter]);
 
+  const {
+    visible: shown,
+    hasMore,
+    remaining,
+    showMore,
+  } = useShowMore(visible ?? [], 20, statusFilter);
+
   return (
     <>
       <div className="page-header">
@@ -345,19 +342,22 @@ export default function PodcastsPage() {
         </div>
       )}
       {visible !== null && visible.length > 0 && (
-        <div className="rec-list">
-          {visible.map((rec) => (
-            <PodcastCard
-              key={rec.recommendationId}
-              rec={rec}
-              saving={savingId === rec.recommendationId}
-              highlighted={highlightedId === rec.recommendationId}
-              onFeedback={(feedback) =>
-                void handleFeedback(rec.recommendationId, feedback)
-              }
-            />
-          ))}
-        </div>
+        <>
+          <div className="rec-list">
+            {shown.map((rec) => (
+              <PodcastCard
+                key={rec.recommendationId}
+                rec={rec}
+                saving={savingId === rec.recommendationId}
+                highlighted={highlightedId === rec.recommendationId}
+                onFeedback={(feedback) =>
+                  void handleFeedback(rec.recommendationId, feedback)
+                }
+              />
+            ))}
+          </div>
+          {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
+        </>
       )}
     </>
   );

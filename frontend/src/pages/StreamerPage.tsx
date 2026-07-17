@@ -10,6 +10,7 @@ import {
 import { fetchStreamerMetrics, fetchStreamerSessions } from "../api";
 import type { StreamerMetrics, StreamerView, StreamSession } from "../api";
 import { PlatformIcon } from "../components/PlatformIcon";
+import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { useNow } from "../hooks/useNow";
 import { useLiveData } from "../live";
 import { Link } from "../router";
@@ -229,7 +230,12 @@ function formatSessionTime(timestamp: number): string {
 }
 
 function RecentSessions({ sessions }: { sessions: StreamSession[] }) {
-  const shown = sessions.slice(0, MAX_SESSION_ROWS);
+  const {
+    visible: shown,
+    hasMore,
+    remaining,
+    showMore,
+  } = useShowMore(sessions, MAX_SESSION_ROWS);
   return (
     <section className="page-section">
       <h2 className="section-title">
@@ -263,11 +269,7 @@ function RecentSessions({ sessions }: { sessions: StreamSession[] }) {
           </li>
         ))}
       </ul>
-      {sessions.length > shown.length && (
-        <div className="muted session-truncated">
-          Showing the {shown.length} most recent sessions.
-        </div>
-      )}
+      {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
     </section>
   );
 }

@@ -5,7 +5,9 @@ import { LiveDataProvider } from "./live";
 import BriefingsPage from "./pages/BriefingsPage";
 import FeedbackPage, { type FeedbackKind } from "./pages/FeedbackPage";
 import HomePage from "./pages/HomePage";
+import PodcastDetailPage from "./pages/PodcastDetailPage";
 import PodcastsPage from "./pages/PodcastsPage";
+import RecommendationDetailPage from "./pages/RecommendationDetailPage";
 import RecommendationsPage from "./pages/RecommendationsPage";
 import { usePath } from "./router";
 
@@ -43,10 +45,18 @@ export default function App() {
   const feedbackMatch = path.match(
     /^\/feedback\/(recommendations|podcasts)\/([^/]+)$/,
   );
+  const mediaDetailMatch = path.match(/^\/media\/([^/]+)$/);
+  const podcastDetailMatch = path.match(/^\/podcasts\/([^/]+)$/);
   if (feedbackMatch) {
     const kind = feedbackMatch[1] as FeedbackKind;
     const id = decodeURIComponent(feedbackMatch[2]);
     page = <FeedbackPage key={`${kind}/${id}`} kind={kind} id={id} />;
+  } else if (mediaDetailMatch) {
+    const id = decodeURIComponent(mediaDetailMatch[1]);
+    page = <RecommendationDetailPage key={id} id={id} />;
+  } else if (podcastDetailMatch) {
+    const id = decodeURIComponent(podcastDetailMatch[1]);
+    page = <PodcastDetailPage key={id} id={id} />;
   } else if (path.startsWith("/streamers/")) {
     const streamerId = decodeURIComponent(path.slice("/streamers/".length));
     page = (

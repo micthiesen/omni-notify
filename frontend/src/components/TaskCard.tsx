@@ -61,7 +61,7 @@ function HistoryList({
   onViewLogs: (run: TaskRun) => void;
 }) {
   if (runs.length === 0) {
-    return <div className="muted history-empty">No recorded runs.</div>;
+    return <div className="muted history-empty">No earlier runs.</div>;
   }
   return (
     <div className="history-list">
@@ -117,7 +117,9 @@ export function TaskCard({
   useEffect(() => {
     if (!expanded) return;
     let cancelled = false;
-    fetchTaskRuns({ task: task.name, limit: HISTORY_LIMIT })
+    // Fetch one extra: the newest run already shows in the card's last-run
+    // line, so it's excluded from the accordion below.
+    fetchTaskRuns({ task: task.name, limit: HISTORY_LIMIT + 1 })
       .then((data) => {
         if (cancelled) return;
         setHistory(data.runs);
@@ -186,7 +188,14 @@ export function TaskCard({
           {historyError && (
             <div className="error-inline history-empty">{historyError}</div>
           )}
-          {history !== null && <HistoryList runs={history} onViewLogs={onViewLogs} />}
+          {history !== null && (
+            <HistoryList
+              runs={history
+                .filter((run) => run.runId !== lastRunId)
+                .slice(0, HISTORY_LIMIT)}
+              onViewLogs={onViewLogs}
+            />
+          )}
         </div>
       )}
       <button

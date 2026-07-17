@@ -5,6 +5,7 @@ import {
   type EmailPipeline,
   fetchEmailActivity,
 } from "../api";
+import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { formatAbsolute } from "../utils/format";
 
 const PIPELINE_LABELS: Record<EmailPipeline, string> = {
@@ -42,6 +43,12 @@ export default function EmailActivityPage() {
       cancelled = true;
     };
   }, [pipeline]);
+
+  const { visible, hasMore, remaining, showMore } = useShowMore(
+    activities ?? [],
+    30,
+    pipeline,
+  );
 
   return (
     <>
@@ -92,7 +99,7 @@ export default function EmailActivityPage() {
 
       {activities !== null && activities.length > 0 && (
         <ul className="mail-list">
-          {activities.map((activity) => (
+          {visible.map((activity) => (
             <li key={activity.activityId} className="mail-row">
               <div className="mail-row-top">
                 <span className="mail-subject" title={activity.subject}>
@@ -125,6 +132,7 @@ export default function EmailActivityPage() {
           ))}
         </ul>
       )}
+      {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
     </>
   );
 }

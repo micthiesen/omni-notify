@@ -8,11 +8,46 @@ import {
   type DataStorageSummary,
   type DataValue,
 } from "../api";
+import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { Toast, useToast } from "../components/Toast";
 import { downloadFile } from "../utils/download";
 import { toTitleCase } from "../utils/format";
 
 type SortDirection = "asc" | "desc";
+type SortState = { column: string; direction: SortDirection };
+
+const ROWS_PER_PAGE = 100;
+
+/**
+ * Column names that indicate row recency, in preference order. The first one
+ * present with numeric values becomes the default sort (newest first).
+ */
+const RECENCY_COLUMNS = [
+  "createdAt",
+  "t",
+  "timestamp",
+  "startedAt",
+  "recordedAt",
+  "observedAt",
+  "processedAt",
+  "receivedAt",
+  "recommendedAt",
+  "generatedAt",
+  "submittedAt",
+  "deliveredAt",
+  "updatedAt",
+  "endedAt",
+  "evaluatedThrough",
+];
+
+function defaultSort(rows: DataRow[]): SortState | null {
+  for (const column of RECENCY_COLUMNS) {
+    if (rows.some((row) => typeof row[column] === "number")) {
+      return { column, direction: "desc" };
+    }
+  }
+  return null;
+}
 
 const MALFORMED_ROW_KEY = "__dataManagerMalformed";
 
@@ -62,23 +97,35 @@ function rowId(row: DataRow, primaryKey: string[]): string {
   return json(keyFor(row, primaryKey));
 }
 
+// Cells cap their content so a huge stored string (compressed logs, profile
+// prose) can't bloat the table DOM; the row detail modal always shows it all.
+const CELL_TEXT_MAX = 200;
+const CELL_TITLE_MAX = 1000;
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max)}…` : value;
+}
+
 function displayValue(value: DataValue | undefined): { text: string; title: string } {
   if (value === undefined) return { text: "", title: "Missing" };
   if (value === null) return { text: "null", title: "null" };
   if (Array.isArray(value)) {
     return {
       text: `[${value.length} item${value.length === 1 ? "" : "s"}]`,
-      title: json(value),
+      title: truncate(json(value), CELL_TITLE_MAX),
     };
   }
   if (typeof value === "object") {
     const count = Object.keys(value).length;
     return {
       text: `{${count} field${count === 1 ? "" : "s"}}`,
-      title: json(value),
+      title: truncate(json(value), CELL_TITLE_MAX),
     };
   }
-  return { text: String(value), title: String(value) };
+  return {
+    text: truncate(String(value), CELL_TEXT_MAX),
+    title: truncate(String(value), CELL_TITLE_MAX),
+  };
 }
 
 type ColumnWidth = "narrow" | "medium" | "wide";
@@ -186,8 +233,7 @@ export default function DataPage() {
   const [loadingRows, setLoadingRows] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [sort, setSort] = useState<SortState | null>(null);
   const [detailRow, setDetailRow] = useState<DataRow | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const rowsRequest = useRef(0);
@@ -226,6 +272,9 @@ export default function DataPage() {
       const { summary, rows: fetched } = await fetchDataRows(selectedSlug);
       if (request !== rowsRequest.current) return;
       setRows(fetched);
+      // Default to newest-first on the best recency column, unless the user
+      // already picked a sort for this entity.
+      setSort((current) => current ?? defaultSort(fetched));
       setEntities((current) =>
         current.map((entity) => (entity.slug === summary.slug ? summary : entity)),
       );
@@ -241,7 +290,7 @@ export default function DataPage() {
   useEffect(() => {
     setRows([]);
     setQuery("");
-    setSortColumn(null);
+    setSort(null);
     setDetailRow(null);
     void loadRows();
   }, [loadRows]);
@@ -286,14 +335,21 @@ export default function DataPage() {
     const filtered = needle
       ? rows.filter((row) => json(row).toLocaleLowerCase().includes(needle))
       : [...rows];
-    if (sortColumn) {
+    if (sort) {
       filtered.sort((a, b) => {
-        const result = compareValues(a[sortColumn], b[sortColumn]);
-        return sortDirection === "asc" ? result : -result;
+        const result = compareValues(a[sort.column], b[sort.column]);
+        return sort.direction === "asc" ? result : -result;
       });
     }
     return filtered;
-  }, [query, rows, sortColumn, sortDirection]);
+  }, [query, rows, sort]);
+
+  const {
+    visible: pagedRows,
+    hasMore: hasMoreRows,
+    remaining: remainingRows,
+    showMore: showMoreRows,
+  } = useShowMore(visibleRows, ROWS_PER_PAGE, `${selectedSlug}|${query}`);
 
   const downloadRows = () => {
     if (!selected) return;
@@ -306,12 +362,11 @@ export default function DataPage() {
   };
 
   const selectSort = (column: string) => {
-    if (sortColumn === column) {
-      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
-    } else {
-      setSortColumn(column);
-      setSortDirection("asc");
-    }
+    setSort((current) =>
+      current?.column === column
+        ? { column, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { column, direction: "asc" },
+    );
   };
 
   const deleteRow = async (row: DataRow) => {
@@ -514,9 +569,9 @@ export default function DataPage() {
                               {column === MALFORMED_ROW_KEY
                                 ? "Malformed record"
                                 : column}
-                              {sortColumn === column && (
+                              {sort?.column === column && (
                                 <span>
-                                  {sortDirection === "asc" ? " ↑" : " ↓"}
+                                  {sort.direction === "asc" ? " ↑" : " ↓"}
                                 </span>
                               )}
                             </button>
@@ -528,7 +583,7 @@ export default function DataPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {visibleRows.map((row) => {
+                      {pagedRows.map((row) => {
                         const id = rowId(row, selected.primaryKey);
                         const malformed = getMalformedMetadata(row);
                         return (
@@ -582,6 +637,9 @@ export default function DataPage() {
                   </table>
                 )}
               </div>
+              {hasMoreRows && (
+                <ShowMoreButton remaining={remainingRows} onClick={showMoreRows} />
+              )}
             </>
           )}
         </section>

@@ -11,49 +11,25 @@ import type {
   RecommendationStatus,
   TaskRun,
   TasteProfile,
-  WatchlistResult,
 } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
+import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
 import { TasteBrain } from "../components/TasteBrain";
 import { Toast, useToast } from "../components/Toast";
 import { useRecHighlight } from "../hooks/useRecHighlight";
 import { useLiveData } from "../live";
+import { Link } from "../router";
 import { formatAbsolute, formatDateOnly, formatRelative } from "../utils/format";
+import {
+  REC_FEEDBACK_ACTIONS as FEEDBACK_ACTIONS,
+  REC_STATUS_LABELS as STATUS_LABELS,
+  REC_STATUS_ORDER as STATUS_ORDER,
+  WATCHLIST_LABELS,
+} from "../utils/recLabels";
 
 const TASK_NAME = "Recommendations";
 const TASTE_TASK_NAME = "TasteReflection";
-
-const STATUS_LABELS: Record<RecommendationStatus, string> = {
-  pending: "Pending",
-  notified: "Notified",
-  watched: "Watched",
-  abandoned: "Abandoned",
-  ignored: "Ignored",
-  failed: "Failed",
-};
-
-const STATUS_ORDER: RecommendationStatus[] = [
-  "notified",
-  "pending",
-  "watched",
-  "abandoned",
-  "ignored",
-  "failed",
-];
-
-const WATCHLIST_LABELS: Record<WatchlistResult, string> = {
-  added: "Added to watchlist",
-  already_exists: "Already on watchlist",
-  available: "Available in Plex",
-  error: "Watchlist error",
-};
-
-const FEEDBACK_ACTIONS: { value: RecommendationFeedback; label: string }[] = [
-  { value: "good_pick", label: "Good pick" },
-  { value: "not_for_me", label: "Not for me" },
-  { value: "already_watched", label: "Already watched" },
-];
 
 function Poster({ rec }: { rec: Recommendation }) {
   return (
@@ -102,10 +78,14 @@ function RecommendationCard({
       <Poster rec={rec} />
       <div className="rec-body">
         <div className="rec-title-row">
-          <span className="rec-title">
+          <Link
+            to={`/media/${encodeURIComponent(rec.recommendationId)}`}
+            className="rec-title rec-title-link"
+            title="View details"
+          >
             {rec.title}
             {rec.year !== null && <span className="rec-year"> ({rec.year})</span>}
-          </span>
+          </Link>
           <span className={`media-badge media-${rec.mediaType}`}>
             {rec.mediaType === "tv" ? "TV" : "Movie"}
           </span>
@@ -391,6 +371,13 @@ export default function RecommendationsPage() {
       : recs.filter((r) => r.status === statusFilter);
   }, [recs, statusFilter]);
 
+  const {
+    visible: shown,
+    hasMore,
+    remaining,
+    showMore,
+  } = useShowMore(visible ?? [], 20, statusFilter);
+
   return (
     <>
       <div className="page-header">
@@ -473,19 +460,22 @@ export default function RecommendationsPage() {
         </div>
       )}
       {visible !== null && visible.length > 0 && (
-        <div className="rec-list">
-          {visible.map((rec) => (
-            <RecommendationCard
-              key={rec.recommendationId}
-              rec={rec}
-              saving={savingId === rec.recommendationId}
-              highlighted={highlightedId === rec.recommendationId}
-              onFeedback={(feedback) =>
-                void handleFeedback(rec.recommendationId, feedback)
-              }
-            />
-          ))}
-        </div>
+        <>
+          <div className="rec-list">
+            {shown.map((rec) => (
+              <RecommendationCard
+                key={rec.recommendationId}
+                rec={rec}
+                saving={savingId === rec.recommendationId}
+                highlighted={highlightedId === rec.recommendationId}
+                onFeedback={(feedback) =>
+                  void handleFeedback(rec.recommendationId, feedback)
+                }
+              />
+            ))}
+          </div>
+          {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
+        </>
       )}
     </>
   );

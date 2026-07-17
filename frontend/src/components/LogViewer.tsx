@@ -230,11 +230,13 @@ export function LogViewer({
               key={`${line.t}:${index}`}
               className={`log-line log-line-${line.level}`}
             >
-              <span className="log-time">{formatLogTime(line.t)}</span>
-              <span className={`log-level log-level-${line.level}`}>
-                {line.level}
+              <span className="log-line-meta">
+                <span className="log-time">{formatLogTime(line.t)}</span>
+                <span className={`log-level log-level-${line.level}`}>
+                  {line.level}
+                </span>
+                <span className="log-logger">{shortLoggerName(line.logger)}</span>
               </span>
-              <span className="log-logger">{shortLoggerName(line.logger)}</span>
               <span className="log-msg">{line.msg}</span>
             </div>
           ))}
