@@ -2247,10 +2247,14 @@ button.task-last-run,
 }
 
 /* Sits mid-card (the history toggle is below it), so its full-bleed hover
-   highlight must stay square — rounded bottom corners read as a card edge. */
+   highlight must stay square — rounded bottom corners read as a card edge.
+   The extra bottom padding swallows the card's flex gap so the highlight
+   runs flush to the accordion/toggle border below. */
 button.task-last-run {
   border-top: 1px solid var(--border);
   border-radius: 0;
+  padding-bottom: 0.55rem;
+  margin-bottom: -0.55rem;
 }
 
 button.history-row {
