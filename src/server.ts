@@ -6,6 +6,10 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { getAllBriefingHistories } from "./briefing-agent/persistence.js";
 import {
+  AUTO_PASS_SENDERS as CALENDAR_BUILTIN_AUTO_PASS,
+  BLACKLISTED_SENDERS as CALENDAR_BUILTIN_BLOCKED,
+} from "./calendar-events/filter/keywords.js";
+import {
   deleteManagedEntityRow,
   getManagedDataSummary,
   getManagedEntity,
@@ -41,6 +45,10 @@ import { platformConfigs } from "./live-check/platforms/index.js";
 import { getStreamSessions } from "./live-check/sessions.js";
 import type { PlatformBinding, Streamer } from "./live-check/streamers.js";
 import { toTriggerChannels } from "./live-check/triggerChannels.js";
+import {
+  CARRIER_SENDER_DOMAINS as PARCEL_BUILTIN_AUTO_PASS,
+  BLACKLISTED_SENDERS as PARCEL_BUILTIN_BLOCKED,
+} from "./parcel-tracker/filter/keywords.js";
 import { SubmittedDeliveryEntity } from "./parcel-tracker/persistence.js";
 import {
   getAllPetsWithHistory,
@@ -760,9 +768,24 @@ export function startServer(
     return c.json({ activity: serializeEmailActivity(updated) });
   });
 
-  // User-editable sender rules, merged with the static filter lists.
+  // User-editable sender rules plus the read-only built-in lists, so the UI
+  // can show everything the filters consult. User allow rules override the
+  // built-in blocklists; built-ins live in code (version-controlled, survive
+  // DB resets) and are not seeded into the entity.
   app.get("/api/email-rules", (c) => {
-    return c.json({ rules: listEmailRules() });
+    return c.json({
+      rules: listEmailRules(),
+      builtin: {
+        parcel: {
+          blocked: PARCEL_BUILTIN_BLOCKED,
+          autoPass: PARCEL_BUILTIN_AUTO_PASS,
+        },
+        calendar: {
+          blocked: CALENDAR_BUILTIN_BLOCKED,
+          autoPass: CALENDAR_BUILTIN_AUTO_PASS,
+        },
+      },
+    });
   });
 
   const emailRuleSchema = z.object({

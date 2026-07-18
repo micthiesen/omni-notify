@@ -89,6 +89,22 @@ describe("filterCalendarCandidate — sender rules", () => {
     );
     expect(result).toEqual({ pass: true, reason: "known sender" });
   });
+
+  it("an allow rule overrides the built-in blacklist", async () => {
+    upsertEmailRule({
+      pattern: "steampowered.com",
+      scope: "calendar",
+      verdict: "allow",
+    });
+    const result = await filterCalendarCandidate(
+      make("noreply@steampowered.com", "Purchase confirmation"),
+      downTriage().triage,
+    );
+    expect(result).toEqual({
+      pass: true,
+      reason: "allowed by rule steampowered.com",
+    });
+  });
 });
 
 describe("filterCalendarCandidate — static blacklist", () => {

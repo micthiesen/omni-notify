@@ -4,7 +4,8 @@ import type { EmailTriageService } from "../../jmap/triage.js";
 import config from "../../utils/config.js";
 import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
 
-const BLACKLISTED_SENDERS = [
+// Exported read-only so the rules UI can show what ships built in.
+export const BLACKLISTED_SENDERS = [
   // Intentionally excluded: Parcel has a dedicated Amazon integration that
   // covers those deliveries, so tracking them here would duplicate.
   "@amazon.",
@@ -41,7 +42,8 @@ const BLACKLISTED_SENDERS = [
   "noreply@github.com",
 ];
 
-const CARRIER_SENDER_DOMAINS = [
+// Exported read-only so the rules UI can show what ships built in.
+export const CARRIER_SENDER_DOMAINS = [
   "@ups.com",
   "@fedex.com",
   "@usps.com",
@@ -107,10 +109,14 @@ export async function filterTrackingCandidate(
 ): Promise<FilterResult> {
   const fromLower = email.from.toLowerCase();
 
-  // User rule blocks beat everything
+  // User rules beat the built-in lists in both directions: an explicit allow
+  // overrides a shipped blacklist entry (block still beats allow among rules).
   const rule = findSenderRule(email.from, "parcel");
   if (rule?.verdict === "block") {
     return { pass: false, reason: `blocked by rule ${rule.pattern}` };
+  }
+  if (rule?.verdict === "allow") {
+    return { pass: true, reason: `allowed by rule ${rule.pattern}` };
   }
 
   // Blacklisted senders are always rejected
@@ -121,11 +127,6 @@ export async function filterTrackingCandidate(
   // AliExpress order-status emails never carry tracking info
   if (isAliexpressOrderStatus(fromLower, email.subject)) {
     return { pass: false, reason: "aliexpress order-status" };
-  }
-
-  // User rule allows skip triage entirely
-  if (rule?.verdict === "allow") {
-    return { pass: true, reason: `allowed by rule ${rule.pattern}` };
   }
 
   // Known carrier/shipping sender domains auto-pass

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type EmailActivity,
   type EmailActivityOutcome,
+  type EmailBuiltinRules,
   type EmailFeedback,
   type EmailPipeline,
   type EmailRule,
@@ -41,7 +42,9 @@ const SCOPE_LABELS: Record<EmailRuleScope, string> = {
  */
 function SenderRulesSection() {
   const [rules, setRules] = useState<EmailRule[] | null>(null);
+  const [builtin, setBuiltin] = useState<EmailBuiltinRules | null>(null);
   const [open, setOpen] = useState(false);
+  const [builtinOpen, setBuiltinOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pattern, setPattern] = useState("");
   const [scope, setScope] = useState<EmailRuleScope>("parcel");
@@ -52,7 +55,9 @@ function SenderRulesSection() {
     let cancelled = false;
     fetchEmailRules()
       .then((res) => {
-        if (!cancelled) setRules(res.rules);
+        if (cancelled) return;
+        setRules(res.rules);
+        setBuiltin(res.builtin);
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -185,9 +190,84 @@ function SenderRulesSection() {
             </button>
           </form>
           {error && <div className="error-inline mail-rules-error">{error}</div>}
+          {builtin && (
+            <div className="rule-builtin">
+              <button
+                type="button"
+                className="mail-rules-toggle"
+                aria-expanded={builtinOpen}
+                onClick={() => setBuiltinOpen((v) => !v)}
+              >
+                <span className="mail-rules-caret">{builtinOpen ? "▾" : "▸"}</span>
+                Built-in lists
+                <span className="chip-btn-count">
+                  {builtin.parcel.blocked.length +
+                    builtin.parcel.autoPass.length +
+                    builtin.calendar.blocked.length +
+                    builtin.calendar.autoPass.length}
+                </span>
+              </button>
+              {builtinOpen && (
+                <div className="rule-builtin-body">
+                  <BuiltinList
+                    label="Parcels · blocked"
+                    verdict="block"
+                    patterns={builtin.parcel.blocked}
+                  />
+                  <BuiltinList
+                    label="Parcels · auto-pass"
+                    verdict="allow"
+                    patterns={builtin.parcel.autoPass}
+                  />
+                  <BuiltinList
+                    label="Calendar · blocked"
+                    verdict="block"
+                    patterns={builtin.calendar.blocked}
+                  />
+                  <BuiltinList
+                    label="Calendar · auto-pass"
+                    verdict="allow"
+                    patterns={builtin.calendar.autoPass}
+                  />
+                  <div className="muted mail-rules-note">
+                    Built-ins ship with the app and live in code. An Allow rule
+                    above overrides a built-in block for that sender.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>
+  );
+}
+
+function BuiltinList({
+  label,
+  verdict,
+  patterns,
+}: {
+  label: string;
+  verdict: EmailRuleVerdict;
+  patterns: string[];
+}) {
+  return (
+    <div className="rule-builtin-group">
+      <div className="rule-builtin-label">
+        <span className={`rule-verdict rule-verdict-${verdict}`}>
+          {verdict === "block" ? "Block" : "Allow"}
+        </span>
+        <span>{label}</span>
+      </div>
+      <div className="rule-builtin-patterns">
+        {patterns.map((pattern) => (
+          <code key={pattern} className="rule-builtin-pattern">
+            {pattern}
+          </code>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -575,8 +575,18 @@ export function fetchEmailActivityLogs(
   );
 }
 
-export function fetchEmailRules(): Promise<{ rules: EmailRule[] }> {
-  return apiGet<{ rules: EmailRule[] }>("/api/email-rules");
+export interface EmailBuiltinRules {
+  parcel: { blocked: string[]; autoPass: string[] };
+  calendar: { blocked: string[]; autoPass: string[] };
+}
+
+export function fetchEmailRules(): Promise<{
+  rules: EmailRule[];
+  builtin: EmailBuiltinRules;
+}> {
+  return apiGet<{ rules: EmailRule[]; builtin: EmailBuiltinRules }>(
+    "/api/email-rules",
+  );
 }
 
 export function createEmailRule(input: {

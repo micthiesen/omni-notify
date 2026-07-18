@@ -90,6 +90,16 @@ describe("filterTrackingCandidate — sender rules", () => {
     );
     expect(result).toEqual({ pass: true, reason: "carrier sender" });
   });
+
+  it("an allow rule overrides the built-in blacklist", async () => {
+    upsertEmailRule({ pattern: "npmjs.com", scope: "parcel", verdict: "allow" });
+    const result = await filterTrackingCandidate(
+      make("support@npmjs.com", "Successfully published a package"),
+      mockLogger,
+      downTriage().triage,
+    );
+    expect(result).toEqual({ pass: true, reason: "allowed by rule npmjs.com" });
+  });
 });
 
 describe("filterTrackingCandidate — static blacklist", () => {

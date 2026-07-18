@@ -2,7 +2,8 @@ import { findSenderRule } from "../../jmap/senderRules.js";
 import type { EmailTriageService } from "../../jmap/triage.js";
 import config from "../../utils/config.js";
 
-const BLACKLISTED_SENDERS = [
+// Exported read-only so the rules UI can show what ships built in.
+export const BLACKLISTED_SENDERS = [
   "@facebook.com",
   "@twitter.com",
   "@x.com",
@@ -37,7 +38,8 @@ const BLACKLISTED_SENDERS = [
   "pkginfo@ups.com",
 ];
 
-const AUTO_PASS_SENDERS = [
+// Exported read-only so the rules UI can show what ships built in.
+export const AUTO_PASS_SENDERS = [
   // Airlines
   "@united.com",
   "@delta.com",
@@ -171,20 +173,19 @@ export async function filterCalendarCandidate(
 ): Promise<FilterResult> {
   const fromLower = email.from.toLowerCase();
 
-  // User rule blocks beat everything
+  // User rules beat the built-in lists in both directions: an explicit allow
+  // overrides a shipped blacklist entry (block still beats allow among rules).
   const rule = findSenderRule(email.from, "calendar");
   if (rule?.verdict === "block") {
     return { pass: false, reason: `blocked by rule ${rule.pattern}` };
+  }
+  if (rule?.verdict === "allow") {
+    return { pass: true, reason: `allowed by rule ${rule.pattern}` };
   }
 
   // Blacklisted senders are always rejected
   if (isBlacklistedSender(fromLower)) {
     return { pass: false, reason: "blacklisted sender" };
-  }
-
-  // User rule allows skip triage entirely
-  if (rule?.verdict === "allow") {
-    return { pass: true, reason: `allowed by rule ${rule.pattern}` };
   }
 
   // Known booking/travel/event domains auto-pass. Match on the sender's

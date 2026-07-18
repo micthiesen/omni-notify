@@ -2593,6 +2593,51 @@ button.history-row:last-child {
   color: var(--accent);
 }
 
+/* Read-only built-in filter lists inside the sender-rules section */
+
+.rule-builtin {
+  margin-top: 0.6rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+}
+
+.rule-builtin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 0.5rem;
+}
+
+.rule-builtin-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.rule-builtin-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.rule-builtin-patterns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.rule-builtin-pattern {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0.1rem 0.4rem;
+}
+
 .detail-back {
   display: inline-flex;
   align-items: center;
