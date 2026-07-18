@@ -17,6 +17,24 @@ export function getExtractionModel(): { model: LanguageModel; modelId: string } 
   return resolveModel(config.EXTRACTION_MODEL, "google:gemini-3.1-flash-lite");
 }
 
+/**
+ * Calendar extraction runs on a stronger model than parcel extraction: every
+ * serious calendar failure in production traced to flash-lite output
+ * degeneration (repeated objects, field soup in timeZone), and triage keeps
+ * call volume low enough to afford it.
+ */
+export function getCalendarExtractionModel(): {
+  model: LanguageModel;
+  modelId: string;
+} {
+  return resolveModel(config.CALENDAR_EXTRACTION_MODEL, "google:gemini-3.5-flash");
+}
+
+/** Cheap shared relevance classifier that gates both email pipelines. */
+export function getTriageModel(): { model: LanguageModel; modelId: string } {
+  return resolveModel(config.TRIAGE_MODEL, "google:gemini-3.1-flash-lite");
+}
+
 export function getRecsShortlistModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(config.RECS_SHORTLIST_MODEL, "openai:gpt-5.6-luna");
 }

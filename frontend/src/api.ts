@@ -310,6 +310,8 @@ export type EmailActivityOutcome =
   | "skipped"
   | "no_matches"
   | "processed"
+  | "partial"
+  | "failed"
   | "error";
 
 export interface EmailActivity {
@@ -321,8 +323,35 @@ export interface EmailActivity {
   receivedAt: number;
   processedAt: number;
   outcome: EmailActivityOutcome;
+  /** Why the filter admitted this email, e.g. "triage: mentions UPS tracking". */
+  admitReason: string | null;
   detail: string | null;
   items: string[];
+}
+
+export type EmailRuleScope = "parcel" | "calendar" | "both";
+export type EmailRuleVerdict = "block" | "allow";
+
+export interface EmailRule {
+  ruleId: string;
+  /** Lowercase full address ("x@y.com") or bare domain ("y.com"). */
+  pattern: string;
+  scope: EmailRuleScope;
+  verdict: EmailRuleVerdict;
+  createdAt: number;
+}
+
+export type EmailFeedbackVerdict = "not_relevant" | "missed";
+
+export interface EmailFeedback {
+  activityId: string;
+  pipeline: EmailPipeline;
+  emailId: string;
+  subject: string;
+  from: string;
+  verdict: EmailFeedbackVerdict;
+  note?: string;
+  createdAt: number;
 }
 
 export interface BriefingNotification {
@@ -364,8 +393,29 @@ async function extractErrorMessage(res: Response): Promise<string> {
   return `HTTP ${res.status}: ${res.statusText}`;
 }
 
+// Container restarts are routine and take up to ~30s; during one, fetches
+// either fail at the network layer or hit the proxy's 502/503/504. GETs are
+// idempotent, so ride out restarts with backoff instead of erroring pages
+// into blank states. Application errors (4xx, 500) still surface immediately.
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+const GET_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000];
+
+async function fetchGetWithRetry(path: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const lastAttempt = attempt >= GET_RETRY_DELAYS_MS.length;
+    try {
+      const res = await fetch(path);
+      if (!RETRYABLE_STATUS.has(res.status) || lastAttempt) return res;
+    } catch (err) {
+      // Network failure: server down mid-restart
+      if (lastAttempt) throw err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAYS_MS[attempt]));
+  }
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const res = await fetchGetWithRetry(path);
   if (!res.ok) {
     throw new ApiError(res.status, await extractErrorMessage(res));
   }
@@ -388,11 +438,15 @@ export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-export async function apiDelete<T>(path: string, body: unknown): Promise<T> {
+export async function apiDelete<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }),
   });
   if (!res.ok) {
     throw new ApiError(res.status, await extractErrorMessage(res));
@@ -496,9 +550,15 @@ export function fetchBriefings(): Promise<{ briefings: BriefingHistory[] }> {
 
 export function fetchEmailActivity(
   pipeline?: EmailPipeline,
+  limit?: number,
 ): Promise<{ activities: EmailActivity[] }> {
-  const query = pipeline ? `?pipeline=${encodeURIComponent(pipeline)}` : "";
-  return apiGet<{ activities: EmailActivity[] }>(`/api/email-activity${query}`);
+  const params = new URLSearchParams();
+  if (pipeline) params.set("pipeline", pipeline);
+  if (limit !== undefined) params.set("limit", String(limit));
+  const query = params.toString();
+  return apiGet<{ activities: EmailActivity[] }>(
+    `/api/email-activity${query ? `?${query}` : ""}`,
+  );
 }
 
 export interface EmailActivityLogs {
@@ -512,6 +572,55 @@ export function fetchEmailActivityLogs(
 ): Promise<EmailActivityLogs> {
   return apiGet<EmailActivityLogs>(
     `/api/email-activity/${encodeURIComponent(activityId)}/logs`,
+  );
+}
+
+export function fetchEmailRules(): Promise<{ rules: EmailRule[] }> {
+  return apiGet<{ rules: EmailRule[] }>("/api/email-rules");
+}
+
+export function createEmailRule(input: {
+  pattern: string;
+  scope: EmailRuleScope;
+  verdict: EmailRuleVerdict;
+}): Promise<{ rule: EmailRule }> {
+  return apiPost<{ rule: EmailRule }>("/api/email-rules", input);
+}
+
+export function deleteEmailRule(ruleId: string): Promise<{ deleted: true }> {
+  return apiDelete<{ deleted: true }>(
+    `/api/email-rules/${encodeURIComponent(ruleId)}`,
+  );
+}
+
+export function fetchEmailFeedback(): Promise<{ feedback: EmailFeedback[] }> {
+  return apiGet<{ feedback: EmailFeedback[] }>("/api/email-feedback");
+}
+
+export function sendEmailActivityFeedback(
+  activityId: string,
+  verdict: EmailFeedbackVerdict | null,
+  note?: string,
+): Promise<{ feedback: EmailFeedback | null }> {
+  return apiPost<{ feedback: EmailFeedback | null }>(
+    `/api/email-activity/${encodeURIComponent(activityId)}/feedback`,
+    { verdict, ...(note === undefined ? {} : { note }) },
+  );
+}
+
+export function reprocessEmailActivity(
+  activityId: string,
+): Promise<{ activity: EmailActivity }> {
+  return apiPost<{ activity: EmailActivity }>(
+    `/api/email-activity/${encodeURIComponent(activityId)}/reprocess`,
+  );
+}
+
+export function forgetParcelDelivery(
+  trackingNumber: string,
+): Promise<{ deleted: true }> {
+  return apiDelete<{ deleted: true }>(
+    `/api/parcel-tracker/deliveries/${encodeURIComponent(trackingNumber)}`,
   );
 }
 

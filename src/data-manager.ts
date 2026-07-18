@@ -4,7 +4,10 @@ import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
 import { EmailActivityEntity } from "./jmap/activity.js";
 import { EmailActivityLogEntity } from "./jmap/activityLogs.js";
-import { EmailStateEntity } from "./jmap/persistence.js";
+import { EmailFeedbackEntity } from "./jmap/feedback.js";
+import { EmailDispatchEntity, EmailStateEntity } from "./jmap/persistence.js";
+import { EmailRetryEntity } from "./jmap/retry.js";
+import { EmailRuleEntity } from "./jmap/senderRules.js";
 import { ViewerMetricsEntity } from "./live-check/metrics/persistence.js";
 import { StreamerStatusEntity } from "./live-check/persistence.js";
 import { StreamSessionsEntity } from "./live-check/sessions.js";
@@ -270,6 +273,22 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     label: "Email cursor",
     description: "Fastmail JMAP state cursor for incremental email processing.",
     warning: "Deleting the cursor can replay old email through every email handler.",
+  }),
+  createManagedEntity(EmailDispatchEntity, {
+    label: "Email dispatch state",
+    description: "Last email dispatch timestamp, used by the pipeline watchdog.",
+  }),
+  createManagedEntity(EmailRetryEntity, {
+    label: "Email retries",
+    description: "Emails queued for reprocessing after transient failures.",
+  }),
+  createManagedEntity(EmailRuleEntity, {
+    label: "Email sender rules",
+    description: "User-defined block/allow rules merged into the email filters.",
+  }),
+  createManagedEntity(EmailFeedbackEntity, {
+    label: "Email feedback",
+    description: "Explicit outcome corrections injected into email triage prompts.",
   }),
 ];
 

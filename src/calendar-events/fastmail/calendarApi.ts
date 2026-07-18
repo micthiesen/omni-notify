@@ -7,12 +7,12 @@ const CALDAV_BASE = `${CALDAV_HOST}/dav/calendars`;
 
 type CreateResult =
   | { status: "success"; eventUid: string }
-  | { status: "error"; message: string };
+  | { status: "error"; code: number; message: string };
 
 type DeleteResult =
   | { status: "success" }
   | { status: "not_found" }
-  | { status: "error"; message: string };
+  | { status: "error"; code: number; message: string };
 
 /**
  * Discover the default calendar URL via CalDAV PROPFIND.
@@ -104,6 +104,7 @@ export async function createCalendarEvent(
   );
   return {
     status: "error",
+    code: response.status,
     message: `CalDAV ${response.status}: ${response.statusText}`,
   };
 }
@@ -141,6 +142,7 @@ export async function updateCalendarEvent(
   );
   return {
     status: "error",
+    code: response.status,
     message: `CalDAV ${response.status}: ${response.statusText}`,
   };
 }
@@ -177,11 +179,13 @@ export async function deleteCalendarEvent(
   );
   return {
     status: "error",
+    code: response.status,
     message: `CalDAV ${response.status}: ${response.statusText}`,
   };
 }
 
-function buildICalendar(
+/** Exported for testing. */
+export function buildICalendar(
   event: CalendarEventExtraction["events"][number],
   uid: string,
 ): string {
@@ -218,6 +222,14 @@ function buildICalendar(
     } else {
       lines.push("DURATION:PT1H");
     }
+  }
+
+  if (event.recurrence) {
+    const freq = event.recurrence.frequency.toUpperCase();
+    const until = event.allDay
+      ? event.recurrence.until.replace(/-/g, "")
+      : formatUtcUntil(event.recurrence.until, event.startTime ?? "00:00", tz);
+    lines.push(`RRULE:FREQ=${freq};UNTIL=${until}`);
   }
 
   if (event.location) {
@@ -258,6 +270,48 @@ function formatUtcNow(): string {
   const now = new Date();
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
+}
+
+/**
+ * RRULE UNTIL for a timed event must be a UTC date-time (RFC 5545) that covers
+ * the last occurrence: the event's wall-clock start time on the until date,
+ * converted from the event's timezone to UTC.
+ */
+function formatUtcUntil(
+  untilDate: string,
+  startTime: string,
+  timeZone: string,
+): string {
+  const naive = new Date(`${untilDate}T${startTime}:00Z`);
+  let instant = naive;
+  try {
+    const dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    const parts: Record<string, string> = {};
+    for (const part of dtf.formatToParts(naive)) parts[part.type] = part.value;
+    const asUtc = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour) % 24,
+      Number(parts.minute),
+      Number(parts.second),
+    );
+    // asUtc - naive is the zone's offset at that instant; subtract to get UTC.
+    instant = new Date(naive.getTime() - (asUtc - naive.getTime()));
+  } catch {
+    // Unresolvable zone: fall back to treating the wall-clock time as UTC.
+  }
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${instant.getUTCFullYear()}${pad(instant.getUTCMonth() + 1)}${pad(instant.getUTCDate())}T${pad(instant.getUTCHours())}${pad(instant.getUTCMinutes())}${pad(instant.getUTCSeconds())}Z`;
 }
 
 /** Add one day to an ISO 8601 date string (e.g. "2026-03-20" → "2026-03-21"). */

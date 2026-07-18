@@ -1,4 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { findSenderRule } from "../../jmap/senderRules.js";
+import type { EmailTriageService } from "../../jmap/triage.js";
+import config from "../../utils/config.js";
 import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
 
 const BLACKLISTED_SENDERS = [
@@ -26,6 +29,8 @@ const BLACKLISTED_SENDERS = [
   "@wealthsimple.com",
   // Cloud platforms
   "cloudplatform-noreply@google.com",
+  // Developer platforms ("Successfully published ... package" is not a parcel)
+  "@npmjs.com",
   // Social media
   "@facebook.com",
   "@twitter.com",
@@ -63,10 +68,32 @@ const TRACKING_KEYWORDS = [
   "delivery",
 ];
 
+/**
+ * AliExpress order-status subject shapes. These carry no tracking info and were
+ * the single biggest source of wasted extraction calls; the same sender's
+ * "Package ... ready to ship" emails must still pass.
+ */
+const ALIEXPRESS_ORDER_STATUS_PHRASES = [
+  "awaiting confirmation",
+  "order shipped",
+  "order confirmed",
+  "delivery update",
+  "awaiting payment",
+];
+
+export function isAliexpressOrderStatus(fromLower: string, subject: string): boolean {
+  if (!fromLower.includes("aliexpress")) return false;
+  const subjectLower = subject.toLowerCase();
+  if (/^order \d+:/.test(subjectLower)) return true;
+  return ALIEXPRESS_ORDER_STATUS_PHRASES.some((p) => subjectLower.includes(p));
+}
+
 export interface EmailCandidate {
+  id: string;
   from: string;
   subject: string;
   textBody: string;
+  links?: string[];
 }
 
 export type FilterResult =
@@ -76,32 +103,71 @@ export type FilterResult =
 export async function filterTrackingCandidate(
   email: EmailCandidate,
   logger: Logger,
+  triage: EmailTriageService,
 ): Promise<FilterResult> {
   const fromLower = email.from.toLowerCase();
 
+  // User rule blocks beat everything
+  const rule = findSenderRule(email.from, "parcel");
+  if (rule?.verdict === "block") {
+    return { pass: false, reason: `blocked by rule ${rule.pattern}` };
+  }
+
   // Blacklisted senders are always rejected
-  if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) {
+  if (isBlacklistedSender(fromLower)) {
     return { pass: false, reason: "blacklisted sender" };
   }
 
-  // Tier 1: Known carrier/shipping sender domains auto-pass
+  // AliExpress order-status emails never carry tracking info
+  if (isAliexpressOrderStatus(fromLower, email.subject)) {
+    return { pass: false, reason: "aliexpress order-status" };
+  }
+
+  // User rule allows skip triage entirely
+  if (rule?.verdict === "allow") {
+    return { pass: true, reason: `allowed by rule ${rule.pattern}` };
+  }
+
+  // Known carrier/shipping sender domains auto-pass
   if (CARRIER_SENDER_DOMAINS.some((domain) => fromLower.includes(domain))) {
     return { pass: true, reason: "carrier sender" };
   }
 
-  // Tier 2: Keyword match in subject or body
+  // Cheap-LLM triage decides everything else; keywords are only the fallback
+  try {
+    const verdict = await triage.classify(email);
+    return verdict.parcel
+      ? { pass: true, reason: `triage: ${verdict.reason}` }
+      : { pass: false, reason: `triage: ${verdict.reason}` };
+  } catch {
+    return keywordFallback(email, logger);
+  }
+}
+
+function isBlacklistedSender(fromLower: string): boolean {
+  if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) return true;
+  // The user's own outgoing mail is never a shipment notification
+  const self = config.FASTMAIL_USERNAME?.toLowerCase();
+  return self !== undefined && fromLower.includes(self);
+}
+
+/** Degraded path when the triage model is unavailable. */
+async function keywordFallback(
+  email: EmailCandidate,
+  logger: Logger,
+): Promise<FilterResult> {
   const searchText = `${email.subject} ${email.textBody}`.toLowerCase();
   const matchedKeyword = TRACKING_KEYWORDS.find((kw) => searchText.includes(kw));
   if (matchedKeyword) {
-    return { pass: true, reason: `keyword "${matchedKeyword}"` };
+    return { pass: true, reason: `keyword "${matchedKeyword}" (triage unavailable)` };
   }
 
-  // Tier 3: Carrier name mentioned (word-boundary match)
+  // Carrier name mentioned (word-boundary match)
   const patterns = await getCarrierNamePatterns(logger);
   const fullText = `${email.subject} ${email.textBody}`;
   if (patterns.some((pattern) => pattern.test(fullText))) {
-    return { pass: true, reason: "carrier name match" };
+    return { pass: true, reason: "carrier name match (triage unavailable)" };
   }
 
-  return { pass: false, reason: "no keyword match" };
+  return { pass: false, reason: "no keyword match (triage unavailable)" };
 }

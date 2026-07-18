@@ -52,27 +52,35 @@ src/
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
 ├── jmap/                    # Shared Fastmail JMAP infrastructure
 │   ├── client.ts            # JMAP session + account resolution
-│   ├── activity.ts          # Per-email pipeline outcome records (filtered/processed/error)
-│   ├── dispatcher.ts        # EmailDispatcher: fetch-once fan-out to EmailHandlers
-│   ├── eventSource.ts       # SSE for real-time email state changes
-│   ├── emailFetcher.ts      # Fetch new emails via JMAP changes API
-│   ├── persistence.ts       # Shared JMAP email state cursor (SQLite)
-│   └── htmlToText.ts        # HTML email body → plain text
+│   ├── activity.ts          # Per-email outcome records (filtered/processed/partial/failed/…)
+│   ├── activityLogs.ts      # Per-email captured log lines (withEmailLogCapture, gzip rows)
+│   ├── dispatcher.ts        # EmailDispatcher: no-drop fan-out to EmailHandlers, gap recovery
+│   ├── eventSource.ts       # SSE for real-time email state changes (drains on reconnect)
+│   ├── emailFetcher.ts      # Fetch new emails (paged changes, mailbox-scoped, links, by-id)
+│   ├── mailboxes.ts         # Mailbox role resolution: only inbox/archive are processed
+│   ├── triage.ts            # EmailTriageService: one shared cheap-LLM relevance call/email
+│   ├── senderRules.ts       # User-editable block/allow sender rules (merged into filters)
+│   ├── feedback.ts          # Explicit outcome corrections → triage prompt digests
+│   ├── retry.ts             # Persisted retry queue for transient pipeline failures
+│   ├── retryTask.ts         # EmailRetryTask: drains due retries (15min cadence)
+│   ├── watchdogTask.ts      # EmailWatchdogTask: warns when no email dispatched >72h
+│   ├── persistence.ts       # JMAP state cursor + last-dispatched timestamp (SQLite)
+│   └── htmlToText.ts        # HTML email body → text + shipment-shaped link extraction
 ├── parcel-tracker/          # Auto-submit tracking numbers from emails to Parcel.app
-│   ├── index.ts             # Pipeline factory
-│   ├── pipeline.ts          # Email → filter → LLM extract → Parcel API
-│   ├── persistence.ts       # Dedup gate + JMAP state (SQLite)
-│   ├── extraction/          # LLM tracking number extraction
-│   ├── filter/              # Email candidate filtering (keywords, carriers)
-│   ├── carriers/            # Parcel API carrier list + blacklist
-│   └── parcel/              # Parcel.app API client
+│   ├── index.ts             # Pipeline factory (takes the shared EmailTriageService)
+│   ├── pipeline.ts          # Email → filter → LLM extract → validate → Parcel API
+│   ├── persistence.ts       # Dedup gate incl. near-duplicate matching (SQLite)
+│   ├── extraction/          # LLM extraction: ranked carrier candidates, links, order-# rules
+│   ├── filter/              # Tiered filter: rules → blacklist → auto-pass → triage
+│   ├── carriers/            # Parcel API carrier list + blacklist + candidate validation
+│   └── parcel/              # Parcel.app API client (wrong-carrier fallback signals)
 ├── calendar-events/         # Auto-create calendar events from emails via CalDAV
-│   ├── index.ts             # Pipeline factory
-│   ├── pipeline.ts          # Email → filter → LLM extract → CalDAV PUT
-│   ├── persistence.ts       # Dedup gate + JMAP state (SQLite)
-│   ├── extraction/          # LLM calendar event extraction
-│   ├── filter/              # Email candidate filtering (booking/travel keywords)
-│   └── fastmail/            # CalDAV calendar API (raw iCalendar over HTTP)
+│   ├── index.ts             # Pipeline factory (takes the shared EmailTriageService)
+│   ├── pipeline.ts          # Email → filter → LLM extract → sanitize → CalDAV
+│   ├── persistence.ts       # Dedup gate, 365d context window, evt_N resolution (SQLite)
+│   ├── extraction/          # LLM event extraction + output sanitization + retry
+│   ├── filter/              # Tiered filter: rules → blacklist → auto-pass → triage
+│   └── fastmail/            # CalDAV calendar API (iCalendar incl. RRULE recurrence)
 ├── recommendations/         # AI media recommendations → watchlist + Pushover
 │   ├── task.ts              # RecommendationTask (cron, default Mon/Wed/Fri 5pm)
 │   ├── pipeline.ts          # Poll state → outcomes → candidates → filter → shortlist → select → commit
@@ -126,7 +134,7 @@ src/
     └── config.ts            # Environment config with zod validation
 ```
 
-Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy), `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
+Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy; outcome/pipeline filter chips, per-email processing-log modal with reprocess / sender block / not-relevant-missed feedback / forget-tracking-number actions, and a sender-rules management section), `/media/:id` + `/podcasts/:id` recommendation detail pages, `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
 
 ### Frontend Style Guide
 
@@ -366,7 +374,9 @@ KICK_CLIENT_ID=xxx                      # OAuth client (dev.kick.com) — requir
 KICK_CLIENT_SECRET=xxx
 OFFLINE_NOTIFICATIONS=true|false
 BRIEFING_MODEL=google:gemini-3.5-flash  # Model for briefing agents (provider:model)
-EXTRACTION_MODEL=google:gemini-3.1-flash-lite  # Model for email extraction (parcel + calendar)
+EXTRACTION_MODEL=google:gemini-3.1-flash-lite  # Model for parcel email extraction
+CALENDAR_EXTRACTION_MODEL=google:gemini-3.5-flash  # Model for calendar email extraction (stronger)
+TRIAGE_MODEL=google:gemini-3.1-flash-lite      # Model for shared email relevance triage
 GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Required for google: models
 ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
 OPENAI_API_KEY=xxx                      # Required for openai: models
@@ -431,11 +441,24 @@ PODCAST_TASTE_REFLECTION_SCHEDULE=0 0 5 * * 0      # Weekly podcast taste reflec
 
 Both parcel-tracker and calendar-events share the same JMAP infrastructure (`src/jmap/`):
 - **JMAP** (via `jmap-jam`): Email monitoring via SSE event source
-- **EmailDispatcher**: Fetches emails once per state change, fans out to registered `EmailHandler`s (parcel-tracker, calendar-events). Owns the shared JMAP state cursor.
+- **EmailDispatcher**: Fetches emails once per state change, fans out to registered `EmailHandler`s (parcel-tracker, calendar-events). Owns the shared JMAP state cursor. State changes arriving mid-processing set a pending flag and re-run (never dropped); `Email/changes` is paged via `maxChanges` with a 500-email/pass cap; on `cannotCalculateChanges` it recovers the gap with a bounded `Email/query` from the last dispatched timestamp before resetting state (warn → Pushover).
+- **Mailbox scoping**: only emails in mailboxes with role inbox/archive are processed (Sent/Drafts/Spam/Trash never reach pipelines). Fails open if roles can't be resolved.
 - **CalDAV** (raw HTTP): Calendar event creation — `PUT` iCalendar files to Fastmail's CalDAV endpoint
 - Auth: `FASTMAIL_API_TOKEN` (bearer token for JMAP), `FASTMAIL_APP_PASSWORD` (basic auth for CalDAV)
 - Each pipeline implements `EmailHandler` with a `handleEmails(emails)` method for filtering and processing
 - `jmap-jam` only supports email methods; calendar uses raw `fetch()` against `https://caldav.fastmail.com/dav/calendars/`
+
+### Email Pipeline Design Invariants
+
+Grounded in a full audit of production history (all submissions, events, and extraction logs) — keep these properties when changing the email system:
+
+- **Tiered filtering, LLM-triage last**: per pipeline the order is user sender-rules block → static blacklist (incl. AliExpress order-status subject skip for parcels; Amazon is intentionally excluded from parcels because Parcel has a dedicated Amazon integration) → user rules allow → static auto-pass senders → shared `EmailTriageService` verdict. The old keyword lists survive only as the degraded fallback when triage errors. One triage model call is shared per email across both pipelines (memoized by email id).
+- **Honest outcomes**: activity rows derive `processed`/`partial`/`failed` from per-item success (`deriveItemsOutcome`) — an email whose every submission was rejected must never read as processed. The admitting tier/reason is recorded as `admitReason` on every non-filtered row.
+- **Parcel extraction**: model returns up to 3 ranked carrier candidates (Canada-first for multi-country brands, e.g. `dicom` GLS Canada over `gls`); candidates are validated against the live carrier list and tried in order with wrong-carrier fallback on 4xx (except auth/rate-limit). Order numbers are never tracking numbers (prompt rule — the historical iHerb failure). Dedup is per-delivery with near-duplicate containment matching (merchant-truncated copies of one number), read live so batches can't double-submit.
+- **Calendar extraction**: runs on the stronger `CALENDAR_EXTRACTION_MODEL`; model output passes `sanitize.ts` (IANA timeZone validation, identical-object collapse, no timed events without startTime, length caps) with one retry on degenerate output — and the existing-events prompt context is re-sanitized so a bad persisted row can't poison later prompts. The context window covers 365 future days (far-future events must be visible to dedupe), and `findEvent`'s fallback only searches that same window. Cancels require an explicit `evt_N` reference; receipts/bills never cancel.
+- **Transient failures retry for real**: network/5xx failures enqueue into `EmailRetryEntity`; `EmailRetryTask` re-fetches the email by id and reruns the owning pipeline (dedup gates make it idempotent). `EmailWatchdogTask` warns when nothing has been dispatched for >72h (a 16-day silent outage motivated it).
+- **Feedback loop**: `/emails` UI actions write sender rules (scoped parcel/calendar/both, block beats allow) and explicit `not_relevant`/`missed` feedback; recent feedback is injected into the triage prompt as corrections. Reprocess (re-fetch by id + rerun) and forget-tracking-number endpoints close the loop.
+- Per-email processing logs are captured via `withEmailLogCapture` and viewable from the `/emails` page (same modal machinery as task-run logs).
 
 ## Common Tasks
 

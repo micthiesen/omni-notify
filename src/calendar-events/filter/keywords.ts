@@ -1,3 +1,7 @@
+import { findSenderRule } from "../../jmap/senderRules.js";
+import type { EmailTriageService } from "../../jmap/triage.js";
+import config from "../../utils/config.js";
+
 const BLACKLISTED_SENDERS = [
   "@facebook.com",
   "@twitter.com",
@@ -25,6 +29,12 @@ const BLACKLISTED_SENDERS = [
   "@ubereats.com",
   "@skipthedishes.com",
   "@instacart.com",
+  // Developer platforms ("event on ..." inside URLs is not a calendar event)
+  "@npmjs.com",
+  // Purchase "confirmation" emails, never appointments
+  "@steampowered.com",
+  // Shipment notifications belong to the parcel pipeline
+  "pkginfo@ups.com",
 ];
 
 const AUTO_PASS_SENDERS = [
@@ -68,7 +78,6 @@ const AUTO_PASS_SENDERS = [
   "@resy.com",
   // Travel
   "@kayak.com",
-  "@google.com",
   "@tripadvisor.com",
   // Building/strata management
   "@tribemgmt.com",
@@ -132,9 +141,11 @@ const CALENDAR_KEYWORDS = [
 ];
 
 export interface EmailCandidate {
+  id: string;
   from: string;
   subject: string;
   textBody: string;
+  links?: string[];
 }
 
 export type FilterResult =
@@ -154,15 +165,29 @@ function senderDomain(fromLower: string): string {
   return at >= 0 ? addr.slice(at + 1).trim() : addr;
 }
 
-export function filterCalendarCandidate(email: EmailCandidate): FilterResult {
+export async function filterCalendarCandidate(
+  email: EmailCandidate,
+  triage: EmailTriageService,
+): Promise<FilterResult> {
   const fromLower = email.from.toLowerCase();
 
+  // User rule blocks beat everything
+  const rule = findSenderRule(email.from, "calendar");
+  if (rule?.verdict === "block") {
+    return { pass: false, reason: `blocked by rule ${rule.pattern}` };
+  }
+
   // Blacklisted senders are always rejected
-  if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) {
+  if (isBlacklistedSender(fromLower)) {
     return { pass: false, reason: "blacklisted sender" };
   }
 
-  // Tier 1: Known booking/travel/event domains auto-pass. Match on the sender's
+  // User rule allows skip triage entirely
+  if (rule?.verdict === "allow") {
+    return { pass: true, reason: `allowed by rule ${rule.pattern}` };
+  }
+
+  // Known booking/travel/event domains auto-pass. Match on the sender's
   // domain (incl. subdomains) so transactional subdomains like
   // "noreply@reminder.eventbrite.com" still resolve to "eventbrite.com".
   const domain = senderDomain(fromLower);
@@ -175,15 +200,34 @@ export function filterCalendarCandidate(email: EmailCandidate): FilterResult {
     return { pass: true, reason: "known sender" };
   }
 
-  // Tier 2: Keyword match in subject or body. Strip the ubiquitous "all rights
-  // reserved" footer first so it can never masquerade as a booking signal.
+  // Cheap-LLM triage decides everything else; keywords are only the fallback
+  try {
+    const verdict = await triage.classify(email);
+    return verdict.calendar
+      ? { pass: true, reason: `triage: ${verdict.reason}` }
+      : { pass: false, reason: `triage: ${verdict.reason}` };
+  } catch {
+    return keywordFallback(email);
+  }
+}
+
+function isBlacklistedSender(fromLower: string): boolean {
+  if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) return true;
+  // The user's own outgoing mail is never a booking notification
+  const self = config.FASTMAIL_USERNAME?.toLowerCase();
+  return self !== undefined && fromLower.includes(self);
+}
+
+/** Degraded path when the triage model is unavailable. */
+function keywordFallback(email: EmailCandidate): FilterResult {
+  // Strip the ubiquitous "all rights reserved" footer first so it can never
+  // masquerade as a booking signal.
   const searchText = `${email.subject} ${email.textBody}`
     .toLowerCase()
     .replaceAll("all rights reserved", "");
   const matchedKeyword = CALENDAR_KEYWORDS.find((kw) => searchText.includes(kw));
   if (matchedKeyword) {
-    return { pass: true, reason: `keyword "${matchedKeyword}"` };
+    return { pass: true, reason: `keyword "${matchedKeyword}" (triage unavailable)` };
   }
-
-  return { pass: false, reason: "no keyword match" };
+  return { pass: false, reason: "no keyword match (triage unavailable)" };
 }

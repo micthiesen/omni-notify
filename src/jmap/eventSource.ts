@@ -78,6 +78,10 @@ class JmapEventSource {
         this.connected = true;
       }
       this.resetInactivityTimer();
+      // Catch-up drain: state pushes that fired while we were disconnected are
+      // gone forever, so treat every (re)connect as a potential missed change
+      // and let the dispatcher diff against its saved state immediately.
+      this.onEmailStateChange();
     });
 
     // RFC 8620 §7.3: `event: state` with JSON payload

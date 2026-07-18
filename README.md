@@ -132,7 +132,7 @@ The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify 
 - `/podcasts` lists podcast episode recommendations with show artwork, status filters, episode/discussion links, good-pick/not-for-me feedback controls, and the podcast taste profile.
 - `/feedback/recommendations/:id` and `/feedback/podcasts/:id` are mobile-first one-tap rating pages. Pushover recommendation notifications deep-link here ("Rate this pick"), and the page links onward to the full recommendation view.
 - `/briefings` is a browsable archive of briefing notifications (the last 50 stored per briefing).
-- `/emails` shows what the parcel and calendar email pipelines did with each processed email (filtered and why, extracted, submitted, errored).
+- `/emails` shows what the parcel and calendar email pipelines did with each email (why it was admitted or filtered, per-item results, honest processed/partial/failed outcomes) with per-email processing logs, one-click reprocess, block-sender and not-relevant/missed feedback actions, a forget-tracking-number escape hatch, and a user-editable sender-rules section. A shared LLM triage call gates both pipelines; corrections feed back into its prompt.
 
 Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port — no extra ports needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
 
@@ -149,7 +149,9 @@ Models are configured via environment variables using `provider:model` format. S
 | Variable | Default | Used for |
 |---|---|---|
 | `BRIEFING_MODEL` | `google:gemini-3.5-flash` | Briefing agents |
-| `EXTRACTION_MODEL` | `google:gemini-3.1-flash-lite` | Email extraction (parcel + calendar) |
+| `EXTRACTION_MODEL` | `google:gemini-3.1-flash-lite` | Parcel email extraction |
+| `CALENDAR_EXTRACTION_MODEL` | `google:gemini-3.5-flash` | Calendar email extraction |
+| `TRIAGE_MODEL` | `google:gemini-3.1-flash-lite` | Shared email relevance triage |
 | `RECS_SHORTLIST_MODEL` | `openai:gpt-5.6-luna` | Recommendation shortlist scoring |
 | `RECS_SELECTION_MODEL` | `openai:gpt-5.6` | Recommendation research + final pick |
 | `TASTE_REFLECTION_MODEL` | `openai:gpt-5.6-luna` | Weekly evidence-backed taste reflection |
@@ -175,7 +177,9 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
 | `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3.5-flash`) |
-| `EXTRACTION_MODEL` | No | AI model for email extraction (default: `google:gemini-3.1-flash-lite`) |
+| `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `google:gemini-3.1-flash-lite`) |
+| `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `google:gemini-3.5-flash`) |
+| `TRIAGE_MODEL` | No | AI model for shared email triage (default: `google:gemini-3.1-flash-lite`) |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Required for `google:` models |
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |

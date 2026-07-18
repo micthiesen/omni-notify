@@ -2,10 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type CreatedCalendarEventData,
   computeEventHash,
+  findEvent,
   hasEventChanged,
   normalizeTitle,
   pickByStartDate,
   resolveEventReference,
+  resolveExplicitEventReference,
+  selectRecentEvents,
 } from "./persistence.js";
 
 const rec = (
@@ -98,6 +101,130 @@ describe("hasEventChanged", () => {
       false,
     );
   });
+
+  it("detects added, removed, and modified recurrence", () => {
+    const recurring = rec({
+      ...base,
+      recurrence: { frequency: "daily", until: "2026-07-13" },
+    });
+
+    expect(
+      hasEventChanged(base, {
+        ...base,
+        recurrence: { frequency: "daily", until: "2026-07-13" },
+      }),
+    ).toBe(true);
+    expect(hasEventChanged(recurring, { ...base })).toBe(true);
+    expect(
+      hasEventChanged(recurring, {
+        ...base,
+        recurrence: { frequency: "daily", until: "2026-07-20" },
+      }),
+    ).toBe(true);
+  });
+
+  it("treats identical recurrence (and null vs undefined) as unchanged", () => {
+    const recurring = rec({
+      ...base,
+      recurrence: { frequency: "weekly", until: "2026-08-01" },
+    });
+
+    expect(
+      hasEventChanged(recurring, {
+        ...base,
+        recurrence: { frequency: "weekly", until: "2026-08-01" },
+      }),
+    ).toBe(false);
+    expect(hasEventChanged(base, { ...base, recurrence: null })).toBe(false);
+  });
+});
+
+describe("selectRecentEvents", () => {
+  const now = Date.parse("2026-04-15T12:00:00Z");
+  const events = [
+    rec({ eventHash: "old", startDate: "2026-04-01" }), // 14 days past
+    rec({ eventHash: "recent-past", startDate: "2026-04-12" }), // 3 days past
+    rec({ eventHash: "soon", startDate: "2026-05-01" }),
+    rec({ eventHash: "september", startDate: "2026-09-10" }), // ~150 days ahead
+    rec({ eventHash: "next-year", startDate: "2027-06-01" }), // beyond 365 days
+    rec({ eventHash: "cancelled", startDate: "2026-05-01", status: "cancelled" }),
+  ];
+
+  it("includes far-future events within a 365-day horizon", () => {
+    const selected = selectRecentEvents(events, 365, now);
+    expect(selected.map((e) => e.eventHash)).toEqual([
+      "recent-past",
+      "soon",
+      "september",
+    ]);
+  });
+
+  it("hides far-future events under the old 90-day horizon (the dup-cluster bug)", () => {
+    const selected = selectRecentEvents(events, 90, now);
+    expect(selected.map((e) => e.eventHash)).toEqual(["recent-past", "soon"]);
+  });
+});
+
+describe("findEvent", () => {
+  it("matches title+date within the given candidate set", () => {
+    const target = rec({
+      eventHash: "t",
+      title: "💇 Haircut",
+      startDate: "2026-07-20",
+    });
+    const other = rec({ eventHash: "o", title: "💇 Haircut", startDate: "2026-08-20" });
+
+    expect(findEvent("Haircut", "2026-07-20", [target, other])).toBe(target);
+  });
+
+  it("resolves a lone in-window candidate even when stale same-title events exist outside the set", () => {
+    // Three stale past "haircut" events exist in the store but are NOT in the
+    // windowed candidate set shown to the model — they must not break resolution.
+    const inWindow = rec({
+      eventHash: "current",
+      title: "💇 Haircut",
+      startDate: "2026-07-20",
+    });
+
+    expect(findEvent("Haircut", "2026-07-21", [inWindow])).toBe(inWindow);
+  });
+
+  it("fails closed when several in-window candidates share the title and none match the date", () => {
+    const a = rec({ eventHash: "a", title: "💇 Haircut", startDate: "2026-07-20" });
+    const b = rec({ eventHash: "b", title: "💇 Haircut", startDate: "2026-08-20" });
+
+    expect(findEvent("Haircut", "2026-09-01", [a, b])).toBeUndefined();
+  });
+
+  it("ignores cancelled candidates", () => {
+    const cancelled = rec({
+      eventHash: "c",
+      title: "💇 Haircut",
+      startDate: "2026-07-20",
+      status: "cancelled",
+    });
+
+    expect(findEvent("Haircut", "2026-07-20", [cancelled])).toBeUndefined();
+  });
+});
+
+describe("resolveExplicitEventReference", () => {
+  const target = rec({ eventHash: "t" });
+  const byId = new Map([["evt_3", target]]);
+
+  it("resolves a bare or bracketed handle", () => {
+    expect(resolveExplicitEventReference({ eventId: "evt_3" }, byId)).toBe(target);
+    expect(resolveExplicitEventReference({ eventId: "[evt_3]" }, byId)).toBe(target);
+  });
+
+  it("returns undefined without an eventId (no title fallback for cancels)", () => {
+    expect(resolveExplicitEventReference({}, byId)).toBeUndefined();
+    expect(resolveExplicitEventReference({ eventId: undefined }, byId)).toBeUndefined();
+  });
+
+  it("returns undefined for an unknown handle", () => {
+    expect(resolveExplicitEventReference({ eventId: "evt_99" }, byId)).toBeUndefined();
+  });
 });
 
 describe("pickByStartDate", () => {
@@ -179,6 +306,22 @@ describe("resolveEventReference", () => {
 
     expect(result).toBe(found);
     expect(fallback).toHaveBeenCalledOnce();
+  });
+
+  it("defaults the fallback to title+date search over the windowed byId values", () => {
+    const target = rec({
+      eventHash: "windowed",
+      title: "💇 Haircut",
+      startDate: "2026-07-20",
+    });
+    const byId = new Map([["evt_1", target]]);
+
+    expect(
+      resolveEventReference({ title: "Haircut", startDate: "2026-07-20" }, byId),
+    ).toBe(target);
+    expect(
+      resolveEventReference({ title: "Unrelated", startDate: "2026-07-20" }, byId),
+    ).toBeUndefined();
   });
 
   it("returns undefined when neither the handle nor the fallback matches", () => {

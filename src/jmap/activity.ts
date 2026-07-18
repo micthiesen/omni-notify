@@ -7,14 +7,27 @@ export type EmailPipelineName = "ParcelTracker" | "CalendarEvents";
 export type EmailActivityOutcome =
   /** Did not pass the candidate filter. */
   | "filtered"
-  /** Passed the filter but was dropped before extraction (e.g. dedup). */
+  /** Legacy only: the old whole-email dedup pre-skip emitted this; dedup is
+   * now per-delivery, so new rows never use it. Kept for stored rows. */
   | "skipped"
   /** Extraction ran and found nothing actionable. */
   | "no_matches"
-  /** Extraction found items; see `items` for per-item results. */
+  /** Extraction found items and every item succeeded. */
   | "processed"
-  /** Processing failed. */
+  /** Extraction found items; some succeeded and some failed. */
+  | "partial"
+  /** Extraction found items and every item failed (e.g. all rejected). */
+  | "failed"
+  /** Processing threw. */
   | "error";
+
+/** Derive the outcome from per-item success flags (empty → no_matches). */
+export function deriveItemsOutcome(itemsOk: boolean[]): EmailActivityOutcome {
+  if (itemsOk.length === 0) return "no_matches";
+  const succeeded = itemsOk.filter(Boolean).length;
+  if (succeeded === itemsOk.length) return "processed";
+  return succeeded === 0 ? "failed" : "partial";
+}
 
 export type EmailActivityData = {
   /** `${pipeline}#${emailId}` — reprocessing the same email overwrites. */
@@ -28,11 +41,13 @@ export type EmailActivityData = {
   outcome: EmailActivityOutcome;
   /** Filter reason, error message, or other context. */
   detail?: string;
+  /** Why the email was admitted past the filter (tier/keyword/triage verdict). */
+  admitReason?: string;
   /** Short per-item results, e.g. "1Z999AA1 (ups): submitted". */
   items?: string[];
 };
 
-export const KEEP_PER_PIPELINE = 200;
+export const KEEP_PER_PIPELINE = 1000;
 
 export const EmailActivityEntity = new Entity<EmailActivityData, ["activityId"]>(
   "email-activity",
@@ -56,6 +71,7 @@ export function recordEmailActivity(entry: {
   email: Pick<FetchedEmail, "id" | "subject" | "from" | "receivedAt">;
   outcome: EmailActivityOutcome;
   detail?: string;
+  admitReason?: string;
   items?: string[];
 }): void {
   const receivedAt = Date.parse(entry.email.receivedAt);
@@ -69,6 +85,7 @@ export function recordEmailActivity(entry: {
     processedAt: Date.now(),
     outcome: entry.outcome,
     detail: entry.detail,
+    admitReason: entry.admitReason,
     items: entry.items,
   });
   for (const stale of selectActivityToPrune(

@@ -11,6 +11,8 @@ import { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { BriefingHistoryEntity } from "../briefing-agent/persistence.js";
 import { EmailActivityEntity } from "../jmap/activity.js";
+import { recordEmailFeedback } from "../jmap/feedback.js";
+import { upsertEmailRule } from "../jmap/senderRules.js";
 import { ViewerMetricsEntity } from "../live-check/metrics/persistence.js";
 import type { DailyBucket } from "../live-check/metrics/types.js";
 import { StreamerStatusEntity } from "../live-check/persistence.js";
@@ -527,7 +529,35 @@ EmailActivityEntity.upsert({
   receivedAt: now - 3 * HOUR,
   processedAt: now - 3 * HOUR + 30_000,
   outcome: "processed",
+  admitReason: "triage: shipment notification with a UPS tracking number",
   items: ["1Z999AA10123456784 (ups): submitted"],
+});
+EmailActivityEntity.upsert({
+  activityId: "ParcelTracker#preview-5",
+  pipeline: "ParcelTracker",
+  emailId: "preview-5",
+  subject: "Order Shipped #945938211",
+  from: "noreply@info.iherb.example",
+  receivedAt: now - 5 * HOUR,
+  processedAt: now - 5 * HOUR + 20_000,
+  outcome: "failed",
+  admitReason: "carrier sender",
+  items: ["945938211 (asendia): rejected by Parcel (400)"],
+});
+EmailActivityEntity.upsert({
+  activityId: "ParcelTracker#preview-6",
+  pipeline: "ParcelTracker",
+  emailId: "preview-6",
+  subject: "Two packages on the way",
+  from: "shipping@multistore.example",
+  receivedAt: now - 12 * HOUR,
+  processedAt: now - 12 * HOUR + 25_000,
+  outcome: "partial",
+  admitReason: "triage: mentions tracking numbers for two shipments",
+  items: [
+    "9400111899223100315842 (usps): submitted",
+    "RA123456789CN (chinapost): rejected by Parcel (400)",
+  ],
 });
 EmailActivityEntity.upsert({
   activityId: "CalendarEvents#preview-2",
@@ -538,6 +568,7 @@ EmailActivityEntity.upsert({
   receivedAt: now - 7 * HOUR,
   processedAt: now - 7 * HOUR + 45_000,
   outcome: "processed",
+  admitReason: "triage: upcoming medical appointment with a concrete time",
   items: ["Dr. Chen appointment → Jul 22, 2:10 PM (created)"],
 });
 EmailActivityEntity.upsert({
@@ -561,6 +592,22 @@ EmailActivityEntity.upsert({
   processedAt: now - 30 * HOUR + 60_000,
   outcome: "error",
   detail: "CalDAV PUT failed: 507 Insufficient Storage",
+});
+
+upsertEmailRule({ pattern: "news@example-store.com", scope: "both", verdict: "block" });
+upsertEmailRule({
+  pattern: "clinicbookings.example",
+  scope: "calendar",
+  verdict: "allow",
+});
+
+recordEmailFeedback({
+  pipeline: "ParcelTracker",
+  emailId: "preview-5",
+  subject: "Order Shipped #945938211",
+  from: "noreply@info.iherb.example",
+  verdict: "not_relevant",
+  note: "That's an order number, not a tracking number",
 });
 
 // --- Pet ----------------------------------------------------------------------

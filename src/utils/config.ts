@@ -47,6 +47,10 @@ const configSchema = baseConfigSchema
     FASTMAIL_USERNAME: z.string().optional(),
     PARCEL_API_KEY: z.string().optional(),
     EXTRACTION_MODEL: z.string().optional(),
+    /** Calendar extraction gets its own (stronger) model; falls back in registry. */
+    CALENDAR_EXTRACTION_MODEL: z.string().optional(),
+    /** Cheap shared email triage classifier (parcel + calendar relevance). */
+    TRIAGE_MODEL: z.string().optional(),
     FASTMAIL_CALENDAR_ID: z.string().optional(),
     TMDB_API_KEY: z.string().optional(),
     RECS_SHORTLIST_MODEL: z.string().optional(),

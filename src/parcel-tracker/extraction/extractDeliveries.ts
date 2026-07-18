@@ -8,7 +8,7 @@ import { MAX_CARRIER_CANDIDATES } from "../carriers/candidates.js";
 import { getCarrierCodesForPrompt } from "../carriers/carrierMap.js";
 import { deliveryExtractionSchema } from "./schema.js";
 
-const MAX_BODY_CHARS = 3000;
+const MAX_BODY_CHARS = 12000;
 
 export interface ExtractedDelivery {
   tracking_number: string;
@@ -17,15 +17,23 @@ export interface ExtractedDelivery {
 }
 
 export async function extractDeliveries(
-  email: { subject: string; from: string; textBody: string },
+  email: { subject: string; from: string; textBody: string; links: string[] },
   logger: Logger,
   logFile?: LogFile,
 ): Promise<ExtractedDelivery[]> {
   const { model, modelId } = getExtractionModel();
   const carrierCodes = await getCarrierCodesForPrompt(logger);
   const body = email.textBody.slice(0, MAX_BODY_CHARS);
+  const linksSection =
+    email.links.length > 0
+      ? `\n\nURLs from the email (tracking numbers sometimes appear only inside these):\n${email.links.join("\n")}`
+      : "";
 
   const prompt = `Extract package tracking numbers from this email. If no tracking numbers are found, return an empty deliveries array.
+
+Rules for what counts as a tracking number:
+- A number labeled "Order #", "order number", or appearing in a subject like "Order Shipped #123456" or "Order Confirmed #123456" is NEVER a tracking number. Order numbers identify the merchant order, not the shipment.
+- If the body names a carrier but says tracking information will be available later (e.g. "the shipping provider needs 24-48 hours"), there is no tracking number yet — return an empty deliveries array.
 
 For carrier_candidates, list up to ${MAX_CARRIER_CANDIDATES} plausible carrier codes ranked most likely first, using the short code (left of the colon) from this list — not the display name. If no carrier in this list could plausibly match, omit that tracking number entirely.
 ${carrierCodes}
@@ -38,7 +46,7 @@ Carrier guidance:
 From: ${email.from}
 Subject: ${email.subject}
 
-${body}`;
+${body}${linksSection}`;
 
   if (logFile) {
     logFile.log(

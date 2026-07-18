@@ -3,8 +3,13 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output, type UserContent } from "ai";
-import { getExtractionModel } from "../../ai/registry.js";
+import { getCalendarExtractionModel } from "../../ai/registry.js";
 import type { DownloadedAttachment } from "./attachments.js";
+import {
+  isDegenerateExtraction,
+  type SanitizeResult,
+  sanitizeExtractedEvents,
+} from "./sanitize.js";
 import {
   type CalendarEventExtraction,
   calendarEventExtractionSchema,
@@ -50,7 +55,7 @@ export async function extractCalendarEvents(
 ): Promise<CalendarEventExtraction["events"]> {
   const { email, logger, logFile, attachments, localTimeZone, existingEvents } =
     options;
-  const { model, modelId } = getExtractionModel();
+  const { model, modelId } = getCalendarExtractionModel();
   const body = email.textBody.slice(0, MAX_BODY_CHARS);
 
   const currentDate = new Date().toLocaleDateString("en-US", {
@@ -72,6 +77,7 @@ Guidelines:
 - Do NOT extract any billing, payment, or subscription event — subscription renewals, recurring or auto-pay charges (e.g. iCloud+, Netflix, a PayPal automatic-payment setup), domain/plan renewals, invoices, or payment due dates — regardless of cadence (monthly, annual, or one-off). These are auto-charged and not actionable. This exclusion is about money charged or owed; genuine action-required deadlines that are NOT about payment (e.g. securing API keys by a date, renewing a passport) should still be extracted. A receipt or confirmation for a real scheduled event (a paid concert ticket, a flight or hotel booking) IS still extractable — put the event on the calendar, just never the payment/charge itself
 - For flights: create one event per flight segment (outbound, return, connections)
 - For multi-day events (hotel stays, retreats, conferences): create one event spanning the first day to the last (set endDate), not separate events per day
+- For notices repeating on a fixed pattern: a notice like "daily 9:00-16:00 from Jul 6 to Jul 13" is ONE event on the first day (startDate the first day, startTime 09:00, endTime 16:00) with recurrence { frequency: "daily", until: the last day }. Do NOT set endDate to the last day of the pattern and do NOT create one event per day; endDate is only for a single continuous stay spanning multiple days
 - For appointments: use the appointment time, not the "arrive by" time
 - Always extract endTime when a time range is given (e.g. "8:00 a.m. – 5:00 p.m." → startTime 08:00, endTime 17:00). Do not omit the end time
 - Infer timezone from location context when not explicitly stated (e.g. JFK airport → America/New_York, a restaurant in London → Europe/London, a hotel in Tokyo → Asia/Tokyo)${localTimeZone ? `. When there are no geographic clues, use the recipient's local timezone: ${localTimeZone}` : ". Only leave timeZone empty if there are no geographic clues at all"}
@@ -85,6 +91,8 @@ Guidelines:
 Action classification:
 - Use "create" for new events not already in the existing events list below. Omit eventId
 - Use "cancel" if the email indicates an existing event has been cancelled, voided, or is no longer happening
+- Payment receipts and bills confirm past service — they NEVER cancel an upcoming event. Never emit "cancel" because a payment, receipt, invoice, or billing email mentions an appointment or service
+- A "cancel" is only honored when its eventId references an existing event from the list below; a cancel without a valid eventId is skipped
 - Use "update" if the email indicates an existing event has been rescheduled, moved, or had details changed (new time, location, etc.)
 - For "cancel" and "update", set eventId to the id shown in square brackets next to the existing event you are acting on, WITHOUT the brackets (for [evt_2], use evt_2). Copy it exactly. Only use an id from the list; never invent one. Keep the same title and startDate as that existing event
 - If an update fundamentally changes the event (e.g. rebooked to a completely different flight), emit a "cancel" for the old event (with its eventId) and a "create" for the new one
@@ -133,6 +141,31 @@ ${body}`;
     logger.info(`Including ${attachments.length} attachment(s): ${attachmentNames}`);
   }
 
+  const first = await runExtractionOnce({ model, content, logger, logFile });
+
+  // Degenerate outputs (mass-duplicated objects, field soup in timeZone) tend to
+  // be bad samples — one fresh retry usually recovers; keep whichever is cleaner.
+  if (!isDegenerateExtraction(first)) return first.events;
+  logger.warn(
+    `Degenerate extraction output (${first.issues.join("; ")}); retrying once`,
+  );
+  const second = await runExtractionOnce({ model, content, logger, logFile });
+  if (second.issues.length < first.issues.length) {
+    logger.info("Retry produced a cleaner extraction; using the retry result");
+    return second.events;
+  }
+  logger.info("Retry did not improve on the first extraction; keeping the first");
+  return first.events;
+}
+
+async function runExtractionOnce(args: {
+  model: ReturnType<typeof getCalendarExtractionModel>["model"];
+  content: UserContent;
+  logger: Logger;
+  logFile?: LogFile;
+}): Promise<SanitizeResult> {
+  const { model, content, logger, logFile } = args;
+
   const result = await generateText({
     model,
     output: Output.object({ schema: calendarEventExtractionSchema }),
@@ -158,5 +191,9 @@ ${body}`;
     `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
   );
 
-  return result.output?.events ?? [];
+  const sanitized = sanitizeExtractedEvents(result.output?.events ?? []);
+  for (const issue of sanitized.issues) {
+    logger.warn(`Sanitized extraction output: ${issue}`);
+  }
+  return sanitized;
 }

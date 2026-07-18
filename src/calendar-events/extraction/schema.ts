@@ -47,6 +47,20 @@ export const calendarEventExtractionSchema = z.object({
         .string()
         .optional()
         .describe("IANA timezone, e.g. America/Toronto. Omit to use default"),
+      recurrence: z
+        .object({
+          frequency: z.enum(["daily", "weekly", "monthly"]),
+          until: z
+            .string()
+            .describe(
+              "ISO 8601 date of the last occurrence (inclusive), e.g. 2026-07-13",
+            ),
+        })
+        .nullable()
+        .optional()
+        .describe(
+          "For events repeating on a fixed pattern. A notice like 'daily 9:00-16:00 from Jul 6 to Jul 13' is ONE event on the first day with recurrence { frequency: 'daily', until: '2026-07-13' }. Null/omit for one-off events",
+        ),
       allDay: z
         .boolean()
         .describe("True if this is an all-day event with no specific time"),
@@ -61,3 +75,5 @@ export const calendarEventExtractionSchema = z.object({
 });
 
 export type CalendarEventExtraction = z.infer<typeof calendarEventExtractionSchema>;
+
+export type ExtractedCalendarEvent = CalendarEventExtraction["events"][number];

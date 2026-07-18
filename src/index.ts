@@ -5,9 +5,12 @@ import { Scheduler } from "@micthiesen/mitools/scheduling";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { createCalendarHandler } from "./calendar-events/index.js";
-import { createJmapClient } from "./jmap/client.js";
-import { EmailDispatcher } from "./jmap/dispatcher.js";
+import { createJmapClient, type JmapContext } from "./jmap/client.js";
+import { EmailDispatcher, type EmailHandler } from "./jmap/dispatcher.js";
 import { createEventSource } from "./jmap/eventSource.js";
+import EmailRetryTask from "./jmap/retryTask.js";
+import { EmailTriageService } from "./jmap/triage.js";
+import EmailWatchdogTask from "./jmap/watchdogTask.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
 import { Platform } from "./live-check/platforms/index.js";
 import { buildStreamers, type Streamer } from "./live-check/streamers.js";
@@ -20,7 +23,7 @@ import { PodcastRecommendationTask } from "./podcast-recs/task.js";
 import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
 import { RecommendationTask } from "./recommendations/task.js";
 import { TasteReflectionTask } from "./recommendations/taste/task.js";
-import { startServer } from "./server.js";
+import { type EmailControls, startServer } from "./server.js";
 import { installLogCapture } from "./task-runs/logCapture.js";
 import { TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
@@ -104,8 +107,17 @@ const serverOnly = process.argv.includes("--server-only");
 const registry = new TaskRegistry(logger);
 const streamers = loadStreamers();
 
+// Filled in once the JMAP features start; powers the reprocess endpoint.
+const emailControls: EmailControls = {};
+
 // Start HTTP server
-const closeServer = startServer(config.FRONTEND_PORT, logger, registry, streamers);
+const closeServer = startServer(
+  config.FRONTEND_PORT,
+  logger,
+  registry,
+  streamers,
+  emailControls,
+);
 
 let cleanupEventSource: (() => void) | undefined;
 
@@ -115,11 +127,16 @@ if (!serverOnly) {
     scheduler.register(registry.track(task));
   }
 
-  // Start JMAP-based features (parcel tracker + calendar events)
-  try {
-    cleanupEventSource = await startJmapFeatures(logger);
-  } catch (error) {
-    logger.error("Failed to start JMAP features", (error as Error).message);
+  // Email tasks register up-front (Scheduler requires pre-start registration)
+  // so a failed JMAP connect at boot can't silently disable them — the exact
+  // outage the watchdog exists to catch. The retry task no-ops until the
+  // controls fill in; the connect itself retries in the background.
+  if (config.FASTMAIL_API_TOKEN) {
+    scheduler.register(registry.track(new EmailWatchdogTask(logger)));
+    scheduler.register(registry.track(new EmailRetryTask(() => emailControls, logger)));
+    void startJmapWithRetry(logger);
+  } else {
+    logger.info("JMAP features disabled: missing FASTMAIL_API_TOKEN");
   }
 
   // Start scheduler (runs opted-in tasks immediately, then all tasks on schedule)
@@ -150,24 +167,60 @@ if (!serverOnly) {
   logger.info("Running in server-only mode (tasks disabled)");
 }
 
+interface JmapFeatures {
+  cleanup: () => void;
+  ctx: JmapContext;
+  handlers: Map<string, EmailHandler>;
+}
+
+/**
+ * Containers restart often and Fastmail can blip: a one-shot connect at boot
+ * would silently disable the whole email system (including the retry drain)
+ * until the next restart. Retry forever with capped backoff instead; only the
+ * first failure alerts (errors reach Pushover), and the watchdog covers the
+ * prolonged-outage case.
+ */
+async function startJmapWithRetry(parentLogger: Logger): Promise<void> {
+  const maxDelayMs = 5 * 60_000;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const jmap = await startJmapFeatures(parentLogger);
+      if (jmap) {
+        cleanupEventSource = jmap.cleanup;
+        emailControls.ctx = jmap.ctx;
+        emailControls.handlers = jmap.handlers;
+      }
+      return;
+    } catch (error) {
+      const delayMs = Math.min(30_000 * 2 ** (attempt - 1), maxDelayMs);
+      const message = `Failed to start JMAP features (attempt ${attempt}), retrying in ${Math.round(delayMs / 1000)}s`;
+      if (attempt === 1) {
+        parentLogger.error(message, (error as Error).message);
+      } else {
+        parentLogger.info(`${message}: ${(error as Error).message}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function startJmapFeatures(
   parentLogger: Logger,
-): Promise<(() => void) | undefined> {
-  if (!config.FASTMAIL_API_TOKEN) {
-    parentLogger.info("JMAP features disabled: missing FASTMAIL_API_TOKEN");
-    return undefined;
-  }
+): Promise<JmapFeatures | undefined> {
+  if (!config.FASTMAIL_API_TOKEN) return undefined;
 
   const jmapLogger = parentLogger.extend("JMAP");
   const ctx = await createJmapClient(config.FASTMAIL_API_TOKEN, jmapLogger);
 
-  // Create dispatcher and register handlers
+  // Create dispatcher and register handlers; one shared triage service so
+  // concurrent pipelines classify each email with a single model call.
   const dispatcher = new EmailDispatcher(ctx, jmapLogger);
+  const triage = new EmailTriageService(jmapLogger.extend("Triage"));
 
-  const parcel = createParcelHandler(parentLogger);
+  const parcel = createParcelHandler(parentLogger, triage);
   if (parcel) dispatcher.register(parcel);
 
-  const calendar = createCalendarHandler(ctx, parentLogger);
+  const calendar = createCalendarHandler(ctx, parentLogger, triage);
   if (calendar) dispatcher.register(calendar);
 
   if (dispatcher.handlerCount === 0) {
@@ -175,11 +228,15 @@ async function startJmapFeatures(
     return undefined;
   }
 
+  const handlers = new Map<string, EmailHandler>();
+  if (parcel) handlers.set(parcel.name, parcel);
+  if (calendar) handlers.set(calendar.name, calendar);
+
   const closeEventSource = await createEventSource(
     ctx,
     () => dispatcher.onStateChange(),
     jmapLogger,
   );
   jmapLogger.info(`Started with ${dispatcher.handlerCount} pipeline(s)`);
-  return closeEventSource;
+  return { cleanup: closeEventSource, ctx, handlers };
 }

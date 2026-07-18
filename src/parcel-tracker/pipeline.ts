@@ -1,10 +1,12 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
-import { recordEmailActivity } from "../jmap/activity.js";
+import { deriveItemsOutcome, recordEmailActivity } from "../jmap/activity.js";
 import { withEmailLogCapture } from "../jmap/activityLogs.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
+import { enqueueEmailRetry } from "../jmap/retry.js";
+import type { EmailTriageService } from "../jmap/triage.js";
 import config from "../utils/config.js";
 import { selectValidCandidates } from "./carriers/candidates.js";
 import { getValidCarrierCodes } from "./carriers/carrierMap.js";
@@ -15,20 +17,29 @@ import {
 import { filterTrackingCandidate } from "./filter/keywords.js";
 import { shouldTryNextCandidate, submitDelivery } from "./parcel/parcelApi.js";
 import {
-  getRecentTrackingNumbers,
+  findNearDuplicateTracking,
+  getAllTrackingNumbers,
   hasSubmittedDelivery,
   recordSubmittedDelivery,
 } from "./persistence.js";
+
+/** Per-delivery result: the activity item line + whether the item succeeded. */
+interface DeliveryResult {
+  line: string;
+  ok: boolean;
+}
 
 export class DeliveryPipeline implements EmailHandler {
   public readonly name = "ParcelTracker";
   private logger: Logger;
   private parcelApiKey: string;
+  private triage: EmailTriageService;
   private rejectionLog?: LogFile;
 
-  constructor(parcelApiKey: string, logger: Logger) {
+  constructor(parcelApiKey: string, logger: Logger, triage: EmailTriageService) {
     this.parcelApiKey = parcelApiKey;
     this.logger = logger;
+    this.triage = triage;
 
     if (config.LOGS_PATH) {
       const dir = `${config.LOGS_PATH}/parcel-tracker`;
@@ -37,18 +48,32 @@ export class DeliveryPipeline implements EmailHandler {
   }
 
   async handleEmails(emails: FetchedEmail[]): Promise<void> {
-    // Filter candidates
-    const candidates = [];
+    // Filter candidates. Each email is guarded individually: a throw here
+    // must not reject the whole batch, because the dispatcher advances the
+    // JMAP cursor regardless and the other emails would be lost silently.
+    const candidates: { email: FetchedEmail; admitReason: string }[] = [];
     for (const email of emails) {
-      const result = await filterTrackingCandidate(
-        { from: email.from, subject: email.subject, textBody: email.textBody },
-        this.logger,
-      );
+      let result: Awaited<ReturnType<typeof filterTrackingCandidate>>;
+      try {
+        result = await filterTrackingCandidate(email, this.logger, this.triage);
+      } catch (error) {
+        this.logger.error(
+          `Filter failed for "${email.subject}"`,
+          (error as Error).message,
+        );
+        recordEmailActivity({
+          pipeline: this.name,
+          email,
+          outcome: "error",
+          detail: `filter failed: ${(error as Error).message}`,
+        });
+        continue;
+      }
       if (result.pass) {
         this.logger.info(
           `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
         );
-        candidates.push(email);
+        candidates.push({ email, admitReason: result.reason });
       } else {
         this.logger.info(
           `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
@@ -62,34 +87,10 @@ export class DeliveryPipeline implements EmailHandler {
       }
     }
 
-    // Pre-filter: skip emails that mention already-submitted tracking numbers
-    const knownNumbers = getRecentTrackingNumbers();
-    const newCandidates = candidates.filter((email) => {
-      const text = `${email.subject} ${email.textBody}`;
-      const match = [...knownNumbers].find((num) => text.includes(num));
-      if (match) {
-        this.logger.info(
-          `Skipping "${email.subject}" — contains known tracking number ${match}`,
-        );
-        recordEmailActivity({
-          pipeline: this.name,
-          email,
-          outcome: "skipped",
-          detail: `contains known tracking number ${match}`,
-        });
-        return false;
-      }
-      return true;
-    });
-
-    if (newCandidates.length < candidates.length) {
-      this.logger.info(
-        `Skipped ${candidates.length - newCandidates.length} email(s) with known tracking numbers`,
-      );
-    }
-
-    // Process each candidate, capturing its log lines for the activity UI
-    for (const email of newCandidates) {
+    // Process each candidate, capturing its log lines for the activity UI.
+    // Dedup (exact + near-duplicate) happens per delivery after extraction,
+    // reading persistence live so within-batch duplicates are caught too.
+    for (const { email, admitReason } of candidates) {
       const runLog = config.LOGS_PATH
         ? new LogFile(
             `${config.LOGS_PATH}/parcel-tracker/${logTimestamp()}.md`,
@@ -98,13 +99,14 @@ export class DeliveryPipeline implements EmailHandler {
         : undefined;
       await withEmailLogCapture(`${this.name}#${email.id}`, this.name, async () => {
         try {
-          const items = await this.processEmail(email, runLog);
+          const results = await this.processEmail(email, runLog);
           recordEmailActivity({
             pipeline: this.name,
             email,
-            outcome: items.length > 0 ? "processed" : "no_matches",
-            detail: items.length > 0 ? undefined : "no tracking numbers found",
-            items: items.length > 0 ? items : undefined,
+            outcome: deriveItemsOutcome(results.map((r) => r.ok)),
+            detail: results.length > 0 ? undefined : "no tracking numbers found",
+            admitReason,
+            items: results.length > 0 ? results.map((r) => r.line) : undefined,
           });
         } catch (error) {
           this.logger.error(
@@ -116,6 +118,7 @@ export class DeliveryPipeline implements EmailHandler {
             email,
             outcome: "error",
             detail: (error as Error).message,
+            admitReason,
           });
           // Continue with other emails
         }
@@ -123,20 +126,26 @@ export class DeliveryPipeline implements EmailHandler {
     }
   }
 
-  /** Returns a short per-delivery result line for each extracted delivery. */
+  /** Returns a short per-delivery result for each extracted delivery. */
   private async processEmail(
     email: {
       id: string;
       subject: string;
       from: string;
       textBody: string;
+      links: string[];
     },
     runLog?: LogFile,
-  ): Promise<string[]> {
+  ): Promise<DeliveryResult[]> {
     this.logger.info(`Extracting from: "${email.subject}" (from: ${email.from})`);
 
     const deliveries = await extractDeliveries(
-      { subject: email.subject, from: email.from, textBody: email.textBody },
+      {
+        subject: email.subject,
+        from: email.from,
+        textBody: email.textBody,
+        links: email.links,
+      },
       this.logger,
       runLog,
     );
@@ -148,24 +157,40 @@ export class DeliveryPipeline implements EmailHandler {
 
     this.logger.info(`Found ${deliveries.length} delivery(ies) in "${email.subject}"`);
 
-    const results: string[] = [];
+    const results: DeliveryResult[] = [];
     for (const delivery of deliveries) {
       results.push(await this.processDelivery(delivery, email.id));
     }
     return results;
   }
 
-  /** Returns a short result line for the activity record. */
+  /** Returns a short result line + success flag for the activity record. */
   private async processDelivery(
     delivery: ExtractedDelivery,
     emailId: string,
-  ): Promise<string> {
+  ): Promise<DeliveryResult> {
     const { tracking_number: trackingNumber, description } = delivery;
 
-    // Dedup check
+    // Dedup checks read persistence live so within-batch duplicates are caught
     if (hasSubmittedDelivery(trackingNumber)) {
       this.logger.info(`Duplicate tracking number: ${trackingNumber} (skipping)`);
-      return `${trackingNumber}: already submitted`;
+      return { line: `${trackingNumber}: already submitted`, ok: true };
+    }
+
+    // Near-duplicate: the same shipment's number truncated differently by
+    // another merchant email (e.g. P5253806501 vs P52538065)
+    const nearDuplicate = findNearDuplicateTracking(
+      trackingNumber,
+      getAllTrackingNumbers(),
+    );
+    if (nearDuplicate !== undefined) {
+      this.logger.info(
+        `Near-duplicate tracking number: ${trackingNumber} matches known ${nearDuplicate} (skipping)`,
+      );
+      return {
+        line: `${trackingNumber}: near-duplicate of ${nearDuplicate}, skipped`,
+        ok: true,
+      };
     }
 
     // Validate carrier candidates against the live Parcel carrier list
@@ -174,7 +199,7 @@ export class DeliveryPipeline implements EmailHandler {
       this.logger.warn(
         `Carrier list unavailable, cannot validate candidates for ${trackingNumber}`,
       );
-      return `${trackingNumber}: carrier list unavailable`;
+      return { line: `${trackingNumber}: carrier list unavailable`, ok: false };
     }
 
     const { valid: candidates, invalid } = selectValidCandidates(
@@ -188,7 +213,7 @@ export class DeliveryPipeline implements EmailHandler {
     }
     if (candidates.length === 0) {
       this.logger.warn(`No valid carrier candidates for ${trackingNumber}, skipping`);
-      return `${trackingNumber}: no valid carrier candidates`;
+      return { line: `${trackingNumber}: no valid carrier candidates`, ok: false };
     }
 
     this.logger.info(
@@ -222,13 +247,19 @@ export class DeliveryPipeline implements EmailHandler {
           submittedAt: Date.now(),
           emailId,
         });
-        return `${label}: submitted`;
+        return { line: `${label}: submitted`, ok: true };
       }
 
       if (result.status === "error") {
-        // Transient (network/5xx): don't burn remaining candidates or record dedup
+        // Transient (network/5xx): don't burn remaining candidates or record
+        // dedup; enqueue the email for a retry pass instead
         this.logger.warn(`Failed to submit ${label}, will retry later`);
-        return `${label}: submission failed, will retry`;
+        enqueueEmailRetry({
+          pipeline: this.name,
+          emailId,
+          reason: `Parcel submission network/5xx for ${trackingNumber}`,
+        });
+        return { line: `${label}: submission failed, will retry`, ok: false };
       }
 
       // Rejected
@@ -251,7 +282,7 @@ export class DeliveryPipeline implements EmailHandler {
         submittedAt: Date.now(),
         emailId,
       });
-      return `${label}: rejected by Parcel (${result.statusCode})`;
+      return { line: `${label}: rejected by Parcel (${result.statusCode})`, ok: false };
     }
 
     // Unreachable: candidates is non-empty and every iteration returns or continues

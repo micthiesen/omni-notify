@@ -15,14 +15,33 @@ import {
   type EmailPipelineName,
   getEmailActivity,
   getRecentEmailActivity,
+  KEEP_PER_PIPELINE,
 } from "./jmap/activity.js";
 import { getEmailActivityLogs } from "./jmap/activityLogs.js";
+import type { JmapContext } from "./jmap/client.js";
+import type { EmailHandler } from "./jmap/dispatcher.js";
+import { fetchEmailById } from "./jmap/emailFetcher.js";
+import {
+  deleteEmailFeedback,
+  type EmailFeedbackVerdict,
+  listEmailFeedback,
+  recordEmailFeedback,
+} from "./jmap/feedback.js";
+import { clearEmailRetry } from "./jmap/retry.js";
+import {
+  deleteEmailRule,
+  type EmailRuleScope,
+  type EmailRuleVerdict,
+  listEmailRules,
+  upsertEmailRule,
+} from "./jmap/senderRules.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
 import { getStreamSessions } from "./live-check/sessions.js";
 import type { PlatformBinding, Streamer } from "./live-check/streamers.js";
 import { toTriggerChannels } from "./live-check/triggerChannels.js";
+import { SubmittedDeliveryEntity } from "./parcel-tracker/persistence.js";
 import {
   getAllPetsWithHistory,
   getDailyVisitCounts,
@@ -263,11 +282,49 @@ function feedbackRoute<
   };
 }
 
+function serializeEmailActivity(a: {
+  activityId: string;
+  pipeline: string;
+  emailId: string;
+  subject: string;
+  from: string;
+  receivedAt: number;
+  processedAt: number;
+  outcome: string;
+  detail?: string;
+  admitReason?: string;
+  items?: string[];
+}) {
+  return {
+    activityId: a.activityId,
+    pipeline: a.pipeline,
+    emailId: a.emailId,
+    subject: a.subject,
+    from: a.from,
+    receivedAt: a.receivedAt,
+    processedAt: a.processedAt,
+    outcome: a.outcome,
+    detail: a.detail ?? null,
+    admitReason: a.admitReason ?? null,
+    items: a.items ?? [],
+  };
+}
+
+/**
+ * Live email-pipeline handles for interactive endpoints (reprocess). Filled
+ * in by index.ts after the JMAP features start; empty in server-only mode.
+ */
+export interface EmailControls {
+  ctx?: JmapContext;
+  handlers?: Map<string, EmailHandler>;
+}
+
 export function startServer(
   port: number,
   parentLogger: Logger,
   registry: TaskRegistry,
   streamers: Streamer[],
+  emailControls: EmailControls = {},
 ): () => void {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
@@ -655,18 +712,13 @@ export function startServer(
       return c.json({ error: "Unknown pipeline" }, 400);
     }
     const pipeline = pipelineParam as EmailPipelineName | undefined;
-    const activities = getRecentEmailActivity(pipeline).map((a) => ({
-      activityId: a.activityId,
-      pipeline: a.pipeline,
-      emailId: a.emailId,
-      subject: a.subject,
-      from: a.from,
-      receivedAt: a.receivedAt,
-      processedAt: a.processedAt,
-      outcome: a.outcome,
-      detail: a.detail ?? null,
-      items: a.items ?? [],
-    }));
+    const limitParam = Number(c.req.query("limit") ?? 100);
+    const limit = Number.isFinite(limitParam)
+      ? Math.min(Math.max(1, Math.floor(limitParam)), KEEP_PER_PIPELINE * 2)
+      : 100;
+    const activities = getRecentEmailActivity(pipeline, limit).map(
+      serializeEmailActivity,
+    );
     return c.json({ activities });
   });
 
@@ -678,21 +730,115 @@ export function startServer(
     if (!activity) return c.json({ error: "Unknown activity" }, 404);
     const logs = getEmailActivityLogs(activityId);
     return c.json({
-      activity: {
-        activityId: activity.activityId,
-        pipeline: activity.pipeline,
-        emailId: activity.emailId,
-        subject: activity.subject,
-        from: activity.from,
-        receivedAt: activity.receivedAt,
-        processedAt: activity.processedAt,
-        outcome: activity.outcome,
-        detail: activity.detail ?? null,
-        items: activity.items ?? [],
-      },
+      activity: serializeEmailActivity(activity),
       lines: logs?.lines ?? [],
       dropped: logs?.dropped ?? 0,
     });
+  });
+
+  // Re-fetch the email from Fastmail and run it through its pipeline again.
+  // Dedup gates make this safe: anything that already landed is skipped.
+  app.post("/api/email-activity/:activityId/reprocess", async (c) => {
+    const activityId = c.req.param("activityId");
+    const activity = getEmailActivity(activityId);
+    if (!activity) return c.json({ error: "Unknown activity" }, 404);
+    const { ctx, handlers } = emailControls;
+    const handler = handlers?.get(activity.pipeline);
+    if (!ctx || !handler) {
+      return c.json({ error: "Email pipelines are not active" }, 503);
+    }
+    const email = await fetchEmailById(ctx, activity.emailId, logger);
+    if (!email) {
+      return c.json({ error: "Email no longer exists in the mailbox" }, 404);
+    }
+    logger.info(`Reprocessing "${activity.subject}" through ${activity.pipeline}`);
+    // A queued retry for this email is superseded by the manual run (and
+    // clearing it narrows the window for a concurrent duplicate pass).
+    clearEmailRetry(activity.pipeline, activity.emailId);
+    await handler.handleEmails([email]);
+    const updated = getEmailActivity(activityId) ?? activity;
+    return c.json({ activity: serializeEmailActivity(updated) });
+  });
+
+  // User-editable sender rules, merged with the static filter lists.
+  app.get("/api/email-rules", (c) => {
+    return c.json({ rules: listEmailRules() });
+  });
+
+  const emailRuleSchema = z.object({
+    pattern: z.string().min(1).max(200),
+    scope: z.enum(["parcel", "calendar", "both"]),
+    verdict: z.enum(["block", "allow"]),
+  });
+
+  app.post("/api/email-rules", async (c) => {
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = emailRuleSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "pattern, scope, and verdict are required" }, 400);
+    }
+    const rule = upsertEmailRule({
+      pattern: parsed.data.pattern,
+      scope: parsed.data.scope as EmailRuleScope,
+      verdict: parsed.data.verdict as EmailRuleVerdict,
+    });
+    logger.info(`Email rule saved: ${rule.verdict} ${rule.pattern} (${rule.scope})`);
+    return c.json({ rule }, 201);
+  });
+
+  app.delete("/api/email-rules/:ruleId", (c) => {
+    const deleted = deleteEmailRule(c.req.param("ruleId"));
+    if (!deleted) return c.json({ error: "Unknown rule" }, 404);
+    return c.json({ deleted: true });
+  });
+
+  // Explicit user feedback on an email's outcome; feeds triage corrections.
+  app.post("/api/email-activity/:activityId/feedback", async (c) => {
+    const activity = getEmailActivity(c.req.param("activityId"));
+    if (!activity) return c.json({ error: "Unknown activity" }, 404);
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = z
+      .object({
+        verdict: z.enum(["not_relevant", "missed"]).nullable(),
+        note: z.string().max(500).optional(),
+      })
+      .safeParse(body);
+    if (!parsed.success) {
+      return c.json(
+        { error: "A verdict (not_relevant | missed | null) is required" },
+        400,
+      );
+    }
+    if (parsed.data.verdict === null) {
+      deleteEmailFeedback(activity.activityId);
+      return c.json({ feedback: null });
+    }
+    const feedback = recordEmailFeedback({
+      pipeline: activity.pipeline,
+      emailId: activity.emailId,
+      subject: activity.subject,
+      from: activity.from,
+      verdict: parsed.data.verdict as EmailFeedbackVerdict,
+      note: parsed.data.note,
+    });
+    logger.info(
+      `Email feedback: ${feedback.verdict} for "${activity.subject}" (${activity.pipeline})`,
+    );
+    return c.json({ feedback });
+  });
+
+  app.get("/api/email-feedback", (c) => {
+    return c.json({ feedback: listEmailFeedback() });
+  });
+
+  // Forget a submitted tracking number so a future email can resubmit it
+  // (escape hatch for the permanent dedup gate after a mis-extraction).
+  app.delete("/api/parcel-tracker/deliveries/:trackingNumber", (c) => {
+    const trackingNumber = c.req.param("trackingNumber");
+    const deleted = SubmittedDeliveryEntity.delete({ trackingNumber });
+    if (!deleted) return c.json({ error: "Unknown tracking number" }, 404);
+    logger.info(`Forgot submitted delivery ${trackingNumber}`);
+    return c.json({ deleted: true });
   });
 
   // Stored briefing history (last 50 notifications per briefing), one row per
