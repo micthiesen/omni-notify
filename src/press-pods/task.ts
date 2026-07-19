@@ -14,7 +14,7 @@ import {
   selectDueJobs,
 } from "./persistence.js";
 import { createEpisodeFromUrl } from "./pipeline.js";
-import { ensureAudioDir } from "./storage.js";
+import { ensureAudioDir, getAudioDir } from "./storage.js";
 
 /**
  * Drains the episode job queue. Submissions kick a manual run immediately;
@@ -43,13 +43,22 @@ export default class PressPodsTask extends ScheduledTask {
       parentLogger.info(`PressPods disabled: missing ${missing.join(", ")}`);
       return null;
     }
+    // A bad audio dir must disable the feature, not crash-loop the whole app
+    // at boot; the warn reaches Pushover so the misconfiguration is loud.
+    try {
+      ensureAudioDir();
+    } catch (error) {
+      parentLogger.warn(
+        `PressPods disabled: cannot create audio dir "${getAudioDir()}": ${(error as Error).message}`,
+      );
+      return null;
+    }
     return new PressPodsTask(parentLogger);
   }
 
   private constructor(parentLogger: Logger) {
     super();
     this.logger = parentLogger.extend("PressPods");
-    ensureAudioDir();
   }
 
   public getLastRunSummary(): string | undefined {

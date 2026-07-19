@@ -8,10 +8,11 @@ export const AUDIO_FILE_RE = /^[A-Za-z0-9_-]+\.mp3$/;
 
 /** Episode MP3s live next to the SQLite DB so the same volume persists both. */
 export function getAudioDir(): string {
-  return (
-    config.PRESSPODS_AUDIO_DIR ??
-    path.join(path.dirname(config.DB_NAME), "press-pods-audio")
-  );
+  if (config.PRESSPODS_AUDIO_DIR) return config.PRESSPODS_AUDIO_DIR;
+  // Mirror mitools' docstore resolution: DB_NAME may be a bare file name, and
+  // in Docker the DB lives under /data regardless.
+  const dbPath = config.DOCKERIZED ? `/data/${config.DB_NAME}` : config.DB_NAME;
+  return path.join(path.dirname(dbPath), "press-pods-audio");
 }
 
 export function ensureAudioDir(): void {
