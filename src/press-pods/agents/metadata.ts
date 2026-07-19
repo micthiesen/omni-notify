@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateText, Output } from "ai";
 import { isValid } from "date-fns";
 import { z } from "zod";
 import { getPressPodsMetadataModel } from "../../ai/registry.js";
@@ -42,13 +42,10 @@ export async function getArticleMetadata(
   costCounter: CostCounter,
 ): Promise<Metadata> {
   const { model, modelId } = getPressPodsMetadataModel();
-  const { object, usage } = await generateObject({
+  const result = await generateText({
     model,
-    schema: rawMetadataInfoSchema,
-    messages: [
-      {
-        role: "system",
-        content: `You are an expert at extracting article metadata for podcast generation. Your goal is to extract useful metadata that enhances the listening experience. When uncertain, make reasonable inferences rather than leaving fields empty - approximate data is better than none for our use case.
+    output: Output.object({ schema: rawMetadataInfoSchema }),
+    system: `You are an expert at extracting article metadata for podcast generation. Your goal is to extract useful metadata that enhances the listening experience. When uncertain, make reasonable inferences rather than leaving fields empty - approximate data is better than none for our use case.
 
 Given webpage content, determine if it's valid and extract metadata. In the case of multiple authors, choose one as the primary.
 
@@ -80,10 +77,7 @@ For author gender:
 For shortSummary: Create a one-sentence description of what this article is about (for podcast descriptions). Do NOT include URLs in the summary.
 
 Other webpages (blog posts, wiki pages, forum threads, documentation) should be treated as valid articles.`,
-      },
-      {
-        role: "user",
-        content: `Please validate the following article and extract its metadata if it is valid.
+    prompt: `Please validate the following article and extract its metadata if it is valid.
 
 Potential Article Info:
 Title: ${article.title || ""}
@@ -95,14 +89,15 @@ Lead Image URL: ${article.leadImageUrl || ""}
 
 Webpage Content (HTML converted to plain text):
 ${article.text}`,
-      },
-    ],
   });
 
+  const object = result.output;
+  if (!object) throw new Error("Metadata model returned no output");
+
   const completionUsage: CompletionUsage = {
-    promptTokens: usage.inputTokens || 0,
-    completionTokens: usage.outputTokens || 0,
-    totalTokens: usage.totalTokens || 0,
+    promptTokens: result.usage.inputTokens || 0,
+    completionTokens: result.usage.outputTokens || 0,
+    totalTokens: result.usage.totalTokens || 0,
   };
   costCounter.recordLlmUsage(modelId, "meta", completionUsage);
 

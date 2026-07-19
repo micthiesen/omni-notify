@@ -13,10 +13,7 @@ export async function getCleanedArticle(
   const { model, modelId } = getPressPodsCleaningModel();
   const { text, usage } = await generateText({
     model,
-    messages: [
-      {
-        role: "system",
-        content: `Adapt this article for podcast narration. The output will be read aloud by a text-to-speech voice.
+    system: `Adapt this article for podcast narration. The output will be read aloud by a text-to-speech voice.
 
 Preserve the article's content faithfully. Your job is to make it sound natural when spoken, not to summarize or editorialize.
 
@@ -60,12 +57,7 @@ Numbers and measurements:
 - Spell out numbers that would sound unnatural as digits when read aloud.
 
 Output the adapted text inside <cleaned_article> tags.`,
-      },
-      {
-        role: "user",
-        content: article.text,
-      },
-    ],
+    prompt: article.text,
   });
 
   const completionUsage: CompletionUsage = {

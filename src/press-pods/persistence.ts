@@ -148,9 +148,15 @@ export function recordJobFailure(
   retryable: boolean,
 ): PressPodsJobData {
   const now = Date.now();
-  const attempts = job.attempts + 1;
+  // Base the update on the live row, not the caller's pre-claim snapshot —
+  // otherwise fields written since selection (e.g. claimJob's lastRunId) are
+  // silently wiped. A missing row means a concurrent delete: compute the
+  // outcome for the caller's logging but don't resurrect the job.
+  const existing = PressPodsJobEntity.get({ jobId: job.jobId });
+  const base = existing ?? job;
+  const attempts = base.attempts + 1;
   const updated: PressPodsJobData = {
-    ...job,
+    ...base,
     attempts,
     lastError: error,
     updatedAt: now,
@@ -159,9 +165,7 @@ export function recordJobFailure(
       ? { status: "queued" as const, nextAttemptAt: now + retryDelayMs(attempts) }
       : { status: "failed" as const, nextAttemptAt: 0 }),
   };
-  // Respect a concurrent delete: upserting from a stale snapshot would
-  // resurrect a job the user explicitly dismissed.
-  if (PressPodsJobEntity.get({ jobId: job.jobId })) {
+  if (existing) {
     PressPodsJobEntity.upsert(updated);
   }
   return updated;

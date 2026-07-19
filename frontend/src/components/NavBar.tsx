@@ -5,7 +5,7 @@ const LINKS = [
   { to: "/", label: "Dashboard" },
   { to: "/media", label: "Media" },
   { to: "/podcasts", label: "Podcasts" },
-  { to: "/pods", label: "Pods" },
+  { to: "/pods", label: "PressPods" },
   { to: "/briefings", label: "Briefings" },
   { to: "/emails", label: "Email" },
   { to: "/pets", label: "Pets" },
