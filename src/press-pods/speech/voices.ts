@@ -1,3 +1,4 @@
+import config from "../../utils/config.js";
 import type { MetadataInfo } from "../agents/metadata.js";
 
 export interface Voice {
@@ -5,31 +6,22 @@ export interface Voice {
   name: string;
 }
 
-export interface VoiceChoices {
-  male: Voice[];
-  female: Voice[];
-}
-
 /**
- * Preset voices from the Mistral API (list with
- * `curl -s "https://api.mistral.ai/v1/audio/voices?limit=30" -H "Authorization: Bearer $MISTRAL_API_KEY"`).
- * Only the neutral-mood English presets are used: Paul (en_us) and Oliver
- * (en_gb) for male authors, Jane (en_gb) — the sole English female preset —
- * for female/unknown authors.
+ * ElevenLabs premade narrator voices. Author gender picks the family (matching
+ * the old Voxtral behavior); female/unknown authors get the female voice. Both
+ * ids are overridable via ELEVENLABS_VOICE_MALE / ELEVENLABS_VOICE_FEMALE —
+ * audition alternatives in the ElevenLabs voice library and swap by id.
  */
-export const VOICE_CHOICES: VoiceChoices = {
-  male: [
-    { id: "c69964a6-ab8b-4f8a-9465-ec0925096ec8", name: "Paul - Neutral" },
-    { id: "e3596645-b1af-469e-b857-f18ddedc7652", name: "Oliver - Neutral" },
-  ],
-  female: [{ id: "82c99ee6-f932-423f-a4a3-d403c8914b8d", name: "Jane - Neutral" }],
-};
+const DEFAULT_MALE: Voice = { id: "nPczCjzI2devNBz1zQrb", name: "Brian" };
+const DEFAULT_FEMALE: Voice = { id: "XrExE9yKIg1WjnnlVkGX", name: "Matilda" };
 
-export function getRandomVoice(
-  choices: VoiceChoices,
-  authorGender: MetadataInfo["authorGender"],
-): Voice {
-  const voices = authorGender === "male" ? choices.male : choices.female;
-  const randomIndex = Math.floor(Math.random() * voices.length);
-  return voices[randomIndex];
+export function getVoice(authorGender: MetadataInfo["authorGender"]): Voice {
+  if (authorGender === "male") {
+    return config.ELEVENLABS_VOICE_MALE
+      ? { id: config.ELEVENLABS_VOICE_MALE, name: "Custom (male)" }
+      : DEFAULT_MALE;
+  }
+  return config.ELEVENLABS_VOICE_FEMALE
+    ? { id: config.ELEVENLABS_VOICE_FEMALE, name: "Custom (female)" }
+    : DEFAULT_FEMALE;
 }

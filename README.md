@@ -124,13 +124,13 @@ from the Queue. Matching is deliberately case-sensitive and prefix-only.
 
 ## PressPods (Article → Podcast)
 
-Enabled by setting `PRESSPODS_AUTH_TOKEN` (plus `MISTRAL_API_KEY` and a Google API key). Submit an article URL — from an iOS Shortcut via `POST /pods/episodes?authToken=…` with `{ "url": "…" }`, or from the `/pods` page — and it becomes an episode in a private podcast RSS feed (`GET /pods/rss?authToken=…`) your podcast app subscribes to.
+Enabled by setting `PRESSPODS_AUTH_TOKEN` (plus `ELEVENLABS_API_KEY` and a Google API key). Submit an article URL — from an iOS Shortcut via `POST /pods/episodes?authToken=…` with `{ "url": "…" }`, or from the `/pods` page — and it becomes an episode in a private podcast RSS feed (`GET /pods/rss?authToken=…`) your podcast app subscribes to.
 
 Each submission becomes a durable job (visible on `/pods`, with retries and per-run logs) processed by the `PressPods` task:
 
 1. Seven article retrievers run in parallel (Postlight, Readability, Extractus, Wayback, removepaywall, raw fetch, and Jina.ai when `JINA_API_KEY` is set); an LLM rates each result's extraction quality and the best wins.
-2. A cleaning pass rewrites the article for narration (junk removal, audio-friendly dates/abbreviations, blockquote handling).
-3. Mistral Voxtral synthesizes speech; ffmpeg normalizes loudness and prepends the intro jingle; the lead image is embedded as album art.
+2. A broadcast-style cleaning pass rewrites the article for the ear (one-idea sentences, attribution-first quotes, number rounding, a cold-open hook and a spoken outro) and marks major sections for chapters.
+3. ElevenLabs v3 synthesizes each chunk separately; ffmpeg per-chunk-levels, two-pass loudness-normalizes to -16 LUFS, and joins the intro jingle click-free; the lead image and chapter markers are embedded as ID3 tags.
 4. The MP3 is stored on disk (next to the SQLite DB by default) and served at `/pods/audio/<id>.mp3` with an unguessable content-addressed name; a Pushover notification announces the episode.
 
 Transient failures (TTS 429/5xx, network blips) retry automatically with backoff; permanent failures surface on `/pods` with a retry button. Submitted articles are also bookmarked in Karakeep when `KARAKEEP_URL`/`KARAKEEP_API_KEY` are set. To expose the feed publicly, reverse-proxy just the `/pods/*` paths and set `PRESSPODS_PUBLIC_URL` to the public origin (or let it derive from `X-Forwarded-*` headers).
@@ -217,7 +217,8 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `PODCAST_TASTE_REFLECTION_MODEL` | No | Model for weekly podcast taste reflection (default: `openai:gpt-5.6-luna`) |
 | `PODCAST_TASTE_REFLECTION_SCHEDULE` | No | Podcast taste reflection cron (default: `0 0 5 * * 0`, Sunday 5am) |
 | `PRESSPODS_AUTH_TOKEN` | No | Long random secret; enables PressPods and authenticates `/pods/episodes` + `/pods/rss` |
-| `MISTRAL_API_KEY` | For PressPods | Mistral Voxtral TTS |
+| `ELEVENLABS_API_KEY` | For PressPods | ElevenLabs v3 TTS |
+| `ELEVENLABS_VOICE_MALE` / `ELEVENLABS_VOICE_FEMALE` | No | Voice-id overrides for narration (default: Brian / Matilda) |
 | `PRESSPODS_PUBLIC_URL` | No | Public origin for RSS enclosure URLs (else derived from forwarded headers) |
 | `PRESSPODS_AUDIO_DIR` | No | Episode MP3 directory (default: `press-pods-audio` next to the DB) |
 | `JINA_API_KEY` | No | Enables the Jina.ai Reader retriever |

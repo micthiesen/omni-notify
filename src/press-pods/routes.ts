@@ -44,10 +44,10 @@ export function registerPressPodsRoutes(
   // The routes gate only on the auth token, but the worker task also needs
   // TTS/model credentials — without them submissions would queue forever with
   // no error anywhere. Make that misconfiguration loud at boot.
-  if (!config.MISTRAL_API_KEY) {
+  if (!config.ELEVENLABS_API_KEY) {
     logger.warn(
       "PressPods routes are active but the worker task is disabled " +
-        "(missing MISTRAL_API_KEY); submitted jobs will queue without processing",
+        "(missing ELEVENLABS_API_KEY); submitted jobs will queue without processing",
     );
   }
 
@@ -241,6 +241,7 @@ function serializeEpisode(episode: PressPodsEpisodeData) {
     excerpt: episode.excerpt ?? null,
     voiceName: episode.voiceName ?? null,
     synthesizedSeconds: episode.synthesizedSeconds ?? null,
+    chapters: episode.chapters ?? null,
     audioUrl: `/pods/audio/${episode.audioFile}`,
     durationSeconds: episode.durationSeconds ?? null,
     fileBytes: episode.fileBytes,

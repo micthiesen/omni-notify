@@ -34,7 +34,7 @@ export default class PressPodsTask extends ScheduledTask {
       return null;
     }
     const missing = [
-      ["MISTRAL_API_KEY", config.MISTRAL_API_KEY],
+      ["ELEVENLABS_API_KEY", config.ELEVENLABS_API_KEY],
       ...requiredModelCredentials(),
     ]
       .filter(([, value]) => !value)

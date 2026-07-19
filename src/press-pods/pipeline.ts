@@ -3,7 +3,7 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { formatDuration, getTitleFromUrl } from "@micthiesen/mitools/strings";
 import config from "../utils/config.js";
 import { getCleanedArticle } from "./agents/cleaner.js";
-import { addAlbumArt, getDuration } from "./audio.js";
+import { getDuration, tagEpisodeAudio } from "./audio.js";
 import CostCounter from "./costs.js";
 import { buildFinalText } from "./formatting/index.js";
 import {
@@ -74,8 +74,18 @@ export async function createEpisodeFromUrl(
     costCounter,
   });
 
-  const audio = await addAlbumArt(synthesis.audio, article.leadImageUrl, logger);
-  const durationSeconds = await getDuration(audio, logger);
+  // Duration must be known before tagging so chapter end-times are correct;
+  // ID3 tagging doesn't change duration, so measure the untagged audio first.
+  const durationSeconds = await getDuration(synthesis.audio, logger);
+  const audio = await tagEpisodeAudio(
+    synthesis.audio,
+    {
+      leadImageUrl: article.leadImageUrl,
+      chapters: synthesis.chapters,
+      durationSeconds,
+    },
+    logger,
+  );
 
   const episodeId = secureId();
   const audioFile = `${episodeId}.mp3`;
@@ -95,6 +105,7 @@ export async function createEpisodeFromUrl(
     voiceName: synthesis.voiceName,
     voiceProvider: synthesis.voiceProvider,
     synthesizedSeconds: synthesis.synthesizedSeconds,
+    chapters: synthesis.chapters,
     audioFile,
     durationSeconds,
     fileBytes: audio.length,

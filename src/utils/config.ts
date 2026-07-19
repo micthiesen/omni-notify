@@ -118,6 +118,12 @@ const configSchema = baseConfigSchema
     PRESSPODS_AUDIO_DIR: z.string().optional(),
     PRESSPODS_METADATA_MODEL: z.string().optional(),
     PRESSPODS_CLEANING_MODEL: z.string().optional(),
+    /** ElevenLabs API key — the PressPods TTS provider (Eleven v3). */
+    ELEVENLABS_API_KEY: z.string().optional(),
+    /** Optional voice-id overrides for male / female author narration. */
+    ELEVENLABS_VOICE_MALE: z.string().optional(),
+    ELEVENLABS_VOICE_FEMALE: z.string().optional(),
+    /** Voxtral: retired from PressPods; still used by the tts-bakeoff tool. */
     MISTRAL_API_KEY: z.string().optional(),
     JINA_API_KEY: z.string().optional(),
     PUSHOVER_PRESSPODS_TOKEN: z.string().optional(),

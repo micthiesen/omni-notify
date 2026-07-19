@@ -15,6 +15,12 @@ export interface ArticleRetriever {
   retrieve: (url: string, userAgent: string) => Promise<Article>;
 }
 
+/** A chapter marker: title + its start offset (seconds) into the final audio. */
+export interface Chapter {
+  startTimeSeconds: number;
+  title: string;
+}
+
 export type ArticleRetrieverResult =
   | { success: false; error: unknown; retrieverName: string }
   | { success: true; article: Article; metadata: Metadata; retrieverName: string };

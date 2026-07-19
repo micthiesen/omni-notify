@@ -13,50 +13,48 @@ export async function getCleanedArticle(
   const { model, modelId } = getPressPodsCleaningModel();
   const { text, usage } = await generateText({
     model,
-    system: `Adapt this article for podcast narration. The output will be read aloud by a text-to-speech voice.
+    system: `You adapt a written article into a script for a single podcast host to read aloud (text-to-speech). Preserve the article's content and meaning faithfully — do NOT summarize, editorialize, or invent facts. Your job is to make it sound like an engaging host reading for the ear, not an eye.
 
-Preserve the article's content faithfully. Your job is to make it sound natural when spoken, not to summarize or editorialize.
-
-The input begins with a spoken header line like "Title. By Author. Published Date on Domain." — keep this as the opening line, unchanged.
+The input begins with a header line like "Title. By Author. Published Date on Domain." Use its facts, but restructure the opening (see OPENING).
 
 REMOVE:
 - Website chrome: navigation, sidebars, footer links, "← Previous / Next →" links
 - Junk: ads, subscribe/signup prompts, social buttons, cookie notices, share links
 - Non-narrative elements: author bios, related articles, comments, image captions, photo credits
-- Duplicate titles (the article title often appears multiple times — keep only the first)
+- Duplicate titles (the article title often appears multiple times)
 - Charts, tables, diagrams, ASCII art, emojis
 - Footnotes, "[return]" back-links, and footnote references ([1], etc.)
 - Academic citations like (Smith, 2024) — except within direct quotes
-- Complex URLs — replace with "link to [domain]" only if essential, otherwise drop
+- Bylines, datelines, and captions read literally; URLs — drop them, or fold into prose ("as the Times reported"). Never read a raw URL aloud.
 
-ADAPT FOR AUDIO:
+WRITE FOR THE EAR:
+- One idea per sentence. Break long print sentences into several short spoken ones. Avoid stacked dependent clauses.
+- Use contractions and a natural, present-tense-leaning voice. If you wouldn't say it aloud, don't write it.
+- Attribution comes BEFORE the quote or claim, never after: "The report's author, Jane Doe, argues that…" — not "…, Doe argues." Prefer reported speech ("she said the plan would fail") unless the exact wording matters.
+- Blockquotes (lines starting with ">"): integrate naturally. If context already attributes it, just read it; otherwise introduce it ("As the report puts it,"). Remove the ">"; never say "quote"/"unquote".
+- Lists and bullets: rewrite as flowing prose with transitions ("First… Then… Finally…").
+- Numbers are hard to hear: round them ("nearly two million dollars", not "$1,987,452"), at most one figure per sentence. Give a percentage a baseline when the article implies one.
 
-Blockquotes (lines starting with ">"):
-- These are quoted passages. Integrate them naturally into the narration.
-- If surrounding text provides attribution (e.g., "The CEO said:"), just read the quote directly — the context is enough.
-- If a blockquote has no clear attribution, introduce it naturally (e.g., "As the article states:" or "To quote the report:").
-- Remove the ">" prefix; never say the word "quote" or "unquote" literally.
+OPENING (make it feel like a produced episode):
+- Start with a ONE- or TWO-sentence hook drawn from the article's most interesting idea (a question, a striking fact, or a scene). Do not fabricate — the hook must be true to the article.
+- Then read in the framing naturally: "That's from [Title], by [Author], published [Date] in [Publication]." Skip fields that are missing or "Anonymous".
+- Then the body.
 
-Lists and bullet points:
-- Convert to flowing prose with natural transitions.
+OUTRO:
+- End with ONE short spoken line: "That was [Title], by [Author]." (drop author if unknown). Nothing more.
 
-Dates:
-- Use pronounceable format: "3/15/24" → "March 15th, 2024", "Q3 2023" → "third quarter of 2023"
+SECTIONS (for chapter markers):
+- If the article has clear major sections, mark each with a line "## Short Title" (2-5 words) on its own line, immediately before that section's narration. These lines are NOT spoken — they only mark chapters — so keep them short and descriptive.
+- Do NOT add a "## " marker before the opening hook/intro, and do NOT invent sections. If the article has no natural sections, use no "## " markers at all.
 
-Code and math:
-- Short expressions (under ~10 characters) can stay as-is.
-- Longer code blocks: replace with a natural description of what the code does.
+NORMALIZE (spell out what TTS mispronounces):
+- Dates: "3/15/24" → "March 15th, 2024", "Q3 2023" → "third quarter of 2023". Ranges: "2019–2023" → "2019 to 2023".
+- Currency: "$4.2B" → "4.2 billion dollars", "$45.67" → "forty-five dollars and sixty-seven cents".
+- Version numbers: "v2.1" → "version two point one". Leading decimals: ".22 rifle" → "twenty-two rifle".
+- Abbreviations: expand ones a voice stumbles on ("govt" → "government", "approx." → "approximately"). Strip periods from initialisms ("U.F.O." → "UFO", "C.I.A." → "CIA"). Keep naturally-spoken ones (Dr., Mr., U.S., AI, CEO).
+- Code/math: short expressions can stay; describe longer code blocks in words.
 
-Abbreviations:
-- Expand shortened forms that a voice would stumble on: "govt" → "government", "approx." → "approximately", "dept" → "department", etc.
-- Strip periods from letter-by-letter abbreviations: "U.F.O." → "UFO", "C.I.A." → "CIA", "F.D.R." → "FDR", "S.T.D.s" → "STDs", "A.D.D." → "ADD". TTS handles these better without periods.
-- Common abbreviations that are naturally spoken (Dr., Mr., U.S., AI, CEO) can stay as-is.
-
-Numbers and measurements:
-- Leading decimals: ".40-caliber" → "40-caliber", ".22 rifle" → "22 rifle"
-- Spell out numbers that would sound unnatural as digits when read aloud.
-
-Output the adapted text inside <cleaned_article> tags.`,
+Output the finished script inside <cleaned_article> tags.`,
     prompt: article.text,
   });
 

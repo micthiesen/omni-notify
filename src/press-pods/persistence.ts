@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
 import type { Costs } from "./costs.js";
-import type { RetrieverAttempt } from "./types.js";
+import type { Chapter, RetrieverAttempt } from "./types.js";
 
 /**
  * CSPRNG ids: episode ids double as publicly-served audio file names whose
@@ -27,6 +27,8 @@ export type PressPodsEpisodeData = {
   voiceName?: string;
   voiceProvider?: string;
   synthesizedSeconds?: number;
+  /** Chapter markers (title + start offset), embedded as ID3 chapters. */
+  chapters?: Chapter[];
   audioFile: string;
   durationSeconds?: number;
   fileBytes: number;

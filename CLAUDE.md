@@ -91,7 +91,11 @@ src/
 │   │                        #   extractus, wayback, removepaywall, fetch, jina if keyed);
 │   │                        #   metadata model rates each 0-10, best wins
 │   ├── agents/              # metadata rating/extraction + narration cleaning prompts
-│   ├── speech/              # Mistral Voxtral TTS + ffmpeg loudnorm/intro concat
+│   ├── speech/              # ElevenLabs v3 TTS: chunk → per-chunk synth → mastering
+│   │                        #   synthesize.ts (chunked synth + chapter offsets),
+│   │                        #   textChunking.ts (section/paragraph chunking, pure),
+│   │                        #   audioChain.ts (ffmpeg: per-chunk leveling, 2-pass
+│   │                        #   linear loudnorm, click-free intro concat), voices.ts
 │   ├── audio.ts             # duration probe (music-metadata) + ID3 album art (node-id3)
 │   ├── storage.ts           # episode MP3s on disk (press-pods-audio next to the DB)
 │   ├── rss.ts               # podcast RSS feed (podcast pkg), 50 newest episodes
@@ -205,7 +209,11 @@ Migrated from the standalone serverless `presspods` project (2026-07); the AWS p
 - **Public surface is deliberately tiny**: `/pods/episodes` (POST, token), `/pods/rss` (token), `/pods/audio/:file` (unguessable content-addressed names from a CSPRNG (`secureId`) — podcast apps can't send auth headers on enclosure fetches, so unguessability IS the auth; never switch these ids to `Math.random`-based generation), `/pods/logo.jpeg`. Token compare is constant-time; enclosure URLs use `PRESSPODS_PUBLIC_URL` or the request's `X-Forwarded-*` headers. The audio route supports byte ranges. Feed descriptions are HTML rendered by podcast clients: dynamic text (content, excerpt, article URL) is entity-escaped so article-controlled content can't inject markup. Expose ONLY `/pods/*` through the reverse proxy — `/api/*` has no auth of its own.
 - **Audio lives on disk, not in the DB**: MP3s go to `press-pods-audio/` next to the SQLite file (same Docker volume, same backups). ffmpeg comes from the runtime image (apt), not bundled binaries; the intro jingle + logo live in `assets/press-pods/`. Episode rows/files are deliberately never pruned (personal-scale volume; the feed caps itself at the newest 50).
 - Episode processing runs inside tracked task runs, so per-episode logs are viewable from `/pods` via the standard LogViewer (`runId` is stored on jobs and episodes).
-- Voice selection is gender-aware (male authors → Paul/Oliver, female/unknown → Jane; all neutral-mood English presets — see `speech/voices.ts` for how to list the catalog).
+- **TTS is ElevenLabs v3** (`eleven_v3`, "Natural" stability, fixed seed for reproducibility), chosen over Voxtral in a blind bake-off (`src/tools/tts-bakeoff.ts`, which still runs Voxtral/MiniMax/Fish for future comparisons). The LLM "audio tag" director pass was tried and rejected — plain narration scored higher.
+- **We own the chunking** (v3 has no request-stitching): `textChunking.ts` splits narration into sections (on `## ` markers the cleaner emits), then into ~900-char paragraph/sentence chunks (never mid-sentence). Each chunk is synthesized separately, trimmed, edge-faded, and **per-chunk loudness-normalized to -19 LUFS** before concat (kills chunk-to-chunk level jumps), then the whole thing is mastered with **two-pass linear loudnorm to -16 LUFS / -1.5 dBTP** and the intro is joined click-free in one filtergraph with a single 96k-mono MP3 encode (replaces the old three-generation MP3 chain). Whisper round-trip verification was scoped but deferred.
+- Voice selection is gender-aware (male authors → male voice, female/unknown → female voice); defaults are ElevenLabs premade voices (Brian / Matilda), overridable by id via `ELEVENLABS_VOICE_MALE` / `ELEVENLABS_VOICE_FEMALE`.
+- **Chapters**: the cleaner marks major sections with `## Title` lines (consumed, not spoken); synthesis records each section's start offset and embeds them as ID3 CHAP/CTOC frames (via node-id3, alongside album art) so podcast apps show a scrubbable chapter list — no new public route, no RSS change. Only emitted when the article has ≥2 sections.
+- The narration cleaner (`agents/cleaner.ts`) is a **broadcast-style rewrite**, not just junk removal: one-idea sentences, attribution-before-quote, number rounding, contractions, a cold-open hook before the byline read-in, and a one-line spoken outro. Deliberately not NotebookLM-style conversational rewriting (faithful body, ear-friendly phrasing).
 - `@postlight/parser` needs a pnpm override mapping its git-pinned `difflib` fork back to the npm package (supply-chain policy blocks git subdeps); see pnpm-workspace.yaml.
 
 ## Key Patterns
@@ -387,6 +395,18 @@ npx dotenvx run -- bun src/tools/my-test-script.ts
 
 Delete the script when done—these are throwaway, not committed.
 
+## .env Hygiene
+
+`.env` holds real secrets and is gitignored — a bad write is unrecoverable (this has happened). Hard rules:
+
+- **Never read values.** Don't open `.env` with the Read tool, `cat` it, or print values any other way (`dotenvx get`, `echo $SOME_KEY`, `console.log(process.env…)`). Secret values must never enter the conversation, logs, scripts, or commits.
+- **Key names only.** To see what's configured: `cut -d= -f1 .env`. To check one key opaquely: `grep -qE '^SOME_KEY=.+' .env && echo set || echo missing` (the `.+` makes empty placeholders read as missing).
+- **Append-only.** Add keys with `echo 'SOME_KEY=value' >> .env`. Never use the Write/Edit tools on `.env`, never `>`, `sed -i`, `tee`, or any full-file rewrite.
+- **Need a value only Michael has?** Append a value-less placeholder (`echo 'SOME_KEY=' >> .env`), tell him which keys to fill in, and re-check later with the opaque grep.
+- **Never change or delete existing lines.** Duplicate-key precedence is parser-dependent, so appending a replacement is unreliable — if an existing value must change, ask Michael to edit it himself.
+- Scripts consume the env via `npx dotenvx run -- …`; don't export secrets into the shell or inline them in commands.
+- Applies to every `.env*` file except `.env.example`, which is version-controlled, holds placeholders only, and is edited normally.
+
 ## Environment Variables
 
 ```bash
@@ -436,7 +456,10 @@ PODCAST_MAX_GUEST_PICKS=6               # Optional: Tier-1 guest picks cap per r
 PODCAST_TASTE_REFLECTION_MODEL=openai:gpt-5.6-luna # Model for podcast taste reflection
 PODCAST_TASTE_REFLECTION_SCHEDULE=0 0 5 * * 0      # Weekly podcast taste reflection (Sunday 5am)
 PRESSPODS_AUTH_TOKEN=xxx                # Enables PressPods; authenticates /pods/episodes + /pods/rss
-MISTRAL_API_KEY=xxx                     # Voxtral TTS (required for PressPods)
+ELEVENLABS_API_KEY=xxx                  # ElevenLabs v3 TTS (required for PressPods)
+ELEVENLABS_VOICE_MALE=xxx               # Optional: voice id for male-author narration (default Brian)
+ELEVENLABS_VOICE_FEMALE=xxx             # Optional: voice id for female/unknown-author narration (default Matilda)
+MISTRAL_API_KEY=xxx                     # Optional: only the tts-bakeoff comparison tool still uses it
 PRESSPODS_PUBLIC_URL=https://pods.example.com  # Optional: public origin for RSS enclosures
 PRESSPODS_AUDIO_DIR=/data/press-pods-audio     # Optional: MP3 dir (default: next to the DB)
 PRESSPODS_METADATA_MODEL=google:gemini-3.5-flash  # Rates each retriever's extraction
@@ -456,7 +479,7 @@ KARAKEEP_API_KEY=xxx
 - **linkedom**: Lightweight DOM parser (used by Readability, 3x faster than jsdom)
 - **turndown** + **turndown-plugin-gfm**: HTML to Markdown conversion with table support
 - **node-cron**: Scheduling
-- **@mistralai/mistralai**: Voxtral TTS (PressPods)
+- **@mistralai/mistralai**: Voxtral TTS (only the `tts-bakeoff` comparison tool; PressPods uses ElevenLabs)
 - **@postlight/parser**, **@extractus/article-extractor**: article extraction (PressPods retrievers)
 - **fluent-ffmpeg**: loudness normalization + intro concat (needs ffmpeg on PATH; installed in the Docker runtime image)
 - **music-metadata** + **node-id3**: MP3 duration probe + album-art tagging
