@@ -11,21 +11,18 @@ export interface VoiceChoices {
 }
 
 /**
- * Preset voices from the Mistral API (`GET /v1/audio/voices`). Mistral's
- * preset catalog is thin; both gender slots currently hold the same two male
- * voices, so gender-aware selection is a no-op until distinct female presets
- * are slotted in (list them with:
- * `curl -s https://api.mistral.ai/v1/audio/voices -H "Authorization: Bearer $MISTRAL_API_KEY"`).
+ * Preset voices from the Mistral API (list with
+ * `curl -s "https://api.mistral.ai/v1/audio/voices?limit=30" -H "Authorization: Bearer $MISTRAL_API_KEY"`).
+ * Only the neutral-mood English presets are used: Paul (en_us) and Oliver
+ * (en_gb) for male authors, Jane (en_gb) — the sole English female preset —
+ * for female/unknown authors.
  */
 export const VOICE_CHOICES: VoiceChoices = {
   male: [
     { id: "c69964a6-ab8b-4f8a-9465-ec0925096ec8", name: "Paul - Neutral" },
     { id: "e3596645-b1af-469e-b857-f18ddedc7652", name: "Oliver - Neutral" },
   ],
-  female: [
-    { id: "c69964a6-ab8b-4f8a-9465-ec0925096ec8", name: "Paul - Neutral" },
-    { id: "e3596645-b1af-469e-b857-f18ddedc7652", name: "Oliver - Neutral" },
-  ],
+  female: [{ id: "82c99ee6-f932-423f-a4a3-d403c8914b8d", name: "Jane - Neutral" }],
 };
 
 export function getRandomVoice(
