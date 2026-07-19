@@ -1,6 +1,6 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   findEpisodeForJob,
   MAX_JOB_ATTEMPTS,
@@ -94,6 +94,14 @@ describe("retryDelayMs", () => {
 });
 
 describe("recordJobFailure", () => {
+  // recordJobFailure reads the live row, so stale rows from previous test
+  // runs (the spec DB persists on disk) must be cleared.
+  beforeEach(() => {
+    for (const jobId of ["r1", "r2", "r3", "gone"]) {
+      PressPodsJobEntity.delete({ jobId });
+    }
+  });
+
   it("requeues a retryable failure with backoff", () => {
     const updated = recordJobFailure(job({ jobId: "r1" }), "boom", true);
     expect(updated.status).toBe("queued");
