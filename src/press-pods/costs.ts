@@ -31,10 +31,9 @@ const llmOutputTokenCents: Record<string, number> = {
   "gemini-3.1-flash-lite": 0.00004, // $0.40 per 1M tokens
 };
 const ttsCharacterCents: Record<string, number> = {
-  // ElevenLabs v3 bills in credits (~1 credit/char); the per-char dollar cost
-  // depends on the subscription tier. ~0.022 cents/char ≈ the Creator plan
-  // ($22 / 100k credits). Adjust if the plan changes — this is an estimate.
-  eleven_v3: 0.022,
+  // ElevenLabs v2/v3: $0.10 per 1,000 characters (Creator-plan effective rate
+  // and the overage rate are both ~this), i.e. 0.01 cents/char.
+  eleven_v3: 0.01,
   "voxtral-mini-tts-2603": 0.0016, // Mistral Voxtral ($0.016 / 1k chars)
 };
 
