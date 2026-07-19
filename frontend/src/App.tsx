@@ -13,6 +13,7 @@ import { usePath } from "./router";
 
 // These pages pull in recharts (~500kB minified); keep it out of the main chunk.
 const PetsPage = lazy(() => import("./pages/PetsPage"));
+const PodsPage = lazy(() => import("./pages/PodsPage"));
 const StreamerPage = lazy(() => import("./pages/StreamerPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
@@ -28,6 +29,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/pets": "Pets",
   "/media": "Media",
   "/podcasts": "Podcasts",
+  "/pods": "PressPods",
   "/briefings": "Briefings",
   "/emails": "Email activity",
   "/data": "Data",
@@ -85,6 +87,13 @@ export default function App() {
         break;
       case "/podcasts":
         page = <PodcastsPage />;
+        break;
+      case "/pods":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <PodsPage />
+          </Suspense>
+        );
         break;
       case "/briefings":
         page = <BriefingsPage />;

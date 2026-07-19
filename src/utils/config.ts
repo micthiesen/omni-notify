@@ -104,6 +104,23 @@ const configSchema = baseConfigSchema
         return { email, password };
       }),
     FRONTEND_PORT: z.coerce.number().optional().default(3000),
+    /** Enables PressPods (article → podcast) and authenticates its public routes. */
+    PRESSPODS_AUTH_TOKEN: z.string().optional(),
+    /**
+     * Public origin for RSS enclosure URLs (e.g. the nginx-exposed host).
+     * When unset, the origin is derived from each request's forwarded headers.
+     */
+    PRESSPODS_PUBLIC_URL: z
+      .string()
+      .optional()
+      .transform((s) => s?.replace(/\/+$/, "")),
+    /** Episode MP3 directory; defaults to press-pods-audio next to the DB. */
+    PRESSPODS_AUDIO_DIR: z.string().optional(),
+    PRESSPODS_METADATA_MODEL: z.string().optional(),
+    PRESSPODS_CLEANING_MODEL: z.string().optional(),
+    MISTRAL_API_KEY: z.string().optional(),
+    JINA_API_KEY: z.string().optional(),
+    PUSHOVER_PRESSPODS_TOKEN: z.string().optional(),
   })
   .transform((c) => ({
     ...c,
@@ -112,6 +129,7 @@ const configSchema = baseConfigSchema
     PUSHOVER_CALENDAR_TOKEN: c.PUSHOVER_CALENDAR_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_RECS_TOKEN: c.PUSHOVER_RECS_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_PODCAST_TOKEN: c.PUSHOVER_PODCAST_TOKEN ?? c.PUSHOVER_TOKEN,
+    PUSHOVER_PRESSPODS_TOKEN: c.PUSHOVER_PRESSPODS_TOKEN ?? c.PUSHOVER_TOKEN,
   }));
 
 export type Config = z.infer<typeof configSchema>;

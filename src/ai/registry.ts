@@ -54,6 +54,18 @@ export function getPodcastTasteReflectionModel(): {
   return resolveModel(config.PODCAST_TASTE_REFLECTION_MODEL, "openai:gpt-5.6-luna");
 }
 
+/**
+ * PressPods metadata extraction rates every retriever's result (up to 7 calls
+ * per episode) but the calls are small; cleaning is one large rewrite pass.
+ */
+export function getPressPodsMetadataModel(): { model: LanguageModel; modelId: string } {
+  return resolveModel(config.PRESSPODS_METADATA_MODEL, "google:gemini-3.5-flash");
+}
+
+export function getPressPodsCleaningModel(): { model: LanguageModel; modelId: string } {
+  return resolveModel(config.PRESSPODS_CLEANING_MODEL, "google:gemini-3.5-flash");
+}
+
 function resolveModel(configured: string | undefined, fallback: RegisteredModelId) {
   const modelId = (configured ?? fallback) as RegisteredModelId;
   return { model: modelRegistry.languageModel(modelId), modelId };

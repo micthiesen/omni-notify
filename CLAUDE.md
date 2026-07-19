@@ -81,6 +81,24 @@ src/
 │   ├── extraction/          # LLM event extraction + output sanitization + retry
 │   ├── filter/              # Tiered filter: rules → blacklist → auto-pass → triage
 │   └── fastmail/            # CalDAV calendar API (iCalendar incl. RRULE recurrence)
+├── press-pods/              # PressPods: article URL → TTS podcast episode + RSS feed
+│   ├── task.ts              # PressPodsTask: drains the job queue (5min sweep; submissions
+│   │                        #   kick a manual run immediately via TaskRegistry.runNow)
+│   ├── pipeline.ts          # URL → retrieve → clean → synthesize → store → notify
+│   ├── persistence.ts       # PressPodsEpisodeEntity + durable job queue (backoff retries,
+│   │                        #   stale-claim reclaim after crashes, manual retry from UI)
+│   ├── retrievers/          # 7 parallel article extractors (postlight, readability,
+│   │                        #   extractus, wayback, removepaywall, fetch, jina if keyed);
+│   │                        #   metadata model rates each 0-10, best wins
+│   ├── agents/              # metadata rating/extraction + narration cleaning prompts
+│   ├── speech/              # Mistral Voxtral TTS + ffmpeg loudnorm/intro concat
+│   ├── audio.ts             # duration probe (music-metadata) + ID3 album art (node-id3)
+│   ├── storage.ts           # episode MP3s on disk (press-pods-audio next to the DB)
+│   ├── rss.ts               # podcast RSS feed (podcast pkg), 50 newest episodes
+│   ├── routes.ts            # public /pods/* (token-gated) + internal /api/press-pods/*
+│   ├── submit.ts            # shared submission path (zod schema, Karakeep bookmark, kick)
+│   ├── errors.ts            # retryable-vs-permanent failure classification
+│   └── costs.ts             # per-episode LLM/TTS cost tracking
 ├── recommendations/         # AI media recommendations → watchlist + Pushover
 │   ├── task.ts              # RecommendationTask (cron, default Mon/Wed/Fri 5pm)
 │   ├── pipeline.ts          # Poll state → outcomes → candidates → filter → shortlist → select → commit
@@ -127,14 +145,14 @@ src/
 ├── tools/
 │   └── preview-server.ts    # Dev harness: real server + fake data for frontend work
 ├── server.ts                # Hono API (/api/tasks, /api/task-runs, /api/recommendations,
-│                            #   /api/pets, /api/streamers, /api/snapshot,
+│                            #   /api/pets, /api/streamers, /api/snapshot, /pods/* (PressPods),
 │                            #   /api/trigger-channels for homebridge-stream-triggers) + SSE (/api/events,
 │                            #   /api/task-runs/:runId/logs/stream) + SPA
 └── utils/
     └── config.ts            # Environment config with zod validation
 ```
 
-Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy; outcome/pipeline filter chips, per-email processing-log modal with reprocess / sender block / not-relevant-missed feedback / forget-tracking-number actions, and a sender-rules management section), `/media/:id` + `/podcasts/:id` recommendation detail pages, `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
+Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/pods` PressPods episodes (lazy; submit-URL form, inline audio player, job status with retry/dismiss for failures, per-episode logs via the task-run LogViewer), `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy; outcome/pipeline filter chips, per-email processing-log modal with reprocess / sender block / not-relevant-missed feedback / forget-tracking-number actions, and a sender-rules management section), `/media/:id` + `/podcasts/:id` recommendation detail pages, `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
 
 ### Frontend Style Guide
 
@@ -177,6 +195,18 @@ Deliberately a sibling system to media recommendations (same architecture, separ
 - Commit protocol mirrors media recs: write `pending` before Castro enqueue and Pushover, then flip to `notified`; stale pending rows become failed with a 24h retry exclusion. Enqueue is idempotent, so a retry observes `already_exists` if that effect landed before a crash, while notification delivery remains unverifiable.
 - Well-behaved-client controls (Castro is a private, reverse-engineered API): every request funnels through ONE process-wide rate-limit queue in `CastroApi` (concurrency 4, ≤8 req/s) — `createCastroClient` shares a singleton `CastroApi` so overlapping task runs can't double the ceiling; each request is signed at send time. Scheduled tasks jitter ±5min off their cron instant. Listen-history reads for outcome sync (the heaviest fan-out) are skipped entirely when no recommendation is open, and otherwise bounded to just before the oldest open delivery — never the full 180-day window, but always wide enough to cover every open rec (a shorter cutoff would mislabel a listened episode as ignored). The weekly taste-reflection read is the deliberate exception: one full-window read per week, through the same rate-limited singleton.
 - The old `PodcastPicks` briefing (`briefings/PodcastPicks.md` on the deploy host) is superseded by this feature and should be disabled when `PODCAST_TASTE_PATH` is configured.
+
+### PressPods Design Invariants
+
+Migrated from the standalone serverless `presspods` project (2026-07); the AWS pieces (SQS, DynamoDB, S3, Lambda, API Gateway) were replaced with omni-notify infrastructure:
+
+- **Durable job queue replaces SQS**: every submission writes a `PressPodsJobEntity` row before anything else. The `PressPods` task drains due jobs; submissions kick an immediate manual run via `TaskRegistry.runNow` (already-running is fine — the drain loop picks the new row up). Crash mid-processing leaves a `processing` row whose stale claim (>30min) the next sweep reclaims — but a reclaim never reprocesses blindly: if an episode for the job's URL already exists (crash landed after the episode write), the job just completes; otherwise the crash counts as an attempt (so a job that kills the process every time still converges to `failed` instead of reclaim-looping forever). Transient failures (TTS 429/5xx, network) requeue with doubling backoff up to 6 attempts; everything else fails permanently but stays visible on `/pods` with a manual Retry (failed jobs only — the guard prevents clobbering in-flight attempts, and `recordJobFailure` respects concurrent deletes instead of resurrecting dismissed jobs).
+- **Best-of-N retrieval**: all retrievers run in parallel, each result is rated 0-10 by the metadata model, best wins. One broken retriever can never hurt an episode; per-retriever outcomes are persisted compactly (`RetrieverAttempt[]`, never the full article texts) for the UI.
+- **Public surface is deliberately tiny**: `/pods/episodes` (POST, token), `/pods/rss` (token), `/pods/audio/:file` (unguessable content-addressed names from a CSPRNG (`secureId`) — podcast apps can't send auth headers on enclosure fetches, so unguessability IS the auth; never switch these ids to `Math.random`-based generation), `/pods/logo.jpeg`. Token compare is constant-time; enclosure URLs use `PRESSPODS_PUBLIC_URL` or the request's `X-Forwarded-*` headers. The audio route supports byte ranges. Feed descriptions are HTML rendered by podcast clients: dynamic text (content, excerpt, article URL) is entity-escaped so article-controlled content can't inject markup. Expose ONLY `/pods/*` through the reverse proxy — `/api/*` has no auth of its own.
+- **Audio lives on disk, not in the DB**: MP3s go to `press-pods-audio/` next to the SQLite file (same Docker volume, same backups). ffmpeg comes from the runtime image (apt), not bundled binaries; the intro jingle + logo live in `assets/press-pods/`. Episode rows/files are deliberately never pruned (personal-scale volume; the feed caps itself at the newest 50).
+- Episode processing runs inside tracked task runs, so per-episode logs are viewable from `/pods` via the standard LogViewer (`runId` is stored on jobs and episodes).
+- Gender-aware voice selection is kept but currently vacuous: Mistral's preset catalog has no distinct female voice wired in yet (see `speech/voices.ts` for how to list presets).
+- `@postlight/parser` needs a pnpm override mapping its git-pinned `difflib` fork back to the npm package (supply-chain policy blocks git subdeps); see pnpm-workspace.yaml.
 
 ## Key Patterns
 
@@ -405,6 +435,16 @@ PODCAST_VOICE_ROTATION_MAX=12           # Optional: voices person-searched per r
 PODCAST_MAX_GUEST_PICKS=6               # Optional: Tier-1 guest picks cap per run
 PODCAST_TASTE_REFLECTION_MODEL=openai:gpt-5.6-luna # Model for podcast taste reflection
 PODCAST_TASTE_REFLECTION_SCHEDULE=0 0 5 * * 0      # Weekly podcast taste reflection (Sunday 5am)
+PRESSPODS_AUTH_TOKEN=xxx                # Enables PressPods; authenticates /pods/episodes + /pods/rss
+MISTRAL_API_KEY=xxx                     # Voxtral TTS (required for PressPods)
+PRESSPODS_PUBLIC_URL=https://pods.example.com  # Optional: public origin for RSS enclosures
+PRESSPODS_AUDIO_DIR=/data/press-pods-audio     # Optional: MP3 dir (default: next to the DB)
+PRESSPODS_METADATA_MODEL=google:gemini-3.5-flash  # Rates each retriever's extraction
+PRESSPODS_CLEANING_MODEL=google:gemini-3.5-flash  # Narration rewrite
+JINA_API_KEY=xxx                        # Optional: enables the Jina.ai Reader retriever
+PUSHOVER_PRESSPODS_TOKEN=xxx            # Optional: override for PressPods notifications
+KARAKEEP_URL=xxx                        # Optional: bookmark submitted articles (read by mitools)
+KARAKEEP_API_KEY=xxx
 ```
 
 ## External Dependencies
@@ -416,6 +456,11 @@ PODCAST_TASTE_REFLECTION_SCHEDULE=0 0 5 * * 0      # Weekly podcast taste reflec
 - **linkedom**: Lightweight DOM parser (used by Readability, 3x faster than jsdom)
 - **turndown** + **turndown-plugin-gfm**: HTML to Markdown conversion with table support
 - **node-cron**: Scheduling
+- **@mistralai/mistralai**: Voxtral TTS (PressPods)
+- **@postlight/parser**, **@extractus/article-extractor**: article extraction (PressPods retrievers)
+- **fluent-ffmpeg**: loudness normalization + intro concat (needs ffmpeg on PATH; installed in the Docker runtime image)
+- **music-metadata** + **node-id3**: MP3 duration probe + album-art tagging
+- **podcast**: RSS feed generation
 - **gray-matter**: YAML frontmatter parsing for briefing config files
 - **zod**: Schema validation (config, API responses)
 - **html-entities**: Decode HTML entities in YouTube titles

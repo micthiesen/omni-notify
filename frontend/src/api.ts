@@ -366,6 +366,47 @@ export interface BriefingHistory {
   notifications: BriefingNotification[];
 }
 
+export type PressPodsRetrieverAttempt =
+  | { name: string; success: true; contentRating: number; textChars: number }
+  | { name: string; success: false; error: string };
+
+export interface PressPodsEpisode {
+  episodeId: string;
+  title: string;
+  author: string | null;
+  publication: string | null;
+  domain: string | null;
+  articleUrl: string;
+  leadImageUrl: string | null;
+  excerpt: string | null;
+  voiceName: string | null;
+  synthesizedSeconds: number | null;
+  audioUrl: string;
+  durationSeconds: number | null;
+  fileBytes: number;
+  retrieverName: string | null;
+  retrieverSeconds: number | null;
+  retrieverAttempts: PressPodsRetrieverAttempt[] | null;
+  costCents: number | null;
+  createdAt: number;
+  publishedAt: number | null;
+  runId: string | null;
+}
+
+export type PressPodsJobStatus = "queued" | "processing" | "failed";
+
+export interface PressPodsJob {
+  jobId: string;
+  url: string;
+  status: PressPodsJobStatus;
+  attempts: number;
+  nextAttemptAt: number | null;
+  lastError: string | null;
+  createdAt: number;
+  updatedAt: number;
+  lastRunId: string | null;
+}
+
 export class ApiError extends Error {
   public readonly status: number;
 
@@ -542,6 +583,25 @@ export function fetchTasteProfile(): Promise<{ profile: TasteProfile | null }> {
   return apiGet<{ profile: TasteProfile | null }>(
     "/api/recommendations/taste-profile",
   );
+}
+
+export function fetchPressPods(): Promise<{
+  episodes: PressPodsEpisode[];
+  jobs: PressPodsJob[];
+}> {
+  return apiGet("/api/press-pods/episodes");
+}
+
+export function submitPressPodsUrl(url: string): Promise<{ job: PressPodsJob }> {
+  return apiPost("/api/press-pods/submit", { url });
+}
+
+export function retryPressPodsJob(jobId: string): Promise<{ job: PressPodsJob }> {
+  return apiPost(`/api/press-pods/jobs/${encodeURIComponent(jobId)}/retry`);
+}
+
+export function dismissPressPodsJob(jobId: string): Promise<{ deleted: boolean }> {
+  return apiDelete(`/api/press-pods/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export function fetchBriefings(): Promise<{ briefings: BriefingHistory[] }> {

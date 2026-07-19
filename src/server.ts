@@ -64,6 +64,7 @@ import {
 } from "./podcast-recs/persistence.js";
 import { MAX_PODCAST_RECOMMENDATIONS_PER_RUN } from "./podcast-recs/pipeline.js";
 import { getLatestPodcastTasteProfile } from "./podcast-recs/reflection/index.js";
+import { registerPressPodsRoutes } from "./press-pods/routes.js";
 import {
   getAllRecommendations,
   getRecommendation,
@@ -930,6 +931,8 @@ export function startServer(
     c.header("Content-Disposition", `attachment; filename="${filename}"`);
     return c.body(lines.join("\n"));
   });
+
+  registerPressPodsRoutes(app, registry, logger);
 
   // Vite content-hashes asset filenames, so they can be cached forever; the
   // HTML must revalidate so deploys pick up new asset hashes.

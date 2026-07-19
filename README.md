@@ -122,6 +122,19 @@ It runs hourly and silently clears Inbox episodes whose description begins with
 episodes. It changes only the Inbox `is_new` state and never removes an episode
 from the Queue. Matching is deliberately case-sensitive and prefix-only.
 
+## PressPods (Article → Podcast)
+
+Enabled by setting `PRESSPODS_AUTH_TOKEN` (plus `MISTRAL_API_KEY` and a Google API key). Submit an article URL — from an iOS Shortcut via `POST /pods/episodes?authToken=…` with `{ "url": "…" }`, or from the `/pods` page — and it becomes an episode in a private podcast RSS feed (`GET /pods/rss?authToken=…`) your podcast app subscribes to.
+
+Each submission becomes a durable job (visible on `/pods`, with retries and per-run logs) processed by the `PressPods` task:
+
+1. Seven article retrievers run in parallel (Postlight, Readability, Extractus, Wayback, removepaywall, raw fetch, and Jina.ai when `JINA_API_KEY` is set); an LLM rates each result's extraction quality and the best wins.
+2. A cleaning pass rewrites the article for narration (junk removal, audio-friendly dates/abbreviations, blockquote handling).
+3. Mistral Voxtral synthesizes speech; ffmpeg normalizes loudness and prepends the intro jingle; the lead image is embedded as album art.
+4. The MP3 is stored on disk (next to the SQLite DB by default) and served at `/pods/audio/<id>.mp3` with an unguessable content-addressed name; a Pushover notification announces the episode.
+
+Transient failures (TTS 429/5xx, network blips) retry automatically with backoff; permanent failures surface on `/pods` with a retry button. Submitted articles are also bookmarked in Karakeep when `KARAKEEP_URL`/`KARAKEEP_API_KEY` are set. To expose the feed publicly, reverse-proxy just the `/pods/*` paths and set `PRESSPODS_PUBLIC_URL` to the public origin (or let it derive from `X-Forwarded-*` headers).
+
 ## Web UI
 
 The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify dashboard:
@@ -131,6 +144,7 @@ The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify 
 - `/recommendations` lists every recommendation with poster, status, reasoning, service links, explicit feedback controls, filters, the current evidence-backed taste profile, and recent pipeline activity.
 - `/podcasts` lists podcast episode recommendations with show artwork, status filters, episode/discussion links, good-pick/not-for-me feedback controls, and the podcast taste profile.
 - `/feedback/recommendations/:id` and `/feedback/podcasts/:id` are mobile-first one-tap rating pages. Pushover recommendation notifications deep-link here ("Rate this pick"), and the page links onward to the full recommendation view.
+- `/pods` lists PressPods episodes with an inline player, costs, and processing logs, plus a submit-URL form and retry controls for failed jobs.
 - `/briefings` is a browsable archive of briefing notifications (the last 50 stored per briefing).
 - `/emails` shows what the parcel and calendar email pipelines did with each email (why it was admitted or filtered, per-item results, honest processed/partial/failed outcomes) with per-email processing logs, one-click reprocess, block-sender and not-relevant/missed feedback actions, a forget-tracking-number escape hatch, and a user-editable sender-rules section. A shared LLM triage call gates both pipelines; corrections feed back into its prompt.
 
@@ -155,6 +169,8 @@ Models are configured via environment variables using `provider:model` format. S
 | `RECS_SHORTLIST_MODEL` | `openai:gpt-5.6-luna` | Recommendation shortlist scoring |
 | `RECS_SELECTION_MODEL` | `openai:gpt-5.6` | Recommendation research + final pick |
 | `TASTE_REFLECTION_MODEL` | `openai:gpt-5.6-luna` | Weekly evidence-backed taste reflection |
+| `PRESSPODS_METADATA_MODEL` | `google:gemini-3.5-flash` | PressPods per-retriever metadata + rating |
+| `PRESSPODS_CLEANING_MODEL` | `google:gemini-3.5-flash` | PressPods narration rewrite |
 
 Examples:
 
@@ -200,6 +216,13 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `PODCAST_VOICE_ROTATION_MAX` / `PODCAST_MAX_GUEST_PICKS` | No | Voices searched per run (default 12) / Tier-1 guest cap (default 6) |
 | `PODCAST_TASTE_REFLECTION_MODEL` | No | Model for weekly podcast taste reflection (default: `openai:gpt-5.6-luna`) |
 | `PODCAST_TASTE_REFLECTION_SCHEDULE` | No | Podcast taste reflection cron (default: `0 0 5 * * 0`, Sunday 5am) |
+| `PRESSPODS_AUTH_TOKEN` | No | Long random secret; enables PressPods and authenticates `/pods/episodes` + `/pods/rss` |
+| `MISTRAL_API_KEY` | For PressPods | Mistral Voxtral TTS |
+| `PRESSPODS_PUBLIC_URL` | No | Public origin for RSS enclosure URLs (else derived from forwarded headers) |
+| `PRESSPODS_AUDIO_DIR` | No | Episode MP3 directory (default: `press-pods-audio` next to the DB) |
+| `JINA_API_KEY` | No | Enables the Jina.ai Reader retriever |
+| `PUSHOVER_PRESSPODS_TOKEN` | No | Pushover token for PressPods (falls back to `PUSHOVER_TOKEN`) |
+| `KARAKEEP_URL` / `KARAKEEP_API_KEY` | No | Bookmark submitted articles in Karakeep |
 | `PLEX_URL` / `PLEX_TOKEN` | For recommendations | Plex server URL and token |
 | `PLEX_ACCOUNT_ID` | For shared Plex servers | Account ID used to scope viewing history; multiple detected accounts fail closed without it |
 | `RADARR_URL` / `RADARR_API_KEY` | For recommendations | Radarr v3 API connection |

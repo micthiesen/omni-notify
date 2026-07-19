@@ -16,11 +16,17 @@ RUN pnpm prune --prod
 
 FROM node:24.18.0-slim AS runtime
 
+# ffmpeg: PressPods audio pipeline (loudnorm + intro concat)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/frontend/dist ./frontend/dist
+COPY --from=build --chown=node:node /app/assets ./assets
 COPY --from=build --chown=node:node /app/package.json ./package.json
 
 RUN mkdir -p /data && chown node:node /data

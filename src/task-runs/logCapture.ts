@@ -62,6 +62,11 @@ export function runWithLogCapture<T>(runId: string, fn: () => Promise<T>): Promi
   return runContext.run({ runId }, fn);
 }
 
+/** The runId of the task run this code is executing inside, if any. */
+export function getCurrentRunId(): string | undefined {
+  return runContext.getStore()?.runId;
+}
+
 /** Live buffer contents for an in-flight run, if any. */
 export function getActiveRunLogs(
   runId: string,

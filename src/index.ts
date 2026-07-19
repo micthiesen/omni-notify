@@ -20,6 +20,7 @@ import PetTrackerTask from "./pet-tracker/task.js";
 import { CastroInboxCleanupTask } from "./podcast-recs/castro/inboxCleanupTask.js";
 import { PodcastTasteReflectionTask } from "./podcast-recs/reflection/index.js";
 import { PodcastRecommendationTask } from "./podcast-recs/task.js";
+import PressPodsTask from "./press-pods/task.js";
 import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
 import { RecommendationTask } from "./recommendations/task.js";
 import { TasteReflectionTask } from "./recommendations/taste/task.js";
@@ -64,6 +65,8 @@ function buildTasks(streamers: Streamer[]): ScheduledTask[] {
     if (task) tasks.push(task);
   }
 
+  const pressPods = PressPodsTask.create(logger);
+  if (pressPods) tasks.push(pressPods);
   const recommendations = RecommendationTask.create(logger);
   if (recommendations) tasks.push(recommendations);
   const podcastRecs = PodcastRecommendationTask.create(logger);
