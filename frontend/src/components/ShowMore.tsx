@@ -37,7 +37,7 @@ export function ShowMoreButton({
 }) {
   return (
     <button type="button" className="show-more-btn" onClick={onClick}>
-      Show more
+      Show More
       <span className="show-more-count">{remaining}</span>
     </button>
   );

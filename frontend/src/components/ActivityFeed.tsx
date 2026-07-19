@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchTaskRuns } from "../api";
-import type { Snapshot, TaskRun } from "../api";
-import { formatAbsolute, formatRelative, toTitleCase } from "../utils/format";
+import type { Snapshot, TaskInfo, TaskRun } from "../api";
+import { formatAbsolute, formatRelative, taskLabel, taskLabelFromName } from "../utils/format";
 import { StatusDot, TriggerBadge } from "./badges";
 import { runDuration } from "./TaskCard";
 
@@ -37,9 +37,11 @@ export function groupRuns(runs: TaskRun[]): ActivityGroup[] {
 
 function GroupRow({
   group,
+  tasks,
   onViewLogs,
 }: {
   group: ActivityGroup;
+  tasks: TaskInfo[];
   onViewLogs: (run: TaskRun) => void;
 }) {
   const newest = group.runs[0];
@@ -53,7 +55,7 @@ function GroupRow({
       title="View logs"
     >
       <StatusDot status={newest.status} />
-      <span className="activity-task">{toTitleCase(newest.taskName)}</span>
+      <span className="activity-task">{taskLabelFromName(newest.taskName, tasks)}</span>
       {count > 1 && (
         <span
           className="collapse-badge"
@@ -126,8 +128,6 @@ export function ActivityFeed({
     return groupRuns(base);
   }, [runs, errorsOnly]);
 
-  const taskNames = snapshot.tasks.map((t) => t.name);
-
   return (
     <>
       <div className="activity-controls">
@@ -136,10 +136,10 @@ export function ActivityFeed({
           value={filterTask}
           onChange={(e) => setFilterTask(e.target.value)}
         >
-          <option value="">All tasks</option>
-          {taskNames.map((name) => (
-            <option key={name} value={name}>
-              {toTitleCase(name)}
+          <option value="">All Tasks</option>
+          {snapshot.tasks.map((task) => (
+            <option key={task.name} value={task.name}>
+              {taskLabel(task)}
             </option>
           ))}
         </select>
@@ -148,7 +148,7 @@ export function ActivityFeed({
           className={`chip-btn ${errorsOnly ? "active" : ""}`}
           onClick={() => setErrorsOnly((v) => !v)}
         >
-          Errors only
+          Errors Only
         </button>
       </div>
       {filtered && fetchError && fetched === null && (
@@ -165,7 +165,12 @@ export function ActivityFeed({
       {visible !== null && visible.length > 0 && (
         <div className="activity-list">
           {visible.map((group) => (
-            <GroupRow key={group.key} group={group} onViewLogs={onViewLogs} />
+            <GroupRow
+              key={group.key}
+              group={group}
+              tasks={snapshot.tasks}
+              onViewLogs={onViewLogs}
+            />
           ))}
         </div>
       )}

@@ -9,15 +9,16 @@ export interface RecommendationManualRunInput {
   maxRecommendations: number;
 }
 
-export class RecommendationTask extends ScheduledTask {
+export class MediaRecommendationTask extends ScheduledTask {
   public readonly name = "Recommendations";
+  public readonly displayName = "Media Recommendations";
   public readonly schedule = config.RECS_SCHEDULE;
   public override readonly runOnStartup = false;
 
   private logger: Logger;
   private lastRunSummary?: string;
 
-  public static create(parentLogger: Logger): RecommendationTask | null {
+  public static create(parentLogger: Logger): MediaRecommendationTask | null {
     const missing = [
       ["TMDB_API_KEY", config.TMDB_API_KEY],
       ["TAVILY_API_KEY", config.TAVILY_API_KEY],
@@ -39,7 +40,7 @@ export class RecommendationTask extends ScheduledTask {
       parentLogger.info(`Recommendations disabled: missing ${missing.join(", ")}`);
       return null;
     }
-    return new RecommendationTask(parentLogger);
+    return new MediaRecommendationTask(parentLogger);
   }
 
   private constructor(parentLogger: Logger) {

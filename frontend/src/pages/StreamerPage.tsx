@@ -102,11 +102,11 @@ function StreamerStats({ metrics }: { metrics: StreamerMetrics }) {
     (b) => b.date >= daysAgo(30),
   ).length;
   const highs: { label: string; value: number; detail?: string }[] = [
-    { label: "7-day high", value: windowMax(metrics, 7) },
-    { label: "30-day high", value: windowMax(metrics, 30) },
-    { label: "90-day high", value: windowMax(metrics, 90) },
+    { label: "7-Day High", value: windowMax(metrics, 7) },
+    { label: "30-Day High", value: windowMax(metrics, 30) },
+    { label: "90-Day High", value: windowMax(metrics, 90) },
     {
-      label: "All-time record",
+      label: "All-Time Record",
       value: metrics.allTimeMax,
       detail: metrics.allTimeMaxTimestamp
         ? formatDateOnly(metrics.allTimeMaxTimestamp)
@@ -126,7 +126,7 @@ function StreamerStats({ metrics }: { metrics: StreamerMetrics }) {
         </div>
       ))}
       <div className="stat-tile">
-        <span className="stat-label">Days streamed</span>
+        <span className="stat-label">Days Streamed</span>
         <span className="stat-value">{daysStreamed30}</span>
         <span className="stat-detail">of last 30</span>
       </div>
@@ -142,7 +142,7 @@ function ViewerChart({ metrics }: { metrics: StreamerMetrics }) {
   return (
     <section className="page-section">
       <h2 className="section-title">
-        Peak viewers by day
+        Peak Viewers by Day
         <span className="range-buttons">
           {ranges.map((r) => (
             <button
@@ -239,7 +239,7 @@ function RecentSessions({ sessions }: { sessions: StreamSession[] }) {
   return (
     <section className="page-section">
       <h2 className="section-title">
-        Recent streams
+        Recent Streams
         <span className="section-count">{sessions.length}</span>
       </h2>
       <ul className="session-list">

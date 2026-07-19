@@ -14,6 +14,7 @@ import config from "../utils/config.js";
 import {
   getAllEpisodes,
   getAllJobs,
+  getEpisode,
   getJob,
   type PressPodsEpisodeData,
   type PressPodsJobData,
@@ -158,6 +159,12 @@ export function registerPressPodsRoutes(
     }),
   );
 
+  app.get("/api/press-pods/episodes/:id", (c) => {
+    const episode = getEpisode(c.req.param("id"));
+    if (!episode) return c.json({ error: "Unknown episode" }, 404);
+    return c.json({ episode: serializeEpisodeDetail(episode) });
+  });
+
   app.post("/api/press-pods/submit", async (c) => {
     let parsed: z.infer<typeof submitEpisodeSchema>;
     try {
@@ -258,6 +265,23 @@ function serializeEpisode(episode: PressPodsEpisodeData) {
     createdAt: episode.createdAt,
     publishedAt: episode.publishedAt ?? null,
     runId: episode.runId ?? null,
+  };
+}
+
+/**
+ * Full episode detail for the `/pods/:id` page: everything the list
+ * serializer sends plus the transcript, per-chunk synthesis stats, and the
+ * itemized cost breakdown. Deliberately not part of the list payload — those
+ * fields are too heavy to ship for every row.
+ */
+function serializeEpisodeDetail(episode: PressPodsEpisodeData) {
+  return {
+    ...serializeEpisode(episode),
+    content: episode.content,
+    authorGender: episode.authorGender ?? null,
+    voiceProvider: episode.voiceProvider ?? null,
+    chunks: episode.chunks ?? null,
+    costs: episode.costs ?? null,
   };
 }
 

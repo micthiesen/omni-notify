@@ -242,7 +242,15 @@ export function validateProfile(
 
 function isTasteBearingEvidence(item: TasteEvidenceData): boolean {
   if (item.kind === "explicit_feedback") {
-    return item.feedback === "good_pick" || item.feedback === "not_for_me";
+    // A note-only row (no good_pick/not_for_me) still reaches reflection so
+    // its interpretive context isn't lost, but it's bound to exactly one
+    // canonicalId like any other explicit_feedback row, so it can't alone
+    // satisfy the ≥2-independent-title threshold in validateClaims.
+    return (
+      item.feedback === "good_pick" ||
+      item.feedback === "not_for_me" ||
+      Boolean(item.note)
+    );
   }
   if (item.kind === "recommendation_outcome") {
     return (
@@ -291,6 +299,7 @@ function compactEvidence(item: TasteEvidenceData): Record<string, unknown> {
       completion: item.completion,
       recommendation_status: item.recommendationStatus,
       feedback: item.feedback,
+      note: item.note,
       source: item.source,
       genres: item.genres,
       runtime_minutes: item.runtimeMinutes,
@@ -316,6 +325,7 @@ Rules:
 - Separate stable preferences from conditional/contextual ones.
 - Preserve some exploration and state uncertainties instead of inventing certainty.
 - Every profile field must cite evidence ids from the supplied ledger, including saturation, exploration, uncertainty, and commitment assessments. Stable, conditional, saturation, and commitment claims need at least two independent titles. One explicit not_for_me item may support an aversion. Exploration and uncertainty entries need at least one taste-bearing item.
+- Free-form notes on feedback rows are interpretive context to help you understand the structured feedback (or, if there is no good_pick/not_for_me on that row, the only signal). They are not independent evidence: never let a single vivid note carry more weight than one title's worth of evidence toward the independent-title requirement for a claim.
 - Do not propose changes to code, prompts, weights, or automation.
 
 DETERMINISTIC STATS:
@@ -332,7 +342,7 @@ function buildCriticPrompt(
 ): string {
   return `Act as a skeptical second-pass reviewer of a movie/TV taste profile. Return a corrected final profile.
 
-Remove overfitting, unsupported genre claims, accidental treatment of "already_watched" as dislike, use of pending/notified/failed operational rows as taste evidence, and claims whose cited ids do not exist. Reduce confidence when evidence is ambiguous. Every field must cite taste-bearing evidence, including saturation, exploration, uncertainty, and commitment assessments. Stable, conditional, saturation, and commitment claims need two independent titles, while one explicit not_for_me item may support an aversion. Exploration and uncertainty need at least one relevant item.
+Remove overfitting, unsupported genre claims, accidental treatment of "already_watched" as dislike, use of pending/notified/failed operational rows as taste evidence, and claims whose cited ids do not exist. Reduce confidence when evidence is ambiguous. Every field must cite taste-bearing evidence, including saturation, exploration, uncertainty, and commitment assessments. Stable, conditional, saturation, and commitment claims need two independent titles, while one explicit not_for_me item may support an aversion. Exploration and uncertainty need at least one relevant item. Free-form notes are interpretive context, not independent evidence: flag any claim that leans on a note's wording instead of the independent-title count it actually has.
 
 DETERMINISTIC STATS:
 ${JSON.stringify(stats, null, 2)}

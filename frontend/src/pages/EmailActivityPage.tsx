@@ -17,8 +17,25 @@ import {
 import { EmailLogModal } from "../components/EmailLogModal";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
+import { Toast, useToast } from "../components/Toast";
 import { OUTCOME_LABELS, PIPELINE_LABELS } from "../utils/emailLabels";
 import { formatAbsolute } from "../utils/format";
+
+/** admitTier → short human label; unrecognized tiers fall back to the raw value. */
+const ADMIT_TIER_LABELS: Record<string, string> = {
+  rule: "Rule",
+  builtin: "Built-in",
+  triage: "Triage",
+  "keyword-fallback": "Keyword Fallback",
+  "carrier-name": "Carrier Name",
+};
+
+/** costCents is fractional-cent LLM spend; format for a tiny inline badge. */
+function formatEmailCost(cents: number): string {
+  if (cents < 1) return `${cents.toFixed(2)}¢`;
+  const dollars = cents / 100;
+  return dollars < 1 ? `$${dollars.toFixed(4)}` : `$${dollars.toFixed(2)}`;
+}
 
 const OUTCOME_FILTER_ORDER: readonly EmailActivityOutcome[] = [
   "processed",
@@ -50,6 +67,7 @@ function SenderRulesSection() {
   const [scope, setScope] = useState<EmailRuleScope>("parcel");
   const [verdict, setVerdict] = useState<EmailRuleVerdict>("block");
   const [submitting, setSubmitting] = useState(false);
+  const { toast, showToast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -76,10 +94,28 @@ function SenderRulesSection() {
     setError(null);
     try {
       const res = await createEmailRule({ pattern: trimmed, scope, verdict });
-      setRules((prev) => {
-        const others = (prev ?? []).filter((r) => r.ruleId !== res.rule.ruleId);
-        return [res.rule, ...others];
-      });
+      switch (res.status) {
+        case "created":
+          showToast("Rule added", "info");
+          break;
+        case "merged":
+          showToast(res.message ?? "Merged into a single Both rule", "info");
+          break;
+        case "exists":
+          showToast(res.message ?? "That rule already exists", "error");
+          break;
+        case "builtin":
+          showToast(res.message ?? "Already covered by a built-in list", "error");
+          break;
+      }
+      // builtin/exists may return no new rule — only prepend when one landed.
+      if (res.rule) {
+        const rule = res.rule;
+        setRules((prev) => {
+          const others = (prev ?? []).filter((r) => r.ruleId !== rule.ruleId);
+          return [rule, ...others];
+        });
+      }
       setPattern("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add rule");
@@ -104,6 +140,7 @@ function SenderRulesSection() {
 
   return (
     <section className="mail-rules">
+      <Toast toast={toast} />
       <button
         type="button"
         className="mail-rules-toggle"
@@ -111,7 +148,7 @@ function SenderRulesSection() {
         onClick={() => setOpen((v) => !v)}
       >
         <span className="mail-rules-caret">{open ? "▾" : "▸"}</span>
-        Sender rules
+        Sender Rules
         {rules !== null && <span className="chip-btn-count">{rules.length}</span>}
       </button>
       {open && (
@@ -199,7 +236,7 @@ function SenderRulesSection() {
                 onClick={() => setBuiltinOpen((v) => !v)}
               >
                 <span className="mail-rules-caret">{builtinOpen ? "▾" : "▸"}</span>
-                Built-in lists
+                Built-in Lists
                 <span className="chip-btn-count">
                   {builtin.parcel.blocked.length +
                     builtin.parcel.autoPass.length +
@@ -210,22 +247,22 @@ function SenderRulesSection() {
               {builtinOpen && (
                 <div className="rule-builtin-body">
                   <BuiltinList
-                    label="Parcels · blocked"
+                    label="Parcels · Blocked"
                     verdict="block"
                     patterns={builtin.parcel.blocked}
                   />
                   <BuiltinList
-                    label="Parcels · auto-pass"
+                    label="Parcels · Auto-pass"
                     verdict="allow"
                     patterns={builtin.parcel.autoPass}
                   />
                   <BuiltinList
-                    label="Calendar · blocked"
+                    label="Calendar · Blocked"
                     verdict="block"
                     patterns={builtin.calendar.blocked}
                   />
                   <BuiltinList
-                    label="Calendar · auto-pass"
+                    label="Calendar · Auto-pass"
                     verdict="allow"
                     patterns={builtin.calendar.autoPass}
                   />
@@ -360,7 +397,7 @@ export default function EmailActivityPage() {
     <>
       <div className="page-header">
         <div className="page-header-stack">
-          <h1>Email activity</h1>
+          <h1>Email Activity</h1>
           <p className="page-subtitle">
             What the parcel and calendar pipelines did with each email.
           </p>
@@ -447,6 +484,21 @@ export default function EmailActivityPage() {
                   {activity.admitReason && (
                     <span className="mail-admit" title={activity.admitReason}>
                       Admitted: {activity.admitReason}
+                    </span>
+                  )}
+                  {activity.admitTier && (
+                    <span
+                      className={`email-tier email-tier-${activity.admitTier}`}
+                      title={`Admitted via ${
+                        ADMIT_TIER_LABELS[activity.admitTier] ?? activity.admitTier
+                      }`}
+                    >
+                      {ADMIT_TIER_LABELS[activity.admitTier] ?? activity.admitTier}
+                    </span>
+                  )}
+                  {activity.costCents != null && activity.costCents > 0 && (
+                    <span className="email-cost" title="LLM cost for this email">
+                      {formatEmailCost(activity.costCents)}
                     </span>
                   )}
                   {feedback.has(activity.activityId) && (

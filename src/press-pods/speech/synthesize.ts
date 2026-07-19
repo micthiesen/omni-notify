@@ -1,7 +1,7 @@
 import fsAsync from "node:fs/promises";
 import type { Logger } from "@micthiesen/mitools/logging";
 import type CostCounter from "../costs.js";
-import type { Chapter } from "../types.js";
+import type { Chapter, ChunkStat } from "../types.js";
 import {
   assembleEpisode,
   cleanupWavs,
@@ -35,23 +35,33 @@ const MIN_VERIFY_CHARS = 120;
  * a natural pace. A synth/prepare failure counts as a spent attempt rather than
  * failing the whole episode. Discarded takes' temp files are cleaned up.
  */
+interface ChunkSynthesisOutcome {
+  chunk: PreparedChunk;
+  /** Synth takes spent (length-verify retries count; 1 when skipped). */
+  attempts: number;
+}
+
 async function synthesizeChunkAudio(
   provider: TtsProvider,
   text: string,
   logger: Logger,
-): Promise<PreparedChunk> {
+): Promise<ChunkSynthesisOutcome> {
   const opts = { denoise: provider.needsDenoise };
   const attempt = async (): Promise<PreparedChunk> =>
     prepareChunk(await provider.synthesizeChunk(text, logger), opts);
 
-  if (!provider.verifyChunkLength || text.length < MIN_VERIFY_CHARS) return attempt();
+  if (!provider.verifyChunkLength || text.length < MIN_VERIFY_CHARS) {
+    return { chunk: await attempt(), attempts: 1 };
+  }
 
   const inBounds = (take: PreparedChunk): boolean => {
     const ratio = take.durationSeconds / text.length;
     return ratio >= MIN_SEC_PER_CHAR && ratio <= MAX_SEC_PER_CHAR;
   };
   const takes: PreparedChunk[] = [];
+  let attemptsMade = 0;
   for (let i = 1; i <= MAX_LENGTH_ATTEMPTS; i++) {
+    attemptsMade = i;
     try {
       const take = await attempt();
       takes.push(take);
@@ -86,7 +96,7 @@ async function synthesizeChunkAudio(
         `(${chosen.durationSeconds.toFixed(1)}s)`,
     );
   }
-  return chosen;
+  return { chunk: chosen, attempts: attemptsMade };
 }
 
 /** ~900-char chunks keep each request in the quality sweet spot; sections and
@@ -105,6 +115,7 @@ export interface SynthesisResult {
   voiceProvider: string;
   synthesizedSeconds: number;
   chapters: Chapter[];
+  chunks: ChunkStat[];
 }
 
 export async function synthesizeSpeech({
@@ -137,6 +148,7 @@ export async function synthesizeSpeech({
   const sectionGap = await makeSilenceWav(SECTION_GAP_SEC);
   const wavPaths: string[] = [];
   const chapters: Chapter[] = [];
+  const chunkStats: ChunkStat[] = [];
   // Offset into the speech track (excludes the intro jingle, added below).
   let speechOffset = 0;
   let chunkIndex = 0;
@@ -166,15 +178,28 @@ export async function synthesizeSpeech({
           wavPaths.push(chunkGap);
           speechOffset += CHUNK_GAP_SEC;
         }
-        const { wavPath, durationSeconds } = await synthesizeChunkAudio(
+        const chunkStartTimeSeconds = introDuration + speechOffset;
+        const { chunk, attempts } = await synthesizeChunkAudio(
           provider,
           chunks[i],
           logger,
         );
+        const { wavPath, durationSeconds } = chunk;
         costCounter.recordTtsUsage(provider.modelId, "tts", chunks[i]);
         wavPaths.push(wavPath);
         speechOffset += durationSeconds;
         chunkIndex++;
+        chunkStats.push({
+          index: chunkIndex - 1,
+          sectionIndex: s,
+          sectionTitle: section.title,
+          text: chunks[i],
+          charCount: chunks[i].length,
+          durationSeconds,
+          startTimeSeconds: chunkStartTimeSeconds,
+          secPerChar: chunks[i].length > 0 ? durationSeconds / chunks[i].length : 0,
+          attempts,
+        });
         logger.info(`Synthesized chunk ${chunkIndex}/${totalChunks}`);
       }
     }
@@ -191,6 +216,7 @@ export async function synthesizeSpeech({
       voiceProvider: provider.providerName,
       synthesizedSeconds: (Date.now() - start) / 1000,
       chapters,
+      chunks: chunkStats,
     };
   } finally {
     await cleanupWavs([...wavPaths, chunkGap, sectionGap]);

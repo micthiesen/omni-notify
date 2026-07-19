@@ -12,6 +12,7 @@ export interface PodcastRecommendationManualRunInput {
 
 export class PodcastRecommendationTask extends ScheduledTask {
   public readonly name = "PodcastRecs";
+  public readonly displayName = "Podcast Recommendations";
   public readonly schedule = config.PODCAST_RECS_SCHEDULE;
   public override readonly runOnStartup = false;
   // Fire a few minutes off the scheduled instant so we don't hit Castro at a

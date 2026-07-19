@@ -28,6 +28,8 @@ export interface TasteEvidenceData {
   recommendationId?: string;
   recommendationStatus?: RecommendationStatus;
   feedback?: RecommendationFeedback;
+  /** Free-form note left alongside (or instead of) the binary feedback. */
+  note?: string;
   recommendedAt?: number;
   startedAt?: number;
   source?: string;

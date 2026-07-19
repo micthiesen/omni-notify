@@ -37,7 +37,8 @@ import {
   type EmailRuleScope,
   type EmailRuleVerdict,
   listEmailRules,
-  upsertEmailRule,
+  normalizeRulePattern,
+  upsertEmailRuleChecked,
 } from "./jmap/senderRules.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
@@ -147,6 +148,7 @@ function serializeRecommendation(rec: RecommendationData) {
     confidence: rec.confidence ?? null,
     feedback: rec.feedback ?? null,
     feedbackAt: rec.feedbackAt ?? null,
+    feedbackNote: rec.feedbackNote ?? null,
     source: rec.source ?? null,
     genres: rec.genres ?? [],
     runtimeMinutes: rec.runtimeMinutes ?? null,
@@ -192,6 +194,7 @@ function serializePodcastRecommendation(rec: PodcastRecommendationData) {
     queueResult: rec.queueResult ?? null,
     feedback: rec.feedback ?? null,
     feedbackAt: rec.feedbackAt ?? null,
+    feedbackNote: rec.feedbackNote ?? null,
   };
 }
 
@@ -268,15 +271,22 @@ function feedbackRoute<
   TData extends { status: string },
   TFeedback extends string,
 >(options: {
-  schema: z.ZodType<{ feedback: TFeedback }>;
+  schema: z.ZodType<{ feedback?: TFeedback; note?: string }>;
   get: (id: string) => TData | undefined;
-  setFeedback: (id: string, feedback: TFeedback) => TData | undefined;
+  setFeedback: (
+    id: string,
+    input: { feedback?: TFeedback; note?: string },
+  ) => TData | undefined;
   serialize: (data: TData) => unknown;
 }) {
   return async (c: Context) => {
     const parsed = options.schema.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) {
       return c.json({ error: "Invalid recommendation feedback" }, 400);
+    }
+    // A rating, a free-form note, or both — but at least one must be present.
+    if (parsed.data.feedback === undefined && !parsed.data.note?.trim()) {
+      return c.json({ error: "A rating or a note is required" }, 400);
     }
     // Both routes bind :id, but the generic Context can't prove it.
     const id = c.req.param("id") ?? "";
@@ -285,7 +295,10 @@ function feedbackRoute<
     if (existing.status === "pending" || existing.status === "failed") {
       return c.json({ error: "Undelivered recommendations cannot be rated" }, 409);
     }
-    const recommendation = options.setFeedback(id, parsed.data.feedback);
+    const recommendation = options.setFeedback(id, {
+      feedback: parsed.data.feedback,
+      note: parsed.data.note?.trim() || undefined,
+    });
     if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
     return c.json({ recommendation: options.serialize(recommendation) });
   };
@@ -302,6 +315,8 @@ function serializeEmailActivity(a: {
   outcome: string;
   detail?: string;
   admitReason?: string;
+  admitTier?: string;
+  costCents?: number | null;
   items?: string[];
 }) {
   return {
@@ -315,8 +330,46 @@ function serializeEmailActivity(a: {
     outcome: a.outcome,
     detail: a.detail ?? null,
     admitReason: a.admitReason ?? null,
+    // Which tier admitted the email (rule/builtin/triage/keyword-fallback/
+    // carrier-name) and the LLM cost incurred deciding/extracting it. costCents
+    // is null when no priced LLM call was attributable to the row.
+    admitTier: a.admitTier ?? null,
+    costCents: a.costCents ?? null,
     items: a.items ?? [],
   };
+}
+
+/**
+ * Representative sender addresses a user rule for `pattern` targets — a domain
+ * rule ("@host") also targets subdomains, so include a subdomain probe. Used to
+ * test built-in coverage with the same substring semantics the runtime uses.
+ */
+function ruleSampleSenders(pattern: string): string[] {
+  const domain = pattern.startsWith("@")
+    ? pattern.slice(1)
+    : pattern.includes("@")
+      ? null
+      : pattern;
+  if (domain === null) return [pattern]; // full "local@host" address rule
+  return [`probe@${domain}`, `probe@sub.${domain}`];
+}
+
+/**
+ * True when a user *block* rule for `pattern`/`scope` would be redundant because
+ * a built-in blacklist already covers EVERY sender the rule targets (including a
+ * subdomain probe for domain rules). Requiring all samples to be covered avoids
+ * falsely claiming coverage when a built-in only matches the bare domain but the
+ * user rule would also block subdomains.
+ */
+function matchesBuiltinBlock(pattern: string, scope: EmailRuleScope): boolean {
+  const samples = ruleSampleSenders(pattern);
+  const coveredBy = (list: string[]) =>
+    samples.every((s) => list.some((e) => s.includes(e.toLowerCase())));
+  const inParcel = coveredBy(PARCEL_BUILTIN_BLOCKED);
+  const inCalendar = coveredBy(CALENDAR_BUILTIN_BLOCKED);
+  if (scope === "parcel") return inParcel;
+  if (scope === "calendar") return inCalendar;
+  return inParcel && inCalendar;
 }
 
 /**
@@ -652,7 +705,8 @@ export function startServer(
     "/api/recommendations/:id/feedback",
     feedbackRoute({
       schema: z.object({
-        feedback: z.enum(["good_pick", "not_for_me", "already_watched"]),
+        feedback: z.enum(["good_pick", "not_for_me", "already_watched"]).optional(),
+        note: z.string().max(1000).optional(),
       }),
       get: getRecommendation,
       setFeedback: setRecommendationFeedback,
@@ -681,7 +735,10 @@ export function startServer(
   app.post(
     "/api/podcast-recommendations/:id/feedback",
     feedbackRoute({
-      schema: z.object({ feedback: z.enum(["good_pick", "not_for_me"]) }),
+      schema: z.object({
+        feedback: z.enum(["good_pick", "not_for_me"]).optional(),
+        note: z.string().max(1000).optional(),
+      }),
       get: getPodcastRecommendation,
       setFeedback: setPodcastRecommendationFeedback,
       serialize: serializePodcastRecommendation,
@@ -801,13 +858,33 @@ export function startServer(
     if (!parsed.success) {
       return c.json({ error: "pattern, scope, and verdict are required" }, 400);
     }
-    const rule = upsertEmailRule({
-      pattern: parsed.data.pattern,
-      scope: parsed.data.scope as EmailRuleScope,
-      verdict: parsed.data.verdict as EmailRuleVerdict,
-    });
-    logger.info(`Email rule saved: ${rule.verdict} ${rule.pattern} (${rule.scope})`);
-    return c.json({ rule }, 201);
+    const pattern = normalizeRulePattern(parsed.data.pattern);
+    const scope = parsed.data.scope as EmailRuleScope;
+    const verdict = parsed.data.verdict as EmailRuleVerdict;
+    if (!pattern) {
+      return c.json({ error: "pattern, scope, and verdict are required" }, 400);
+    }
+
+    // A block rule a built-in list already covers is redundant — surface that
+    // rather than silently storing a no-op user rule. (Allow rules are the
+    // escape hatch from built-ins, so they're never rejected this way.)
+    if (verdict === "block" && matchesBuiltinBlock(pattern, scope)) {
+      return c.json(
+        { status: "builtin", message: "Already blocked by a built-in list" },
+        200,
+      );
+    }
+
+    const result = upsertEmailRuleChecked({ pattern, scope, verdict });
+    const status = result.alreadyExists
+      ? "exists"
+      : result.merged
+        ? "merged"
+        : "created";
+    logger.info(
+      `Email rule ${status}: ${result.rule.verdict} ${result.rule.pattern} (${result.rule.scope})`,
+    );
+    return c.json({ rule: result.rule, status }, status === "created" ? 201 : 200);
   });
 
   app.delete("/api/email-rules/:ruleId", (c) => {
@@ -877,6 +954,8 @@ export function startServer(
             message: n.message,
             url: n.url,
             timestamp: n.timestamp,
+            runId: n.runId ?? null,
+            costCents: n.costCents ?? null,
           }))
           .sort((a, b) => b.timestamp - a.timestamp),
       }))

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
 import type { Costs } from "./costs.js";
-import type { Chapter, RetrieverAttempt } from "./types.js";
+import type { Chapter, ChunkStat, RetrieverAttempt } from "./types.js";
 
 /**
  * CSPRNG ids: episode ids double as publicly-served audio file names whose
@@ -29,6 +29,8 @@ export type PressPodsEpisodeData = {
   synthesizedSeconds?: number;
   /** Chapter markers (title + start offset), embedded as ID3 chapters. */
   chapters?: Chapter[];
+  /** Per-chunk synthesis stats; absent on episodes created before this field. */
+  chunks?: ChunkStat[];
   audioFile: string;
   durationSeconds?: number;
   fileBytes: number;
@@ -49,6 +51,10 @@ export const PressPodsEpisodeEntity = new Entity<PressPodsEpisodeData, ["episode
 
 export function getAllEpisodes(): PressPodsEpisodeData[] {
   return PressPodsEpisodeEntity.getAll().sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export function getEpisode(episodeId: string): PressPodsEpisodeData | undefined {
+  return PressPodsEpisodeEntity.get({ episodeId });
 }
 
 /**

@@ -80,10 +80,10 @@ export function TasteBrain({
 }) {
   const columns: [string, TasteClaim[]][] = profile
     ? [
-        ["Reliable preferences", profile.stablePreferences],
-        ["Depends on context", profile.conditionalPreferences],
+        ["Reliable Preferences", profile.stablePreferences],
+        ["Depends on Context", profile.conditionalPreferences],
         ["Avoid", profile.aversions],
-        ["Still learning", profile.uncertainties],
+        ["Still Learning", profile.uncertainties],
       ]
     : [];
 
@@ -91,7 +91,7 @@ export function TasteBrain({
     <section className="page-section taste-brain">
       <div className="taste-heading">
         <div>
-          <h2 className="section-title">Taste brain</h2>
+          <h2 className="section-title">Taste Brain</h2>
           <div className="muted taste-subtitle">{subtitle}</div>
         </div>
         {profile && (
@@ -147,7 +147,7 @@ export function TasteBrain({
               )}
               {profile.currentSaturation.length > 0 && (
                 <TagGroup
-                  label="Currently saturated"
+                  label="Currently Saturated"
                   claims={profile.currentSaturation}
                 />
               )}

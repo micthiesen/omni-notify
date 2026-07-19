@@ -66,6 +66,8 @@ export type PodcastRecommendationData = {
   resolvedAt?: number;
   feedback?: PodcastFeedback;
   feedbackAt?: number;
+  /** Optional free-form note alongside (or instead of) the binary feedback. */
+  feedbackNote?: string;
 };
 
 export const PodcastRecommendationEntity = new Entity<
@@ -147,16 +149,37 @@ export function getOpenPodcastRecommendations(): PodcastRecommendationData[] {
   );
 }
 
+export type PodcastFeedbackInput = {
+  feedback?: PodcastFeedback;
+  note?: string;
+};
+
+/**
+ * Overloaded so existing callers passing a bare enum keep compiling: the note
+ * is purely additive, and either input alone (or both) is a valid update.
+ */
 export function setPodcastRecommendationFeedback(
   recommendationId: string,
   feedback: PodcastFeedback,
+): PodcastRecommendationData | undefined;
+export function setPodcastRecommendationFeedback(
+  recommendationId: string,
+  input: PodcastFeedbackInput,
+): PodcastRecommendationData | undefined;
+export function setPodcastRecommendationFeedback(
+  recommendationId: string,
+  input: PodcastFeedback | PodcastFeedbackInput,
 ): PodcastRecommendationData | undefined {
   const rec = PodcastRecommendationEntity.get({ recommendationId });
   if (!rec) return undefined;
-  PodcastRecommendationEntity.patch(
-    { recommendationId },
-    { feedback, feedbackAt: Date.now() },
-  );
+  const { feedback, note } =
+    typeof input === "string" ? { feedback: input, note: undefined } : input;
+  const patch: Partial<Omit<PodcastRecommendationData, "recommendationId">> = {
+    feedbackAt: Date.now(),
+  };
+  if (feedback !== undefined) patch.feedback = feedback;
+  if (note !== undefined) patch.feedbackNote = note;
+  PodcastRecommendationEntity.patch({ recommendationId }, patch);
   return PodcastRecommendationEntity.get({ recommendationId });
 }
 
@@ -173,7 +196,7 @@ export function formatPodcastFeedbackDigestFrom(
       (a, b) => (b.feedbackAt ?? b.recommendedAt) - (a.feedbackAt ?? a.recommendedAt),
     )
     .filter((rec) => {
-      if (!rec.feedback || seen.has(rec.showId)) return false;
+      if ((!rec.feedback && !rec.feedbackNote) || seen.has(rec.showId)) return false;
       seen.add(rec.showId);
       return true;
     })
@@ -182,16 +205,31 @@ export function formatPodcastFeedbackDigestFrom(
 
   const good = records.filter((rec) => rec.feedback === "good_pick");
   const bad = records.filter((rec) => rec.feedback === "not_for_me");
+  const noteOnly = records.filter((rec) => !rec.feedback && rec.feedbackNote);
   const lines = ["Explicit feedback on past podcast recommendations:"];
   if (good.length > 0) {
-    lines.push(
-      `- Good picks: ${good.map((r) => `${r.showTitle} — ${r.episodeTitle}`).join("; ")}`,
-    );
+    const picks = good.map((r) => formatPodcastFeedbackEntry(r, true)).join("; ");
+    lines.push(`- Good picks: ${picks}`);
   }
   if (bad.length > 0) {
-    lines.push(`- Not for me: ${bad.map((r) => r.showTitle).join("; ")}`);
+    const skips = bad.map((r) => formatPodcastFeedbackEntry(r, false)).join("; ");
+    lines.push(`- Not for me: ${skips}`);
+  }
+  if (noteOnly.length > 0) {
+    const notes = noteOnly.map((r) => formatPodcastFeedbackEntry(r, true)).join("; ");
+    lines.push(`- Notes (no rating): ${notes}`);
   }
   return lines.join("\n");
+}
+
+function formatPodcastFeedbackEntry(
+  rec: PodcastRecommendationData,
+  includeEpisode: boolean,
+): string {
+  const base = includeEpisode
+    ? `${rec.showTitle} — ${rec.episodeTitle}`
+    : rec.showTitle;
+  return rec.feedbackNote ? `${base} — note: "${rec.feedbackNote}"` : base;
 }
 
 /** Recently recommended episodes, for the discovery/selection dedup context. */

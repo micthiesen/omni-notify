@@ -1,6 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { generateText, Output } from "ai";
 import { z } from "zod";
+import { hasPrice, llmCostCents } from "../ai/cost.js";
 import { getTriageModel } from "../ai/registry.js";
 import type { FetchedEmail } from "./emailFetcher.js";
 import { formatFeedbackDigest } from "./feedback.js";
@@ -62,6 +63,11 @@ ${body}${linksSection}${correctionsSection}`;
  */
 export class EmailTriageService {
   private cache = new Map<string, Promise<TriageVerdict>>();
+  // Keyed by email id, populated once `callModel` resolves. `null` means the
+  // call ran but its model has no pricing entry (unpriced, not free) — a
+  // missing key (checked via `getTriageCostCents`) means no call has
+  // completed for that email yet.
+  private costCache = new Map<string, number | null>();
   private logger: Logger;
   private classifyFn: (email: TriageEmail) => Promise<TriageVerdict>;
 
@@ -90,9 +96,27 @@ export class EmailTriageService {
     this.cache.set(email.id, pending);
     if (this.cache.size > MAX_TRIAGE_CACHE_ENTRIES) {
       const oldest = this.cache.keys().next().value;
-      if (oldest !== undefined) this.cache.delete(oldest);
+      if (oldest !== undefined) {
+        this.cache.delete(oldest);
+        this.costCache.delete(oldest);
+      }
     }
     return pending;
+  }
+
+  /**
+   * Triage cost for one email, since `classify` is memoized: both pipelines
+   * calling `classify` for the same email trigger exactly one model call, so
+   * this cost is attributable once per email — a pipeline attaching it to its
+   * own activity row may double-count against the other pipeline's row for
+   * the same email, which is an accepted per-email-transparency trade-off.
+   * Returns `null` both when no call has completed yet (classification
+   * failed, or hasn't resolved) and when it completed on an unpriced model —
+   * callers only reach for this after confirming `admitTier === "triage"`,
+   * at which point either reading means "cost unknown, don't fabricate one".
+   */
+  public getTriageCostCents(emailId: string): number | null {
+    return this.costCache.get(emailId) ?? null;
   }
 
   private async callModel(email: TriageEmail): Promise<TriageVerdict> {
@@ -104,6 +128,18 @@ export class EmailTriageService {
     });
     const verdict = result.output;
     if (!verdict) throw new Error("Triage model returned no output");
+
+    const costCents = hasPrice(modelId)
+      ? llmCostCents(modelId, {
+          inputTokens: result.usage.inputTokens ?? 0,
+          outputTokens: result.usage.outputTokens ?? 0,
+        })
+      : null;
+    if (costCents === null) {
+      this.logger.debug(`No pricing data for triage model "${modelId}"`);
+    }
+    this.costCache.set(email.id, costCents);
+
     this.logger.info(
       `Triage (${modelId}) "${email.subject}": parcel=${verdict.parcel} ` +
         `calendar=${verdict.calendar} — ${verdict.reason}`,

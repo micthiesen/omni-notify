@@ -3,6 +3,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { hasPrice, llmCostCents } from "../../ai/cost.js";
 import { getExtractionModel } from "../../ai/registry.js";
 import { MAX_CARRIER_CANDIDATES } from "../carriers/candidates.js";
 import { getCarrierCodesForPrompt } from "../carriers/carrierMap.js";
@@ -16,11 +17,17 @@ export interface ExtractedDelivery {
   description: string;
 }
 
+export interface ExtractDeliveriesResult {
+  deliveries: ExtractedDelivery[];
+  /** USD cents, or null if the extraction model has no pricing entry. */
+  costCents: number | null;
+}
+
 export async function extractDeliveries(
   email: { subject: string; from: string; textBody: string; links: string[] },
   logger: Logger,
   logFile?: LogFile,
-): Promise<ExtractedDelivery[]> {
+): Promise<ExtractDeliveriesResult> {
   const { model, modelId } = getExtractionModel();
   const carrierCodes = await getCarrierCodesForPrompt(logger);
   const body = email.textBody.slice(0, MAX_BODY_CHARS);
@@ -81,9 +88,22 @@ ${body}${linksSection}`;
     `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
   );
 
+  const costCents = hasPrice(modelId)
+    ? llmCostCents(modelId, {
+        inputTokens: result.usage.inputTokens ?? 0,
+        outputTokens: result.usage.outputTokens ?? 0,
+      })
+    : null;
+  if (costCents === null) {
+    logger.debug(`No pricing data for extraction model "${modelId}"`);
+  }
+
   const deliveries = result.output?.deliveries ?? [];
-  return deliveries.map((delivery) => ({
-    ...delivery,
-    carrier_candidates: delivery.carrier_candidates.slice(0, MAX_CARRIER_CANDIDATES),
-  }));
+  return {
+    deliveries: deliveries.map((delivery) => ({
+      ...delivery,
+      carrier_candidates: delivery.carrier_candidates.slice(0, MAX_CARRIER_CANDIDATES),
+    })),
+    costCents,
+  };
 }

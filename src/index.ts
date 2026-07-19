@@ -9,6 +9,7 @@ import { createJmapClient, type JmapContext } from "./jmap/client.js";
 import { EmailDispatcher, type EmailHandler } from "./jmap/dispatcher.js";
 import { createEventSource } from "./jmap/eventSource.js";
 import EmailRetryTask from "./jmap/retryTask.js";
+import { normalizeSenderRules } from "./jmap/senderRules.js";
 import { EmailTriageService } from "./jmap/triage.js";
 import EmailWatchdogTask from "./jmap/watchdogTask.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
@@ -22,8 +23,8 @@ import { PodcastTasteReflectionTask } from "./podcast-recs/reflection/index.js";
 import { PodcastRecommendationTask } from "./podcast-recs/task.js";
 import PressPodsTask from "./press-pods/task.js";
 import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
-import { RecommendationTask } from "./recommendations/task.js";
-import { TasteReflectionTask } from "./recommendations/taste/task.js";
+import { MediaRecommendationTask } from "./recommendations/task.js";
+import { MediaTasteReflectionTask } from "./recommendations/taste/task.js";
 import { type EmailControls, startServer } from "./server.js";
 import { installLogCapture } from "./task-runs/logCapture.js";
 import { TaskRegistry } from "./task-runs/registry.js";
@@ -34,6 +35,13 @@ installLogCapture();
 migrateLegacyRecommendations();
 
 const logger = new Logger("Main");
+
+// One-time (idempotent) cleanup: fold any legacy same-address parcel+calendar
+// sender rules into a single "both" rule. New adds normalize at write time.
+const mergedRuleCount = normalizeSenderRules();
+if (mergedRuleCount > 0) {
+  logger.info(`Normalized ${mergedRuleCount} sender-rule pair(s) into "both"`);
+}
 
 function loadStreamers(): Streamer[] {
   const kickConfigured = config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET;
@@ -67,13 +75,13 @@ function buildTasks(streamers: Streamer[]): ScheduledTask[] {
 
   const pressPods = PressPodsTask.create(logger);
   if (pressPods) tasks.push(pressPods);
-  const recommendations = RecommendationTask.create(logger);
+  const recommendations = MediaRecommendationTask.create(logger);
   if (recommendations) tasks.push(recommendations);
   const podcastRecs = PodcastRecommendationTask.create(logger);
   if (podcastRecs) tasks.push(podcastRecs);
   const castroInboxCleanup = CastroInboxCleanupTask.create(logger);
   if (castroInboxCleanup) tasks.push(castroInboxCleanup);
-  const tasteReflection = TasteReflectionTask.create(logger);
+  const tasteReflection = MediaTasteReflectionTask.create(logger);
   if (tasteReflection) tasks.push(tasteReflection);
   const podcastTasteReflection = PodcastTasteReflectionTask.create(logger);
   if (podcastTasteReflection) tasks.push(podcastTasteReflection);

@@ -8,7 +8,7 @@ import {
   formatCountdown,
   formatDuration,
   formatRelative,
-  toTitleCase,
+  taskLabel,
 } from "../utils/format";
 import { StatusDot, TriggerBadge } from "./badges";
 
@@ -150,7 +150,7 @@ export function TaskCard({
               }
             />
           )}
-          <span className="task-name">{toTitleCase(task.name)}</span>
+          <span className="task-name">{taskLabel(task)}</span>
         </div>
         <button
           type="button"
@@ -158,7 +158,7 @@ export function TaskCard({
           disabled={task.running}
           onClick={() => onRun(task.name)}
         >
-          {task.running ? "Running…" : "Run now"}
+          {task.running ? "Running…" : "Run Now"}
         </button>
       </div>
       <div className="task-schedule">
@@ -166,7 +166,7 @@ export function TaskCard({
         {human && <span className="cron-human">{human}</span>}
       </div>
       <div className="task-next-run">
-        <span className="field-label">Next run</span>
+        <span className="field-label">Next Run</span>
         {nextRunMs !== null && !Number.isNaN(nextRunMs) ? (
           <span
             className="next-run-value meta-row"
@@ -176,7 +176,7 @@ export function TaskCard({
             <span className="muted">{formatAbsolute(nextRunMs)}</span>
           </span>
         ) : (
-          <span className="muted">Not scheduled</span>
+          <span className="muted">Not Scheduled</span>
         )}
       </div>
       <LastRunSummary run={task.lastRun} onViewLogs={onViewLogs} />
@@ -203,7 +203,7 @@ export function TaskCard({
         className="history-toggle"
         onClick={() => setExpanded((v) => !v)}
       >
-        {expanded ? "Hide history" : "History"}
+        {expanded ? "Hide History" : "History"}
         <span className={`chevron ${expanded ? "open" : ""}`}>▾</span>
       </button>
     </div>

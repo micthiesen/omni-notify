@@ -21,8 +21,8 @@ vi.mock("../utils/config.js", () => ({
   },
 }));
 
-import { RecommendationTask } from "./task.js";
-import { TasteReflectionTask } from "./taste/task.js";
+import { MediaRecommendationTask } from "./task.js";
+import { MediaTasteReflectionTask } from "./taste/task.js";
 
 const logger = {
   extend: vi.fn(),
@@ -32,8 +32,8 @@ const logger = {
 
 describe("recommendation task startup policy", () => {
   it("does not run LLM-backed tasks on service startup", () => {
-    const recommendations = RecommendationTask.create(logger);
-    const tasteReflection = TasteReflectionTask.create(logger);
+    const recommendations = MediaRecommendationTask.create(logger);
+    const tasteReflection = MediaTasteReflectionTask.create(logger);
 
     expect(recommendations?.runOnStartup).toBe(false);
     expect(tasteReflection?.runOnStartup).toBe(false);

@@ -1,3 +1,4 @@
+import type { AdmitTier } from "../../jmap/activity.js";
 import { findSenderRule } from "../../jmap/senderRules.js";
 import type { EmailTriageService } from "../../jmap/triage.js";
 import config from "../../utils/config.js";
@@ -151,7 +152,7 @@ export interface EmailCandidate {
 }
 
 export type FilterResult =
-  | { pass: true; reason: string }
+  | { pass: true; reason: string; admitTier: AdmitTier }
   | { pass: false; reason: string };
 
 /**
@@ -180,7 +181,11 @@ export async function filterCalendarCandidate(
     return { pass: false, reason: `blocked by rule ${rule.pattern}` };
   }
   if (rule?.verdict === "allow") {
-    return { pass: true, reason: `allowed by rule ${rule.pattern}` };
+    return {
+      pass: true,
+      reason: `allowed by rule ${rule.pattern}`,
+      admitTier: "rule",
+    };
   }
 
   // Blacklisted senders are always rejected
@@ -198,14 +203,14 @@ export async function filterCalendarCandidate(
       return domain === bare || domain.endsWith(`.${bare}`);
     })
   ) {
-    return { pass: true, reason: "known sender" };
+    return { pass: true, reason: "known sender", admitTier: "builtin" };
   }
 
   // Cheap-LLM triage decides everything else; keywords are only the fallback
   try {
     const verdict = await triage.classify(email);
     return verdict.calendar
-      ? { pass: true, reason: `triage: ${verdict.reason}` }
+      ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
       : { pass: false, reason: `triage: ${verdict.reason}` };
   } catch {
     return keywordFallback(email);
@@ -228,7 +233,11 @@ function keywordFallback(email: EmailCandidate): FilterResult {
     .replaceAll("all rights reserved", "");
   const matchedKeyword = CALENDAR_KEYWORDS.find((kw) => searchText.includes(kw));
   if (matchedKeyword) {
-    return { pass: true, reason: `keyword "${matchedKeyword}" (triage unavailable)` };
+    return {
+      pass: true,
+      reason: `keyword "${matchedKeyword}" (triage unavailable)`,
+      admitTier: "keyword-fallback",
+    };
   }
   return { pass: false, reason: "no keyword match (triage unavailable)" };
 }

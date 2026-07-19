@@ -1,6 +1,6 @@
 import type { Snapshot } from "../api";
 import { useNow } from "../hooks/useNow";
-import { formatCountdown, toTitleCase } from "../utils/format";
+import { formatCountdown, taskLabel } from "../utils/format";
 
 interface Tile {
   label: string;
@@ -23,37 +23,37 @@ export function StatStrip({ snapshot }: { snapshot: Snapshot }) {
       const iso = t.nextRuns[0];
       if (!iso) return [];
       const at = new Date(iso).getTime();
-      return Number.isNaN(at) ? [] : [{ name: t.name, at }];
+      return Number.isNaN(at) ? [] : [{ task: t, at }];
     })
     .sort((a, b) => a.at - b.at)[0];
 
   const tiles: Tile[] = [];
   if (snapshot.streamers.length > 0) {
     tiles.push({
-      label: "Live channels",
+      label: "Live Channels",
       value: String(liveCount),
       tone: liveCount > 0 ? "live" : undefined,
     });
   }
   tiles.push(
     {
-      label: "Tasks running",
+      label: "Tasks Running",
       value: String(running),
       detail: `${snapshot.tasks.length} registered`,
       tone: running > 0 ? "accent" : undefined,
     },
     {
-      label: "Tasks failing",
+      label: "Tasks Failing",
       value: String(failing),
       tone: failing > 0 ? "danger" : undefined,
     },
     next
       ? {
-          label: "Next run",
+          label: "Next Run",
           value: formatCountdown(next.at - now),
-          detail: toTitleCase(next.name),
+          detail: taskLabel(next.task),
         }
-      : { label: "Next run", value: "—" },
+      : { label: "Next Run", value: "—" },
   );
 
   return (

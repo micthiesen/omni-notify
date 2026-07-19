@@ -77,7 +77,11 @@ describe("filterTrackingCandidate — sender rules", () => {
       mockLogger,
       triage,
     );
-    expect(result).toEqual({ pass: true, reason: "allowed by rule somestore.com" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "allowed by rule somestore.com",
+      admitTier: "rule",
+    });
     expect(classifyFn).not.toHaveBeenCalled();
   });
 
@@ -88,7 +92,11 @@ describe("filterTrackingCandidate — sender rules", () => {
       mockLogger,
       downTriage().triage,
     );
-    expect(result).toEqual({ pass: true, reason: "carrier sender" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "carrier sender",
+      admitTier: "builtin",
+    });
   });
 
   it("an allow rule overrides the built-in blacklist", async () => {
@@ -98,7 +106,11 @@ describe("filterTrackingCandidate — sender rules", () => {
       mockLogger,
       downTriage().triage,
     );
-    expect(result).toEqual({ pass: true, reason: "allowed by rule npmjs.com" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "allowed by rule npmjs.com",
+      admitTier: "rule",
+    });
   });
 });
 
@@ -190,7 +202,11 @@ describe("filterTrackingCandidate — aliexpress", () => {
       mockLogger,
       stubTriage(parcelYes).triage,
     );
-    expect(result).toEqual({ pass: true, reason: "triage: tracking" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "triage: tracking",
+      admitTier: "triage",
+    });
   });
 });
 
@@ -202,7 +218,11 @@ describe("filterTrackingCandidate — carrier senders", () => {
       mockLogger,
       triage,
     );
-    expect(result).toEqual({ pass: true, reason: "carrier sender" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "carrier sender",
+      admitTier: "builtin",
+    });
     expect(classifyFn).not.toHaveBeenCalled();
   });
 });
@@ -214,7 +234,11 @@ describe("filterTrackingCandidate — triage", () => {
       mockLogger,
       stubTriage(parcelYes).triage,
     );
-    expect(result).toEqual({ pass: true, reason: "triage: tracking" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "triage: tracking",
+      admitTier: "triage",
+    });
   });
 
   it("fails when triage says no, even with tracking keywords present", async () => {
@@ -237,6 +261,7 @@ describe("filterTrackingCandidate — keyword fallback when triage is down", () 
     expect(result).toEqual({
       pass: true,
       reason: 'keyword "shipped" (triage unavailable)',
+      admitTier: "keyword-fallback",
     });
   });
 

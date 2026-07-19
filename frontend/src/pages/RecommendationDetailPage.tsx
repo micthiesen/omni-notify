@@ -61,13 +61,18 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
   const [rec, setRec] = useState<Recommendation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
   const { toast, showToast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
     fetchRecommendation(id)
       .then((res) => {
-        if (!cancelled) setRec(res.recommendation);
+        if (!cancelled) {
+          setRec(res.recommendation);
+          setNoteText(res.recommendation.feedbackNote ?? "");
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -92,6 +97,19 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
     }
   };
 
+  const handleSaveNote = async () => {
+    setSavingNote(true);
+    try {
+      const result = await sendRecommendationFeedback(id, null, noteText.trim());
+      setRec(result.recommendation);
+      showToast("Note saved", "info");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to save note", "error");
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="error">
@@ -111,7 +129,7 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
         <span className="detail-back-arrow" aria-hidden="true">
           ←
         </span>
-        All media picks
+        All Media Picks
       </Link>
       <Toast toast={toast} />
 
@@ -178,6 +196,29 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
               ))}
             </div>
           )}
+          {canRate && (
+            <div className="feedback-note">
+              <label className="feedback-note-label" htmlFor="rec-feedback-note">
+                Note
+              </label>
+              <textarea
+                id="rec-feedback-note"
+                className="feedback-note-input"
+                placeholder="Optional note about this pick…"
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                disabled={savingNote}
+              />
+              <button
+                type="button"
+                className="feedback-note-save-btn"
+                disabled={savingNote}
+                onClick={() => void handleSaveNote()}
+              >
+                {savingNote ? "Saving…" : "Save Note"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -200,7 +241,7 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
               </DetailField>
             )}
             {rec.seriesStatus && (
-              <DetailField label="Series status">{rec.seriesStatus}</DetailField>
+              <DetailField label="Series Status">{rec.seriesStatus}</DetailField>
             )}
             {rec.certification && (
               <DetailField label="Rated">{rec.certification}</DetailField>
@@ -216,7 +257,7 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
               </DetailField>
             )}
             {rec.creators.length > 0 && (
-              <DetailField label={rec.mediaType === "movie" ? "Directed by" : "Created by"}>
+              <DetailField label={rec.mediaType === "movie" ? "Directed By" : "Created By"}>
                 {rec.creators.join(", ")}
               </DetailField>
             )}
@@ -237,11 +278,11 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
 
         {scores && (
           <section className="page-section">
-            <h2 className="section-title">Shortlist scores</h2>
+            <h2 className="section-title">Shortlist Scores</h2>
             <div className="score-list">
-              <ScoreRow label="Taste match" value={scores.tasteMatch} />
+              <ScoreRow label="Taste Match" value={scores.tasteMatch} />
               <ScoreRow label="Novelty" value={scores.novelty} />
-              <ScoreRow label="Effort fit" value={scores.effortFit} />
+              <ScoreRow label="Effort Fit" value={scores.effortFit} />
               <ScoreRow label="Composite" value={scores.composite} />
             </div>
             {scores.risks.length > 0 && (
@@ -262,7 +303,7 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
               <TimelineRow label="Notified" at={rec.notifiedAt} />
             )}
             {rec.startedAt !== null && (
-              <TimelineRow label="Started watching" at={rec.startedAt} />
+              <TimelineRow label="Started Watching" at={rec.startedAt} />
             )}
             {rec.resolvedAt !== null && (
               <TimelineRow

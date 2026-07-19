@@ -25,19 +25,19 @@ export const REC_STATUS_ORDER: RecommendationStatus[] = [
 ];
 
 export const WATCHLIST_LABELS: Record<WatchlistResult, string> = {
-  added: "Added to watchlist",
-  already_exists: "Already on watchlist",
+  added: "Added to Watchlist",
+  already_exists: "Already on Watchlist",
   available: "Available in Plex",
-  error: "Watchlist error",
+  error: "Watchlist Error",
 };
 
 export const REC_FEEDBACK_ACTIONS: {
   value: RecommendationFeedback;
   label: string;
 }[] = [
-  { value: "good_pick", label: "Good pick" },
-  { value: "not_for_me", label: "Not for me" },
-  { value: "already_watched", label: "Already watched" },
+  { value: "good_pick", label: "Good Pick" },
+  { value: "not_for_me", label: "Not for Me" },
+  { value: "already_watched", label: "Already Watched" },
 ];
 
 export const PODCAST_STATUS_LABELS: Record<PodcastRecommendationStatus, string> = {
@@ -59,6 +59,6 @@ export const PODCAST_STATUS_ORDER: PodcastRecommendationStatus[] = [
 ];
 
 export const PODCAST_FEEDBACK_ACTIONS: { value: PodcastFeedback; label: string }[] = [
-  { value: "good_pick", label: "Good pick" },
-  { value: "not_for_me", label: "Not for me" },
+  { value: "good_pick", label: "Good Pick" },
+  { value: "not_for_me", label: "Not for Me" },
 ];

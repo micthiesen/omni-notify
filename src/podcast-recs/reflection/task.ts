@@ -8,6 +8,7 @@ import { runPodcastTasteReflection } from "./reflection.js";
 
 export class PodcastTasteReflectionTask extends ScheduledTask {
   public readonly name = "PodcastTasteReflection";
+  public readonly displayName = "Podcast Taste Reflection";
   public readonly schedule = config.PODCAST_TASTE_REFLECTION_SCHEDULE;
   public override readonly runOnStartup = false;
   // Fire a few minutes off the scheduled instant so we don't hit Castro at a

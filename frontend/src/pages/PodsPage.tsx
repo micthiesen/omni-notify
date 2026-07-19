@@ -12,7 +12,9 @@ import {
 import { ImageWithFallback } from "../components/ImageWithFallback";
 import { LogViewer } from "../components/LogViewer";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
+import { Toast, useToast } from "../components/Toast";
 import { useLiveData } from "../live";
+import { Link } from "../router";
 import { formatAbsolute } from "../utils/format";
 
 const JOB_STATUS_LABELS: Record<PressPodsJob["status"], string> = {
@@ -21,7 +23,7 @@ const JOB_STATUS_LABELS: Record<PressPodsJob["status"], string> = {
   failed: "Failed",
 };
 
-function formatAudioDuration(seconds: number | null): string | null {
+export function formatAudioDuration(seconds: number | null): string | null {
   if (seconds === null || !Number.isFinite(seconds)) return null;
   const total = Math.round(seconds);
   const mins = Math.floor(total / 60);
@@ -29,7 +31,7 @@ function formatAudioDuration(seconds: number | null): string | null {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-function formatCost(costCents: number | null): string | null {
+export function formatCost(costCents: number | null): string | null {
   if (costCents === null) return null;
   return `US$${(costCents / 100).toFixed(2)}`;
 }
@@ -49,6 +51,7 @@ export default function PodsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [logRun, setLogRun] = useState<TaskRun | null>(null);
+  const { toast, showToast } = useToast();
 
   const load = useCallback(() => {
     fetchPressPods()
@@ -95,7 +98,7 @@ export default function PodsPage() {
       await retryPressPodsJob(jobId);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to retry job");
+      showToast(err instanceof Error ? err.message : "Failed to retry job", "error");
     }
   };
 
@@ -104,7 +107,7 @@ export default function PodsPage() {
       await dismissPressPodsJob(jobId);
       load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to dismiss job");
+      showToast(err instanceof Error ? err.message : "Failed to dismiss job", "error");
     }
   };
 
@@ -112,8 +115,8 @@ export default function PodsPage() {
     try {
       const { run } = await fetchRunLogs(runId);
       setLogRun(run);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load logs");
+    } catch {
+      showToast("Logs for this episode are no longer available", "error");
     }
   };
 
@@ -148,14 +151,14 @@ export default function PodsPage() {
           className="pods-submit-btn"
           disabled={submitting || url.trim() === ""}
         >
-          {submitting ? "Submitting…" : "Create episode"}
+          {submitting ? "Submitting…" : "Create Episode"}
         </button>
       </form>
       {submitError && <div className="pods-submit-error">{submitError}</div>}
 
       {jobs.length > 0 && (
         <section className="pods-jobs">
-          <h2 className="section-title">In progress</h2>
+          <h2 className="section-title">In Progress</h2>
           {jobs.map((job) => (
             <div key={job.jobId} className={`pods-job pods-job-${job.status}`}>
               <div className="pods-job-main">
@@ -243,7 +246,14 @@ export default function PodsPage() {
                   loading="lazy"
                 />
                 <div className="pods-card-info">
-                  <h2 className="pods-card-title">{episode.title}</h2>
+                  <h2 className="pods-card-title">
+                    <Link
+                      to={`/pods/${encodeURIComponent(episode.episodeId)}`}
+                      className="pods-card-title-link"
+                    >
+                      {episode.title}
+                    </Link>
+                  </h2>
                   <div className="meta-row pods-card-meta">
                     <span>{formatAbsolute(episode.createdAt)}</span>
                     {formatAudioDuration(episode.durationSeconds) && (
@@ -297,6 +307,7 @@ export default function PodsPage() {
       )}
 
       {logRun && <LogViewer run={logRun} onClose={() => setLogRun(null)} />}
+      <Toast toast={toast} />
     </>
   );
 }

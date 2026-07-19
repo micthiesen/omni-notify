@@ -58,7 +58,10 @@ export function deriveRecommendationEvidence(
       observedAt,
       recommendationStatus: recommendation.status,
     });
-    if (recommendation.feedback) {
+    // A note alone (no good_pick/not_for_me) is still worth capturing — it
+    // reaches reflection as interpretive context, never as independent
+    // evidence (see isTasteBearingEvidence + the reflection prompts).
+    if (recommendation.feedback || recommendation.feedbackNote) {
       const feedbackObservedAt =
         recommendation.feedbackAt ?? recommendation.recommendedAt;
       evidence.push({
@@ -66,7 +69,8 @@ export function deriveRecommendationEvidence(
           [
             recommendation.recommendationId,
             "feedback",
-            recommendation.feedback,
+            recommendation.feedback ?? "none",
+            recommendation.feedbackNote ?? "",
             feedbackObservedAt,
             JSON.stringify(fields),
           ].join(":"),
@@ -75,6 +79,7 @@ export function deriveRecommendationEvidence(
         ...fields,
         observedAt: feedbackObservedAt,
         feedback: recommendation.feedback,
+        note: recommendation.feedbackNote,
       });
     }
   }

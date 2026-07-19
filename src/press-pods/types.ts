@@ -21,6 +21,25 @@ export interface Chapter {
   title: string;
 }
 
+/**
+ * Per-chunk synthesis stats, persisted on the episode for diagnostics (the
+ * detail page can chart pacing, denoise/retry behavior, etc). `attempts` is
+ * how many synth takes the length-verify retry loop spent (1 for providers
+ * that skip verification, e.g. ElevenLabs).
+ */
+export interface ChunkStat {
+  index: number;
+  sectionIndex: number;
+  sectionTitle?: string;
+  text: string;
+  charCount: number;
+  durationSeconds: number;
+  /** Offset into the final audio (includes the intro jingle), like Chapter. */
+  startTimeSeconds: number;
+  secPerChar: number;
+  attempts: number;
+}
+
 export type ArticleRetrieverResult =
   | { success: false; error: unknown; retrieverName: string }
   | { success: true; article: Article; metadata: Metadata; retrieverName: string };

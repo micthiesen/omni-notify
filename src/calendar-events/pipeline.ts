@@ -2,7 +2,12 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
-import { deriveItemsOutcome, recordEmailActivity } from "../jmap/activity.js";
+import {
+  type AdmitTier,
+  deriveItemsOutcome,
+  recordEmailActivity,
+  sumCostCents,
+} from "../jmap/activity.js";
 import { withEmailLogCapture } from "../jmap/activityLogs.js";
 import type { JmapContext } from "../jmap/client.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
@@ -79,7 +84,11 @@ export class CalendarEventPipeline implements EmailHandler {
     // Filter candidates. Each email is guarded individually: a throw here
     // must not reject the whole batch, because the dispatcher advances the
     // JMAP cursor regardless and the other emails would be lost silently.
-    const candidates: { email: FetchedEmail; admitReason: string }[] = [];
+    const candidates: {
+      email: FetchedEmail;
+      admitReason: string;
+      admitTier: AdmitTier;
+    }[] = [];
     for (const email of emails) {
       let result: Awaited<ReturnType<typeof filterCalendarCandidate>>;
       try {
@@ -101,7 +110,11 @@ export class CalendarEventPipeline implements EmailHandler {
         this.logger.info(
           `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
         );
-        candidates.push({ email, admitReason: result.reason });
+        candidates.push({
+          email,
+          admitReason: result.reason,
+          admitTier: result.admitTier,
+        });
       } else {
         this.logger.info(
           `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
@@ -111,6 +124,9 @@ export class CalendarEventPipeline implements EmailHandler {
           email,
           outcome: "filtered",
           detail: result.reason,
+          // A triage-rejected email still incurred a paid LLM call; attribute
+          // it (null when a cheaper tier rejected before triage ran).
+          costCents: this.triage.getTriageCostCents(email.id),
         });
       }
     }
@@ -125,13 +141,15 @@ export class CalendarEventPipeline implements EmailHandler {
           (error as Error).message,
         );
         // The JMAP cursor still advances, so these candidates won't be retried.
-        for (const { email, admitReason } of candidates) {
+        for (const { email, admitReason, admitTier } of candidates) {
           recordEmailActivity({
             pipeline: this.name,
             email,
             outcome: "error",
             detail: `calendar discovery failed: ${(error as Error).message}`,
             admitReason,
+            admitTier,
+            costCents: sumCostCents([this.triageCostCentsFor(email.id, admitTier)]),
           });
         }
         return;
@@ -139,16 +157,27 @@ export class CalendarEventPipeline implements EmailHandler {
     }
 
     // Process each candidate, capturing its log lines for the activity UI
-    for (const { email, admitReason } of candidates) {
+    for (const { email, admitReason, admitTier } of candidates) {
       const runLog = config.LOGS_PATH
         ? new LogFile(
             `${config.LOGS_PATH}/calendar-events/${logTimestamp()}.md`,
             "overwrite",
           )
         : undefined;
+      // Triage cost only counts toward this row when triage is what admitted
+      // it; the shared EmailTriageService memoizes per email, so the same
+      // triage cost may also appear on ParcelTracker's row for this email —
+      // acceptable for per-email transparency (see EmailTriageService docs).
+      const triageCostCents = this.triageCostCentsFor(email.id, admitTier);
       await withEmailLogCapture(`${this.name}#${email.id}`, this.name, async () => {
         try {
-          await this.processEmail(email, admitReason, runLog);
+          await this.processEmail(
+            email,
+            admitReason,
+            admitTier,
+            triageCostCents,
+            runLog,
+          );
         } catch (error) {
           this.logger.error(
             `Failed to process email "${email.subject}"`,
@@ -160,15 +189,27 @@ export class CalendarEventPipeline implements EmailHandler {
             outcome: "error",
             detail: (error as Error).message,
             admitReason,
+            admitTier,
+            costCents: sumCostCents([triageCostCents]),
           });
         }
       });
     }
   }
 
+  /** Triage cost is only attributable when triage is what admitted the candidate. */
+  private triageCostCentsFor(
+    emailId: string,
+    admitTier: AdmitTier,
+  ): number | null | undefined {
+    return admitTier === "triage" ? this.triage.getTriageCostCents(emailId) : undefined;
+  }
+
   private async processEmail(
     email: FetchedEmail,
     admitReason: string,
+    admitTier: AdmitTier,
+    triageCostCents: number | null | undefined,
     runLog?: LogFile,
   ): Promise<void> {
     this.logger.info(
@@ -206,9 +247,9 @@ export class CalendarEventPipeline implements EmailHandler {
       };
     });
 
-    let events: Awaited<ReturnType<typeof extractCalendarEvents>>;
+    let extraction: Awaited<ReturnType<typeof extractCalendarEvents>>;
     try {
-      events = await extractCalendarEvents({
+      extraction = await extractCalendarEvents({
         email: { subject: email.subject, from: email.from, textBody: email.textBody },
         logger: this.logger,
         logFile: runLog,
@@ -227,9 +268,15 @@ export class CalendarEventPipeline implements EmailHandler {
         outcome: "error",
         detail: `extraction failed: ${(error as Error).message}`,
         admitReason,
+        admitTier,
+        // Extraction threw, so its cost isn't known; only triage may count.
+        costCents: sumCostCents([triageCostCents]),
       });
       return;
     }
+
+    const { events, costCents: extractionCostCents } = extraction;
+    const costCents = sumCostCents([triageCostCents, extractionCostCents]);
 
     if (events.length === 0) {
       this.logger.info(`No calendar events found in "${email.subject}"`);
@@ -239,6 +286,8 @@ export class CalendarEventPipeline implements EmailHandler {
         outcome: "no_matches",
         detail: "no calendar events found",
         admitReason,
+        admitTier,
+        costCents,
       });
       return;
     }
@@ -295,6 +344,8 @@ export class CalendarEventPipeline implements EmailHandler {
       outcome: deriveItemsOutcome(itemsOk),
       items,
       admitReason,
+      admitTier,
+      costCents,
     });
   }
 

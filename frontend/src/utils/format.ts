@@ -107,6 +107,24 @@ export function toTitleCase(value: string): string {
     .join(" ");
 }
 
+/** Prefers a task's admin-set displayName, falling back to a title-cased name. */
+export function taskLabel(task: { name: string; displayName?: string | null }): string {
+  return task.displayName?.trim() || toTitleCase(task.name);
+}
+
+/**
+ * Looks up a task by name (e.g. from a TaskRun's taskName) and returns its
+ * label; falls back to a title-cased name when the task isn't found (run-only
+ * contexts where the task list isn't available or the task was removed).
+ */
+export function taskLabelFromName(
+  taskName: string,
+  tasks: { name: string; displayName?: string | null }[],
+): string {
+  const task = tasks.find((t) => t.name === taskName);
+  return task ? taskLabel(task) : toTitleCase(taskName);
+}
+
 export function formatDateOnly(epochMs: number): string {
   return new Date(epochMs).toLocaleDateString("en-US", {
     month: "short",

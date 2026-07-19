@@ -77,7 +77,11 @@ describe("filterCalendarCandidate — sender rules", () => {
       make("frontdesk@clinic.example", "Anything at all"),
       triage,
     );
-    expect(result).toEqual({ pass: true, reason: "allowed by rule clinic.example" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "allowed by rule clinic.example",
+      admitTier: "rule",
+    });
     expect(classifyFn).not.toHaveBeenCalled();
   });
 
@@ -87,7 +91,11 @@ describe("filterCalendarCandidate — sender rules", () => {
       make("noreply@eventbrite.com", "anything"),
       downTriage().triage,
     );
-    expect(result).toEqual({ pass: true, reason: "known sender" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "known sender",
+      admitTier: "builtin",
+    });
   });
 
   it("an allow rule overrides the built-in blacklist", async () => {
@@ -103,6 +111,7 @@ describe("filterCalendarCandidate — sender rules", () => {
     expect(result).toEqual({
       pass: true,
       reason: "allowed by rule steampowered.com",
+      admitTier: "rule",
     });
   });
 });
@@ -161,7 +170,11 @@ describe("filterCalendarCandidate — auto-pass senders", () => {
       make("noreply@eventbrite.com", "anything"),
       triage,
     );
-    expect(result).toEqual({ pass: true, reason: "known sender" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "known sender",
+      admitTier: "builtin",
+    });
     expect(classifyFn).not.toHaveBeenCalled();
   });
 
@@ -170,7 +183,11 @@ describe("filterCalendarCandidate — auto-pass senders", () => {
       make("noreply@reminder.eventbrite.com", "Just added! BCIMS New Year's Retreat"),
       downTriage().triage,
     );
-    expect(result).toEqual({ pass: true, reason: "known sender" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "known sender",
+      admitTier: "builtin",
+    });
   });
 
   it("passes a known domain wrapped in a display-name angle-bracket form", async () => {
@@ -178,7 +195,11 @@ describe("filterCalendarCandidate — auto-pass senders", () => {
       make('"Eventbrite Reminders" <noreply@reminder.eventbrite.com>', "anything"),
       downTriage().triage,
     );
-    expect(result).toEqual({ pass: true, reason: "known sender" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "known sender",
+      admitTier: "builtin",
+    });
   });
 
   it("sends a lookalike domain to triage instead of auto-passing", async () => {
@@ -204,7 +225,11 @@ describe("filterCalendarCandidate — triage", () => {
       make("no-reply@cortico.health", "Your Dr. Hassan Salame Appointment"),
       stubTriage(calendarYes).triage,
     );
-    expect(result).toEqual({ pass: true, reason: "triage: upcoming appointment" });
+    expect(result).toEqual({
+      pass: true,
+      reason: "triage: upcoming appointment",
+      admitTier: "triage",
+    });
   });
 
   it("fails when triage says no, even with calendar keywords present", async () => {
@@ -225,6 +250,7 @@ describe("filterCalendarCandidate — keyword fallback when triage is down", () 
     expect(result).toEqual({
       pass: true,
       reason: 'keyword "reminder" (triage unavailable)',
+      admitTier: "keyword-fallback",
     });
   });
 

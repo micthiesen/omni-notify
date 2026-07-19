@@ -6,11 +6,13 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { generateText, isStepCount, tool } from "ai";
 import { z } from "zod";
+import { hasPrice, llmCostCents } from "../ai/cost.js";
 import { getBriefingModel } from "../ai/registry.js";
 import { fetchUrl } from "../ai/tools/fetchUrl.js";
 import { webSearch } from "../ai/tools/webSearch.js";
+import { getCurrentRunId } from "../task-runs/logCapture.js";
 import config from "../utils/config.js";
-import { addBriefingNotification } from "./persistence.js";
+import { addBriefingNotification, distributeBriefingRunCost } from "./persistence.js";
 import { resolveAllPlaceholders } from "./placeholders.js";
 
 export interface BriefingConfig {
@@ -73,6 +75,8 @@ export class BriefingAgentTask extends ScheduledTask {
       );
     }
 
+    let notificationSent = false;
+
     const tools = {
       web_search: webSearch,
       fetch_url: fetchUrl,
@@ -103,13 +107,15 @@ export class BriefingAgentTask extends ScheduledTask {
             message,
             url,
             timestamp: Date.now(),
+            runId: getCurrentRunId(),
           });
+          notificationSent = true;
           return { success: true };
         },
       }),
     };
 
-    const { steps } = await generateText({
+    const { steps, usage } = await generateText({
       model,
       providerOptions: {
         google: { thinkingConfig: { thinkingLevel: "high" as const } },
@@ -177,6 +183,23 @@ export class BriefingAgentTask extends ScheduledTask {
       );
     } else {
       this.logger.info(`Agent completed in ${steps.length} steps`);
+    }
+
+    // Total token usage across all steps is only known once generateText
+    // resolves, but the notification (if any) was created earlier inside the
+    // send_notification tool — so the cost is backfilled onto that row here.
+    if (notificationSent) {
+      const runId = getCurrentRunId();
+      if (hasPrice(modelId)) {
+        const costCents = llmCostCents(modelId, {
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+        });
+        distributeBriefingRunCost(this.name, runId, costCents);
+      } else {
+        this.logger.debug(`No pricing data for model ${modelId}; cost not recorded`);
+        distributeBriefingRunCost(this.name, runId, null);
+      }
     }
   }
 }

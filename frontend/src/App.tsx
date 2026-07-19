@@ -14,6 +14,7 @@ import { usePath } from "./router";
 // These pages pull in recharts (~500kB minified); keep it out of the main chunk.
 const PetsPage = lazy(() => import("./pages/PetsPage"));
 const PodsPage = lazy(() => import("./pages/PodsPage"));
+const PodsDetailPage = lazy(() => import("./pages/PodsDetailPage"));
 const StreamerPage = lazy(() => import("./pages/StreamerPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
@@ -31,7 +32,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/podcasts": "Podcasts",
   "/pods": "PressPods",
   "/briefings": "Briefings",
-  "/emails": "Email activity",
+  "/emails": "Email Activity",
   "/data": "Data",
 };
 
@@ -49,6 +50,7 @@ export default function App() {
   );
   const mediaDetailMatch = path.match(/^\/media\/([^/]+)$/);
   const podcastDetailMatch = path.match(/^\/podcasts\/([^/]+)$/);
+  const podsDetailMatch = path.match(/^\/pods\/([^/]+)$/);
   if (feedbackMatch) {
     const kind = feedbackMatch[1] as FeedbackKind;
     const id = decodeURIComponent(feedbackMatch[2]);
@@ -59,6 +61,13 @@ export default function App() {
   } else if (podcastDetailMatch) {
     const id = decodeURIComponent(podcastDetailMatch[1]);
     page = <PodcastDetailPage key={id} id={id} />;
+  } else if (podsDetailMatch) {
+    const id = decodeURIComponent(podsDetailMatch[1]);
+    page = (
+      <Suspense fallback={<div className="loading">Loading…</div>}>
+        <PodsDetailPage key={id} id={id} />
+      </Suspense>
+    );
   } else if (path.startsWith("/streamers/")) {
     const streamerId = decodeURIComponent(path.slice("/streamers/".length));
     page = (

@@ -3,6 +3,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output, type UserContent } from "ai";
+import { hasPrice, llmCostCents } from "../../ai/cost.js";
 import { getCalendarExtractionModel } from "../../ai/registry.js";
 import type { DownloadedAttachment } from "./attachments.js";
 import {
@@ -38,6 +39,27 @@ export interface ExtractCalendarEventsOptions {
   existingEvents?: ExistingEventContext[];
 }
 
+export interface ExtractCalendarEventsResult {
+  events: CalendarEventExtraction["events"];
+  /**
+   * USD cents across every generateText call this run made (the degenerate-
+   * output retry is a second real call, so its cost counts too, regardless
+   * of whether the retry's events end up used). Null if any contributing
+   * call ran on an unpriced model.
+   */
+  costCents: number | null;
+}
+
+/** One `generateText` attempt's sanitized output plus its cost. */
+interface ExtractionAttempt extends SanitizeResult {
+  costCents: number | null;
+}
+
+/** Sum two attempt costs; null propagates (an unpriced call taints the total). */
+function addCostCents(a: number | null, b: number | null): number | null {
+  return a === null || b === null ? null : a + b;
+}
+
 function formatExistingEvent(e: ExistingEventContext): string {
   const parts = [`- [${e.id}] "${e.title}" on ${e.startDate}`];
   if (e.allDay) {
@@ -52,7 +74,7 @@ function formatExistingEvent(e: ExistingEventContext): string {
 
 export async function extractCalendarEvents(
   options: ExtractCalendarEventsOptions,
-): Promise<CalendarEventExtraction["events"]> {
+): Promise<ExtractCalendarEventsResult> {
   const { email, logger, logFile, attachments, localTimeZone, existingEvents } =
     options;
   const { model, modelId } = getCalendarExtractionModel();
@@ -141,21 +163,24 @@ ${body}`;
     logger.info(`Including ${attachments.length} attachment(s): ${attachmentNames}`);
   }
 
-  const first = await runExtractionOnce({ model, content, logger, logFile });
+  const first = await runExtractionOnce({ model, content, logger, logFile, modelId });
 
   // Degenerate outputs (mass-duplicated objects, field soup in timeZone) tend to
   // be bad samples — one fresh retry usually recovers; keep whichever is cleaner.
-  if (!isDegenerateExtraction(first)) return first.events;
+  if (!isDegenerateExtraction(first)) {
+    return { events: first.events, costCents: first.costCents };
+  }
   logger.warn(
     `Degenerate extraction output (${first.issues.join("; ")}); retrying once`,
   );
-  const second = await runExtractionOnce({ model, content, logger, logFile });
+  const second = await runExtractionOnce({ model, content, logger, logFile, modelId });
+  const costCents = addCostCents(first.costCents, second.costCents);
   if (second.issues.length < first.issues.length) {
     logger.info("Retry produced a cleaner extraction; using the retry result");
-    return second.events;
+    return { events: second.events, costCents };
   }
   logger.info("Retry did not improve on the first extraction; keeping the first");
-  return first.events;
+  return { events: first.events, costCents };
 }
 
 async function runExtractionOnce(args: {
@@ -163,8 +188,9 @@ async function runExtractionOnce(args: {
   content: UserContent;
   logger: Logger;
   logFile?: LogFile;
-}): Promise<SanitizeResult> {
-  const { model, content, logger, logFile } = args;
+  modelId: string;
+}): Promise<ExtractionAttempt> {
+  const { model, content, logger, logFile, modelId } = args;
 
   const result = await generateText({
     model,
@@ -191,9 +217,19 @@ async function runExtractionOnce(args: {
     `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
   );
 
+  const costCents = hasPrice(modelId)
+    ? llmCostCents(modelId, {
+        inputTokens: result.usage.inputTokens ?? 0,
+        outputTokens: result.usage.outputTokens ?? 0,
+      })
+    : null;
+  if (costCents === null) {
+    logger.debug(`No pricing data for extraction model "${modelId}"`);
+  }
+
   const sanitized = sanitizeExtractedEvents(result.output?.events ?? []);
   for (const issue of sanitized.issues) {
     logger.warn(`Sanitized extraction output: ${issue}`);
   }
-  return sanitized;
+  return { ...sanitized, costCents };
 }

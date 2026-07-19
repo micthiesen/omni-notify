@@ -15,6 +15,8 @@ export interface TaskRun {
 
 export interface TaskInfo {
   name: string;
+  /** UI label; falls back to toTitleCase(name) when absent. */
+  displayName?: string | null;
   schedule: string;
   running: boolean;
   nextRuns: string[];
@@ -160,6 +162,7 @@ export interface Recommendation {
   confidence: number | null;
   feedback: RecommendationFeedback | null;
   feedbackAt: number | null;
+  feedbackNote: string | null;
   source: string | null;
   genres: string[];
   runtimeMinutes: number | null;
@@ -302,6 +305,7 @@ export interface PodcastRecommendation {
   queueResult?: PodcastQueueResult | null;
   feedback?: PodcastFeedback;
   feedbackAt?: number;
+  feedbackNote?: string | null;
 }
 
 export type EmailPipeline = "ParcelTracker" | "CalendarEvents";
@@ -325,6 +329,10 @@ export interface EmailActivity {
   outcome: EmailActivityOutcome;
   /** Why the filter admitted this email, e.g. "triage: mentions UPS tracking". */
   admitReason: string | null;
+  /** Which tier admitted it: rule/builtin/triage/keyword-fallback/carrier-name. */
+  admitTier: string | null;
+  /** LLM cost (cents) attributable to this row; null when no priced LLM ran. */
+  costCents: number | null;
   detail: string | null;
   items: string[];
 }
@@ -359,6 +367,10 @@ export interface BriefingNotification {
   message: string;
   url: string;
   timestamp: number;
+  /** Task run that produced this notification, for opening its logs. */
+  runId: string | null;
+  /** LLM cost (cents) of producing it; null when unpriced/uncomputed. */
+  costCents: number | null;
 }
 
 export interface BriefingHistory {
@@ -369,6 +381,31 @@ export interface BriefingHistory {
 export type PressPodsRetrieverAttempt =
   | { name: string; success: true; contentRating: number; textChars: number }
   | { name: string; success: false; error: string };
+
+export interface PressPodsChapter {
+  startTimeSeconds: number;
+  title: string;
+}
+
+export interface PressPodsChunkStat {
+  index: number;
+  sectionIndex: number;
+  sectionTitle?: string;
+  text: string;
+  charCount: number;
+  durationSeconds: number;
+  startTimeSeconds: number;
+  secPerChar: number;
+  attempts: number;
+}
+
+export interface PressPodsCosts {
+  llmCents: number;
+  ttsCents: number;
+  detailCents: Record<string, number>;
+  detailTokens: Record<string, { input: number; output: number }>;
+  detailChars: Record<string, number>;
+}
 
 export interface PressPodsEpisode {
   episodeId: string;
@@ -387,10 +424,20 @@ export interface PressPodsEpisode {
   retrieverName: string | null;
   retrieverSeconds: number | null;
   retrieverAttempts: PressPodsRetrieverAttempt[] | null;
+  chapters: PressPodsChapter[] | null;
   costCents: number | null;
   createdAt: number;
   publishedAt: number | null;
   runId: string | null;
+}
+
+/** Full per-episode detail from GET /api/press-pods/episodes/:id. */
+export interface PressPodsEpisodeDetail extends PressPodsEpisode {
+  content: string;
+  authorGender: string | null;
+  voiceProvider: string | null;
+  chunks: PressPodsChunkStat[] | null;
+  costs: PressPodsCosts | null;
 }
 
 export type PressPodsJobStatus = "queued" | "processing" | "failed";
@@ -592,6 +639,14 @@ export function fetchPressPods(): Promise<{
   return apiGet("/api/press-pods/episodes");
 }
 
+export function fetchPressPodsEpisode(
+  episodeId: string,
+): Promise<{ episode: PressPodsEpisodeDetail }> {
+  return apiGet<{ episode: PressPodsEpisodeDetail }>(
+    `/api/press-pods/episodes/${encodeURIComponent(episodeId)}`,
+  );
+}
+
 export function submitPressPodsUrl(url: string): Promise<{ job: PressPodsJob }> {
   return apiPost("/api/press-pods/submit", { url });
 }
@@ -649,12 +704,20 @@ export function fetchEmailRules(): Promise<{
   );
 }
 
+export type CreateEmailRuleStatus = "created" | "exists" | "merged" | "builtin";
+
+export interface CreateEmailRuleResult {
+  rule?: EmailRule;
+  status: CreateEmailRuleStatus;
+  message?: string;
+}
+
 export function createEmailRule(input: {
   pattern: string;
   scope: EmailRuleScope;
   verdict: EmailRuleVerdict;
-}): Promise<{ rule: EmailRule }> {
-  return apiPost<{ rule: EmailRule }>("/api/email-rules", input);
+}): Promise<CreateEmailRuleResult> {
+  return apiPost<CreateEmailRuleResult>("/api/email-rules", input);
 }
 
 export function deleteEmailRule(ruleId: string): Promise<{ deleted: true }> {
@@ -712,11 +775,15 @@ export function fetchPodcastRecommendation(
 
 export function sendRecommendationFeedback(
   recommendationId: string,
-  feedback: RecommendationFeedback,
+  feedback: RecommendationFeedback | null,
+  note?: string,
 ): Promise<{ recommendation: Recommendation }> {
   return apiPost<{ recommendation: Recommendation }>(
     `/api/recommendations/${encodeURIComponent(recommendationId)}/feedback`,
-    { feedback },
+    {
+      ...(feedback ? { feedback } : {}),
+      ...(note === undefined ? {} : { note }),
+    },
   );
 }
 
@@ -738,10 +805,14 @@ export function fetchPodcastTasteProfile(): Promise<{
 
 export function sendPodcastRecommendationFeedback(
   recommendationId: string,
-  feedback: PodcastFeedback,
+  feedback: PodcastFeedback | null,
+  note?: string,
 ): Promise<{ recommendation: PodcastRecommendation }> {
   return apiPost<{ recommendation: PodcastRecommendation }>(
     `/api/podcast-recommendations/${encodeURIComponent(recommendationId)}/feedback`,
-    { feedback },
+    {
+      ...(feedback ? { feedback } : {}),
+      ...(note === undefined ? {} : { note }),
+    },
   );
 }

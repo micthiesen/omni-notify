@@ -401,7 +401,12 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
               Visits
             </button>
           </div>
-          <a href={exportUrl} className="export-btn" title="Export CSV">
+          <a
+            href={exportUrl}
+            className="export-btn"
+            title="Export CSV"
+            aria-label={`Export ${pet.name} weight data as CSV`}
+          >
             <svg
               width="16"
               height="16"
@@ -411,6 +416,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
               strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
+              aria-hidden="true"
             >
               <path d="M8 2v8M5 7l3 3 3-3M3 12h10M3 14h10" />
             </svg>

@@ -29,6 +29,8 @@ export type PodcastTasteEvidenceData = {
   recommendationId?: string;
   recommendationStatus?: PodcastRecommendationStatus;
   feedback?: PodcastFeedback;
+  /** Free-form note left alongside (or instead of) the binary feedback. */
+  note?: string;
   discoveredVia?: string;
   matchedVoices?: string[];
   durationMinutes?: number;

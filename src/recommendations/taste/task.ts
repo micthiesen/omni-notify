@@ -14,15 +14,16 @@ import type { CanonicalWatchObservation } from "./types.js";
 
 const MAX_WATCH_EVIDENCE = 160;
 
-export class TasteReflectionTask extends ScheduledTask {
+export class MediaTasteReflectionTask extends ScheduledTask {
   public readonly name = "TasteReflection";
+  public readonly displayName = "Media Taste Reflection";
   public readonly schedule = config.TASTE_REFLECTION_SCHEDULE;
   public override readonly runOnStartup = false;
 
   private lastRunSummary?: string;
   private readonly logger: Logger;
 
-  public static create(parentLogger: Logger): TasteReflectionTask | null {
+  public static create(parentLogger: Logger): MediaTasteReflectionTask | null {
     const modelId = config.TASTE_REFLECTION_MODEL ?? "openai:gpt-5.6-luna";
     const provider = modelId.split(":", 1)[0];
     const credential =
@@ -43,7 +44,7 @@ export class TasteReflectionTask extends ScheduledTask {
       parentLogger.info(`Taste reflection disabled: missing ${missing.join(", ")}`);
       return null;
     }
-    return new TasteReflectionTask(parentLogger);
+    return new MediaTasteReflectionTask(parentLogger);
   }
 
   private constructor(logger: Logger) {

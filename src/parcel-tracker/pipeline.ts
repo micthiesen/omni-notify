@@ -1,7 +1,12 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
-import { deriveItemsOutcome, recordEmailActivity } from "../jmap/activity.js";
+import {
+  type AdmitTier,
+  deriveItemsOutcome,
+  recordEmailActivity,
+  sumCostCents,
+} from "../jmap/activity.js";
 import { withEmailLogCapture } from "../jmap/activityLogs.js";
 import type { EmailHandler } from "../jmap/dispatcher.js";
 import type { FetchedEmail } from "../jmap/emailFetcher.js";
@@ -51,7 +56,11 @@ export class DeliveryPipeline implements EmailHandler {
     // Filter candidates. Each email is guarded individually: a throw here
     // must not reject the whole batch, because the dispatcher advances the
     // JMAP cursor regardless and the other emails would be lost silently.
-    const candidates: { email: FetchedEmail; admitReason: string }[] = [];
+    const candidates: {
+      email: FetchedEmail;
+      admitReason: string;
+      admitTier: AdmitTier;
+    }[] = [];
     for (const email of emails) {
       let result: Awaited<ReturnType<typeof filterTrackingCandidate>>;
       try {
@@ -73,7 +82,11 @@ export class DeliveryPipeline implements EmailHandler {
         this.logger.info(
           `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
         );
-        candidates.push({ email, admitReason: result.reason });
+        candidates.push({
+          email,
+          admitReason: result.reason,
+          admitTier: result.admitTier,
+        });
       } else {
         this.logger.info(
           `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
@@ -83,6 +96,9 @@ export class DeliveryPipeline implements EmailHandler {
           email,
           outcome: "filtered",
           detail: result.reason,
+          // A triage-rejected email still incurred a paid LLM call; attribute
+          // it (null when a cheaper tier rejected before triage ran).
+          costCents: this.triage.getTriageCostCents(email.id),
         });
       }
     }
@@ -90,22 +106,33 @@ export class DeliveryPipeline implements EmailHandler {
     // Process each candidate, capturing its log lines for the activity UI.
     // Dedup (exact + near-duplicate) happens per delivery after extraction,
     // reading persistence live so within-batch duplicates are caught too.
-    for (const { email, admitReason } of candidates) {
+    for (const { email, admitReason, admitTier } of candidates) {
       const runLog = config.LOGS_PATH
         ? new LogFile(
             `${config.LOGS_PATH}/parcel-tracker/${logTimestamp()}.md`,
             "overwrite",
           )
         : undefined;
+      // Triage cost only counts toward this row when triage is what admitted
+      // it; the shared EmailTriageService memoizes per email, so the same
+      // triage cost may also appear on CalendarEvents' row for this email —
+      // acceptable for per-email transparency (see EmailTriageService docs).
+      const triageCostCents =
+        admitTier === "triage" ? this.triage.getTriageCostCents(email.id) : undefined;
       await withEmailLogCapture(`${this.name}#${email.id}`, this.name, async () => {
         try {
-          const results = await this.processEmail(email, runLog);
+          const { results, costCents: extractionCostCents } = await this.processEmail(
+            email,
+            runLog,
+          );
           recordEmailActivity({
             pipeline: this.name,
             email,
             outcome: deriveItemsOutcome(results.map((r) => r.ok)),
             detail: results.length > 0 ? undefined : "no tracking numbers found",
             admitReason,
+            admitTier,
+            costCents: sumCostCents([triageCostCents, extractionCostCents]),
             items: results.length > 0 ? results.map((r) => r.line) : undefined,
           });
         } catch (error) {
@@ -119,6 +146,8 @@ export class DeliveryPipeline implements EmailHandler {
             outcome: "error",
             detail: (error as Error).message,
             admitReason,
+            admitTier,
+            costCents: sumCostCents([triageCostCents]),
           });
           // Continue with other emails
         }
@@ -126,7 +155,10 @@ export class DeliveryPipeline implements EmailHandler {
     }
   }
 
-  /** Returns a short per-delivery result for each extracted delivery. */
+  /**
+   * Returns a short per-delivery result for each extracted delivery, plus
+   * the extraction call's cost.
+   */
   private async processEmail(
     email: {
       id: string;
@@ -136,10 +168,10 @@ export class DeliveryPipeline implements EmailHandler {
       links: string[];
     },
     runLog?: LogFile,
-  ): Promise<DeliveryResult[]> {
+  ): Promise<{ results: DeliveryResult[]; costCents: number | null }> {
     this.logger.info(`Extracting from: "${email.subject}" (from: ${email.from})`);
 
-    const deliveries = await extractDeliveries(
+    const { deliveries, costCents } = await extractDeliveries(
       {
         subject: email.subject,
         from: email.from,
@@ -152,7 +184,7 @@ export class DeliveryPipeline implements EmailHandler {
 
     if (deliveries.length === 0) {
       this.logger.info(`No tracking numbers found in "${email.subject}"`);
-      return [];
+      return { results: [], costCents };
     }
 
     this.logger.info(`Found ${deliveries.length} delivery(ies) in "${email.subject}"`);
@@ -161,7 +193,7 @@ export class DeliveryPipeline implements EmailHandler {
     for (const delivery of deliveries) {
       results.push(await this.processDelivery(delivery, email.id));
     }
-    return results;
+    return { results, costCents };
   }
 
   /** Returns a short result line + success flag for the activity record. */

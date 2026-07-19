@@ -30,6 +30,11 @@ interface HandlesManualRunInput {
   runManual(input: unknown): Promise<void>;
 }
 
+/** Tasks may report a friendlier name for the UI; `name` itself stays the load-bearing key. */
+interface HasDisplayName {
+  displayName?: string;
+}
+
 function providesRunSummary(
   task: ScheduledTask,
 ): task is ScheduledTask & ProvidesRunSummary {
@@ -42,8 +47,13 @@ function handlesManualRunInput(
   return typeof (task as Partial<HandlesManualRunInput>).runManual === "function";
 }
 
+function getDisplayName(task: ScheduledTask): string | undefined {
+  return (task as Partial<HasDisplayName>).displayName;
+}
+
 export interface TaskInfo {
   name: string;
+  displayName?: string;
   schedule: string;
   running: boolean;
   nextRuns: string[];
@@ -222,6 +232,7 @@ export class TaskRegistry {
   public list(): TaskInfo[] {
     return [...this.tasks.entries()].map(([name, entry]) => ({
       name,
+      displayName: getDisplayName(entry.task),
       schedule: entry.task.schedule,
       running: this.running.has(name),
       nextRuns: this.getNextRuns(entry.cronTask),

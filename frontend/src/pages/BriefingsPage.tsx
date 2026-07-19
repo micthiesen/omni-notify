@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { type BriefingHistory, fetchBriefings } from "../api";
+import {
+  type BriefingHistory,
+  fetchBriefings,
+  fetchRunLogs,
+  type TaskRun,
+} from "../api";
+import { LogViewer } from "../components/LogViewer";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { formatAbsoluteWithYear, toTitleCase } from "../utils/format";
 
@@ -9,6 +15,13 @@ interface FeedEntry {
   message: string;
   url: string;
   timestamp: number;
+  runId: string | null;
+  costCents: number | null;
+}
+
+function formatCost(costCents: number | null): string | null {
+  if (costCents === null) return null;
+  return `US$${(costCents / 100).toFixed(2)}`;
 }
 
 function buildFeed(briefings: BriefingHistory[], filter: string | null): FeedEntry[] {
@@ -24,6 +37,17 @@ export default function BriefingsPage() {
   const [briefings, setBriefings] = useState<BriefingHistory[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
+  const [logRun, setLogRun] = useState<TaskRun | null>(null);
+  const [logsError, setLogsError] = useState<string | null>(null);
+
+  const openLogs = async (runId: string) => {
+    try {
+      const { run } = await fetchRunLogs(runId);
+      setLogRun(run);
+    } catch (err) {
+      setLogsError(err instanceof Error ? err.message : "Failed to load logs");
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +145,18 @@ export default function BriefingsPage() {
                       Source ↗
                     </a>
                   )}
+                  {formatCost(entry.costCents) && (
+                    <span className="briefing-cost">{formatCost(entry.costCents)}</span>
+                  )}
+                  {entry.runId && (
+                    <button
+                      type="button"
+                      className="briefing-logs-btn"
+                      onClick={() => entry.runId && void openLogs(entry.runId)}
+                    >
+                      Logs
+                    </button>
+                  )}
                 </div>
                 <p className="briefing-message">{entry.message}</p>
               </article>
@@ -132,6 +168,8 @@ export default function BriefingsPage() {
           {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
         </>
       )}
+      {logsError && <div className="briefing-logs-error">{logsError}</div>}
+      {logRun && <LogViewer run={logRun} onClose={() => setLogRun(null)} />}
     </>
   );
 }

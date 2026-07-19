@@ -216,7 +216,7 @@ function RowDetail({
             disabled={deleting}
             onClick={onDelete}
           >
-            {deleting ? "Deleting…" : "Delete row"}
+            {deleting ? "Deleting…" : "Delete Row"}
           </button>
         </div>
       </div>
@@ -567,7 +567,7 @@ export default function DataPage() {
                           >
                             <button type="button" onClick={() => selectSort(column)}>
                               {column === MALFORMED_ROW_KEY
-                                ? "Malformed record"
+                                ? "Malformed Record"
                                 : column}
                               {sort?.column === column && (
                                 <span>

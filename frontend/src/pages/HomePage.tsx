@@ -1,5 +1,5 @@
-import { useState } from "react";
-import type { TaskRun } from "../api";
+import { useMemo, useState } from "react";
+import type { TaskInfo, TaskRun } from "../api";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { LiveNow } from "../components/LiveNow";
 import { LogViewer } from "../components/LogViewer";
@@ -7,6 +7,18 @@ import { StatStrip } from "../components/StatStrip";
 import { TaskCard } from "../components/TaskCard";
 import { Toast, useToast } from "../components/Toast";
 import { useLiveData } from "../live";
+
+/** Soonest next run first; tasks with no scheduled next run sort last. */
+function nextRunMs(task: TaskInfo): number {
+  const iso = task.nextRuns[0];
+  if (!iso) return Number.POSITIVE_INFINITY;
+  const ms = new Date(iso).getTime();
+  return Number.isNaN(ms) ? Number.POSITIVE_INFINITY : ms;
+}
+
+function sortTasksByNextRun(tasks: TaskInfo[]): TaskInfo[] {
+  return [...tasks].sort((a, b) => nextRunMs(a) - nextRunMs(b));
+}
 
 export default function HomePage() {
   const { snapshot, error, runTask } = useLiveData();
@@ -17,6 +29,11 @@ export default function HomePage() {
     const result = await runTask(name);
     showToast(result.message, result.ok ? "info" : "error");
   };
+
+  const sortedTasks = useMemo(
+    () => (snapshot ? sortTasksByNextRun(snapshot.tasks) : []),
+    [snapshot],
+  );
 
   if (snapshot === null) {
     return error !== null ? (
@@ -48,7 +65,7 @@ export default function HomePage() {
           <div className="muted">No scheduled tasks registered.</div>
         ) : (
           <div className="task-grid">
-            {snapshot.tasks.map((task) => (
+            {sortedTasks.map((task) => (
               <TaskCard
                 key={task.name}
                 task={task}

@@ -106,6 +106,7 @@ export async function createEpisodeFromUrl(
     voiceProvider: synthesis.voiceProvider,
     synthesizedSeconds: synthesis.synthesizedSeconds,
     chapters: synthesis.chapters,
+    chunks: synthesis.chunks,
     audioFile,
     durationSeconds,
     fileBytes: audio.length,

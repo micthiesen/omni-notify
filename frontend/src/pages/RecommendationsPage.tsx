@@ -157,16 +157,16 @@ function MediaTasteBrain({
 }) {
   const stats: [string, React.ReactNode][] = profile
     ? [
-        ["Completed movies", profile.stats.completedMovies],
-        ["Completed series", profile.stats.completedSeries],
-        ["Rewatched titles", profile.stats.rewatchedTitles],
+        ["Completed Movies", profile.stats.completedMovies],
+        ["Completed Series", profile.stats.completedSeries],
+        ["Rewatched Titles", profile.stats.rewatchedTitles],
         [
-          "Recommendations watched",
+          "Recommendations Watched",
           `${profile.stats.recommendations.watched}/${profile.stats.recommendations.total}`,
         ],
-        ["Good picks", profile.stats.feedback.goodPick],
+        ["Good Picks", profile.stats.feedback.goodPick],
         [
-          "Average time to start",
+          "Average Time to Start",
           profile.stats.averageHoursToStart === undefined
             ? "Not enough data"
             : `${profile.stats.averageHoursToStart.toFixed(1)}h`,
@@ -185,13 +185,13 @@ function MediaTasteBrain({
       footer={
         profile && (
           <div className="taste-commitments">
-            <span>Commitment fit</span>
+            <span>Commitment Fit</span>
             <span>Movies: {profile.commitmentPreferences.movies.preference}</span>
             <span>
-              Limited series: {profile.commitmentPreferences.limitedSeries.preference}
+              Limited Series: {profile.commitmentPreferences.limitedSeries.preference}
             </span>
             <span>
-              Long series: {profile.commitmentPreferences.longSeries.preference}
+              Long Series: {profile.commitmentPreferences.longSeries.preference}
             </span>
           </div>
         )
@@ -204,7 +204,7 @@ function runOutcome(run: TaskRun): { label: string; tone: string } {
   if (run.status === "running") return { label: "Running", tone: "running" };
   if (run.status === "error") return { label: "Error", tone: "error" };
   if (run.summary?.startsWith("no_add:")) {
-    return { label: "No pick", tone: "no-add" };
+    return { label: "No Pick", tone: "no-add" };
   }
   return { label: "Completed", tone: "success" };
 }
@@ -212,7 +212,7 @@ function runOutcome(run: TaskRun): { label: string; tone: string } {
 function RecommendationActivity({ runs }: { runs: TaskRun[] }) {
   return (
     <section className="page-section rec-activity-section">
-      <h2 className="section-title">Recent recommendation runs</h2>
+      <h2 className="section-title">Recent Recommendation Runs</h2>
       {runs.length === 0 ? (
         <div className="muted">No recommendation runs recorded yet.</div>
       ) : (
@@ -384,7 +384,7 @@ export default function RecommendationsPage() {
         <h1>Media</h1>
         <div className="rec-run-controls">
           <label className="rec-run-limit">
-            <span>Up to</span>
+            <span>Up To</span>
             <select
               aria-label="Maximum recommendations"
               value={maxRecommendations}
@@ -414,9 +414,9 @@ export default function RecommendationsPage() {
                 <span className="running-pulse" /> Running…
               </>
             ) : taskAvailable ? (
-              "Run now"
+              "Run Now"
             ) : (
-              "Task disabled"
+              "Task Disabled"
             )}
           </button>
         </div>

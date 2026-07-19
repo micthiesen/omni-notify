@@ -60,13 +60,18 @@ export default function PodcastDetailPage({ id }: { id: string }) {
   const [rec, setRec] = useState<PodcastRecommendation | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
   const { toast, showToast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
     fetchPodcastRecommendation(id)
       .then((res) => {
-        if (!cancelled) setRec(res.recommendation);
+        if (!cancelled) {
+          setRec(res.recommendation);
+          setNoteText(res.recommendation.feedbackNote ?? "");
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -91,6 +96,19 @@ export default function PodcastDetailPage({ id }: { id: string }) {
     }
   };
 
+  const handleSaveNote = async () => {
+    setSavingNote(true);
+    try {
+      const result = await sendPodcastRecommendationFeedback(id, null, noteText.trim());
+      setRec(result.recommendation);
+      showToast("Note saved", "info");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Failed to save note", "error");
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="error">
@@ -110,7 +128,7 @@ export default function PodcastDetailPage({ id }: { id: string }) {
         <span className="detail-back-arrow" aria-hidden="true">
           ←
         </span>
-        All podcast picks
+        All Podcast Picks
       </Link>
       <Toast toast={toast} />
 
@@ -135,7 +153,7 @@ export default function PodcastDetailPage({ id }: { id: string }) {
                 className="podrec-queued"
                 title="This episode is waiting in your Castro queue"
               >
-                🎧 In Castro queue
+                🎧 In Castro Queue
               </span>
             )}
           </div>
@@ -156,7 +174,7 @@ export default function PodcastDetailPage({ id }: { id: string }) {
             <div className="rec-links">
               {rec.episodeUrl && (
                 <a href={rec.episodeUrl} target="_blank" rel="noreferrer">
-                  Episode page
+                  Episode Page
                 </a>
               )}
               {rec.sourceUrl && (
@@ -182,6 +200,29 @@ export default function PodcastDetailPage({ id }: { id: string }) {
               ))}
             </div>
           )}
+          {canRate && (
+            <div className="feedback-note">
+              <label className="feedback-note-label" htmlFor="podrec-feedback-note">
+                Note
+              </label>
+              <textarea
+                id="podrec-feedback-note"
+                className="feedback-note-input"
+                placeholder="Optional note about this pick…"
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                disabled={savingNote}
+              />
+              <button
+                type="button"
+                className="feedback-note-save-btn"
+                disabled={savingNote}
+                onClick={() => void handleSaveNote()}
+              >
+                {savingNote ? "Saving…" : "Save Note"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -198,7 +239,7 @@ export default function PodcastDetailPage({ id }: { id: string }) {
               </DetailField>
             )}
             {rec.discoveredVia && (
-              <DetailField label="Discovered via">{rec.discoveredVia}</DetailField>
+              <DetailField label="Discovered Via">{rec.discoveredVia}</DetailField>
             )}
             {rec.confidence != null && (
               <DetailField label="Confidence">
@@ -223,9 +264,9 @@ export default function PodcastDetailPage({ id }: { id: string }) {
 
         {scores && (
           <section className="page-section">
-            <h2 className="section-title">Shortlist scores</h2>
+            <h2 className="section-title">Shortlist Scores</h2>
             <div className="score-list">
-              <ScoreRow label="Taste match" value={scores.tasteMatch} />
+              <ScoreRow label="Taste Match" value={scores.tasteMatch} />
               <ScoreRow label="Novelty" value={scores.novelty} />
               <ScoreRow label="Composite" value={scores.composite} />
             </div>

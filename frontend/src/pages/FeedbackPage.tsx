@@ -22,14 +22,14 @@ interface FeedbackOption<V extends string> {
 }
 
 const MEDIA_OPTIONS: FeedbackOption<RecommendationFeedback>[] = [
-  { value: "good_pick", emoji: "👍", label: "Good pick" },
-  { value: "not_for_me", emoji: "👎", label: "Not for me" },
-  { value: "already_watched", emoji: "✅", label: "Already watched" },
+  { value: "good_pick", emoji: "👍", label: "Good Pick" },
+  { value: "not_for_me", emoji: "👎", label: "Not for Me" },
+  { value: "already_watched", emoji: "✅", label: "Already Watched" },
 ];
 
 const PODCAST_OPTIONS: FeedbackOption<PodcastFeedback>[] = [
-  { value: "good_pick", emoji: "👍", label: "Good pick" },
-  { value: "not_for_me", emoji: "👎", label: "Not for me" },
+  { value: "good_pick", emoji: "👍", label: "Good Pick" },
+  { value: "not_for_me", emoji: "👎", label: "Not for Me" },
 ];
 
 function Art({ src, alt }: { src: string | null; alt: string }) {
@@ -51,8 +51,10 @@ interface ShellProps<V extends string> {
   why: string | null;
   options: FeedbackOption<V>[];
   current: V | null;
+  note: string | null;
   detailsTo: string;
   onSelect: (value: V) => Promise<void>;
+  onSaveNote: (note: string) => Promise<void>;
 }
 
 function FeedbackShell<V extends string>({
@@ -62,12 +64,15 @@ function FeedbackShell<V extends string>({
   why,
   options,
   current,
+  note,
   detailsTo,
   onSelect,
+  onSaveNote,
 }: ShellProps<V>) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState(note ?? "");
 
   const select = async (value: V) => {
     if (saving) return;
@@ -75,6 +80,20 @@ function FeedbackShell<V extends string>({
     setSaveError(null);
     try {
       await onSelect(value);
+      setSaved(true);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save feedback");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveNote = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSaveNote(noteText);
       setSaved(true);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save feedback");
@@ -104,12 +123,29 @@ function FeedbackShell<V extends string>({
           </button>
         ))}
       </div>
+      <div className="feedback-note">
+        <textarea
+          className="feedback-note-input"
+          placeholder="Optional note about this pick…"
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          disabled={saving}
+        />
+        <button
+          type="button"
+          className="feedback-note-save-btn"
+          disabled={saving}
+          onClick={() => void saveNote()}
+        >
+          Save Note
+        </button>
+      </div>
       {saved && !saveError && (
         <div className="feedback-saved">Thanks — feedback saved.</div>
       )}
       {saveError && <div className="error-inline">{saveError}</div>}
       <Link to={detailsTo} className="feedback-details-link">
-        View full recommendation →
+        View Full Recommendation →
       </Link>
     </div>
   );
@@ -153,9 +189,14 @@ function MediaFeedback({ id }: { id: string }) {
       why={rec.whyForUser}
       options={MEDIA_OPTIONS}
       current={rec.feedback}
+      note={rec.feedbackNote}
       detailsTo={`/media/${encodeURIComponent(id)}`}
       onSelect={async (feedback) => {
         const res = await sendRecommendationFeedback(id, feedback);
+        setRec(res.recommendation);
+      }}
+      onSaveNote={async (note) => {
+        const res = await sendRecommendationFeedback(id, null, note);
         setRec(res.recommendation);
       }}
     />
@@ -193,9 +234,14 @@ function PodcastFeedbackCard({ id }: { id: string }) {
       why={rec.whyForUser ?? null}
       options={PODCAST_OPTIONS}
       current={rec.feedback ?? null}
+      note={rec.feedbackNote ?? null}
       detailsTo={`/podcasts/${encodeURIComponent(id)}`}
       onSelect={async (feedback) => {
         const res = await sendPodcastRecommendationFeedback(id, feedback);
+        setRec(res.recommendation);
+      }}
+      onSaveNote={async (note) => {
+        const res = await sendPodcastRecommendationFeedback(id, null, note);
         setRec(res.recommendation);
       }}
     />

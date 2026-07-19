@@ -172,15 +172,15 @@ function PodcastTasteBrain({
 }) {
   const stats: [string, React.ReactNode][] = profile
     ? [
-        ["Episodes finished", profile.stats.listenedEpisodes],
-        ["Episodes started", profile.stats.startedEpisodes],
+        ["Episodes Finished", profile.stats.listenedEpisodes],
+        ["Episodes Started", profile.stats.startedEpisodes],
         ["Starred", profile.stats.starredEpisodes],
-        ["Shows heard", profile.stats.distinctShows],
+        ["Shows Heard", profile.stats.distinctShows],
         [
-          "Recommendations listened",
+          "Recommendations Listened",
           `${profile.stats.recommendations.listened}/${profile.stats.recommendations.total}`,
         ],
-        ["Good picks", profile.stats.feedback.goodPick],
+        ["Good Picks", profile.stats.feedback.goodPick],
       ]
     : [];
 

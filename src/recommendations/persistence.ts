@@ -65,6 +65,8 @@ export type RecommendationData = {
   managerSlug?: string;
   feedback?: RecommendationFeedback;
   feedbackAt?: number;
+  /** Optional free-form note alongside (or instead of) the binary feedback. */
+  feedbackNote?: string;
   /** True when this was the backup candidate promoted after already_exists. */
   wasBackup?: boolean;
 };
@@ -189,16 +191,37 @@ export function getOpenRecommendations(): RecommendationData[] {
   );
 }
 
+export type RecommendationFeedbackInput = {
+  feedback?: RecommendationFeedback;
+  note?: string;
+};
+
+/**
+ * Overloaded so existing callers passing a bare enum keep compiling: the note
+ * is purely additive, and either input alone (or both) is a valid update.
+ */
 export function setRecommendationFeedback(
   recommendationId: string,
   feedback: RecommendationFeedback,
+): RecommendationData | undefined;
+export function setRecommendationFeedback(
+  recommendationId: string,
+  input: RecommendationFeedbackInput,
+): RecommendationData | undefined;
+export function setRecommendationFeedback(
+  recommendationId: string,
+  input: RecommendationFeedback | RecommendationFeedbackInput,
 ): RecommendationData | undefined {
   const rec = RecommendationEntity.get({ recommendationId });
   if (!rec) return undefined;
-  RecommendationEntity.patch(
-    { recommendationId },
-    { feedback, feedbackAt: Date.now() },
-  );
+  const { feedback, note } =
+    typeof input === "string" ? { feedback: input, note: undefined } : input;
+  const patch: Partial<Omit<RecommendationData, "recommendationId">> = {
+    feedbackAt: Date.now(),
+  };
+  if (feedback !== undefined) patch.feedback = feedback;
+  if (note !== undefined) patch.feedbackNote = note;
+  RecommendationEntity.patch({ recommendationId }, patch);
   return RecommendationEntity.get({ recommendationId });
 }
 
@@ -213,7 +236,9 @@ export function formatFeedbackDigestFrom(input: RecommendationData[]): string {
       (a, b) => (b.feedbackAt ?? b.recommendedAt) - (a.feedbackAt ?? a.recommendedAt),
     )
     .filter((rec) => {
-      if (!rec.feedback || seen.has(rec.canonicalId)) return false;
+      if ((!rec.feedback && !rec.feedbackNote) || seen.has(rec.canonicalId)) {
+        return false;
+      }
       seen.add(rec.canonicalId);
       return true;
     })
@@ -222,6 +247,7 @@ export function formatFeedbackDigestFrom(input: RecommendationData[]): string {
 
   const good = records.filter((rec) => rec.feedback === "good_pick");
   const bad = records.filter((rec) => rec.feedback === "not_for_me");
+  const noteOnly = records.filter((rec) => !rec.feedback && rec.feedbackNote);
   const lines = ["Explicit recommendation feedback:"];
   if (good.length > 0) {
     lines.push(
@@ -233,9 +259,14 @@ export function formatFeedbackDigestFrom(input: RecommendationData[]): string {
       `- Not for me: ${bad.map((rec) => formatFeedbackTitle(rec)).join(", ")}`,
     );
   }
+  if (noteOnly.length > 0) {
+    const notes = noteOnly.map((rec) => formatFeedbackTitle(rec)).join(", ");
+    lines.push(`- Notes (no rating): ${notes}`);
+  }
   return lines.join("\n");
 }
 
 function formatFeedbackTitle(rec: RecommendationData): string {
-  return `${rec.title}${rec.year ? ` (${rec.year})` : ""} [${rec.mediaType}]`;
+  const base = `${rec.title}${rec.year ? ` (${rec.year})` : ""} [${rec.mediaType}]`;
+  return rec.feedbackNote ? `${base} — note: "${rec.feedbackNote}"` : base;
 }
