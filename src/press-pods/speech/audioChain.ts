@@ -23,10 +23,12 @@ const MASTER_LUFS = -16;
 const EDGE_FADE_SEC = 0.012;
 /**
  * Speech denoise for self-hosted models with a noise floor (e.g. Higgs): a
- * sub-80Hz rumble cut plus FFT spectral denoise. Moderate `nr` avoids the
- * "underwater" artifacts aggressive settings cause on voice.
+ * sub-80Hz rumble cut plus RNNoise (`arnndn`). RNNoise is used over `afftdn`
+ * because spectral subtraction leaves a metallic/"musical noise" tang on voice;
+ * the RNN model suppresses the noise floor cleanly. Model ships in assets.
  */
-const DENOISE_FILTER = "highpass=f=80,afftdn=nr=14:nf=-30";
+const DENOISE_MODEL_PATH = "assets/press-pods/denoise.rnnn";
+const DENOISE_FILTER = `highpass=f=80,arnndn=m=${DENOISE_MODEL_PATH}`;
 
 async function ffmpeg(args: string[]): Promise<string> {
   const { stderr } = await execFileAsync("ffmpeg", ["-hide_banner", "-y", ...args], {

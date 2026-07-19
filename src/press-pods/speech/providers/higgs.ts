@@ -16,6 +16,11 @@ const MAX_TOKENS = 3000;
  * token cap first. Bounds a genuinely hung server. */
 const REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
 
+interface RefVoice {
+  refAudio: string;
+  refText: string;
+}
+
 export class HiggsProvider implements TtsProvider {
   public readonly providerName = "Higgs";
   public readonly needsDenoise = true;
@@ -24,6 +29,7 @@ export class HiggsProvider implements TtsProvider {
   public readonly voiceName: string;
   private readonly baseUrl: string;
   private readonly gender: "male" | "female";
+  private readonly refVoice: RefVoice | undefined;
 
   constructor(authorGender: AuthorGender) {
     if (!config.PRESSPODS_TTS_URL) {
@@ -31,12 +37,25 @@ export class HiggsProvider implements TtsProvider {
     }
     this.baseUrl = config.PRESSPODS_TTS_URL;
     this.modelId = config.PRESSPODS_TTS_MODEL ?? DEFAULT_MODEL;
-    // Higgs has no fixed voice preset; the gender hint steers the timbre.
     this.gender = authorGender === "male" ? "male" : "female";
-    this.voiceName = `Higgs (${this.gender})`;
+    // A reference clip pins one consistent voice across chunks (Higgs otherwise
+    // picks a random speaker per request). Both fields are needed; the path
+    // resolves on the mlx-audio host.
+    this.refVoice =
+      config.PRESSPODS_HIGGS_REF_AUDIO && config.PRESSPODS_HIGGS_REF_TEXT
+        ? {
+            refAudio: config.PRESSPODS_HIGGS_REF_AUDIO,
+            refText: config.PRESSPODS_HIGGS_REF_TEXT,
+          }
+        : undefined;
+    this.voiceName = this.refVoice ? "Higgs (cloned)" : `Higgs (${this.gender})`;
   }
 
   public async synthesizeChunk(text: string, logger: Logger): Promise<Buffer> {
+    // A reference clip defines the voice, so gender is omitted when cloning.
+    const voiceParams = this.refVoice
+      ? { ref_audio: this.refVoice.refAudio, ref_text: this.refVoice.refText }
+      : { gender: this.gender };
     // Only network blips retry here; content-quality retries (truncation /
     // runaway) are the length-verify's job in synthesize.ts, so keep this small
     // to avoid the two loops compounding into a long stall.
@@ -48,7 +67,7 @@ export class HiggsProvider implements TtsProvider {
             json: {
               model: this.modelId,
               input: text,
-              gender: this.gender,
+              ...voiceParams,
               speed: SPEED,
               max_tokens: MAX_TOKENS,
               response_format: "mp3",

@@ -127,6 +127,14 @@ const configSchema = baseConfigSchema
       .transform((s) => s?.replace(/\/+$/, "")),
     /** Optional model-repo override for the Higgs provider. */
     PRESSPODS_TTS_MODEL: z.string().optional(),
+    /**
+     * Reference-voice cloning for Higgs (pins one consistent voice across
+     * chunks — without it Higgs picks a random speaker per request). The path
+     * must resolve on the mlx-audio host (the M5), not on this box; REF_TEXT is
+     * the reference clip's transcript. Both must be set to take effect.
+     */
+    PRESSPODS_HIGGS_REF_AUDIO: z.string().optional(),
+    PRESSPODS_HIGGS_REF_TEXT: z.string().optional(),
     /** ElevenLabs API key — required when the provider is ElevenLabs. */
     ELEVENLABS_API_KEY: z.string().optional(),
     /** Optional voice-id overrides for male / female author narration. */
