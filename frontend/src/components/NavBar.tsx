@@ -32,13 +32,15 @@ const CONNECTION_TITLES = {
 function ConnectionBadge() {
   const { connection } = useLiveData();
   return (
-    <span
+    <button
+      type="button"
       className={`conn-badge conn-${connection}`}
-      title={CONNECTION_TITLES[connection]}
+      title={`${CONNECTION_TITLES[connection]} (click to refresh)`}
+      onClick={() => window.location.reload()}
     >
       <span className="conn-dot" />
       {CONNECTION_LABELS[connection]}
-    </span>
+    </button>
   );
 }
 

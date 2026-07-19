@@ -1,3 +1,4 @@
+import { Logger } from "@micthiesen/mitools/logging";
 import { generateText } from "ai";
 import { getPressPodsCleaningModel } from "../../ai/registry.js";
 import type CostCounter from "../costs.js";
@@ -5,15 +6,23 @@ import type { CompletionUsage } from "../costs.js";
 import type { Article } from "../types.js";
 import { extractBetweenTags } from "./parsing.js";
 
+const LOGGER = new Logger("PressPods.agents.cleaner");
+
+/** Re-synthesize the narration if the model returns unusable/untagged output. */
+const MAX_CLEAN_ATTEMPTS = 3;
+
 /** Adapt the article text for TTS narration (junk removal, audio phrasing). */
 export async function getCleanedArticle(
   article: Article,
   costCounter: CostCounter,
 ): Promise<{ content: string }> {
   const { model, modelId } = getPressPodsCleaningModel();
-  const { text, usage } = await generateText({
-    model,
-    system: `You adapt a written article into a script for a single podcast host to read aloud (text-to-speech). Preserve the article's content and meaning faithfully — do NOT summarize, editorialize, or invent facts. Your job is to make it sound like an engaging host reading for the ear, not an eye.
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_CLEAN_ATTEMPTS; attempt++) {
+    const { text, usage } = await generateText({
+      model,
+      system: `You adapt a written article into a script for a single podcast host to read aloud (text-to-speech). Preserve the article's content and meaning faithfully — do NOT summarize, editorialize, or invent facts. Your job is to make it sound like an engaging host reading for the ear, not an eye.
 
 The input begins with a header line like "Title. By Author. Published Date on Domain." Use its facts, but restructure the opening (see OPENING).
 
@@ -54,16 +63,26 @@ NORMALIZE (spell out what TTS mispronounces):
 - Abbreviations: expand ones a voice stumbles on ("govt" → "government", "approx." → "approximately"). Strip periods from initialisms ("U.F.O." → "UFO", "C.I.A." → "CIA"). Keep naturally-spoken ones (Dr., Mr., U.S., AI, CEO).
 - Code/math: short expressions can stay; describe longer code blocks in words.
 
-Output the finished script inside <cleaned_article> tags.`,
-    prompt: article.text,
-  });
+Output ONLY the finished script wrapped in <cleaned_article> and </cleaned_article> tags — nothing before or after. Always emit the closing </cleaned_article> tag.`,
+      prompt: article.text,
+    });
 
-  const completionUsage: CompletionUsage = {
-    promptTokens: usage.inputTokens || 0,
-    completionTokens: usage.outputTokens || 0,
-    totalTokens: usage.totalTokens || 0,
-  };
-  costCounter.recordLlmUsage(modelId, "clean", completionUsage);
+    const completionUsage: CompletionUsage = {
+      promptTokens: usage.inputTokens || 0,
+      completionTokens: usage.outputTokens || 0,
+      totalTokens: usage.totalTokens || 0,
+    };
+    costCounter.recordLlmUsage(modelId, "clean", completionUsage);
 
-  return { content: extractBetweenTags(text, "cleaned_article") };
+    try {
+      return { content: extractBetweenTags(text, "cleaned_article") };
+    } catch (error) {
+      lastError = error;
+      LOGGER.info(
+        `Narration cleaning attempt ${attempt}/${MAX_CLEAN_ATTEMPTS} produced no usable output; retrying`,
+      );
+    }
+  }
+
+  throw lastError;
 }

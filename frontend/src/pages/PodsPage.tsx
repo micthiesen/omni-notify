@@ -1,4 +1,10 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   dismissPressPodsJob,
   fetchPressPods,
@@ -38,7 +44,7 @@ function retrieverSummary(episode: PressPodsEpisode): string | null {
 }
 
 export default function PodsPage() {
-  const { snapshot } = useLiveData();
+  const { snapshot, connection } = useLiveData();
   const [episodes, setEpisodes] = useState<PressPodsEpisode[] | null>(null);
   const [jobs, setJobs] = useState<PressPodsJob[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -70,6 +76,16 @@ export default function PodsPage() {
   useEffect(() => {
     if (runKey !== null) load();
   }, [runKey, load]);
+
+  // Episode/job data rides its own REST endpoint, not the SSE snapshot, and job
+  // rows can change during a stream outage (a submission mid-run produces no new
+  // task run to diff against). Re-fetch on every reconnect so the list can't
+  // silently go stale until a manual refresh.
+  const prevConnection = useRef(connection);
+  useEffect(() => {
+    if (connection === "live" && prevConnection.current !== "live") load();
+    prevConnection.current = connection;
+  }, [connection, load]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();

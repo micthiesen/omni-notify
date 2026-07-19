@@ -12,6 +12,16 @@ describe("prepareTextForRss", () => {
     );
   });
 
+  it("renders ## chapter markers as bold headings, not literal markdown", () => {
+    expect(prepareTextForRss("## Background\nbody text")).toBe(
+      "<b>Background</b><br>body text",
+    );
+  });
+
+  it("does not treat mid-line ## as a heading", () => {
+    expect(prepareTextForRss("rated it 4## stars")).toBe("rated it 4## stars");
+  });
+
   it("returns empty string for undefined", () => {
     expect(prepareTextForRss(undefined)).toBe("");
   });

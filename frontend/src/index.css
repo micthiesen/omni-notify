@@ -219,16 +219,18 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  font-family: inherit;
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
+  background: none;
   padding: 0.2rem 0.65rem;
   border: 1px solid var(--border);
   border-radius: 999px;
   white-space: nowrap;
-  cursor: default;
+  cursor: pointer;
 }
 
 .conn-dot {
@@ -4239,6 +4241,12 @@ button.history-row:last-child {
 @media (max-width: 600px) {
   .pods-submit {
     flex-direction: column;
+  }
+
+  /* In a column flex container flex-basis governs height; pin the input to a
+     single line instead of letting its 16rem basis stretch it vertically. */
+  .pods-submit-input {
+    flex: 0 0 auto;
   }
 
   .pods-chunk-list {
