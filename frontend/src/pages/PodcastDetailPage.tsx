@@ -216,7 +216,7 @@ export default function PodcastDetailPage({ id }: { id: string }) {
               <button
                 type="button"
                 className="feedback-note-save-btn"
-                disabled={savingNote}
+                disabled={savingNote || noteText.trim().length === 0}
                 onClick={() => void handleSaveNote()}
               >
                 {savingNote ? "Saving…" : "Save Note"}

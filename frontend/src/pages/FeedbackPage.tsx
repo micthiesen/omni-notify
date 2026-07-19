@@ -134,7 +134,7 @@ function FeedbackShell<V extends string>({
         <button
           type="button"
           className="feedback-note-save-btn"
-          disabled={saving}
+          disabled={saving || noteText.trim().length === 0}
           onClick={() => void saveNote()}
         >
           Save Note

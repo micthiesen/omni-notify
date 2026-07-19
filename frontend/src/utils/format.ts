@@ -2,6 +2,18 @@ export function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+/**
+ * Format a cost given in cents. Sub-cent amounts read as "0.12¢", otherwise
+ * dollars ("$0.0034" / "$1.23"). Returns null for null/undefined/non-finite so
+ * callers can conditionally render.
+ */
+export function formatCents(cents: number | null | undefined): string | null {
+  if (cents == null || !Number.isFinite(cents)) return null;
+  if (cents < 1) return `${cents.toFixed(2)}¢`;
+  const dollars = cents / 100;
+  return dollars < 1 ? `$${dollars.toFixed(4)}` : `$${dollars.toFixed(2)}`;
+}
+
 export function formatClockTime(hour: number, minute: number): string {
   const ampm = hour >= 12 ? "PM" : "AM";
   const h12 = hour % 12 === 0 ? 12 : hour % 12;

@@ -6,9 +6,9 @@ import type {
   PressPodsRetrieverAttempt,
 } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
-import { formatAudioDuration, formatCost } from "./PodsPage";
+import { formatAudioDuration } from "./PodsPage";
 import { Link } from "../router";
-import { formatAbsoluteWithYear } from "../utils/format";
+import { formatAbsoluteWithYear, formatCents } from "../utils/format";
 
 // Higgs length-verify bounds (see synthesize.ts): chunks outside this range
 // were catastrophically truncated or ran away and got re-synthesized.
@@ -132,9 +132,9 @@ function CostTable({ episode }: { episode: PressPodsEpisodeDetail }) {
   return (
     <>
       <div className="meta-row pods-cost-summary">
-        <span>LLM {formatCost(costs.llmCents) ?? "—"}</span>
-        <span>TTS {formatCost(costs.ttsCents) ?? "—"}</span>
-        <span>Total {formatCost(episode.costCents) ?? "—"}</span>
+        <span>LLM {formatCents(costs.llmCents) ?? "—"}</span>
+        <span>TTS {formatCents(costs.ttsCents) ?? "—"}</span>
+        <span>Total {formatCents(episode.costCents) ?? "—"}</span>
       </div>
       {keys.size > 0 && (
         <div className="pods-cost-table">
@@ -149,7 +149,7 @@ function CostTable({ episode }: { episode: PressPodsEpisodeDetail }) {
             return (
               <div key={key} className="pods-cost-table-row">
                 <span className="pods-cost-table-key">{key}</span>
-                <span>{formatCost(costs.detailCents[key] ?? null) ?? "—"}</span>
+                <span>{formatCents(costs.detailCents[key] ?? null) ?? "—"}</span>
                 <span>
                   {tokens ? `${tokens.input.toLocaleString()} / ${tokens.output.toLocaleString()}` : "—"}
                 </span>
@@ -247,9 +247,9 @@ export default function PodsDetailPage({ id }: { id: string }) {
                 {formatAudioDuration(episode.durationSeconds)}
               </span>
             )}
-            {formatCost(episode.costCents) && (
+            {formatCents(episode.costCents) && (
               <span className="pods-detail-cost-badge">
-                {formatCost(episode.costCents)}
+                {formatCents(episode.costCents)}
               </span>
             )}
           </div>

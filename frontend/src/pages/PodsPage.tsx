@@ -15,7 +15,7 @@ import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { Toast, useToast } from "../components/Toast";
 import { useLiveData } from "../live";
 import { Link } from "../router";
-import { formatAbsolute } from "../utils/format";
+import { formatAbsolute, formatCents } from "../utils/format";
 
 const JOB_STATUS_LABELS: Record<PressPodsJob["status"], string> = {
   queued: "Queued",
@@ -29,11 +29,6 @@ export function formatAudioDuration(seconds: number | null): string | null {
   const mins = Math.floor(total / 60);
   const secs = total % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-export function formatCost(costCents: number | null): string | null {
-  if (costCents === null) return null;
-  return `US$${(costCents / 100).toFixed(2)}`;
 }
 
 function retrieverSummary(episode: PressPodsEpisode): string | null {
@@ -260,8 +255,8 @@ export default function PodsPage() {
                       <span>{formatAudioDuration(episode.durationSeconds)}</span>
                     )}
                     {episode.voiceName && <span>{episode.voiceName}</span>}
-                    {formatCost(episode.costCents) && (
-                      <span>{formatCost(episode.costCents)}</span>
+                    {formatCents(episode.costCents) && (
+                      <span>{formatCents(episode.costCents)}</span>
                     )}
                     {retrieverSummary(episode) && (
                       <span title="Winning retriever">

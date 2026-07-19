@@ -7,7 +7,7 @@ import {
 } from "../api";
 import { LogViewer } from "../components/LogViewer";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
-import { formatAbsoluteWithYear, toTitleCase } from "../utils/format";
+import { formatAbsoluteWithYear, formatCents, toTitleCase } from "../utils/format";
 
 interface FeedEntry {
   briefingName: string;
@@ -17,11 +17,6 @@ interface FeedEntry {
   timestamp: number;
   runId: string | null;
   costCents: number | null;
-}
-
-function formatCost(costCents: number | null): string | null {
-  if (costCents === null) return null;
-  return `US$${(costCents / 100).toFixed(2)}`;
 }
 
 function buildFeed(briefings: BriefingHistory[], filter: string | null): FeedEntry[] {
@@ -145,8 +140,8 @@ export default function BriefingsPage() {
                       Source ↗
                     </a>
                   )}
-                  {formatCost(entry.costCents) && (
-                    <span className="briefing-cost">{formatCost(entry.costCents)}</span>
+                  {formatCents(entry.costCents) && (
+                    <span className="briefing-cost">{formatCents(entry.costCents)}</span>
                   )}
                   {entry.runId && (
                     <button

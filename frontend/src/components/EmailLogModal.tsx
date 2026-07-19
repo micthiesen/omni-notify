@@ -17,7 +17,7 @@ import type {
   EmailRuleScope,
   RunLogLine,
 } from "../api";
-import { formatAbsolute } from "../utils/format";
+import { formatAbsolute, formatCents } from "../utils/format";
 import { OUTCOME_LABELS, PIPELINE_LABELS } from "../utils/emailLabels";
 import { LogLines } from "./LogViewer";
 import { Toast, useToast } from "./Toast";
@@ -30,13 +30,6 @@ const ADMIT_TIER_LABELS: Record<string, string> = {
   "keyword-fallback": "Keyword Fallback",
   "carrier-name": "Carrier Name",
 };
-
-/** costCents is fractional-cent LLM spend; format for a tiny inline badge. */
-function formatEmailCost(cents: number): string {
-  if (cents < 1) return `${cents.toFixed(2)}¢`;
-  const dollars = cents / 100;
-  return dollars < 1 ? `$${dollars.toFixed(4)}` : `$${dollars.toFixed(2)}`;
-}
 
 const FEEDBACK_LABELS: Record<
   EmailPipeline,
@@ -326,7 +319,7 @@ export function EmailLogModal({
             )}
             {current.costCents != null && current.costCents > 0 && (
               <span className="email-cost" title="LLM cost for this email">
-                {formatEmailCost(current.costCents)}
+                {formatCents(current.costCents)}
               </span>
             )}
           </div>

@@ -19,7 +19,7 @@ import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
 import { Toast, useToast } from "../components/Toast";
 import { OUTCOME_LABELS, PIPELINE_LABELS } from "../utils/emailLabels";
-import { formatAbsolute } from "../utils/format";
+import { formatAbsolute, formatCents } from "../utils/format";
 
 /** admitTier → short human label; unrecognized tiers fall back to the raw value. */
 const ADMIT_TIER_LABELS: Record<string, string> = {
@@ -29,13 +29,6 @@ const ADMIT_TIER_LABELS: Record<string, string> = {
   "keyword-fallback": "Keyword Fallback",
   "carrier-name": "Carrier Name",
 };
-
-/** costCents is fractional-cent LLM spend; format for a tiny inline badge. */
-function formatEmailCost(cents: number): string {
-  if (cents < 1) return `${cents.toFixed(2)}¢`;
-  const dollars = cents / 100;
-  return dollars < 1 ? `$${dollars.toFixed(4)}` : `$${dollars.toFixed(2)}`;
-}
 
 const OUTCOME_FILTER_ORDER: readonly EmailActivityOutcome[] = [
   "processed",
@@ -498,7 +491,7 @@ export default function EmailActivityPage() {
                   )}
                   {activity.costCents != null && activity.costCents > 0 && (
                     <span className="email-cost" title="LLM cost for this email">
-                      {formatEmailCost(activity.costCents)}
+                      {formatCents(activity.costCents)}
                     </span>
                   )}
                   {feedback.has(activity.activityId) && (
