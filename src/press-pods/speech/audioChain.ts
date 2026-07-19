@@ -38,10 +38,23 @@ const RESAMPLE_HQ = "filter_size=256:cutoff=0.95";
  * the RNN model suppresses the noise floor cleanly. Model ships in assets.
  */
 const DENOISE_MODEL_PATH = "assets/press-pods/denoise.rnnn";
+/**
+ * Higgs's vocoder synthesizes sibilance as a dense comb of narrowband peaks
+ * running right up to its ~11kHz band edge. Below ~9.5kHz the comb is masked
+ * by the sibilance it rides on; the 9.8-11kHz remainder pokes above the
+ * sibilance rolloff and reads as a faint metallic rattle shadowing every "s".
+ * This steep linear-phase FIR shelf removes that exposed octave (measured:
+ * -62dB → -88dB in sibilant frames) while leaving ≤9.5kHz untouched. The
+ * in-band comb below 9.5kHz is a model artifact post-processing can't remove
+ * without dulling sibilance; see docs/presspods-audio.md.
+ */
+const FIZZ_SHELF =
+  "firequalizer=gain='if(lt(f,9600),0,if(gt(f,10300),-30,-30*(f-9600)/700))'";
 /** The explicit HQ aresample pre-empts the default-quality one ffmpeg would
  * auto-insert for arnndn (RNNoise only runs at 48kHz). */
 const DENOISE_FILTER =
-  `highpass=f=80,aresample=48000:${RESAMPLE_HQ},` + `arnndn=m=${DENOISE_MODEL_PATH}`;
+  `highpass=f=80,aresample=48000:${RESAMPLE_HQ},` +
+  `arnndn=m=${DENOISE_MODEL_PATH},${FIZZ_SHELF}`;
 
 async function ffmpeg(args: string[]): Promise<string> {
   const { stderr } = await execFileAsync("ffmpeg", ["-hide_banner", "-y", ...args], {

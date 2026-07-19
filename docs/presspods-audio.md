@@ -10,7 +10,7 @@ issues can be diagnosed the same way), and the known next steps.
 
 | Provider | Native output | Bandwidth | Noise floor | Quirks |
 |---|---|---|---|---|
-| Higgs v3 (self-hosted mlx-audio, default) | 24 kHz MP3 ~128k mono | content shelf ~11 kHz | audible hiss (needs denoise) | random voice per request unless ref-cloned; unreliable length (truncation/runaway); dense vocoder "fizz" peaks at 10.0–10.7 kHz right below its band edge |
+| Higgs v3 (self-hosted mlx-audio, default) | 24 kHz MP3 ~128k mono | content shelf ~11 kHz | audible hiss (needs denoise) | random voice per request unless ref-cloned; unreliable length (truncation/runaway); comb-structured sibilance (see below) |
 | ElevenLabs v3 | 44.1 kHz MP3 | full | clean | none of the above; costs $0.10/1k chars |
 
 Two provider flags drive the chain: `needsDenoise` (Higgs) and
@@ -26,11 +26,12 @@ shows up above the shelf was manufactured by our own processing.
 
 Per chunk (`prepareChunk`):
 
-1. **Denoise** (Higgs only): `highpass=f=80` rumble cut, then RNNoise
-   (`arnndn` with `assets/press-pods/denoise.rnnn`). RNNoise over `afftdn`
-   because spectral subtraction leaves a metallic "musical noise" tang on
-   voice. RNNoise only runs at 48 kHz, so the filter chain upsamples to 48k
-   first (see the resampling section below).
+1. **Denoise + band-edge shelf** (Higgs only): `highpass=f=80` rumble cut,
+   then RNNoise (`arnndn` with `assets/press-pods/denoise.rnnn`), then the
+   `FIZZ_SHELF` FIR (see the comb-sibilance section below). RNNoise over
+   `afftdn` because spectral subtraction leaves a metallic "musical noise"
+   tang on voice. RNNoise only runs at 48 kHz, so the filter chain upsamples
+   to 48k first (see the resampling section below).
 2. **Edge trim + fades**: `silenceremove` at each end (via an `areverse`
    sandwich), 12 ms fades so butt-joins never click.
 3. **Per-chunk leveling** to −19 LUFS (two-pass *linear* loudnorm) so no chunk
@@ -144,14 +145,42 @@ frequency's mirror lands in a band that correlates with it, it's resampler
 imaging; if it correlates with nothing, look at noise-shaping/codec artifacts
 instead.
 
+## Fixed: exposed band-edge fizz — the second "ring" (FIZZ_SHELF, 2026-07)
+
+After the imaging fix, a fainter version of the same metallic-rattle
+perception persisted. Analysis of three post-fix episodes confirmed the
+resampler fix was live (13 kHz band flat, zero sibilance correlation) and
+found the actual source: **Higgs's vocoder synthesizes sibilance as a dense
+comb of narrowband peaks** (~20–100 Hz spacing) instead of smooth noise,
+running from ~7 kHz right up to its 11 kHz band edge. Below ~9.5 kHz the comb
+is masked by the sibilance it rides on. Above it, the sibilance rolloff drops
+faster than the comb does, so the 9.8–11 kHz remainder pokes within 6–8 dB of
+the speech mids at the worst moments (r=0.90 with sibilance) — audible as the
+rattle. The original pre-fix complaint was almost certainly both layers
+stacked (comb + its 13 kHz mirror image); the imaging fix removed one layer.
+
+**Fix**: `FIZZ_SHELF` in `audioChain.ts` — a steep linear-phase FIR shelf
+(`firequalizer`: 0 dB below 9.6 kHz, ramping to −30 dB by 10.3 kHz) appended
+to the Higgs denoise chain. Measured on a full episode: fizz band in sibilant
+frames −62 dB → −88 dB, with the 9.0–9.5 kHz band bit-identical. A more
+aggressive corner (9.2 kHz) bought 4 dB more reduction but cost 3.8 dB of
+real sibilance — rejected.
+
+Note per-generation variance is real but small: episodes that "sound clean"
+and episodes that "ring" measured statistically identical here; perception
+depends on content (sibilance density) and listening conditions.
+
 ## Known next steps
 
-- **~10.5 kHz gentle lowpass (Higgs only)**: the raw model output has real
-  vocoder fizz at 10.0–10.7 kHz, just under its band edge. It's in-band
-  content, partially masked by sibilance, and was NOT the ring complaint — so
-  it's deliberately untouched. If a residual "tinge" is still audible after
-  the imaging fix, a gentle lowpass around 10.5 kHz on the denoise path is
-  the next lever. Costs genuine sibilance sparkle; A/B before shipping.
+- **In-band comb sibilance (< 9.5 kHz)**: still present and inherently a
+  model artifact — post-processing can't notch a moving comb out of the band
+  that carries real sibilance without dulling it. If it's still bothersome,
+  the levers are, in order: (1) a dynamic de-esser-style band compressor on
+  8–9.5 kHz (only engages during sibilant bursts; `acrossover` +
+  `sidechaincompress` filtergraph — complex, prototype first); (2) source
+  side — different Higgs quantization/settings on the mlx server, a reference
+  clip with softer sibilance, or switching the provider back to ElevenLabs
+  (clean sibilance, $0.10/1k chars).
 - **Whisper round-trip verify** (from the design invariants): the length-bounds
   check catches catastrophic truncation/runaway only. If subtle content drops
   surface, transcribe each chunk and diff against input text.
