@@ -44,10 +44,14 @@ export function registerPressPodsRoutes(
   // The routes gate only on the auth token, but the worker task also needs
   // TTS/model credentials — without them submissions would queue forever with
   // no error anywhere. Make that misconfiguration loud at boot.
-  if (!config.ELEVENLABS_API_KEY) {
+  const ttsCredMissing =
+    config.PRESSPODS_TTS_PROVIDER === "elevenlabs"
+      ? !config.ELEVENLABS_API_KEY && "ELEVENLABS_API_KEY"
+      : !config.PRESSPODS_TTS_URL && "PRESSPODS_TTS_URL";
+  if (ttsCredMissing) {
     logger.warn(
-      "PressPods routes are active but the worker task is disabled " +
-        "(missing ELEVENLABS_API_KEY); submitted jobs will queue without processing",
+      `PressPods routes are active but the worker task is disabled ` +
+        `(missing ${ttsCredMissing}); submitted jobs will queue without processing`,
     );
   }
 

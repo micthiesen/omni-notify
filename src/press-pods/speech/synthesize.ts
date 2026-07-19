@@ -1,29 +1,96 @@
 import fsAsync from "node:fs/promises";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { Logger } from "@micthiesen/mitools/logging";
-import got, { HTTPError } from "got";
-import config from "../../utils/config.js";
-import type { MetadataInfo } from "../agents/metadata.js";
 import type CostCounter from "../costs.js";
 import type { Chapter } from "../types.js";
 import {
   assembleEpisode,
   cleanupWavs,
   makeSilenceWav,
+  type PreparedChunk,
   prepareChunk,
   probeDurationSeconds,
 } from "./audioChain.js";
+import { createTtsProvider } from "./providers/index.js";
+import type { AuthorGender, TtsProvider } from "./providers/types.js";
 import { chunkText, splitSections } from "./textChunking.js";
-import { getVoice, type Voice } from "./voices.js";
 
-/** ElevenLabs v3 — highest-expressiveness model; "Natural" stability mode. */
-export const TTS_MODEL = "eleven_v3";
-const TTS_ENDPOINT = "https://api.elevenlabs.io/v1/text-to-speech";
-const OUTPUT_FORMAT = "mp3_44100_128";
-/** Deterministic sampling so a re-synthesized episode sounds identical. */
-const SEED = 4242;
+/** Plausible narration pacing (seconds of *trimmed* audio per input char). The
+ * band is wide on purpose: it catches catastrophic truncation (a few seconds
+ * for a full chunk) and runaway looping (minutes for one paragraph), not a
+ * naturally fast reader. */
+const MIN_SEC_PER_CHAR = 0.03;
+const MAX_SEC_PER_CHAR = 0.15;
+/** Only ranks fallback takes when all attempts are out of bounds; a complete
+ * read sits ~0.06 (Higgs runs faster, ~0.04). */
+const IDEAL_SEC_PER_CHAR = 0.06;
+const MAX_LENGTH_ATTEMPTS = 3;
+/** Below this the pacing ratio is dominated by fixed overhead (warm-up, edge
+ * silence) and can't distinguish truncation, so the check is skipped. */
+const MIN_VERIFY_CHARS = 120;
 
-/** v3 sweet spot is 500-800 chars; keep headroom under the 5k cap. */
+/**
+ * Synthesize one chunk and prepare it for concat. For providers that need it
+ * (local models truncate or loop unpredictably), re-synthesize when the
+ * prepared (trimmed) audio's pacing is implausible, keeping the take closest to
+ * a natural pace. A synth/prepare failure counts as a spent attempt rather than
+ * failing the whole episode. Discarded takes' temp files are cleaned up.
+ */
+async function synthesizeChunkAudio(
+  provider: TtsProvider,
+  text: string,
+  logger: Logger,
+): Promise<PreparedChunk> {
+  const opts = { denoise: provider.needsDenoise };
+  const attempt = async (): Promise<PreparedChunk> =>
+    prepareChunk(await provider.synthesizeChunk(text, logger), opts);
+
+  if (!provider.verifyChunkLength || text.length < MIN_VERIFY_CHARS) return attempt();
+
+  const inBounds = (take: PreparedChunk): boolean => {
+    const ratio = take.durationSeconds / text.length;
+    return ratio >= MIN_SEC_PER_CHAR && ratio <= MAX_SEC_PER_CHAR;
+  };
+  const takes: PreparedChunk[] = [];
+  for (let i = 1; i <= MAX_LENGTH_ATTEMPTS; i++) {
+    try {
+      const take = await attempt();
+      takes.push(take);
+      if (inBounds(take)) break;
+      if (i < MAX_LENGTH_ATTEMPTS) {
+        logger.warn(
+          `Chunk length implausible (${take.durationSeconds.toFixed(1)}s for ` +
+            `${text.length} chars); retry ${i}/${MAX_LENGTH_ATTEMPTS}`,
+        );
+      }
+    } catch (error) {
+      // A corrupt/truncated response can fail prepareChunk's ffmpeg; retry
+      // rather than aborting the episode.
+      logger.warn(
+        `Chunk synth/prepare failed (attempt ${i}/${MAX_LENGTH_ATTEMPTS}): ${(error as Error).message}`,
+      );
+    }
+  }
+
+  if (takes.length === 0) {
+    throw new Error(`All ${MAX_LENGTH_ATTEMPTS} synthesis attempts failed for a chunk`);
+  }
+  const distance = (take: PreparedChunk): number =>
+    Math.abs(take.durationSeconds / text.length - IDEAL_SEC_PER_CHAR);
+  const chosen =
+    takes.find(inBounds) ??
+    takes.reduce((a, b) => (distance(a) <= distance(b) ? a : b));
+  await cleanupWavs(takes.filter((t) => t !== chosen).map((t) => t.wavPath));
+  if (!inBounds(chosen)) {
+    logger.warn(
+      `Chunk still implausible after ${MAX_LENGTH_ATTEMPTS} tries; using closest take ` +
+        `(${chosen.durationSeconds.toFixed(1)}s)`,
+    );
+  }
+  return chosen;
+}
+
+/** ~900-char chunks keep each request in the quality sweet spot; sections and
+ * paragraphs are never split mid-sentence. */
 const CHUNK_TARGET = 900;
 const CHUNK_MAX = 1500;
 /** Gaps between chunks (paragraph-ish) and between sections. */
@@ -47,17 +114,18 @@ export async function synthesizeSpeech({
   costCounter,
 }: {
   content: string;
-  authorGender: MetadataInfo["authorGender"];
+  authorGender: AuthorGender;
   logger: Logger;
   costCounter: CostCounter;
 }): Promise<SynthesisResult> {
   const start = Date.now();
-  const voice = getVoice(authorGender);
+  const provider = createTtsProvider(authorGender);
   const sections = splitSections(content);
 
   logger.info("Starting speech synthesis", {
-    voice: voice.name,
-    model: TTS_MODEL,
+    provider: provider.providerName,
+    voice: provider.voiceName,
+    model: provider.modelId,
     totalChars: content.length,
     sections: sections.length,
   });
@@ -98,9 +166,12 @@ export async function synthesizeSpeech({
           wavPaths.push(chunkGap);
           speechOffset += CHUNK_GAP_SEC;
         }
-        const mp3 = await synthesizeChunk(chunks[i], voice, logger);
-        costCounter.recordTtsUsage(TTS_MODEL, "tts", chunks[i]);
-        const { wavPath, durationSeconds } = await prepareChunk(mp3);
+        const { wavPath, durationSeconds } = await synthesizeChunkAudio(
+          provider,
+          chunks[i],
+          logger,
+        );
+        costCounter.recordTtsUsage(provider.modelId, "tts", chunks[i]);
         wavPaths.push(wavPath);
         speechOffset += durationSeconds;
         chunkIndex++;
@@ -116,50 +187,12 @@ export async function synthesizeSpeech({
 
     return {
       audio,
-      voiceName: voice.name,
-      voiceProvider: "ElevenLabs",
+      voiceName: provider.voiceName,
+      voiceProvider: provider.providerName,
       synthesizedSeconds: (Date.now() - start) / 1000,
       chapters,
     };
   } finally {
     await cleanupWavs([...wavPaths, chunkGap, sectionGap]);
-  }
-}
-
-/** POST one chunk to ElevenLabs, retrying transient (429/5xx) failures. */
-async function synthesizeChunk(
-  text: string,
-  voice: Voice,
-  logger: Logger,
-): Promise<Buffer> {
-  const apiKey = config.ELEVENLABS_API_KEY;
-  if (!apiKey) throw new Error("ELEVENLABS_API_KEY is not set");
-
-  const maxAttempts = 3;
-  for (let attempt = 1; ; attempt++) {
-    try {
-      const bytes = await got
-        .post(`${TTS_ENDPOINT}/${voice.id}?output_format=${OUTPUT_FORMAT}`, {
-          headers: { "xi-api-key": apiKey },
-          json: {
-            text,
-            model_id: TTS_MODEL,
-            seed: SEED,
-            voice_settings: { stability: 0.5, use_speaker_boost: true },
-          },
-          timeout: { request: 5 * 60 * 1000 },
-        })
-        .buffer();
-      return Buffer.from(bytes);
-    } catch (error) {
-      const status = error instanceof HTTPError ? error.response.statusCode : 0;
-      const transient = status === 429 || status >= 500;
-      if (!transient || attempt >= maxAttempts) throw error;
-      const backoffMs = 2000 * 2 ** (attempt - 1);
-      logger.warn(
-        `ElevenLabs chunk failed (${status}); retry ${attempt}/${maxAttempts - 1} in ${backoffMs}ms`,
-      );
-      await sleep(backoffMs);
-    }
   }
 }

@@ -124,13 +124,13 @@ from the Queue. Matching is deliberately case-sensitive and prefix-only.
 
 ## PressPods (Article → Podcast)
 
-Enabled by setting `PRESSPODS_AUTH_TOKEN` (plus `ELEVENLABS_API_KEY` and a Google API key). Submit an article URL — from an iOS Shortcut via `POST /pods/episodes?authToken=…` with `{ "url": "…" }`, or from the `/pods` page — and it becomes an episode in a private podcast RSS feed (`GET /pods/rss?authToken=…`) your podcast app subscribes to.
+Enabled by setting `PRESSPODS_AUTH_TOKEN` (plus a Google API key and a TTS backend — either a self-hosted Higgs server via `PRESSPODS_TTS_URL`, or `ELEVENLABS_API_KEY` with `PRESSPODS_TTS_PROVIDER=elevenlabs`). Submit an article URL — from an iOS Shortcut via `POST /pods/episodes?authToken=…` with `{ "url": "…" }`, or from the `/pods` page — and it becomes an episode in a private podcast RSS feed (`GET /pods/rss?authToken=…`) your podcast app subscribes to.
 
 Each submission becomes a durable job (visible on `/pods`, with retries and per-run logs) processed by the `PressPods` task:
 
 1. Seven article retrievers run in parallel (Postlight, Readability, Extractus, Wayback, removepaywall, raw fetch, and Jina.ai when `JINA_API_KEY` is set); an LLM rates each result's extraction quality and the best wins.
 2. A broadcast-style cleaning pass rewrites the article for the ear (one-idea sentences, attribution-first quotes, number rounding, a cold-open hook and a spoken outro) and marks major sections for chapters.
-3. ElevenLabs v3 synthesizes each chunk separately; ffmpeg per-chunk-levels, two-pass loudness-normalizes to -16 LUFS, and joins the intro jingle click-free; the lead image and chapter markers are embedded as ID3 tags.
+3. The configured TTS backend (self-hosted Higgs v3, or ElevenLabs v3) synthesizes each chunk separately, with a length-verify retry for the local model; ffmpeg denoises (Higgs), per-chunk-levels, two-pass loudness-normalizes to -16 LUFS, and joins the intro jingle click-free; the lead image and chapter markers are embedded as ID3 tags.
 4. The MP3 is stored on disk (next to the SQLite DB by default) and served at `/pods/audio/<id>.mp3` with an unguessable content-addressed name; a Pushover notification announces the episode.
 
 Transient failures (TTS 429/5xx, network blips) retry automatically with backoff; permanent failures surface on `/pods` with a retry button. Submitted articles are also bookmarked in Karakeep when `KARAKEEP_URL`/`KARAKEEP_API_KEY` are set. To expose the feed publicly, reverse-proxy just the `/pods/*` paths and set `PRESSPODS_PUBLIC_URL` to the public origin (or let it derive from `X-Forwarded-*` headers).
@@ -217,7 +217,10 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `PODCAST_TASTE_REFLECTION_MODEL` | No | Model for weekly podcast taste reflection (default: `openai:gpt-5.6-luna`) |
 | `PODCAST_TASTE_REFLECTION_SCHEDULE` | No | Podcast taste reflection cron (default: `0 0 5 * * 0`, Sunday 5am) |
 | `PRESSPODS_AUTH_TOKEN` | No | Long random secret; enables PressPods and authenticates `/pods/episodes` + `/pods/rss` |
-| `ELEVENLABS_API_KEY` | For PressPods | ElevenLabs v3 TTS |
+| `PRESSPODS_TTS_PROVIDER` | No | TTS backend: `higgs` (self-hosted, default) or `elevenlabs` |
+| `PRESSPODS_TTS_URL` | For higgs | mlx-audio server URL, e.g. `http://10.10.1.90:8000` |
+| `PRESSPODS_TTS_MODEL` | No | Higgs model repo (default `bosonai/higgs-audio-v3-tts-4b`) |
+| `ELEVENLABS_API_KEY` | For elevenlabs | ElevenLabs v3 TTS |
 | `ELEVENLABS_VOICE_MALE` / `ELEVENLABS_VOICE_FEMALE` | No | Voice-id overrides for narration (default: Brian / Matilda) |
 | `PRESSPODS_PUBLIC_URL` | No | Public origin for RSS enclosure URLs (else derived from forwarded headers) |
 | `PRESSPODS_AUDIO_DIR` | No | Episode MP3 directory (default: `press-pods-audio` next to the DB) |

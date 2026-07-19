@@ -118,7 +118,16 @@ const configSchema = baseConfigSchema
     PRESSPODS_AUDIO_DIR: z.string().optional(),
     PRESSPODS_METADATA_MODEL: z.string().optional(),
     PRESSPODS_CLEANING_MODEL: z.string().optional(),
-    /** ElevenLabs API key — the PressPods TTS provider (Eleven v3). */
+    /** PressPods TTS backend: self-hosted Higgs (default) or ElevenLabs. */
+    PRESSPODS_TTS_PROVIDER: z.enum(["higgs", "elevenlabs"]).default("higgs"),
+    /** mlx-audio server base URL (required when the provider is Higgs). */
+    PRESSPODS_TTS_URL: z
+      .string()
+      .optional()
+      .transform((s) => s?.replace(/\/+$/, "")),
+    /** Optional model-repo override for the Higgs provider. */
+    PRESSPODS_TTS_MODEL: z.string().optional(),
+    /** ElevenLabs API key — required when the provider is ElevenLabs. */
     ELEVENLABS_API_KEY: z.string().optional(),
     /** Optional voice-id overrides for male / female author narration. */
     ELEVENLABS_VOICE_MALE: z.string().optional(),

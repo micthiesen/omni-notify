@@ -33,10 +33,11 @@ export default class PressPodsTask extends ScheduledTask {
       parentLogger.info("PressPods disabled: missing PRESSPODS_AUTH_TOKEN");
       return null;
     }
-    const missing = [
-      ["ELEVENLABS_API_KEY", config.ELEVENLABS_API_KEY],
-      ...requiredModelCredentials(),
-    ]
+    const ttsCred: [string, unknown] =
+      config.PRESSPODS_TTS_PROVIDER === "elevenlabs"
+        ? ["ELEVENLABS_API_KEY", config.ELEVENLABS_API_KEY]
+        : ["PRESSPODS_TTS_URL", config.PRESSPODS_TTS_URL];
+    const missing = [ttsCred, ...requiredModelCredentials()]
       .filter(([, value]) => !value)
       .map(([name]) => name);
     if (missing.length > 0) {

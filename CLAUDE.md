@@ -91,11 +91,12 @@ src/
 │   │                        #   extractus, wayback, removepaywall, fetch, jina if keyed);
 │   │                        #   metadata model rates each 0-10, best wins
 │   ├── agents/              # metadata rating/extraction + narration cleaning prompts
-│   ├── speech/              # ElevenLabs v3 TTS: chunk → per-chunk synth → mastering
-│   │                        #   synthesize.ts (chunked synth + chapter offsets),
+│   ├── speech/              # TTS: chunk → per-chunk synth+verify → mastering
+│   │                        #   synthesize.ts (chunked synth + length-verify + chapters),
+│   │                        #   providers/ (higgs | elevenlabs, swappable via config),
 │   │                        #   textChunking.ts (section/paragraph chunking, pure),
-│   │                        #   audioChain.ts (ffmpeg: per-chunk leveling, 2-pass
-│   │                        #   linear loudnorm, click-free intro concat), voices.ts
+│   │                        #   audioChain.ts (ffmpeg: denoise, per-chunk leveling,
+│   │                        #   2-pass linear loudnorm, click-free intro concat), voices.ts
 │   ├── audio.ts             # duration probe (music-metadata) + ID3 album art (node-id3)
 │   ├── storage.ts           # episode MP3s on disk (press-pods-audio next to the DB)
 │   ├── rss.ts               # podcast RSS feed (podcast pkg), 50 newest episodes
@@ -209,9 +210,10 @@ Migrated from the standalone serverless `presspods` project (2026-07); the AWS p
 - **Public surface is deliberately tiny**: `/pods/episodes` (POST, token), `/pods/rss` (token), `/pods/audio/:file` (unguessable content-addressed names from a CSPRNG (`secureId`) — podcast apps can't send auth headers on enclosure fetches, so unguessability IS the auth; never switch these ids to `Math.random`-based generation), `/pods/logo.jpeg`. Token compare is constant-time; enclosure URLs use `PRESSPODS_PUBLIC_URL` or the request's `X-Forwarded-*` headers. The audio route supports byte ranges. Feed descriptions are HTML rendered by podcast clients: dynamic text (content, excerpt, article URL) is entity-escaped so article-controlled content can't inject markup. Expose ONLY `/pods/*` through the reverse proxy — `/api/*` has no auth of its own.
 - **Audio lives on disk, not in the DB**: MP3s go to `press-pods-audio/` next to the SQLite file (same Docker volume, same backups). ffmpeg comes from the runtime image (apt), not bundled binaries; the intro jingle + logo live in `assets/press-pods/`. Episode rows/files are deliberately never pruned (personal-scale volume; the feed caps itself at the newest 50).
 - Episode processing runs inside tracked task runs, so per-episode logs are viewable from `/pods` via the standard LogViewer (`runId` is stored on jobs and episodes).
-- **TTS is ElevenLabs v3** (`eleven_v3`, "Natural" stability, fixed seed for reproducibility), chosen over Voxtral in a blind bake-off (`src/tools/tts-bakeoff.ts`, which still runs Voxtral/MiniMax/Fish for future comparisons). The LLM "audio tag" director pass was tried and rejected — plain narration scored higher.
-- **We own the chunking** (v3 has no request-stitching): `textChunking.ts` splits narration into sections (on `## ` markers the cleaner emits), then into ~900-char paragraph/sentence chunks (never mid-sentence). Each chunk is synthesized separately, trimmed, edge-faded, and **per-chunk loudness-normalized to -19 LUFS** before concat (kills chunk-to-chunk level jumps), then the whole thing is mastered with **two-pass linear loudnorm to -16 LUFS / -1.5 dBTP** and the intro is joined click-free in one filtergraph with a single 96k-mono MP3 encode (replaces the old three-generation MP3 chain). Whisper round-trip verification was scoped but deferred.
-- Voice selection is gender-aware (male authors → male voice, female/unknown → female voice); defaults are ElevenLabs premade voices (Brian / Matilda), overridable by id via `ELEVENLABS_VOICE_MALE` / `ELEVENLABS_VOICE_FEMALE`.
+- **TTS is provider-swappable** (`speech/providers/`, chosen via `PRESSPODS_TTS_PROVIDER`): `higgs` (default — self-hosted Higgs Audio v3 on an mlx-audio server at `PRESSPODS_TTS_URL`, e.g. the M5, $0/char) or `elevenlabs` (Eleven v3, `$0.10/1k chars`). ElevenLabs won a blind bake-off outright (`src/tools/tts-bakeoff.ts`, still runs Voxtral/MiniMax/Fish for future comparisons) and the LLM "audio tag" director pass was tried and rejected; the switch to Higgs is a deliberate cost trade (self-hosted, close-but-not-equal quality). Both providers stay live — flip the env var to switch back.
+- **Higgs is unreliable on length** (autoregressive: it truncates or runs away — minutes of looping — for the same text, non-deterministically). `verifyChunkLength` (true for Higgs, false for the reliable EL) drives a duration-bounds retry in `synthesize.ts`: a chunk whose seconds-per-char falls outside [0.03, 0.15] is re-synthesized up to 3× and the closest take kept. This catches catastrophes (7s truncations, 240s runaways), not subtle drops — a **Whisper round-trip verify is the deferred hardening** if content-completeness issues surface. Higgs also gets a **denoise pass** (`needsDenoise`: highpass + `afftdn` before leveling) for its noise floor; EL output is clean and skips it.
+- **We own the chunking** (neither provider stitches server-side; EL v3 dropped v2's request-stitching): `textChunking.ts` splits narration into sections (on `## ` markers the cleaner emits), then into ~900-char paragraph/sentence chunks (never mid-sentence). Each chunk is synthesized separately, denoised (Higgs), trimmed, edge-faded, and **per-chunk loudness-normalized to -19 LUFS** before concat (kills chunk-to-chunk level jumps), then mastered with **two-pass linear loudnorm to -16 LUFS / -1.5 dBTP** and the intro joined click-free in one filtergraph with a single 96k-mono MP3 encode (replaces the old three-generation MP3 chain).
+- Voice selection is gender-aware (male → male voice, female/unknown → female). EL defaults are premade voices Brian / Matilda (override by id via `ELEVENLABS_VOICE_MALE` / `_FEMALE`); Higgs has no preset voice, so the author gender is passed as the model's `gender` hint and `speed=0.9` tames its fast pace.
 - **Chapters**: the cleaner marks major sections with `## Title` lines (consumed, not spoken); synthesis records each section's start offset and embeds them as ID3 CHAP/CTOC frames (via node-id3, alongside album art) so podcast apps show a scrubbable chapter list — no new public route, no RSS change. Only emitted when the article has ≥2 sections.
 - The narration cleaner (`agents/cleaner.ts`) is a **broadcast-style rewrite**, not just junk removal: one-idea sentences, attribution-before-quote, number rounding, contractions, a cold-open hook before the byline read-in, and a one-line spoken outro. Deliberately not NotebookLM-style conversational rewriting (faithful body, ear-friendly phrasing).
 - `@postlight/parser` needs a pnpm override mapping its git-pinned `difflib` fork back to the npm package (supply-chain policy blocks git subdeps); see pnpm-workspace.yaml.
@@ -456,7 +458,10 @@ PODCAST_MAX_GUEST_PICKS=6               # Optional: Tier-1 guest picks cap per r
 PODCAST_TASTE_REFLECTION_MODEL=openai:gpt-5.6-luna # Model for podcast taste reflection
 PODCAST_TASTE_REFLECTION_SCHEDULE=0 0 5 * * 0      # Weekly podcast taste reflection (Sunday 5am)
 PRESSPODS_AUTH_TOKEN=xxx                # Enables PressPods; authenticates /pods/episodes + /pods/rss
-ELEVENLABS_API_KEY=xxx                  # ElevenLabs v3 TTS (required for PressPods)
+PRESSPODS_TTS_PROVIDER=higgs            # TTS backend: higgs (self-hosted, default) or elevenlabs
+PRESSPODS_TTS_URL=http://10.10.1.90:8000 # mlx-audio server URL (required when provider=higgs)
+PRESSPODS_TTS_MODEL=xxx                 # Optional: Higgs model repo (default bosonai/higgs-audio-v3-tts-4b)
+ELEVENLABS_API_KEY=xxx                  # ElevenLabs v3 TTS (required when provider=elevenlabs)
 ELEVENLABS_VOICE_MALE=xxx               # Optional: voice id for male-author narration (default Brian)
 ELEVENLABS_VOICE_FEMALE=xxx             # Optional: voice id for female/unknown-author narration (default Matilda)
 MISTRAL_API_KEY=xxx                     # Optional: only the tts-bakeoff comparison tool still uses it

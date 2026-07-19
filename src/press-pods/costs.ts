@@ -34,6 +34,7 @@ const ttsCharacterCents: Record<string, number> = {
   // ElevenLabs v2/v3: $0.10 per 1,000 characters (Creator-plan effective rate
   // and the overage rate are both ~this), i.e. 0.01 cents/char.
   eleven_v3: 0.01,
+  "bosonai/higgs-audio-v3-tts-4b": 0, // self-hosted on the M5 — no per-char cost
   "voxtral-mini-tts-2603": 0.0016, // Mistral Voxtral ($0.016 / 1k chars)
 };
 

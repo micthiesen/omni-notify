@@ -21,6 +21,12 @@ const CHUNK_LUFS = -19;
 const MASTER_LUFS = -16;
 /** Short fades at each chunk edge so butt-joins don't click. */
 const EDGE_FADE_SEC = 0.012;
+/**
+ * Speech denoise for self-hosted models with a noise floor (e.g. Higgs): a
+ * sub-80Hz rumble cut plus FFT spectral denoise. Moderate `nr` avoids the
+ * "underwater" artifacts aggressive settings cause on voice.
+ */
+const DENOISE_FILTER = "highpass=f=80,afftdn=nr=14:nf=-30";
 
 async function ffmpeg(args: string[]): Promise<string> {
   const { stderr } = await execFileAsync("ffmpeg", ["-hide_banner", "-y", ...args], {
@@ -91,21 +97,29 @@ async function twoPassLoudnorm(
 }
 
 /**
- * Turn one raw TTS chunk (MP3 bytes) into a concat-ready WAV: trim edge
- * silence, apply short edge fades, and level to a fixed per-chunk LUFS so no
- * chunk sits quieter than its neighbors. Returns the WAV path + its duration
- * (used to compute chapter offsets). The `areverse` sandwich trims + fades the
- * trailing edge without needing to know the duration up front.
+ * Turn one raw TTS chunk (MP3 bytes) into a concat-ready WAV: optionally
+ * denoise, trim edge silence, apply short edge fades, and level to a fixed
+ * per-chunk LUFS so no chunk sits quieter than its neighbors. Returns the WAV
+ * path + its duration (used to compute chapter offsets). The `areverse`
+ * sandwich trims + fades the trailing edge without needing the duration up
+ * front; denoise runs first so leveling doesn't amplify the noise floor.
  */
+export interface PreparedChunk {
+  wavPath: string;
+  durationSeconds: number;
+}
+
 export async function prepareChunk(
   mp3: Buffer,
-): Promise<{ wavPath: string; durationSeconds: number }> {
+  { denoise = false }: { denoise?: boolean } = {},
+): Promise<PreparedChunk> {
   const rawPath = tmpFile("mp3");
   const trimmedPath = tmpFile("wav");
   const wavPath = tmpFile("wav");
   await fs.writeFile(rawPath, mp3);
   try {
     const edge =
+      (denoise ? `${DENOISE_FILTER},` : "") +
       "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
       `afade=t=in:st=0:d=${EDGE_FADE_SEC},` +
       "areverse," +
