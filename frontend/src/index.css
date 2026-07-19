@@ -1910,6 +1910,10 @@ button.task-last-run,
   flex-direction: column;
   gap: 0.4rem;
   margin-top: 0.7rem;
+  /* Fill the column: the parent uses align-items: flex-start, which would
+     otherwise shrink this block to the textarea's intrinsic width. */
+  align-self: stretch;
+  width: 100%;
 }
 
 .feedback-note-label {
