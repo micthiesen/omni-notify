@@ -22,13 +22,26 @@ const MASTER_LUFS = -16;
 /** Short fades at each chunk edge so butt-joins don't click. */
 const EDGE_FADE_SEC = 0.012;
 /**
+ * swresample's default anti-imaging filter is weak: upsampling Higgs's 24kHz
+ * output with defaults mirrors the vocoder's band-edge energy (~10.7kHz)
+ * around 12kHz into an audible ~13kHz "ring" that shadows every sibilant.
+ * These params bury the images below the noise floor (measured: -95dB →
+ * -136dB in sibilant frames). Every aresample in this file must carry them,
+ * including ones that pre-empt auto-inserted conversions (arnndn forces 48k,
+ * loudnorm runs a 192k round-trip internally). See docs/presspods-audio.md.
+ */
+const RESAMPLE_HQ = "filter_size=256:cutoff=0.95";
+/**
  * Speech denoise for self-hosted models with a noise floor (e.g. Higgs): a
  * sub-80Hz rumble cut plus RNNoise (`arnndn`). RNNoise is used over `afftdn`
  * because spectral subtraction leaves a metallic/"musical noise" tang on voice;
  * the RNN model suppresses the noise floor cleanly. Model ships in assets.
  */
 const DENOISE_MODEL_PATH = "assets/press-pods/denoise.rnnn";
-const DENOISE_FILTER = `highpass=f=80,arnndn=m=${DENOISE_MODEL_PATH}`;
+/** The explicit HQ aresample pre-empts the default-quality one ffmpeg would
+ * auto-insert for arnndn (RNNoise only runs at 48kHz). */
+const DENOISE_FILTER =
+  `highpass=f=80,aresample=48000:${RESAMPLE_HQ},` + `arnndn=m=${DENOISE_MODEL_PATH}`;
 
 async function ffmpeg(args: string[]): Promise<string> {
   const { stderr } = await execFileAsync("ffmpeg", ["-hide_banner", "-y", ...args], {
@@ -82,7 +95,7 @@ async function twoPassLoudnorm(
     `loudnorm=${spec}:linear=true` +
     `:measured_I=${m.input_i}:measured_TP=${m.input_tp}` +
     `:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}` +
-    `:offset=${m.target_offset},aresample=${SAMPLE_RATE}`;
+    `:offset=${m.target_offset},aresample=${SAMPLE_RATE}:${RESAMPLE_HQ}`;
   const encode = toWav ? ["-c:a", "pcm_s16le"] : ["-c:a", "libmp3lame", "-b:a", "96k"];
   await ffmpeg([
     "-i",
@@ -127,7 +140,8 @@ export async function prepareChunk(
       "areverse," +
       "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.25," +
       `afade=t=in:st=0:d=${EDGE_FADE_SEC},` +
-      "areverse";
+      "areverse," +
+      `aresample=${SAMPLE_RATE}:${RESAMPLE_HQ}`;
     await ffmpeg([
       "-i",
       rawPath,
@@ -205,9 +219,10 @@ export async function assembleEpisode(
       "-i",
       speechMastered,
       "-filter_complex",
-      `[0:a]aresample=${SAMPLE_RATE},aformat=channel_layouts=mono,` +
-        `loudnorm=I=${MASTER_LUFS}:TP=-1.5:LRA=11[intro];` +
-        `[1:a]aresample=${SAMPLE_RATE},aformat=channel_layouts=mono[speech];` +
+      `[0:a]aresample=${SAMPLE_RATE}:${RESAMPLE_HQ},aformat=channel_layouts=mono,` +
+        `loudnorm=I=${MASTER_LUFS}:TP=-1.5:LRA=11,` +
+        `aresample=${SAMPLE_RATE}:${RESAMPLE_HQ}[intro];` +
+        `[1:a]aresample=${SAMPLE_RATE}:${RESAMPLE_HQ},aformat=channel_layouts=mono[speech];` +
         `[intro][speech]concat=n=2:v=0:a=1[out]`,
       "-map",
       "[out]",
