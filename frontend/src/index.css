@@ -2823,10 +2823,24 @@ button.history-row:last-child {
 }
 
 .detail-sections {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Compact metadata sections (Details, Cost, Retriever, Chapters) share one
+   responsive band; large sections (Audio Chunks, Transcript) sit full width
+   below so a long list never traps its siblings in a narrow column. */
+.pods-overview {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  column-gap: 2rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.25rem 2rem;
   align-items: start;
+  margin-bottom: 2.25rem;
+}
+
+.pods-overview > .page-section {
+  margin-bottom: 0;
+  min-width: 0;
 }
 
 .detail-grid {
@@ -4021,53 +4035,55 @@ button.history-row:last-child {
   margin-bottom: 0.6rem;
 }
 
-.pods-cost-table {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
+.pods-cost-total {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* One row per model/function. Key on its own line so it never truncates (the
+   old fixed-column table clipped long keys like "gemini-...-cleaning-input");
+   cost is right-aligned beside it, usage sits underneath. */
+.pods-cost-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pods-cost-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--bg-inset);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  font-size: 0.78rem;
 }
 
-.pods-cost-table-header,
-.pods-cost-table-row {
-  display: contents;
+.pods-cost-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
-.pods-cost-table-header span,
-.pods-cost-table-row span {
-  padding: 0.4rem 0.6rem;
-  border-bottom: 1px solid var(--border);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.pods-cost-key {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
-.pods-cost-table-header span {
-  background: var(--bg-inset);
-  color: var(--text-muted);
-  font-size: 0.66rem;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.pods-cost-table-row span {
+.pods-cost-amount {
+  flex-shrink: 0;
   color: var(--text-secondary);
-}
-
-.pods-cost-table-row span:not(:first-child) {
+  font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
 
-.pods-cost-table-row:last-child span {
-  border-bottom: none;
-}
-
-.pods-cost-table-row .pods-cost-table-key {
-  font-family: var(--font-mono);
-  color: var(--text);
+.pods-cost-usage {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Chapters */
@@ -4118,8 +4134,11 @@ button.history-row:last-child {
 
 .pods-chunk-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 0.7rem;
+  /* Cards keep their natural height; expanding one card's full text must not
+     stretch its row-mates into tall boxes of whitespace. */
+  align-items: start;
 }
 
 .pods-chunk-card {
@@ -4219,17 +4238,42 @@ button.history-row:last-child {
   text-decoration: underline;
 }
 
-/* Transcript: collapsed to a fading preview, expands in place. */
+/* Transcript: collapsed to a fading preview, expands in place. Reading width is
+   capped so full-width lines stay legible. */
 .pods-transcript {
+  max-width: 42rem;
   max-height: 8rem;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 0.85rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
+  font-size: 0.9rem;
+  line-height: 1.65;
   overflow-wrap: anywhere;
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.pods-transcript-p {
+  margin: 0 0 0.85rem;
+}
+
+.pods-transcript-p:last-child {
+  margin-bottom: 0;
+}
+
+.pods-transcript-heading {
+  margin: 1.5rem 0 0.65rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.pods-transcript-heading:first-child {
+  margin-top: 0;
+}
+
+.pods-transcript em {
+  font-style: italic;
+  color: var(--text);
 }
 
 .pods-transcript-expanded {
@@ -4268,14 +4312,5 @@ button.history-row:last-child {
 
   .pods-chunk-list {
     grid-template-columns: 1fr;
-  }
-
-  .pods-cost-table {
-    font-size: 0.72rem;
-  }
-
-  .pods-cost-table-header span,
-  .pods-cost-table-row span {
-    padding: 0.35rem 0.4rem;
   }
 }

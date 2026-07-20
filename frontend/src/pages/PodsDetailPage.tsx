@@ -144,6 +144,60 @@ function ChunkCard({ chunk }: { chunk: PressPodsChunkStat }) {
   );
 }
 
+/** Light inline emphasis: *italic* / _italic_ → <em>. The narration cleaner
+ * emits these (often for titles); raw asterisks/underscores read as broken. */
+function renderInline(text: string): React.ReactNode[] {
+  const parts: React.ReactNode[] = [];
+  const re = /([*_])(?=\S)(.+?)(?<=\S)\1/g;
+  let last = 0;
+  let key = 0;
+  let match: RegExpExecArray | null = re.exec(text);
+  while (match !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push(<em key={key++}>{match[2]}</em>);
+    last = match.index + match[0].length;
+    match = re.exec(text);
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+/** Render narration content: `## ` section markers become headings, blank-line
+ * separated blocks become paragraphs, with inline emphasis. */
+function TranscriptBody({ content }: { content: string }) {
+  const blocks: React.ReactNode[] = [];
+  let para: string[] = [];
+  let key = 0;
+  const flush = () => {
+    const text = para.join(" ").trim();
+    if (text) {
+      blocks.push(
+        <p key={key++} className="pods-transcript-p">
+          {renderInline(text)}
+        </p>,
+      );
+    }
+    para = [];
+  };
+  for (const line of content.split("\n")) {
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) {
+      flush();
+      blocks.push(
+        <h3 key={key++} className="pods-transcript-heading">
+          {renderInline(heading[1])}
+        </h3>,
+      );
+    } else if (line.trim() === "") {
+      flush();
+    } else {
+      para.push(line);
+    }
+  }
+  flush();
+  return <>{blocks}</>;
+}
+
 function CostTable({ episode }: { episode: PressPodsEpisodeDetail }) {
   const costs = episode.costs;
   if (!costs) return <div className="muted">No cost data recorded.</div>;
@@ -159,30 +213,34 @@ function CostTable({ episode }: { episode: PressPodsEpisodeDetail }) {
       <div className="meta-row pods-cost-summary">
         <span>LLM {formatCents(costs.llmCents) ?? "—"}</span>
         <span>TTS {formatCents(costs.ttsCents) ?? "—"}</span>
-        <span>Total {formatCents(episode.costCents) ?? "—"}</span>
+        <span className="pods-cost-total">
+          Total {formatCents(episode.costCents) ?? "—"}
+        </span>
       </div>
       {keys.size > 0 && (
-        <div className="pods-cost-table">
-          <div className="pods-cost-table-header">
-            <span>Model / Function</span>
-            <span>Cost</span>
-            <span>Tokens (in/out)</span>
-            <span>Chars</span>
-          </div>
+        <div className="pods-cost-list">
           {[...keys].sort().map((key) => {
             const tokens = costs.detailTokens[key];
+            const chars = costs.detailChars[key];
             return (
-              <div key={key} className="pods-cost-table-row">
-                <span className="pods-cost-table-key">{key}</span>
-                <span>{formatCents(costs.detailCents[key] ?? null) ?? "—"}</span>
-                <span>
-                  {tokens ? `${tokens.input.toLocaleString()} / ${tokens.output.toLocaleString()}` : "—"}
-                </span>
-                <span>
-                  {costs.detailChars[key] !== undefined
-                    ? costs.detailChars[key].toLocaleString()
-                    : "—"}
-                </span>
+              <div key={key} className="pods-cost-row">
+                <div className="pods-cost-row-head">
+                  <span className="pods-cost-key">{key}</span>
+                  <span className="pods-cost-amount">
+                    {formatCents(costs.detailCents[key] ?? null) ?? "—"}
+                  </span>
+                </div>
+                {(tokens || chars !== undefined) && (
+                  <div className="meta-row pods-cost-usage">
+                    {tokens && (
+                      <span>
+                        {tokens.input.toLocaleString()} / {tokens.output.toLocaleString()}{" "}
+                        tokens
+                      </span>
+                    )}
+                    {chars !== undefined && <span>{chars.toLocaleString()} chars</span>}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -290,6 +348,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
       </div>
 
       <div className="detail-sections">
+        <div className="pods-overview">
         <section className="page-section">
           <h2 className="section-title">Details</h2>
           <dl className="detail-grid">
@@ -353,6 +412,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
             </ul>
           </section>
         )}
+        </div>
 
         <section className="page-section">
           <h2 className="section-title">
@@ -384,7 +444,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
           <div
             className={`pods-transcript ${transcriptExpanded ? "pods-transcript-expanded" : ""}`}
           >
-            {episode.content}
+            <TranscriptBody content={episode.content} />
           </div>
           <button
             type="button"
