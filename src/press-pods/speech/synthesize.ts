@@ -1,6 +1,13 @@
 import fsAsync from "node:fs/promises";
 import type { Logger } from "@micthiesen/mitools/logging";
 import type CostCounter from "../costs.js";
+import {
+  checkpointKey,
+  deleteChunkCheckpoint,
+  materializeCheckpointWav,
+  readChunkCheckpoint,
+  writeChunkCheckpoint,
+} from "../storage.js";
 import type { Chapter, ChunkStat } from "../types.js";
 import {
   assembleEpisode,
@@ -16,6 +23,30 @@ import { createTtsProvider } from "./providers/index.js";
 import type { AuthorGender, TtsProvider } from "./providers/types.js";
 import { createSttClient, type SttClient } from "./stt.js";
 import { chunkText, splitSections } from "./textChunking.js";
+
+/**
+ * Per-article checkpoint context threaded through synthesis. When present, each
+ * verified chunk's prepared WAV is cached on disk (keyed by render signature +
+ * chunk text) so an abrupt restart resumes from the last good chunk instead of
+ * re-synthesizing everything. Null disables checkpointing (e.g. no work id).
+ */
+interface CheckpointCtx {
+  workId: string;
+  signature: string;
+}
+
+/** Everything about the render that changes the produced audio bytes — folded
+ * into the checkpoint key so a mid-flight voice/provider/speed change can never
+ * serve a stale take from a previous attempt. */
+function renderSignature(provider: TtsProvider): string {
+  return [
+    provider.providerName,
+    provider.voiceName,
+    provider.modelId,
+    provider.needsDenoise ? "dn" : "raw",
+    `x${SPEED_MULTIPLIER}`,
+  ].join("|");
+}
 
 /** Plausible narration pacing (seconds of *trimmed*, sped audio per input
  * char). The band is wide on purpose and is the *fallback* verifier (used when
@@ -33,12 +64,14 @@ const MAX_SYNTH_ATTEMPTS = 3;
  * silence, STT word-count noise) and can't distinguish truncation, so the
  * check is skipped. */
 const MIN_VERIFY_CHARS = 120;
-/** A splittable chunk gets only this many full-size re-rolls before we stop
+/** A splittable chunk gets only this many full-size attempts before we stop
  * banging on the same text and adapt (re-split). Higgs truncation is
- * length-correlated and non-deterministic, so re-rolling a long chunk rarely
- * recovers — smaller boundary-safe pieces do. Leaf chunks that can't be split
- * still get the full MAX_SYNTH_ATTEMPTS. */
-const RESPLIT_PROBE_ATTEMPTS = 2;
+ * length-correlated and non-deterministic, so a second full-size re-roll of a
+ * long chunk almost always fails the same way — re-splitting into smaller
+ * boundary-safe pieces is the reliable recovery, so go there immediately after
+ * the first verification failure. Leaf chunks that can't be split still get the
+ * full MAX_SYNTH_ATTEMPTS. */
+const RESPLIT_PROBE_ATTEMPTS = 1;
 /** Don't re-split a chunk already this short: the sub-pieces would be tiny and
  * a residual failure at this size is a content/STT quirk, not truncation. */
 const MIN_RESPLIT_CHARS = 500;
@@ -139,9 +172,52 @@ async function synthesizeChunkAudio(
   stt: SttClient | null,
   costCounter: CostCounter,
   logger: Logger,
+  ckpt: CheckpointCtx | null,
   maxAttempts: number = MAX_SYNTH_ATTEMPTS,
 ): Promise<ChunkSynthesisOutcome> {
   const opts = { denoise: provider.needsDenoise };
+  const key = ckpt ? checkpointKey(ckpt.signature, text) : null;
+
+  // Resume: a prepared WAV cached from a previous (crashed) attempt skips synth
+  // and verification entirely. Probing validates the file is intact; a corrupt
+  // checkpoint is treated as a miss so it can never poison the episode.
+  if (ckpt && key) {
+    const cached = await readChunkCheckpoint(ckpt.workId, key);
+    if (cached) {
+      let wavPath: string | undefined;
+      try {
+        wavPath = await materializeCheckpointWav(cached);
+        const durationSeconds = await probeDurationSeconds(wavPath);
+        logger.info(`Resumed chunk from checkpoint (${text.length} chars)`);
+        return { chunk: { wavPath, durationSeconds }, attempts: 0, passed: true };
+      } catch (error) {
+        // Corrupt/unreadable checkpoint: clean up the temp file it produced and
+        // drop the bad entry so it isn't re-probed (and re-leaked) on every
+        // future resume, then fall through to synthesize fresh.
+        if (wavPath) await cleanupWavs([wavPath]);
+        await deleteChunkCheckpoint(ckpt.workId, key);
+        logger.warn(
+          `Discarded unreadable chunk checkpoint: ${(error as Error).message}`,
+        );
+      }
+    }
+  }
+
+  // Cache a verified take so a later restart resumes here. Best-effort: a read
+  // failure just costs the resume speedup, never the episode.
+  const cache = async (chunk: PreparedChunk): Promise<void> => {
+    if (!ckpt || !key) return;
+    try {
+      await writeChunkCheckpoint(
+        ckpt.workId,
+        key,
+        await fsAsync.readFile(chunk.wavPath),
+      );
+    } catch {
+      // ignore
+    }
+  };
+
   const synth = async (): Promise<{ chunk: PreparedChunk; raw: Buffer }> => {
     const raw = await provider.synthesizeChunk(text, logger);
     // Bill every real TTS response here, at the call site — retried and re-split
@@ -154,7 +230,9 @@ async function synthesizeChunkAudio(
   const useContent = provider.verifyChunkContent && stt !== null;
   const verify = provider.verifyChunkLength || useContent;
   if (!verify || text.length < MIN_VERIFY_CHARS) {
-    return { chunk: (await synth()).chunk, attempts: 1, passed: true };
+    const { chunk } = await synth();
+    await cache(chunk);
+    return { chunk, attempts: 1, passed: true };
   }
 
   const takes: Array<{ chunk: PreparedChunk; assessment: Assessment }> = [];
@@ -213,6 +291,16 @@ async function synthesizeChunkAudio(
         `(${chosen.assessment.describe()})`,
     );
   }
+  // Only checkpoint a genuinely-validated take. When STT content-verification is
+  // the intended mode, a duration-band "pass" from an STT outage must NOT be
+  // cached — a later resume skips verification, which would permanently lock in
+  // audio a healthy verifier might have rejected as truncated. `passed` stays
+  // broader (it drives the re-split decision) so an STT outage doesn't trigger
+  // pointless re-splitting; the cache gate is the stricter one.
+  const trulyVerified = useContent
+    ? chosen.assessment.verified && chosen.assessment.accept
+    : chosen.assessment.accept;
+  if (trulyVerified) await cache(chosen.chunk);
   return {
     chunk: chosen.chunk,
     attempts: attemptsMade,
@@ -237,6 +325,7 @@ async function synthesizeChunkAdaptive(
   stt: SttClient | null,
   costCounter: CostCounter,
   logger: Logger,
+  ckpt: CheckpointCtx | null,
   depth = 0,
 ): Promise<ChunkPiece[]> {
   const splittable = depth < MAX_RESPLIT_DEPTH && text.length >= MIN_RESPLIT_CHARS;
@@ -253,6 +342,7 @@ async function synthesizeChunkAdaptive(
       stt,
       costCounter,
       logger,
+      ckpt,
       splittable ? RESPLIT_PROBE_ATTEMPTS : MAX_SYNTH_ATTEMPTS,
     );
   } catch (error) {
@@ -309,6 +399,7 @@ async function synthesizeChunkAdaptive(
         stt,
         costCounter,
         logger,
+        ckpt,
         depth + 1,
       );
       // Mark every descendant so the UI can show recovery happened here, even
@@ -349,15 +440,21 @@ export async function synthesizeSpeech({
   authorGender,
   logger,
   costCounter,
+  workId,
 }: {
   content: string;
   authorGender: AuthorGender;
   logger: Logger;
   costCounter: CostCounter;
+  /** Stable per-article id enabling per-chunk resume across restarts. */
+  workId?: string;
 }): Promise<SynthesisResult> {
   const start = Date.now();
   const provider = createTtsProvider(authorGender);
   const stt = provider.verifyChunkContent ? createSttClient() : null;
+  const ckpt: CheckpointCtx | null = workId
+    ? { workId, signature: renderSignature(provider) }
+    : null;
   const sections = splitSections(content);
 
   logger.info("Starting speech synthesis", {
@@ -419,6 +516,7 @@ export async function synthesizeSpeech({
           stt,
           costCounter,
           logger,
+          ckpt,
         );
         // A re-split adds pieces beyond the pre-split estimate; keep total honest.
         totalChunks += pieces.length - 1;

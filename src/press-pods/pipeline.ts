@@ -7,14 +7,21 @@ import { getDuration, tagEpisodeAudio } from "./audio.js";
 import CostCounter from "./costs.js";
 import { buildFinalText } from "./formatting/index.js";
 import {
+  deleteEpisodesByNormalizedUrlExcept,
   type PressPodsEpisodeData,
   PressPodsEpisodeEntity,
   secureId,
 } from "./persistence.js";
 import { getArticleFromUrl } from "./retrievers/index.js";
 import { synthesizeSpeech } from "./speech/synthesize.js";
-import { saveEpisodeAudio } from "./storage.js";
+import {
+  checkpointWorkId,
+  clearChunkCheckpoints,
+  deleteEpisodeAudio,
+  saveEpisodeAudio,
+} from "./storage.js";
 import { type Article, summarizeRetrieverAttempts } from "./types.js";
+import { normalizeUrl } from "./url.js";
 
 /**
  * URL → article retrieval → narration cleaning → TTS → audio finalization →
@@ -28,6 +35,8 @@ export async function createEpisodeFromUrl(
 ): Promise<PressPodsEpisodeData> {
   const start = Date.now();
   const costCounter = new CostCounter();
+  const normalizedUrl = normalizeUrl(url);
+  const workId = checkpointWorkId(normalizedUrl);
 
   const {
     article: unvalidatedArticle,
@@ -72,6 +81,7 @@ export async function createEpisodeFromUrl(
     authorGender: metadata.info.authorGender,
     logger,
     costCounter,
+    workId,
   });
 
   // Duration must be known before tagging so chapter end-times are correct;
@@ -99,6 +109,7 @@ export async function createEpisodeFromUrl(
     publication: metadata.info.publication ?? undefined,
     domain: article.domain,
     articleUrl: url,
+    normalizedUrl,
     leadImageUrl: article.leadImageUrl,
     excerpt: metadata.info.shortSummary ?? undefined,
     content,
@@ -120,9 +131,37 @@ export async function createEpisodeFromUrl(
   };
   PressPodsEpisodeEntity.upsert(episode);
 
+  // Resubmit-as-retry: the newest take replaces any older episode for the same
+  // canonical URL. Do this right after the new row lands so a crash here can't
+  // leave the article with zero episodes.
+  await replaceOlderEpisodes(normalizedUrl, episodeId, logger);
+
+  // Synthesis finished — the per-chunk resume cache for this article is no
+  // longer needed.
+  await clearChunkCheckpoints(workId);
+
   logger.info(`Episode created for "${episode.title}"`, costCounter.getCosts());
   await notifyEpisodeAvailable(episode, logger);
   return episode;
+}
+
+/**
+ * Drop episodes older than `keepEpisodeId` that share its canonical URL, plus
+ * their audio files. Runs on the happy path (createEpisodeFromUrl) and on
+ * crash recovery (the worker completing a job whose episode already landed) so
+ * the replace invariant holds even if the process died in the gap between the
+ * new episode's write and this cleanup.
+ */
+export async function replaceOlderEpisodes(
+  normalizedUrl: string,
+  keepEpisodeId: string,
+  logger: Logger,
+): Promise<void> {
+  const replaced = deleteEpisodesByNormalizedUrlExcept(normalizedUrl, keepEpisodeId);
+  for (const old of replaced) {
+    await deleteEpisodeAudio(old.audioFile);
+    logger.info(`Replaced older episode ${old.episodeId} for the same article`);
+  }
 }
 
 async function notifyEpisodeAvailable(

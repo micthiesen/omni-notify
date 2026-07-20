@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
-import { fetchPressPodsEpisode } from "../api";
+import {
+  deletePressPodsEpisode,
+  fetchPressPodsEpisode,
+  retryPressPodsEpisode,
+} from "../api";
 import type {
   PressPodsChunkStat,
   PressPodsEpisodeDetail,
   PressPodsRetrieverAttempt,
 } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
+import { Toast, useToast } from "../components/Toast";
 import { formatAudioDuration } from "./PodsPage";
-import { Link } from "../router";
+import { Link, navigate } from "../router";
 import { formatAbsoluteWithYear, formatCents } from "../utils/format";
 
 // Higgs duration-band bounds (the fallback verifier in synthesize.ts), scaled
@@ -254,6 +259,49 @@ export default function PodsDetailPage({ id }: { id: string }) {
   const [episode, setEpisode] = useState<PressPodsEpisodeDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { toast, showToast } = useToast();
+
+  const onRetry = async () => {
+    if (!episode || retrying) return;
+    setRetrying(true);
+    try {
+      await retryPressPodsEpisode(episode.episodeId);
+      // A successful regeneration replaces (deletes) this episode row once the
+      // new one lands, so this detail page would 404 on reload — send the user
+      // back to the list where the in-progress job is visible.
+      showToast("Re-queued for regeneration");
+      navigate("/pods");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to retry episode",
+        "error",
+      );
+    } finally {
+      setRetrying(false);
+    }
+  };
+
+  const onDelete = async () => {
+    if (!episode || deleting) return;
+    const confirmed = window.confirm(
+      `Delete "${episode.title}"? This removes the episode and its audio permanently.`,
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await deletePressPodsEpisode(episode.episodeId);
+      showToast("Episode deleted");
+      navigate("/pods");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to delete episode",
+        "error",
+      );
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -293,12 +341,32 @@ export default function PodsDetailPage({ id }: { id: string }) {
 
   return (
     <>
-      <Link to="/pods" className="detail-back">
-        <span className="detail-back-arrow" aria-hidden="true">
-          ←
-        </span>
-        All episodes
-      </Link>
+      <div className="pods-detail-back-row">
+        <Link to="/pods" className="detail-back">
+          <span className="detail-back-arrow" aria-hidden="true">
+            ←
+          </span>
+          All episodes
+        </Link>
+        <div className="pods-detail-actions">
+          <button
+            type="button"
+            className="pods-card-logs"
+            onClick={onRetry}
+            disabled={retrying}
+          >
+            {retrying ? "Retrying…" : "Retry"}
+          </button>
+          <button
+            type="button"
+            className="pods-card-logs pods-card-delete"
+            onClick={onDelete}
+            disabled={deleting}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+        </div>
+      </div>
 
       <div className="detail-head">
         <ImageWithFallback
@@ -455,6 +523,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
           </button>
         </section>
       </div>
+      <Toast toast={toast} />
     </>
   );
 }

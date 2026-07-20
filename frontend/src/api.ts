@@ -736,6 +736,18 @@ export function dismissPressPodsJob(jobId: string): Promise<{ deleted: boolean }
   return apiDelete(`/api/press-pods/jobs/${encodeURIComponent(jobId)}`);
 }
 
+export function deletePressPodsEpisode(
+  episodeId: string,
+): Promise<{ deleted: boolean }> {
+  return apiDelete(`/api/press-pods/episodes/${encodeURIComponent(episodeId)}`);
+}
+
+export function retryPressPodsEpisode(
+  episodeId: string,
+): Promise<{ job: PressPodsJob }> {
+  return apiPost(`/api/press-pods/episodes/${encodeURIComponent(episodeId)}/retry`);
+}
+
 export function fetchBriefings(): Promise<{ briefings: BriefingHistory[] }> {
   return apiGet<{ briefings: BriefingHistory[] }>("/api/briefings");
 }

@@ -12,17 +12,25 @@ import {
 } from "../task-runs/registry.js";
 import config from "../utils/config.js";
 import {
+  deleteEpisode,
   getAllEpisodes,
   getAllJobs,
   getEpisode,
   getJob,
+  jobNormalizedUrl,
   type PressPodsEpisodeData,
   type PressPodsJobData,
   PressPodsJobEntity,
   requeueJobNow,
 } from "./persistence.js";
 import { buildPressPodsFeed, latestEpisodeId } from "./rss.js";
-import { AUDIO_FILE_RE, episodeAudioPath } from "./storage.js";
+import {
+  AUDIO_FILE_RE,
+  checkpointWorkId,
+  clearChunkCheckpoints,
+  deleteEpisodeAudio,
+  episodeAudioPath,
+} from "./storage.js";
 import { submitEpisodeSchema, submitEpisodeUrl } from "./submit.js";
 
 const LOGO_PATH = "assets/press-pods/logo.jpeg";
@@ -165,6 +173,26 @@ export function registerPressPodsRoutes(
     return c.json({ episode: serializeEpisodeDetail(episode) });
   });
 
+  // Manual delete from the UI: drop the row and its audio file. Episodes are
+  // never pruned automatically, so this is the only way one goes away.
+  app.delete("/api/press-pods/episodes/:id", async (c) => {
+    const deleted = deleteEpisode(c.req.param("id"));
+    if (!deleted) return c.json({ error: "Unknown episode" }, 404);
+    await deleteEpisodeAudio(deleted.audioFile);
+    logger.info(`Deleted episode ${deleted.episodeId} ("${deleted.title}")`);
+    return c.json({ deleted: true });
+  });
+
+  // Manual retry/regenerate from the UI: re-run the article through the pipeline.
+  // Goes through the shared submit path, so it dedups onto any in-flight job and
+  // the fresh episode replaces this one on completion.
+  app.post("/api/press-pods/episodes/:id/retry", (c) => {
+    const episode = getEpisode(c.req.param("id"));
+    if (!episode) return c.json({ error: "Unknown episode" }, 404);
+    const job = submitEpisodeUrl(episode.articleUrl, kickWorker, logger);
+    return c.json({ job: serializeJob(job) }, 202);
+  });
+
   app.post("/api/press-pods/submit", async (c) => {
     let parsed: z.infer<typeof submitEpisodeSchema>;
     try {
@@ -189,7 +217,7 @@ export function registerPressPodsRoutes(
     return c.json({ job: serializeJob(job) });
   });
 
-  app.delete("/api/press-pods/jobs/:jobId", (c) => {
+  app.delete("/api/press-pods/jobs/:jobId", async (c) => {
     const jobId = c.req.param("jobId");
     const existing = getJob(jobId);
     if (!existing) return c.json({ error: "Unknown job" }, 404);
@@ -197,6 +225,9 @@ export function registerPressPodsRoutes(
       return c.json({ error: "Job is currently processing" }, 409);
     }
     PressPodsJobEntity.delete({ jobId });
+    // Dismissing a job means giving up on it — drop any per-chunk resume cache
+    // so an abandoned article doesn't leave checkpoint WAVs on disk forever.
+    await clearChunkCheckpoints(checkpointWorkId(jobNormalizedUrl(existing)));
     return c.json({ deleted: true });
   });
 }

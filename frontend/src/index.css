@@ -3929,6 +3929,16 @@ button.history-row:last-child {
   color: var(--accent);
 }
 
+.pods-card-logs:disabled {
+  color: var(--text-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pods-card-delete:hover {
+  color: var(--danger);
+}
+
 .pods-card-excerpt {
   margin: 0.45rem 0 0;
   color: var(--text-secondary);
@@ -3944,6 +3954,21 @@ button.history-row:last-child {
 }
 
 /* ===== PressPods detail page ===== */
+
+.pods-detail-back-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pods-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
 
 .pods-detail-byline {
   color: var(--text-secondary);

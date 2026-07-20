@@ -8,13 +8,20 @@ import {
   completeJob,
   findEpisodeForJob,
   getAllJobs,
+  jobNormalizedUrl,
   MAX_JOB_ATTEMPTS,
   type PressPodsJobData,
+  reclaimProcessingJobsAtBoot,
   recordJobFailure,
   selectDueJobs,
 } from "./persistence.js";
-import { createEpisodeFromUrl } from "./pipeline.js";
-import { ensureAudioDir, getAudioDir } from "./storage.js";
+import { createEpisodeFromUrl, replaceOlderEpisodes } from "./pipeline.js";
+import {
+  checkpointWorkId,
+  clearChunkCheckpoints,
+  ensureAudioDir,
+  getAudioDir,
+} from "./storage.js";
 
 /**
  * Drains the episode job queue. Submissions kick a manual run immediately;
@@ -24,9 +31,13 @@ import { ensureAudioDir, getAudioDir } from "./storage.js";
 export default class PressPodsTask extends ScheduledTask {
   public readonly name = "PressPods";
   public readonly schedule = "0 */5 * * * *"; // Every 5 minutes
+  // Run at boot so a restart immediately drains queued work and recovers jobs
+  // orphaned mid-run, rather than waiting up to 5 minutes for the first sweep.
+  public override readonly runOnStartup = true;
 
   private logger: Logger;
   private lastRunSummary: string | undefined;
+  private reclaimedOnBoot = false;
 
   public static create(parentLogger: Logger): PressPodsTask | null {
     if (!config.PRESSPODS_AUTH_TOKEN) {
@@ -67,6 +78,19 @@ export default class PressPodsTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
+    // First run of a fresh process: any `processing` job was orphaned by the
+    // restart (single-process deployment), so make its claim immediately
+    // reclaimable instead of waiting out the 30-minute stale window. The drain
+    // below then either completes it (episode already landed) or counts a
+    // crashed attempt and requeues.
+    if (!this.reclaimedOnBoot) {
+      this.reclaimedOnBoot = true;
+      const reclaimed = reclaimProcessingJobsAtBoot();
+      if (reclaimed > 0) {
+        this.logger.warn(`Reclaiming ${reclaimed} job(s) orphaned by a restart`);
+      }
+    }
+
     let processed = 0;
     let requeued = 0;
     let failed = 0;
@@ -107,6 +131,12 @@ export default class PressPodsTask extends ScheduledTask {
         this.logger.info(
           `Job for ${job.url} already produced episode ${existing.episodeId}; completing`,
         );
+        // Finish the replace + checkpoint cleanup the crashed run never reached,
+        // so a crash in the gap between the episode write and cleanup can't
+        // leave the article with a permanent duplicate or orphaned checkpoints.
+        const normalizedUrl = jobNormalizedUrl(job);
+        await replaceOlderEpisodes(normalizedUrl, existing.episodeId, this.logger);
+        await clearChunkCheckpoints(checkpointWorkId(normalizedUrl));
         completeJob(job.jobId);
         return "processed";
       }

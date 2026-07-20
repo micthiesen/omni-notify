@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
 import type { Costs } from "./costs.js";
 import type { Chapter, ChunkStat, RetrieverAttempt } from "./types.js";
+import { normalizeUrl } from "./url.js";
 
 /**
  * CSPRNG ids: episode ids double as publicly-served audio file names whose
@@ -20,6 +21,8 @@ export type PressPodsEpisodeData = {
   publication?: string;
   domain?: string;
   articleUrl: string;
+  /** Canonical identity for dedup/replace (see url.ts); absent on old rows. */
+  normalizedUrl?: string;
   leadImageUrl?: string;
   excerpt?: string;
   /** The cleaned, narration-ready text that was synthesized. */
@@ -65,8 +68,11 @@ export function getEpisode(episodeId: string): PressPodsEpisodeData | undefined 
 export function findEpisodeForJob(
   job: PressPodsJobData,
 ): PressPodsEpisodeData | undefined {
+  const normalized = jobNormalizedUrl(job);
   return PressPodsEpisodeEntity.getAll().find(
-    (episode) => episode.articleUrl === job.url && episode.createdAt >= job.createdAt,
+    (episode) =>
+      episodeNormalizedUrl(episode) === normalized &&
+      episode.createdAt >= job.createdAt,
   );
 }
 
@@ -81,7 +87,10 @@ export type PressPodsJobStatus = "queued" | "processing" | "failed";
 
 export type PressPodsJobData = {
   jobId: string;
+  /** Original submitted URL — what the retrievers fetch (query string intact). */
   url: string;
+  /** Canonical identity for dedup/resubmit-as-retry (see url.ts). */
+  normalizedUrl?: string;
   status: PressPodsJobStatus;
   attempts: number;
   /** Earliest time the job may run (0 = immediately). */
@@ -109,6 +118,7 @@ export function enqueueEpisodeJob(url: string): PressPodsJobData {
   const job: PressPodsJobData = {
     jobId: secureId(),
     url,
+    normalizedUrl: normalizeUrl(url),
     status: "queued",
     attempts: 0,
     nextAttemptAt: 0,
@@ -117,6 +127,36 @@ export function enqueueEpisodeJob(url: string): PressPodsJobData {
   };
   PressPodsJobEntity.upsert(job);
   return job;
+}
+
+/** Canonical identity for a job/episode, computed on read so pre-existing rows
+ * (written before `normalizedUrl` was stored) still dedup correctly. */
+export function jobNormalizedUrl(job: PressPodsJobData): string {
+  return job.normalizedUrl ?? normalizeUrl(job.url);
+}
+export function episodeNormalizedUrl(episode: PressPodsEpisodeData): string {
+  return episode.normalizedUrl ?? normalizeUrl(episode.articleUrl);
+}
+
+/** An in-flight job (queued or processing) for this URL — a resubmit joins it
+ * instead of enqueueing a duplicate. Newest first. */
+export function findActiveJobByNormalizedUrl(
+  normalizedUrl: string,
+): PressPodsJobData | undefined {
+  return getAllJobs().find(
+    (j) =>
+      (j.status === "queued" || j.status === "processing") &&
+      jobNormalizedUrl(j) === normalizedUrl,
+  );
+}
+
+/** A failed job for this URL — a resubmit requeues it rather than stacking. */
+export function findFailedJobByNormalizedUrl(
+  normalizedUrl: string,
+): PressPodsJobData | undefined {
+  return getAllJobs().find(
+    (j) => j.status === "failed" && jobNormalizedUrl(j) === normalizedUrl,
+  );
 }
 
 export function retryDelayMs(attempts: number): number {
@@ -184,8 +224,12 @@ export function getJob(jobId: string): PressPodsJobData | undefined {
 }
 
 /**
- * Manual retry from the UI: reset a failed job to run immediately. Restricted
- * to failed jobs so it can't clobber an in-flight or already-queued attempt.
+ * Manual retry from the UI (or a resubmit joining a failed job): reset a failed
+ * job to run immediately with a fresh attempt budget. Restricted to failed jobs
+ * so it can't clobber an in-flight or already-queued attempt. `attempts` is
+ * reset to 0 — a deliberate user retry earns a full retry cycle, not the single
+ * shot a still-`MAX_JOB_ATTEMPTS` counter would leave (which would re-fail on
+ * the next transient blip).
  */
 export function requeueJobNow(jobId: string): PressPodsJobData | undefined {
   const job = PressPodsJobEntity.get({ jobId });
@@ -194,8 +238,10 @@ export function requeueJobNow(jobId: string): PressPodsJobData | undefined {
   const updated: PressPodsJobData = {
     ...job,
     status: "queued",
+    attempts: 0,
     nextAttemptAt: 0,
     claimedAt: undefined,
+    lastError: undefined,
     updatedAt: now,
   };
   PressPodsJobEntity.upsert(updated);
@@ -204,4 +250,49 @@ export function requeueJobNow(jobId: string): PressPodsJobData | undefined {
 
 export function getAllJobs(): PressPodsJobData[] {
   return PressPodsJobEntity.getAll().sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/**
+ * Boot-time crash recovery. The deployment is single-process, so any job left
+ * in `processing` when a fresh process starts was orphaned by an abrupt
+ * restart — its worker didn't survive. Mark those claims immediately stale so
+ * the very next drain reclaims them (the normal `processing` branch then either
+ * completes the job if its episode already landed, or counts a crashed attempt
+ * and requeues) instead of waiting out the 30-minute stale window. Returns the
+ * number of orphaned jobs found.
+ */
+export function reclaimProcessingJobsAtBoot(): number {
+  const orphaned = PressPodsJobEntity.getAll().filter((j) => j.status === "processing");
+  for (const job of orphaned) {
+    PressPodsJobEntity.patch({ jobId: job.jobId }, { claimedAt: 0 });
+  }
+  return orphaned.length;
+}
+
+/** Remove an episode row. Returns the deleted row so the caller can clean up
+ * its audio file (kept separate — persistence stays free of filesystem I/O). */
+export function deleteEpisode(episodeId: string): PressPodsEpisodeData | undefined {
+  const episode = PressPodsEpisodeEntity.get({ episodeId });
+  if (!episode) return undefined;
+  PressPodsEpisodeEntity.delete({ episodeId });
+  return episode;
+}
+
+/**
+ * Replace semantics for resubmit-as-retry: after a fresh episode is written for
+ * a URL, drop any older episodes sharing its canonical identity so the newest
+ * take wins instead of piling up duplicates. Returns the removed rows so the
+ * caller can delete their audio files.
+ */
+export function deleteEpisodesByNormalizedUrlExcept(
+  normalizedUrl: string,
+  keepEpisodeId: string,
+): PressPodsEpisodeData[] {
+  const stale = PressPodsEpisodeEntity.getAll().filter(
+    (e) => e.episodeId !== keepEpisodeId && episodeNormalizedUrl(e) === normalizedUrl,
+  );
+  for (const episode of stale) {
+    PressPodsEpisodeEntity.delete({ episodeId: episode.episodeId });
+  }
+  return stale;
 }

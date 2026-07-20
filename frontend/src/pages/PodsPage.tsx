@@ -6,11 +6,13 @@ import {
   useState,
 } from "react";
 import {
+  deletePressPodsEpisode,
   dismissPressPodsJob,
   fetchPressPods,
   fetchRunLogs,
   type PressPodsEpisode,
   type PressPodsJob,
+  retryPressPodsEpisode,
   retryPressPodsJob,
   submitPressPodsUrl,
   type TaskRun,
@@ -119,6 +121,38 @@ export default function PodsPage() {
       load();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to dismiss job", "error");
+    }
+  };
+
+  const onRetryEpisode = async (episode: PressPodsEpisode) => {
+    try {
+      await retryPressPodsEpisode(episode.episodeId);
+      load();
+      showToast("Re-queued for regeneration");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to retry episode",
+        "error",
+      );
+    }
+  };
+
+  const onDeleteEpisode = async (episode: PressPodsEpisode) => {
+    const confirmed = window.confirm(
+      `Delete "${episode.title}"? This removes the episode and its audio permanently.`,
+    );
+    if (!confirmed) return;
+    try {
+      await deletePressPodsEpisode(episode.episodeId);
+      setEpisodes((prev) =>
+        prev ? prev.filter((e) => e.episodeId !== episode.episodeId) : prev,
+      );
+      showToast("Episode deleted");
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Failed to delete episode",
+        "error",
+      );
     }
   };
 
@@ -298,6 +332,20 @@ export default function PodsPage() {
                         Logs
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="pods-card-logs"
+                      onClick={() => onRetryEpisode(episode)}
+                    >
+                      Retry
+                    </button>
+                    <button
+                      type="button"
+                      className="pods-card-logs pods-card-delete"
+                      onClick={() => onDeleteEpisode(episode)}
+                    >
+                      Delete
+                    </button>
                   </div>
                   {episode.excerpt && (
                     <p className="pods-card-excerpt">{episode.excerpt}</p>
