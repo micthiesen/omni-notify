@@ -1,4 +1,9 @@
-import { deleteDoc, getDb, getDoc } from "@micthiesen/mitools/docstore";
+import {
+  deleteDoc,
+  getDb,
+  getDoc,
+  getKeysByPrefix,
+} from "@micthiesen/mitools/docstore";
 import type { Entity } from "@micthiesen/mitools/entities";
 import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
@@ -144,7 +149,10 @@ export function createManagedEntity<
     },
     rows: () => {
       const rows: DataRow[] = [];
-      for (const rawKey of entity.keys()) {
+      // Iterate raw storage keys (not entity.keys(), which decodes every row via
+      // getAll) so a single undecodable row surfaces as a malformed row instead
+      // of throwing the whole listing.
+      for (const rawKey of getKeysByPrefix(`$${entity.name}#`)) {
         try {
           const row = getDoc<Data>(rawKey);
           if (row) rows.push(row as DataRow);
@@ -157,7 +165,8 @@ export function createManagedEntity<
     delete: (key) => {
       const malformed = getMalformedMetadata(key);
       if (malformed) {
-        if (!entity.keys().includes(malformed.rawKey)) return { status: "not-found" };
+        if (!getKeysByPrefix(`$${entity.name}#`).includes(malformed.rawKey))
+          return { status: "not-found" };
         if (!deleteDoc(malformed.rawKey)) return { status: "not-found" };
         return {
           status: "deleted",

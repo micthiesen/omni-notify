@@ -1,4 +1,5 @@
 import { Injector } from "@micthiesen/mitools/config";
+import { Entity } from "@micthiesen/mitools/entities";
 import { Logger } from "@micthiesen/mitools/logging";
 import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Scheduler } from "@micthiesen/mitools/scheduling";
@@ -30,11 +31,20 @@ import { installLogCapture } from "./task-runs/logCapture.js";
 import { TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
 
+const logger = new Logger("Main");
+
 Injector.configure({ config });
+// One-shot docstore upgrade (mitools 3.x): rewrites every existing row into the
+// current key encoding + metadata columns. Idempotent and must run before any
+// other DB access, since reads now key off the entity column that migration
+// stamps. Every Entity is registered by the static import graph above (server →
+// data-manager plus every task module), so the registry is complete here.
+const migratedRows = Entity.migrateAll();
+if (migratedRows > 0) {
+  logger.info(`Migrated ${migratedRows} docstore row(s) to the mitools 3.x format`);
+}
 installLogCapture();
 migrateLegacyRecommendations();
-
-const logger = new Logger("Main");
 
 // One-time (idempotent) cleanup: fold any legacy same-address parcel+calendar
 // sender rules into a single "both" rule. New adds normalize at write time.
