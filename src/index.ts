@@ -1,5 +1,4 @@
 import { Injector } from "@micthiesen/mitools/config";
-import { Entity } from "@micthiesen/mitools/entities";
 import { Logger } from "@micthiesen/mitools/logging";
 import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Scheduler } from "@micthiesen/mitools/scheduling";
@@ -10,7 +9,6 @@ import { createJmapClient, type JmapContext } from "./jmap/client.js";
 import { EmailDispatcher, type EmailHandler } from "./jmap/dispatcher.js";
 import { createEventSource } from "./jmap/eventSource.js";
 import EmailRetryTask from "./jmap/retryTask.js";
-import { normalizeSenderRules } from "./jmap/senderRules.js";
 import { EmailTriageService } from "./jmap/triage.js";
 import EmailWatchdogTask from "./jmap/watchdogTask.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
@@ -23,7 +21,6 @@ import { CastroInboxCleanupTask } from "./podcast-recs/castro/inboxCleanupTask.j
 import { PodcastTasteReflectionTask } from "./podcast-recs/reflection/index.js";
 import { PodcastRecommendationTask } from "./podcast-recs/task.js";
 import PressPodsTask from "./press-pods/task.js";
-import { migrateLegacyRecommendations } from "./recommendations/persistence.js";
 import { MediaRecommendationTask } from "./recommendations/task.js";
 import { MediaTasteReflectionTask } from "./recommendations/taste/task.js";
 import { type EmailControls, startServer } from "./server.js";
@@ -31,27 +28,10 @@ import { installLogCapture } from "./task-runs/logCapture.js";
 import { TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
 
-const logger = new Logger("Main");
-
 Injector.configure({ config });
-// One-shot docstore upgrade (mitools 3.x): rewrites every existing row into the
-// current key encoding + metadata columns. Idempotent and must run before any
-// other DB access, since reads now key off the entity column that migration
-// stamps. Every Entity is registered by the static import graph above (server →
-// data-manager plus every task module), so the registry is complete here.
-const migratedRows = Entity.migrateAll();
-if (migratedRows > 0) {
-  logger.info(`Migrated ${migratedRows} docstore row(s) to the mitools 3.x format`);
-}
 installLogCapture();
-migrateLegacyRecommendations();
 
-// One-time (idempotent) cleanup: fold any legacy same-address parcel+calendar
-// sender rules into a single "both" rule. New adds normalize at write time.
-const mergedRuleCount = normalizeSenderRules();
-if (mergedRuleCount > 0) {
-  logger.info(`Normalized ${mergedRuleCount} sender-rule pair(s) into "both"`);
-}
+const logger = new Logger("Main");
 
 function loadStreamers(): Streamer[] {
   const kickConfigured = config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET;

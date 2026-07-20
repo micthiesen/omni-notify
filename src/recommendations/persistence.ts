@@ -76,12 +76,6 @@ export const RecommendationEntity = new Entity<
   ["recommendationId"]
 >("recs-recommendation-attempt", ["recommendationId"]);
 
-type LegacyRecommendationData = Omit<RecommendationData, "recommendationId">;
-const LegacyRecommendationEntity = new Entity<
-  LegacyRecommendationData,
-  ["canonicalId"]
->("recs-recommendation", ["canonicalId"]);
-
 export type IdentityAliasData = {
   guid: string;
   /** Canonical id, or null when resolution failed (cached to avoid re-lookups). */
@@ -101,32 +95,6 @@ export function getAllRecommendations(): RecommendationData[] {
   return RecommendationEntity.getAll().sort(
     (a, b) => b.recommendedAt - a.recommendedAt,
   );
-}
-
-/** Idempotently preserve pre-attempt recommendation rows under the new key. */
-export function migrateLegacyRecommendations(): number {
-  let migrated = 0;
-  for (const legacy of LegacyRecommendationEntity.getAll()) {
-    const recommendationId = `legacy:${legacy.canonicalId}:${legacy.recommendedAt}`;
-    RecommendationEntity.upsert(
-      normalizeLegacyRecommendation(legacy, recommendationId),
-    );
-    LegacyRecommendationEntity.delete({ canonicalId: legacy.canonicalId });
-    migrated++;
-  }
-  return migrated;
-}
-
-export function normalizeLegacyRecommendation(
-  legacy: LegacyRecommendationData,
-  recommendationId: string,
-): RecommendationData {
-  const legacyResult = legacy.watchlistResult as string | undefined;
-  return {
-    ...legacy,
-    recommendationId,
-    watchlistResult: legacyResult === "skipped" ? "error" : legacy.watchlistResult,
-  };
 }
 
 export function getRecommendation(

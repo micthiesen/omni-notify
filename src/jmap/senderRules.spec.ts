@@ -9,7 +9,6 @@ import {
   listEmailRules,
   matchesSenderPattern,
   normalizeRulePattern,
-  normalizeSenderRules,
   upsertEmailRule,
   upsertEmailRuleChecked,
 } from "./senderRules.js";
@@ -156,64 +155,6 @@ describe("normalizeRulePattern", () => {
 
   it("strips a display-name wrapper", () => {
     expect(normalizeRulePattern("Plex <no-reply@plex.tv>")).toBe("no-reply@plex.tv");
-  });
-});
-
-describe("normalizeSenderRules", () => {
-  it('collapses a bare-domain and "@domain" rule into one', () => {
-    upsertEmailRule({ pattern: "plex.tv", scope: "both", verdict: "block" });
-    upsertEmailRule({ pattern: "@plex.tv", scope: "both", verdict: "block" });
-    expect(listEmailRules()).toHaveLength(2);
-
-    normalizeSenderRules();
-
-    const rules = listEmailRules();
-    expect(rules).toHaveLength(1);
-    expect(rules[0].pattern).toBe("@plex.tv");
-    expect(rules[0].scope).toBe("both");
-  });
-
-  it("folds a parcel + calendar pair for one pattern into a both rule", () => {
-    upsertEmailRule({ pattern: "@shop.com", scope: "parcel", verdict: "block" });
-    upsertEmailRule({ pattern: "@shop.com", scope: "calendar", verdict: "block" });
-
-    normalizeSenderRules();
-
-    const rules = listEmailRules();
-    expect(rules).toHaveLength(1);
-    expect(rules[0].scope).toBe("both");
-    expect(rules[0].pattern).toBe("@shop.com");
-  });
-
-  it("is idempotent", () => {
-    upsertEmailRule({ pattern: "plex.tv", scope: "both", verdict: "block" });
-    normalizeSenderRules();
-    expect(normalizeSenderRules()).toBe(0);
-  });
-
-  it("prefers the newest verdict when canonical patterns collide", () => {
-    // Legacy bare-domain block, then a newer @domain allow override.
-    EmailRuleEntity.upsert({
-      ruleId: "both:shop.com",
-      pattern: "shop.com",
-      scope: "both",
-      verdict: "block",
-      createdAt: 1000,
-    });
-    EmailRuleEntity.upsert({
-      ruleId: "both:@shop.com",
-      pattern: "@shop.com",
-      scope: "both",
-      verdict: "allow",
-      createdAt: 2000,
-    });
-
-    normalizeSenderRules();
-
-    const rules = listEmailRules();
-    expect(rules).toHaveLength(1);
-    expect(rules[0].pattern).toBe("@shop.com");
-    expect(rules[0].verdict).toBe("allow"); // newer override wins, not "block"
   });
 });
 

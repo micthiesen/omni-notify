@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   computeExcludedCanonicalIds,
   formatFeedbackDigestFrom,
-  normalizeLegacyRecommendation,
   type RecommendationData,
   RecommendationStatus,
 } from "./persistence.js";
@@ -75,16 +74,5 @@ describe("recommendation persistence rules", () => {
     const excluded = computeExcludedCanonicalIds([recentFailure, oldFailure], NOW);
     expect(excluded).toContain("tmdb:movie:6");
     expect(excluded).not.toContain("tmdb:movie:7");
-  });
-
-  it("normalizes the legacy skipped write result during migration", () => {
-    const { recommendationId: _recommendationId, ...legacy } = rec(
-      "legacy",
-      "tmdb:movie:8",
-    );
-    Object.assign(legacy, { watchlistResult: "skipped" });
-    const normalized = normalizeLegacyRecommendation(legacy, "migrated");
-    expect(normalized.recommendationId).toBe("migrated");
-    expect(normalized.watchlistResult).toBe("error");
   });
 });
