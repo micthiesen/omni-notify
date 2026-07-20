@@ -20,5 +20,13 @@ export interface TtsProvider {
    * the same text; cloud models (ElevenLabs) are reliable and skip the check.
    */
   readonly verifyChunkLength: boolean;
+  /**
+   * Whether to STT-transcribe each chunk and reject on missing content. Higgs
+   * truncates mid-chunk in a way the duration check can't reliably catch (a
+   * truncated read and a fast read overlap in seconds/char); word coverage
+   * separates them. On for Higgs, off for reliable cloud models. Needs an STT
+   * endpoint (createSttClient) — degrades to the duration check without one.
+   */
+  readonly verifyChunkContent: boolean;
   synthesizeChunk(text: string, logger: Logger): Promise<Buffer>;
 }

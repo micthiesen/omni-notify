@@ -397,6 +397,11 @@ export interface PressPodsChunkStat {
   startTimeSeconds: number;
   secPerChar: number;
   attempts: number;
+  /** STT content-verification of the chosen take (Higgs only, when an STT
+   * endpoint is configured). `coverage` is the fraction of input words recovered
+   * from the audio (~1 complete, low = truncated). Absent on older episodes. */
+  coverage?: number;
+  wordRatio?: number;
 }
 
 export interface PressPodsCosts {

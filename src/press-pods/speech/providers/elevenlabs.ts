@@ -16,6 +16,7 @@ export class ElevenLabsProvider implements TtsProvider {
   public readonly modelId = MODEL;
   public readonly needsDenoise = false;
   public readonly verifyChunkLength = false;
+  public readonly verifyChunkContent = false;
   public readonly voiceName: string;
   private readonly voice: Voice;
 

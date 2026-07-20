@@ -170,6 +170,57 @@ Note per-generation variance is real but small: episodes that "sound clean"
 and episodes that "ring" measured statistically identical here; perception
 depends on content (sibilance density) and listening conditions.
 
+## Fixed: Higgs truncation slipping past the duration check (STT verify, 2026-07)
+
+Higgs (autoregressive) silently truncates: it emits a natural-sounding read of
+only the first ~half of a chunk and stops. `synthesize.ts` had only a
+duration-band check (seconds-of-audio per input char, `[0.03, 0.15]`) to catch
+this, and it wasn't enough.
+
+**Diagnosis.** Pulled the six post-Higgs episodes off `omni.boris` and looked at
+the stored per-chunk stats, then STT-transcribed the suspicious chunks and
+diffed word coverage against the input text. On a 5-chunk sample:
+
+| chunk        | s/char | duration verdict     | STT coverage | word ratio |
+| ------------ | ------ | -------------------- | ------------ | ---------- |
+| complete ref | 0.065  | in-band              | 100%         | 1.00       |
+| truncated    | 0.027  | out (shipped best)   | 48%          | 0.36       |
+| truncated    | 0.030  | **in-band — passed** | 64%          | 0.45       |
+| truncated    | 0.025  | out (shipped best)   | 58%          | 0.37       |
+| truncated    | 0.035  | **in-band — passed** | 66%          | 0.47       |
+
+Two chunks missing ~half their content passed the duration band: a truncated
+read and a fast read overlap in seconds/char, so duration can't separate them.
+Word coverage can — complete reads recover ~all input words (~1.0), truncated
+ones a fraction (≤0.66) — with a wide gap between the two populations.
+
+**Fix.** An STT round-trip is now the primary chunk verifier (`coverage.ts` +
+`stt.ts`, wired into `synthesize.ts`'s retry loop). Each take is transcribed and
+scored on word `coverage` and `wordRatio` (transcript/input word count);
+`isContentComplete` requires coverage ≥ 0.75 and ratio ≤ 1.8 (the ratio guard
+also catches runaway loops, which keep coverage high). Below-bar takes are
+re-synthesized (up to 3); the best is kept and flagged in the UI. The duration
+band is retained as the **fallback** verifier for when no STT endpoint is
+configured.
+
+STT runs on the same mlx-audio host as Higgs TTS (`PRESSPODS_STT_URL` defaults
+to `PRESSPODS_TTS_URL`) via its OpenAI-compatible `/v1/audio/transcriptions`,
+using `mlx-community/parakeet-tdt-0.6b-v3` (~0.3 s/chunk, $0). Note
+`whisper-large-v3-turbo` on this mlx build 500s on that endpoint — parakeet
+works and is faster. `coverage.ts` is pure and unit-tested against the measured
+truncated/complete populations above.
+
+## Playback speed: +10% via `atempo`
+
+Narration is sped up 10% (`SPEED_MULTIPLIER = 1.1` in `audioChain.ts`) with a
+pitch-preserving `atempo` time-stretch, applied as the first filter in
+`prepareChunk` so every returned duration — and the chapter/chunk offsets
+derived from it — already reflects the sped audio. This is decoupled from the
+model's own speed handling (Higgs stays at its quality-tuned `speed=0.9`); the
+intro jingle is joined later in `assembleEpisode` and is not sped. The
+duration-band fallback constants in `synthesize.ts` are divided by
+`SPEED_MULTIPLIER` to stay honest; STT coverage is speed-invariant.
+
 ## Known next steps
 
 - **In-band comb sibilance (< 9.5 kHz)**: still present and inherently a
@@ -181,9 +232,8 @@ depends on content (sibilance density) and listening conditions.
   side — different Higgs quantization/settings on the mlx server, a reference
   clip with softer sibilance, or switching the provider back to ElevenLabs
   (clean sibilance, $0.10/1k chars).
-- **Whisper round-trip verify** (from the design invariants): the length-bounds
-  check catches catastrophic truncation/runaway only. If subtle content drops
-  surface, transcribe each chunk and diff against input text.
+- **STT round-trip verify** (shipped 2026-07, was "Whisper round-trip"): see
+  the section below. The duration band is now the fallback verifier.
 - **MP3 96k pre-echo**: not currently audible, but if a "smear before
   transients" complaint ever comes in, suspect the encoder before the chain —
   test by encoding a mastered WAV at 128k/V2 and comparing.

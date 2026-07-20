@@ -15,6 +15,15 @@ const execFileAsync = promisify(execFile);
  */
 
 const SAMPLE_RATE = 44100;
+/**
+ * Playback-speed multiplier applied to narration (not the intro jingle) via a
+ * pitch-preserving `atempo` time-stretch — the cleanest way to nudge pace
+ * without touching the model's own unreliable speed handling. 1.1 = +10%.
+ * Applied first in prepareChunk so the returned duration (and every chapter /
+ * chunk offset derived from it) already reflects the sped audio. Kept well
+ * inside atempo's transparent 0.5–2.0 range.
+ */
+export const SPEED_MULTIPLIER = 1.1;
 /** Per-chunk leveling target; the final master lifts everything to -16 LUFS. */
 const CHUNK_LUFS = -19;
 /** Delivery target: -16 LUFS / -1.5 dBTP is the podcast convention. */
@@ -147,6 +156,7 @@ export async function prepareChunk(
   await fs.writeFile(rawPath, mp3);
   try {
     const edge =
+      `atempo=${SPEED_MULTIPLIER},` +
       (denoise ? `${DENOISE_FILTER},` : "") +
       "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
       `afade=t=in:st=0:d=${EDGE_FADE_SEC},` +

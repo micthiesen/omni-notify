@@ -10,10 +10,17 @@ import { formatAudioDuration } from "./PodsPage";
 import { Link } from "../router";
 import { formatAbsoluteWithYear, formatCents } from "../utils/format";
 
-// Higgs length-verify bounds (see synthesize.ts): chunks outside this range
-// were catastrophically truncated or ran away and got re-synthesized.
-const SEC_PER_CHAR_MIN = 0.03;
-const SEC_PER_CHAR_MAX = 0.15;
+// Higgs duration-band bounds (the fallback verifier in synthesize.ts), scaled
+// for the +10% playback speed-up applied in prepareChunk. Chunks outside this
+// range were truncated or ran away. STT `coverage` (below) is the authoritative
+// signal when present; duration is only meaningful without it.
+const SEC_PER_CHAR_MIN = 0.03 / 1.1;
+const SEC_PER_CHAR_MAX = 0.15 / 1.1;
+// Below this coverage a chunk is missing too much of its text, above this word
+// ratio it ran away (a loop). Mirror DEFAULT_CONTENT_BOUNDS in coverage.ts —
+// the backend's accept test rejects on either, so the UI flag must too.
+const MIN_COVERAGE = 0.75;
+const MAX_WORD_RATIO = 1.8;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -43,6 +50,15 @@ function DetailField({
 }
 
 function isChunkProblematic(chunk: PressPodsChunkStat): boolean {
+  // Coverage is authoritative when recorded; a chunk that shipped its best but
+  // still-failing take is flagged on either bound the backend rejects on —
+  // low coverage (truncation) or high word ratio (runaway loop).
+  if (chunk.coverage != null) {
+    return (
+      chunk.coverage < MIN_COVERAGE ||
+      (chunk.wordRatio != null && chunk.wordRatio > MAX_WORD_RATIO)
+    );
+  }
   return (
     chunk.attempts > 1 ||
     chunk.secPerChar < SEC_PER_CHAR_MIN ||
@@ -103,6 +119,9 @@ function ChunkCard({ chunk }: { chunk: PressPodsChunkStat }) {
         <span>
           {chunk.attempts} attempt{chunk.attempts === 1 ? "" : "s"}
         </span>
+        {chunk.coverage != null && (
+          <span>{Math.round(chunk.coverage * 100)}% coverage</span>
+        )}
         <span>starts at {formatAudioDuration(chunk.startTimeSeconds)}</span>
       </div>
       <p className="pods-chunk-text">{preview}</p>

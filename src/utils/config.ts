@@ -128,6 +128,19 @@ const configSchema = baseConfigSchema
     /** Optional model-repo override for the Higgs provider. */
     PRESSPODS_TTS_MODEL: z.string().optional(),
     /**
+     * OpenAI-compatible STT endpoint used to verify each synthesized chunk is
+     * complete (catches Higgs truncation/looping the duration check can't).
+     * Defaults to PRESSPODS_TTS_URL — the mlx-audio host already serves an ASR
+     * model, so verification is local and $0. Unset (and no TTS URL) disables
+     * content verification, falling back to the duration-band check.
+     */
+    PRESSPODS_STT_URL: z
+      .string()
+      .optional()
+      .transform((s) => s?.replace(/\/+$/, "")),
+    /** STT model id (default mlx-community/parakeet-tdt-0.6b-v3). */
+    PRESSPODS_STT_MODEL: z.string().optional(),
+    /**
      * Reference-voice cloning for Higgs (pins one consistent voice across
      * chunks — without it Higgs picks a random speaker per request). The path
      * must resolve on the mlx-audio host (the M5), not on this box; REF_TEXT is

@@ -9,94 +9,173 @@ import {
   type PreparedChunk,
   prepareChunk,
   probeDurationSeconds,
+  SPEED_MULTIPLIER,
 } from "./audioChain.js";
+import { type CoverageResult, computeCoverage, isContentComplete } from "./coverage.js";
 import { createTtsProvider } from "./providers/index.js";
 import type { AuthorGender, TtsProvider } from "./providers/types.js";
+import { createSttClient, type SttClient } from "./stt.js";
 import { chunkText, splitSections } from "./textChunking.js";
 
-/** Plausible narration pacing (seconds of *trimmed* audio per input char). The
- * band is wide on purpose: it catches catastrophic truncation (a few seconds
- * for a full chunk) and runaway looping (minutes for one paragraph), not a
- * naturally fast reader. */
-const MIN_SEC_PER_CHAR = 0.03;
-const MAX_SEC_PER_CHAR = 0.15;
+/** Plausible narration pacing (seconds of *trimmed*, sped audio per input
+ * char). The band is wide on purpose and is the *fallback* verifier (used when
+ * STT content-verification is unavailable): it catches catastrophic truncation
+ * (a few seconds for a full chunk) and runaway looping (minutes for one
+ * paragraph), not a naturally fast reader. Divided by SPEED_MULTIPLIER because
+ * prepareChunk speeds the audio, shortening every duration. */
+const MIN_SEC_PER_CHAR = 0.03 / SPEED_MULTIPLIER;
+const MAX_SEC_PER_CHAR = 0.15 / SPEED_MULTIPLIER;
 /** Only ranks fallback takes when all attempts are out of bounds; a complete
- * read sits ~0.06 (Higgs runs faster, ~0.04). */
-const IDEAL_SEC_PER_CHAR = 0.06;
-const MAX_LENGTH_ATTEMPTS = 3;
-/** Below this the pacing ratio is dominated by fixed overhead (warm-up, edge
- * silence) and can't distinguish truncation, so the check is skipped. */
+ * read sits ~0.06 (Higgs runs faster, ~0.04) before the speed-up. */
+const IDEAL_SEC_PER_CHAR = 0.06 / SPEED_MULTIPLIER;
+const MAX_SYNTH_ATTEMPTS = 3;
+/** Below this the verifiers are dominated by fixed overhead (warm-up, edge
+ * silence, STT word-count noise) and can't distinguish truncation, so the
+ * check is skipped. */
 const MIN_VERIFY_CHARS = 120;
 
 /**
- * Synthesize one chunk and prepare it for concat. For providers that need it
- * (local models truncate or loop unpredictably), re-synthesize when the
- * prepared (trimmed) audio's pacing is implausible, keeping the take closest to
- * a natural pace. A synth/prepare failure counts as a spent attempt rather than
- * failing the whole episode. Discarded takes' temp files are cleaned up.
+ * Synthesize one chunk and prepare it for concat, re-synthesizing when a
+ * verifier rejects the take. Higgs truncates/loops unpredictably; the primary
+ * verifier is an STT round-trip (word coverage — see coverage.ts), which
+ * cleanly separates a truncated read from a fast one where duration alone can't.
+ * When no STT endpoint is configured it falls back to the duration band. The
+ * best take is kept even if none pass. A synth/prepare/STT failure counts as a
+ * spent attempt rather than failing the whole episode; discarded takes' temp
+ * files are cleaned up.
  */
 interface ChunkSynthesisOutcome {
   chunk: PreparedChunk;
-  /** Synth takes spent (length-verify retries count; 1 when skipped). */
+  /** Synth takes spent (verify retries count; 1 when verification is skipped). */
   attempts: number;
+  coverage?: CoverageResult;
+}
+
+/** A verifier's read on one take. `verified` marks a real STT content check
+ * (vs the duration-band fallback used when STT is off or erroring). `score`
+ * ranks least-bad takes when none pass, but is only comparable within one kind
+ * — never rank a duration `score` against a content `score` (different axes). */
+interface Assessment {
+  accept: boolean;
+  verified: boolean;
+  score: number;
+  coverage?: CoverageResult;
+  describe: () => string;
+}
+
+async function assessTake(
+  take: PreparedChunk,
+  rawMp3: Buffer,
+  text: string,
+  stt: SttClient | null,
+  useContent: boolean,
+  logger: Logger,
+): Promise<Assessment> {
+  if (useContent && stt) {
+    try {
+      const transcript = await stt.transcribe(rawMp3, logger);
+      const coverage = computeCoverage(text, transcript);
+      return {
+        accept: isContentComplete(coverage),
+        verified: true,
+        // Penalize runaway (ratio > 1) as much as truncation so best-of doesn't
+        // pick a loop; score peaks at ratio 1.
+        score: coverage.coverage - Math.max(0, coverage.wordRatio - 1),
+        coverage,
+        describe: () =>
+          `coverage=${(coverage.coverage * 100).toFixed(0)}% ratio=${coverage.wordRatio.toFixed(2)}`,
+      };
+    } catch (error) {
+      // STT down/erroring: fall through to the duration band for this take so a
+      // flaky ASR server never blocks synthesis.
+      logger.warn(
+        `STT verify failed (${(error as Error).message}); falling back to duration check`,
+      );
+    }
+  }
+  const ratio = take.durationSeconds / text.length;
+  return {
+    accept: ratio >= MIN_SEC_PER_CHAR && ratio <= MAX_SEC_PER_CHAR,
+    verified: false,
+    score: -Math.abs(ratio - IDEAL_SEC_PER_CHAR),
+    describe: () => `${take.durationSeconds.toFixed(1)}s for ${text.length} chars`,
+  };
 }
 
 async function synthesizeChunkAudio(
   provider: TtsProvider,
   text: string,
+  stt: SttClient | null,
   logger: Logger,
 ): Promise<ChunkSynthesisOutcome> {
   const opts = { denoise: provider.needsDenoise };
-  const attempt = async (): Promise<PreparedChunk> =>
-    prepareChunk(await provider.synthesizeChunk(text, logger), opts);
+  const synth = async (): Promise<{ chunk: PreparedChunk; raw: Buffer }> => {
+    const raw = await provider.synthesizeChunk(text, logger);
+    return { chunk: await prepareChunk(raw, opts), raw };
+  };
 
-  if (!provider.verifyChunkLength || text.length < MIN_VERIFY_CHARS) {
-    return { chunk: await attempt(), attempts: 1 };
+  const useContent = provider.verifyChunkContent && stt !== null;
+  const verify = provider.verifyChunkLength || useContent;
+  if (!verify || text.length < MIN_VERIFY_CHARS) {
+    return { chunk: (await synth()).chunk, attempts: 1 };
   }
 
-  const inBounds = (take: PreparedChunk): boolean => {
-    const ratio = take.durationSeconds / text.length;
-    return ratio >= MIN_SEC_PER_CHAR && ratio <= MAX_SEC_PER_CHAR;
-  };
-  const takes: PreparedChunk[] = [];
+  const takes: Array<{ chunk: PreparedChunk; assessment: Assessment }> = [];
   let attemptsMade = 0;
-  for (let i = 1; i <= MAX_LENGTH_ATTEMPTS; i++) {
+  for (let i = 1; i <= MAX_SYNTH_ATTEMPTS; i++) {
     attemptsMade = i;
     try {
-      const take = await attempt();
-      takes.push(take);
-      if (inBounds(take)) break;
-      if (i < MAX_LENGTH_ATTEMPTS) {
+      const { chunk, raw } = await synth();
+      const assessment = await assessTake(chunk, raw, text, stt, useContent, logger);
+      takes.push({ chunk, assessment });
+      // Only stop early on a *verified* accept when content-verification is the
+      // intended mode — a duration-band accept from a transiently-failed STT
+      // call must not short-circuit it (that's the truncation blind spot STT
+      // closes). Without content mode, a duration accept is the real bar.
+      if (assessment.accept && (assessment.verified || !useContent)) break;
+      if (i < MAX_SYNTH_ATTEMPTS) {
         logger.warn(
-          `Chunk length implausible (${take.durationSeconds.toFixed(1)}s for ` +
-            `${text.length} chars); retry ${i}/${MAX_LENGTH_ATTEMPTS}`,
+          `Chunk verify failed (${assessment.describe()}); retry ${i}/${MAX_SYNTH_ATTEMPTS}`,
         );
       }
     } catch (error) {
       // A corrupt/truncated response can fail prepareChunk's ffmpeg; retry
       // rather than aborting the episode.
       logger.warn(
-        `Chunk synth/prepare failed (attempt ${i}/${MAX_LENGTH_ATTEMPTS}): ${(error as Error).message}`,
+        `Chunk synth/prepare failed (attempt ${i}/${MAX_SYNTH_ATTEMPTS}): ${(error as Error).message}`,
       );
     }
   }
 
   if (takes.length === 0) {
-    throw new Error(`All ${MAX_LENGTH_ATTEMPTS} synthesis attempts failed for a chunk`);
+    throw new Error(`All ${MAX_SYNTH_ATTEMPTS} synthesis attempts failed for a chunk`);
   }
-  const distance = (take: PreparedChunk): number =>
-    Math.abs(take.durationSeconds / text.length - IDEAL_SEC_PER_CHAR);
+  // When content-verification was intended and at least one take got a real STT
+  // read, choose only among those — scores across kinds aren't comparable, and
+  // an unverified (duration-only) take must never be preferred to a verified
+  // one. Fall back to the full set only if every take's STT call failed.
+  const verifiedTakes = takes.filter((t) => t.assessment.verified);
+  const pool = useContent && verifiedTakes.length > 0 ? verifiedTakes : takes;
   const chosen =
-    takes.find(inBounds) ??
-    takes.reduce((a, b) => (distance(a) <= distance(b) ? a : b));
-  await cleanupWavs(takes.filter((t) => t !== chosen).map((t) => t.wavPath));
-  if (!inBounds(chosen)) {
+    pool.find((t) => t.assessment.accept) ??
+    pool.reduce((a, b) => (a.assessment.score >= b.assessment.score ? a : b));
+  await cleanupWavs(takes.filter((t) => t !== chosen).map((t) => t.chunk.wavPath));
+  if (useContent && verifiedTakes.length === 0) {
     logger.warn(
-      `Chunk still implausible after ${MAX_LENGTH_ATTEMPTS} tries; using closest take ` +
-        `(${chosen.durationSeconds.toFixed(1)}s)`,
+      `Content verification unavailable for every take (STT failing); shipping the ` +
+        `duration-best take (${chosen.assessment.describe()}) — truncation may slip through`,
+    );
+  } else if (!chosen.assessment.accept) {
+    logger.warn(
+      `Chunk still failing verification after ${MAX_SYNTH_ATTEMPTS} tries; ` +
+        `using best take (${chosen.assessment.describe()})`,
     );
   }
-  return { chunk: chosen, attempts: attemptsMade };
+  return {
+    chunk: chosen.chunk,
+    attempts: attemptsMade,
+    coverage: chosen.assessment.coverage,
+  };
 }
 
 /** ~900-char chunks keep each request in the quality sweet spot; sections and
@@ -131,6 +210,7 @@ export async function synthesizeSpeech({
 }): Promise<SynthesisResult> {
   const start = Date.now();
   const provider = createTtsProvider(authorGender);
+  const stt = provider.verifyChunkContent ? createSttClient() : null;
   const sections = splitSections(content);
 
   logger.info("Starting speech synthesis", {
@@ -139,7 +219,14 @@ export async function synthesizeSpeech({
     model: provider.modelId,
     totalChars: content.length,
     sections: sections.length,
+    contentVerify: stt ? stt.modelId : "off",
   });
+  if (provider.verifyChunkContent && !stt) {
+    logger.warn(
+      "Content verification unavailable (no PRESSPODS_STT_URL / PRESSPODS_TTS_URL); " +
+        "falling back to the duration-band check, which lets some truncation through",
+    );
+  }
 
   const introBuffer = await fsAsync.readFile(INTRO_PATH);
   const introDuration = await probeDurationSeconds(INTRO_PATH);
@@ -179,9 +266,10 @@ export async function synthesizeSpeech({
           speechOffset += CHUNK_GAP_SEC;
         }
         const chunkStartTimeSeconds = introDuration + speechOffset;
-        const { chunk, attempts } = await synthesizeChunkAudio(
+        const { chunk, attempts, coverage } = await synthesizeChunkAudio(
           provider,
           chunks[i],
+          stt,
           logger,
         );
         const { wavPath, durationSeconds } = chunk;
@@ -199,6 +287,8 @@ export async function synthesizeSpeech({
           startTimeSeconds: chunkStartTimeSeconds,
           secPerChar: chunks[i].length > 0 ? durationSeconds / chunks[i].length : 0,
           attempts,
+          coverage: coverage?.coverage,
+          wordRatio: coverage?.wordRatio,
         });
         logger.info(`Synthesized chunk ${chunkIndex}/${totalChunks}`);
       }

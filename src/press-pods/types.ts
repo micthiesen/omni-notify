@@ -38,6 +38,14 @@ export interface ChunkStat {
   startTimeSeconds: number;
   secPerChar: number;
   attempts: number;
+  /**
+   * STT content-verification result for the chosen take (Higgs only; absent
+   * when the provider skips content verification or no STT endpoint is set).
+   * `coverage` is the fraction of input words recovered from the audio, ~1 for
+   * a complete read; `wordRatio` is transcript/input word count.
+   */
+  coverage?: number;
+  wordRatio?: number;
 }
 
 export type ArticleRetrieverResult =

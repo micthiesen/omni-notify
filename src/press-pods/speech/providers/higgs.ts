@@ -25,6 +25,7 @@ export class HiggsProvider implements TtsProvider {
   public readonly providerName = "Higgs";
   public readonly needsDenoise = true;
   public readonly verifyChunkLength = true;
+  public readonly verifyChunkContent = true;
   public readonly modelId: string;
   public readonly voiceName: string;
   private readonly baseUrl: string;
