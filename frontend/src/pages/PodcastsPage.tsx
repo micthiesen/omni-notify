@@ -11,6 +11,7 @@ import type {
   PodcastTasteProfile,
 } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
+import { RecommendationRuns } from "../components/RecommendationRuns";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
 import { TasteBrain } from "../components/TasteBrain";
@@ -25,6 +26,7 @@ import {
   PODCAST_STATUS_ORDER as STATUS_ORDER,
 } from "../utils/recLabels";
 
+const TASK_NAME = "PodcastRecs";
 const TASTE_TASK_NAME = "PodcastTasteReflection";
 
 function formatEpisodeDuration(minutes: number): string {
@@ -211,6 +213,8 @@ export default function PodcastsPage() {
 
   const latestTasteRunId =
     snapshot?.runs.find((run) => run.taskName === TASTE_TASK_NAME)?.runId ?? null;
+  const latestRecommendationRunId =
+    snapshot?.runs.find((run) => run.taskName === TASK_NAME)?.runId ?? null;
 
   // Load once, then reload whenever a reflection run lands so a fresh profile
   // version appears without a manual refresh.
@@ -313,6 +317,11 @@ export default function PodcastsPage() {
         profile={tasteProfile}
         loading={tasteLoading}
         error={tasteError}
+      />
+
+      <RecommendationRuns
+        taskName={TASK_NAME}
+        latestRunId={latestRecommendationRunId}
       />
 
       {recs !== null && recs.length > 0 && (

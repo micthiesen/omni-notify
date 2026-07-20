@@ -23,6 +23,10 @@ import {
   PodcastTasteProfileEntity,
 } from "./podcast-recs/reflection/index.js";
 import {
+  PressPodsEpisodeEntity,
+  PressPodsJobEntity,
+} from "./press-pods/persistence.js";
+import {
   IdentityAliasEntity,
   RecommendationEntity,
 } from "./recommendations/persistence.js";
@@ -258,6 +262,16 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     label: "Briefing history",
     description: "Recent notifications retained for briefing deduplication.",
     warning: "Deleting history can allow a briefing to repeat prior stories.",
+  }),
+  createManagedEntity(PressPodsEpisodeEntity, {
+    label: "PressPods episodes",
+    description: "Generated podcast episodes: metadata, narration, chunk stats, costs.",
+    warning:
+      "Deleting a row does not remove its audio file from disk; the episode also drops out of the RSS feed.",
+  }),
+  createManagedEntity(PressPodsJobEntity, {
+    label: "PressPods jobs",
+    description: "Durable submission queue with retry backoff and stale-claim reclaim.",
   }),
   createManagedEntity(SubmittedDeliveryEntity, {
     label: "Submitted deliveries",

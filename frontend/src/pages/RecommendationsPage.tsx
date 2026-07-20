@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchRecommendations,
-  fetchTaskRuns,
   fetchTasteProfile,
   sendRecommendationFeedback,
 } from "../api";
@@ -9,10 +8,10 @@ import type {
   Recommendation,
   RecommendationFeedback,
   RecommendationStatus,
-  TaskRun,
   TasteProfile,
 } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
+import { RecommendationRuns } from "../components/RecommendationRuns";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
 import { TasteBrain } from "../components/TasteBrain";
@@ -20,7 +19,7 @@ import { Toast, useToast } from "../components/Toast";
 import { useRecHighlight } from "../hooks/useRecHighlight";
 import { useLiveData } from "../live";
 import { Link } from "../router";
-import { formatAbsolute, formatDateOnly, formatRelative } from "../utils/format";
+import { formatDateOnly } from "../utils/format";
 import {
   REC_FEEDBACK_ACTIONS as FEEDBACK_ACTIONS,
   REC_STATUS_LABELS as STATUS_LABELS,
@@ -200,51 +199,6 @@ function MediaTasteBrain({
   );
 }
 
-function runOutcome(run: TaskRun): { label: string; tone: string } {
-  if (run.status === "running") return { label: "Running", tone: "running" };
-  if (run.status === "error") return { label: "Error", tone: "error" };
-  if (run.summary?.startsWith("no_add:")) {
-    return { label: "No Pick", tone: "no-add" };
-  }
-  return { label: "Completed", tone: "success" };
-}
-
-function RecommendationActivity({ runs }: { runs: TaskRun[] }) {
-  return (
-    <section className="page-section rec-activity-section">
-      <h2 className="section-title">Recent Recommendation Runs</h2>
-      {runs.length === 0 ? (
-        <div className="muted">No recommendation runs recorded yet.</div>
-      ) : (
-        <div className="rec-run-list">
-          {runs.map((run) => {
-            const outcome = runOutcome(run);
-            const detail = run.error ?? run.summary;
-            return (
-              <div className="rec-run-row" key={run.runId}>
-                <span className={`rec-run-outcome rec-run-${outcome.tone}`}>
-                  {outcome.label}
-                </span>
-                <span
-                  className="rec-run-time"
-                  title={formatAbsolute(run.startedAt)}
-                >
-                  {formatRelative(run.startedAt)}
-                </span>
-                {detail !== null && (
-                  <span className={run.error ? "run-error" : "run-summary"}>
-                    {detail}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
 export default function RecommendationsPage() {
   const [recs, setRecs] = useState<Recommendation[] | null>(null);
   const [recsError, setRecsError] = useState<string | null>(null);
@@ -253,7 +207,6 @@ export default function RecommendationsPage() {
   const [tasteProfile, setTasteProfile] = useState<TasteProfile | null>(null);
   const [tasteLoading, setTasteLoading] = useState(true);
   const [tasteError, setTasteError] = useState<string | null>(null);
-  const [recommendationRuns, setRecommendationRuns] = useState<TaskRun[]>([]);
   const [maxRecommendations, setMaxRecommendations] = useState(1);
   const { snapshot, runTask } = useLiveData();
   const { toast, showToast } = useToast();
@@ -314,20 +267,6 @@ export default function RecommendationsPage() {
       cancelled = true;
     };
   }, [latestTasteRunId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchTaskRuns({ task: TASK_NAME, limit: 6 })
-      .then((data) => {
-        if (!cancelled) setRecommendationRuns(data.runs);
-      })
-      .catch(() => {
-        // Recommendation cards remain useful if activity history is unavailable.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [latestRecommendationRunId]);
 
   const handleRun = async () => {
     const result = await runTask(TASK_NAME, { maxRecommendations });
@@ -429,7 +368,10 @@ export default function RecommendationsPage() {
         error={tasteError}
       />
 
-      <RecommendationActivity runs={recommendationRuns} />
+      <RecommendationRuns
+        taskName={TASK_NAME}
+        latestRunId={latestRecommendationRunId}
+      />
 
       {recs !== null && recs.length > 0 && (
         <StatusFilterChips
