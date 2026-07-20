@@ -78,6 +78,8 @@ interface ChunkPiece {
   text: string;
   attempts: number;
   coverage?: CoverageResult;
+  /** Set when this piece is a sub-chunk of a re-split (parent kept failing). */
+  resplit?: boolean;
 }
 
 /** A verifier's read on one take. `verified` marks a real STT content check
@@ -135,12 +137,17 @@ async function synthesizeChunkAudio(
   provider: TtsProvider,
   text: string,
   stt: SttClient | null,
+  costCounter: CostCounter,
   logger: Logger,
   maxAttempts: number = MAX_SYNTH_ATTEMPTS,
 ): Promise<ChunkSynthesisOutcome> {
   const opts = { denoise: provider.needsDenoise };
   const synth = async (): Promise<{ chunk: PreparedChunk; raw: Buffer }> => {
     const raw = await provider.synthesizeChunk(text, logger);
+    // Bill every real TTS response here, at the call site — retried and re-split
+    // takes are all charged (ElevenLabs bills generated chars even when we later
+    // discard the take), so cost tracks actual spend, not just the final pieces.
+    costCounter.recordTtsUsage(provider.modelId, "tts", text);
     return { chunk: await prepareChunk(raw, opts), raw };
   };
 
@@ -228,6 +235,7 @@ async function synthesizeChunkAdaptive(
   provider: TtsProvider,
   text: string,
   stt: SttClient | null,
+  costCounter: CostCounter,
   logger: Logger,
   depth = 0,
 ): Promise<ChunkPiece[]> {
@@ -243,6 +251,7 @@ async function synthesizeChunkAdaptive(
       provider,
       text,
       stt,
+      costCounter,
       logger,
       splittable ? RESPLIT_PROBE_ATTEMPTS : MAX_SYNTH_ATTEMPTS,
     );
@@ -294,9 +303,18 @@ async function synthesizeChunkAdaptive(
   const pieces: ChunkPiece[] = [];
   try {
     for (const sub of subChunks) {
-      pieces.push(
-        ...(await synthesizeChunkAdaptive(provider, sub, stt, logger, depth + 1)),
+      const subPieces = await synthesizeChunkAdaptive(
+        provider,
+        sub,
+        stt,
+        costCounter,
+        logger,
+        depth + 1,
       );
+      // Mark every descendant so the UI can show recovery happened here, even
+      // when a sub-piece ultimately passed on its first take.
+      for (const piece of subPieces) piece.resplit = true;
+      pieces.push(...subPieces);
     }
   } catch (error) {
     // A later sibling hard-failed: earlier siblings' kept WAVs were never handed
@@ -395,7 +413,13 @@ export async function synthesizeSpeech({
       for (const chunk of chunks) {
         // One input chunk yields one piece, or several when adaptive re-splitting
         // breaks a chunk that kept failing verification into smaller pieces.
-        const pieces = await synthesizeChunkAdaptive(provider, chunk, stt, logger);
+        const pieces = await synthesizeChunkAdaptive(
+          provider,
+          chunk,
+          stt,
+          costCounter,
+          logger,
+        );
         // A re-split adds pieces beyond the pre-split estimate; keep total honest.
         totalChunks += pieces.length - 1;
         for (const piece of pieces) {
@@ -406,7 +430,8 @@ export async function synthesizeSpeech({
           firstPieceInSection = false;
           const chunkStartTimeSeconds = introDuration + speechOffset;
           const { wavPath, durationSeconds } = piece.chunk;
-          costCounter.recordTtsUsage(provider.modelId, "tts", piece.text);
+          // Cost is billed per real synth call inside synthesizeChunkAudio, not
+          // here — a re-split or retried chunk makes several calls per piece.
           wavPaths.push(wavPath);
           speechOffset += durationSeconds;
           chunkIndex++;
@@ -422,6 +447,7 @@ export async function synthesizeSpeech({
             attempts: piece.attempts,
             coverage: piece.coverage?.coverage,
             wordRatio: piece.coverage?.wordRatio,
+            resplit: piece.resplit,
           });
           logger.info(`Synthesized chunk ${chunkIndex}/${totalChunks}`);
         }

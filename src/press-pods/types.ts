@@ -46,6 +46,13 @@ export interface ChunkStat {
    */
   coverage?: number;
   wordRatio?: number;
+  /**
+   * True when this piece came from adaptively re-splitting a larger chunk that
+   * kept failing verification (see synthesize.ts). Recovery worked, but it marks
+   * where Higgs struggled — a chunk that needed re-splitting is worth a look even
+   * if every sub-piece ultimately passed.
+   */
+  resplit?: boolean;
 }
 
 export type ArticleRetrieverResult =

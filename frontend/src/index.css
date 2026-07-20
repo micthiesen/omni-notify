@@ -4173,6 +4173,23 @@ button.history-row:last-child {
   padding: 0.04rem 0.45rem;
 }
 
+/* Informational, not a failure: the re-split recovered the chunk. Neutral
+   accent tone, distinct from the amber "Needs Review". margin-left:auto pushes
+   it right; when a warn badge follows, the two sit adjacent (its own auto has
+   no free space left to consume). */
+.pods-chunk-resplit-badge {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.62rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.04rem 0.45rem;
+}
+
 .pods-chunk-meta {
   color: var(--text-muted);
   font-size: 0.72rem;

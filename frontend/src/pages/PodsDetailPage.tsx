@@ -108,9 +108,15 @@ function ChunkCard({ chunk }: { chunk: PressPodsChunkStat }) {
         {chunk.sectionTitle && (
           <span className="pods-chunk-section">{chunk.sectionTitle}</span>
         )}
-        {problematic && (
-          <span className="pods-chunk-warn-badge">Needs Review</span>
+        {chunk.resplit && (
+          <span
+            className="pods-chunk-resplit-badge"
+            title="A larger chunk kept failing verification and was re-split into smaller pieces to recover"
+          >
+            Re-split
+          </span>
         )}
+        {problematic && <span className="pods-chunk-warn-badge">Needs Review</span>}
       </div>
       <div className="meta-row pods-chunk-meta">
         <span>{chunk.charCount.toLocaleString()} chars</span>

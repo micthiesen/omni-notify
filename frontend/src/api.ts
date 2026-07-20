@@ -402,6 +402,9 @@ export interface PressPodsChunkStat {
    * from the audio (~1 complete, low = truncated). Absent on older episodes. */
   coverage?: number;
   wordRatio?: number;
+  /** This piece came from re-splitting a larger chunk that kept failing
+   * verification. Recovery worked, but marks where Higgs struggled. */
+  resplit?: boolean;
 }
 
 export interface PressPodsCosts {
