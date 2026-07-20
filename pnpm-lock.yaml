@@ -30,8 +30,8 @@ importers:
         specifier: ^2.0.9
         version: 2.0.9(hono@4.12.30)
       '@micthiesen/mitools':
-        specifier: ^3.0.3
-        version: 3.0.3
+        specifier: ^3.0.4
+        version: 3.0.4
       '@mistralai/mistralai':
         specifier: ^2.5.0
         version: 2.5.0(@opentelemetry/api@1.9.0)
@@ -480,8 +480,8 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@micthiesen/mitools@3.0.3':
-    resolution: {integrity: sha512-7Pv+mKhVmV4XCRtY4dGyV06ThLUHQnkszLeL5W/vU+z/hzzDIpaQpqYyK9Dt7fYOMPMufUiJDh5uGuVEijXljw==}
+  '@micthiesen/mitools@3.0.4':
+    resolution: {integrity: sha512-5/GhG1blEzUmF8DT8mlqFiDa6XfVtBItANfwikZXuYGSsVVSFwa0xineu2aoR7OznhkNzrSUk86djST4V1dG2A==}
     engines: {node: '>=20', pnpm: '>=10'}
 
   '@mistralai/mistralai@2.5.0':
@@ -2518,7 +2518,7 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@micthiesen/mitools@3.0.3':
+  '@micthiesen/mitools@3.0.4':
     dependencies:
       better-sqlite3: 12.11.1
       cbor: 10.0.12
