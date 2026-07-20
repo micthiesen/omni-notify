@@ -345,7 +345,7 @@ Every log line emitted during a task run is captured and viewable in the web UI 
 
 ### Persistence
 
-Uses `@micthiesen/mitools` Entity system with SQLite (`docstore.db`):
+Uses `@micthiesen/mitools` Entity system with SQLite (`docstore.db`). mitools 3.x keys rows by a length-prefixed, type-tagged codec and scopes reads by an `entity` metadata column, so existing rows are upgraded in place by a one-shot `Entity.migrateAll()` at the very top of `index.ts` (right after `Injector.configure`, before any other DB access). `migrateAll()` only touches entities that have been constructed — every `new Entity(...)` module must be statically imported before that call (guaranteed today via `server → data-manager` plus the task imports). When adding a new entity, make sure its module is in that static import graph.
 - `StreamerStatusEntity`: Aggregate live/offline state per streamer (one row per merged identity, keyed on `streamerId`). Holds the sticky primary binding, summed max viewer count, and the per-binding titles for the current live session.
 - `ViewerMetricsEntity`: Daily viewer buckets + all-time max, keyed on `streamerId`. Recorded viewer count is the **sum across currently-live bindings**.
 
