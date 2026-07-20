@@ -462,6 +462,75 @@ export interface PressPodsJob {
   lastRunId: string | null;
 }
 
+export type CostRange = 7 | 30 | 90 | "all";
+
+export interface CostSummary {
+  selectedCostCents: number;
+  allTimeCostCents: number;
+  allTimeUnknownEventCount: number;
+  averageDailyCostCents: number;
+  highestDay: { date: string; costCents: number } | null;
+  eventCount: number;
+  unknownEventCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  characters: number;
+  requests: number;
+  credits: number;
+}
+
+export interface DailyCost {
+  /** YYYY-MM-DD */
+  date: string;
+  costCents: number;
+  byFeature: Record<string, number>;
+  pricedEventCount: number;
+  unknownEventCount: number;
+}
+
+export interface FeatureCost {
+  feature: string;
+  costCents: number;
+  eventCount: number;
+  unknownEventCount: number;
+}
+
+export interface ServiceCost {
+  service: string;
+  model: string | null;
+  category: string;
+  costCents: number;
+  eventCount: number;
+  unknownEventCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  characters: number;
+  requests: number;
+  credits: number;
+}
+
+export interface CostEvent {
+  eventId: string;
+  incurredAt: number;
+  feature: string;
+  operation: string;
+  service: string;
+  model: string | null;
+  category: string;
+  costCents: number | null;
+  priceStatus: string;
+  runId: string | null;
+}
+
+export interface CostsResponse {
+  range: { days: number | null; from: number | null; to: number };
+  summary: CostSummary;
+  daily: DailyCost[];
+  byFeature: FeatureCost[];
+  byService: ServiceCost[];
+  recent: CostEvent[];
+}
+
 export class ApiError extends Error {
   public readonly status: number;
 
@@ -669,6 +738,10 @@ export function dismissPressPodsJob(jobId: string): Promise<{ deleted: boolean }
 
 export function fetchBriefings(): Promise<{ briefings: BriefingHistory[] }> {
   return apiGet<{ briefings: BriefingHistory[] }>("/api/briefings");
+}
+
+export function fetchCosts(range: CostRange): Promise<CostsResponse> {
+  return apiGet<CostsResponse>(`/api/costs?days=${range}`);
 }
 
 export function fetchEmailActivity(

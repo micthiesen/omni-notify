@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import got from "got";
 import { z } from "zod";
+import { currentCostFeature, recordCostEventSafely } from "../../costs/persistence.js";
 import config from "../../utils/config.js";
 
 interface TavilySearchResponse {
@@ -32,6 +33,19 @@ export async function searchWeb(options: {
       headers: { Authorization: `Bearer ${config.TAVILY_API_KEY}` },
     })
     .json<TavilySearchResponse>();
+
+  // Default/basic search consumes one credit. Use Tavily's public pay-as-you-go
+  // rate as an estimate; subscription/free-plan billing can make actual spend lower.
+  recordCostEventSafely({
+    category: "search",
+    feature: currentCostFeature("web-search"),
+    operation: "search",
+    service: "tavily",
+    model: "basic",
+    costCents: 0.8,
+    priceStatus: "estimated",
+    usage: { requests: 1, credits: 1 },
+  });
 
   return {
     results: results.map(({ title, url, content }) => ({

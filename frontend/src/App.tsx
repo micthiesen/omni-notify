@@ -18,6 +18,7 @@ const PodsDetailPage = lazy(() => import("./pages/PodsDetailPage"));
 const StreamerPage = lazy(() => import("./pages/StreamerPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
+const CostsPage = lazy(() => import("./pages/CostsPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
@@ -34,6 +35,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/briefings": "Briefings",
   "/emails": "Email Activity",
   "/data": "Data",
+  "/costs": "Costs",
 };
 
 export default function App() {
@@ -111,6 +113,13 @@ export default function App() {
         page = (
           <Suspense fallback={<div className="loading">Loading…</div>}>
             <EmailActivityPage />
+          </Suspense>
+        );
+        break;
+      case "/costs":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <CostsPage />
           </Suspense>
         );
         break;

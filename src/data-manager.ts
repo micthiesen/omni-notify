@@ -7,6 +7,8 @@ import {
 import type { Entity } from "@micthiesen/mitools/entities";
 import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
+import { CostMigrationEntity } from "./costs/migrate.js";
+import { CostEventEntity } from "./costs/persistence.js";
 import { EmailActivityEntity } from "./jmap/activity.js";
 import { EmailActivityLogEntity } from "./jmap/activityLogs.js";
 import { EmailFeedbackEntity } from "./jmap/feedback.js";
@@ -191,6 +193,16 @@ export function createManagedEntity<
 }
 
 const MANAGED_ENTITIES: ManagedEntity[] = [
+  createManagedEntity(CostEventEntity, {
+    label: "Cost events",
+    description: "Metered service usage and estimated cost ledger.",
+    warning: "Deleting events changes global cost totals and cannot be undone.",
+  }),
+  createManagedEntity(CostMigrationEntity, {
+    label: "Cost migration state",
+    description: "Completed cost-ledger backfills and their imported event counts.",
+    warning: "Deleting this state can duplicate historical costs on the next restart.",
+  }),
   createManagedEntity(TaskRunEntity, {
     label: "Task runs",
     description: "Scheduled, manual, startup, and catch-up execution history.",

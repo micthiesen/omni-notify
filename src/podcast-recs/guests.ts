@@ -137,7 +137,7 @@ async function discoverViaTavily(
   });
   if (response.results.length === 0) return [];
 
-  const { model } = getRecsShortlistModel();
+  const { model } = getRecsShortlistModel("extract-guest-appearances");
   const prompt = `Recent web results for podcast episodes possibly featuring ${voice} as a guest. Extract ONLY episodes where ${voice} is actually a guest or participant (not merely mentioned or the topic). Give the podcast show name and episode title as precisely as you can.
 
 RESULTS:

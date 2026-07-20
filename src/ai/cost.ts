@@ -71,6 +71,13 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   },
 };
 
+/** USD cents per synthesized character; zero means known self-hosted/free. */
+export const TTS_CHARACTER_CENTS: Record<string, number> = {
+  eleven_v3: 0.01,
+  "bosonai/higgs-audio-v3-tts-4b": 0,
+  "voxtral-mini-tts-2603": 0.0016,
+};
+
 /** Strips a "provider:model" prefix, if present, down to the bare model id. */
 export function bareModelId(modelId: string): string {
   return modelId.split(":").pop() ?? modelId;

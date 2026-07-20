@@ -95,7 +95,7 @@ export async function selectGuestAppearances(
   max: number,
 ): Promise<GuestPick[]> {
   if (candidates.length === 0) return [];
-  const { model, modelId } = getRecsSelectionModel();
+  const { model, modelId } = getRecsSelectionModel("select-guest-appearances");
   const prompt = buildPrompt(candidates, tasteDigest, max);
 
   logFile?.log(

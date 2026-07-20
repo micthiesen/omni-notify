@@ -1,5 +1,7 @@
 import { DefaultMap } from "@micthiesen/mitools/collections";
 import { Logger } from "@micthiesen/mitools/logging";
+import { hasPrice, llmCostCents, TTS_CHARACTER_CENTS } from "../ai/cost.js";
+import { currentCostFeature, recordCostEventSafely } from "../costs/persistence.js";
 
 export interface CompletionUsage {
   promptTokens: number;
@@ -16,27 +18,6 @@ export interface Costs {
 }
 
 const LOGGER = new Logger("PressPods.CostCounter");
-
-// Prices are in USD cents per token/character. Unlisted models cost 0 (with a
-// warning); extend the tables when switching models.
-// https://ai.google.dev/pricing / https://mistral.ai/pricing
-const llmInputTokenCents: Record<string, number> = {
-  "gemini-3-flash-preview": 0.00005, // $0.50 per 1M tokens
-  "gemini-3.5-flash": 0.00005, // $0.50 per 1M tokens
-  "gemini-3.1-flash-lite": 0.00001, // $0.10 per 1M tokens
-};
-const llmOutputTokenCents: Record<string, number> = {
-  "gemini-3-flash-preview": 0.0003, // $3.00 per 1M tokens
-  "gemini-3.5-flash": 0.0003, // $3.00 per 1M tokens
-  "gemini-3.1-flash-lite": 0.00004, // $0.40 per 1M tokens
-};
-const ttsCharacterCents: Record<string, number> = {
-  // ElevenLabs v2/v3: $0.10 per 1,000 characters (Creator-plan effective rate
-  // and the overage rate are both ~this), i.e. 0.01 cents/char.
-  eleven_v3: 0.01,
-  "bosonai/higgs-audio-v3-tts-4b": 0, // self-hosted on the M5 — no per-char cost
-  "voxtral-mini-tts-2603": 0.0016, // Mistral Voxtral ($0.016 / 1k chars)
-};
 
 export default class CostCounter {
   private llmCents = 0;
@@ -67,11 +48,17 @@ export default class CostCounter {
       return;
     }
     const bareModel = model.split(":").pop() ?? model;
-    if (llmInputTokenCents[bareModel] === undefined) {
+    if (!hasPrice(model)) {
       LOGGER.debug(`No pricing for model ${bareModel}; counting as $0`);
     }
-    const inputCents = (llmInputTokenCents[bareModel] ?? 0) * usage.promptTokens;
-    const outputCents = (llmOutputTokenCents[bareModel] ?? 0) * usage.completionTokens;
+    const inputCents = llmCostCents(model, {
+      inputTokens: usage.promptTokens,
+      outputTokens: 0,
+    });
+    const outputCents = llmCostCents(model, {
+      inputTokens: 0,
+      outputTokens: usage.completionTokens,
+    });
     this.llmCents += inputCents + outputCents;
 
     this.recordDetailCents(`${bareModel}-${fn}-input`, inputCents);
@@ -82,10 +69,21 @@ export default class CostCounter {
   }
 
   public recordTtsUsage(model: string, fn: string, text: string): void {
-    const cents = (ttsCharacterCents[model] ?? 0) * text.length;
+    const price = TTS_CHARACTER_CENTS[model];
+    const cents = (price ?? 0) * text.length;
     this.ttsCents += cents;
     this.recordDetailCents(`${model}-${fn}`, cents);
     this.recordDetailChars(`${model}-${fn}`, text.length);
+    recordCostEventSafely({
+      category: "tts",
+      feature: currentCostFeature("press-pods"),
+      operation: fn,
+      service: model === "eleven_v3" ? "elevenlabs" : "self-hosted",
+      model,
+      costCents: price === undefined ? null : cents,
+      priceStatus: price === undefined ? "unknown" : price === 0 ? "free" : "estimated",
+      usage: { characters: text.length, requests: 1 },
+    });
   }
 
   private recordDetailCents(key: string, cents: number): void {

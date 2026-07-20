@@ -14,7 +14,12 @@ interface RunLogBuffer {
   dropped: number;
 }
 
-const runContext = new AsyncLocalStorage<{ runId: string }>();
+export interface RunContext {
+  runId: string;
+  taskName: string;
+}
+
+const runContext = new AsyncLocalStorage<RunContext>();
 const buffers = new Map<string, RunLogBuffer>();
 
 /**
@@ -59,12 +64,18 @@ export function startRunLogCapture(runId: string, taskName: string): void {
  * of different tasks separate.
  */
 export function runWithLogCapture<T>(runId: string, fn: () => Promise<T>): Promise<T> {
-  return runContext.run({ runId }, fn);
+  const taskName = buffers.get(runId)?.taskName ?? "Unknown";
+  return runContext.run({ runId, taskName }, fn);
 }
 
 /** The runId of the task run this code is executing inside, if any. */
 export function getCurrentRunId(): string | undefined {
   return runContext.getStore()?.runId;
+}
+
+/** Current task or synthetic email-pipeline capture, used for cost attribution. */
+export function getCurrentRunContext(): RunContext | undefined {
+  return runContext.getStore();
 }
 
 /** Live buffer contents for an in-flight run, if any. */

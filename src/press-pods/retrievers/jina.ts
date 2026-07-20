@@ -1,5 +1,6 @@
 import { extractDomain } from "@micthiesen/mitools/strings";
 import got from "got";
+import { currentCostFeature, recordCostEventSafely } from "../../costs/persistence.js";
 import config from "../../utils/config.js";
 import { cleanText } from "../formatting/index.js";
 import type { Article } from "../types.js";
@@ -34,6 +35,17 @@ export async function retrieveArticleJina(
   if (!html || html.length < 100) {
     throw new Error("Jina returned empty or too short content");
   }
+
+  recordCostEventSafely({
+    category: "retrieval",
+    feature: currentCostFeature("press-pods"),
+    operation: "retrieve-article",
+    service: "jina",
+    model: "reader",
+    costCents: null,
+    priceStatus: "unknown",
+    usage: { requests: 1 },
+  });
 
   return {
     title: extractTitleFromHtml(html),

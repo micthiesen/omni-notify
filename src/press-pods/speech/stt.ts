@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { currentCostFeature, recordCostEventSafely } from "../../costs/persistence.js";
 import config from "../../utils/config.js";
 
 /**
@@ -66,6 +67,19 @@ export function createSttClient(apiKey?: string): SttClient | null {
             continue;
           }
           const body = (await res.json()) as { text?: string };
+          const selfHosted =
+            config.PRESSPODS_STT_URL === undefined ||
+            config.PRESSPODS_STT_URL === config.PRESSPODS_TTS_URL;
+          recordCostEventSafely({
+            category: "transcription",
+            feature: currentCostFeature("press-pods"),
+            operation: "verify-audio",
+            service: selfHosted ? "self-hosted" : "openai-compatible",
+            model: modelId,
+            costCents: selfHosted ? 0 : null,
+            priceStatus: selfHosted ? "free" : "unknown",
+            usage: { requests: 1 },
+          });
           return (body.text ?? "").trim();
         } catch (error) {
           // A thrown 4xx (above) is already terminal; only network/abort errors

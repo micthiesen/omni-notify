@@ -87,7 +87,7 @@ export async function discoverEpisodes(
     return [];
   }
 
-  const { model, modelId } = getRecsShortlistModel();
+  const { model, modelId } = getRecsShortlistModel("discover-episodes");
   const prompt = buildExtractionPrompt(
     searches,
     tasteDigest,

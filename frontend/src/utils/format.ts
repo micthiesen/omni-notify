@@ -144,3 +144,14 @@ export function formatDateOnly(epochMs: number): string {
     year: "numeric",
   });
 }
+
+/** Formats a YYYY-MM-DD value without allowing timezone conversion to shift it. */
+export function formatCalendarDate(date: string, includeYear = true): string {
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return date;
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(includeYear ? { year: "numeric" } : {}),
+  });
+}

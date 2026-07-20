@@ -5,6 +5,7 @@ import { Scheduler } from "@micthiesen/mitools/scheduling";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { createCalendarHandler } from "./calendar-events/index.js";
+import { importHistoricalCosts } from "./costs/migrate.js";
 import { createJmapClient, type JmapContext } from "./jmap/client.js";
 import { EmailDispatcher, type EmailHandler } from "./jmap/dispatcher.js";
 import { createEventSource } from "./jmap/eventSource.js";
@@ -32,6 +33,10 @@ Injector.configure({ config });
 installLogCapture();
 
 const logger = new Logger("Main");
+const importedCostEvents = importHistoricalCosts();
+if (importedCostEvents > 0) {
+  logger.info(`Imported ${importedCostEvents} historical cost event(s)`);
+}
 
 function loadStreamers(): Streamer[] {
   const kickConfigured = config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET;

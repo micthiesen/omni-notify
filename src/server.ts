@@ -9,6 +9,8 @@ import {
   AUTO_PASS_SENDERS as CALENDAR_BUILTIN_AUTO_PASS,
   BLACKLISTED_SENDERS as CALENDAR_BUILTIN_BLOCKED,
 } from "./calendar-events/filter/keywords.js";
+import { getCostEvents } from "./costs/persistence.js";
+import { summarizeCosts } from "./costs/summary.js";
 import {
   deleteManagedEntityRow,
   getManagedDataSummary,
@@ -88,6 +90,7 @@ import {
   TaskNotFoundError,
   type TaskRegistry,
 } from "./task-runs/registry.js";
+import config from "./utils/config.js";
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -603,6 +606,15 @@ export function startServer(
     const limit =
       Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : 50;
     return c.json({ runs: getRuns(task || undefined, limit).map(serializeRun) });
+  });
+
+  app.get("/api/costs", (c) => {
+    const value = c.req.query("days") ?? "30";
+    const days = value === "all" ? null : Number(value);
+    if (days !== null && ![7, 30, 90].includes(days)) {
+      return c.json({ error: "days must be 7, 30, 90, or all" }, 400);
+    }
+    return c.json(summarizeCosts(getCostEvents(), { days, timeZone: config.TZ }));
   });
 
   // In-flight runs read from the live capture buffer, finished runs from the
