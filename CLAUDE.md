@@ -17,6 +17,36 @@ pnpm check    # Biome linting + formatting check
 
 **Always run `pnpm check:write && pnpm test && pnpm build` after making changes.**
 
+## Deployment & Ops (boris)
+
+Production runs as the `omni-notify` Docker container on **boris** (`10.10.1.100`),
+under `/home/michael/compose` (compose project) with the data volume at
+`/home/michael/compose/volumes/omni-notify` (mounted to `/data` in the container:
+`docstore.db`, `channels.json`, `briefings/`, `press-pods-audio/`). Deploys are
+**auto**: pushing to `main` here rebuilds/publishes `ghcr.io/micthiesen/omni-notify:latest`
+and the host pulls it — so a code fix is a valid way to ship anything, including a
+DB migration written in code.
+
+- **App is reachable on the LAN** at `http://omni.boris/` directly from this machine.
+  Use it to hit the frontend/API and to **download anything the frontend exposes**
+  (episode MP3s, data exports, etc.) without SSH. Direct DB access on boris is also fine.
+- **Logs**: `ssh michael@10.10.1.100` (the `boris` alias) then
+  `docker logs omni-notify` (add `--since`/`| tail`/`| grep`). This is the fastest
+  way to get a real stack trace for a 500.
+- **Ad-hoc DB inspection/repair**: no `sqlite3` on the host, but the container ships
+  `better-sqlite3` + `cbor`. Write a `.mjs` script that imports them by absolute
+  `.pnpm` path (e.g.
+  `/app/node_modules/.pnpm/better-sqlite3@<ver>/node_modules/better-sqlite3/lib/index.js`),
+  `docker cp` it into `/app`, and `docker exec -w /app omni-notify node script.mjs`
+  (a script under `/tmp` can't resolve `/app/node_modules`). Root-owned files from
+  `docker cp` need `docker exec -u root … rm` to clean up. **Back up before mutating**
+  (`db.backup('/data/docstore.pre-repair.db')` — WAL-safe). Destructive DB writes may
+  trip the auto-mode permission classifier; get explicit user OK first.
+- **Two valid ways to run a one-off DB migration/repair**: (a) directly on boris
+  (`stop` container → run the migration script against `/data/docstore.db` → `start`),
+  or (b) in code that runs at boot, which auto-deploys on push. Prefer (b) for anything
+  that should be reproducible/committed; (a) for one-shot surgery.
+
 ## Architecture
 
 ```
