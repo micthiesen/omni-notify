@@ -76,6 +76,22 @@ export function normalizeUrl(raw: string): string {
     .replace(/\.$/, "");
   url.hash = "";
 
+  // X status identity is the numeric post ID. Share links add opaque `s`/`t`
+  // parameters, and the same post is routinely linked through x.com,
+  // twitter.com, mobile hosts, or a different historical username.
+  const xStatusMatch = url.pathname.match(
+    /^\/(?:[^/]+\/status|i\/web\/status)\/(\d+)(?:\/.*)?$/,
+  );
+  const isXHost = [
+    "x.com",
+    "mobile.x.com",
+    "twitter.com",
+    "mobile.twitter.com",
+  ].includes(url.hostname);
+  if (isXHost && xStatusMatch) {
+    return `https://x.com/i/status/${xStatusMatch[1]}`;
+  }
+
   const kept: [string, string][] = [];
   for (const [key, value] of url.searchParams) {
     if (!isTrackingParam(key)) kept.push([key, value]);

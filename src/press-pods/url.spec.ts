@@ -63,6 +63,35 @@ describe("normalizeUrl", () => {
     );
   });
 
+  it("canonicalizes X share links by status ID", () => {
+    expect(
+      normalizeUrl(
+        "https://x.com/edels0n/status/2077031491045929255?s=46&t=LN32clxPq8AlS6Ujqu_UEg",
+      ),
+    ).toBe("https://x.com/i/status/2077031491045929255");
+  });
+
+  it("collapses X and Twitter host, username, and media-path variants", () => {
+    const canonical = "https://x.com/i/status/2077031491045929255";
+    expect(
+      normalizeUrl(
+        "https://mobile.twitter.com/old_handle/status/2077031491045929255/photo/1",
+      ),
+    ).toBe(canonical);
+    expect(
+      normalizeUrl("https://www.x.com/new_handle/status/2077031491045929255"),
+    ).toBe(canonical);
+    expect(
+      normalizeUrl("https://x.com/i/web/status/2077031491045929255?utm_source=share"),
+    ).toBe(canonical);
+  });
+
+  it("keeps short query parameters on non-X URLs", () => {
+    expect(normalizeUrl("https://example.com/article?s=46&t=chapter-2")).toBe(
+      "https://example.com/article?s=46&t=chapter-2",
+    );
+  });
+
   it("returns the trimmed input when the string is not a URL", () => {
     expect(normalizeUrl("  not a url  ")).toBe("not a url");
   });

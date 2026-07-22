@@ -13,6 +13,7 @@ import { retrieveArticlePostlight } from "./postlight.js";
 import { retrieveArticleReadability } from "./readability.js";
 import { retrieveArticleRemovepaywall } from "./removepaywall.js";
 import { retrieveArticleWayback } from "./wayback.js";
+import { retrieveArticleX } from "./x.js";
 
 const RETRIEVER_TIMEOUT_MS = 60_000;
 
@@ -80,7 +81,25 @@ export async function rateRetrievedArticles(
   return results;
 }
 
-export function getArticleRetrievers(): ArticleRetriever[] {
+function isXStatusUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    return (
+      ["x.com", "mobile.x.com", "twitter.com", "mobile.twitter.com"].includes(
+        hostname,
+      ) && /^\/(?:[^/]+\/status|i\/web\/status)\/\d+/.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function getArticleRetrievers(url?: string): ArticleRetriever[] {
+  if (url && isXStatusUrl(url)) {
+    return [{ name: "x", retrieve: retrieveArticleX }];
+  }
+
   const retrievers: ArticleRetriever[] = [
     { name: "postlight", retrieve: retrieveArticlePostlight },
     { name: "readability", retrieve: retrieveArticleReadability },
@@ -111,7 +130,7 @@ export async function getArticleFromUrl(
   allResults: ArticleRetrieverResult[];
 }> {
   const retrieved = await Promise.all(
-    getArticleRetrievers().map((retriever) =>
+    getArticleRetrievers(url).map((retriever) =>
       withTimeout(retrieveArticle(url, retriever), RETRIEVER_TIMEOUT_MS).catch(
         (error) => ({
           success: false as const,

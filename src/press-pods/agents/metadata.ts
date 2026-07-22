@@ -76,7 +76,8 @@ For author gender:
 
 For shortSummary: Create a one-sentence description of what this article is about (for podcast descriptions). Do NOT include URLs in the summary.
 
-Other webpages (blog posts, wiki pages, forum threads, documentation) should be treated as valid articles.`,
+Other webpages (blog posts, wiki pages, forum threads, documentation) should be treated as valid articles.
+X Articles and connected same-author X threads are valid articles. Judge completeness against the article body or connected self-thread, not against unrelated replies. Prefer explicit source metadata for their title, author, publication (X), publication date, and lead image instead of inferring replacements.`,
     prompt: `Please validate the following article and extract its metadata if it is valid.
 
 Potential Article Info:

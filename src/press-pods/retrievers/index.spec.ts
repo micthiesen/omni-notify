@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Metadata } from "../agents/metadata.js";
 import type { Article } from "../types.js";
-import { rateRetrievedArticles } from "./index.js";
+import { getArticleRetrievers, rateRetrievedArticles } from "./index.js";
 
 function article(text: string, title: string): Article {
   return {
@@ -107,5 +107,39 @@ describe("rateRetrievedArticles", () => {
     expect((results[2] as { error: Error }).error.message).toBe("Invalid article");
     expect((results[1] as { error: Error }).error.message).toBe("model unavailable");
     expect((results[3] as { error: Error }).error.message).toBe("model unavailable");
+  });
+});
+
+describe("getArticleRetrievers", () => {
+  it("uses the specialized retriever for X and Twitter status URLs", () => {
+    expect(
+      getArticleRetrievers(
+        "https://x.com/edels0n/status/2077031491045929255?s=46&t=share",
+      ).map(({ name }) => name),
+    ).toEqual(["x"]);
+    expect(
+      getArticleRetrievers(
+        "https://mobile.twitter.com/user/status/2079904005652893709",
+      ).map(({ name }) => name),
+    ).toEqual(["x"]);
+    expect(
+      getArticleRetrievers("https://x.com/i/status/2079904005652893709").map(
+        ({ name }) => name,
+      ),
+    ).toEqual(["x"]);
+    expect(
+      getArticleRetrievers("https://x.com/i/web/status/2079904005652893709").map(
+        ({ name }) => name,
+      ),
+    ).toEqual(["x"]);
+  });
+
+  it("keeps generic retrievers for non-status and lookalike URLs", () => {
+    expect(
+      getArticleRetrievers("https://x.com/explore").map(({ name }) => name),
+    ).toContain("readability");
+    expect(
+      getArticleRetrievers("https://x.com.example/status/123").map(({ name }) => name),
+    ).toContain("readability");
   });
 });

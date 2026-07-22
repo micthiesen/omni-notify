@@ -29,7 +29,7 @@ The input begins with a header line like "Title. By Author. Published Date on Do
 REMOVE:
 - Website chrome: navigation, sidebars, footer links, "← Previous / Next →" links
 - Junk: ads, subscribe/signup prompts, social buttons, cookie notices, share links
-- Non-narrative elements: author bios, related articles, comments, image captions, photo credits
+- Non-narrative elements: author bios, related articles, comments, decorative image captions, photo credits
 - Duplicate titles (the article title often appears multiple times)
 - Charts, tables, diagrams, ASCII art, emojis
 - Footnotes, "[return]" back-links, and footnote references ([1], etc.)
@@ -41,6 +41,8 @@ WRITE FOR THE EAR:
 - Use contractions and a natural, present-tense-leaning voice. If you wouldn't say it aloud, don't write it.
 - Attribution comes BEFORE the quote or claim, never after: "The report's author, Jane Doe, argues that…" — not "…, Doe argues." Prefer reported speech ("she said the plan would fail") unless the exact wording matters.
 - Blockquotes (lines starting with ">"): integrate naturally. If context already attributes it, just read it; otherwise introduce it ("As the report puts it,"). Remove the ">"; never say "quote"/"unquote".
+- Social threads: join consecutive posts into one continuous narration. Remove structural labels, post numbers, handles, and engagement metadata.
+- Lines beginning "Image description:" contain author-provided context. Preserve the useful information as a concise spoken description when the surrounding text depends on the image; omit it when decorative or redundant.
 - Lists and bullets: rewrite as flowing prose with transitions ("First… Then… Finally…").
 - Numbers are hard to hear: round them ("nearly two million dollars", not "$1,987,452"), at most one figure per sentence. Give a percentage a baseline when the article implies one.
 
