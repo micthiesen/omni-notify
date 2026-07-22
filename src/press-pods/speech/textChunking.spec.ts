@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkText, splitSections } from "./textChunking.js";
+import { chunkText, splitChunkForRetry, splitSections } from "./textChunking.js";
 
 describe("splitSections", () => {
   it("returns one untitled section when there are no headings", () => {
@@ -54,5 +54,40 @@ describe("chunkText", () => {
       expect(chunk.trim()).toMatch(/\.$/);
     }
     expect(chunks.join(" ").replace(/\s+/g, " ")).toBe(paragraph.replace(/\s+/g, " "));
+  });
+});
+
+describe("splitChunkForRetry", () => {
+  const sentence = (word: string, count: number): string =>
+    `${`${word} `.repeat(count).trim()}.`;
+
+  it("allows two successively smaller boundary-safe re-split levels", () => {
+    const sentences = Array.from({ length: 6 }, (_, i) => sentence(`word${i}`, 25));
+    const original = sentences.join(" ");
+
+    const firstLevel = splitChunkForRetry(original, 0);
+    expect(firstLevel).not.toBeNull();
+    expect(firstLevel?.length).toBeGreaterThan(1);
+
+    const firstSplittableChild = firstLevel?.find(
+      (chunk) => splitChunkForRetry(chunk, 1) !== null,
+    );
+    expect(firstSplittableChild).toBeDefined();
+    const secondLevel = splitChunkForRetry(firstSplittableChild ?? "", 1);
+    expect(secondLevel?.length).toBeGreaterThan(1);
+    expect(splitChunkForRetry(firstSplittableChild ?? "", 2)).toBeNull();
+
+    expect(firstLevel?.join(" ").replace(/\s+/g, " ")).toBe(
+      original.replace(/\s+/g, " "),
+    );
+    expect(secondLevel?.join(" ").replace(/\s+/g, " ")).toBe(
+      firstSplittableChild?.replace(/\s+/g, " "),
+    );
+  });
+
+  it("does not claim a long single sentence is splittable", () => {
+    const longSentence = sentence("word", 140);
+    expect(longSentence.length).toBeGreaterThan(500);
+    expect(splitChunkForRetry(longSentence, 0)).toBeNull();
   });
 });

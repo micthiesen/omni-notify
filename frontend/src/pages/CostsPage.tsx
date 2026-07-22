@@ -34,6 +34,23 @@ const FEATURE_COLORS = [
   "#818cf8",
 ];
 
+const COST_LABELS: Record<string, string> = {
+  api: "API",
+  llm: "LLM",
+  openai: "OpenAI",
+  "self-hosted": "Self-Hosted",
+  stt: "STT",
+  tts: "TTS",
+};
+
+function costLabel(value: string): string {
+  return COST_LABELS[value.toLowerCase()] ?? toTitleCase(value);
+}
+
+function eventCountLabel(count: number): string {
+  return `${count.toLocaleString()} ${count === 1 ? "event" : "events"}`;
+}
+
 function rangeLabel(range: CostRange): string {
   return range === "all" ? "All" : `${range}d`;
 }
@@ -54,8 +71,9 @@ function usageParts(service: ServiceCost): string[] {
 }
 
 function eventCost(event: CostEvent): string {
+  if (event.priceStatus === "free") return "Free";
   if (event.costCents !== null) return formatCents(event.costCents) ?? "Unknown";
-  return toTitleCase(event.priceStatus);
+  return costLabel(event.priceStatus);
 }
 
 export default function CostsPage() {
@@ -282,7 +300,7 @@ export default function CostsPage() {
                     <div className="costs-row-main">
                       <strong>{toTitleCase(item.feature)}</strong>
                       <span>
-                        {item.eventCount.toLocaleString()} events
+                        {eventCountLabel(item.eventCount)}
                         {item.unknownEventCount > 0
                           ? `, ${item.unknownEventCount.toLocaleString()} unpriced`
                           : ""}
@@ -310,17 +328,29 @@ export default function CostsPage() {
                       className="costs-row"
                     >
                       <div className="costs-row-main">
-                        <strong>{toTitleCase(item.service)}</strong>
+                        <strong>{costLabel(item.service)}</strong>
                         <span className="costs-model">
-                          {item.model ?? toTitleCase(item.category)}
+                          {item.model ?? costLabel(item.category)}
                         </span>
-                        {usage.length > 0 && <span>{usage.join(" · ")}</span>}
+                        {usage.length > 0 && (
+                          <span className="meta-row costs-service-usage">
+                            {usage.map((part) => (
+                              <span key={part}>{part}</span>
+                            ))}
+                          </span>
+                        )}
                         {item.unknownEventCount > 0 && (
-                          <span>{item.unknownEventCount} unpriced</span>
+                          <span>
+                            {item.unknownEventCount.toLocaleString()} unpriced
+                          </span>
                         )}
                       </div>
                       <span className="costs-row-value">
-                        {formatCents(item.costCents)}
+                        {item.unknownEventCount === item.eventCount
+                          ? "Unpriced"
+                          : item.costCents === 0
+                          ? "Free"
+                          : formatCents(item.costCents)}
                       </span>
                     </div>
                   );
@@ -339,14 +369,14 @@ export default function CostsPage() {
                 <div key={event.eventId} className="costs-event-row">
                   <div className="costs-event-when">
                     <strong>{formatAbsoluteWithYear(event.incurredAt)}</strong>
-                    <span>{toTitleCase(event.feature)}</span>
+                    <span>{costLabel(event.feature)}</span>
                   </div>
                   <div className="costs-event-detail">
-                    <strong>{toTitleCase(event.operation)}</strong>
+                    <strong>{costLabel(event.operation)}</strong>
                     <span className="meta-row">
-                      <span>{toTitleCase(event.service)}</span>
+                      <span>{costLabel(event.service)}</span>
                       {event.model && <span>{event.model}</span>}
-                      <span>{toTitleCase(event.category)}</span>
+                      <span>{costLabel(event.category)}</span>
                     </span>
                   </div>
                   <span

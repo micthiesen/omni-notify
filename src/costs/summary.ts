@@ -6,8 +6,20 @@ export interface CostSummaryOptions {
   timeZone: string;
 }
 
+const USAGE_KEYS = [
+  "inputTokens",
+  "inputNoCacheTokens",
+  "cacheReadTokens",
+  "cacheWriteTokens",
+  "outputTokens",
+  "reasoningTokens",
+  "characters",
+  "requests",
+  "credits",
+] as const satisfies readonly (keyof CostUsage)[];
+
 function sumUsage(target: Required<CostUsage>, usage: CostUsage): void {
-  for (const key of Object.keys(target) as (keyof CostUsage)[]) {
+  for (const key of USAGE_KEYS) {
     target[key] += usage[key] ?? 0;
   }
 }

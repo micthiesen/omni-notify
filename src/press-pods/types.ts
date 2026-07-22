@@ -46,6 +46,7 @@ export interface ChunkStat {
    */
   coverage?: number;
   wordRatio?: number;
+  expectedWords?: number;
   /**
    * True when this piece came from adaptively re-splitting a larger chunk that
    * kept failing verification (see synthesize.ts). Recovery worked, but it marks
@@ -53,6 +54,8 @@ export interface ChunkStat {
    * if every sub-piece ultimately passed.
    */
   resplit?: boolean;
+  /** Number of adaptive re-split levels used to produce this piece. */
+  resplitDepth?: number;
 }
 
 export type ArticleRetrieverResult =

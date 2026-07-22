@@ -197,11 +197,14 @@ ones a fraction (≤0.66) — with a wide gap between the two populations.
 **Fix.** An STT round-trip is now the primary chunk verifier (`coverage.ts` +
 `stt.ts`, wired into `synthesize.ts`'s retry loop). Each take is transcribed and
 scored on word `coverage` and `wordRatio` (transcript/input word count);
-`isContentComplete` requires coverage ≥ 0.75 and ratio ≤ 1.8 (the ratio guard
-also catches runaway loops, which keep coverage high). Below-bar takes are
-re-synthesized (up to 3); the best is kept and flagged in the UI. The duration
-band is retained as the **fallback** verifier for when no STT endpoint is
-configured.
+`isContentComplete` accepts coverage ≥ 0.75, or coverage ≥ 0.68 for short
+(≤60-word) chunks when the word ratio is also ≥ 0.78. The secondary pass handles complete, number-heavy
+reads where STT emits digits for spoken number words, while remaining above the
+≤0.47 ratios measured for true truncations. A ratio ≤ 1.8 is always required
+(the upper guard also catches runaway loops, which keep coverage high).
+Below-bar takes are re-synthesized (up to 3); the best is kept and flagged in
+the UI. The duration band is retained as the **fallback** verifier for when no
+STT endpoint is configured.
 
 STT runs on the same mlx-audio host as Higgs TTS (`PRESSPODS_STT_URL` defaults
 to `PRESSPODS_TTS_URL`) via its OpenAI-compatible `/v1/audio/transcriptions`,

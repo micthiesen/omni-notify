@@ -7,6 +7,12 @@ function withStatus(status: number): Error {
   return error;
 }
 
+function withResponseStatus(status: number): Error {
+  const error = new Error(`HTTP ${status}`);
+  Object.assign(error, { response: { statusCode: status } });
+  return error;
+}
+
 describe("isRetryableError", () => {
   it("retries 429 and 5xx statuses", () => {
     expect(isRetryableError(withStatus(429))).toBe(true);
@@ -17,6 +23,12 @@ describe("isRetryableError", () => {
   it("does not retry 4xx client errors", () => {
     expect(isRetryableError(withStatus(400))).toBe(false);
     expect(isRetryableError(withStatus(401))).toBe(false);
+  });
+
+  it("recognizes got response status codes", () => {
+    expect(isRetryableError(withResponseStatus(429))).toBe(true);
+    expect(isRetryableError(withResponseStatus(503))).toBe(true);
+    expect(isRetryableError(withResponseStatus(400))).toBe(false);
   });
 
   it("retries known network error names", () => {

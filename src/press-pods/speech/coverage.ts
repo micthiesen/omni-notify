@@ -53,17 +53,31 @@ export function computeCoverage(expected: string, transcript: string): CoverageR
 export interface ContentBounds {
   /** Minimum word coverage for a read to count as complete. */
   minCoverage: number;
+  /**
+   * Lower coverage floor allowed when the transcript length shows that the
+   * whole read is present. This tolerates STT substitutions such as spoken
+   * number words being transcribed as digits.
+   */
+  minCoverageWithHealthyRatio: number;
+  /** Minimum word ratio required to use the lower coverage floor. */
+  minHealthyWordRatio: number;
+  /** Maximum input size for the number-heavy false-positive allowance. */
+  maxHealthyRatioExpectedWords: number;
   /** Maximum word ratio before a read is treated as a runaway loop. */
   maxWordRatio: number;
 }
 
 /**
  * Measured separation (Higgs, self-hosted): complete reads land at ~1.0
- * coverage / ~1.0 ratio; truncated reads at ≤0.66 coverage / ≤0.47 ratio. The
- * 0.75 / 1.8 bar sits in the wide gap between the two populations.
+ * coverage / ~1.0 ratio; truncated reads at ≤0.66 coverage / ≤0.47 ratio.
+ * Number-heavy complete reads can have coverage as low as 0.68 when STT emits
+ * digits for spoken number words, but retain a healthy ratio of at least 0.78.
  */
 export const DEFAULT_CONTENT_BOUNDS: ContentBounds = {
   minCoverage: 0.75,
+  minCoverageWithHealthyRatio: 0.68,
+  minHealthyWordRatio: 0.78,
+  maxHealthyRatioExpectedWords: 60,
   maxWordRatio: 1.8,
 };
 
@@ -71,7 +85,11 @@ export function isContentComplete(
   result: CoverageResult,
   bounds: ContentBounds = DEFAULT_CONTENT_BOUNDS,
 ): boolean {
+  if (result.wordRatio > bounds.maxWordRatio) return false;
   return (
-    result.coverage >= bounds.minCoverage && result.wordRatio <= bounds.maxWordRatio
+    result.coverage >= bounds.minCoverage ||
+    (result.coverage >= bounds.minCoverageWithHealthyRatio &&
+      result.wordRatio >= bounds.minHealthyWordRatio &&
+      result.expectedWords <= bounds.maxHealthyRatioExpectedWords)
   );
 }

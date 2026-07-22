@@ -4213,6 +4213,11 @@ button.history-row:last-child {
   overflow-wrap: anywhere;
 }
 
+.costs-service-usage {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
 .costs-row-value,
 .costs-event-value {
   flex-shrink: 0;

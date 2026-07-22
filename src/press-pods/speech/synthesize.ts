@@ -1,6 +1,7 @@
 import fsAsync from "node:fs/promises";
 import type { Logger } from "@micthiesen/mitools/logging";
 import type CostCounter from "../costs.js";
+import { isRetryableError } from "../errors.js";
 import {
   checkpointKey,
   deleteChunkCheckpoint,
@@ -22,7 +23,7 @@ import { type CoverageResult, computeCoverage, isContentComplete } from "./cover
 import { createTtsProvider } from "./providers/index.js";
 import type { AuthorGender, TtsProvider } from "./providers/types.js";
 import { createSttClient, type SttClient } from "./stt.js";
-import { chunkText, splitSections } from "./textChunking.js";
+import { chunkText, splitChunkForRetry, splitSections } from "./textChunking.js";
 
 /**
  * Per-article checkpoint context threaded through synthesis. When present, each
@@ -72,16 +73,6 @@ const MIN_VERIFY_CHARS = 120;
  * the first verification failure. Leaf chunks that can't be split still get the
  * full MAX_SYNTH_ATTEMPTS. */
 const RESPLIT_PROBE_ATTEMPTS = 1;
-/** Don't re-split a chunk already this short: the sub-pieces would be tiny and
- * a residual failure at this size is a content/STT quirk, not truncation. */
-const MIN_RESPLIT_CHARS = 500;
-/** Target size for re-split sub-chunks — comfortably inside Higgs's reliable
- * range so a first-level split usually clears verification. */
-const RESPLIT_TARGET_CHARS = 400;
-/** Safety bound on recursive re-splitting (a pathological all-failing article
- * can't fan out without limit). */
-const MAX_RESPLIT_DEPTH = 2;
-
 /**
  * Synthesize one chunk and prepare it for concat, re-synthesizing when a
  * verifier rejects the take. Higgs truncates/loops unpredictably; the primary
@@ -113,6 +104,8 @@ interface ChunkPiece {
   coverage?: CoverageResult;
   /** Set when this piece is a sub-chunk of a re-split (parent kept failing). */
   resplit?: boolean;
+  /** Number of adaptive re-split levels used to produce this piece. */
+  resplitDepth?: number;
 }
 
 /** A verifier's read on one take. `verified` marks a real STT content check
@@ -237,6 +230,8 @@ async function synthesizeChunkAudio(
 
   const takes: Array<{ chunk: PreparedChunk; assessment: Assessment }> = [];
   let attemptsMade = 0;
+  let lastError: unknown;
+  let retryableError: unknown;
   for (let i = 1; i <= maxAttempts; i++) {
     attemptsMade = i;
     try {
@@ -254,6 +249,10 @@ async function synthesizeChunkAudio(
         );
       }
     } catch (error) {
+      lastError = error;
+      if (retryableError === undefined && isRetryableError(error)) {
+        retryableError = error;
+      }
       // A corrupt/truncated response can fail prepareChunk's ffmpeg; retry
       // rather than aborting the episode.
       logger.warn(
@@ -263,7 +262,14 @@ async function synthesizeChunkAudio(
   }
 
   if (takes.length === 0) {
-    throw new Error(`All ${maxAttempts} synthesis attempts failed for a chunk`);
+    // Preserve provider error identity (status/code/name) so the durable job
+    // queue can recognize transient outages and retry later. Wrapping this in a
+    // plain Error would incorrectly turn a retryable network failure permanent.
+    throw (
+      retryableError ??
+      lastError ??
+      new Error(`All ${maxAttempts} synthesis attempts failed for a chunk`)
+    );
   }
   // When content-verification was intended and at least one take got a real STT
   // read, choose only among those — scores across kinds aren't comparable, and
@@ -328,12 +334,12 @@ async function synthesizeChunkAdaptive(
   ckpt: CheckpointCtx | null,
   depth = 0,
 ): Promise<ChunkPiece[]> {
-  const splittable = depth < MAX_RESPLIT_DEPTH && text.length >= MIN_RESPLIT_CHARS;
-  // A splittable chunk that verifies badly re-splits; one that *throws* on every
-  // probe (network/ffmpeg/TTS 5xx) should also fall through to re-split rather
-  // than abort the whole episode — smaller sub-chunks are the recovery path for
-  // both. Only a non-splittable chunk's hard failure propagates. `outcome` is
-  // null in that fall-through case.
+  const subChunks = splitChunkForRetry(text, depth);
+  const splittable = subChunks !== null;
+  // A splittable chunk that verifies badly re-splits. A hard local failure can
+  // also recover through smaller chunks, but transient provider failures must
+  // propagate to the durable job retry rather than fan out. `outcome` is null
+  // when a non-transient hard failure falls through to re-splitting.
   let outcome: ChunkSynthesisOutcome | null = null;
   try {
     outcome = await synthesizeChunkAudio(
@@ -346,7 +352,10 @@ async function synthesizeChunkAdaptive(
       splittable ? RESPLIT_PROBE_ATTEMPTS : MAX_SYNTH_ATTEMPTS,
     );
   } catch (error) {
-    if (!splittable) throw error;
+    // Smaller chunks cannot repair an unavailable/rate-limited server. Let the
+    // durable job retry use its backoff and existing verified checkpoints
+    // instead of multiplying requests across a re-split tree.
+    if (!splittable || isRetryableError(error)) throw error;
     logger.warn(
       `Chunk synthesis threw on every probe (${(error as Error).message}); ` +
         `re-splitting to recover`,
@@ -364,26 +373,13 @@ async function synthesizeChunkAdaptive(
     ];
   }
 
-  const subChunks = chunkText(text, RESPLIT_TARGET_CHARS, RESPLIT_TARGET_CHARS);
-  // A single unsplittable sentence can't be broken without a mid-sentence cut.
-  // Keep the best take if we have one; if the chunk hard-failed and can't split,
-  // there's nothing to ship — let the error propagate.
-  if (subChunks.length <= 1) {
-    if (outcome) {
-      return [
-        {
-          chunk: outcome.chunk,
-          text,
-          attempts: outcome.attempts,
-          coverage: outcome.coverage,
-        },
-      ];
-    }
-    throw new Error(`Chunk synthesis failed and the text could not be re-split`);
-  }
+  // `splittable` guarantees this is non-null; keep the assertion local so the
+  // retry plan is computed once and cannot disagree with the probe budget.
+  if (!subChunks) throw new Error("Missing adaptive chunk split");
 
   logger.warn(
-    `Re-splitting failing chunk (${text.length} chars) into ${subChunks.length} ` +
+    `Re-splitting failing chunk at level ${depth + 1} (${text.length} chars) ` +
+      `into ${subChunks.length} ` +
       `boundary-safe sub-chunks and re-synthesizing`,
   );
   if (outcome) await cleanupWavs([outcome.chunk.wavPath]);
@@ -404,7 +400,10 @@ async function synthesizeChunkAdaptive(
       );
       // Mark every descendant so the UI can show recovery happened here, even
       // when a sub-piece ultimately passed on its first take.
-      for (const piece of subPieces) piece.resplit = true;
+      for (const piece of subPieces) {
+        piece.resplit = true;
+        piece.resplitDepth = Math.max(piece.resplitDepth ?? 0, depth + 1);
+      }
       pieces.push(...subPieces);
     }
   } catch (error) {
@@ -416,10 +415,31 @@ async function synthesizeChunkAdaptive(
   return pieces;
 }
 
-/** ~900-char chunks keep each request in the quality sweet spot; sections and
- * paragraphs are never split mid-sentence. */
-const CHUNK_TARGET = 900;
-const CHUNK_MAX = 1500;
+interface InitialChunkProfile {
+  target: number;
+  max: number;
+}
+
+/**
+ * Higgs failures rise sharply around 700 chars, so providers that require the
+ * content-verification path start below that cliff. Reliable providers retain
+ * the larger chunks to avoid needless request and seam overhead. Both profiles
+ * remain boundary-safe because chunkText never cuts mid-sentence.
+ */
+const CONTENT_VERIFIED_CHUNK_PROFILE: InitialChunkProfile = {
+  target: 650,
+  max: 700,
+};
+const DEFAULT_CHUNK_PROFILE: InitialChunkProfile = {
+  target: 900,
+  max: 1500,
+};
+
+function initialChunkProfile(provider: TtsProvider): InitialChunkProfile {
+  return provider.verifyChunkContent
+    ? CONTENT_VERIFIED_CHUNK_PROFILE
+    : DEFAULT_CHUNK_PROFILE;
+}
 /** Gaps between chunks (paragraph-ish) and between sections. */
 const CHUNK_GAP_SEC = 0.7;
 const SECTION_GAP_SEC = 1.5;
@@ -455,6 +475,7 @@ export async function synthesizeSpeech({
   const ckpt: CheckpointCtx | null = workId
     ? { workId, signature: renderSignature(provider) }
     : null;
+  const chunkProfile = initialChunkProfile(provider);
   const sections = splitSections(content);
 
   logger.info("Starting speech synthesis", {
@@ -464,6 +485,8 @@ export async function synthesizeSpeech({
     totalChars: content.length,
     sections: sections.length,
     contentVerify: stt ? stt.modelId : "off",
+    chunkTarget: chunkProfile.target,
+    chunkMax: chunkProfile.max,
   });
   if (provider.verifyChunkContent && !stt) {
     logger.warn(
@@ -486,7 +509,7 @@ export async function synthesizeSpeech({
   // Pre-split estimate; grows as adaptive re-splitting turns one chunk into
   // several, so the progress fraction stays honest instead of pinning at N/N.
   let totalChunks = sections.reduce(
-    (n, s) => n + chunkText(s.body, CHUNK_TARGET, CHUNK_MAX).length,
+    (n, s) => n + chunkText(s.body, chunkProfile.target, chunkProfile.max).length,
     0,
   );
 
@@ -505,7 +528,7 @@ export async function synthesizeSpeech({
         });
       }
 
-      const chunks = chunkText(section.body, CHUNK_TARGET, CHUNK_MAX);
+      const chunks = chunkText(section.body, chunkProfile.target, chunkProfile.max);
       let firstPieceInSection = true;
       for (const chunk of chunks) {
         // One input chunk yields one piece, or several when adaptive re-splitting
@@ -545,7 +568,9 @@ export async function synthesizeSpeech({
             attempts: piece.attempts,
             coverage: piece.coverage?.coverage,
             wordRatio: piece.coverage?.wordRatio,
+            expectedWords: piece.coverage?.expectedWords,
             resplit: piece.resplit,
+            resplitDepth: piece.resplitDepth,
           });
           logger.info(`Synthesized chunk ${chunkIndex}/${totalChunks}`);
         }

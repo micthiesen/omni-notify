@@ -81,3 +81,23 @@ export function chunkText(text: string, target: number, max: number): string[] {
   if (buf) chunks.push(buf);
   return chunks;
 }
+
+/**
+ * Successively smaller targets used when a synthesized chunk fails
+ * verification. Each entry represents one allowed re-split level; exhausting
+ * the list makes the chunk a leaf with the normal retry budget.
+ */
+const RETRY_CHUNK_TARGETS = [400, 200] as const;
+
+/**
+ * Return a smaller, boundary-safe split for one adaptive-retry level, or null
+ * when the depth cap has been reached or the text cannot actually be split.
+ * Checking the produced chunks instead of text length is important for long
+ * single sentences, which chunkText deliberately keeps intact.
+ */
+export function splitChunkForRetry(text: string, depth: number): string[] | null {
+  const target = RETRY_CHUNK_TARGETS[depth];
+  if (target === undefined) return null;
+  const chunks = chunkText(text, target, target);
+  return chunks.length > 1 ? chunks : null;
+}

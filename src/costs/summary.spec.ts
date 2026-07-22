@@ -69,6 +69,28 @@ describe("summarizeCosts", () => {
     expect(result.recent[0]).toMatchObject({ eventId: "b", model: null, runId: null });
   });
 
+  it("only sums usage fields when multiple events share a service row", () => {
+    const result = summarizeCosts(
+      [
+        event("a", now - 1000, { model: undefined }),
+        event("b", now - 500, { model: undefined }),
+      ],
+      { days: null, now, timeZone: "UTC" },
+    );
+
+    expect(result.byService).toEqual([
+      expect.objectContaining({
+        service: "google",
+        model: null,
+        category: "llm",
+        eventCount: 2,
+        inputTokens: 200,
+        outputTokens: 40,
+        requests: 2,
+      }),
+    ]);
+  });
+
   it("does not call an unknown-only date the highest priced day", () => {
     const result = summarizeCosts(
       [event("unknown", now, { costCents: null, priceStatus: "unknown" })],

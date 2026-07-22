@@ -18,6 +18,20 @@ export function isRetryableError(error: unknown): boolean {
     return status === 429 || (status >= 500 && status <= 599);
   }
 
+  // got HTTPError: the status lives on the response rather than the error
+  // itself. Keep this structural so the generic pipeline error classifier does
+  // not need to depend on got's concrete classes.
+  if (
+    "response" in error &&
+    error.response !== null &&
+    typeof error.response === "object" &&
+    "statusCode" in error.response &&
+    typeof error.response.statusCode === "number"
+  ) {
+    const status = error.response.statusCode;
+    return status === 429 || (status >= 500 && status <= 599);
+  }
+
   // Mistral SDK: HTTPClientError subclasses for network failures
   const retryableNames = [
     "ConnectionError",

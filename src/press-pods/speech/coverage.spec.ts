@@ -80,4 +80,38 @@ describe("computeCoverage", () => {
       }),
     ).toBe(true);
   });
+
+  it("accepts production number-heavy reads with healthy transcript lengths", () => {
+    const completeNumberHeavyReads = [
+      { coverage: 0.71, wordRatio: 0.83, expectedWords: 59, transcriptWords: 49 },
+      { coverage: 0.68, wordRatio: 0.78, expectedWords: 32, transcriptWords: 25 },
+      { coverage: 0.72, wordRatio: 0.84, expectedWords: 38, transcriptWords: 32 },
+    ];
+
+    for (const result of completeNumberHeavyReads) {
+      expect(isContentComplete(result)).toBe(true);
+    }
+  });
+
+  it("does not let the secondary coverage pass admit true truncations", () => {
+    expect(
+      isContentComplete({
+        coverage: DEFAULT_CONTENT_BOUNDS.minCoverageWithHealthyRatio,
+        wordRatio: DEFAULT_CONTENT_BOUNDS.minHealthyWordRatio - 0.01,
+        expectedWords: 100,
+        transcriptWords: 69,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not relax coverage for long chunks", () => {
+    expect(
+      isContentComplete({
+        coverage: 0.7,
+        wordRatio: 0.8,
+        expectedWords: DEFAULT_CONTENT_BOUNDS.maxHealthyRatioExpectedWords + 1,
+        transcriptWords: 49,
+      }),
+    ).toBe(false);
+  });
 });

@@ -25,6 +25,9 @@ const SEC_PER_CHAR_MAX = 0.15 / 1.1;
 // ratio it ran away (a loop). Mirror DEFAULT_CONTENT_BOUNDS in coverage.ts —
 // the backend's accept test rejects on either, so the UI flag must too.
 const MIN_COVERAGE = 0.75;
+const MIN_COVERAGE_WITH_HEALTHY_RATIO = 0.68;
+const MIN_HEALTHY_WORD_RATIO = 0.78;
+const MAX_HEALTHY_RATIO_EXPECTED_WORDS = 60;
 const MAX_WORD_RATIO = 1.8;
 
 function formatBytes(bytes: number): string {
@@ -59,10 +62,16 @@ function isChunkProblematic(chunk: PressPodsChunkStat): boolean {
   // still-failing take is flagged on either bound the backend rejects on —
   // low coverage (truncation) or high word ratio (runaway loop).
   if (chunk.coverage != null) {
-    return (
-      chunk.coverage < MIN_COVERAGE ||
-      (chunk.wordRatio != null && chunk.wordRatio > MAX_WORD_RATIO)
-    );
+    if (chunk.wordRatio != null && chunk.wordRatio > MAX_WORD_RATIO) return true;
+    const secondaryPass =
+      chunk.coverage >= MIN_COVERAGE_WITH_HEALTHY_RATIO &&
+      chunk.wordRatio != null &&
+      chunk.wordRatio >= MIN_HEALTHY_WORD_RATIO &&
+      // Older rows do not store expectedWords. charCount is not a safe proxy,
+      // so only use the relaxed UI verdict when the persisted stat proves it.
+      chunk.expectedWords != null &&
+      chunk.expectedWords <= MAX_HEALTHY_RATIO_EXPECTED_WORDS;
+    return chunk.coverage < MIN_COVERAGE && !secondaryPass;
   }
   return (
     chunk.attempts > 1 ||
@@ -118,7 +127,9 @@ function ChunkCard({ chunk }: { chunk: PressPodsChunkStat }) {
             className="pods-chunk-resplit-badge"
             title="A larger chunk kept failing verification and was re-split into smaller pieces to recover"
           >
-            Re-split
+            Re-split{chunk.resplitDepth && chunk.resplitDepth > 1
+              ? ` ×${chunk.resplitDepth}`
+              : ""}
           </span>
         )}
         {problematic && <span className="pods-chunk-warn-badge">Needs Review</span>}

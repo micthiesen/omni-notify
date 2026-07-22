@@ -16,6 +16,70 @@ import { retrieveArticleWayback } from "./wayback.js";
 
 const RETRIEVER_TIMEOUT_MS = 60_000;
 
+type RetrievedArticleResult =
+  | { success: false; error: unknown; retrieverName: string }
+  | { success: true; article: Article; retrieverName: string };
+
+function articleRatingFingerprint(article: Article): string {
+  return JSON.stringify({
+    title: article.title ?? null,
+    text: article.text.replace(/\r\n?/g, "\n").trim(),
+    author: article.author ?? null,
+    domain: article.domain ?? null,
+    url: article.url,
+    publishedAt: article.publishedAt?.toISOString() ?? null,
+    leadImageUrl: article.leadImageUrl ?? null,
+  });
+}
+
+/**
+ * Rate each distinct extraction once, then fan that result back out to every
+ * retriever that produced the same article text. The returned array preserves
+ * provider order and still has exactly one result per provider.
+ */
+export async function rateRetrievedArticles(
+  retrieved: RetrievedArticleResult[],
+  rateArticle: (article: Article) => Promise<Metadata>,
+): Promise<ArticleRetrieverResult[]> {
+  const results = new Array<ArticleRetrieverResult>(retrieved.length);
+  const groups = new Map<string, Array<{ index: number; article: Article }>>();
+
+  for (const [index, result] of retrieved.entries()) {
+    if (!result.success) {
+      results[index] = result;
+      continue;
+    }
+    const key = articleRatingFingerprint(result.article);
+    const group = groups.get(key) ?? [];
+    group.push({ index, article: result.article });
+    groups.set(key, group);
+  }
+
+  await Promise.all(
+    [...groups.values()].map(async (group) => {
+      try {
+        const metadata = await rateArticle(group[0].article);
+        for (const member of group) {
+          const retrieverName = retrieved[member.index].retrieverName;
+          results[member.index] = metadata.info.isValidArticle
+            ? { success: true, article: member.article, metadata, retrieverName }
+            : { success: false, error: new Error("Invalid article"), retrieverName };
+        }
+      } catch (error) {
+        for (const member of group) {
+          results[member.index] = {
+            success: false,
+            error,
+            retrieverName: retrieved[member.index].retrieverName,
+          };
+        }
+      }
+    }),
+  );
+
+  return results;
+}
+
 export function getArticleRetrievers(): ArticleRetriever[] {
   const retrievers: ArticleRetriever[] = [
     { name: "postlight", retrieve: retrieveArticlePostlight },
@@ -46,17 +110,19 @@ export async function getArticleFromUrl(
   retrieverName: string;
   allResults: ArticleRetrieverResult[];
 }> {
-  const allResults = await Promise.all(
+  const retrieved = await Promise.all(
     getArticleRetrievers().map((retriever) =>
-      withTimeout(
-        tryGetArticleFromUrl(url, retriever, costCounter),
-        RETRIEVER_TIMEOUT_MS,
-      ).catch((error) => ({
-        success: false as const,
-        error,
-        retrieverName: retriever.name,
-      })),
+      withTimeout(retrieveArticle(url, retriever), RETRIEVER_TIMEOUT_MS).catch(
+        (error) => ({
+          success: false as const,
+          error,
+          retrieverName: retriever.name,
+        }),
+      ),
     ),
+  );
+  const allResults = await rateRetrievedArticles(retrieved, (article) =>
+    withTimeout(getArticleMetadata(article, costCounter), RETRIEVER_TIMEOUT_MS),
   );
   const successResults = allResults.filter((result) => result.success);
   if (successResults.length === 0) {
@@ -84,23 +150,13 @@ export async function getArticleFromUrl(
   };
 }
 
-async function tryGetArticleFromUrl(
+async function retrieveArticle(
   url: string,
   retriever: ArticleRetriever,
-  costCounter: CostCounter,
-): Promise<ArticleRetrieverResult> {
+): Promise<RetrievedArticleResult> {
   try {
     const article = await retriever.retrieve(url, USER_AGENT);
-    const metadata = await getArticleMetadata(article, costCounter);
-    if (metadata.info.isValidArticle) {
-      return { success: true, article, metadata, retrieverName: retriever.name };
-    }
-
-    return {
-      success: false,
-      error: new Error("Invalid article"),
-      retrieverName: retriever.name,
-    };
+    return { success: true, article, retrieverName: retriever.name };
   } catch (error) {
     return { success: false, error, retrieverName: retriever.name };
   }
