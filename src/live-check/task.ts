@@ -10,6 +10,11 @@ import {
   type NotificationPermissions,
 } from "./notificationPolicy.js";
 import {
+  OutageAlerter,
+  UNREACHABLE_TICK_THRESHOLD,
+  type UnknownStreak,
+} from "./outage.js";
+import {
   getStreamerStatus,
   type StreamerStatus,
   type StreamerStatusLive,
@@ -34,7 +39,8 @@ export default class LiveCheckTask extends ScheduledTask {
   private logger: Logger;
   private streamers: Streamer[];
   private streamersById: Map<string, Streamer>;
-  private consecutiveUnknowns = new Map<string, number>();
+  private unknownStreaks = new Map<string, UnknownStreak>();
+  private outageAlerter = new OutageAlerter();
   private metricsService: ViewerMetricsService;
 
   public constructor(streamers: Streamer[], parentLogger: Logger) {
@@ -59,6 +65,42 @@ export default class LiveCheckTask extends ScheduledTask {
 
   public async run(): Promise<void> {
     await Promise.all(this.streamers.map((s) => this.tickStreamer(s)));
+    await this.reportOutage();
+  }
+
+  /**
+   * One alert for the whole fleet rather than one per streamer per tick: a
+   * platform or network blip fails every streamer at once, and the per-streamer
+   * detail belongs in the logs, not in a notification storm.
+   *
+   * Notifications go out directly instead of via logger.error, because the
+   * alerter already owns the cadence and the generic alert throttle would
+   * otherwise be free to swallow an escalation or a fresh outage. The log line
+   * stays at warn/info for the same reason: those levels don't notify, so the
+   * alert can't be delivered twice.
+   */
+  private async reportOutage(): Promise<void> {
+    const alert = this.outageAlerter.evaluate(
+      [...this.unknownStreaks.values()],
+      this.streamers.length,
+      Date.now(),
+    );
+    if (!alert) return;
+
+    const line = `${alert.title}\n${alert.message}`;
+    if (alert.kind === "degraded") this.logger.warn(line);
+    else this.logger.info(line);
+
+    try {
+      await notify({ title: alert.title, message: alert.message });
+    } catch (error) {
+      // A failed send must not fail the run — the outage state has already
+      // advanced, so retrying this exact alert isn't possible anyway.
+      this.logger.error(
+        "Failed to send live-check outage notification",
+        (error as Error).message,
+      );
+    }
   }
 
   private async tickStreamer(streamer: Streamer): Promise<void> {
@@ -80,7 +122,7 @@ export default class LiveCheckTask extends ScheduledTask {
       this.handleAllUnknown(streamer, decision.errors);
       return;
     }
-    this.consecutiveUnknowns.delete(streamer.id);
+    this.clearUnknownStreak(streamer);
     switch (decision.kind) {
       case "no-change":
         return;
@@ -111,18 +153,31 @@ export default class LiveCheckTask extends ScheduledTask {
     }
   }
 
+  /**
+   * Records the streak only. Notifying is the aggregate outage alerter's job
+   * (see reportOutage), so this stays below the level that reaches Pushover.
+   */
   private handleAllUnknown(streamer: Streamer, errors: string[]): void {
-    const count = (this.consecutiveUnknowns.get(streamer.id) ?? 0) + 1;
-    this.consecutiveUnknowns.set(streamer.id, count);
-    const summary = errors.filter(Boolean).join("; ").slice(0, 300);
+    const ticks = (this.unknownStreaks.get(streamer.id)?.ticks ?? 0) + 1;
+    const error = errors.filter(Boolean).join("; ").slice(0, 300);
+    this.unknownStreaks.set(streamer.id, {
+      displayName: streamer.displayName,
+      ticks,
+      error,
+    });
 
-    if (count >= 10) {
-      this.logger.error(
-        `${streamer.displayName}: ${count} consecutive all-unknown ticks: ${summary}`,
-      );
-    } else if (count >= 3) {
-      this.logger.warn(
-        `${streamer.displayName}: ${count} consecutive all-unknown ticks: ${summary}`,
+    const message = `${streamer.displayName}: ${ticks} consecutive all-unknown ticks: ${error}`;
+    if (ticks === UNREACHABLE_TICK_THRESHOLD) this.logger.info(message);
+    else this.logger.debug(message);
+  }
+
+  private clearUnknownStreak(streamer: Streamer): void {
+    const streak = this.unknownStreaks.get(streamer.id);
+    if (!streak) return;
+    this.unknownStreaks.delete(streamer.id);
+    if (streak.ticks >= UNREACHABLE_TICK_THRESHOLD) {
+      this.logger.info(
+        `${streamer.displayName} reachable again after ${streak.ticks} all-unknown ticks`,
       );
     }
   }

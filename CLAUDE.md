@@ -59,6 +59,8 @@ src/
 ├── live-check/              # Livestream monitoring feature
 │   ├── task.ts              # LiveCheckTask: aggregate per-streamer loop
 │   ├── transitions.ts       # Pure state machine: decides live/offline/title edges
+│   ├── outage.ts            # Pure fleet-level outage alerter (one alert per
+│   │                        #   outage + escalating reminders + recovery note)
 │   ├── sessions.ts          # Completed live-session history (start/end/peak/title)
 │   ├── streamers.ts         # Streamer model: merges bindings by display name
 │   ├── channelsConfig.ts    # Loads per-streamer overrides from channels.json
@@ -73,6 +75,10 @@ src/
 │       ├── ViewerMetricsService.ts  # Peak confirmation state machine
 │       ├── persistence.ts   # ViewerMetricsEntity (daily buckets, keyed on streamerId)
 │       └── windows.ts       # Rolling window calculation helpers
+├── alerts/                  # Notification hygiene
+│   └── throttle.ts          # AlertThrottle: wraps Logger.onError/onWarn at boot,
+│                            #   dedups a repeating alert into one delivery plus
+│                            #   backing-off reminders ("Repeated N times in…")
 ├── ai/                      # AI model configuration and shared tools
 │   ├── registry.ts          # Provider registry (Google, Anthropic, OpenAI)
 │   └── tools/               # Shared AI agent tools (reusable across any agent)
@@ -359,9 +365,24 @@ History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
 ### Error Handling
 
 - Providers catch their own errors and return `LiveStatus.Unknown`
-- `LiveCheckTask` tracks consecutive unknowns per channel
-- Escalating log levels: debug (1-2) → warn (3-9) → error (10+)
-- Logger `warn`/`error` go to Pushover via @micthiesen/mitools
+- Logger `error` goes to Pushover via @micthiesen/mitools' `Logger.onError` hook.
+  `warn` does not (mitools leaves `onWarn` unset), so warn is the right level for
+  "visible in the logs and the run-log UI, but don't push me".
+- **Every notification path is throttled at exactly one layer.** `installAlertThrottle()`
+  (boot, `src/alerts/throttle.ts`) wraps the Logger hooks and collapses a repeating
+  alert — same logger + same message text — into one delivery plus backing-off
+  reminders (15min → 30min → 1h → 3h), annotated with the suppressed count; a key
+  goes quiet for 6h and the next occurrence reads as a fresh incident. The key
+  deliberately does NOT normalize digits: messages differing only by an embedded
+  tracking number, URL, or subject are distinct incidents and must not merge.
+- A caller whose message carries its own counter therefore throttles at the source
+  and sends via `notify()` directly, bypassing the generic layer (double-gating can
+  only swallow alerts the source deliberately chose to send). `LiveCheckTask` is the
+  worked example: per-streamer all-unknown streaks stay at debug/info, and
+  `OutageAlerter` (`src/live-check/outage.ts`) emits one fleet-level "degraded" alert
+  after 3 consecutive all-unknown ticks (~1 min), escalating reminders at 30min → 2h
+  → 6h → 24h, and one "recovered" note after 3 consecutive clean ticks (the clean-tick
+  requirement is what stops a flapping streamer from pumping degraded/recovered pairs).
 
 ### Task Run Logs
 

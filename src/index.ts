@@ -2,6 +2,7 @@ import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Scheduler } from "@micthiesen/mitools/scheduling";
+import { installAlertThrottle } from "./alerts/throttle.js";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { createCalendarHandler } from "./calendar-events/index.js";
@@ -31,6 +32,7 @@ import config from "./utils/config.js";
 
 Injector.configure({ config });
 installLogCapture();
+installAlertThrottle();
 
 const logger = new Logger("Main");
 const importedCostEvents = importHistoricalCosts();
