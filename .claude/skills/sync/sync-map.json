@@ -4,6 +4,10 @@
     "mitools": {
       "path": "../mitools",
       "notes": "Upstream shared library (@micthiesen/mitools) this project consumes; its upkeep skill was adapted from this repo's."
+    },
+    "stillair": {
+      "path": "../stillair",
+      "notes": "Custom ceiling fan project (docs + Rust ESP32 firmware). Bootstrapped its sync skill from here; shares only the sync skill itself."
     }
   },
   "resources": [
