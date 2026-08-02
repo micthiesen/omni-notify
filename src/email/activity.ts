@@ -1,6 +1,6 @@
 import { Entity } from "@micthiesen/mitools/entities";
 import { EmailActivityLogEntity } from "./activityLogs.js";
-import type { FetchedEmail } from "./emailFetcher.js";
+import type { FetchedEmail } from "./types.js";
 
 export type EmailPipelineName = "ParcelTracker" | "CalendarEvents";
 

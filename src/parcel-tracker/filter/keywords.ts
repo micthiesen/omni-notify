@@ -1,7 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import type { AdmitTier } from "../../jmap/activity.js";
-import { findSenderRule } from "../../jmap/senderRules.js";
-import type { EmailTriageService } from "../../jmap/triage.js";
+import type { AdmitTier } from "../../email/activity.js";
+import { findSenderRule } from "../../email/senderRules.js";
+import type { EmailTriageService } from "../../email/triage.js";
 import config from "../../utils/config.js";
 import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
 
@@ -153,7 +153,7 @@ export async function filterTrackingCandidate(
 function isBlacklistedSender(fromLower: string): boolean {
   if (BLACKLISTED_SENDERS.some((sender) => fromLower.includes(sender))) return true;
   // The user's own outgoing mail is never a shipment notification
-  const self = config.FASTMAIL_USERNAME?.toLowerCase();
+  const self = config.EMAIL_SELF_ADDRESS?.toLowerCase();
   return self !== undefined && fromLower.includes(self);
 }
 

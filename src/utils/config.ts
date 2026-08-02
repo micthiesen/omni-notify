@@ -42,9 +42,30 @@ const configSchema = baseConfigSchema
     LOGS_PATH: z.string().optional(),
     CHANNELS_CONFIG_PATH: z.string().optional(),
     BRIEFINGS_PATH: z.string().optional(),
+    /**
+     * Which email transport monitors the mailbox: Fastmail JMAP or iCloud
+     * IMAP. Defaults to fastmail while FASTMAIL_API_TOKEN is set (safe during
+     * the migration overlap), else icloud when its credentials exist.
+     */
+    EMAIL_TRANSPORT: z.enum(["fastmail", "icloud"]).optional(),
+    /** CalDAV backend for calendar-event writes; defaults to EMAIL_TRANSPORT.
+     * Set explicitly (icloud) once calendar data migrates ahead of the MX cutover. */
+    CALDAV_PROVIDER: z.enum(["fastmail", "icloud"]).optional(),
     FASTMAIL_API_TOKEN: z.string().optional(),
     FASTMAIL_APP_PASSWORD: z.string().optional(),
     FASTMAIL_USERNAME: z.string().optional(),
+    /** iCloud primary username (micthiesen@icloud.com — NOT the custom-domain
+     * address); shared by IMAP and CalDAV. */
+    ICLOUD_USERNAME: z.string().optional(),
+    /** App-specific password (account.apple.com → App-Specific Passwords). */
+    ICLOUD_APP_PASSWORD: z.string().optional(),
+    /** Display name of the iCloud calendar to write events to (e.g. "Personal"). */
+    ICLOUD_CALENDAR_NAME: z.string().optional(),
+    /** Optional: previously discovered collection URL; skips discovery. */
+    ICLOUD_CALENDAR_URL: z.string().optional(),
+    /** The user's own receiving address (self-sent-mail filter); defaults to
+     * FASTMAIL_USERNAME for compatibility. */
+    EMAIL_SELF_ADDRESS: z.string().optional(),
     PARCEL_API_KEY: z.string().optional(),
     EXTRACTION_MODEL: z.string().optional(),
     /** Calendar extraction gets its own (stronger) model; falls back in registry. */
@@ -160,6 +181,14 @@ const configSchema = baseConfigSchema
   })
   .transform((c) => ({
     ...c,
+    EMAIL_TRANSPORT:
+      c.EMAIL_TRANSPORT ??
+      (c.FASTMAIL_API_TOKEN
+        ? ("fastmail" as const)
+        : c.ICLOUD_USERNAME && c.ICLOUD_APP_PASSWORD
+          ? ("icloud" as const)
+          : undefined),
+    EMAIL_SELF_ADDRESS: c.EMAIL_SELF_ADDRESS ?? c.FASTMAIL_USERNAME,
     PUSHOVER_LIVE_TOKEN: c.PUSHOVER_LIVE_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_CALENDAR_TOKEN: c.PUSHOVER_CALENDAR_TOKEN ?? c.PUSHOVER_TOKEN,

@@ -9,12 +9,14 @@ import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
 import { CostMigrationEntity } from "./costs/migrate.js";
 import { CostEventEntity } from "./costs/persistence.js";
-import { EmailActivityEntity } from "./jmap/activity.js";
-import { EmailActivityLogEntity } from "./jmap/activityLogs.js";
-import { EmailFeedbackEntity } from "./jmap/feedback.js";
-import { EmailDispatchEntity, EmailStateEntity } from "./jmap/persistence.js";
-import { EmailRetryEntity } from "./jmap/retry.js";
-import { EmailRuleEntity } from "./jmap/senderRules.js";
+import { EmailActivityEntity } from "./email/activity.js";
+import { EmailActivityLogEntity } from "./email/activityLogs.js";
+import { EmailFeedbackEntity } from "./email/feedback.js";
+import { ImapFolderCursorEntity } from "./email/imap/persistence.js";
+import { EmailStateEntity } from "./email/jmap/persistence.js";
+import { EmailDispatchEntity } from "./email/persistence.js";
+import { EmailRetryEntity } from "./email/retry.js";
+import { EmailRuleEntity } from "./email/senderRules.js";
 import { ViewerMetricsEntity } from "./live-check/metrics/persistence.js";
 import { StreamerStatusEntity } from "./live-check/persistence.js";
 import { StreamSessionsEntity } from "./live-check/sessions.js";
@@ -308,6 +310,11 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     label: "Email cursor",
     description: "Fastmail JMAP state cursor for incremental email processing.",
     warning: "Deleting the cursor can replay old email through every email handler.",
+  }),
+  createManagedEntity(ImapFolderCursorEntity, {
+    label: "Email IMAP cursors",
+    description: "Per-folder iCloud IMAP UID cursors for incremental email processing.",
+    warning: "Deleting a cursor can replay old email through every email handler.",
   }),
   createManagedEntity(EmailDispatchEntity, {
     label: "Email dispatch state",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveItemsOutcome } from "../jmap/activity.js";
+import { deriveItemsOutcome } from "../email/activity.js";
 import { findNearDuplicateTracking } from "./persistence.js";
 
 describe("findNearDuplicateTracking", () => {

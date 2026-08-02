@@ -2,8 +2,8 @@ import { Injector } from "@micthiesen/mitools/config";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { EmailRuleEntity, upsertEmailRule } from "../../jmap/senderRules.js";
-import { EmailTriageService, type TriageVerdict } from "../../jmap/triage.js";
+import { EmailRuleEntity, upsertEmailRule } from "../../email/senderRules.js";
+import { EmailTriageService, type TriageVerdict } from "../../email/triage.js";
 import config from "../../utils/config.js";
 import { filterTrackingCandidate, isAliexpressOrderStatus } from "./keywords.js";
 
@@ -137,8 +137,8 @@ describe("filterTrackingCandidate — static blacklist", () => {
   });
 
   it("rejects the user's own outgoing address when configured", async () => {
-    const original = config.FASTMAIL_USERNAME;
-    config.FASTMAIL_USERNAME = "michael@example.com";
+    const original = config.EMAIL_SELF_ADDRESS;
+    config.EMAIL_SELF_ADDRESS = "michael@example.com";
     try {
       const result = await filterTrackingCandidate(
         make("michael@example.com", "Fwd: your package shipped"),
@@ -147,7 +147,7 @@ describe("filterTrackingCandidate — static blacklist", () => {
       );
       expect(result).toEqual({ pass: false, reason: "blacklisted sender" });
     } finally {
-      config.FASTMAIL_USERNAME = original;
+      config.EMAIL_SELF_ADDRESS = original;
     }
   });
 

@@ -1,30 +1,12 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { extractInterestingLinks, htmlToText } from "../htmlToText.js";
+import type { EmailAttachment, FetchedEmail } from "../types.js";
 import type { JmapContext } from "./client.js";
-import { extractInterestingLinks, htmlToText } from "./htmlToText.js";
 import {
   getMailboxRoles,
   isEmailInAllowedMailbox,
   type MailboxRoles,
 } from "./mailboxes.js";
-
-export interface EmailAttachment {
-  blobId: string;
-  name: string;
-  type: string; // MIME type
-  size: number;
-}
-
-export interface FetchedEmail {
-  id: string;
-  subject: string;
-  from: string;
-  textBody: string;
-  /** Shipment/booking-shaped URLs pulled from the HTML body (hrefs are
-   * stripped from textBody, but tracking numbers often live only in them). */
-  links: string[];
-  receivedAt: string;
-  attachments: EmailAttachment[];
-}
 
 export interface FetchResult {
   emails: FetchedEmail[];

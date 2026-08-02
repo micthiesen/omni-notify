@@ -7,14 +7,19 @@ import {
   deriveItemsOutcome,
   recordEmailActivity,
   sumCostCents,
-} from "../jmap/activity.js";
-import { withEmailLogCapture } from "../jmap/activityLogs.js";
-import type { JmapContext } from "../jmap/client.js";
-import type { EmailHandler } from "../jmap/dispatcher.js";
-import type { FetchedEmail } from "../jmap/emailFetcher.js";
-import { enqueueEmailRetry } from "../jmap/retry.js";
-import type { EmailTriageService } from "../jmap/triage.js";
+} from "../email/activity.js";
+import { withEmailLogCapture } from "../email/activityLogs.js";
+import { enqueueEmailRetry } from "../email/retry.js";
+import type { EmailTriageService } from "../email/triage.js";
+import type { EmailHandler, EmailTransport, FetchedEmail } from "../email/types.js";
 import config from "../utils/config.js";
+import {
+  type CaldavSession,
+  createCalendarEvent,
+  deleteCalendarEvent,
+  discoverCaldavSession,
+  updateCalendarEvent,
+} from "./caldav/index.js";
 import { downloadSupportedAttachments } from "./extraction/attachments.js";
 import {
   type ExistingEventContext,
@@ -27,12 +32,6 @@ import {
   truncated,
 } from "./extraction/sanitize.js";
 import type { ExtractedCalendarEvent } from "./extraction/schema.js";
-import {
-  createCalendarEvent,
-  deleteCalendarEvent,
-  discoverCalendarUrl,
-  updateCalendarEvent,
-} from "./fastmail/calendarApi.js";
 import { filterCalendarCandidate } from "./filter/keywords.js";
 import {
   type CreatedCalendarEventData,
@@ -66,12 +65,12 @@ function isTransientCalDavCode(code: number): boolean {
 export class CalendarEventPipeline implements EmailHandler {
   public readonly name = "CalendarEvents";
   private logger: Logger;
-  private ctx: JmapContext;
+  private transport: EmailTransport;
   private triage: EmailTriageService;
-  private calendarUrl?: string;
+  private caldav?: CaldavSession;
 
-  constructor(ctx: JmapContext, logger: Logger, triage: EmailTriageService) {
-    this.ctx = ctx;
+  constructor(transport: EmailTransport, logger: Logger, triage: EmailTriageService) {
+    this.transport = transport;
     this.logger = logger;
     this.triage = triage;
     const rekeyed = reconcileEventHashes();
@@ -83,7 +82,7 @@ export class CalendarEventPipeline implements EmailHandler {
   async handleEmails(emails: FetchedEmail[]): Promise<void> {
     // Filter candidates. Each email is guarded individually: a throw here
     // must not reject the whole batch, because the dispatcher advances the
-    // JMAP cursor regardless and the other emails would be lost silently.
+    // email cursor regardless and the other emails would be lost silently.
     const candidates: {
       email: FetchedEmail;
       admitReason: string;
@@ -132,15 +131,15 @@ export class CalendarEventPipeline implements EmailHandler {
     }
 
     // Discover calendar URL once (lazy init + cache)
-    if (candidates.length > 0 && !this.calendarUrl) {
+    if (candidates.length > 0 && !this.caldav) {
       try {
-        this.calendarUrl = await discoverCalendarUrl(this.logger);
+        this.caldav = await discoverCaldavSession(this.logger);
       } catch (error) {
         this.logger.error(
           "Failed to discover calendar URL, skipping batch",
           (error as Error).message,
         );
-        // The JMAP cursor still advances, so these candidates won't be retried.
+        // The email cursor still advances, so these candidates won't be retried.
         for (const { email, admitReason, admitTier } of candidates) {
           recordEmailActivity({
             pipeline: this.name,
@@ -218,7 +217,7 @@ export class CalendarEventPipeline implements EmailHandler {
 
     // Download supported attachments (PDFs, images)
     const downloaded = await downloadSupportedAttachments(
-      this.ctx,
+      this.transport,
       email.attachments,
       this.logger,
     );
@@ -363,12 +362,12 @@ export class CalendarEventPipeline implements EmailHandler {
       return { line: `${label}: duplicate, skipped`, ok: true };
     }
 
-    if (!this.calendarUrl) {
+    if (!this.caldav) {
       this.logger.error("Calendar URL not discovered, cannot create event");
       return { line: `${label}: failed (calendar URL not discovered)`, ok: false };
     }
 
-    const result = await createCalendarEvent(this.calendarUrl, event, this.logger);
+    const result = await createCalendarEvent(this.caldav, event, this.logger);
 
     if (result.status === "error") {
       this.logger.error(
@@ -425,7 +424,7 @@ export class CalendarEventPipeline implements EmailHandler {
       };
     }
 
-    if (!this.calendarUrl) {
+    if (!this.caldav) {
       this.logger.error("Calendar URL not discovered, cannot cancel event");
       return {
         line: `${label}: cancel failed (calendar URL not discovered)`,
@@ -434,7 +433,7 @@ export class CalendarEventPipeline implements EmailHandler {
     }
 
     const result = await deleteCalendarEvent(
-      this.calendarUrl,
+      this.caldav,
       record.calendarEventId,
       this.logger,
     );
@@ -492,7 +491,7 @@ export class CalendarEventPipeline implements EmailHandler {
       return { line: `${label}: no changes, skipped`, ok: true };
     }
 
-    if (!this.calendarUrl) {
+    if (!this.caldav) {
       this.logger.error("Calendar URL not discovered, cannot update event");
       return {
         line: `${label}: update failed (calendar URL not discovered)`,
@@ -501,7 +500,7 @@ export class CalendarEventPipeline implements EmailHandler {
     }
 
     const result = await updateCalendarEvent(
-      this.calendarUrl,
+      this.caldav,
       merged,
       record.calendarEventId,
       this.logger,

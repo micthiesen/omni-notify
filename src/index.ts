@@ -7,12 +7,13 @@ import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { createCalendarHandler } from "./calendar-events/index.js";
 import { importHistoricalCosts } from "./costs/migrate.js";
-import { createJmapClient, type JmapContext } from "./jmap/client.js";
-import { EmailDispatcher, type EmailHandler } from "./jmap/dispatcher.js";
-import { createEventSource } from "./jmap/eventSource.js";
-import EmailRetryTask from "./jmap/retryTask.js";
-import { EmailTriageService } from "./jmap/triage.js";
-import EmailWatchdogTask from "./jmap/watchdogTask.js";
+import { EmailDispatcher } from "./email/dispatcher.js";
+import { ImapTransport } from "./email/imap/transport.js";
+import { JmapTransport } from "./email/jmap/transport.js";
+import EmailRetryTask from "./email/retryTask.js";
+import { EmailTriageService } from "./email/triage.js";
+import type { EmailHandler, EmailTransport } from "./email/types.js";
+import EmailWatchdogTask from "./email/watchdogTask.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
 import { Platform } from "./live-check/platforms/index.js";
 import { buildStreamers, type Streamer } from "./live-check/streamers.js";
@@ -115,7 +116,7 @@ const serverOnly = process.argv.includes("--server-only");
 const registry = new TaskRegistry(logger);
 const streamers = loadStreamers();
 
-// Filled in once the JMAP features start; powers the reprocess endpoint.
+// Filled in once the email features start; powers the reprocess endpoint.
 const emailControls: EmailControls = {};
 
 // Start HTTP server
@@ -127,7 +128,7 @@ const closeServer = startServer(
   emailControls,
 );
 
-let cleanupEventSource: (() => void) | undefined;
+let cleanupEmailTransport: (() => void) | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
@@ -136,15 +137,18 @@ if (!serverOnly) {
   }
 
   // Email tasks register up-front (Scheduler requires pre-start registration)
-  // so a failed JMAP connect at boot can't silently disable them — the exact
-  // outage the watchdog exists to catch. The retry task no-ops until the
-  // controls fill in; the connect itself retries in the background.
-  if (config.FASTMAIL_API_TOKEN) {
+  // so a failed transport connect at boot can't silently disable them — the
+  // exact outage the watchdog exists to catch. The retry task no-ops until
+  // the controls fill in; the connect itself retries in the background.
+  if (config.EMAIL_TRANSPORT) {
     scheduler.register(registry.track(new EmailWatchdogTask(logger)));
     scheduler.register(registry.track(new EmailRetryTask(() => emailControls, logger)));
-    void startJmapWithRetry(logger);
+    void startEmailWithRetry(logger);
   } else {
-    logger.info("JMAP features disabled: missing FASTMAIL_API_TOKEN");
+    logger.info(
+      "Email features disabled: no transport configured " +
+        "(FASTMAIL_API_TOKEN or ICLOUD_USERNAME + ICLOUD_APP_PASSWORD)",
+    );
   }
 
   // Start scheduler (runs opted-in tasks immediately, then all tasks on schedule)
@@ -162,7 +166,7 @@ if (!serverOnly) {
 
     logger.info(`Received ${signal}, shutting down gracefully...`);
     closeServer();
-    cleanupEventSource?.();
+    cleanupEmailTransport?.();
     await scheduler.shutdown();
     await recoveryPromise;
     logger.info("Shutdown complete");
@@ -175,33 +179,33 @@ if (!serverOnly) {
   logger.info("Running in server-only mode (tasks disabled)");
 }
 
-interface JmapFeatures {
+interface EmailFeatures {
   cleanup: () => void;
-  ctx: JmapContext;
+  transport: EmailTransport;
   handlers: Map<string, EmailHandler>;
 }
 
 /**
- * Containers restart often and Fastmail can blip: a one-shot connect at boot
- * would silently disable the whole email system (including the retry drain)
- * until the next restart. Retry forever with capped backoff instead; only the
- * first failure alerts (errors reach Pushover), and the watchdog covers the
- * prolonged-outage case.
+ * Containers restart often and mail servers can blip: a one-shot connect at
+ * boot would silently disable the whole email system (including the retry
+ * drain) until the next restart. Retry forever with capped backoff instead;
+ * only the first failure alerts (errors reach Pushover), and the watchdog
+ * covers the prolonged-outage case.
  */
-async function startJmapWithRetry(parentLogger: Logger): Promise<void> {
+async function startEmailWithRetry(parentLogger: Logger): Promise<void> {
   const maxDelayMs = 5 * 60_000;
   for (let attempt = 1; ; attempt++) {
     try {
-      const jmap = await startJmapFeatures(parentLogger);
-      if (jmap) {
-        cleanupEventSource = jmap.cleanup;
-        emailControls.ctx = jmap.ctx;
-        emailControls.handlers = jmap.handlers;
+      const email = await startEmailFeatures(parentLogger);
+      if (email) {
+        cleanupEmailTransport = email.cleanup;
+        emailControls.transport = email.transport;
+        emailControls.handlers = email.handlers;
       }
       return;
     } catch (error) {
       const delayMs = Math.min(30_000 * 2 ** (attempt - 1), maxDelayMs);
-      const message = `Failed to start JMAP features (attempt ${attempt}), retrying in ${Math.round(delayMs / 1000)}s`;
+      const message = `Failed to start email features (attempt ${attempt}), retrying in ${Math.round(delayMs / 1000)}s`;
       if (attempt === 1) {
         parentLogger.error(message, (error as Error).message);
       } else {
@@ -212,27 +216,44 @@ async function startJmapWithRetry(parentLogger: Logger): Promise<void> {
   }
 }
 
-async function startJmapFeatures(
-  parentLogger: Logger,
-): Promise<JmapFeatures | undefined> {
-  if (!config.FASTMAIL_API_TOKEN) return undefined;
+async function createEmailTransport(
+  logger: Logger,
+): Promise<EmailTransport | undefined> {
+  switch (config.EMAIL_TRANSPORT) {
+    case "fastmail":
+      if (!config.FASTMAIL_API_TOKEN) return undefined;
+      return JmapTransport.create(config.FASTMAIL_API_TOKEN, logger.extend("JMAP"));
+    case "icloud":
+      if (!config.ICLOUD_USERNAME || !config.ICLOUD_APP_PASSWORD) return undefined;
+      return new ImapTransport(
+        { user: config.ICLOUD_USERNAME, pass: config.ICLOUD_APP_PASSWORD },
+        logger.extend("IMAP"),
+      );
+    default:
+      return undefined;
+  }
+}
 
-  const jmapLogger = parentLogger.extend("JMAP");
-  const ctx = await createJmapClient(config.FASTMAIL_API_TOKEN, jmapLogger);
+async function startEmailFeatures(
+  parentLogger: Logger,
+): Promise<EmailFeatures | undefined> {
+  const emailLogger = parentLogger.extend("Email");
+  const transport = await createEmailTransport(parentLogger);
+  if (!transport) return undefined;
 
   // Create dispatcher and register handlers; one shared triage service so
   // concurrent pipelines classify each email with a single model call.
-  const dispatcher = new EmailDispatcher(ctx, jmapLogger);
-  const triage = new EmailTriageService(jmapLogger.extend("Triage"));
+  const dispatcher = new EmailDispatcher(transport, emailLogger);
+  const triage = new EmailTriageService(emailLogger.extend("Triage"));
 
   const parcel = createParcelHandler(parentLogger, triage);
   if (parcel) dispatcher.register(parcel);
 
-  const calendar = createCalendarHandler(ctx, parentLogger, triage);
+  const calendar = createCalendarHandler(transport, parentLogger, triage);
   if (calendar) dispatcher.register(calendar);
 
   if (dispatcher.handlerCount === 0) {
-    jmapLogger.info("No JMAP pipelines active");
+    emailLogger.info("No email pipelines active");
     return undefined;
   }
 
@@ -240,11 +261,9 @@ async function startJmapFeatures(
   if (parcel) handlers.set(parcel.name, parcel);
   if (calendar) handlers.set(calendar.name, calendar);
 
-  const closeEventSource = await createEventSource(
-    ctx,
-    () => dispatcher.onStateChange(),
-    jmapLogger,
+  await transport.start(() => dispatcher.onMailEvent());
+  emailLogger.info(
+    `Started ${transport.name} transport with ${dispatcher.handlerCount} pipeline(s)`,
   );
-  jmapLogger.info(`Started with ${dispatcher.handlerCount} pipeline(s)`);
-  return { cleanup: closeEventSource, ctx, handlers };
+  return { cleanup: () => transport.stop(), transport, handlers };
 }

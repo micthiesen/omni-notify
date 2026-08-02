@@ -1,15 +1,9 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { JmapContext } from "./client.js";
-import type { EmailHandler } from "./dispatcher.js";
-import type { FetchedEmail } from "./emailFetcher.js";
 import { EmailRetryEntity, enqueueEmailRetry } from "./retry.js";
 import EmailRetryTask from "./retryTask.js";
-
-vi.mock("./emailFetcher.js", () => ({
-  fetchEmailById: vi.fn(async (): Promise<FetchedEmail> => fakeEmail),
-}));
+import type { EmailHandler, EmailTransport, FetchedEmail } from "./types.js";
 
 Injector.configure({
   config: {
@@ -32,7 +26,9 @@ const fakeEmail: FetchedEmail = {
 };
 
 const logger = new Logger("Test");
-const fakeCtx = {} as JmapContext;
+const fakeTransport = {
+  fetchEmailById: async (): Promise<FetchedEmail> => fakeEmail,
+} as unknown as EmailTransport;
 
 function dueRow(pipeline: string, emailId: string, attempts: number): void {
   EmailRetryEntity.upsert({
@@ -64,7 +60,10 @@ describe("EmailRetryTask", () => {
       handleEmails: async () => {},
     };
     const task = new EmailRetryTask(
-      () => ({ ctx: fakeCtx, handlers: new Map([["ParcelTracker", handler]]) }),
+      () => ({
+        transport: fakeTransport,
+        handlers: new Map([["ParcelTracker", handler]]),
+      }),
       logger,
     );
 
@@ -86,7 +85,10 @@ describe("EmailRetryTask", () => {
       },
     };
     const task = new EmailRetryTask(
-      () => ({ ctx: fakeCtx, handlers: new Map([["ParcelTracker", handler]]) }),
+      () => ({
+        transport: fakeTransport,
+        handlers: new Map([["ParcelTracker", handler]]),
+      }),
       logger,
     );
 
@@ -109,7 +111,10 @@ describe("EmailRetryTask", () => {
       },
     };
     const task = new EmailRetryTask(
-      () => ({ ctx: fakeCtx, handlers: new Map([["ParcelTracker", handler]]) }),
+      () => ({
+        transport: fakeTransport,
+        handlers: new Map([["ParcelTracker", handler]]),
+      }),
       logger,
     );
 
@@ -126,7 +131,10 @@ describe("EmailRetryTask", () => {
       },
     };
     const task = new EmailRetryTask(
-      () => ({ ctx: fakeCtx, handlers: new Map([["ParcelTracker", handler]]) }),
+      () => ({
+        transport: fakeTransport,
+        handlers: new Map([["ParcelTracker", handler]]),
+      }),
       logger,
     );
 

@@ -196,6 +196,16 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `google:gemini-3.1-flash-lite`) |
 | `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `google:gemini-3.5-flash`) |
 | `TRIAGE_MODEL` | No | AI model for shared email triage (default: `google:gemini-3.1-flash-lite`) |
+| `EMAIL_TRANSPORT` | No | Email transport: `fastmail` (JMAP) or `icloud` (IMAP). Defaults to `fastmail` while `FASTMAIL_API_TOKEN` is set, else `icloud` when its credentials exist. |
+| `CALDAV_PROVIDER` | No | CalDAV backend for calendar-event writes: `fastmail` or `icloud` (default: follows `EMAIL_TRANSPORT`) |
+| `EMAIL_SELF_ADDRESS` | No | Own receiving address for self-sent-mail filtering (default: `FASTMAIL_USERNAME`) |
+| `FASTMAIL_API_TOKEN` | No | Fastmail JMAP API token (enables the Fastmail email transport) |
+| `FASTMAIL_APP_PASSWORD` / `FASTMAIL_USERNAME` | No | Fastmail CalDAV credentials |
+| `FASTMAIL_CALENDAR_ID` | No | Pins the Fastmail calendar (default: auto-discover) |
+| `ICLOUD_USERNAME` | No | iCloud primary username (`user@icloud.com`, not the custom-domain address); IMAP + CalDAV |
+| `ICLOUD_APP_PASSWORD` | No | iCloud app-specific password (IMAP + CalDAV) |
+| `ICLOUD_CALENDAR_NAME` | No | Display name of the iCloud calendar to write to (e.g. `Personal`) |
+| `ICLOUD_CALENDAR_URL` | No | Pins the iCloud calendar collection URL (default: RFC 6764 discovery) |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Required for `google:` models |
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |

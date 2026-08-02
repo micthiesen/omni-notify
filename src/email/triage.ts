@@ -3,8 +3,8 @@ import { generateText, Output } from "ai";
 import { z } from "zod";
 import { hasPrice, llmCostCents } from "../ai/cost.js";
 import { getTriageModel } from "../ai/registry.js";
-import type { FetchedEmail } from "./emailFetcher.js";
 import { formatFeedbackDigest } from "./feedback.js";
+import type { FetchedEmail } from "./types.js";
 
 export interface TriageVerdict {
   parcel: boolean;

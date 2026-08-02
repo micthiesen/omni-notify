@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExtractedCalendarEvent } from "../extraction/schema.js";
-import { buildICalendar } from "./calendarApi.js";
+import { buildICalendar } from "./ics.js";
 
 const evt = (overrides: Partial<ExtractedCalendarEvent>): ExtractedCalendarEvent => ({
   action: "create",

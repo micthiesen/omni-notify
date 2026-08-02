@@ -22,18 +22,15 @@ import {
   getEmailActivity,
   getRecentEmailActivity,
   KEEP_PER_PIPELINE,
-} from "./jmap/activity.js";
-import { getEmailActivityLogs } from "./jmap/activityLogs.js";
-import type { JmapContext } from "./jmap/client.js";
-import type { EmailHandler } from "./jmap/dispatcher.js";
-import { fetchEmailById } from "./jmap/emailFetcher.js";
+} from "./email/activity.js";
+import { getEmailActivityLogs } from "./email/activityLogs.js";
 import {
   deleteEmailFeedback,
   type EmailFeedbackVerdict,
   listEmailFeedback,
   recordEmailFeedback,
-} from "./jmap/feedback.js";
-import { clearEmailRetry } from "./jmap/retry.js";
+} from "./email/feedback.js";
+import { clearEmailRetry } from "./email/retry.js";
 import {
   deleteEmailRule,
   type EmailRuleScope,
@@ -41,7 +38,8 @@ import {
   listEmailRules,
   normalizeRulePattern,
   upsertEmailRuleChecked,
-} from "./jmap/senderRules.js";
+} from "./email/senderRules.js";
+import type { EmailHandler, EmailTransport } from "./email/types.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
@@ -377,10 +375,10 @@ function matchesBuiltinBlock(pattern: string, scope: EmailRuleScope): boolean {
 
 /**
  * Live email-pipeline handles for interactive endpoints (reprocess). Filled
- * in by index.ts after the JMAP features start; empty in server-only mode.
+ * in by index.ts after the email features start; empty in server-only mode.
  */
 export interface EmailControls {
-  ctx?: JmapContext;
+  transport?: EmailTransport;
   handlers?: Map<string, EmailHandler>;
 }
 
@@ -814,18 +812,18 @@ export function startServer(
     });
   });
 
-  // Re-fetch the email from Fastmail and run it through its pipeline again.
+  // Re-fetch the email from the mail server and run it through its pipeline again.
   // Dedup gates make this safe: anything that already landed is skipped.
   app.post("/api/email-activity/:activityId/reprocess", async (c) => {
     const activityId = c.req.param("activityId");
     const activity = getEmailActivity(activityId);
     if (!activity) return c.json({ error: "Unknown activity" }, 404);
-    const { ctx, handlers } = emailControls;
+    const { transport, handlers } = emailControls;
     const handler = handlers?.get(activity.pipeline);
-    if (!ctx || !handler) {
+    if (!transport || !handler) {
       return c.json({ error: "Email pipelines are not active" }, 503);
     }
-    const email = await fetchEmailById(ctx, activity.emailId, logger);
+    const email = await transport.fetchEmailById(activity.emailId);
     if (!email) {
       return c.json({ error: "Email no longer exists in the mailbox" }, 404);
     }

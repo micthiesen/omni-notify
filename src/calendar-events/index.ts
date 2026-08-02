@@ -1,22 +1,21 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import type { JmapContext } from "../jmap/client.js";
-import type { EmailHandler } from "../jmap/dispatcher.js";
-import type { EmailTriageService } from "../jmap/triage.js";
-import config from "../utils/config.js";
+import type { EmailTriageService } from "../email/triage.js";
+import type { EmailHandler, EmailTransport } from "../email/types.js";
+import { getCaldavProvider } from "./caldav/index.js";
 import { CalendarEventPipeline } from "./pipeline.js";
 
 export function createCalendarHandler(
-  ctx: JmapContext,
+  transport: EmailTransport,
   parentLogger: Logger,
   triage: EmailTriageService,
 ): EmailHandler | undefined {
   const logger = parentLogger.extend("CalendarEvents");
 
-  if (!config.FASTMAIL_USERNAME) {
-    logger.info("Disabled: missing FASTMAIL_USERNAME (required for CalDAV)");
+  if (!getCaldavProvider()) {
+    logger.info("Disabled: no CalDAV credentials (Fastmail or iCloud) configured");
     return undefined;
   }
 
   logger.info("Pipeline created");
-  return new CalendarEventPipeline(ctx, logger, triage);
+  return new CalendarEventPipeline(transport, logger, triage);
 }

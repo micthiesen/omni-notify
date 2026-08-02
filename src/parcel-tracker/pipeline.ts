@@ -6,12 +6,11 @@ import {
   deriveItemsOutcome,
   recordEmailActivity,
   sumCostCents,
-} from "../jmap/activity.js";
-import { withEmailLogCapture } from "../jmap/activityLogs.js";
-import type { EmailHandler } from "../jmap/dispatcher.js";
-import type { FetchedEmail } from "../jmap/emailFetcher.js";
-import { enqueueEmailRetry } from "../jmap/retry.js";
-import type { EmailTriageService } from "../jmap/triage.js";
+} from "../email/activity.js";
+import { withEmailLogCapture } from "../email/activityLogs.js";
+import { enqueueEmailRetry } from "../email/retry.js";
+import type { EmailTriageService } from "../email/triage.js";
+import type { EmailHandler, FetchedEmail } from "../email/types.js";
 import config from "../utils/config.js";
 import { selectValidCandidates } from "./carriers/candidates.js";
 import { getValidCarrierCodes } from "./carriers/carrierMap.js";

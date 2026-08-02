@@ -1,6 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import type { EmailHandler } from "../jmap/dispatcher.js";
-import type { EmailTriageService } from "../jmap/triage.js";
+import type { EmailTriageService } from "../email/triage.js";
+import type { EmailHandler } from "../email/types.js";
 import config from "../utils/config.js";
 import { DeliveryPipeline } from "./pipeline.js";
 

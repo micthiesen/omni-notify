@@ -1,8 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import type { JmapContext } from "./client.js";
-import type { EmailHandler } from "./dispatcher.js";
-import { fetchEmailById } from "./emailFetcher.js";
 import {
   clearEmailRetry,
   EmailRetryEntity,
@@ -10,15 +7,16 @@ import {
   MAX_RETRY_ATTEMPTS,
   selectDueRetries,
 } from "./retry.js";
+import type { EmailHandler, EmailTransport } from "./types.js";
 
 /**
  * Replays transiently-failed email processing: pipelines enqueue retries via
  * enqueueEmailRetry, this task re-fetches each email and reruns the owning
  * pipeline's handler (pipeline dedup gates make that idempotent).
  */
-/** Live JMAP handles, filled in once the pipelines connect (possibly late). */
+/** Live transport handles, filled in once the pipelines connect (possibly late). */
 export interface EmailPipelineControls {
-  ctx?: JmapContext;
+  transport?: EmailTransport;
   handlers?: Map<string, EmailHandler>;
 }
 
@@ -30,7 +28,7 @@ export default class EmailRetryTask extends ScheduledTask {
   private readonly logger: Logger;
   private lastRunSummary: string | undefined;
 
-  // The task is registered before the JMAP connection is (re)established so it
+  // The task is registered before the transport is (re)connected so it
   // survives a failed connect at boot; it no-ops until controls are filled.
   constructor(getControls: () => EmailPipelineControls, logger: Logger) {
     super();
@@ -50,11 +48,11 @@ export default class EmailRetryTask extends ScheduledTask {
       return;
     }
 
-    const { ctx, handlers } = this.getControls();
-    if (!ctx || !handlers) {
+    const { transport, handlers } = this.getControls();
+    if (!transport || !handlers) {
       this.lastRunSummary = `${due.length} due, pipelines not connected yet`;
       this.logger.info(
-        `${due.length} retry(ies) due but the JMAP pipelines are not connected; deferring`,
+        `${due.length} retry(ies) due but the email pipelines are not connected; deferring`,
       );
       return;
     }
@@ -77,7 +75,7 @@ export default class EmailRetryTask extends ScheduledTask {
         continue;
       }
 
-      const email = await fetchEmailById(ctx, row.emailId, this.logger);
+      const email = await transport.fetchEmailById(row.emailId);
       if (!email) {
         this.logger.info(
           `Email ${row.emailId} no longer exists; dropping ${row.pipeline} retry`,
