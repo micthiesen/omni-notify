@@ -170,8 +170,8 @@ describe("pickCalendarCollection", () => {
     expect(pickCalendarCollection(collections, "personal")?.name).toBe("Personal");
   });
 
-  it("falls back to a default-sounding VEVENT calendar", () => {
-    expect(pickCalendarCollection(collections, undefined)?.name).toBe("Home");
+  it("falls back to a default-sounding VEVENT calendar in preference order", () => {
+    expect(pickCalendarCollection(collections, undefined)?.name).toBe("Personal");
   });
 
   it("prefers the account-default calendar named iCloud when present", () => {

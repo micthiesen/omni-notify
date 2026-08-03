@@ -106,9 +106,10 @@ export function pickCalendarCollection(
     if (preferred) return preferred;
   }
 
-  // "iCloud" is the display name of the account's default calendar.
-  const byDefaultName = eventCapable.find((c) =>
-    ["icloud", "default", "personal", "home"].includes(c.name.toLowerCase()),
-  );
-  return byDefaultName ?? eventCapable[0];
+  // In preference order; "iCloud" is the account-default calendar's name.
+  for (const fallback of ["icloud", "default", "personal", "home"]) {
+    const match = eventCapable.find((c) => c.name.toLowerCase() === fallback);
+    if (match) return match;
+  }
+  return eventCapable[0];
 }
