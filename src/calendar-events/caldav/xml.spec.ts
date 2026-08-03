@@ -174,6 +174,14 @@ describe("pickCalendarCollection", () => {
     expect(pickCalendarCollection(collections, undefined)?.name).toBe("Home");
   });
 
+  it("prefers the account-default calendar named iCloud when present", () => {
+    const withDefault = [
+      ...collections,
+      { href: "/x/calendars/work/", name: "iCloud", components: ["VEVENT"] },
+    ];
+    expect(pickCalendarCollection(withDefault, undefined)?.name).toBe("iCloud");
+  });
+
   it("never picks a VTODO-only collection", () => {
     expect(pickCalendarCollection(collections, "Reminders")?.name).not.toBe(
       "Reminders",
