@@ -859,11 +859,11 @@ th.data-actions-column {
 }
 
 .live-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding: 0.9rem 1.05rem;
-  text-decoration: none;
+  gap: 0.5rem;
+  padding: 1rem 1.15rem;
   color: var(--text);
   border-color: rgba(251, 77, 103, 0.3);
   transition: border-color 0.15s ease, transform 0.15s ease;
@@ -874,15 +874,63 @@ th.data-actions-column {
   transform: translateY(-1px);
 }
 
+/* Stretched-link overlay: the whole card opens the stream in a new tab.
+   Transparent, sits above the static content but below .live-card-details
+   so the details control remains independently tappable. */
+.live-card-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+/* Compact secondary affordance routing to the streamer detail page. Sits
+   above the overlay in its own stacking context; the ::after pseudo-element
+   pads its hit area to a real touch target without growing it visually. */
+.live-card-details {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.7rem;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.live-card-details:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.live-card-details::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
 .live-card-header {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* Leaves room so the header text never runs under the details control. */
+  padding-right: 4.5rem;
 }
 
 .live-name {
   font-weight: 650;
-  font-size: 1rem;
+  font-size: 1.05rem;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -922,8 +970,6 @@ th.data-actions-column {
 }
 
 .live-meta {
-  display: flex;
-  gap: 0.9rem;
   font-size: 0.78rem;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -932,6 +978,10 @@ th.data-actions-column {
 .live-uptime {
   color: var(--live);
   font-weight: 600;
+}
+
+.live-empty {
+  font-size: 0.9rem;
 }
 
 .offline-strip {
@@ -971,6 +1021,96 @@ th.data-actions-column {
 .offline-when {
   font-size: 0.72rem;
   color: var(--text-muted);
+}
+
+/* ===== On deck ===== */
+/* Secondary "what else could I watch" strip — deliberately quieter than
+   Live Now: neutral border, no lift-on-hover, no glow. */
+
+.ondeck-row {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  padding-bottom: 0.3rem;
+  scrollbar-width: thin;
+}
+
+.ondeck-row::-webkit-scrollbar {
+  height: 6px;
+}
+
+.ondeck-row::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+.ondeck-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: 132px;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  padding: 0.55rem;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease;
+}
+
+.ondeck-card:hover {
+  border-color: var(--border-strong);
+}
+
+.ondeck-poster,
+.ondeck-poster-placeholder {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--radius-xs);
+  background: var(--bg-inset);
+}
+
+.ondeck-poster-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.ondeck-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ondeck-title-row {
+  line-height: 1.25;
+}
+
+.ondeck-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ondeck-year {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.ondeck-why {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ===== Task cards ===== */
@@ -2209,6 +2349,16 @@ button.task-last-run,
   .task-grid,
   .live-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* Live cards are the primary mobile action (open the stream at a glance),
+     so give them a hero-sized tap area in the single-column layout. */
+  .live-grid {
+    gap: 0.75rem;
+  }
+
+  .live-card {
+    padding: 1.25rem 1.3rem;
   }
 
   .rec-poster {

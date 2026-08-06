@@ -57,11 +57,18 @@ interface StreamerBase {
   bindings: StreamerBinding[];
 }
 
+export type StreamerTier = "primary" | "background";
+
 export type LiveStreamer = StreamerBase & {
   live: true;
   title: string;
   startedAt: number;
   maxViewerCount: number;
+  /** Current viewer count, when the platform reports it live. */
+  viewerCount: number | null;
+  /** Twitch/Kick category or game name, when reported. */
+  category: string | null;
+  tier: StreamerTier;
   primary: StreamerBinding;
 };
 
@@ -70,6 +77,7 @@ export type OfflineStreamer = StreamerBase & {
   lastStartedAt: number | null;
   lastEndedAt: number | null;
   lastMaxViewerCount: number | null;
+  tier: StreamerTier;
 };
 
 export type StreamerView = LiveStreamer | OfflineStreamer;
@@ -97,10 +105,23 @@ export interface StreamSession {
   username: string;
 }
 
+/** Newest delivered-but-unwatched media recommendation, for the home page
+ * "what else could I watch" strip. Already filtered/sorted/capped server-side. */
+export interface OnDeckItem {
+  recommendationId: string;
+  title: string;
+  mediaType: MediaType;
+  year: number | null;
+  posterPath: string | null;
+  whyForUser: string | null;
+  recommendedAt: number;
+}
+
 export interface Snapshot {
   tasks: TaskInfo[];
   streamers: StreamerView[];
   runs: TaskRun[];
+  onDeck: OnDeckItem[];
 }
 
 export type DataValue =

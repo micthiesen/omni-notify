@@ -3,6 +3,7 @@ import type { TaskInfo, TaskRun } from "../api";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { LiveNow } from "../components/LiveNow";
 import { LogViewer } from "../components/LogViewer";
+import { OnDeck } from "../components/OnDeck";
 import { StatStrip } from "../components/StatStrip";
 import { TaskCard } from "../components/TaskCard";
 import { Toast, useToast } from "../components/Toast";
@@ -55,9 +56,11 @@ export default function HomePage() {
         </div>
       )}
 
-      <StatStrip snapshot={snapshot} />
-
       <LiveNow streamers={snapshot.streamers} />
+
+      <OnDeck items={snapshot.onDeck} />
+
+      <StatStrip snapshot={snapshot} />
 
       <section className="page-section">
         <h2 className="section-title">Tasks</h2>
