@@ -76,6 +76,8 @@ export class ImapTransport implements EmailTransport {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs = 0;
   private stopped = false;
+  /** Last bulk-import-guard skip count per folder, to de-noise repeat logs. */
+  private lastSkipCounts = new Map<string, number>();
 
   constructor(auth: ImapAuth, logger: Logger) {
     this.auth = auth;
@@ -268,10 +270,17 @@ export class ImapTransport implements EmailTransport {
         (m) => m.internalDate === undefined || m.internalDate.getTime() >= cutoff,
       );
       if (fresh.length < metas.length) {
-        this.logger.info(
-          `${folder}: skipping ${metas.length - fresh.length} message(s) older ` +
+        // During an imapsync backfill this fires on every sweep for weeks; only
+        // the first occurrence and count changes are worth surfacing at info.
+        const skipped = metas.length - fresh.length;
+        const level = this.lastSkipCounts.get(folder) === skipped ? "debug" : "info";
+        this.lastSkipCounts.set(folder, skipped);
+        this.logger[level](
+          `${folder}: skipping ${skipped} message(s) older ` +
             `than ${MAX_EMAIL_AGE_MS / 86_400_000}d (bulk import guard)`,
         );
+      } else {
+        this.lastSkipCounts.delete(folder);
       }
 
       const selected = fresh.slice(0, MAX_EMAILS_PER_PASS);
