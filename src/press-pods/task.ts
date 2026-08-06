@@ -190,8 +190,8 @@ export default class PressPodsTask extends ScheduledTask {
 
 function requiredModelCredentials(): [string, unknown][] {
   const modelIds = [
-    config.PRESSPODS_METADATA_MODEL ?? "google:gemini-3.5-flash",
-    config.PRESSPODS_CLEANING_MODEL ?? "google:gemini-3.5-flash",
+    config.PRESSPODS_METADATA_MODEL ?? "openai:gpt-5.6-luna",
+    config.PRESSPODS_CLEANING_MODEL ?? "openai:gpt-5.6-terra",
   ];
   const providers = new Set(modelIds.map((id) => id.split(":", 1)[0]));
   const credentials: [string, unknown][] = [];

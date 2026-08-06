@@ -13,7 +13,7 @@ export const modelRegistry = createProviderRegistry({ anthropic, google, openai 
 export function getBriefingModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.BRIEFING_MODEL,
-    "google:gemini-3.5-flash",
+    "openai:gpt-5.6-luna",
     "briefings",
     "generate",
   );
@@ -22,7 +22,7 @@ export function getBriefingModel(): { model: LanguageModel; modelId: string } {
 export function getExtractionModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.EXTRACTION_MODEL,
-    "google:gemini-3.1-flash-lite",
+    "openai:gpt-5.6-luna",
     "parcel-tracker",
     "extract-deliveries",
   );
@@ -30,9 +30,9 @@ export function getExtractionModel(): { model: LanguageModel; modelId: string } 
 
 /**
  * Calendar extraction runs on a stronger model than parcel extraction: every
- * serious calendar failure in production traced to flash-lite output
+ * serious calendar failure in production traced to cheap-tier output
  * degeneration (repeated objects, field soup in timeZone), and triage keeps
- * call volume low enough to afford it.
+ * call volume low enough to afford the mid tier.
  */
 export function getCalendarExtractionModel(): {
   model: LanguageModel;
@@ -40,7 +40,7 @@ export function getCalendarExtractionModel(): {
 } {
   return resolveModel(
     config.CALENDAR_EXTRACTION_MODEL,
-    "google:gemini-3.5-flash",
+    "openai:gpt-5.6-terra",
     "calendar-events",
     "extract-events",
   );
@@ -50,7 +50,7 @@ export function getCalendarExtractionModel(): {
 export function getTriageModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.TRIAGE_MODEL,
-    "google:gemini-3.1-flash-lite",
+    "openai:gpt-5.6-luna",
     "email-triage",
     "classify",
   );
@@ -108,7 +108,7 @@ export function getPodcastTasteReflectionModel(): {
 export function getPressPodsMetadataModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.PRESSPODS_METADATA_MODEL,
-    "google:gemini-3.5-flash",
+    "openai:gpt-5.6-luna",
     "press-pods",
     "rate-retrieval",
   );
@@ -117,7 +117,7 @@ export function getPressPodsMetadataModel(): { model: LanguageModel; modelId: st
 export function getPressPodsCleaningModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.PRESSPODS_CLEANING_MODEL,
-    "google:gemini-3.5-flash",
+    "openai:gpt-5.6-terra",
     "press-pods",
     "clean-narration",
   );

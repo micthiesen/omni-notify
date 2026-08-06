@@ -27,18 +27,18 @@ export interface ModelPrice {
 // pricing found for this exact model id) — verify before trusting cost
 // totals derived from them.
 export const MODEL_PRICES: Record<string, ModelPrice> = {
-  // --- Google Gemini --- (ported from src/press-pods/costs.ts)
+  // --- Google Gemini --- (ai.google.dev/gemini-api/docs/pricing, 2026-08)
   "gemini-3-flash-preview": {
     inputCentsPerToken: 0.00005, // $0.50 / 1M tokens
     outputCentsPerToken: 0.0003, // $3.00 / 1M tokens
   },
   "gemini-3.5-flash": {
-    inputCentsPerToken: 0.00005, // $0.50 / 1M tokens
-    outputCentsPerToken: 0.0003, // $3.00 / 1M tokens
+    inputCentsPerToken: 0.00015, // $1.50 / 1M tokens
+    outputCentsPerToken: 0.0009, // $9.00 / 1M tokens
   },
   "gemini-3.1-flash-lite": {
-    inputCentsPerToken: 0.00001, // $0.10 / 1M tokens
-    outputCentsPerToken: 0.00004, // $0.40 / 1M tokens
+    inputCentsPerToken: 0.00003, // $0.30 / 1M tokens
+    outputCentsPerToken: 0.00025, // $2.50 / 1M tokens
   },
   // ESTIMATED: no confirmed pricing found; assumed to sit between
   // gemini-3.1-flash-lite and gemini-3.5-flash, consistent with the "flash"
@@ -51,23 +51,27 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   // held flat pricing across Gemini generations, so this mirrors
   // gemini-3.1-flash-lite.
   "gemini-3.5-flash-lite": {
-    inputCentsPerToken: 0.00001, // $0.10 / 1M tokens (estimated)
-    outputCentsPerToken: 0.00004, // $0.40 / 1M tokens (estimated)
+    inputCentsPerToken: 0.00003, // $0.30 / 1M tokens (estimated)
+    outputCentsPerToken: 0.00025, // $2.50 / 1M tokens (estimated)
   },
 
-  // --- OpenAI ---
-  // ESTIMATED: no confirmed pricing found for this model id; assumed
-  // comparable to the GPT-4o-tier flagship rate.
+  // --- OpenAI --- (developers.openai.com model pages, post 2026-07-30 cuts;
+  // the bare "gpt-5.6" alias routes to Sol, so both ids carry the Sol rate)
   "gpt-5.6": {
-    inputCentsPerToken: 0.00025, // $2.50 / 1M tokens (estimated)
-    outputCentsPerToken: 0.001, // $10.00 / 1M tokens (estimated)
+    inputCentsPerToken: 0.0005, // $5.00 / 1M tokens
+    outputCentsPerToken: 0.003, // $30.00 / 1M tokens
   },
-  // ESTIMATED: no confirmed pricing found; "-luna" reads as the cheap/mini
-  // variant (used for shortlist scoring / taste reflection where volume is
-  // high), assumed comparable to the GPT-4o-mini-tier rate.
+  "gpt-5.6-sol": {
+    inputCentsPerToken: 0.0005, // $5.00 / 1M tokens
+    outputCentsPerToken: 0.003, // $30.00 / 1M tokens
+  },
+  "gpt-5.6-terra": {
+    inputCentsPerToken: 0.0002, // $2.00 / 1M tokens
+    outputCentsPerToken: 0.0012, // $12.00 / 1M tokens
+  },
   "gpt-5.6-luna": {
-    inputCentsPerToken: 0.000015, // $0.15 / 1M tokens (estimated)
-    outputCentsPerToken: 0.00006, // $0.60 / 1M tokens (estimated)
+    inputCentsPerToken: 0.00002, // $0.20 / 1M tokens
+    outputCentsPerToken: 0.00012, // $1.20 / 1M tokens
   },
 };
 

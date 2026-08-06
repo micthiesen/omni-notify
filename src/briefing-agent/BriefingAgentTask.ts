@@ -117,8 +117,11 @@ export class BriefingAgentTask extends ScheduledTask {
 
     const { steps, usage } = await generateText({
       model,
+      // Per-provider options are ignored by the other providers, so both are
+      // safe to declare regardless of which model BRIEFING_MODEL resolves to.
       providerOptions: {
         google: { thinkingConfig: { thinkingLevel: "high" as const } },
+        openai: { reasoningEffort: "high" as const },
       },
       tools,
       stopWhen: isStepCount(20),
