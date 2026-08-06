@@ -1,4 +1,4 @@
-import cronParser from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 
 const HOUR_MS = 60 * 60 * 1000;
 const MIN_CATCH_UP_CADENCE_MS = 6 * HOUR_MS;
@@ -52,8 +52,8 @@ export function decideCatchUp(
 }
 
 function getNearbyOccurrences(schedule: string, now: number): number[] {
-  const previous = cronParser.parseExpression(schedule, { currentDate: new Date(now) });
-  const next = cronParser.parseExpression(schedule, { currentDate: new Date(now) });
+  const previous = CronExpressionParser.parse(schedule, { currentDate: new Date(now) });
+  const next = CronExpressionParser.parse(schedule, { currentDate: new Date(now) });
   const occurrences: number[] = [];
 
   for (let i = 0; i < OCCURRENCES_PER_SIDE; i++) {

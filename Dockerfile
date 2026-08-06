@@ -1,8 +1,8 @@
-FROM node:24.18.0-slim AS build
+FROM node:24.19.0-slim AS build
 
 ENV CI=true
 
-RUN npm install -g pnpm@11.13.1
+RUN npm install -g pnpm@11.20.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -14,7 +14,7 @@ COPY . .
 RUN pnpm run build && pnpm --filter frontend run build
 RUN pnpm prune --prod
 
-FROM node:24.18.0-slim AS runtime
+FROM node:24.19.0-slim AS runtime
 
 # ffmpeg: PressPods audio pipeline (loudnorm + intro concat)
 RUN apt-get update \
