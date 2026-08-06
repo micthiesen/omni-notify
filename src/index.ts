@@ -16,7 +16,11 @@ import type { EmailHandler, EmailTransport } from "./email/types.js";
 import EmailWatchdogTask from "./email/watchdogTask.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
 import { Platform } from "./live-check/platforms/index.js";
-import { buildStreamers, type Streamer } from "./live-check/streamers.js";
+import {
+  buildStreamers,
+  dropPlatformBindings,
+  type Streamer,
+} from "./live-check/streamers.js";
 import LiveCheckTask from "./live-check/task.js";
 import { createParcelHandler } from "./parcel-tracker/index.js";
 import PetTrackerTask from "./pet-tracker/task.js";
@@ -41,19 +45,51 @@ if (importedCostEvents > 0) {
   logger.info(`Imported ${importedCostEvents} historical cost event(s)`);
 }
 
+// channels.json is the sole source of channel config now; these env vars are
+// silently ignored by utils/config.ts (dropped from its schema), so warn
+// instead of leaving a stale, no-longer-honored value unexplained.
+const LEGACY_CHANNEL_ENV_VARS = [
+  "YT_CHANNEL_NAMES",
+  "TWITCH_CHANNEL_NAMES",
+  "KICK_CHANNEL_NAMES",
+] as const;
+
+function warnOnLegacyChannelEnvVars(): void {
+  for (const key of LEGACY_CHANNEL_ENV_VARS) {
+    if (process.env[key]) {
+      logger.warn(
+        `${key} is no longer read — channels are configured in channels.json`,
+      );
+    }
+  }
+}
+
 function loadStreamers(): Streamer[] {
-  const kickConfigured = config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET;
-  if (config.KICK_CHANNEL_NAMES.length > 0 && !kickConfigured) {
+  warnOnLegacyChannelEnvVars();
+
+  const streamers = buildStreamers(loadChannelsConfig());
+  const kickConfigured = Boolean(config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET);
+  if (kickConfigured) return streamers;
+
+  const { streamers: withoutKick, droppedAny } = dropPlatformBindings(
+    streamers,
+    Platform.Kick,
+  );
+  if (droppedAny) {
     logger.warn(
       "Kick channels configured but KICK_CLIENT_ID/KICK_CLIENT_SECRET missing; skipping Kick",
     );
+    // A streamer whose ONLY binding was Kick vanishes from tracking entirely —
+    // name those specifically rather than letting them disappear silently.
+    const remaining = new Set(withoutKick.map((s) => s.id));
+    const fullyDropped = streamers
+      .filter((s) => !remaining.has(s.id))
+      .map((s) => s.displayName);
+    if (fullyDropped.length > 0) {
+      logger.warn(`Not tracked at all (Kick-only): ${fullyDropped.join(", ")}`);
+    }
   }
-  const sources: [Platform, { username: string; displayName: string }[]][] = [
-    [Platform.YouTube, config.YT_CHANNEL_NAMES],
-    [Platform.Twitch, config.TWITCH_CHANNEL_NAMES],
-    [Platform.Kick, kickConfigured ? config.KICK_CHANNEL_NAMES : []],
-  ];
-  return buildStreamers(sources, loadChannelsConfig(logger));
+  return withoutKick;
 }
 
 function buildTasks(streamers: Streamer[]): ScheduledTask[] {

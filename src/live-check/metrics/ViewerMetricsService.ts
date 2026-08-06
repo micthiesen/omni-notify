@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
+import type { ViewerRecordScope } from "../notificationPolicy.js";
 import { getViewerMetrics, upsertViewerMetrics } from "./persistence.js";
 import {
   type ConfirmedPeak,
@@ -14,6 +15,7 @@ const HYSTERESIS = 0.95;
 const MAX_BUCKET_AGE_DAYS = 100;
 
 export type TokenResolver = (streamerId: string) => string | undefined;
+export type RecordScopeResolver = (streamerId: string) => ViewerRecordScope;
 
 export type NotificationUrlFields = { url: string; url_title: string };
 
@@ -28,9 +30,15 @@ export class ViewerMetricsService {
   private logger: Logger;
   private streamerStates = new Map<string, StreamerPeakState>();
   private resolveToken: TokenResolver;
+  private resolveRecordScope: RecordScopeResolver;
 
-  constructor(resolveToken: TokenResolver, parentLogger: Logger) {
+  constructor(
+    resolveToken: TokenResolver,
+    resolveRecordScope: RecordScopeResolver,
+    parentLogger: Logger,
+  ) {
     this.resolveToken = resolveToken;
+    this.resolveRecordScope = resolveRecordScope;
     this.logger = parentLogger.extend("ViewerMetrics");
   }
 
@@ -42,9 +50,13 @@ export class ViewerMetricsService {
   }: ViewerObservation): Promise<void> {
     const metrics = getViewerMetrics(streamerId);
     const state = this.getOrCreateStreamerState(streamerId);
+    const scope = this.resolveRecordScope(streamerId);
 
     metrics.dailyBuckets = updateDailyBucket(metrics.dailyBuckets, viewerCount);
 
+    // Notify-eligible confirmations only — every window is still tracked and
+    // persisted below regardless of scope; "all-time-only" just narrows which
+    // confirmations are allowed to reach a notification.
     const confirmedPeaks: ConfirmedPeak[] = [];
 
     for (const [windowId, config] of Object.entries(WINDOW_CONFIGS) as [
@@ -61,17 +73,20 @@ export class ViewerMetricsService {
             `${streamerId}: Updated pending ${config.label} to ${viewerCount}`,
           );
         } else if (viewerCount < pending.value * HYSTERESIS) {
-          confirmedPeaks.push({
-            windowId,
-            config,
-            peak: pending.value,
-            previous: pending.previousMax,
-          });
           state.pendingPeaks.delete(windowId);
 
           if (windowId === MetricWindow.AllTime && pending.value > metrics.allTimeMax) {
             metrics.allTimeMax = pending.value;
             metrics.allTimeMaxTimestamp = Date.now();
+          }
+
+          if (scope === "all" || windowId === MetricWindow.AllTime) {
+            confirmedPeaks.push({
+              windowId,
+              config,
+              peak: pending.value,
+              previous: pending.previousMax,
+            });
           }
 
           this.logger.debug(
@@ -104,21 +119,24 @@ export class ViewerMetricsService {
   }: Omit<ViewerObservation, "viewerCount">): Promise<void> {
     const state = this.streamerStates.get(streamerId);
     if (!state || state.pendingPeaks.size === 0) return;
+    const scope = this.resolveRecordScope(streamerId);
 
     const metrics = getViewerMetrics(streamerId);
     const confirmedPeaks: ConfirmedPeak[] = [];
 
     for (const [windowId, pending] of state.pendingPeaks) {
       const config = WINDOW_CONFIGS[windowId];
-      confirmedPeaks.push({
-        windowId,
-        config,
-        peak: pending.value,
-        previous: pending.previousMax,
-      });
       if (windowId === MetricWindow.AllTime && pending.value > metrics.allTimeMax) {
         metrics.allTimeMax = pending.value;
         metrics.allTimeMaxTimestamp = Date.now();
+      }
+      if (scope === "all" || windowId === MetricWindow.AllTime) {
+        confirmedPeaks.push({
+          windowId,
+          config,
+          peak: pending.value,
+          previous: pending.previousMax,
+        });
       }
       this.logger.debug(
         `${streamerId}: Flushed pending ${config.label} peak at ${pending.value}`,

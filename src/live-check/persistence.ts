@@ -8,6 +8,17 @@ export type StreamerStatusLive = {
   primaryTitle: string;
   startedAt: Date;
   maxViewerCount: number;
+  /**
+   * Current (not max) summed viewer count as of the most recent tick.
+   * Optional: rows persisted before this field existed won't have it.
+   */
+  viewerCount?: number;
+  /**
+   * The primary binding's category/game, when the platform reports one (e.g.
+   * Twitch/Kick; YouTube never sets this). Optional for the same reason as
+   * viewerCount.
+   */
+  category?: string;
 };
 
 export type StreamerStatusOffline = {

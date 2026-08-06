@@ -11,10 +11,11 @@ const KI: PlatformBinding = { platform: Platform.Kick, username: "ki" };
 const now = new Date("2026-04-17T00:00:00Z");
 const earlier = new Date("2026-04-16T00:00:00Z");
 
-const live = (title = "t", viewers = 100): FetchedStatus => ({
+const live = (title = "t", viewers = 100, category?: string): FetchedStatus => ({
   status: LiveStatus.Live,
   title,
   viewerCount: viewers,
+  category,
 });
 const offline = (): FetchedStatus => ({ status: LiveStatus.Offline });
 const unknown = (err = "boom"): FetchedStatus => ({
@@ -72,6 +73,30 @@ describe("decideTransition", () => {
       expect(d.next.maxViewerCount).toBe(60);
       expect(d.summedViewerCount).toBe(60);
       expect(d.next.startedAt).toEqual(now);
+      // Current (not max) viewer count is the summed count for this tick.
+      expect(d.next.viewerCount).toBe(60);
+    }
+  });
+
+  it("sets category from the primary binding's live status on went-live", () => {
+    const results: BindingFetchResult[] = [
+      { binding: KI, status: live("kick-title", 50, "Just Chatting") },
+    ];
+    const d = decideTransition("s", offlineStatus, results, now);
+    expect(d.kind).toBe("went-live");
+    if (d.kind === "went-live") {
+      expect(d.next.category).toBe("Just Chatting");
+    }
+  });
+
+  it("leaves category undefined when the primary binding reports none (e.g. YouTube)", () => {
+    const results: BindingFetchResult[] = [
+      { binding: YT, status: live("yt-title", 10) },
+    ];
+    const d = decideTransition("s", offlineStatus, results, now);
+    expect(d.kind).toBe("went-live");
+    if (d.kind === "went-live") {
+      expect(d.next.category).toBeUndefined();
     }
   });
 
@@ -98,7 +123,7 @@ describe("decideTransition", () => {
     // Primary must stay Kick even though YouTube has higher priority.
     const results: BindingFetchResult[] = [
       { binding: YT, status: live("yt", 10) },
-      { binding: KI, status: live("kick-new-title", 100) },
+      { binding: KI, status: live("kick-new-title", 100, "Elden Ring") },
     ];
     const d = decideTransition("s", liveStatus(KI, "kick-old"), results, now);
     expect(d.kind).toBe("still-live");
@@ -107,6 +132,10 @@ describe("decideTransition", () => {
       expect(d.primarySwitched).toBe(false);
       expect(d.titleChanged).toBe(true);
       expect(d.next.primaryTitle).toBe("kick-new-title");
+      // Current viewer count is the summed count for this tick, and category
+      // tracks the (new, sticky) primary's live status.
+      expect(d.next.viewerCount).toBe(110);
+      expect(d.next.category).toBe("Elden Ring");
     }
   });
 
@@ -116,13 +145,28 @@ describe("decideTransition", () => {
       { binding: YT, status: live("yt-title", 10) },
       { binding: KI, status: offline() },
     ];
-    const d = decideTransition("s", liveStatus(KI, "kick-title"), results, now);
+    const previous = { ...liveStatus(KI, "kick-title"), category: "Slots" };
+    const d = decideTransition("s", previous, results, now);
     expect(d.kind).toBe("still-live");
     if (d.kind === "still-live") {
       expect(d.next.primary).toEqual(YT);
       expect(d.primarySwitched).toBe(true);
       // Primary switched → no title-change notification even though "title" is different
       expect(d.titleChanged).toBe(false);
+      // The old primary's category must not survive a switch: the new primary
+      // (YouTube) reports none, so none is shown.
+      expect(d.next.category).toBeUndefined();
+    }
+  });
+
+  it("retains the last known category when a still-live tick reports none", () => {
+    // Category is display-only, so a transient fetch gap must not blank it.
+    const previous = { ...liveStatus(KI, "t"), category: "Elden Ring" };
+    const results: BindingFetchResult[] = [{ binding: KI, status: live("t", 60) }];
+    const d = decideTransition("s", previous, results, now);
+    expect(d.kind).toBe("still-live");
+    if (d.kind === "still-live") {
+      expect(d.next.category).toBe("Elden Ring");
     }
   });
 

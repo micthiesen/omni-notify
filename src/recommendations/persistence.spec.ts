@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   computeExcludedCanonicalIds,
   formatFeedbackDigestFrom,
+  ON_DECK_LIMIT,
   type RecommendationData,
   RecommendationStatus,
+  selectOnDeck,
 } from "./persistence.js";
 import { MediaType } from "./types.js";
 
@@ -74,5 +76,41 @@ describe("recommendation persistence rules", () => {
     const excluded = computeExcludedCanonicalIds([recentFailure, oldFailure], NOW);
     expect(excluded).toContain("tmdb:movie:6");
     expect(excluded).not.toContain("tmdb:movie:7");
+  });
+});
+
+describe("selectOnDeck", () => {
+  const notified = (id: string, ageMs: number): RecommendationData =>
+    rec(id, `tmdb:movie:${id}`, {
+      status: RecommendationStatus.Notified,
+      recommendedAt: NOW - ageMs,
+    });
+
+  it("excludes pending rows (not yet delivered)", () => {
+    const picks = selectOnDeck([
+      notified("a", 1000),
+      rec("p", "tmdb:movie:9", {
+        status: RecommendationStatus.Pending,
+        recommendedAt: NOW,
+      }),
+    ]);
+    expect(picks.map((r) => r.recommendationId)).toEqual(["a"]);
+  });
+
+  it("returns the newest first and caps at the limit", () => {
+    const picks = selectOnDeck([
+      notified("oldest", 5000),
+      notified("newest", 1000),
+      notified("mid", 3000),
+      notified("older", 4000),
+      notified("newer", 2000),
+    ]);
+    expect(picks).toHaveLength(ON_DECK_LIMIT);
+    expect(picks.map((r) => r.recommendationId)).toEqual([
+      "newest",
+      "newer",
+      "mid",
+      "older",
+    ]);
   });
 });

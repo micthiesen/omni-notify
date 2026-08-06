@@ -148,6 +148,21 @@ export function computeExcludedCanonicalIds(
   return excluded;
 }
 
+export const ON_DECK_LIMIT = 4;
+
+/**
+ * Pure core of the dashboard "On Deck" strip: the newest delivered
+ * recommendations still awaiting an outcome. Callers pass the open set (see
+ * getOpenRecommendations); pending rows are excluded because they haven't
+ * been notified/acquired yet.
+ */
+export function selectOnDeck(open: RecommendationData[]): RecommendationData[] {
+  return open
+    .filter((rec) => rec.status === RecommendationStatus.Notified)
+    .sort((a, b) => b.recommendedAt - a.recommendedAt)
+    .slice(0, ON_DECK_LIMIT);
+}
+
 /** Recommendations still awaiting an outcome label. */
 export function getOpenRecommendations(): RecommendationData[] {
   return RecommendationEntity.getAll().filter(

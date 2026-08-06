@@ -68,8 +68,10 @@ import { getLatestPodcastTasteProfile } from "./podcast-recs/reflection/index.js
 import { registerPressPodsRoutes } from "./press-pods/routes.js";
 import {
   getAllRecommendations,
+  getOpenRecommendations,
   getRecommendation,
   type RecommendationData,
+  selectOnDeck,
   setRecommendationFeedback,
 } from "./recommendations/persistence.js";
 import { MAX_RECOMMENDATIONS_PER_RUN } from "./recommendations/pipeline.js";
@@ -171,6 +173,23 @@ function serializeRecommendation(rec: RecommendationData) {
   };
 }
 
+/**
+ * Compact "On Deck" strip for the dashboard: the newest delivered media
+ * recommendations still awaiting an outcome (see selectOnDeck for the pure
+ * filter/sort/cap logic).
+ */
+function buildOnDeck() {
+  return selectOnDeck(getOpenRecommendations()).map((rec) => ({
+    recommendationId: rec.recommendationId,
+    title: rec.title,
+    mediaType: rec.mediaType,
+    year: rec.year ?? null,
+    posterPath: rec.posterPath ?? null,
+    whyForUser: rec.whyForUser ?? null,
+    recommendedAt: rec.recommendedAt,
+  }));
+}
+
 function serializePodcastRecommendation(rec: PodcastRecommendationData) {
   return {
     recommendationId: rec.recommendationId,
@@ -219,6 +238,7 @@ function serializeStreamer(streamer: Streamer) {
     id: streamer.id,
     displayName: streamer.displayName,
     bindings: streamer.bindings.map(serializeBinding),
+    tier: streamer.tier,
   };
   if (status.isLive) {
     return {
@@ -227,6 +247,10 @@ function serializeStreamer(streamer: Streamer) {
       title: status.primaryTitle,
       startedAt: toEpochMs(status.startedAt),
       maxViewerCount: status.maxViewerCount,
+      // Current (not max) summed viewer count; null when unknown/0-data —
+      // e.g. rows persisted before this field existed.
+      viewerCount: status.viewerCount ?? null,
+      category: status.category ?? null,
       primary: serializeBinding(status.primary),
     };
   }
@@ -419,6 +443,7 @@ export function startServer(
     })),
     streamers: streamers.map(serializeStreamer),
     runs: getRuns(undefined, SNAPSHOT_RUN_LIMIT).map(serializeRun),
+    onDeck: buildOnDeck(),
   });
 
   app.get("/api/tasks", (c) =>

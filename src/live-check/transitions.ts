@@ -126,6 +126,8 @@ export function decideTransition(
       primaryTitle,
       startedAt: now,
       maxViewerCount: summedViewerCount,
+      viewerCount: summedViewerCount,
+      category: primaryLive.status.category,
     };
     return { kind: "went-live", next, summedViewerCount };
   }
@@ -137,6 +139,13 @@ export function decideTransition(
     primaryTitle,
     startedAt: previous.startedAt,
     maxViewerCount: Math.max(previous.maxViewerCount, summedViewerCount),
+    viewerCount: summedViewerCount,
+    // Category is display-only, so a transient fetch without one keeps the
+    // last known value rather than blanking the dashboard; a primary switch
+    // takes the new primary's category (stale cross-platform data is worse
+    // than none).
+    category:
+      primaryLive.status.category ?? (primarySwitched ? undefined : previous.category),
   };
   const titleChanged = !primarySwitched && primaryTitle !== previous.primaryTitle;
   return { kind: "still-live", next, summedViewerCount, titleChanged, primarySwitched };

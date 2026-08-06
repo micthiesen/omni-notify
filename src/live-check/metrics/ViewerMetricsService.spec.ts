@@ -1,6 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ViewerRecordScope } from "../notificationPolicy.js";
 import type { ViewerMetricsData } from "./types.js";
 import { ViewerMetricsService } from "./ViewerMetricsService.js";
 
@@ -32,8 +33,15 @@ const noopLogger = {
 
 const urlFields = { url: "https://example.com", url_title: "Watch" };
 
-function makeService(token?: string): ViewerMetricsService {
-  return new ViewerMetricsService(() => token, noopLogger);
+function makeService(
+  token?: string,
+  scope: ViewerRecordScope = "all",
+): ViewerMetricsService {
+  return new ViewerMetricsService(
+    () => token,
+    () => scope,
+    noopLogger,
+  );
 }
 
 describe("ViewerMetricsService notifications", () => {
@@ -90,5 +98,65 @@ describe("ViewerMetricsService notifications", () => {
     await service.recordViewerCount({ ...base, viewerCount: 149 });
 
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  // Background-tier streamers resolve scope "all-time-only": every window is
+  // still tracked/persisted (see recordViewerCount/flushPendingPeaks), but
+  // only a confirmed all-time record is allowed to reach a notification.
+  describe("record scope (background tier)", () => {
+    it("suppresses window-only confirmations (7d/30d/90d) when scope is all-time-only", async () => {
+      // A high pre-existing all-time max means a modest peak can confirm the
+      // window records (fresh, no buckets yet) without ever touching the
+      // all-time window.
+      store.set("bg", {
+        streamerId: "bg",
+        dailyBuckets: [],
+        allTimeMax: 500,
+        allTimeMaxTimestamp: 0,
+      });
+      const service = makeService("tok", "all-time-only");
+      const base = { streamerId: "bg", displayName: "Background", urlFields };
+
+      await service.recordViewerCount({ ...base, viewerCount: 50 });
+      expect(notify).not.toHaveBeenCalled();
+      await service.recordViewerCount({ ...base, viewerCount: 40 });
+
+      expect(notify).not.toHaveBeenCalled();
+      // Suppression is notification-only: tracking still persists the peak in
+      // the daily buckets and leaves the all-time max untouched.
+      const persisted = store.get("bg");
+      expect(persisted?.dailyBuckets.at(-1)?.maxViewers).toBe(50);
+      expect(persisted?.allTimeMax).toBe(500);
+    });
+
+    it("still notifies a genuine all-time record when scope is all-time-only", async () => {
+      const service = makeService("tok", "all-time-only");
+      const base = { streamerId: "bg2", displayName: "Background2", urlFields };
+
+      await service.recordViewerCount({ ...base, viewerCount: 100 });
+      expect(notify).not.toHaveBeenCalled();
+      await service.recordViewerCount({ ...base, viewerCount: 90 });
+
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledWith(
+        expect.objectContaining({ title: expect.stringContaining("all-time record") }),
+      );
+    });
+
+    it("suppresses a window-only flush on went-offline when scope is all-time-only", async () => {
+      store.set("bg3", {
+        streamerId: "bg3",
+        dailyBuckets: [],
+        allTimeMax: 500,
+        allTimeMaxTimestamp: 0,
+      });
+      const service = makeService("tok", "all-time-only");
+      const base = { streamerId: "bg3", displayName: "Background3", urlFields };
+
+      await service.recordViewerCount({ ...base, viewerCount: 50 });
+      await service.flushPendingPeaks(base);
+
+      expect(notify).not.toHaveBeenCalled();
+    });
   });
 });

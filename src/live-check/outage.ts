@@ -2,7 +2,9 @@ import { formatElapsed } from "../utils/dates.js";
 
 /**
  * Consecutive all-unknown ticks before a streamer counts as unreachable. The
- * live check runs every 20s, so this is roughly a minute of failures.
+ * live check runs every 20s, so this is roughly a minute of failures for
+ * primary-tier streamers; background streamers tick every 3rd run, so their
+ * streaks advance at ~3x that wall-clock time.
  */
 export const UNREACHABLE_TICK_THRESHOLD = 3;
 

@@ -1,19 +1,6 @@
 import { baseConfigSchema, logConfig, stringBoolean } from "@micthiesen/mitools/config";
 import { z } from "zod";
 
-export type ChannelEntry = { username: string; displayName: string };
-
-const channelList = z
-  .string()
-  .optional()
-  .transform((val): ChannelEntry[] => {
-    if (!val) return [];
-    return val.split(",").map((entry) => {
-      const [username, displayName] = entry.split(":");
-      return { username, displayName: displayName ?? username };
-    });
-  });
-
 const optionalPositiveInt = z.preprocess(
   (value) => (value === "" ? undefined : value),
   z.coerce.number().int().positive().optional(),
@@ -21,9 +8,6 @@ const optionalPositiveInt = z.preprocess(
 
 const configSchema = baseConfigSchema
   .extend({
-    YT_CHANNEL_NAMES: channelList,
-    TWITCH_CHANNEL_NAMES: channelList,
-    KICK_CHANNEL_NAMES: channelList,
     KICK_CLIENT_ID: z.string().optional(),
     KICK_CLIENT_SECRET: z.string().optional(),
     OFFLINE_NOTIFICATIONS: z

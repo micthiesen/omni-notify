@@ -8,6 +8,7 @@ import {
   getNotificationPermissions,
   liveNotificationsEnabled,
   type NotificationPermissions,
+  type ViewerRecordScope,
 } from "./notificationPolicy.js";
 import {
   OutageAlerter,
@@ -23,7 +24,8 @@ import {
 } from "./persistence.js";
 import { getNotificationUrlFields, platformConfigs } from "./platforms/index.js";
 import { recordCompletedSession } from "./sessions.js";
-import type { PlatformBinding, Streamer } from "./streamers.js";
+import { isStreamerDue, type PlatformBinding, type Streamer } from "./streamers.js";
+import { TitleChangeDebouncer } from "./titleDebounce.js";
 import {
   type BindingFetchResult,
   decideTransition,
@@ -42,6 +44,8 @@ export default class LiveCheckTask extends ScheduledTask {
   private unknownStreaks = new Map<string, UnknownStreak>();
   private outageAlerter = new OutageAlerter();
   private metricsService: ViewerMetricsService;
+  private titleDebouncer = new TitleChangeDebouncer();
+  private tickCount = 0;
 
   public constructor(streamers: Streamer[], parentLogger: Logger) {
     super();
@@ -50,6 +54,7 @@ export default class LiveCheckTask extends ScheduledTask {
     this.logger = parentLogger.extend("LiveCheckTask");
     this.metricsService = new ViewerMetricsService(
       (streamerId) => this.getPushoverToken(streamerId),
+      (streamerId) => this.resolveViewerRecordScope(streamerId),
       parentLogger,
     );
     this.logStreamers();
@@ -58,13 +63,26 @@ export default class LiveCheckTask extends ScheduledTask {
   private logStreamers(): void {
     for (const s of this.streamers) {
       const bindings = s.bindings.map((b) => `${b.platform}:${b.username}`).join(", ");
-      const muted = liveNotificationsEnabled(s) ? "" : " (live notifications off)";
-      this.logger.info(`Streamer "${s.displayName}" → ${bindings}${muted}`);
+      const marker =
+        s.tier === "background"
+          ? " (background)"
+          : liveNotificationsEnabled(s)
+            ? ""
+            : " (live notifications off)";
+      this.logger.info(`Streamer "${s.displayName}" → ${bindings}${marker}`);
     }
   }
 
   public async run(): Promise<void> {
-    await Promise.all(this.streamers.map((s) => this.tickStreamer(s)));
+    // Background streamers skip ticks entirely (not just their notification
+    // paths) — a skipped tick means no fetch, no transition, and no
+    // unknown-streak change for that streamer this round. The startup run
+    // (tick 0) always includes them.
+    const tick = this.tickCount++;
+    const due = this.streamers.filter((s) => isStreamerDue(s.tier, tick));
+    await Promise.all(due.map((s) => this.tickStreamer(s)));
+    // Background streamers' unknown streaks (and thus outage detection) only
+    // advance on their slower cadence, since they're skipped above otherwise.
     await this.reportOutage();
   }
 
@@ -192,6 +210,11 @@ export default class LiveCheckTask extends ScheduledTask {
       `${streamer.displayName} is now LIVE (primary ${next.primary.platform}:${next.primary.username})`,
     );
 
+    // The go-live notification below already carries the title, so it counts
+    // as the debouncer's baseline — a quick post-live title fix is held for
+    // the cooldown rather than notified separately.
+    this.titleDebouncer.seed(streamer.id, next.primaryTitle, Date.now());
+
     if (this.notificationPermissions(streamer).wentLive) {
       const message = buildLiveMessage(next.primaryTitle, previous);
 
@@ -217,14 +240,29 @@ export default class LiveCheckTask extends ScheduledTask {
       this.logger.info(
         `${streamer.displayName} primary switched to ${next.primary.platform}:${next.primary.username}`,
       );
+      // A title held from the old primary must not survive to be notified
+      // under the new one — decideTransition never sets titleChanged on a
+      // switch, so nothing else would otherwise clear it.
+      this.titleDebouncer.clear(streamer.id);
     }
 
     if (titleChanged) {
       this.logger.info(`${streamer.displayName} changed title`);
-      if (this.notificationPermissions(streamer).titleChange) {
+    }
+
+    // Observed on every still-live tick, not just when the title changed —
+    // a title held from an earlier tick needs the chance to fire once its
+    // cooldown expires even on a tick with no change of its own.
+    if (this.notificationPermissions(streamer).titleChange) {
+      const debounced = this.titleDebouncer.observe(streamer.id, {
+        currentTitle: next.primaryTitle,
+        titleChanged,
+        now: Date.now(),
+      });
+      if (debounced.action === "notify") {
         await notify({
           title: `${streamer.displayName} changed title`,
-          message: next.primaryTitle,
+          message: debounced.title,
           token: this.getPushoverToken(streamer.id),
           ...getNotificationUrlFields(next.primary.platform, next.primary.username),
         });
@@ -241,6 +279,7 @@ export default class LiveCheckTask extends ScheduledTask {
     next: StreamerStatusOffline,
   ): Promise<void> {
     this.logger.info(`${streamer.displayName} is now offline`);
+    this.titleDebouncer.clear(streamer.id);
 
     recordCompletedSession(previousLive, new Date(next.lastEndedAt ?? Date.now()));
 
@@ -289,6 +328,12 @@ export default class LiveCheckTask extends ScheduledTask {
     return getNotificationPermissions(streamer, {
       offlineNotifications: appConfig.OFFLINE_NOTIFICATIONS,
     });
+  }
+
+  private resolveViewerRecordScope(streamerId: string): ViewerRecordScope {
+    const streamer = this.streamersById.get(streamerId);
+    if (!streamer) return "all";
+    return this.notificationPermissions(streamer).viewerRecords;
   }
 
   private getPushoverToken(streamerId: string): string | undefined {

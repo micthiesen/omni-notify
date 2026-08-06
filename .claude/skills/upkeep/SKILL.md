@@ -49,8 +49,9 @@ pnpm run check          # biome; run `biome migrate --write` if it flags schema 
 Then a runtime smoke test of the real entrypoint (catches ESM/runtime breaks tests miss):
 
 ```
-LOG_LEVEL=info DB_NAME=<scratch>/smoke.db TWITCH_CHANNEL_NAMES=testuser FRONTEND_PORT=3199 \
-  timeout --signal=SIGTERM 6 node dist/index.js
+echo '{"SmokeTest": {"twitch": "testuser"}}' > <scratch>/channels.json
+LOG_LEVEL=info DB_NAME=<scratch>/smoke.db CHANNELS_CONFIG_PATH=<scratch>/channels.json \
+  FRONTEND_PORT=3199 timeout --signal=SIGTERM 6 node dist/index.js
 ```
 
 Expect: config logged, tasks registered, graceful shutdown on SIGTERM. The Docker image cannot be verified locally (no container runtime on this box) — CI covers it.

@@ -58,12 +58,18 @@ src/
 │                            #   ScheduledTask (abstract task base class)
 ├── live-check/              # Livestream monitoring feature
 │   ├── task.ts              # LiveCheckTask: aggregate per-streamer loop
+│   │                        #   (background-tier streamers tick every 3rd run)
 │   ├── transitions.ts       # Pure state machine: decides live/offline/title edges
+│   ├── titleDebounce.ts     # Eager title-change debounce: first change fires
+│   │                        #   immediately, then 10min cooldown, last one wins
+│   ├── notificationPolicy.ts# Pure per-streamer notification permissions
+│   │                        #   (tier/liveNotifications → what may notify)
 │   ├── outage.ts            # Pure fleet-level outage alerter (one alert per
 │   │                        #   outage + escalating reminders + recovery note)
 │   ├── sessions.ts          # Completed live-session history (start/end/peak/title)
-│   ├── streamers.ts         # Streamer model: merges bindings by display name
-│   ├── channelsConfig.ts    # Loads per-streamer overrides from channels.json
+│   ├── streamers.ts         # Streamer model: builds streamers from channels.json
+│   ├── channelsConfig.ts    # channels.json: THE channel config (bindings +
+│   │                        #   overrides); invalid file fails boot
 │   ├── persistence.ts       # Streamer live/offline state (SQLite)
 │   ├── platforms/           # Platform implementations
 │   │   ├── index.ts         # Platform enum, types, config registry
@@ -206,7 +212,7 @@ src/
     └── config.ts            # Environment config with zod validation
 ```
 
-Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard (stat strip, live-streamer cards, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/pods` PressPods episodes (lazy; submit-URL form, inline audio player, job status with retry/dismiss for failures, per-episode logs via the task-run LogViewer), `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy; outcome/pipeline filter chips, per-email processing-log modal with reprocess / sender block / not-relevant-missed feedback / forget-tracking-number actions, and a sender-rules management section), `/media/:id` + `/podcasts/:id` recommendation detail pages, `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
+Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard optimized for the "bored, what should I watch" glance — order: Live Now hero (live cards whose whole-card tap opens the stream itself via a stretched-link overlay, with a smaller "Details ›" chip to the streamer page; title, uptime, current viewers, category; primary tier sorts before background), On Deck strip (newest still-open media recs from the snapshot's `onDeck`, hidden when empty, tiles link to `/media/:id`), then stat strip, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/pods` PressPods episodes (lazy; submit-URL form, inline audio player, job status with retry/dismiss for failures, per-episode logs via the task-run LogViewer), `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy; outcome/pipeline filter chips, per-email processing-log modal with reprocess / sender block / not-relevant-missed feedback / forget-tracking-number actions, and a sender-rules management section), `/media/:id` + `/podcasts/:id` recommendation detail pages, `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs + on-deck recs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
 
 ### Frontend Style Guide
 
@@ -296,14 +302,15 @@ enum LiveStatus {
    - Add to `Platform` enum
    - Add to `platformConfigs` record
 
-3. Update `src/utils/config.ts`:
-   - Add `{PLATFORM}_CHANNEL_NAMES: commaSeparatedString`
+3. Update `src/live-check/channelsConfig.ts`:
+   - Add the platform field to the channel entry schema (channels.json is the
+     single source of channel config; there are no channel env vars)
 
-4. Update `src/index.ts`:
-   - Add to the `sources` array passed to `buildStreamers`
-   - Add to `PLATFORM_PRIORITY` in `src/live-check/streamers.ts` (decides tiebreak order when multiple platforms go live in the same tick)
+4. Update `src/live-check/streamers.ts`:
+   - Map the new field in `buildStreamers`
+   - Add to `PLATFORM_PRIORITY` (decides tiebreak order when multiple platforms go live in the same tick)
 
-5. Update `.env.example` and `README.md`
+5. Update `README.md`
 
 6. Create `src/live-check/platforms/{platform}.spec.ts`
 
@@ -423,7 +430,9 @@ Primary election is **first-to-go-live wins**, sticky for the session. Priority 
 
 The pure transition logic lives in `src/live-check/transitions.ts` (`decideTransition`) for easy testing.
 
-Per-streamer overrides come from `channels.json` (keyed by display name, case-insensitive): `pushoverToken` and `liveNotifications: false` (mutes live/offline/title-change notifications for streamers tracked only for the dashboard/integrations; viewer-record notifications and all tracking still happen).
+All channel config lives in `channels.json` (`CHANNELS_CONFIG_PATH`, default `./channels.json`), keyed by display name (case-insensitive). Each entry holds platform usernames (`youtube` / `twitch` / `kick`, `string | string[]`) plus options: `pushoverToken`, `tier: "background"` (second-tier streamers: mutes live/offline/title-change notifications, restricts viewer records to all-time only, polls every 3rd tick ≈ 60s), and `liveNotifications: false` (mute only, full-rate polling — for integrations needing fast state). `tier: "background"` combined with an explicit `liveNotifications` is a validation error, and any invalid file fails boot (ENOENT = empty config) — never silently degrade, since dropped overrides would un-mute muted streamers. The legacy `*_CHANNEL_NAMES` env vars are no longer read (boot warns if still set).
+
+Title-change notifications are eagerly debounced (`titleDebounce.ts`): the first change fires immediately; further changes within a 10-minute cooldown are held, last one wins, and the held title is sent when the cooldown expires (which restarts it). Going live seeds the debouncer (the go-live notification carries the title, so immediate post-live fiddling is held); went-offline and primary switches clear pending state. In-memory only — a restart makes the next change immediate.
 
 ### Viewer Metrics System
 
@@ -486,16 +495,14 @@ PUSHOVER_LIVE_TOKEN=xxx                 # Optional: override for live-check noti
 PUSHOVER_BRIEFING_TOKEN=xxx             # Optional: override for briefing notifications
 PUSHOVER_PARCEL_TOKEN=xxx               # Optional: override for parcel notifications
 PUSHOVER_CALENDAR_TOKEN=xxx             # Optional: override for calendar notifications
-YT_CHANNEL_NAMES=@channel1,@channel2    # YouTube handles
-TWITCH_CHANNEL_NAMES=user1,user2        # Twitch usernames
-KICK_CHANNEL_NAMES=slug1,slug2          # Kick channel slugs
-KICK_CLIENT_ID=xxx                      # OAuth client (dev.kick.com) — required if KICK_CHANNEL_NAMES set
+CHANNELS_CONFIG_PATH=./channels.json    # Channel config file (single source of truth; no channel env vars)
+KICK_CLIENT_ID=xxx                      # OAuth client (dev.kick.com) — required if channels.json has kick channels
 KICK_CLIENT_SECRET=xxx
 OFFLINE_NOTIFICATIONS=true|false
-BRIEFING_MODEL=google:gemini-3.5-flash  # Model for briefing agents (provider:model)
-EXTRACTION_MODEL=google:gemini-3.1-flash-lite  # Model for parcel email extraction
-CALENDAR_EXTRACTION_MODEL=google:gemini-3.5-flash  # Model for calendar email extraction (stronger)
-TRIAGE_MODEL=google:gemini-3.1-flash-lite      # Model for shared email relevance triage
+BRIEFING_MODEL=openai:gpt-5.6-luna      # Model for briefing agents (provider:model)
+EXTRACTION_MODEL=openai:gpt-5.6-luna    # Model for parcel email extraction
+CALENDAR_EXTRACTION_MODEL=openai:gpt-5.6-terra  # Model for calendar email extraction (stronger)
+TRIAGE_MODEL=openai:gpt-5.6-luna        # Model for shared email relevance triage
 GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Required for google: models
 ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
 OPENAI_API_KEY=xxx                      # Required for openai: models
@@ -543,8 +550,8 @@ ELEVENLABS_VOICE_FEMALE=xxx             # Optional: voice id for female/unknown-
 MISTRAL_API_KEY=xxx                     # Optional: only the tts-bakeoff comparison tool still uses it
 PRESSPODS_PUBLIC_URL=https://pods.example.com  # Optional: public origin for RSS enclosures
 PRESSPODS_AUDIO_DIR=/data/press-pods-audio     # Optional: MP3 dir (default: next to the DB)
-PRESSPODS_METADATA_MODEL=google:gemini-3.5-flash  # Rates each retriever's extraction
-PRESSPODS_CLEANING_MODEL=google:gemini-3.5-flash  # Narration rewrite
+PRESSPODS_METADATA_MODEL=openai:gpt-5.6-luna   # Rates each retriever's extraction
+PRESSPODS_CLEANING_MODEL=openai:gpt-5.6-terra  # Narration rewrite
 JINA_API_KEY=xxx                        # Optional: enables the Jina.ai Reader retriever
 PUSHOVER_PRESSPODS_TOKEN=xxx            # Optional: override for PressPods notifications
 KARAKEEP_URL=xxx                        # Optional: bookmark submitted articles (read by mitools)

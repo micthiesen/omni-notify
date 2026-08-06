@@ -11,17 +11,26 @@ services:
     environment:
       - PUSHOVER_TOKEN=xxx
       - PUSHOVER_USER=xxx
-      - YT_CHANNEL_NAMES=@mkbhd:MKBHD,@pewdiepie:PewDiePie
-      - TWITCH_CHANNEL_NAMES=shroud:Shroud,xqc:xQc
-      - KICK_CHANNEL_NAMES=destiny:Destiny
-      - KICK_CLIENT_ID=xxx
+      - KICK_CLIENT_ID=xxx # only if monitoring Kick channels
       - KICK_CLIENT_SECRET=xxx
+    volumes:
+      - ./channels.json:/app/channels.json:ro
     restart: unless-stopped
 ```
 
-Channel format is `username:DisplayName`. The display name is optional and defaults to the username.
+Channels are configured in `channels.json` (path overridable via `CHANNELS_CONFIG_PATH`), keyed by display name, with platform usernames and per-streamer options inline:
 
-**Same display name = same streamer.** Entries across platforms that share a display name (case-insensitive, whitespace-trimmed) merge into a single streamer. You get **one** "went live" notification when they start streaming on any platform and **one** "went offline" notification when all platforms go offline — no double-pings for multistreams.
+```json
+{
+  "MKBHD": { "youtube": "@mkbhd" },
+  "Destiny": { "youtube": "@destiny", "kick": "destiny" },
+  "Shroud": { "twitch": "shroud", "tier": "background" }
+}
+```
+
+Platform fields are `youtube` / `twitch` / `kick`; each takes one username or an array of them. An invalid file fails startup with a validation error rather than silently dropping config.
+
+**One entry = one streamer.** A streamer live on multiple platforms gets **one** "went live" notification when they start streaming anywhere and **one** "went offline" notification when all platforms go offline — no double-pings for multistreams.
 
 ## How It Works
 
@@ -35,23 +44,15 @@ Checks every 20 seconds (with random jitter) whether monitored channels are live
 
 Set `OFFLINE_NOTIFICATIONS=false` to only get notified when channels go live.
 
-## Per-Streamer Overrides
+## Per-Streamer Options
 
-Optionally provide a `channels.json` (or set `CHANNELS_CONFIG_PATH`) with per-streamer overrides. The key is the display name (case-insensitive):
-
-```json
-{
-  "Destiny": {
-    "pushoverToken": "app-token-for-destiny"
-  },
-  "SomeoneElse": {
-    "liveNotifications": false
-  }
-}
-```
+Alongside the platform fields, each `channels.json` entry accepts:
 
 - `pushoverToken`: override the Pushover token for this streamer's notifications.
-- `liveNotifications`: set to `false` to mute live/offline/title-change notifications for a streamer you track but don't watch (e.g. only for the dashboard or external integrations). Viewer-record notifications (7d/30d/90d/all-time highs) still fire, and tracking, the dashboard, and `/api/trigger-channels` are unaffected.
+- `tier`: set to `"background"` for second-tier streamers you check on the dashboard but never want pushed about. Mutes live/offline/title-change notifications, restricts viewer-record notifications to all-time highs only, and polls at a relaxed cadence (every 60s instead of 20s). Tracking, the dashboard, and `/api/trigger-channels` are unaffected. Combining it with an explicit `liveNotifications` is a config error.
+- `liveNotifications`: set to `false` to mute live/offline/title-change notifications while keeping full-rate polling (e.g. for external integrations that need fast state). Viewer-record notifications (7d/30d/90d/all-time highs) still fire.
+
+Title-change notifications are eagerly debounced: the first change fires immediately, further changes within 10 minutes are held with the last one winning.
 
 ## Briefing Agents
 
@@ -162,22 +163,22 @@ Models are configured via environment variables using `provider:model` format. S
 
 | Variable | Default | Used for |
 |---|---|---|
-| `BRIEFING_MODEL` | `google:gemini-3.5-flash` | Briefing agents |
-| `EXTRACTION_MODEL` | `google:gemini-3.1-flash-lite` | Parcel email extraction |
-| `CALENDAR_EXTRACTION_MODEL` | `google:gemini-3.5-flash` | Calendar email extraction |
-| `TRIAGE_MODEL` | `google:gemini-3.1-flash-lite` | Shared email relevance triage |
+| `BRIEFING_MODEL` | `openai:gpt-5.6-luna` | Briefing agents |
+| `EXTRACTION_MODEL` | `openai:gpt-5.6-luna` | Parcel email extraction |
+| `CALENDAR_EXTRACTION_MODEL` | `openai:gpt-5.6-terra` | Calendar email extraction |
+| `TRIAGE_MODEL` | `openai:gpt-5.6-luna` | Shared email relevance triage |
 | `RECS_SHORTLIST_MODEL` | `openai:gpt-5.6-luna` | Recommendation shortlist scoring |
 | `RECS_SELECTION_MODEL` | `openai:gpt-5.6` | Recommendation research + final pick |
 | `TASTE_REFLECTION_MODEL` | `openai:gpt-5.6-luna` | Weekly evidence-backed taste reflection |
-| `PRESSPODS_METADATA_MODEL` | `google:gemini-3.5-flash` | PressPods per-retriever metadata + rating |
-| `PRESSPODS_CLEANING_MODEL` | `google:gemini-3.5-flash` | PressPods narration rewrite |
+| `PRESSPODS_METADATA_MODEL` | `openai:gpt-5.6-luna` | PressPods per-retriever metadata + rating |
+| `PRESSPODS_CLEANING_MODEL` | `openai:gpt-5.6-terra` | PressPods narration rewrite |
 
 Examples:
 
 ```bash
-BRIEFING_MODEL=google:gemini-3.5-flash
+BRIEFING_MODEL=openai:gpt-5.6-luna
 BRIEFING_MODEL=anthropic:claude-sonnet-5
-BRIEFING_MODEL=openai:gpt-5.6
+BRIEFING_MODEL=google:gemini-3.5-flash
 ```
 
 ## Environment Variables
@@ -186,16 +187,13 @@ BRIEFING_MODEL=openai:gpt-5.6
 |---|---|---|
 | `PUSHOVER_USER` | Yes | Pushover user key |
 | `PUSHOVER_TOKEN` | Yes | Pushover app token |
-| `YT_CHANNEL_NAMES` | No | YouTube channels (`@handle:Name,...`) |
-| `TWITCH_CHANNEL_NAMES` | No | Twitch channels (`username:Name,...`) |
-| `KICK_CHANNEL_NAMES` | No | Kick channels (`slug:Name,...`). Requires `KICK_CLIENT_ID`/`KICK_CLIENT_SECRET`. |
-| `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)) |
+| `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)); required when `channels.json` has Kick channels |
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
-| `BRIEFING_MODEL` | No | AI model for briefings (default: `google:gemini-3.5-flash`) |
-| `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `google:gemini-3.1-flash-lite`) |
-| `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `google:gemini-3.5-flash`) |
-| `TRIAGE_MODEL` | No | AI model for shared email triage (default: `google:gemini-3.1-flash-lite`) |
+| `BRIEFING_MODEL` | No | AI model for briefings (default: `openai:gpt-5.6-luna`) |
+| `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `openai:gpt-5.6-luna`) |
+| `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `openai:gpt-5.6-terra`) |
+| `TRIAGE_MODEL` | No | AI model for shared email triage (default: `openai:gpt-5.6-luna`) |
 | `EMAIL_TRANSPORT` | No | Email transport: `fastmail` (JMAP) or `icloud` (IMAP). Defaults to `fastmail` while `FASTMAIL_API_TOKEN` is set, else `icloud` when its credentials exist. |
 | `CALDAV_PROVIDER` | No | CalDAV backend for calendar-event writes: `fastmail` or `icloud` (default: follows `EMAIL_TRANSPORT`) |
 | `EMAIL_SELF_ADDRESS` | No | Own receiving address for self-sent-mail filtering (default: `FASTMAIL_USERNAME`) |
@@ -211,7 +209,7 @@ BRIEFING_MODEL=openai:gpt-5.6
 | `OPENAI_API_KEY` | No | Required for `openai:` models |
 | `TAVILY_API_KEY` | No | Tavily web search (required for briefings + recommendations) |
 | `BRIEFINGS_PATH` | No | Folder containing `.md` briefing configs |
-| `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` for per-streamer overrides |
+| `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` (default: `./channels.json`) |
 | `TMDB_API_KEY` | No | TMDB API key (required for recommendations; v3 key or v4 read token) |
 | `RECS_SCHEDULE` | No | Recommendation cron (default: `0 0 17 * * 1,3,5`) |
 | `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-5.6-luna`) |

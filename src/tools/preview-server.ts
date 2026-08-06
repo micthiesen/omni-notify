@@ -104,6 +104,7 @@ const streamers: Streamer[] = [
     id: "pixeldust",
     displayName: "PixelDust",
     bindings: [{ platform: Platform.Twitch, username: "pixeldust" }],
+    tier: "primary",
   },
   {
     id: "novabyte",
@@ -112,11 +113,21 @@ const streamers: Streamer[] = [
       { platform: Platform.YouTube, username: "@novabyte" },
       { platform: Platform.Twitch, username: "novabyte" },
     ],
+    tier: "primary",
   },
   {
     id: "retrorex",
     displayName: "RetroRex",
     bindings: [{ platform: Platform.Kick, username: "retrorex" }],
+    tier: "primary",
+  },
+  // Background tier: tracked (metrics/sessions/dashboard) but live-activity
+  // notifications are muted and only all-time viewer records notify.
+  {
+    id: "loopstation",
+    displayName: "LoopStation",
+    bindings: [{ platform: Platform.Twitch, username: "loopstation" }],
+    tier: "background",
   },
 ];
 
@@ -127,6 +138,8 @@ StreamerStatusEntity.upsert({
   primaryTitle: "Ranked grind to Diamond — day 12, chat picks the loadout",
   startedAt: new Date(now - 2.4 * HOUR),
   maxViewerCount: 4230,
+  viewerCount: 3980,
+  category: "VALORANT",
 });
 StreamerStatusEntity.upsert({
   streamerId: "novabyte",
@@ -135,6 +148,8 @@ StreamerStatusEntity.upsert({
   primaryTitle: "Building a mechanical keyboard from scratch (live soldering)",
   startedAt: new Date(now - 47 * MIN),
   maxViewerCount: 812,
+  viewerCount: 690,
+  // YouTube never reports a category, unlike Twitch/Kick.
 });
 StreamerStatusEntity.upsert({
   streamerId: "retrorex",
@@ -142,6 +157,16 @@ StreamerStatusEntity.upsert({
   lastStartedAt: new Date(now - 29 * HOUR),
   lastEndedAt: new Date(now - 26 * HOUR),
   lastMaxViewerCount: 1890,
+});
+StreamerStatusEntity.upsert({
+  streamerId: "loopstation",
+  isLive: true,
+  primary: { platform: Platform.Twitch, username: "loopstation" },
+  primaryTitle: "24/7 lo-fi beats to code to",
+  startedAt: new Date(now - 6 * HOUR),
+  maxViewerCount: 340,
+  viewerCount: 310,
+  category: "Music",
 });
 
 // --- Viewer metrics ------------------------------------------------------------
@@ -175,6 +200,7 @@ function seedViewerMetrics(streamerId: string, base: number, days: number): void
 seedViewerMetrics("pixeldust", 4200, 95);
 seedViewerMetrics("novabyte", 850, 60);
 seedViewerMetrics("retrorex", 1900, 25);
+seedViewerMetrics("loopstation", 330, 40);
 
 // --- Task run history ----------------------------------------------------------
 
@@ -243,6 +269,38 @@ RecommendationEntity.upsert({
   recommendedAt: now - 22 * HOUR,
   notifiedAt: now - 22 * HOUR + MIN,
   watchlistResult: "added",
+});
+// Additional open (notified, unresolved) rows so the dashboard's On Deck strip
+// renders with realistic variety: tv + movie, missing poster, missing why.
+RecommendationEntity.upsert({
+  recommendationId: "preview-glass-orchard",
+  canonicalId: "tmdb:tv:400004",
+  tmdbId: 400004,
+  mediaType: MediaType.Tv,
+  title: "The Glass Orchard",
+  year: 2026,
+  status: RecommendationStatus.Notified,
+  whyForUser: "Prestige family saga with a heist spine; two seasons, both tight.",
+  confidence: 0.77,
+  runDate: "2026-07-16",
+  recommendedAt: now - 3 * 24 * HOUR,
+  notifiedAt: now - 3 * 24 * HOUR + MIN,
+  watchlistResult: "added",
+});
+RecommendationEntity.upsert({
+  recommendationId: "preview-north-of-nowhere",
+  canonicalId: "tmdb:movie:500005",
+  tmdbId: 500005,
+  mediaType: MediaType.Movie,
+  title: "North of Nowhere",
+  year: 2025,
+  status: RecommendationStatus.Notified,
+  // No posterPath and no whyForUser: exercises the strip's fallback tile.
+  confidence: 0.58,
+  runDate: "2026-07-10",
+  recommendedAt: now - 6 * 24 * HOUR,
+  notifiedAt: now - 6 * 24 * HOUR + MIN,
+  watchlistResult: "already_exists",
 });
 RecommendationEntity.upsert({
   recommendationId: "preview-harbor-lights",

@@ -27,7 +27,7 @@ describe("getNotificationPermissions", () => {
       wentLive: true,
       titleChange: true,
       wentOffline: true,
-      viewerRecords: true,
+      viewerRecords: "all",
     });
   });
 
@@ -37,17 +37,17 @@ describe("getNotificationPermissions", () => {
         wentLive: false,
         titleChange: false,
         wentOffline: false,
-        viewerRecords: true,
+        viewerRecords: "all",
       },
     );
   });
 
-  it("still permits viewer-record notifications for muted streamers", () => {
+  it("still permits viewer-record notifications (all windows) for muted streamers", () => {
     const permissions = getNotificationPermissions(
       { liveNotifications: false },
       offlineOn,
     );
-    expect(permissions.viewerRecords).toBe(true);
+    expect(permissions.viewerRecords).toBe("all");
   });
 
   it("suppresses went-offline when OFFLINE_NOTIFICATIONS is disabled globally", () => {
@@ -55,6 +55,35 @@ describe("getNotificationPermissions", () => {
     expect(permissions.wentOffline).toBe(false);
     expect(permissions.wentLive).toBe(true);
     expect(permissions.titleChange).toBe(true);
-    expect(permissions.viewerRecords).toBe(true);
+    expect(permissions.viewerRecords).toBe("all");
+  });
+
+  it("mutes all live-activity notifications for the background tier", () => {
+    expect(getNotificationPermissions({ tier: "background" }, offlineOn)).toEqual({
+      wentLive: false,
+      titleChange: false,
+      wentOffline: false,
+      viewerRecords: "all-time-only",
+    });
+  });
+
+  it("restricts viewer records to all-time-only for the background tier", () => {
+    const permissions = getNotificationPermissions({ tier: "background" }, offlineOn);
+    expect(permissions.viewerRecords).toBe("all-time-only");
+  });
+
+  it("keeps all-window viewer records for the primary tier", () => {
+    const permissions = getNotificationPermissions({ tier: "primary" }, offlineOn);
+    expect(permissions.viewerRecords).toBe("all");
+  });
+});
+
+describe("liveNotificationsEnabled with tier", () => {
+  it("is disabled for the background tier even without liveNotifications set", () => {
+    expect(liveNotificationsEnabled({ tier: "background" })).toBe(false);
+  });
+
+  it("is enabled for the primary tier by default", () => {
+    expect(liveNotificationsEnabled({ tier: "primary" })).toBe(true);
   });
 });

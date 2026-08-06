@@ -4,7 +4,7 @@ import type { Streamer } from "./streamers.js";
 import { toTriggerChannels } from "./triggerChannels.js";
 
 function streamer(displayName: string, bindings: Streamer["bindings"]): Streamer {
-  return { id: displayName.toLowerCase(), displayName, bindings };
+  return { id: displayName.toLowerCase(), displayName, bindings, tier: "primary" };
 }
 
 describe("toTriggerChannels", () => {
