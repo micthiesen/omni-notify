@@ -23,8 +23,8 @@ export async function fetchYouTubeLiveStatus({
 }
 
 export function extractLiveStatus(html: string): FetchedStatus {
-  // Check for signs that we got a non-standard response (CAPTCHA, consent, etc.)
-  if (!html.includes("ytInitialPlayerResponse")) {
+  const playerResponse = extractInitialPlayerResponse(html);
+  if (!playerResponse) {
     return {
       status: LiveStatus.Unknown,
       error: "Response missing expected YouTube data structure",
@@ -32,7 +32,8 @@ export function extractLiveStatus(html: string): FetchedStatus {
   }
 
   const isLive =
-    /"isLive"\s*:\s*true/i.test(html) || /"isLiveNow"\s*:\s*true/i.test(html);
+    playerResponse.microformat?.playerMicroformatRenderer?.liveBroadcastDetails
+      ?.isLiveNow === true;
 
   if (!isLive) {
     return { status: LiveStatus.Offline };
@@ -51,6 +52,71 @@ export function extractLiveStatus(html: string): FetchedStatus {
     title,
     viewerCount: extractViewerCount(html),
   };
+}
+
+interface YouTubePlayerResponse {
+  microformat?: {
+    playerMicroformatRenderer?: {
+      liveBroadcastDetails?: {
+        isLiveNow?: boolean;
+      };
+    };
+  };
+}
+
+function extractInitialPlayerResponse(html: string): YouTubePlayerResponse | null {
+  const assignment = /\bytInitialPlayerResponse\s*=\s*/g;
+
+  for (const match of html.matchAll(assignment)) {
+    const objectStart = (match.index ?? 0) + match[0].length;
+    if (html[objectStart] !== "{") continue;
+
+    const json = extractJsonObject(html, objectStart);
+    if (!json) continue;
+
+    try {
+      const parsed: unknown = JSON.parse(json);
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as YouTubePlayerResponse;
+      }
+    } catch {
+      // Keep looking in case an earlier reference was not the player response assignment.
+    }
+  }
+
+  return null;
+}
+
+function extractJsonObject(html: string, start: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < html.length; index += 1) {
+    const character = html[index];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === "{") {
+      depth += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return html.slice(start, index + 1);
+    }
+  }
+
+  return null;
 }
 
 function extractTitle(html: string): string | null {
