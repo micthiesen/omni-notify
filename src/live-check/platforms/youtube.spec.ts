@@ -44,6 +44,16 @@ describe("extractLiveStatus", () => {
     expect(extractLiveStatus(html)).toEqual({ status: LiveStatus.Offline });
   });
 
+  it("returns offline for a normal channel page with no player response", () => {
+    const html = [
+      '<script>var ytInitialData = {"contents":{}};</script>',
+      "<script>loadInitialData(a.ytInitialData,a.ytInitialPlayerResponse);</script>",
+      '<script>var unrelatedData = {"isLive":true,"isLiveNow":true};</script>',
+    ].join("");
+
+    expect(extractLiveStatus(html)).toEqual({ status: LiveStatus.Offline });
+  });
+
   it("ignores scheduled streams and unrelated live markers", () => {
     const scheduledPlayerResponse = {
       videoDetails: {

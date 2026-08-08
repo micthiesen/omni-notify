@@ -23,8 +23,16 @@ export async function fetchYouTubeLiveStatus({
 }
 
 export function extractLiveStatus(html: string): FetchedStatus {
+  const hasPlayerResponseAssignment = /\bytInitialPlayerResponse\s*=\s*/.test(html);
   const playerResponse = extractInitialPlayerResponse(html);
   if (!playerResponse) {
+    // An offline channel's /live route renders the normal channel page. It has
+    // ytInitialData and references ytInitialPlayerResponse in shared JS, but
+    // does not assign a player response because there is no video to play.
+    if (!hasPlayerResponseAssignment && /\bytInitialData\s*=\s*\{/.test(html)) {
+      return { status: LiveStatus.Offline };
+    }
+
     return {
       status: LiveStatus.Unknown,
       error: "Response missing expected YouTube data structure",
