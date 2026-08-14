@@ -111,7 +111,7 @@ Guidelines:
 - Set reminderMinutes for events that benefit from advance preparation. Examples: flights/travel (1440 = day before), building shutoffs/maintenance (720 = night before), appointments/reservations (60 = 1 hour). Omit for events where the default 30-minute reminder is fine
 
 Action classification:
-- Use "create" for new events not already in the existing events list below. Omit eventId
+- Use "create" for new events not already in the existing events list below. Set eventId to null
 - Use "cancel" if the email indicates an existing event has been cancelled, voided, or is no longer happening
 - Payment receipts and bills confirm past service — they NEVER cancel an upcoming event. Never emit "cancel" because a payment, receipt, invoice, or billing email mentions an appointment or service
 - A "cancel" is only honored when its eventId references an existing event from the list below; a cancel without a valid eventId is skipped

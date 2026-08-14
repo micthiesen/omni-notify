@@ -2,6 +2,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import got from "got";
 
 type CarrierEntry = { code: string; name: string };
+type CarrierResponseValue = string | { name?: unknown };
 
 // In-memory cache for Parcel's carrier list
 let cachedCarriers: CarrierEntry[] | undefined;
@@ -35,10 +36,13 @@ async function fetchCarrierList(logger: Logger): Promise<CarrierEntry[] | undefi
   try {
     const response = await got(
       "https://api.parcel.app/external/supported_carriers.json",
-    ).json<Record<string, string>>();
+    ).json<Record<string, CarrierResponseValue>>();
     cachedCarriers = Object.entries(response)
       .filter(([code]) => !isBlacklistedCarrier(code))
-      .map(([code, name]) => ({ code, name }));
+      .flatMap(([code, value]) => {
+        const name = typeof value === "string" ? value : value.name;
+        return typeof name === "string" ? [{ code, name }] : [];
+      });
     cachedAt = Date.now();
     return cachedCarriers;
   } catch (error) {
