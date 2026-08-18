@@ -555,6 +555,102 @@ export interface CostsResponse {
   recent: CostEvent[];
 }
 
+export type WorkspaceSubjectStatus = "active" | "paused" | "completed" | "archived";
+export interface WorkspaceArtifactDefinition {
+  key: string;
+  title: string;
+  kind: string;
+  instructions: string;
+}
+export interface WorkspaceDefinition {
+  id: string;
+  title: string;
+  description: string;
+  subjectLabel: string;
+  subjectLabelPlural: string;
+  taskName: string;
+  schedule: string;
+  instructions: string;
+  artifacts: WorkspaceArtifactDefinition[];
+}
+export interface WorkspaceSubject {
+  workspaceId: string;
+  subjectId: string;
+  title: string;
+  status: WorkspaceSubjectStatus;
+  summary: string;
+  createdAt: number;
+  updatedAt: number;
+  lastResearchedAt?: number;
+}
+export interface WorkspaceSummary extends WorkspaceDefinition {
+  subjects: WorkspaceSubject[];
+  activeSubjectCount: number;
+  pendingActionCount: number;
+  openPapercutCount: number;
+}
+export interface WorkspaceArtifact {
+  revisionId: string;
+  workspaceId: string;
+  subjectId: string;
+  artifactKey: string;
+  kind: string;
+  content: string;
+  summary: string;
+  createdAt: number;
+  runId?: string;
+}
+export interface WorkspaceMessage {
+  messageId: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  createdAt: number;
+  runId?: string;
+}
+export interface WorkspaceSource {
+  sourceId: string;
+  kind: "web" | "email";
+  title: string;
+  url?: string;
+  excerpt: string;
+  createdAt: number;
+}
+export interface WorkspaceAction {
+  actionId: string;
+  type: "email_scope" | "calendar_event";
+  status: "pending" | "approved" | "rejected" | "failed";
+  title: string;
+  description: string;
+  payload: string;
+  createdAt: number;
+  result?: string;
+}
+export interface WorkspacePapercut {
+  papercutId: string;
+  category: string;
+  title: string;
+  detail: string;
+  occurrences: number;
+  lastSeenAt: number;
+  status: "open" | "addressed" | "dismissed";
+}
+export interface WorkspaceDetailResponse {
+  workspace: WorkspaceDefinition;
+  subject: WorkspaceSubject;
+  artifacts: WorkspaceArtifact[];
+  artifactRevisions: WorkspaceArtifact[];
+  messages: WorkspaceMessage[];
+  sources: WorkspaceSource[];
+  actions: WorkspaceAction[];
+  emailScope: {
+    senders: string[];
+    domains: string[];
+    subjectKeywords: string[];
+    bodyKeywords: string[];
+  } | null;
+  papercuts: WorkspacePapercut[];
+}
+
 export class ApiError extends Error {
   public readonly status: number;
 
@@ -774,6 +870,59 @@ export function retryPressPodsEpisode(
 
 export function fetchBriefings(): Promise<{ briefings: BriefingHistory[] }> {
   return apiGet<{ briefings: BriefingHistory[] }>("/api/briefings");
+}
+
+export function fetchWorkspaces(): Promise<{ workspaces: WorkspaceSummary[] }> {
+  return apiGet("/api/workspaces");
+}
+
+export function fetchWorkspace(workspaceId: string): Promise<{
+  workspace: WorkspaceDefinition;
+  subjects: WorkspaceSubject[];
+  actions: WorkspaceAction[];
+  papercuts: WorkspacePapercut[];
+}> {
+  return apiGet(`/api/workspaces/${encodeURIComponent(workspaceId)}`);
+}
+
+export function fetchWorkspaceSubject(
+  workspaceId: string,
+  subjectId: string,
+): Promise<WorkspaceDetailResponse> {
+  return apiGet(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/subjects/${encodeURIComponent(subjectId)}`,
+  );
+}
+
+export function sendWorkspaceMessage(
+  workspaceId: string,
+  message: string,
+  subjectId?: string,
+): Promise<{ runId: string }> {
+  return apiPost(`/api/workspaces/${encodeURIComponent(workspaceId)}/messages`, {
+    message,
+    subjectId,
+  });
+}
+
+export function setWorkspaceSubjectStatus(
+  workspaceId: string,
+  subjectId: string,
+  status: WorkspaceSubjectStatus,
+): Promise<{ subject: WorkspaceSubject }> {
+  return apiPost(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/subjects/${encodeURIComponent(subjectId)}/status`,
+    { status },
+  );
+}
+
+export function resolveWorkspaceAction(
+  actionId: string,
+  resolution: "approve" | "reject",
+): Promise<{ action: WorkspaceAction }> {
+  return apiPost(
+    `/api/workspace-actions/${encodeURIComponent(actionId)}/${resolution}`,
+  );
 }
 
 export function fetchCosts(range: CostRange): Promise<CostsResponse> {

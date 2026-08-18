@@ -23,8 +23,9 @@ export async function createCalendarEvent(
   session: CaldavSession,
   event: CalendarEventExtraction["events"][number],
   logger: Logger,
+  eventUid = generateUid(),
 ): Promise<CreateResult> {
-  const uid = generateUid();
+  const uid = eventUid;
   const icsBody = buildICalendar(event, uid);
   const eventUrl = `${session.calendarUrl}${uid}.ics`;
 

@@ -36,6 +36,14 @@ import { installLogCapture } from "../task-runs/logCapture.js";
 import { TaskRunEntity } from "../task-runs/persistence.js";
 import { TaskRegistry } from "../task-runs/registry.js";
 import config from "../utils/config.js";
+import {
+  addWorkspaceAction,
+  addWorkspaceArtifactRevision,
+  addWorkspaceMessage,
+  addWorkspaceSource,
+  reportWorkspacePapercut,
+  upsertWorkspaceSubject,
+} from "../workspaces/persistence.js";
 
 Injector.configure({ config });
 installLogCapture();
@@ -90,6 +98,29 @@ class FakeRecommendationsTask extends FakeTask {
   public runManual(input: unknown): Promise<void> {
     this.taskLogger.info("Manual run input", { input });
     return this.run();
+  }
+}
+
+class FakeWorkspaceTask extends FakeTask {
+  public async runManual(input: unknown): Promise<void> {
+    const request = input as { message?: string; subjectId?: string };
+    if (request.message) {
+      addWorkspaceMessage({
+        workspaceId: "purchase-research",
+        subjectId: request.subjectId,
+        role: "user",
+        text: request.message,
+      });
+    }
+    await this.run();
+    if (request.message) {
+      addWorkspaceMessage({
+        workspaceId: "purchase-research",
+        subjectId: request.subjectId,
+        role: "assistant",
+        text: "Preview response: I recorded that update and would refresh the relevant research next.",
+      });
+    }
   }
 }
 
@@ -668,6 +699,79 @@ recordEmailFeedback({
   note: "That's an order number, not a tracking number",
 });
 
+// --- Workspaces ---------------------------------------------------------------
+
+upsertWorkspaceSubject({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  title: "Quiet Office Headphones",
+  status: "active",
+  summary:
+    "Comparing comfortable ANC headphones for long workdays, with strong multipoint support and a $500 CAD ceiling.",
+  lastResearchedAt: now - 18 * HOUR,
+});
+addWorkspaceArtifactRevision({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  artifactKey: "brief",
+  kind: "markdown",
+  summary: "Current buying brief",
+  content:
+    "## Goal\nFind over-ear headphones comfortable for 6+ hour work sessions.\n\n## Must Haves\n- Excellent ANC\n- Reliable laptop + phone multipoint\n- Replaceable ear pads\n- Under $500 CAD",
+});
+addWorkspaceArtifactRevision({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  artifactKey: "comparison",
+  kind: "structured",
+  summary: "Three leading candidates",
+  content:
+    "| Candidate | Strength | Concern |\n|---|---|---|\n| Sony XM6 | Best ANC | Warm pads |\n| Bose QC Ultra | Comfort | Higher price |\n| Sennheiser Momentum 4 | Battery | Weaker ANC |",
+});
+addWorkspaceMessage({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  role: "user",
+  text: "I wear glasses and care more about comfort than microphone quality.",
+  createdAt: now - 20 * HOUR,
+});
+addWorkspaceMessage({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  role: "assistant",
+  text: "I updated the requirements and moved clamp pressure and pad heat into the comparison criteria.",
+  createdAt: now - 19 * HOUR,
+});
+addWorkspaceSource({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  kind: "web",
+  title: "Long-term comfort comparison",
+  url: "https://example.com/headphone-comfort",
+  excerpt: "Measurements and owner reports comparing clamp force, pad depth, and heat.",
+  createdAt: now - 18 * HOUR,
+});
+const { action: previewAction } = addWorkspaceAction({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  type: "email_scope",
+  title: "Watch Headphone Deal Emails",
+  description: "Ingest deal alerts mentioning either current finalist.",
+  payload: JSON.stringify({
+    senders: ["alerts@deal-site.example"],
+    domains: [],
+    subjectKeywords: ["Sony XM6", "Bose QC Ultra"],
+    bodyKeywords: [],
+  }),
+});
+reportWorkspacePapercut({
+  workspaceId: "purchase-research",
+  subjectId: "quiet-office-headphones",
+  category: "poor-source-data",
+  title: "Canadian historical prices are inconsistent",
+  detail: "Several retailer pages expose current price but no stable price history.",
+});
+
 // --- Pet ----------------------------------------------------------------------
 
 upsertPet({
@@ -712,6 +816,16 @@ registry.track(
     "Picked Harbor Lights S2 (2026); added to watchlist.",
   ),
 );
+registry.track(
+  new FakeWorkspaceTask(
+    "PurchaseResearch",
+    "0 0 9 * * 0",
+    2_000,
+    "Updated one purchase dossier.",
+  ),
+);
 
 startServer(config.FRONTEND_PORT, logger, registry, streamers);
-logger.info("Preview server ready");
+logger.info(
+  `Preview server ready; action deep link: /workspaces/purchase-research/quiet-office-headphones?section=actions&target=action-${previewAction.actionId}`,
+);

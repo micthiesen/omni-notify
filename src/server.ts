@@ -91,6 +91,24 @@ import {
   type TaskRegistry,
 } from "./task-runs/registry.js";
 import config from "./utils/config.js";
+import { approveWorkspaceAction, rejectWorkspaceAction } from "./workspaces/actions.js";
+import {
+  getWorkspaceDefinition,
+  workspaceDefinitions,
+} from "./workspaces/definitions.js";
+import {
+  getLatestWorkspaceArtifacts,
+  getWorkspaceEmailScope,
+  getWorkspaceSubject,
+  listWorkspaceActions,
+  listWorkspaceArtifactRevisions,
+  listWorkspaceMessages,
+  listWorkspacePapercuts,
+  listWorkspaceSources,
+  listWorkspaceSubjects,
+  resolveWorkspacePapercut,
+  upsertWorkspaceSubject,
+} from "./workspaces/persistence.js";
 
 function round(n: number): number {
   return Math.round(n * 100) / 100;
@@ -109,6 +127,18 @@ function serializeRun(run: TaskRunData) {
     status: run.status,
     error: run.error ?? null,
     summary: run.summary ?? null,
+  };
+}
+
+function serializeWorkspaceEmailScope(
+  scope: ReturnType<typeof getWorkspaceEmailScope>,
+) {
+  if (!scope) return null;
+  return {
+    senders: scope.senders,
+    domains: scope.domains,
+    subjectKeywords: scope.subjectKeywords,
+    bodyKeywords: scope.bodyKeywords,
   };
 }
 
@@ -999,6 +1029,167 @@ export function startServer(
           (b.notifications[0]?.timestamp ?? 0) - (a.notifications[0]?.timestamp ?? 0),
       );
     return c.json({ briefings });
+  });
+
+  app.get("/api/workspaces", (c) => {
+    return c.json({
+      workspaces: workspaceDefinitions.map((definition) => {
+        const subjects = listWorkspaceSubjects(definition.id);
+        const actions = listWorkspaceActions(definition.id);
+        return {
+          ...definition,
+          subjects,
+          activeSubjectCount: subjects.filter((subject) => subject.status === "active")
+            .length,
+          pendingActionCount: actions.filter((action) => action.status === "pending")
+            .length,
+          openPapercutCount: listWorkspacePapercuts(definition.id, "open").length,
+        };
+      }),
+    });
+  });
+
+  app.get("/api/workspaces/:workspaceId", (c) => {
+    const definition = getWorkspaceDefinition(c.req.param("workspaceId"));
+    if (!definition) return c.json({ error: "Unknown workspace" }, 404);
+    return c.json({
+      workspace: definition,
+      subjects: listWorkspaceSubjects(definition.id),
+      actions: listWorkspaceActions(definition.id),
+      papercuts: listWorkspacePapercuts(definition.id, "open"),
+    });
+  });
+
+  app.get("/api/workspaces/:workspaceId/subjects/:subjectId", (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const subjectId = c.req.param("subjectId");
+    const definition = getWorkspaceDefinition(workspaceId);
+    const subject = getWorkspaceSubject(workspaceId, subjectId);
+    if (!definition || !subject)
+      return c.json({ error: "Unknown workspace subject" }, 404);
+    return c.json({
+      workspace: definition,
+      subject,
+      artifacts: getLatestWorkspaceArtifacts(workspaceId, subjectId),
+      artifactRevisions: listWorkspaceArtifactRevisions(workspaceId, subjectId),
+      messages: listWorkspaceMessages(workspaceId, subjectId),
+      sources: listWorkspaceSources(workspaceId, subjectId),
+      actions: listWorkspaceActions(workspaceId, subjectId),
+      emailScope: serializeWorkspaceEmailScope(
+        getWorkspaceEmailScope(workspaceId, subjectId),
+      ),
+      papercuts: listWorkspacePapercuts(workspaceId, "open").filter(
+        (papercut) => !papercut.subjectId || papercut.subjectId === subjectId,
+      ),
+    });
+  });
+
+  const workspaceMessageSchema = z.object({
+    message: z.string().trim().min(1).max(20_000),
+    subjectId: z.string().min(1).optional(),
+  });
+  app.post("/api/workspaces/:workspaceId/messages", async (c) => {
+    const definition = getWorkspaceDefinition(c.req.param("workspaceId"));
+    if (!definition) return c.json({ error: "Unknown workspace" }, 404);
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = workspaceMessageSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: "A message is required" }, 400);
+    if (
+      parsed.data.subjectId &&
+      !getWorkspaceSubject(definition.id, parsed.data.subjectId)
+    ) {
+      return c.json({ error: "Unknown workspace subject" }, 404);
+    }
+    try {
+      const run = registry.runNow(definition.taskName, parsed.data);
+      return c.json({ runId: run.runId }, 202);
+    } catch (error) {
+      if (error instanceof TaskAlreadyRunningError) {
+        return c.json({ error: "Workspace agent is already running" }, 409);
+      }
+      if (error instanceof TaskNotFoundError) {
+        return c.json({ error: "Workspace task is unavailable" }, 503);
+      }
+      throw error;
+    }
+  });
+
+  const subjectStatusSchema = z.object({
+    status: z.enum(["active", "paused", "completed", "archived"]),
+  });
+  app.post("/api/workspaces/:workspaceId/subjects/:subjectId/status", async (c) => {
+    const workspaceId = c.req.param("workspaceId");
+    const subjectId = c.req.param("subjectId");
+    const subject = getWorkspaceSubject(workspaceId, subjectId);
+    if (!subject) return c.json({ error: "Unknown workspace subject" }, 404);
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = subjectStatusSchema.safeParse(body);
+    if (!parsed.success) return c.json({ error: "A valid status is required" }, 400);
+    return c.json({
+      subject: upsertWorkspaceSubject({
+        workspaceId: subject.workspaceId,
+        subjectId: subject.subjectId,
+        title: subject.title,
+        status: parsed.data.status,
+        summary: subject.summary,
+        createdAt: subject.createdAt,
+        lastResearchedAt: subject.lastResearchedAt,
+      }),
+    });
+  });
+
+  app.post("/api/workspace-actions/:actionId/approve", async (c) => {
+    try {
+      return c.json({
+        action: await approveWorkspaceAction(c.req.param("actionId"), logger),
+      });
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : "Action failed" },
+        409,
+      );
+    }
+  });
+
+  app.post("/api/workspace-actions/:actionId/reject", (c) => {
+    try {
+      return c.json({ action: rejectWorkspaceAction(c.req.param("actionId")) });
+    } catch (error) {
+      return c.json(
+        { error: error instanceof Error ? error.message : "Action failed" },
+        409,
+      );
+    }
+  });
+
+  app.get("/api/workspace-papercuts", (c) => {
+    const status = c.req.query("status");
+    const parsed = z.enum(["open", "addressed", "dismissed"]).safeParse(status);
+    return c.json({
+      papercuts: listWorkspacePapercuts(
+        c.req.query("workspaceId"),
+        parsed.success ? parsed.data : undefined,
+      ),
+    });
+  });
+
+  app.post("/api/workspace-papercuts/:papercutId/resolve", async (c) => {
+    const body: unknown = await c.req.json().catch(() => null);
+    const parsed = z
+      .object({
+        status: z.enum(["addressed", "dismissed"]),
+        resolution: z.string().trim().min(1).max(2_000),
+      })
+      .safeParse(body);
+    if (!parsed.success)
+      return c.json({ error: "Status and resolution are required" }, 400);
+    const papercut = resolveWorkspacePapercut(
+      c.req.param("papercutId"),
+      parsed.data.status,
+      parsed.data.resolution,
+    );
+    if (!papercut) return c.json({ error: "Unknown papercut" }, 404);
+    return c.json({ papercut });
   });
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));

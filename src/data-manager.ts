@@ -43,6 +43,16 @@ import {
   TaskRunLogEntity,
   TaskScheduleStateEntity,
 } from "./task-runs/persistence.js";
+import {
+  WorkspaceActionEntity,
+  WorkspaceArtifactRevisionEntity,
+  WorkspaceEmailScopeEntity,
+  WorkspaceMessageEntity,
+  WorkspaceNotificationEntity,
+  WorkspacePapercutEntity,
+  WorkspaceSourceEntity,
+  WorkspaceSubjectEntity,
+} from "./workspaces/persistence.js";
 
 export type DataRow = Record<string, unknown>;
 export type DataRowKey = Record<string, unknown>;
@@ -331,6 +341,38 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
   createManagedEntity(EmailFeedbackEntity, {
     label: "Email feedback",
     description: "Explicit outcome corrections injected into email triage prompts.",
+  }),
+  createManagedEntity(WorkspaceSubjectEntity, {
+    label: "Workspace subjects",
+    description: "Durable dossiers maintained inside Omni workspaces.",
+  }),
+  createManagedEntity(WorkspaceArtifactRevisionEntity, {
+    label: "Workspace artifact revisions",
+    description: "Append-only history of workspace briefs, research, and decisions.",
+  }),
+  createManagedEntity(WorkspaceMessageEntity, {
+    label: "Workspace messages",
+    description: "User and agent conversation attached to workspace subjects.",
+  }),
+  createManagedEntity(WorkspaceSourceEntity, {
+    label: "Workspace sources",
+    description: "Web and explicitly scoped email evidence used by workspaces.",
+  }),
+  createManagedEntity(WorkspaceActionEntity, {
+    label: "Workspace actions",
+    description: "Deterministic side effects awaiting or recording human approval.",
+  }),
+  createManagedEntity(WorkspaceEmailScopeEntity, {
+    label: "Workspace email scopes",
+    description: "Explicitly approved senders and keywords eligible for ingestion.",
+  }),
+  createManagedEntity(WorkspacePapercutEntity, {
+    label: "Workspace papercuts",
+    description: "Deduplicated capability and workflow problems reported by agents.",
+  }),
+  createManagedEntity(WorkspaceNotificationEntity, {
+    label: "Workspace notifications",
+    description: "Durable Pushover delivery outbox with retry state.",
   }),
 ];
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Omni Workspace"
+  short_description: "Create and manage ongoing Omni research"
+  default_prompt: "Use $omni-workspace to start or update an ongoing research dossier."

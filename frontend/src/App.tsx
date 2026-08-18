@@ -19,6 +19,7 @@ const StreamerPage = lazy(() => import("./pages/StreamerPage"));
 const DataPage = lazy(() => import("./pages/DataPage"));
 const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
 const CostsPage = lazy(() => import("./pages/CostsPage"));
+const WorkspacesPage = lazy(() => import("./pages/WorkspacesPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
@@ -36,13 +37,16 @@ const PAGE_TITLES: Record<string, string> = {
   "/emails": "Email Activity",
   "/data": "Data",
   "/costs": "Costs",
+  "/workspaces": "Workspaces",
 };
 
 export default function App() {
   const path = normalizePath(usePath());
 
   useEffect(() => {
-    const section = PAGE_TITLES[path];
+    const section = path.startsWith("/workspaces")
+      ? "Workspaces"
+      : PAGE_TITLES[path];
     document.title = section ? `${section} · Omni Notify` : "Omni Notify";
   }, [path]);
 
@@ -53,7 +57,13 @@ export default function App() {
   const mediaDetailMatch = path.match(/^\/media\/([^/]+)$/);
   const podcastDetailMatch = path.match(/^\/podcasts\/([^/]+)$/);
   const podsDetailMatch = path.match(/^\/pods\/([^/]+)$/);
-  if (feedbackMatch) {
+  const workspaceSubjectMatch = path.match(/^\/workspaces\/([^/]+)\/([^/]+)$/);
+  const workspaceMatch = path.match(/^\/workspaces\/([^/]+)$/);
+  if (workspaceSubjectMatch) {
+    page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage workspaceId={decodeURIComponent(workspaceSubjectMatch[1])} subjectId={decodeURIComponent(workspaceSubjectMatch[2])} /></Suspense>;
+  } else if (workspaceMatch) {
+    page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage workspaceId={decodeURIComponent(workspaceMatch[1])} /></Suspense>;
+  } else if (feedbackMatch) {
     const kind = feedbackMatch[1] as FeedbackKind;
     const id = decodeURIComponent(feedbackMatch[2]);
     page = <FeedbackPage key={`${kind}/${id}`} kind={kind} id={id} />;
@@ -122,6 +132,9 @@ export default function App() {
             <CostsPage />
           </Suspense>
         );
+        break;
+      case "/workspaces":
+        page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage /></Suspense>;
         break;
       default:
         page = <HomePage />;

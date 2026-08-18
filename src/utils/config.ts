@@ -18,7 +18,15 @@ const configSchema = baseConfigSchema
     PUSHOVER_LIVE_TOKEN: z.string().optional(),
     PUSHOVER_CALENDAR_TOKEN: z.string().optional(),
     PUSHOVER_BRIEFING_TOKEN: z.string().optional(),
+    PUSHOVER_WORKSPACE_TOKEN: z.string().optional(),
     BRIEFING_MODEL: z.string().optional(),
+    WORKSPACE_MODEL: z.string().optional(),
+    WORKSPACE_SCHEDULE: z.string().optional().default("0 0 9 * * 0"),
+    WORKSPACES_PUBLIC_URL: z
+      .string()
+      .optional()
+      .default("http://omni.boris")
+      .transform((s) => s.replace(/\/+$/, "")),
     GOOGLE_GENERATIVE_AI_API_KEY: z.string().optional(),
     ANTHROPIC_API_KEY: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
@@ -175,6 +183,7 @@ const configSchema = baseConfigSchema
     EMAIL_SELF_ADDRESS: c.EMAIL_SELF_ADDRESS ?? c.FASTMAIL_USERNAME,
     PUSHOVER_LIVE_TOKEN: c.PUSHOVER_LIVE_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
+    PUSHOVER_WORKSPACE_TOKEN: c.PUSHOVER_WORKSPACE_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_CALENDAR_TOKEN: c.PUSHOVER_CALENDAR_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_RECS_TOKEN: c.PUSHOVER_RECS_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_PODCAST_TOKEN: c.PUSHOVER_PODCAST_TOKEN ?? c.PUSHOVER_TOKEN,

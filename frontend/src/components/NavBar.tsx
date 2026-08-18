@@ -7,6 +7,7 @@ const LINKS = [
   { to: "/podcasts", label: "Podcasts" },
   { to: "/pods", label: "PressPods" },
   { to: "/briefings", label: "Briefings" },
+  { to: "/workspaces", label: "Workspaces" },
   { to: "/emails", label: "Email" },
   { to: "/pets", label: "Pets" },
   { to: "/costs", label: "Costs" },

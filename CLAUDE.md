@@ -201,6 +201,14 @@ src/
 │   ├── events.ts            # taskRunBus (run start/finish) + runLogBus (per-line log events)
 │   ├── logCapture.ts        # Logger.onLog tap + AsyncLocalStorage run attribution
 │   └── registry.ts          # TaskRegistry: tracked wrapper, manual runs, next-run times
+├── workspaces/              # Durable, conversational research workspaces
+│   ├── definitions.ts       # Code-first workspace registry; Purchase Research first
+│   ├── engine.ts            # Bounded agent context → subjects/artifacts/sources/proposals
+│   ├── task.ts              # Scheduled per-subject refresh + manual/email runs
+│   ├── email.ts             # Deterministic ingestion through approved sender/keyword scopes
+│   ├── actions.ts           # Human approval coordinator (email scopes + idempotent CalDAV)
+│   ├── notifications.ts     # Durable Pushover outbox with specific dossier/action deep links
+│   └── persistence.ts       # Subjects, revisions, messages, sources, actions, scopes, papercuts
 ├── emails/                  # Email utilities (general purpose)
 ├── tools/
 │   └── preview-server.ts    # Dev harness: real server + fake data for frontend work

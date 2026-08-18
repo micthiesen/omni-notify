@@ -218,6 +218,9 @@ export class TaskRegistry {
         recordRunEnd(run.runId, {
           status: "error",
           error: error instanceof Error ? error.message : String(error),
+          summary: providesRunSummary(entry.task)
+            ? entry.task.getLastRunSummary()
+            : undefined,
         });
         throw error;
       } finally {

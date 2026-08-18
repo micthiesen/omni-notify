@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workspace Papercuts"
+  short_description: "Review and fix recurring workspace friction"
+  default_prompt: "Use $workspace-papercuts to review open reports and address reusable workspace problems."

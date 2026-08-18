@@ -19,6 +19,18 @@ export function getBriefingModel(): { model: LanguageModel; modelId: string } {
   );
 }
 
+export function getWorkspaceModel(operation = "run"): {
+  model: LanguageModel;
+  modelId: string;
+} {
+  return resolveModel(
+    config.WORKSPACE_MODEL,
+    "openai:gpt-5.6-terra",
+    "workspaces",
+    operation,
+  );
+}
+
 export function getExtractionModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.EXTRACTION_MODEL,

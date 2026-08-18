@@ -31,9 +31,14 @@ import PressPodsTask from "./press-pods/task.js";
 import { MediaRecommendationTask } from "./recommendations/task.js";
 import { MediaTasteReflectionTask } from "./recommendations/taste/task.js";
 import { type EmailControls, startServer } from "./server.js";
+import { taskRunBus } from "./task-runs/events.js";
 import { installLogCapture } from "./task-runs/logCapture.js";
-import { TaskRegistry } from "./task-runs/registry.js";
+import { TaskAlreadyRunningError, TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
+import { workspaceDefinitions } from "./workspaces/definitions.js";
+import { WorkspaceEmailHandler } from "./workspaces/email.js";
+import { WorkspaceNotificationTask } from "./workspaces/notifications.js";
+import { WorkspaceTask } from "./workspaces/task.js";
 
 Injector.configure({ config });
 installLogCapture();
@@ -119,6 +124,10 @@ function buildTasks(streamers: Streamer[]): ScheduledTask[] {
   if (tasteReflection) tasks.push(tasteReflection);
   const podcastTasteReflection = PodcastTasteReflectionTask.create(logger);
   if (podcastTasteReflection) tasks.push(podcastTasteReflection);
+  for (const definition of workspaceDefinitions) {
+    tasks.push(new WorkspaceTask(definition, logger));
+  }
+  tasks.push(new WorkspaceNotificationTask(logger));
 
   return tasks;
 }
@@ -151,6 +160,49 @@ const serverOnly = process.argv.includes("--server-only");
 
 const registry = new TaskRegistry(logger);
 const streamers = loadStreamers();
+const pendingWorkspaceEmailRuns = new Map<
+  string,
+  { workspaceId: string; subjectId: string; message: string }
+>();
+
+function requestWorkspaceEmailRun(
+  workspaceId: string,
+  subjectId: string,
+  message: string,
+  trigger: "email" = "email",
+): void {
+  const definition = workspaceDefinitions.find((item) => item.id === workspaceId);
+  if (!definition) return;
+  const key = `${workspaceId}:${subjectId}`;
+  try {
+    registry.runNow(definition.taskName, {
+      message,
+      subjectId,
+      trigger,
+    });
+    pendingWorkspaceEmailRuns.delete(key);
+  } catch (error) {
+    if (!(error instanceof TaskAlreadyRunningError)) throw error;
+    pendingWorkspaceEmailRuns.set(key, { workspaceId, subjectId, message });
+    logger.info(
+      `Queued a follow-up workspace email run for ${workspaceId}/${subjectId}`,
+    );
+  }
+}
+
+const unsubscribeWorkspaceEmailRuns = taskRunBus.subscribe((event) => {
+  if (event.type !== "run-finished") return;
+  const definition = workspaceDefinitions.find(
+    (item) => item.taskName === event.taskName,
+  );
+  if (!definition) return;
+  setTimeout(() => {
+    for (const pending of [...pendingWorkspaceEmailRuns.values()]) {
+      if (pending.workspaceId !== definition.id) continue;
+      requestWorkspaceEmailRun(pending.workspaceId, pending.subjectId, pending.message);
+    }
+  }, 50);
+});
 
 // Filled in once the email features start; powers the reprocess endpoint.
 const emailControls: EmailControls = {};
@@ -203,6 +255,7 @@ if (!serverOnly) {
     logger.info(`Received ${signal}, shutting down gracefully...`);
     closeServer();
     cleanupEmailTransport?.();
+    unsubscribeWorkspaceEmailRuns();
     await scheduler.shutdown();
     await recoveryPromise;
     logger.info("Shutdown complete");
@@ -288,6 +341,13 @@ async function startEmailFeatures(
   const calendar = createCalendarHandler(transport, parentLogger, triage);
   if (calendar) dispatcher.register(calendar);
 
+  const workspaces = new WorkspaceEmailHandler(
+    (workspaceId, subjectId, message, trigger) =>
+      requestWorkspaceEmailRun(workspaceId, subjectId, message, trigger),
+    emailLogger.extend("Workspaces"),
+  );
+  dispatcher.register(workspaces);
+
   if (dispatcher.handlerCount === 0) {
     emailLogger.info("No email pipelines active");
     return undefined;
@@ -296,6 +356,7 @@ async function startEmailFeatures(
   const handlers = new Map<string, EmailHandler>();
   if (parcel) handlers.set(parcel.name, parcel);
   if (calendar) handlers.set(calendar.name, calendar);
+  handlers.set(workspaces.name, workspaces);
 
   await transport.start(() => dispatcher.onMailEvent());
   emailLogger.info(
