@@ -133,6 +133,7 @@ function output(subjectId = "new-1"): Output {
         domains: [],
         subject_keywords: [],
         body_keywords: [],
+        event: null,
       },
     ],
     notification: null,

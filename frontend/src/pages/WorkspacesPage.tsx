@@ -61,8 +61,8 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
     setError(null);
     try {
       const { runId } = await sendWorkspaceMessage(id, message);
-      setMessages((current) => ({ ...current, [id]: "" }));
       await waitForRun(runId);
+      setMessages((current) => ({ ...current, [id]: "" }));
       await load();
       window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
@@ -204,8 +204,8 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
         message.trim(),
         subjectId,
       );
-      setMessage("");
       await waitForRun(runId);
+      setMessage("");
       await load();
       window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
