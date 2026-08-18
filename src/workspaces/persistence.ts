@@ -249,6 +249,13 @@ export function addWorkspaceMessage(
   return row;
 }
 
+export function assignWorkspaceMessageSubject(
+  messageId: string,
+  subjectId: string,
+): void {
+  WorkspaceMessageEntity.patch({ messageId }, { subjectId });
+}
+
 export function listWorkspaceMessages(
   workspaceId: string,
   subjectId?: string,

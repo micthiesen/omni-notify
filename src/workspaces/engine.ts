@@ -14,6 +14,7 @@ import {
   addWorkspaceArtifactRevision,
   addWorkspaceMessage,
   addWorkspaceSource,
+  assignWorkspaceMessageSubject,
   getLatestWorkspaceArtifacts,
   getWorkspaceSubject,
   listWorkspaceEmailScopes,
@@ -97,6 +98,16 @@ export async function runWorkspace(
   const { model, modelId } = getWorkspaceModel(request.trigger);
   logger.info(`Running ${definition.title} workspace (${modelId}, ${request.trigger})`);
   const prompt = buildWorkspacePrompt(definition, request);
+  const runId = getCurrentRunId();
+  const persistedUserMessage = request.message
+    ? addWorkspaceMessage({
+        workspaceId: definition.id,
+        subjectId: request.subjectId,
+        role: "user",
+        text: request.message,
+        runId,
+      })
+    : undefined;
   const result = await generateText({
     model,
     output: Output.object({ schema: workspaceOutputSchema }),
@@ -144,6 +155,7 @@ export async function runWorkspace(
     result.output,
     request,
     logger,
+    persistedUserMessage?.messageId,
   );
   logger.info(
     `Workspace updated ${applied.updatedSubjects} subject(s) and proposed ${applied.createdActions} action(s)`,
@@ -156,6 +168,7 @@ export async function applyWorkspaceOutput(
   output: WorkspaceOutput,
   request: WorkspaceRunRequest,
   logger: Logger,
+  persistedUserMessageId?: string,
 ): Promise<WorkspaceRunResult> {
   const runId = getCurrentRunId();
   const idMap = new Map<string, string>();
@@ -283,8 +296,11 @@ export async function applyWorkspaceOutput(
     : updatedSubjectIds.size > 0
       ? [...updatedSubjectIds]
       : [undefined];
-  for (const messageSubjectId of messageSubjectIds) {
-    if (request.message) {
+  if (persistedUserMessageId && messageSubjectIds[0]) {
+    assignWorkspaceMessageSubject(persistedUserMessageId, messageSubjectIds[0]);
+  }
+  for (const [index, messageSubjectId] of messageSubjectIds.entries()) {
+    if (request.message && (!persistedUserMessageId || index > 0)) {
       addWorkspaceMessage({
         workspaceId: definition.id,
         subjectId: messageSubjectId,

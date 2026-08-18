@@ -52,6 +52,10 @@ vi.mock("./persistence.js", () => ({
     state.messages.push(message);
     return message;
   },
+  assignWorkspaceMessageSubject: (messageId: string, subjectId: string) => {
+    const message = state.messages.find((item) => item.messageId === messageId);
+    if (message) message.subjectId = subjectId;
+  },
   addWorkspaceSource: (input: Omit<WorkspaceSourceData, "sourceId" | "createdAt">) => {
     const source: WorkspaceSourceData = {
       ...input,
@@ -173,6 +177,32 @@ describe("workspace output application", () => {
     ).toBe(true);
     expect(result).toMatchObject({ updatedSubjects: 1, createdActions: 1 });
     expect(state.deliver).toHaveBeenCalledTimes(1);
+  });
+
+  it("attaches a pre-model user message to the subject without duplicating it", async () => {
+    state.messages.push({
+      messageId: "persisted-user-message",
+      workspaceId: definition.id,
+      role: "user",
+      text: "Find me a camera",
+      createdAt: 1,
+      runId: "run-1",
+    });
+
+    await applyWorkspaceOutput(
+      definition,
+      output(),
+      { trigger: "message", message: "Find me a camera" },
+      logger,
+      "persisted-user-message",
+    );
+
+    const subject = [...state.subjects.values()][0];
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[0]).toMatchObject({
+      messageId: "persisted-user-message",
+      subjectId: subject?.subjectId,
+    });
   });
 
   it("rejects hallucinated subject IDs instead of allocating a dossier", async () => {
