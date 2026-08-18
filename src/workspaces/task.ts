@@ -34,6 +34,10 @@ export class WorkspaceTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
+    if (this.definition.scheduledRuns === false) {
+      this.lastSummary = "On-demand workspace; scheduled refresh skipped";
+      return;
+    }
     const subjects = listWorkspaceSubjects(this.definition.id).filter(
       (subject) => subject.status === "active",
     );

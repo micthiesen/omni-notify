@@ -22,6 +22,10 @@ export interface WorkspaceDefinition {
   subjectLabelPlural: string;
   taskName: string;
   schedule: string;
+  /** False for workspaces that only progress in response to user input. */
+  scheduledRuns?: boolean;
+  inputPlaceholder?: string;
+  followUpPlaceholder?: string;
   instructions: string;
   artifacts: WorkspaceArtifactDefinition[];
 }

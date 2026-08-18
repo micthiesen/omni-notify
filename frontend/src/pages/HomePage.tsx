@@ -181,7 +181,7 @@ export default function HomePage() {
           </div>
         ) : (
           <Link to="/workspaces" className="home-research-empty">
-            Start an ongoing research workspace ›
+            Start an ongoing workspace ›
           </Link>
         )}
       </section>

@@ -570,6 +570,9 @@ export interface WorkspaceDefinition {
   subjectLabelPlural: string;
   taskName: string;
   schedule: string;
+  scheduledRuns?: boolean;
+  inputPlaceholder?: string;
+  followUpPlaceholder?: string;
   instructions: string;
   artifacts: WorkspaceArtifactDefinition[];
 }

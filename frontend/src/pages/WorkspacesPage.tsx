@@ -30,8 +30,8 @@ export default function WorkspacesPage({ workspaceId, subjectId }: Props) {
 
 function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[] | null>(null);
-  const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [messages, setMessages] = useState<Record<string, string>>({});
+  const [busyWorkspaceId, setBusyWorkspaceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
     if (workspaceId) {
@@ -55,19 +55,20 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
   }, [load]);
 
   const send = async (id: string) => {
-    if (!message.trim() || busy) return;
-    setBusy(true);
+    const message = messages[id]?.trim();
+    if (!message || busyWorkspaceId) return;
+    setBusyWorkspaceId(id);
     setError(null);
     try {
-      const { runId } = await sendWorkspaceMessage(id, message.trim());
-      setMessage("");
+      const { runId } = await sendWorkspaceMessage(id, message);
+      setMessages((current) => ({ ...current, [id]: "" }));
       await waitForRun(runId);
       await load();
       window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
     } finally {
-      setBusy(false);
+      setBusyWorkspaceId(null);
     }
   };
 
@@ -77,7 +78,7 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
         <div className="page-header-stack">
           <h1>{workspaceId ? workspaces?.[0]?.title ?? "Workspace" : "Workspaces"}</h1>
           <p className="page-subtitle">
-            Ongoing research with durable plans, evidence, and human-approved actions.
+            Ongoing projects with durable context, practical artifacts, and human-approved actions.
           </p>
         </div>
       </div>
@@ -95,6 +96,7 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
                 <span>{workspace.activeSubjectCount} Active</span>
                 <span>{workspace.pendingActionCount} Pending</span>
                 <span>{workspace.openPapercutCount} Papercuts</span>
+                {workspace.scheduledRuns === false && <span>On Demand</span>}
               </div>
             </div>
             <form
@@ -105,13 +107,26 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
               }}
             >
               <textarea
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="What are you looking to buy, compare, or keep watching?"
+                value={messages[workspace.id] ?? ""}
+                onChange={(event) =>
+                  setMessages((current) => ({
+                    ...current,
+                    [workspace.id]: event.target.value,
+                  }))
+                }
+                placeholder={
+                  workspace.inputPlaceholder ??
+                  `What would you like help with for this ${workspace.subjectLabel.toLowerCase()}?`
+                }
                 aria-label={`Message ${workspace.title}`}
               />
-              <button type="submit" disabled={busy || !message.trim()}>
-                {busy ? "Starting…" : "Send"}
+              <button
+                type="submit"
+                disabled={
+                  busyWorkspaceId !== null || !messages[workspace.id]?.trim()
+                }
+              >
+                {busyWorkspaceId === workspace.id ? "Starting…" : "Send"}
               </button>
             </form>
             <div className="workspace-subject-list">
@@ -123,7 +138,7 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
                 >
                   <span>
                     <strong>{subject.title}</strong>
-                    <small>{subject.summary || "Research just started."}</small>
+                    <small>{subject.summary || "Work just started."}</small>
                   </span>
                   <span className={`workspace-status status-${subject.status}`}>
                     {subject.status}
@@ -131,7 +146,9 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
                 </Link>
               ))}
               {workspace.subjects.length === 0 && (
-                <div className="muted">Message the workspace to start the first purchase.</div>
+                <div className="muted">
+                  Message the workspace to start the first {workspace.subjectLabel.toLowerCase()}.
+                </div>
               )}
             </div>
             {!workspaceId && (
@@ -254,7 +271,10 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
         <textarea
           value={message}
           onChange={(event) => setMessage(event.target.value)}
-          placeholder="Ask a follow-up, change requirements, add a candidate, or request fresh research…"
+          placeholder={
+            detail.workspace.followUpPlaceholder ??
+            `Add details or ask for the next step on this ${detail.workspace.subjectLabel.toLowerCase()}…`
+          }
           aria-label="Message workspace"
         />
         <button type="submit" disabled={busy || !message.trim()}>{busy ? "Working…" : "Send"}</button>
