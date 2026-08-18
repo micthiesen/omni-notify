@@ -63,6 +63,7 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
       setMessage("");
       await waitForRun(runId);
       await load();
+      window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
     } finally {
@@ -189,6 +190,7 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
       setMessage("");
       await waitForRun(runId);
       await load();
+      window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
     } finally {
@@ -201,6 +203,7 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
     try {
       await resolveWorkspaceAction(actionId, resolution);
       await load();
+      window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
     } finally {
@@ -214,6 +217,7 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
     try {
       await setWorkspaceSubjectStatus(workspaceId, subjectId, status);
       await load();
+      window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
     } finally {

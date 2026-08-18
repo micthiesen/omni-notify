@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import type { ReactNode } from "react";
 import { NavBar } from "./components/NavBar";
+import { SectionNav } from "./components/SectionNav";
 import { LiveDataProvider } from "./live";
 import BriefingsPage from "./pages/BriefingsPage";
 import FeedbackPage, { type FeedbackKind } from "./pages/FeedbackPage";
@@ -20,6 +21,7 @@ const DataPage = lazy(() => import("./pages/DataPage"));
 const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
 const CostsPage = lazy(() => import("./pages/CostsPage"));
 const WorkspacesPage = lazy(() => import("./pages/WorkspacesPage"));
+const OperationsPage = lazy(() => import("./pages/OperationsPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
@@ -30,7 +32,7 @@ function normalizePath(path: string): string {
 
 const PAGE_TITLES: Record<string, string> = {
   "/pets": "Pets",
-  "/media": "Media",
+  "/media": "Watch",
   "/podcasts": "Podcasts",
   "/pods": "PressPods",
   "/briefings": "Briefings",
@@ -38,6 +40,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/data": "Data",
   "/costs": "Costs",
   "/workspaces": "Workspaces",
+  "/operations": "Operations",
 };
 
 export default function App() {
@@ -136,6 +139,9 @@ export default function App() {
       case "/workspaces":
         page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage /></Suspense>;
         break;
+      case "/operations":
+        page = <Suspense fallback={<div className="loading">Loading…</div>}><OperationsPage /></Suspense>;
+        break;
       default:
         page = <HomePage />;
         break;
@@ -144,8 +150,13 @@ export default function App() {
 
   return (
     <LiveDataProvider>
-      <NavBar path={path} />
-      <main className={`page ${path === "/data" ? "page-data" : ""}`}>{page}</main>
+      <div className="app-shell">
+        <NavBar path={path} />
+        <main className={`page ${path === "/data" ? "page-data" : ""}`}>
+          <SectionNav path={path} />
+          {page}
+        </main>
+      </div>
     </LiveDataProvider>
   );
 }

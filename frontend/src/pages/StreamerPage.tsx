@@ -393,7 +393,7 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
     return (
       <>
         <Link to="/" className="back-link">
-          ← Dashboard
+          ← Home
         </Link>
         <div className="error">
           <div>Unknown streamer</div>
@@ -411,7 +411,7 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
   return (
     <>
       <Link to="/" className="back-link">
-        ← Dashboard
+        ← Home
       </Link>
       <StreamerHeader streamer={streamer} />
       {error !== null && (

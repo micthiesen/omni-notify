@@ -23,10 +23,18 @@ interface LinkProps {
   className?: string;
   title?: string;
   ariaLabel?: string;
+  ariaCurrent?: "page";
   children: ReactNode;
 }
 
-export function Link({ to, className, title, ariaLabel, children }: LinkProps) {
+export function Link({
+  to,
+  className,
+  title,
+  ariaLabel,
+  ariaCurrent,
+  children,
+}: LinkProps) {
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (
       e.defaultPrevented ||
@@ -48,6 +56,7 @@ export function Link({ to, className, title, ariaLabel, children }: LinkProps) {
       className={className}
       title={title}
       aria-label={ariaLabel}
+      aria-current={ariaCurrent}
       onClick={onClick}
     >
       {children}
