@@ -10,6 +10,11 @@ import type {
   FetchedEmail,
 } from "../types.js";
 import {
+  type AutoReadClient,
+  discoverAutoReadFolders,
+  markRecentUnreadRead,
+} from "./autoRead.js";
+import {
   decodeAttachmentBlobId,
   type MessageCoords,
   mapParsedMessage,
@@ -62,8 +67,8 @@ interface ImapAuth {
  * Bugzilla #1611624): the pre-login CAPABILITY response is minimal, so
  * capabilities are only trusted post-login (imapflow re-reads them);
  * parameterized `SELECT (CONDSTORE)` is rejected, so QRESYNC stays off and
- * sync is plain-UID based; there is no MOVE, but this transport is read-only
- * so it never needs one.
+ * sync is plain-UID based; there is no MOVE, and the only mailbox mutation is
+ * adding the \Seen flag for the small auto-read cleanup pass.
  */
 export class ImapTransport implements EmailTransport {
   public readonly name = "IMAP";
@@ -76,6 +81,8 @@ export class ImapTransport implements EmailTransport {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffMs = 0;
   private stopped = false;
+  /** Special-use mailboxes are rediscovered after every new connection. */
+  private autoReadFolders: string[] | undefined;
   /** Last bulk-import-guard skip count per folder, to de-noise repeat logs. */
   private lastSkipCounts = new Map<string, number>();
 
@@ -123,6 +130,7 @@ export class ImapTransport implements EmailTransport {
     client.on("exists", () => this.onMailEvent?.());
 
     await client.connect();
+    this.autoReadFolders = undefined;
     const caps = ["IDLE", "CONDSTORE", "QRESYNC", "UIDPLUS"]
       .map((c) => `${c}=${client.capabilities.has(c) ? "y" : "n"}`)
       .join(" ");
@@ -182,6 +190,7 @@ export class ImapTransport implements EmailTransport {
           );
         }
       }
+      await this.autoRead(client);
     } finally {
       await this.restoreInbox(client);
     }
@@ -192,6 +201,25 @@ export class ImapTransport implements EmailTransport {
         for (const commit of commits) commit();
       },
     };
+  }
+
+  private async autoRead(client: ImapFlow): Promise<void> {
+    if (this.autoReadFolders === undefined) {
+      try {
+        this.autoReadFolders = await discoverAutoReadFolders(client as AutoReadClient);
+      } catch (error) {
+        this.logger.warn(
+          `IMAP auto-read mailbox discovery failed: ${(error as Error).message}`,
+        );
+        return;
+      }
+    }
+
+    await markRecentUnreadRead(
+      client as AutoReadClient,
+      this.autoReadFolders,
+      this.logger,
+    );
   }
 
   private async pollFolder(
