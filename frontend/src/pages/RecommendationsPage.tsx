@@ -11,6 +11,7 @@ import type {
   TasteProfile,
 } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
+import { OnDeck } from "../components/OnDeck";
 import { RecommendationRuns } from "../components/RecommendationRuns";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
@@ -181,6 +182,7 @@ function MediaTasteBrain({
       subtitle="Watching and feedback are reflected into a versioned taste profile."
       emptyText="No profile yet. The reflection task will build one from Plex watching and recommendation feedback."
       stats={stats}
+      collapsible
       footer={
         profile && (
           <div className="taste-commitments">
@@ -362,15 +364,12 @@ export default function RecommendationsPage() {
       </div>
       <Toast toast={toast} />
 
+      <OnDeck items={snapshot?.onDeck ?? []} />
+
       <MediaTasteBrain
         profile={tasteProfile}
         loading={tasteLoading}
         error={tasteError}
-      />
-
-      <RecommendationRuns
-        taskName={TASK_NAME}
-        latestRunId={latestRecommendationRunId}
       />
 
       {recs !== null && recs.length > 0 && (
@@ -419,6 +418,11 @@ export default function RecommendationsPage() {
           {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
         </>
       )}
+
+      <RecommendationRuns
+        taskName={TASK_NAME}
+        latestRunId={latestRecommendationRunId}
+      />
     </>
   );
 }

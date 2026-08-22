@@ -69,6 +69,7 @@ export function TasteBrain({
   emptyText,
   stats,
   footer,
+  collapsible = false,
 }: {
   profile: TasteBrainProfile | null;
   loading: boolean;
@@ -77,6 +78,7 @@ export function TasteBrain({
   emptyText: string;
   stats: [string, ReactNode][];
   footer?: ReactNode;
+  collapsible?: boolean;
 }) {
   const columns: [string, TasteClaim[]][] = profile
     ? [
@@ -87,24 +89,26 @@ export function TasteBrain({
       ]
     : [];
 
-  return (
-    <section className="page-section taste-brain">
-      <div className="taste-heading">
-        <div>
-          <h2 className="section-title">Taste Brain</h2>
-          <div className="muted taste-subtitle">{subtitle}</div>
-        </div>
-        {profile && (
-          <span
-            className="taste-version meta-row"
-            title={formatAbsolute(profile.generatedAt)}
-          >
-            <span>v{profile.version}</span>
-            <span>{formatRelative(profile.generatedAt)}</span>
-          </span>
-        )}
+  const heading = (
+    <div className="taste-heading">
+      <div>
+        <h2 className="section-title">Taste Brain</h2>
+        <div className="muted taste-subtitle">{subtitle}</div>
       </div>
+      {profile && (
+        <span
+          className="taste-version meta-row"
+          title={formatAbsolute(profile.generatedAt)}
+        >
+          <span>v{profile.version}</span>
+          <span>{formatRelative(profile.generatedAt)}</span>
+        </span>
+      )}
+    </div>
+  );
 
+  const content = (
+    <>
       {loading && <div className="loading-inline">Loading taste profile…</div>}
       {!loading && error && (
         <div className="error-inline">Taste profile unavailable: {error}</div>
@@ -156,6 +160,40 @@ export function TasteBrain({
           {footer}
         </div>
       )}
+    </>
+  );
+
+  if (collapsible) {
+    return (
+      <details className="page-section taste-brain taste-disclosure">
+        <summary>
+          <span className="taste-heading">
+            <span>
+              <span className="section-title" role="heading" aria-level={2}>
+                Taste Brain
+              </span>
+              <span className="muted taste-subtitle">{subtitle}</span>
+            </span>
+            {profile && (
+              <span
+                className="taste-version meta-row"
+                title={formatAbsolute(profile.generatedAt)}
+              >
+                <span>v{profile.version}</span>
+                <span>{formatRelative(profile.generatedAt)}</span>
+              </span>
+            )}
+          </span>
+        </summary>
+        <div className="taste-disclosure-body">{content}</div>
+      </details>
+    );
+  }
+
+  return (
+    <section className="page-section taste-brain">
+      {heading}
+      {content}
     </section>
   );
 }

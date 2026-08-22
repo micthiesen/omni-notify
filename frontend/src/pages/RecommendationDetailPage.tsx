@@ -169,17 +169,38 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
               ))}
             </ul>
           )}
-          <div className="rec-links">
-            <a href={rec.links.tmdb} target="_blank" rel="noreferrer">
-              TMDB
+          <nav className="detail-service-links" aria-label="Title links">
+            <a
+              href={rec.links.plex}
+              target="_blank"
+              rel="noreferrer"
+              className="detail-service-link detail-service-link-plex"
+              aria-label={`Open ${rec.title} in Plex`}
+            >
+              <span className="detail-service-link-label">Open in Plex</span>
+              <span className="detail-service-link-hint">Find in library</span>
             </a>
-            <a href={rec.links.plex} target="_blank" rel="noreferrer">
-              Plex
+            <a
+              href={rec.links.manager}
+              target="_blank"
+              rel="noreferrer"
+              className={`detail-service-link detail-service-link-manager detail-service-link-${rec.mediaType === "movie" ? "radarr" : "sonarr"}`}
+              aria-label={`Open ${rec.title} in ${rec.mediaType === "movie" ? "Radarr" : "Sonarr"}`}
+            >
+              <span className="detail-service-link-label">
+                Open in {rec.mediaType === "movie" ? "Radarr" : "Sonarr"}
+              </span>
+              <span className="detail-service-link-hint">Manage library</span>
             </a>
-            <a href={rec.links.manager} target="_blank" rel="noreferrer">
-              {rec.mediaType === "movie" ? "Radarr" : "Sonarr"}
+            <a
+              href={rec.links.tmdb}
+              target="_blank"
+              rel="noreferrer"
+              className="detail-metadata-link detail-metadata-link-tmdb"
+            >
+              View metadata on TMDB
             </a>
-          </div>
+          </nav>
           {canRate && (
             <div className="rec-feedback" aria-label="Recommendation feedback">
               {REC_FEEDBACK_ACTIONS.map((action) => (
