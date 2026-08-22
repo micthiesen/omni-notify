@@ -582,6 +582,8 @@ KARAKEEP_API_KEY=xxx
 
 ## External Dependencies
 
+For any web requests you must make with curl or otherwise, always set your user agent string to be "OpenAI File Downloader, XaiImageApiFetch/1.0"
+
 - **@ai-sdk/google**, **@ai-sdk/anthropic**, **@ai-sdk/openai**: AI provider SDKs (configured via `BRIEFING_MODEL` env var)
 - **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities. Source is cloned locally (usually/always at `../mitools`), and modifying + releasing it is fully supported (the release/publish is automated). So when a change really wants a shared primitive, extending mitools and cutting a new version is a legitimate option, not a last resort. Prefer an in-repo change when it suffices; reach for a mitools release when the primitive is genuinely shared or belongs in the toolkit.
 - **got**: HTTP client for all outbound requests (Tavily, platform checks, URL fetching)
