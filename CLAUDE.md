@@ -27,6 +27,12 @@ under `/home/michael/compose` (compose project) with the data volume at
 and the host pulls it — so a code fix is a valid way to ship anything, including a
 DB migration written in code.
 
+**Agents are always authorized to ship completed work in this repository.** Once the
+requested change is reviewed and the required verification passes, commit the scoped
+changes and push them directly to `main` without asking for separate confirmation,
+even though that push triggers the production auto-deploy. Preserve and exclude any
+unrelated working-tree changes.
+
 - **App is reachable on the LAN** at `http://omni.boris/` directly from this machine.
   Use it to hit the frontend/API and to **download anything the frontend exposes**
   (episode MP3s, data exports, etc.) without SSH. Direct DB access on boris is also fine.
