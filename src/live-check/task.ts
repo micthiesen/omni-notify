@@ -3,6 +3,7 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import appConfig from "../utils/config.js";
+import { fetchDggFeed, selectDggStreams } from "./dgg.js";
 import { ViewerMetricsService } from "./metrics/index.js";
 import {
   getNotificationPermissions,
@@ -22,7 +23,13 @@ import {
   type StreamerStatusOffline,
   upsertStreamerStatus,
 } from "./persistence.js";
-import { getNotificationUrlFields, platformConfigs } from "./platforms/index.js";
+import {
+  type FetchedStatus,
+  getNotificationUrlFields,
+  LiveStatus,
+  type Platform,
+  platformConfigs,
+} from "./platforms/index.js";
 import { recordCompletedSession } from "./sessions.js";
 import { isStreamerDue, type PlatformBinding, type Streamer } from "./streamers.js";
 import { TitleChangeDebouncer } from "./titleDebounce.js";
@@ -46,14 +53,22 @@ export default class LiveCheckTask extends ScheduledTask {
   private metricsService: ViewerMetricsService;
   private titleDebouncer = new TitleChangeDebouncer();
   private tickCount = 0;
+  private readonly configuredStreamers: Streamer[];
+  private readonly dggStatuses = new Map<string, FetchedStatus>();
 
   public constructor(
     streamers: Streamer[],
     parentLogger: Logger,
     private readonly reconcileIOSControls?: () => Promise<void>,
+    private readonly dggDiscovery?: {
+      topEmbeds: number;
+      availablePlatforms: ReadonlySet<Platform>;
+      fetchFeed?: typeof fetchDggFeed;
+    },
   ) {
     super();
     this.streamers = streamers;
+    this.configuredStreamers = [...streamers];
     this.streamersById = new Map(streamers.map((s) => [s.id, s]));
     this.logger = parentLogger.extend("LiveCheckTask");
     this.metricsService = new ViewerMetricsService(
@@ -83,6 +98,9 @@ export default class LiveCheckTask extends ScheduledTask {
     // unknown-streak change for that streamer this round. The startup run
     // (tick 0) always includes them.
     const tick = this.tickCount++;
+    if (this.dggDiscovery && isStreamerDue("background", tick)) {
+      await this.refreshDggStreamers();
+    }
     const due = this.streamers.filter((s) => isStreamerDue(s.tier, tick));
     await Promise.all(due.map((s) => this.tickStreamer(s)));
     // Background streamers' unknown streaks (and thus outage detection) only
@@ -95,6 +113,81 @@ export default class LiveCheckTask extends ScheduledTask {
       // must never turn a successful live-status tick into a failed task run.
       this.logger.warn(`Failed to reconcile iOS controls: ${(error as Error).message}`);
     }
+  }
+
+  private async refreshDggStreamers(): Promise<void> {
+    if (!this.dggDiscovery) return;
+
+    let selected: ReturnType<typeof selectDggStreams>;
+    try {
+      selected = selectDggStreams({
+        feed: await (this.dggDiscovery.fetchFeed ?? fetchDggFeed)(),
+        limit: this.dggDiscovery.topEmbeds,
+        configuredStreamers: this.configuredStreamers,
+        availablePlatforms: this.dggDiscovery.availablePlatforms,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to refresh Destiny.gg embeds: ${message}`);
+      for (const streamer of this.streamers) {
+        if (streamer.dgg) {
+          this.dggStatuses.set(streamer.id, {
+            status: LiveStatus.Unknown,
+            error: message,
+          });
+        }
+      }
+      return;
+    }
+
+    const nextIds = new Set(selected.map(({ streamer }) => streamer.id));
+    const removed = this.streamers.filter(
+      (streamer) => streamer.dgg && !nextIds.has(streamer.id),
+    );
+    for (const streamer of removed) {
+      const previous = getStreamerStatus(streamer.id);
+      if (previous.isLive) {
+        // Leaving DGG's top set is not proof that the underlying stream ended,
+        // so retire its current status without recording a false completed
+        // session or confirming a pending viewer record.
+        upsertStreamerStatus({
+          streamerId: streamer.id,
+          isLive: false,
+          lastEndedAt: new Date(),
+          lastStartedAt: previous.startedAt,
+          lastMaxViewerCount: previous.maxViewerCount,
+        });
+      }
+      this.unknownStreaks.delete(streamer.id);
+      this.titleDebouncer.clear(streamer.id);
+      this.metricsService.discardPendingPeaks(streamer.id);
+      this.dggStatuses.delete(streamer.id);
+    }
+
+    for (const entry of selected) {
+      this.dggStatuses.set(entry.streamer.id, entry.status);
+    }
+    this.streamers.splice(
+      0,
+      this.streamers.length,
+      ...this.configuredStreamers,
+      ...selected.map(({ streamer }) => streamer),
+    );
+    this.streamersById = new Map(
+      this.streamers.map((streamer) => [streamer.id, streamer]),
+    );
+
+    const summary = selected
+      .map(
+        ({ streamer }) =>
+          `${streamer.bindings[0]?.platform}:${streamer.bindings[0]?.username}${
+            streamer.dgg?.hosted ? " (hosted)" : ""
+          }`,
+      )
+      .join(", ");
+    this.logger.debug(
+      `Destiny.gg discovery selected ${selected.length}/${this.dggDiscovery.topEmbeds}${summary ? `: ${summary}` : ""}`,
+    );
   }
 
   /**
@@ -133,14 +226,17 @@ export default class LiveCheckTask extends ScheduledTask {
   }
 
   private async tickStreamer(streamer: Streamer): Promise<void> {
-    const results = await Promise.all(
-      streamer.bindings.map<Promise<BindingFetchResult>>(async (binding) => ({
-        binding,
-        status: await platformConfigs[binding.platform].fetchLiveStatus({
-          username: binding.username,
-        }),
-      })),
-    );
+    const dggStatus = this.dggStatuses.get(streamer.id);
+    const results = dggStatus
+      ? [{ binding: streamer.bindings[0], status: dggStatus }]
+      : await Promise.all(
+          streamer.bindings.map<Promise<BindingFetchResult>>(async (binding) => ({
+            binding,
+            status: await platformConfigs[binding.platform].fetchLiveStatus({
+              username: binding.username,
+            }),
+          })),
+        );
 
     for (const r of results) this.logBindingStatus(streamer.displayName, r);
 
@@ -233,7 +329,11 @@ export default class LiveCheckTask extends ScheduledTask {
         title: `${streamer.displayName} is LIVE!`,
         message,
         token: this.getPushoverToken(streamer.id),
-        ...getNotificationUrlFields(next.primary.platform, next.primary.username),
+        ...getNotificationUrlFields(
+          next.primary.platform,
+          next.primary.username,
+          next.primary.urlOverride,
+        ),
       });
     }
 
@@ -275,7 +375,11 @@ export default class LiveCheckTask extends ScheduledTask {
           title: `${streamer.displayName} changed title`,
           message: debounced.title,
           token: this.getPushoverToken(streamer.id),
-          ...getNotificationUrlFields(next.primary.platform, next.primary.username),
+          ...getNotificationUrlFields(
+            next.primary.platform,
+            next.primary.username,
+            next.primary.urlOverride,
+          ),
         });
       }
     }
@@ -300,6 +404,7 @@ export default class LiveCheckTask extends ScheduledTask {
       urlFields: getNotificationUrlFields(
         previousLive.primary.platform,
         previousLive.primary.username,
+        previousLive.primary.urlOverride,
       ),
     });
 
@@ -331,7 +436,11 @@ export default class LiveCheckTask extends ScheduledTask {
       streamerId: streamer.id,
       displayName: streamer.displayName,
       viewerCount: summedViewerCount,
-      urlFields: getNotificationUrlFields(primary.platform, primary.username),
+      urlFields: getNotificationUrlFields(
+        primary.platform,
+        primary.username,
+        primary.urlOverride,
+      ),
     });
   }
 

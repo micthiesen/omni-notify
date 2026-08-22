@@ -63,6 +63,7 @@
     "podcast": "^2.0.1",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
+    "ws": "^8.21.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -74,6 +75,7 @@
     "@types/node": "24.13.3",
     "@types/nodemailer": "^8.0.1",
     "@types/turndown": "^5.0.6",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.23.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"

@@ -119,12 +119,21 @@ export function decideTransition(
   const primaryTitle = primaryLive.status.title;
 
   if (!previous.isLive) {
+    const reportedStart = primaryLive.status.startedAt
+      ? new Date(primaryLive.status.startedAt)
+      : null;
+    const startedAt =
+      reportedStart &&
+      Number.isFinite(reportedStart.getTime()) &&
+      reportedStart.getTime() <= now.getTime()
+        ? reportedStart
+        : now;
     const next: StreamerStatusLive = {
       streamerId,
       isLive: true,
       primary,
       primaryTitle,
-      startedAt: now,
+      startedAt,
       maxViewerCount: summedViewerCount,
       viewerCount: summedViewerCount,
       category: primaryLive.status.category,

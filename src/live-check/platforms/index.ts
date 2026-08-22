@@ -13,6 +13,8 @@ export type FetchedStatusLive = {
   title: string;
   viewerCount?: number;
   category?: string;
+  /** Source-reported stream start, used by discovery feeds when available. */
+  startedAt?: string;
 };
 
 export type FetchedStatusOffline = {
@@ -64,10 +66,14 @@ export const platformConfigs: Record<Platform, PlatformConfig> = {
 };
 
 /** Returns url and url_title fields for notifications */
-export function getNotificationUrlFields(platform: Platform, username: string) {
+export function getNotificationUrlFields(
+  platform: Platform,
+  username: string,
+  urlOverride?: string,
+) {
   const config = platformConfigs[platform];
   return {
-    url: config.getLiveUrl(username),
+    url: urlOverride ?? config.getLiveUrl(username),
     url_title: `Watch on ${config.displayName}`,
   };
 }

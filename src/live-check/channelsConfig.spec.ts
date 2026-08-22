@@ -31,7 +31,7 @@ function withConfig(content: string): void {
 describe("loadChannelsConfig", () => {
   it("returns {} when the file does not exist", () => {
     process.env.CHANNELS_CONFIG_PATH = join(dir, "does-not-exist.json");
-    expect(loadChannelsConfig()).toEqual({});
+    expect(loadChannelsConfig()).toEqual({ channels: {}, dggTopEmbeds: 0 });
   });
 
   it("parses a full production-shaped config", () => {
@@ -43,23 +43,28 @@ describe("loadChannelsConfig", () => {
       }),
     );
     expect(loadChannelsConfig()).toEqual({
-      Destiny: { youtube: "@destiny", kick: "destiny", pushoverToken: "tok" },
-      Hutch: { youtube: "@hutch", liveNotifications: false },
-      Jerma: { twitch: "jerma985", liveNotifications: false },
+      channels: {
+        Destiny: { youtube: "@destiny", kick: "destiny", pushoverToken: "tok" },
+        Hutch: { youtube: "@hutch", liveNotifications: false },
+        Jerma: { twitch: "jerma985", liveNotifications: false },
+      },
+      dggTopEmbeds: 0,
     });
   });
 
   it("accepts a string[] of usernames on a platform field", () => {
     withConfig(JSON.stringify({ Destiny: { twitch: ["destiny", "destinyalt"] } }));
     expect(loadChannelsConfig()).toEqual({
-      Destiny: { twitch: ["destiny", "destinyalt"] },
+      channels: { Destiny: { twitch: ["destiny", "destinyalt"] } },
+      dggTopEmbeds: 0,
     });
   });
 
   it("accepts an entry with a tier field", () => {
     withConfig(JSON.stringify({ Destiny: { kick: "destiny", tier: "background" } }));
     expect(loadChannelsConfig()).toEqual({
-      Destiny: { kick: "destiny", tier: "background" },
+      channels: { Destiny: { kick: "destiny", tier: "background" } },
+      dggTopEmbeds: 0,
     });
   });
 
@@ -121,7 +126,8 @@ describe("loadChannelsConfig", () => {
       JSON.stringify({ Destiny: { kick: "destiny", liveNotifications: false } }),
     );
     expect(loadChannelsConfig()).toEqual({
-      Destiny: { kick: "destiny", liveNotifications: false },
+      channels: { Destiny: { kick: "destiny", liveNotifications: false } },
+      dggTopEmbeds: 0,
     });
   });
 
@@ -132,7 +138,23 @@ describe("loadChannelsConfig", () => {
       }),
     );
     expect(loadChannelsConfig()).toEqual({
-      Destiny: { kick: "destiny", tier: "primary", liveNotifications: false },
+      channels: {
+        Destiny: { kick: "destiny", tier: "primary", liveNotifications: false },
+      },
+      dggTopEmbeds: 0,
     });
+  });
+
+  it("accepts a Destiny.gg top-embeds count alongside channels", () => {
+    withConfig(JSON.stringify({ dggTopEmbeds: 3, Destiny: { kick: "destiny" } }));
+    expect(loadChannelsConfig()).toEqual({
+      channels: { Destiny: { kick: "destiny" } },
+      dggTopEmbeds: 3,
+    });
+  });
+
+  it("rejects an invalid Destiny.gg top-embeds count", () => {
+    withConfig(JSON.stringify({ dggTopEmbeds: -1 }));
+    expect(() => loadChannelsConfig()).toThrow(/dggTopEmbeds/);
   });
 });

@@ -34,14 +34,18 @@ export function toTriggerChannels(streamers: Streamer[]): TriggerChannel[] {
         channels.push({
           ...base,
           type: "youtube",
-          url: getYouTubeLiveUrl(binding.username),
+          url: binding.urlOverride ?? getYouTubeLiveUrl(binding.username),
         });
         break;
       case Platform.Twitch:
         channels.push({ ...base, type: "twitch" });
         break;
       case Platform.Kick:
-        channels.push({ ...base, type: "kick", url: getKickLiveUrl(binding.username) });
+        channels.push({
+          ...base,
+          type: "kick",
+          url: binding.urlOverride ?? getKickLiveUrl(binding.username),
+        });
         break;
     }
   }

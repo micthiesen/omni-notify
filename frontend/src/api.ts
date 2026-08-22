@@ -55,6 +55,11 @@ interface StreamerBase {
   id: string;
   displayName: string;
   bindings: StreamerBinding[];
+  /** Presence in Destiny.gg's current embeds, when DGG discovery is enabled. */
+  dgg?: {
+    hosted: boolean;
+    viewers: number | null;
+  };
 }
 
 export type StreamerTier = "primary" | "background";

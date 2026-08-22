@@ -28,6 +28,26 @@ function viewersLabel(streamer: LiveStreamer): string | null {
   return null;
 }
 
+export function DggPresenceTag({
+  dgg,
+}: {
+  dgg: StreamerView["dgg"];
+}) {
+  if (!dgg) return null;
+
+  const label = dgg.hosted
+    ? "Hosted on DGG"
+    : dgg.viewers !== null
+      ? `${formatCompactNumber(dgg.viewers)} on DGG`
+      : "DGG";
+
+  return (
+    <span className={`dgg-tag${dgg.hosted ? " dgg-tag-hosted" : ""}`}>
+      {label}
+    </span>
+  );
+}
+
 function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
   const now = useNow(1000);
   const viewers = viewersLabel(streamer);
@@ -47,6 +67,7 @@ function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
         <span className="live-uptime">{formatUptime(now - streamer.startedAt)}</span>
         {viewers && <span>{viewers}</span>}
         {streamer.category && <span>{streamer.category}</span>}
+        <DggPresenceTag dgg={streamer.dgg} />
       </div>
       {/* Stretched-link pattern: the whole card opens the stream; the compact
           details control above it routes to the streamer detail page. Two

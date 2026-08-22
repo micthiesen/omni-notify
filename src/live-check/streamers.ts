@@ -10,7 +10,12 @@ export const PLATFORM_PRIORITY: readonly Platform[] = [
   Platform.Kick,
 ];
 
-export type PlatformBinding = { platform: Platform; username: string };
+export type PlatformBinding = {
+  platform: Platform;
+  username: string;
+  /** Exact media URL for transient discovery sources such as YouTube videos. */
+  urlOverride?: string;
+};
 
 export type StreamerTier = "primary" | "background";
 
@@ -31,6 +36,12 @@ export type Streamer = {
    * "primary"; see notificationPolicy.ts for the exact semantics.
    */
   tier: StreamerTier;
+  /** Current placement metadata for a stream discovered through Destiny.gg. */
+  dgg?: {
+    hosted: boolean;
+    /** Number of Destiny.gg viewers showing this embed, when applicable. */
+    viewers: number | null;
+  };
 };
 
 export function normalizeId(displayName: string): string {

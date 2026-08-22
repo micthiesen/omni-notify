@@ -71,12 +71,24 @@ function warnOnLegacyChannelEnvVars(): void {
   }
 }
 
-function loadStreamers(): Streamer[] {
+function loadStreamers(): {
+  streamers: Streamer[];
+  dggTopEmbeds: number;
+  availablePlatforms: Set<Platform>;
+} {
   warnOnLegacyChannelEnvVars();
 
-  const streamers = buildStreamers(loadChannelsConfig());
+  const liveCheckConfig = loadChannelsConfig();
+  const streamers = buildStreamers(liveCheckConfig.channels);
   const kickConfigured = Boolean(config.KICK_CLIENT_ID && config.KICK_CLIENT_SECRET);
-  if (kickConfigured) return streamers;
+  const availablePlatforms = new Set(Object.values(Platform));
+  if (kickConfigured) {
+    return {
+      streamers,
+      dggTopEmbeds: liveCheckConfig.dggTopEmbeds,
+      availablePlatforms,
+    };
+  }
 
   const { streamers: withoutKick, droppedAny } = dropPlatformBindings(
     streamers,
@@ -96,21 +108,28 @@ function loadStreamers(): Streamer[] {
       logger.warn(`Not tracked at all (Kick-only): ${fullyDropped.join(", ")}`);
     }
   }
-  return withoutKick;
+  return {
+    streamers: withoutKick,
+    dggTopEmbeds: liveCheckConfig.dggTopEmbeds,
+    availablePlatforms,
+  };
 }
 
 function buildTasks(
   streamers: Streamer[],
   iosControls?: IOSControlService,
+  dggTopEmbeds = 0,
+  availablePlatforms: ReadonlySet<Platform> = new Set(Object.values(Platform)),
 ): ScheduledTask[] {
   const tasks: ScheduledTask[] = [];
 
-  if (streamers.length > 0) {
+  if (streamers.length > 0 || dggTopEmbeds > 0) {
     tasks.push(
       new LiveCheckTask(
         streamers,
         logger,
         () => iosControls?.reconcile() ?? Promise.resolve(),
+        dggTopEmbeds > 0 ? { topEmbeds: dggTopEmbeds, availablePlatforms } : undefined,
       ),
     );
   }
@@ -186,9 +205,15 @@ if (runTaskIndex !== -1) {
     process.exit(1);
   }
 
-  const oneOffStreamers = loadStreamers();
+  const loadedLiveCheck = loadStreamers();
+  const oneOffStreamers = loadedLiveCheck.streamers;
   const oneOffControls = createIOSControlService(oneOffStreamers);
-  const tasks = buildTasks(oneOffStreamers, oneOffControls);
+  const tasks = buildTasks(
+    oneOffStreamers,
+    oneOffControls,
+    loadedLiveCheck.dggTopEmbeds,
+    loadedLiveCheck.availablePlatforms,
+  );
   const task = tasks.find((t) => t.name.toLowerCase() === taskName.toLowerCase());
   if (!task) {
     const names = tasks.map((t) => t.name).join(", ");
@@ -210,7 +235,8 @@ if (runTaskIndex !== -1) {
 const serverOnly = process.argv.includes("--server-only");
 
 const registry = new TaskRegistry(logger);
-const streamers = loadStreamers();
+const loadedLiveCheck = loadStreamers();
+const streamers = loadedLiveCheck.streamers;
 const iosControls = createIOSControlService(streamers);
 const pendingWorkspaceEmailRuns = new Map<
   string,
@@ -273,7 +299,12 @@ let cleanupEmailTransport: (() => void) | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
-  for (const task of buildTasks(streamers, iosControls)) {
+  for (const task of buildTasks(
+    streamers,
+    iosControls,
+    loadedLiveCheck.dggTopEmbeds,
+    loadedLiveCheck.availablePlatforms,
+  )) {
     scheduler.register(registry.track(task));
   }
 

@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import { fetchStreamerMetrics, fetchStreamerSessions } from "../api";
 import type { StreamerMetrics, StreamerView, StreamSession } from "../api";
+import { DggPresenceTag } from "../components/LiveNow";
 import { PlatformIcon } from "../components/PlatformIcon";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { useNow } from "../hooks/useNow";
@@ -288,6 +289,7 @@ function StreamerHeader({ streamer }: { streamer: StreamerView }) {
               LIVE
             </span>
           )}
+          <DggPresenceTag dgg={streamer.dgg} />
         </h1>
         {streamer.live ? (
           <div className="streamer-sub">

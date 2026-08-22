@@ -58,6 +58,13 @@ export const channelsConfigSchema = z.record(
 );
 export type ChannelEntry = z.infer<typeof channelEntrySchema>;
 export type ChannelsConfig = Record<string, ChannelEntry>;
+export type LiveCheckConfig = {
+  channels: ChannelsConfig;
+  /** Number of current Destiny.gg hosted/top-embed sources to track. */
+  dggTopEmbeds: number;
+};
+
+const dggTopEmbedsSchema = z.number().int().min(0).max(20, "must not exceed 20");
 
 /**
  * Loads channels.json — the single source of truth for which streamers to
@@ -73,13 +80,15 @@ export type ChannelsConfig = Record<string, ChannelEntry>;
  * silently drop streamers or un-mute ones that relied on overrides, so a
  * broken config must fail boot rather than fail open.
  */
-export function loadChannelsConfig(): ChannelsConfig {
+export function loadChannelsConfig(): LiveCheckConfig {
   const configPath = resolve(process.env.CHANNELS_CONFIG_PATH || DEFAULT_CONFIG_PATH);
   let content: string;
   try {
     content = readFileSync(configPath, "utf-8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { channels: {}, dggTopEmbeds: 0 };
+    }
     throw new Error(`Failed to read channels config at "${configPath}": ${error}`);
   }
 
@@ -90,11 +99,27 @@ export function loadChannelsConfig(): ChannelsConfig {
     throw new Error(`Failed to parse channels config at "${configPath}": ${error}`);
   }
 
-  const result = channelsConfigSchema.safeParse(parsed);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(
+      `Invalid channels config at "${configPath}": expected a JSON object`,
+    );
+  }
+
+  const { dggTopEmbeds: rawDggTopEmbeds, ...rawChannels } = parsed as Record<
+    string,
+    unknown
+  >;
+  const result = channelsConfigSchema.safeParse(rawChannels);
   if (!result.success) {
     throw new Error(
       `Invalid channels config at "${configPath}": ${result.error.message}`,
     );
   }
-  return result.data;
+  const dggResult = dggTopEmbedsSchema.safeParse(rawDggTopEmbeds ?? 0);
+  if (!dggResult.success) {
+    throw new Error(
+      `Invalid channels config at "${configPath}": dggTopEmbeds ${dggResult.error.message}`,
+    );
+  }
+  return { channels: result.data, dggTopEmbeds: dggResult.data };
 }

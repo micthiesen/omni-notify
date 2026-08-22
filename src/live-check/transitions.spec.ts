@@ -89,6 +89,45 @@ describe("decideTransition", () => {
     }
   });
 
+  it("uses a valid source-reported start time on went-live", () => {
+    const reported = "2026-04-16T23:30:00Z";
+    const results: BindingFetchResult[] = [
+      {
+        binding: KI,
+        status: {
+          status: LiveStatus.Live,
+          title: "t",
+          viewerCount: 100,
+          startedAt: reported,
+        },
+      },
+    ];
+    const d = decideTransition("s", offlineStatus, results, now);
+    expect(d.kind).toBe("went-live");
+    if (d.kind === "went-live") {
+      expect(d.next.startedAt).toEqual(new Date(reported));
+    }
+  });
+
+  it("ignores an invalid or future source-reported start time", () => {
+    for (const startedAt of ["not-a-date", "2026-04-18T00:00:00Z"]) {
+      const results: BindingFetchResult[] = [
+        {
+          binding: KI,
+          status: {
+            status: LiveStatus.Live,
+            title: "t",
+            viewerCount: 100,
+            startedAt,
+          },
+        },
+      ];
+      const d = decideTransition("s", offlineStatus, results, now);
+      expect(d.kind).toBe("went-live");
+      if (d.kind === "went-live") expect(d.next.startedAt).toEqual(now);
+    }
+  });
+
   it("leaves category undefined when the primary binding reports none (e.g. YouTube)", () => {
     const results: BindingFetchResult[] = [
       { binding: YT, status: live("yt-title", 10) },

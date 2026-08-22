@@ -1244,6 +1244,27 @@ th.data-actions-column {
   font-variant-numeric: tabular-nums;
 }
 
+.dgg-tag {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.08rem 0.42rem;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-xs);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.dgg-tag-hosted {
+  border-color: rgba(74, 222, 128, 0.35);
+  background: rgba(74, 222, 128, 0.1);
+  color: var(--success);
+}
+
 .live-uptime {
   color: var(--live);
   font-weight: 600;
@@ -2971,6 +2992,7 @@ button.task-last-run,
 
 .streamer-header h1 {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.7rem;
   margin-bottom: 0.4rem;

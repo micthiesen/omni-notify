@@ -261,7 +261,9 @@ function serializeBinding(binding: PlatformBinding) {
   return {
     platform: binding.platform,
     username: binding.username,
-    url: platformConfigs[binding.platform].getLiveUrl(binding.username),
+    url:
+      binding.urlOverride ??
+      platformConfigs[binding.platform].getLiveUrl(binding.username),
   };
 }
 
@@ -272,6 +274,7 @@ function serializeStreamer(streamer: Streamer) {
     displayName: streamer.displayName,
     bindings: streamer.bindings.map(serializeBinding),
     tier: streamer.tier,
+    dgg: streamer.dgg,
   };
   if (status.isLive) {
     return {

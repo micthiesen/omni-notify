@@ -51,7 +51,9 @@ export function buildLiveControlSlots(
       displayName: streamer.displayName,
       title: status.primaryTitle,
       platform: status.primary.platform,
-      url: platformConfigs[status.primary.platform].getLiveUrl(status.primary.username),
+      url:
+        status.primary.urlOverride ??
+        platformConfigs[status.primary.platform].getLiveUrl(status.primary.username),
       viewerCount,
       startedAt: epoch(status.startedAt),
     });

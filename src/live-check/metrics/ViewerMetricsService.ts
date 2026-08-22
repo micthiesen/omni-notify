@@ -151,6 +151,11 @@ export class ViewerMetricsService {
     }
   }
 
+  /** Drops unconfirmed observations when a transiently discovered source retires. */
+  discardPendingPeaks(streamerId: string): void {
+    this.streamerStates.delete(streamerId);
+  }
+
   private getOrCreateStreamerState(streamerId: string): StreamerPeakState {
     let state = this.streamerStates.get(streamerId);
     if (!state) {

@@ -1,10 +1,10 @@
 import { Entity } from "@micthiesen/mitools/entities";
-import type { Platform } from "./platforms/index.js";
+import type { PlatformBinding } from "./streamers.js";
 
 export type StreamerStatusLive = {
   streamerId: string;
   isLive: true;
-  primary: { platform: Platform; username: string };
+  primary: PlatformBinding;
   primaryTitle: string;
   startedAt: Date;
   maxViewerCount: number;

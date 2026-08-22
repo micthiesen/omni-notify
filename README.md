@@ -22,6 +22,7 @@ Channels are configured in `channels.json` (path overridable via `CHANNELS_CONFI
 
 ```json
 {
+  "dggTopEmbeds": 3,
   "MKBHD": { "youtube": "@mkbhd" },
   "Destiny": { "youtube": "@destiny", "kick": "destiny" },
   "Shroud": { "twitch": "shroud", "tier": "background" }
@@ -29,6 +30,8 @@ Channels are configured in `channels.json` (path overridable via `CHANNELS_CONFI
 ```
 
 Platform fields are `youtube` / `twitch` / `kick`; each takes one username or an array of them. An invalid file fails startup with a validation error rather than silently dropping config.
+
+The optional top-level `dggTopEmbeds` count adds that many currently hosted or most-watched embeds from Destiny.gg. These are refreshed on the relaxed background cadence, never send live/offline/title notifications, and disappear when they leave the top set. Sources already represented by an explicit channel entry are skipped. Set it to `0` or omit it to disable discovery.
 
 **One entry = one streamer.** A streamer live on multiple platforms gets **one** "went live" notification when they start streaming anywhere and **one** "went offline" notification when all platforms go offline — no double-pings for multistreams.
 
