@@ -170,6 +170,20 @@ const configSchema = baseConfigSchema
     MISTRAL_API_KEY: z.string().optional(),
     JINA_API_KEY: z.string().optional(),
     PUSHOVER_PRESSPODS_TOKEN: z.string().optional(),
+    /** Shared bearer token used only by the private Omni Live app/extension. */
+    IOS_CONTROL_AUTH_TOKEN: z.string().min(24).optional(),
+    /** Fallback tap target when fewer than four channels are live. */
+    IOS_CONTROL_HOME_URL: z
+      .string()
+      .url()
+      .optional()
+      .default("http://omni.boris")
+      .transform((s) => s.replace(/\/+$/, "")),
+    /** APNs token-signing details. All four are required to enable pushes. */
+    IOS_CONTROL_APNS_TEAM_ID: z.string().optional(),
+    IOS_CONTROL_APNS_KEY_ID: z.string().optional(),
+    IOS_CONTROL_APNS_KEY_PATH: z.string().optional(),
+    IOS_CONTROL_BUNDLE_ID: z.string().optional().default("com.micthiesen.OmniLive"),
   })
   .transform((c) => ({
     ...c,

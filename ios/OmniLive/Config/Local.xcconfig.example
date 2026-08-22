@@ -1,0 +1,7 @@
+// Copy to Local.xcconfig. `pnpm ios:configure` writes this for you.
+OMNI_DEVELOPMENT_TEAM = ABCDE12345
+OMNI_DEFAULT_SERVER_URL = http:/$()/omni.boris
+OMNI_DEFAULT_AUTH_TOKEN = paste-a-long-random-token-here
+OMNI_BUNDLE_ID = com.micthiesen.OmniLive
+OMNI_APP_GROUP = group.com.micthiesen.OmniLive
+OMNI_APNS_ENVIRONMENT = development

@@ -1,0 +1,80 @@
+name: OmniLive
+options:
+  bundleIdPrefix: com.micthiesen
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.0"
+  groupSortPosition: top
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: "$(OMNI_DEVELOPMENT_TEAM)"
+    CODE_SIGN_STYLE: Automatic
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0
+    GENERATE_INFOPLIST_FILE: NO
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      APS_ENVIRONMENT: development
+    Release:
+      APS_ENVIRONMENT: "$(OMNI_APNS_ENVIRONMENT)"
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+targets:
+  OmniLive:
+    type: application
+    platform: iOS
+    sources:
+      - path: Shared
+      - path: App
+      - path: Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(OMNI_BUNDLE_ID)"
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/OmniLive.entitlements
+        PRODUCT_NAME: Omni Live
+        INFOPLIST_KEY_CFBundleDisplayName: Omni Live
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    dependencies:
+      - target: OmniLiveControls
+        embed: true
+  OmniLiveControls:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Shared
+      - path: Controls
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(OMNI_BUNDLE_ID).controls"
+        INFOPLIST_FILE: Controls/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Controls/OmniLiveControls.entitlements
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        PRODUCT_NAME: Omni Live Controls
+  OmniLiveTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(OMNI_BUNDLE_ID).tests"
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: OmniLive
+schemes:
+  OmniLive:
+    build:
+      targets:
+        OmniLive: all
+        OmniLiveControls: all
+        OmniLiveTests: [test]
+    test:
+      targets:
+        - OmniLiveTests
+      gatherCoverageData: true

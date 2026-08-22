@@ -47,7 +47,11 @@ export default class LiveCheckTask extends ScheduledTask {
   private titleDebouncer = new TitleChangeDebouncer();
   private tickCount = 0;
 
-  public constructor(streamers: Streamer[], parentLogger: Logger) {
+  public constructor(
+    streamers: Streamer[],
+    parentLogger: Logger,
+    private readonly reconcileIOSControls?: () => Promise<void>,
+  ) {
     super();
     this.streamers = streamers;
     this.streamersById = new Map(streamers.map((s) => [s.id, s]));
@@ -84,6 +88,13 @@ export default class LiveCheckTask extends ScheduledTask {
     // Background streamers' unknown streaks (and thus outage detection) only
     // advance on their slower cadence, since they're skipped above otherwise.
     await this.reportOutage();
+    try {
+      await this.reconcileIOSControls?.();
+    } catch (error) {
+      // Controls are a convenience surface. APNs or control-state failures
+      // must never turn a successful live-status tick into a failed task run.
+      this.logger.warn(`Failed to reconcile iOS controls: ${(error as Error).message}`);
+    }
   }
 
   /**

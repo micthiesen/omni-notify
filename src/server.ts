@@ -40,6 +40,9 @@ import {
   upsertEmailRuleChecked,
 } from "./email/senderRules.js";
 import type { EmailHandler, EmailTransport } from "./email/types.js";
+import { registerIOSControlRoutes } from "./ios-controls/routes.js";
+import type { IOSControlService } from "./ios-controls/service.js";
+import { sortLiveDisplay, sortOfflineDisplay } from "./live-check/displayOrder.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
@@ -293,6 +296,13 @@ function serializeStreamer(streamer: Streamer) {
   };
 }
 
+function serializeStreamersForDisplay(streamers: Streamer[]) {
+  const serialized = streamers.map(serializeStreamer);
+  const live = serialized.filter((streamer) => streamer.live);
+  const offline = serialized.filter((streamer) => !streamer.live);
+  return [...sortLiveDisplay(live), ...sortOfflineDisplay(offline)];
+}
+
 const SNAPSHOT_RUN_LIMIT = 30;
 const SSE_DEBOUNCE_MS = 150;
 const SSE_HEARTBEAT_MS = 25_000;
@@ -442,6 +452,7 @@ export function startServer(
   registry: TaskRegistry,
   streamers: Streamer[],
   emailControls: EmailControls = {},
+  iosControls?: IOSControlService,
 ): () => void {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
@@ -466,12 +477,21 @@ export function startServer(
     c.header("X-Content-Type-Options", "nosniff");
   });
 
+  if (iosControls) {
+    registerIOSControlRoutes(
+      app,
+      iosControls,
+      config.IOS_CONTROL_AUTH_TOKEN,
+      parentLogger,
+    );
+  }
+
   const buildSnapshot = () => ({
     tasks: registry.list().map((task) => ({
       ...task,
       lastRun: task.lastRun ? serializeRun(task.lastRun) : null,
     })),
-    streamers: streamers.map(serializeStreamer),
+    streamers: serializeStreamersForDisplay(streamers),
     runs: getRuns(undefined, SNAPSHOT_RUN_LIMIT).map(serializeRun),
     onDeck: buildOnDeck(),
   });
@@ -486,7 +506,7 @@ export function startServer(
   );
 
   app.get("/api/streamers", (c) =>
-    c.json({ streamers: streamers.map(serializeStreamer) }),
+    c.json({ streamers: serializeStreamersForDisplay(streamers) }),
   );
 
   // Channel list for the homebridge-stream-triggers Homebridge plugin: one

@@ -28,11 +28,6 @@ function viewersLabel(streamer: LiveStreamer): string | null {
   return null;
 }
 
-/** Sort key for the "at a glance" ranking: primary tier first, then hottest. */
-function liveRank(streamer: LiveStreamer): number {
-  return streamer.viewerCount ?? streamer.maxViewerCount;
-}
-
 function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
   const now = useNow(1000);
   const viewers = viewersLabel(streamer);
@@ -103,15 +98,11 @@ function OfflinePill({ streamer }: { streamer: OfflineStreamer }) {
 export function LiveNow({ streamers }: { streamers: StreamerView[] }) {
   if (streamers.length === 0) return null;
 
-  const live = streamers
-    .filter((s): s is LiveStreamer => s.live)
-    .sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier === "primary" ? -1 : 1;
-      return liveRank(b) - liveRank(a);
-    });
-  const offline = streamers
-    .filter((s): s is OfflineStreamer => !s.live)
-    .sort((a, b) => (b.lastEndedAt ?? 0) - (a.lastEndedAt ?? 0));
+  // The snapshot and iOS live-slot API share one server-side ordering
+  // primitive, so every client displays the exact same rank without copying
+  // business rules into its presentation layer.
+  const live = streamers.filter((s): s is LiveStreamer => s.live);
+  const offline = streamers.filter((s): s is OfflineStreamer => !s.live);
 
   return (
     <section className="page-section live-now-section">

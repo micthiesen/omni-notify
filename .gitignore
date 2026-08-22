@@ -8,3 +8,6 @@ dist
 *._*.ts
 *._*.js
 .pushover-icons
+ios/OmniLive/Config/Local.xcconfig
+ios/OmniLive/build/
+ios/OmniLive/DerivedData/

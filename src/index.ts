@@ -14,6 +14,8 @@ import EmailRetryTask from "./email/retryTask.js";
 import { EmailTriageService } from "./email/triage.js";
 import type { EmailHandler, EmailTransport } from "./email/types.js";
 import EmailWatchdogTask from "./email/watchdogTask.js";
+import { ApnsControlClient } from "./ios-controls/apns.js";
+import { IOSControlService } from "./ios-controls/service.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
 import { Platform } from "./live-check/platforms/index.js";
 import {
@@ -97,11 +99,20 @@ function loadStreamers(): Streamer[] {
   return withoutKick;
 }
 
-function buildTasks(streamers: Streamer[]): ScheduledTask[] {
+function buildTasks(
+  streamers: Streamer[],
+  iosControls?: IOSControlService,
+): ScheduledTask[] {
   const tasks: ScheduledTask[] = [];
 
   if (streamers.length > 0) {
-    tasks.push(new LiveCheckTask(streamers, logger));
+    tasks.push(
+      new LiveCheckTask(
+        streamers,
+        logger,
+        () => iosControls?.reconcile() ?? Promise.resolve(),
+      ),
+    );
   }
   if (config.WHISKER_CREDENTIALS) {
     tasks.push(new PetTrackerTask(config.WHISKER_CREDENTIALS, logger));
@@ -132,6 +143,40 @@ function buildTasks(streamers: Streamer[]): ScheduledTask[] {
   return tasks;
 }
 
+function createIOSControlService(streamers: Streamer[]): IOSControlService {
+  const apnsValues = [
+    config.IOS_CONTROL_APNS_TEAM_ID,
+    config.IOS_CONTROL_APNS_KEY_ID,
+    config.IOS_CONTROL_APNS_KEY_PATH,
+  ];
+  const hasAnyApnsConfig = apnsValues.some(Boolean);
+  const hasCompleteApnsConfig = apnsValues.every(Boolean);
+  if (hasAnyApnsConfig && !hasCompleteApnsConfig) {
+    logger.warn(
+      "iOS control APNs pushes disabled: team ID, key ID, and key path must all be set",
+    );
+  }
+  let apns: ApnsControlClient | undefined;
+  if (hasCompleteApnsConfig && config.IOS_CONTROL_AUTH_TOKEN) {
+    try {
+      apns = new ApnsControlClient({
+        teamId: config.IOS_CONTROL_APNS_TEAM_ID as string,
+        keyId: config.IOS_CONTROL_APNS_KEY_ID as string,
+        privateKeyPath: config.IOS_CONTROL_APNS_KEY_PATH as string,
+        bundleId: config.IOS_CONTROL_BUNDLE_ID,
+      });
+    } catch (error) {
+      logger.warn(
+        `iOS control APNs pushes disabled: failed to load signing key (${error instanceof Error ? error.message : "unknown error"})`,
+      );
+    }
+  }
+  if (hasCompleteApnsConfig && !config.IOS_CONTROL_AUTH_TOKEN) {
+    logger.warn("iOS control APNs pushes disabled: IOS_CONTROL_AUTH_TOKEN is not set");
+  }
+  return new IOSControlService(streamers, config.IOS_CONTROL_HOME_URL, logger, apns);
+}
+
 // --run-task <name>: run a single task once and exit
 const runTaskIndex = process.argv.indexOf("--run-task");
 if (runTaskIndex !== -1) {
@@ -141,7 +186,9 @@ if (runTaskIndex !== -1) {
     process.exit(1);
   }
 
-  const tasks = buildTasks(loadStreamers());
+  const oneOffStreamers = loadStreamers();
+  const oneOffControls = createIOSControlService(oneOffStreamers);
+  const tasks = buildTasks(oneOffStreamers, oneOffControls);
   const task = tasks.find((t) => t.name.toLowerCase() === taskName.toLowerCase());
   if (!task) {
     const names = tasks.map((t) => t.name).join(", ");
@@ -150,7 +197,11 @@ if (runTaskIndex !== -1) {
   }
 
   logger.info(`Running task "${task.name}" once...`);
-  await task.run();
+  try {
+    await task.run();
+  } finally {
+    oneOffControls.close();
+  }
   logger.info(`Task "${task.name}" complete`);
   process.exit(0);
 }
@@ -160,6 +211,7 @@ const serverOnly = process.argv.includes("--server-only");
 
 const registry = new TaskRegistry(logger);
 const streamers = loadStreamers();
+const iosControls = createIOSControlService(streamers);
 const pendingWorkspaceEmailRuns = new Map<
   string,
   { workspaceId: string; subjectId: string; message: string }
@@ -214,13 +266,14 @@ const closeServer = startServer(
   registry,
   streamers,
   emailControls,
+  iosControls,
 );
 
 let cleanupEmailTransport: (() => void) | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
-  for (const task of buildTasks(streamers)) {
+  for (const task of buildTasks(streamers, iosControls)) {
     scheduler.register(registry.track(task));
   }
 
@@ -255,6 +308,7 @@ if (!serverOnly) {
     logger.info(`Received ${signal}, shutting down gracefully...`);
     closeServer();
     cleanupEmailTransport?.();
+    iosControls.close();
     unsubscribeWorkspaceEmailRuns();
     await scheduler.shutdown();
     await recoveryPromise;

@@ -44,6 +44,17 @@ Checks every 20 seconds (with random jitter) whether monitored channels are live
 
 Set `OFFLINE_NOTIFICATIONS=false` to only get notified when channels go live.
 
+## iPad Control Center
+
+The private **Omni Live** iOS app exposes four configurable Control Center slots.
+They use the dashboard's primary-first, hottest-first live ordering, show the
+current channel name and title, and open the current stream directly. Omni sends
+targeted WidgetKit control pushes through APNs whenever a displayed slot changes.
+
+See [the CLI installation and operations guide](docs/ios-live-controls.md) for
+Apple/APNs setup, `pnpm ios:*` commands, private device installation, and the
+physical-iPad validation checklist.
+
 ## Per-Streamer Options
 
 Alongside the platform fields, each `channels.json` entry accepts:

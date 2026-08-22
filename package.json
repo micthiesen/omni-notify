@@ -17,7 +17,15 @@
     "docker:build": "docker build -t omni-notify .",
     "docker:publish": "docker push omni-notify",
     "docker:build-and-publish": "pnpm run docker:build && pnpm run docker:publish",
-    "docker:dev": "docker run -p 3000:3000 --rm --name omni-notify omni-notify"
+    "docker:dev": "docker run -p 3000:3000 --rm --name omni-notify omni-notify",
+    "ios:doctor": "bash scripts/ios-live/doctor.sh",
+    "ios:configure": "bash scripts/ios-live/configure.sh",
+    "ios:configure:test": "bash scripts/ios-live/configure.spec.sh",
+    "ios:generate": "cd ios/OmniLive && xcodegen generate",
+    "ios:typecheck": "bash scripts/ios-live/typecheck.sh",
+    "ios:build": "bash scripts/ios-live/build.sh",
+    "ios:test": "bash scripts/ios-live/test.sh",
+    "ios:install": "bash scripts/ios-live/install.sh"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.30",
