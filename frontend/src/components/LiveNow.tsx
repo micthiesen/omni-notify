@@ -63,16 +63,10 @@ function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
         </span>
       </div>
       <div className="live-title">{streamer.title}</div>
-      {streamer.intelligence?.summary ? (
+      {streamer.intelligence?.summary && (
         <div className="live-now-summary">
           <strong>Now:</strong> {streamer.intelligence.summary.text}
         </div>
-      ) : (
-        streamer.intelligence?.semantic && (
-          <div className="live-now-summary">
-            <strong>Likely:</strong> {streamer.intelligence.semantic.headline}
-          </div>
-        )
       )}
       <div className="meta-row live-meta">
         <span className="live-uptime">{formatUptime(now - streamer.startedAt)}</span>
