@@ -44,7 +44,20 @@ export type Streamer = {
   tier: StreamerTier;
   /** Current Destiny.gg placement metadata, discovered or explicitly configured. */
   dgg?: DggPresence;
+  /** Transient discovery provenance. Never set for channels from channels.json. */
+  discoverySource?: "dgg";
 };
+
+/**
+ * DGG-only discoveries compete using their DGG audience, not the much larger
+ * audience reported by the underlying platform. Configured channels retain the
+ * normal platform-viewer/session-peak ordering even when DGG is also showing them.
+ */
+export function streamerOrderingViewerCount(
+  streamer: Pick<Streamer, "dgg" | "discoverySource">,
+): number | undefined {
+  return streamer.discoverySource === "dgg" ? (streamer.dgg?.viewers ?? 0) : undefined;
+}
 
 export function normalizeId(displayName: string): string {
   return displayName.trim().toLowerCase();

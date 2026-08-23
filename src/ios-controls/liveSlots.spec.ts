@@ -80,6 +80,38 @@ describe("buildLiveControlSlots", () => {
     });
   });
 
+  it("ranks DGG-only channels by DGG viewers but returns platform viewers", () => {
+    const dggStreamers: Streamer[] = [
+      {
+        id: "dgg:kick:large",
+        displayName: "Large Platform Stream",
+        bindings: [{ platform: Platform.Kick, username: "large" }],
+        tier: "background",
+        discoverySource: "dgg",
+        dgg: { hosted: false, viewers: 10 },
+      },
+      {
+        id: "configured-small",
+        displayName: "Configured Small Stream",
+        bindings: [{ platform: Platform.Kick, username: "configured-small" }],
+        tier: "background",
+        dgg: { hosted: true, viewers: 1 },
+      },
+    ];
+    live("dgg:kick:large", Platform.Kick, 50_000);
+    live("configured-small", Platform.Kick, 50);
+
+    const slots = buildLiveControlSlots(dggStreamers, "http://omni.boris", 123);
+    expect(slots.map((slot) => slot.streamerId)).toEqual([
+      "configured-small",
+      "dgg:kick:large",
+      null,
+      null,
+    ]);
+    expect(slots[1]?.viewerCount).toBe(50_000);
+    expect(slots[1]).not.toHaveProperty("orderingViewerCount");
+  });
+
   it("does not change the state hash when only updatedAt changes", () => {
     live("alpha", Platform.Twitch, 10);
     const first = buildLiveControlSlots(streamers, "http://omni.boris", 1)[0];

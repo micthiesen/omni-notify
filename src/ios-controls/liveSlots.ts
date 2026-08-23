@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { sortLiveDisplay } from "../live-check/displayOrder.js";
 import { getStreamerStatus } from "../live-check/persistence.js";
 import { type Platform, platformConfigs } from "../live-check/platforms/index.js";
-import type { Streamer } from "../live-check/streamers.js";
+import { type Streamer, streamerOrderingViewerCount } from "../live-check/streamers.js";
 
 export const IOS_CONTROL_SLOT_COUNT = 4;
 
@@ -22,6 +22,7 @@ export type LiveControlSlot = {
 type RankedLiveSlot = Omit<LiveControlSlot, "slot" | "updatedAt"> & {
   tier: Streamer["tier"];
   maxViewerCount: number;
+  orderingViewerCount?: number;
 };
 
 function epoch(value: Date | string): number {
@@ -46,6 +47,7 @@ export function buildLiveControlSlots(
     ranked.push({
       tier: streamer.tier,
       maxViewerCount: status.maxViewerCount,
+      orderingViewerCount: streamerOrderingViewerCount(streamer),
       isLive: true,
       streamerId: streamer.id,
       displayName: streamer.displayName,
@@ -64,7 +66,12 @@ export function buildLiveControlSlots(
   return Array.from({ length: IOS_CONTROL_SLOT_COUNT }, (_, index) => {
     const live = ordered[index];
     if (live) {
-      const { tier: _tier, maxViewerCount: _maxViewerCount, ...slot } = live;
+      const {
+        tier: _tier,
+        maxViewerCount: _maxViewerCount,
+        orderingViewerCount: _orderingViewerCount,
+        ...slot
+      } = live;
       return { ...slot, slot: index + 1, updatedAt: now };
     }
     return {

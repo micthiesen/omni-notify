@@ -33,6 +33,38 @@ describe("display ordering", () => {
     ]);
   });
 
+  it("uses a rank-only viewer override without replacing actual viewers", () => {
+    const ordered = sortLiveDisplay([
+      {
+        id: "dgg-large-platform",
+        tier: "background",
+        viewerCount: 50_000,
+        maxViewerCount: 60_000,
+        orderingViewerCount: 12,
+      },
+      {
+        id: "configured",
+        tier: "background",
+        viewerCount: 80,
+        maxViewerCount: 100,
+      },
+      {
+        id: "dgg-popular",
+        tier: "background",
+        viewerCount: 200,
+        maxViewerCount: 300,
+        orderingViewerCount: 90,
+      },
+    ]);
+
+    expect(ordered.map((item) => item.id)).toEqual([
+      "dgg-popular",
+      "configured",
+      "dgg-large-platform",
+    ]);
+    expect(ordered[2]?.viewerCount).toBe(50_000);
+  });
+
   it("orders offline channels by their most recent end", () => {
     const ordered = sortOfflineDisplay([
       { id: "never", lastEndedAt: null },

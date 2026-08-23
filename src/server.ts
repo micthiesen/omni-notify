@@ -42,12 +42,20 @@ import {
 import type { EmailHandler, EmailTransport } from "./email/types.js";
 import { registerIOSControlRoutes } from "./ios-controls/routes.js";
 import type { IOSControlService } from "./ios-controls/service.js";
-import { sortLiveDisplay, sortOfflineDisplay } from "./live-check/displayOrder.js";
+import {
+  type LiveDisplayItem,
+  sortLiveDisplay,
+  sortOfflineDisplay,
+} from "./live-check/displayOrder.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
 import { getStreamSessions } from "./live-check/sessions.js";
-import type { PlatformBinding, Streamer } from "./live-check/streamers.js";
+import {
+  type PlatformBinding,
+  type Streamer,
+  streamerOrderingViewerCount,
+} from "./live-check/streamers.js";
 import { toTriggerChannels } from "./live-check/triggerChannels.js";
 import {
   CARRIER_SENDER_DOMAINS as PARCEL_BUILTIN_AUTO_PASS,
@@ -300,10 +308,30 @@ function serializeStreamer(streamer: Streamer) {
 }
 
 function serializeStreamersForDisplay(streamers: Streamer[]) {
-  const serialized = streamers.map(serializeStreamer);
-  const live = serialized.filter((streamer) => streamer.live);
-  const offline = serialized.filter((streamer) => !streamer.live);
-  return [...sortLiveDisplay(live), ...sortOfflineDisplay(offline)];
+  type SerializedStreamer = ReturnType<typeof serializeStreamer>;
+  type SerializedLive = Extract<SerializedStreamer, { live: true }>;
+  type SerializedOffline = Extract<SerializedStreamer, { live: false }>;
+
+  const live: Array<LiveDisplayItem & { serialized: SerializedLive }> = [];
+  const offline: SerializedOffline[] = [];
+  for (const streamer of streamers) {
+    const serialized = serializeStreamer(streamer);
+    if (serialized.live) {
+      live.push({
+        serialized,
+        tier: serialized.tier,
+        viewerCount: serialized.viewerCount,
+        maxViewerCount: serialized.maxViewerCount,
+        orderingViewerCount: streamerOrderingViewerCount(streamer),
+      });
+    } else {
+      offline.push(serialized);
+    }
+  }
+  return [
+    ...sortLiveDisplay(live).map((entry) => entry.serialized),
+    ...sortOfflineDisplay(offline),
+  ];
 }
 
 const SNAPSHOT_RUN_LIMIT = 30;

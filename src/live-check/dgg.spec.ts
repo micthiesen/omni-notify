@@ -15,12 +15,14 @@ function embed({
   displayName = id,
   count = 10,
   live = true,
+  viewers = 735,
 }: {
   platform: string;
   id: string;
   displayName?: string;
   count?: number;
   live?: boolean;
+  viewers?: number;
 }) {
   return {
     platform,
@@ -34,7 +36,7 @@ function embed({
         title: `${displayName}'s title`,
         createdDate: "2026-08-22T20:24:55+00:00",
         live,
-        viewers: 735,
+        viewers,
       },
     },
   };
@@ -60,7 +62,7 @@ describe("selectDggStreams", () => {
     ).toEqual([]);
   });
 
-  it("uses the only slot for an active host", () => {
+  it("uses the only slot for an active host when it has the most DGG viewers", () => {
     const selected = selectDggStreams({
       feed: {
         destinyLive: false,
@@ -69,7 +71,10 @@ describe("selectDggStreams", () => {
           id: "host",
           displayName: "Host",
         },
-        embeds: [embed({ platform: "kick", id: "top", count: 999 })],
+        embeds: [
+          embed({ platform: "twitch", id: "host", count: 1_000 }),
+          embed({ platform: "kick", id: "top", count: 999 }),
+        ],
       },
       limit: 1,
       configuredStreamers: [],
@@ -79,6 +84,38 @@ describe("selectDggStreams", () => {
     expect(selected).toHaveLength(1);
     expect(selected[0]?.streamer.id).toBe("dgg:twitch:host");
     expect(selected[0]?.hosted).toBe(true);
+  });
+
+  it("selects the top N discoveries by DGG viewers, without host priority", () => {
+    const selected = selectDggStreams({
+      feed: {
+        destinyLive: false,
+        hosting: {
+          platform: "twitch",
+          id: "small-host",
+          displayName: "Small Host",
+        },
+        embeds: [
+          embed({
+            platform: "twitch",
+            id: "small-host",
+            count: 5,
+            viewers: 1_000_000,
+          }),
+          embed({ platform: "kick", id: "popular", count: 100, viewers: 1 }),
+          embed({ platform: "youtube", id: "second", count: 80, viewers: 2 }),
+        ],
+      },
+      limit: 2,
+      configuredStreamers: [],
+      availablePlatforms: new Set(Object.values(Platform)),
+    });
+
+    expect(selected.map((entry) => entry.streamer.id)).toEqual([
+      "dgg:kick:popular",
+      "dgg:youtube:second",
+    ]);
+    expect(selected.map((entry) => entry.streamer.dgg?.viewers)).toEqual([100, 80]);
   });
 
   it("deduplicates sources and fills past configured high-ranked embeds", () => {
@@ -198,7 +235,7 @@ describe("selectDggStreams", () => {
     });
   });
 
-  it("prefers a host within the limit and retains DGG metadata", () => {
+  it("ranks a host by DGG viewers and retains its metadata", () => {
     const feed: DggFeed = {
       destinyLive: false,
       hosting: {
@@ -210,6 +247,7 @@ describe("selectDggStreams", () => {
       },
       embeds: [
         embed({ platform: "kick", id: "first", count: 99 }),
+        embed({ platform: "twitch", id: "host_channel", count: 5 }),
         embed({ platform: "twitch", id: "host_channel", count: 50 }),
         embed({ platform: "youtube", id: "video-id", count: 40 }),
       ],
@@ -223,11 +261,11 @@ describe("selectDggStreams", () => {
     });
 
     expect(selected.map((entry) => entry.streamer.id)).toEqual([
-      "dgg:twitch:host_channel",
       "dgg:kick:first",
+      "dgg:twitch:host_channel",
       "dgg:youtube:video-id",
     ]);
-    expect(selected[0]).toMatchObject({
+    expect(selected[1]).toMatchObject({
       hosted: true,
       previewUrl: "https://images.test/host.jpg",
       url: "https://www.twitch.tv/host_channel",
@@ -237,11 +275,12 @@ describe("selectDggStreams", () => {
         startedAt: "2026-08-22T20:24:55+00:00",
       },
       streamer: {
+        discoverySource: "dgg",
         dgg: { hosted: true, viewers: 50 },
         bindings: [{ urlOverride: "https://www.twitch.tv/host_channel" }],
       },
     });
-    expect(selected[1]).toMatchObject({
+    expect(selected[0]).toMatchObject({
       hosted: false,
       embedCount: 99,
       status: {
@@ -249,7 +288,11 @@ describe("selectDggStreams", () => {
         viewerCount: 735,
         startedAt: "2026-08-22T20:24:55+00:00",
       },
-      streamer: { tier: "background", dgg: { hosted: false, viewers: 99 } },
+      streamer: {
+        tier: "background",
+        discoverySource: "dgg",
+        dgg: { hosted: false, viewers: 99 },
+      },
     });
     expect(selected[2]?.url).toBe("https://www.youtube.com/watch?v=video-id");
   });

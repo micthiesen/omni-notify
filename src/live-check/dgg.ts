@@ -281,14 +281,16 @@ export function resolveDggStreams({
   if (!feed.destinyLive && feed.hosting) {
     const platform = supportedPlatform(feed.hosting.platform);
     if (platform && availablePlatforms.has(platform)) {
-      const matchingEmbed = feed.embeds.find((embed) => {
-        const embedPlatform = supportedPlatform(embed.platform);
-        return (
-          embedPlatform === platform &&
-          canonicalBinding(platform, embed.id) ===
-            canonicalBinding(platform, feed.hosting?.id ?? "")
-        );
-      });
+      const matchingEmbed = feed.embeds
+        .filter((embed) => {
+          const embedPlatform = supportedPlatform(embed.platform);
+          return (
+            embedPlatform === platform &&
+            canonicalBinding(platform, embed.id) ===
+              canonicalBinding(platform, feed.hosting?.id ?? "")
+          );
+        })
+        .sort((a, b) => b.count - a.count)[0];
       candidates.push({
         platform,
         id: feed.hosting.id,
@@ -326,6 +328,12 @@ export function resolveDggStreams({
     });
   }
 
+  // Hosting is one more DGG placement, not a priority lane. Rank every source
+  // by the number of DGG viewers before applying the configured-channel filter
+  // and discovery limit. Stable sorting keeps the richer hosting candidate
+  // first when it duplicates an embed with the same count.
+  candidates.sort((a, b) => (b.embedCount ?? 0) - (a.embedCount ?? 0));
+
   const seen = new Set<string>();
   const discovered: SelectedDggStream[] = [];
   const configuredPresence = new Map<string, DggPresence>();
@@ -360,6 +368,7 @@ export function resolveDggStreams({
           { platform: candidate.platform, username: candidate.id, urlOverride: url },
         ],
         tier: "background",
+        discoverySource: "dgg",
         dgg: {
           hosted: candidate.hosting !== undefined,
           viewers: candidate.embedCount ?? null,

@@ -4,6 +4,8 @@ export type LiveDisplayItem = {
   tier: StreamerTier;
   viewerCount: number | null;
   maxViewerCount: number;
+  /** Rank-only override; the displayed viewer count remains `viewerCount`. */
+  orderingViewerCount?: number;
 };
 
 export type OfflineDisplayItem = {
@@ -20,8 +22,8 @@ export function compareLiveDisplayOrder(
   b: LiveDisplayItem,
 ): number {
   if (a.tier !== b.tier) return a.tier === "primary" ? -1 : 1;
-  const aRank = a.viewerCount ?? a.maxViewerCount;
-  const bRank = b.viewerCount ?? b.maxViewerCount;
+  const aRank = a.orderingViewerCount ?? a.viewerCount ?? a.maxViewerCount;
+  const bRank = b.orderingViewerCount ?? b.viewerCount ?? b.maxViewerCount;
   return bRank - aRank;
 }
 
