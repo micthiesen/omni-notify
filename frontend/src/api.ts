@@ -124,6 +124,74 @@ export interface LivestreamIntelligence {
   updatedAt: number;
 }
 
+export type LivestreamPipelineStage = "metadata" | "voice" | "summary" | "alert";
+export type LivestreamPipelineStatus =
+  | "idle"
+  | "running"
+  | "success"
+  | "skipped"
+  | "error";
+
+export interface LivestreamStageDiagnostic {
+  status: LivestreamPipelineStatus;
+  eligible?: boolean;
+  startedAt?: number;
+  finishedAt?: number;
+  nextAt?: number;
+  durationMs?: number;
+  detail?: string;
+  metrics?: Record<string, number | string | boolean | null>;
+}
+
+export interface LivestreamDiagnostics {
+  streamerId: string;
+  sessionStartedAt?: number;
+  stages: Partial<Record<LivestreamPipelineStage, LivestreamStageDiagnostic>>;
+  updatedAt: number;
+}
+
+export type LivestreamEventKind =
+  | "session"
+  | "metadata"
+  | "voice"
+  | "summary"
+  | "alert"
+  | "feedback"
+  | "anomaly";
+
+export interface LivestreamIntelligenceEvent {
+  eventId: string;
+  streamerId: string;
+  sessionStartedAt?: number;
+  createdAt: number;
+  kind: LivestreamEventKind;
+  status: "info" | "success" | "warning" | "error";
+  title: string;
+  detail?: string;
+  durationMs?: number;
+  costCents?: number;
+  metrics?: Record<string, number | string | boolean | null>;
+}
+
+export interface LivestreamRuntimeDiagnostics {
+  enabled: true;
+  voiceprintLoaded: boolean;
+  model: string;
+  queues: Record<"capture" | "speech" | "llm", { running: number; queued: number }>;
+  activeStreamCount: number;
+  activeVoiceTargetCount: number;
+  budget: { spentCents: number; limitCents: number; remainingCents: number };
+  intervals: { voiceSeconds: number; summarySeconds: number };
+}
+
+export interface LivestreamIntelligenceDetails {
+  intelligence: LivestreamIntelligence | null;
+  diagnostics: LivestreamDiagnostics | null;
+  events: LivestreamIntelligenceEvent[];
+  runtime: LivestreamRuntimeDiagnostics | null;
+  generatedAt: number;
+}
+
 export type StreamerTier = "primary" | "background";
 
 export type LiveStreamer = StreamerBase & {
@@ -885,6 +953,15 @@ export function fetchStreamerSessions(
 ): Promise<{ sessions: StreamSession[] }> {
   return apiGet<{ sessions: StreamSession[] }>(
     `/api/streamers/${encodeURIComponent(id)}/sessions`,
+  );
+}
+
+export function fetchLivestreamIntelligenceDetails(
+  id: string,
+  limit = 100,
+): Promise<LivestreamIntelligenceDetails> {
+  return apiGet<LivestreamIntelligenceDetails>(
+    `/api/streamers/${encodeURIComponent(id)}/intelligence-details?limit=${limit}`,
   );
 }
 

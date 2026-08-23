@@ -17,6 +17,9 @@ const PetsPage = lazy(() => import("./pages/PetsPage"));
 const PodsPage = lazy(() => import("./pages/PodsPage"));
 const PodsDetailPage = lazy(() => import("./pages/PodsDetailPage"));
 const StreamerPage = lazy(() => import("./pages/StreamerPage"));
+const LivestreamIntelligencePage = lazy(
+  () => import("./pages/LivestreamIntelligencePage"),
+);
 const DataPage = lazy(() => import("./pages/DataPage"));
 const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
 const CostsPage = lazy(() => import("./pages/CostsPage"));
@@ -62,6 +65,9 @@ export default function App() {
   const podsDetailMatch = path.match(/^\/pods\/([^/]+)$/);
   const workspaceSubjectMatch = path.match(/^\/workspaces\/([^/]+)\/([^/]+)$/);
   const workspaceMatch = path.match(/^\/workspaces\/([^/]+)$/);
+  const streamerIntelligenceMatch = path.match(
+    /^\/streamers\/([^/]+)\/intelligence$/,
+  );
   if (workspaceSubjectMatch) {
     page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage workspaceId={decodeURIComponent(workspaceSubjectMatch[1])} subjectId={decodeURIComponent(workspaceSubjectMatch[2])} /></Suspense>;
   } else if (workspaceMatch) {
@@ -81,6 +87,13 @@ export default function App() {
     page = (
       <Suspense fallback={<div className="loading">Loading…</div>}>
         <PodsDetailPage key={id} id={id} />
+      </Suspense>
+    );
+  } else if (streamerIntelligenceMatch) {
+    const streamerId = decodeURIComponent(streamerIntelligenceMatch[1]);
+    page = (
+      <Suspense fallback={<div className="loading">Loading…</div>}>
+        <LivestreamIntelligencePage key={streamerId} streamerId={streamerId} />
       </Suspense>
     );
   } else if (path.startsWith("/streamers/")) {

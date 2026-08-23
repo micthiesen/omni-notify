@@ -301,6 +301,7 @@ const closeServer = startServer(
   streamers,
   emailControls,
   iosControls,
+  livestreamIntelligence,
 );
 
 let cleanupEmailTransport: (() => void) | undefined;

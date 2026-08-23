@@ -1,9 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
 import type {
+  LivestreamDiagnosticsData,
   LivestreamFeedbackData,
   LivestreamFeedbackVerdict,
   LivestreamIntelligenceData,
+  LivestreamIntelligenceEventData,
+  LivestreamPipelineStage,
+  LivestreamStageDiagnostic,
 } from "./types.js";
+
+const MAX_TIMELINE_EVENTS = 3_000;
+const PRUNE_BATCH_SIZE = 250;
 
 export const LivestreamIntelligenceEntity = new Entity<
   LivestreamIntelligenceData,
@@ -14,6 +22,16 @@ export const LivestreamFeedbackEntity = new Entity<
   LivestreamFeedbackData,
   ["feedbackId"]
 >("livestream-feedback", ["feedbackId"]);
+
+export const LivestreamDiagnosticsEntity = new Entity<
+  LivestreamDiagnosticsData,
+  ["streamerId"]
+>("livestream-diagnostics", ["streamerId"]);
+
+export const LivestreamIntelligenceEventEntity = new Entity<
+  LivestreamIntelligenceEventData,
+  ["eventId"]
+>("livestream-intelligence-event", ["eventId"]);
 
 export function getLivestreamIntelligence(
   streamerId: string,
@@ -31,6 +49,71 @@ export function saveLivestreamIntelligence(data: LivestreamIntelligenceData): vo
 
 export function clearLivestreamIntelligence(streamerId: string): void {
   LivestreamIntelligenceEntity.delete({ streamerId });
+}
+
+export function getLivestreamDiagnostics(
+  streamerId: string,
+): LivestreamDiagnosticsData | undefined {
+  return LivestreamDiagnosticsEntity.get({ streamerId });
+}
+
+export function updateLivestreamStage(
+  streamerId: string,
+  sessionStartedAt: number | undefined,
+  stage: LivestreamPipelineStage,
+  value: LivestreamStageDiagnostic,
+): LivestreamDiagnosticsData {
+  const previous = getLivestreamDiagnostics(streamerId);
+  const sameSession = previous?.sessionStartedAt === sessionStartedAt;
+  const next: LivestreamDiagnosticsData = {
+    streamerId,
+    sessionStartedAt,
+    stages: {
+      ...(sameSession ? previous?.stages : {}),
+      [stage]: value,
+    },
+    updatedAt: Date.now(),
+  };
+  LivestreamDiagnosticsEntity.upsert(next);
+  return next;
+}
+
+export type RecordLivestreamEventInput = Omit<
+  LivestreamIntelligenceEventData,
+  "eventId" | "createdAt"
+> & {
+  eventId?: string;
+  createdAt?: number;
+};
+
+export function recordLivestreamEvent(
+  input: RecordLivestreamEventInput,
+): LivestreamIntelligenceEventData {
+  const event: LivestreamIntelligenceEventData = {
+    ...input,
+    eventId: input.eventId ?? randomUUID(),
+    createdAt: input.createdAt ?? Date.now(),
+  };
+  LivestreamIntelligenceEventEntity.upsert(event);
+  if (LivestreamIntelligenceEventEntity.count() > MAX_TIMELINE_EVENTS) {
+    const oldest = LivestreamIntelligenceEventEntity.getAll()
+      .sort((a, b) => a.createdAt - b.createdAt)
+      .slice(0, PRUNE_BATCH_SIZE);
+    for (const item of oldest) {
+      LivestreamIntelligenceEventEntity.delete({ eventId: item.eventId });
+    }
+  }
+  return event;
+}
+
+export function getLivestreamEvents(
+  streamerId?: string,
+  limit = 100,
+): LivestreamIntelligenceEventData[] {
+  return LivestreamIntelligenceEventEntity.getAll()
+    .filter((event) => !streamerId || event.streamerId === streamerId)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, Math.max(1, Math.min(limit, 200)));
 }
 
 export function recordLivestreamFeedback(input: {
@@ -52,6 +135,20 @@ export function recordLivestreamFeedback(input: {
     createdAt: Date.now(),
   };
   LivestreamFeedbackEntity.upsert(feedback);
+  try {
+    recordLivestreamEvent({
+      streamerId: input.streamerId,
+      sessionStartedAt: intelligence.sessionStartedAt,
+      kind: "feedback",
+      status: "info",
+      title: `Alert marked ${input.verdict.replaceAll("_", " ")}`,
+      detail: input.note?.trim() || undefined,
+      metrics: { alertType: alert.type },
+    });
+  } catch {
+    // Feedback is the durable user action; optional observability must never
+    // make a successfully stored correction look like a failed request.
+  }
   return feedback;
 }
 

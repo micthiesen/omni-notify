@@ -48,9 +48,12 @@ import {
   sortOfflineDisplay,
 } from "./live-check/displayOrder.js";
 import {
+  getLivestreamDiagnostics,
+  getLivestreamEvents,
   getLivestreamIntelligence,
   recordLivestreamFeedback,
 } from "./live-check/intelligence/persistence.js";
+import type { LivestreamIntelligenceDiagnosticsProvider } from "./live-check/intelligence/service.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
@@ -492,6 +495,7 @@ export function startServer(
   streamers: Streamer[],
   emailControls: EmailControls = {},
   iosControls?: IOSControlService,
+  livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider,
 ): () => void {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
@@ -577,6 +581,22 @@ export function startServer(
     }
     const sessions = [...getStreamSessions(id).sessions].reverse();
     return c.json({ sessions });
+  });
+
+  app.get("/api/streamers/:id/intelligence-details", (c) => {
+    const id = c.req.param("id");
+    if (!streamers.some((streamer) => streamer.id === id)) {
+      return c.json({ error: "Unknown streamer" }, 404);
+    }
+    const limitParam = Number(c.req.query("limit"));
+    const limit = Number.isInteger(limitParam) && limitParam > 0 ? limitParam : 100;
+    return c.json({
+      intelligence: getLivestreamIntelligence(id) ?? null,
+      diagnostics: getLivestreamDiagnostics(id) ?? null,
+      events: getLivestreamEvents(id, limit),
+      runtime: livestreamDiagnostics?.getRuntimeDiagnostics() ?? null,
+      generatedAt: Date.now(),
+    });
   });
 
   const livestreamFeedbackSchema = z.object({

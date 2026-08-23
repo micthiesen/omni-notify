@@ -18,8 +18,10 @@ import { EmailDispatchEntity } from "./email/persistence.js";
 import { EmailRetryEntity } from "./email/retry.js";
 import { EmailRuleEntity } from "./email/senderRules.js";
 import {
+  LivestreamDiagnosticsEntity,
   LivestreamFeedbackEntity,
   LivestreamIntelligenceEntity,
+  LivestreamIntelligenceEventEntity,
 } from "./live-check/intelligence/persistence.js";
 import { ViewerMetricsEntity } from "./live-check/metrics/persistence.js";
 import { StreamerStatusEntity } from "./live-check/persistence.js";
@@ -260,6 +262,16 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
   createManagedEntity(LivestreamFeedbackEntity, {
     label: "Livestream alert feedback",
     description: "Useful, not-useful, and false-positive alert corrections.",
+  }),
+  createManagedEntity(LivestreamDiagnosticsEntity, {
+    label: "Livestream diagnostics",
+    description:
+      "Latest metadata, voice, summary, and alert pipeline status per streamer.",
+  }),
+  createManagedEntity(LivestreamIntelligenceEventEntity, {
+    label: "Livestream intelligence events",
+    description:
+      "Bounded timeline of meaningful livestream intelligence decisions and failures.",
   }),
   createManagedEntity(RecommendationEntity, {
     label: "Media recommendations",

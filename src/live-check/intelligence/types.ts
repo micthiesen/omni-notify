@@ -83,3 +83,52 @@ export interface LivestreamFeedbackData {
   note?: string;
   createdAt: number;
 }
+
+export type LivestreamPipelineStage = "metadata" | "voice" | "summary" | "alert";
+export type LivestreamPipelineStatus =
+  | "idle"
+  | "running"
+  | "success"
+  | "skipped"
+  | "error";
+
+export interface LivestreamStageDiagnostic {
+  status: LivestreamPipelineStatus;
+  eligible?: boolean;
+  startedAt?: number;
+  finishedAt?: number;
+  nextAt?: number;
+  durationMs?: number;
+  detail?: string;
+  metrics?: Record<string, number | string | boolean | null>;
+}
+
+export interface LivestreamDiagnosticsData {
+  streamerId: string;
+  sessionStartedAt?: number;
+  stages: Partial<Record<LivestreamPipelineStage, LivestreamStageDiagnostic>>;
+  updatedAt: number;
+}
+
+export type LivestreamEventKind =
+  | "session"
+  | "metadata"
+  | "voice"
+  | "summary"
+  | "alert"
+  | "feedback"
+  | "anomaly";
+
+export interface LivestreamIntelligenceEventData {
+  eventId: string;
+  streamerId: string;
+  sessionStartedAt?: number;
+  createdAt: number;
+  kind: LivestreamEventKind;
+  status: "info" | "success" | "warning" | "error";
+  title: string;
+  detail?: string;
+  durationMs?: number;
+  costCents?: number;
+  metrics?: Record<string, number | string | boolean | null>;
+}

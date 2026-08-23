@@ -330,6 +330,12 @@ function StreamerHeader({ streamer }: { streamer: StreamerView }) {
         )}
       </div>
       <div className="streamer-bindings">
+        <Link
+          className="binding-chip intelligence-details-link"
+          to={`/streamers/${encodeURIComponent(streamer.id)}/intelligence`}
+        >
+          Intelligence Details
+        </Link>
         {streamer.bindings.map((binding) => (
           <a
             key={`${binding.platform}:${binding.username}`}
@@ -367,7 +373,15 @@ function LivestreamIntelligencePanel({ streamer }: { streamer: StreamerView }) {
 
   return (
     <section className="page-section intelligence-panel">
-      <h2 className="section-title">Live Intelligence</h2>
+      <h2 className="section-title intelligence-panel-title">
+        Live Intelligence
+        <Link
+          className="section-action-link"
+          to={`/streamers/${encodeURIComponent(streamer.id)}/intelligence`}
+        >
+          Details ›
+        </Link>
+      </h2>
       <div className="intelligence-summary-card">
         <div className="intelligence-summary-heading">
           <strong>{intelligence.summary?.topic ?? "Current Read"}</strong>

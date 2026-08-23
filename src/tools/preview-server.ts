@@ -13,7 +13,12 @@ import { BriefingHistoryEntity } from "../briefing-agent/persistence.js";
 import { EmailActivityEntity } from "../email/activity.js";
 import { recordEmailFeedback } from "../email/feedback.js";
 import { upsertEmailRule } from "../email/senderRules.js";
-import { LivestreamIntelligenceEntity } from "../live-check/intelligence/persistence.js";
+import {
+  LivestreamIntelligenceEntity,
+  type RecordLivestreamEventInput,
+  recordLivestreamEvent,
+  updateLivestreamStage,
+} from "../live-check/intelligence/persistence.js";
 import { ViewerMetricsEntity } from "../live-check/metrics/persistence.js";
 import type { DailyBucket } from "../live-check/metrics/types.js";
 import { StreamerStatusEntity } from "../live-check/persistence.js";
@@ -255,6 +260,121 @@ LivestreamIntelligenceEntity.upsert({
   },
   updatedAt: now - 2 * MIN,
 });
+
+const previewSessionStart = now - 2.4 * HOUR;
+updateLivestreamStage("pixeldust", previewSessionStart, "metadata", {
+  status: "success",
+  eligible: true,
+  startedAt: now - 8 * MIN - 420,
+  finishedAt: now - 8 * MIN,
+  durationMs: 420,
+  detail: "A ranked VALORANT session with chat-controlled loadouts",
+  metrics: { importance: 35, topicCount: 2, costCents: 0.021 },
+});
+updateLivestreamStage("pixeldust", previewSessionStart, "voice", {
+  status: "success",
+  eligible: true,
+  startedAt: now - 75_000,
+  finishedAt: now - MIN,
+  nextAt: now - 30_000,
+  durationMs: 15_000,
+  detail: "No Destiny evidence; 0/14 windows matched at 22% confidence",
+  metrics: {
+    confidence: 0.22,
+    matchedWindows: 0,
+    checkedWindows: 14,
+    evidence: "none",
+  },
+});
+updateLivestreamStage("pixeldust", previewSessionStart, "summary", {
+  status: "success",
+  eligible: true,
+  startedAt: now - 2 * MIN - 6_200,
+  finishedAt: now - 2 * MIN,
+  nextAt: now + 3 * MIN,
+  durationMs: 6_200,
+  detail: "Ranked Promotion Match",
+  metrics: {
+    confidence: 0.91,
+    audioSeconds: 75,
+    transcriptCharacters: 842,
+    costCents: 0.047,
+  },
+});
+updateLivestreamStage("pixeldust", previewSessionStart, "alert", {
+  status: "success",
+  eligible: true,
+  startedAt: now - 2 * MIN - 300,
+  finishedAt: now - 2 * MIN,
+  durationMs: 300,
+  detail: "PixelDust is surging",
+  metrics: { type: "viewer_surge", confidence: 0.85 },
+});
+
+const previewIntelligenceEvents: Array<
+  Omit<RecordLivestreamEventInput, "streamerId" | "sessionStartedAt">
+> = [
+  {
+    createdAt: previewSessionStart,
+    kind: "session" as const,
+    status: "info" as const,
+    title: "Live session started",
+    detail: "Ranked grind to Diamond — day 12, chat picks the loadout",
+  },
+  {
+    createdAt: now - 8 * MIN,
+    kind: "metadata" as const,
+    status: "success" as const,
+    title: "Semantic metadata updated",
+    detail: "A ranked VALORANT session with chat-controlled loadouts",
+    durationMs: 420,
+    costCents: 0.021,
+    metrics: { importance: 35, contentKind: "gaming" },
+  },
+  {
+    createdAt: now - 5 * MIN,
+    kind: "voice" as const,
+    status: "warning" as const,
+    title: "Possible Destiny voice match",
+    detail: "2/18 windows matched; awaiting another independent sample",
+    durationMs: 14_800,
+    metrics: { confidence: 0.67, matchedWindows: 2, checkedWindows: 18 },
+  },
+  {
+    createdAt: now - 4 * MIN,
+    kind: "voice" as const,
+    status: "info" as const,
+    title: "Destiny live participation not confirmed",
+    detail: "The matched audio came from a clip rather than live conversation.",
+    metrics: { assessmentConfidence: 0.88 },
+  },
+  {
+    createdAt: now - 2 * MIN,
+    kind: "summary" as const,
+    status: "success" as const,
+    title: "Now summary updated",
+    detail: "Ranked Promotion Match",
+    durationMs: 6_200,
+    costCents: 0.047,
+    metrics: { confidence: 0.91, audioSeconds: 75 },
+  },
+  {
+    createdAt: now - 2 * MIN + 500,
+    kind: "alert" as const,
+    status: "success" as const,
+    title: "Alert sent: PixelDust is surging",
+    detail: "Viewer count rose 68% in the rolling window.",
+    durationMs: 300,
+    metrics: { type: "viewer_surge", confidence: 0.85 },
+  },
+];
+for (const event of previewIntelligenceEvents) {
+  recordLivestreamEvent({
+    streamerId: "pixeldust",
+    sessionStartedAt: previewSessionStart,
+    ...event,
+  });
+}
 
 // --- Viewer metrics ------------------------------------------------------------
 
@@ -881,7 +1001,22 @@ registry.track(
   ),
 );
 
-startServer(config.FRONTEND_PORT, logger, registry, streamers);
+startServer(config.FRONTEND_PORT, logger, registry, streamers, {}, undefined, {
+  getRuntimeDiagnostics: () => ({
+    enabled: true,
+    voiceprintLoaded: true,
+    model: "parakeet-tdt-0.6b-v3-int8",
+    queues: {
+      capture: { running: 0, queued: 0 },
+      speech: { running: 0, queued: 0 },
+      llm: { running: 0, queued: 0 },
+    },
+    activeStreamCount: 3,
+    activeVoiceTargetCount: 1,
+    budget: { spentCents: 0.18664, limitCents: 300, remainingCents: 299.81336 },
+    intervals: { voiceSeconds: 45, summarySeconds: 300 },
+  }),
+});
 logger.info(
   `Preview server ready; action deep link: /workspaces/purchase-research/quiet-office-headphones?section=actions&target=action-${previewAction.actionId}`,
 );

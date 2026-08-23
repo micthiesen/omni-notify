@@ -12,19 +12,26 @@ import { LivestreamAudioCapture } from "./audio.js";
 import {
   isTranscriptAlertType,
   LivestreamClassifier,
+  livestreamSpendCents,
   type TranscriptAssessment,
 } from "./classifier.js";
 import { LocalSpeechRuntime } from "./localSpeech.js";
 import {
   buildLivestreamFeedbackDigest,
   getAllLivestreamIntelligence,
+  getLivestreamDiagnostics,
   getLivestreamIntelligence,
+  recordLivestreamEvent,
   saveLivestreamIntelligence,
+  updateLivestreamStage,
 } from "./persistence.js";
 import type {
   LivestreamAlertRecord,
   LivestreamAlertType,
+  LivestreamEventKind,
   LivestreamIntelligenceData,
+  LivestreamPipelineStage,
+  LivestreamStageDiagnostic,
   RollingSummary,
 } from "./types.js";
 import { VoiceEvidenceTracker } from "./voiceEvidence.js";
@@ -58,6 +65,25 @@ export interface LivestreamIntelligenceObserver {
   observeLive(observation: LiveObservation): void;
   observeOffline(streamerId: string): void;
   close(): Promise<void>;
+}
+
+export interface LivestreamRuntimeDiagnostics {
+  enabled: true;
+  voiceprintLoaded: boolean;
+  model: string;
+  queues: {
+    capture: { running: number; queued: number };
+    speech: { running: number; queued: number };
+    llm: { running: number; queued: number };
+  };
+  activeStreamCount: number;
+  activeVoiceTargetCount: number;
+  budget: { spentCents: number; limitCents: number; remainingCents: number };
+  intervals: { voiceSeconds: number; summarySeconds: number };
+}
+
+export interface LivestreamIntelligenceDiagnosticsProvider {
+  getRuntimeDiagnostics(): LivestreamRuntimeDiagnostics;
 }
 
 function epoch(value: Date | string): number {
@@ -144,11 +170,75 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     }
   }
 
+  public getRuntimeDiagnostics(): LivestreamRuntimeDiagnostics {
+    const spentCents = livestreamSpendCents();
+    const limitCents = config.LIVESTREAM_MONTHLY_BUDGET_USD * 100;
+    return {
+      enabled: true,
+      voiceprintLoaded: this.speech.hasVoiceprint,
+      model: "parakeet-tdt-0.6b-v3-int8",
+      queues: {
+        capture: { running: this.captureQueue.pending, queued: this.captureQueue.size },
+        speech: { running: this.speechQueue.pending, queued: this.speechQueue.size },
+        llm: { running: this.llmQueue.pending, queued: this.llmQueue.size },
+      },
+      activeStreamCount: this.active.size,
+      activeVoiceTargetCount: [...this.active.values()].filter((item) =>
+        this.isVoiceTarget(item),
+      ).length,
+      budget: {
+        spentCents,
+        limitCents,
+        remainingCents: Math.max(0, limitCents - spentCents),
+      },
+      intervals: {
+        voiceSeconds: config.LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS,
+        summarySeconds: config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS,
+      },
+    };
+  }
+
+  private recordEvent(input: {
+    streamerId: string;
+    sessionStartedAt?: number;
+    kind: LivestreamEventKind;
+    status: "info" | "success" | "warning" | "error";
+    title: string;
+    detail?: string;
+    durationMs?: number;
+    costCents?: number;
+    metrics?: Record<string, number | string | boolean | null>;
+  }): void {
+    try {
+      recordLivestreamEvent(input);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist intelligence event: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private updateStage(
+    streamerId: string,
+    sessionStartedAt: number,
+    stage: LivestreamPipelineStage,
+    value: LivestreamStageDiagnostic,
+  ): void {
+    try {
+      updateLivestreamStage(streamerId, sessionStartedAt, stage, value);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to persist ${stage} diagnostics: ${(error as Error).message}`,
+      );
+    }
+  }
+
   public observeLive(observation: LiveObservation): void {
     const now = Date.now();
     this.active.set(observation.streamer.id, observation);
     const previous = getLivestreamIntelligence(observation.streamer.id);
     const sessionStartedAt = epoch(observation.status.startedAt);
+    const isNewSession = previous?.sessionStartedAt !== sessionStartedAt;
     let state =
       previous?.sessionStartedAt === sessionStartedAt
         ? previous
@@ -180,7 +270,85 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     };
     saveLivestreamIntelligence(state);
 
+    const previousDiagnostics = getLivestreamDiagnostics(observation.streamer.id);
+    if (isNewSession) {
+      this.recordEvent({
+        streamerId: observation.streamer.id,
+        sessionStartedAt,
+        kind: "session",
+        status: "info",
+        title: "Live session started",
+        detail: observation.status.primaryTitle,
+      });
+    }
+    if (isNewSession || previousDiagnostics?.sessionStartedAt !== sessionStartedAt) {
+      this.updateStage(observation.streamer.id, sessionStartedAt, "metadata", {
+        status: state.semantic ? "success" : "idle",
+        eligible: true,
+        finishedAt: state.semantic?.updatedAt,
+        detail: state.semantic?.headline ?? "Waiting for semantic classification",
+        metrics: state.semantic
+          ? {
+              importance: state.semantic.importance,
+              topicCount: state.semantic.topics.length,
+            }
+          : undefined,
+      });
+      this.updateStage(observation.streamer.id, sessionStartedAt, "voice", {
+        status: "idle",
+        eligible: this.isVoiceTarget(observation),
+        detail: this.isVoiceTarget(observation)
+          ? "Eligible DGG third-party stream"
+          : isDestinyOwnedStream(observation.streamer)
+            ? "Destiny's own stream is always excluded"
+            : "Not a DGG third-party voice target",
+      });
+      this.updateStage(observation.streamer.id, sessionStartedAt, "summary", {
+        status: state.summary ? "success" : "idle",
+        eligible: this.isSummaryTarget(observation, state),
+        finishedAt: state.summary?.updatedAt,
+        detail:
+          state.summary?.topic ??
+          (this.isSummaryTarget(observation, state)
+            ? "Eligible for rolling summaries"
+            : "Waiting for relevance, importance, or anomaly gate"),
+        metrics: state.summary
+          ? {
+              confidence: state.summary.confidence,
+              audioSeconds: state.summary.windowSeconds,
+            }
+          : undefined,
+      });
+      if (state.latestAlert) {
+        this.updateStage(observation.streamer.id, sessionStartedAt, "alert", {
+          status: "success",
+          eligible: true,
+          finishedAt: state.latestAlert.createdAt,
+          detail: state.latestAlert.title,
+          metrics: {
+            type: state.latestAlert.type,
+            confidence: state.latestAlert.confidence,
+          },
+        });
+      }
+    }
+
     if (trend.anomalous && relevance.score >= 70) {
+      if (!previous?.trend?.anomalous) {
+        this.recordEvent({
+          streamerId: observation.streamer.id,
+          sessionStartedAt,
+          kind: "anomaly",
+          status: "warning",
+          title: "Viewer surge detected",
+          detail: trend.reason ?? undefined,
+          metrics: {
+            percentChange: trend.percentChange,
+            viewersPerMinute: trend.viewersPerMinute,
+            dggPercentChange: trend.dggPercentChange,
+          },
+        });
+      }
       void this.maybeNotify({
         observation,
         type: "viewer_surge",
@@ -213,6 +381,33 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   }
 
   public observeOffline(streamerId: string): void {
+    const current = getLivestreamIntelligence(streamerId);
+    const diagnostics = getLivestreamDiagnostics(streamerId);
+    const finishedAt = Date.now();
+    if (this.active.has(streamerId) && current) {
+      this.recordEvent({
+        streamerId,
+        sessionStartedAt: current.sessionStartedAt,
+        kind: "session",
+        status: "info",
+        title: "Live session ended",
+      });
+      for (const [stage, value] of Object.entries(diagnostics?.stages ?? {})) {
+        if (value?.status !== "running") continue;
+        this.updateStage(
+          streamerId,
+          current.sessionStartedAt,
+          stage as LivestreamPipelineStage,
+          {
+            ...value,
+            status: "skipped",
+            finishedAt,
+            durationMs: value.startedAt ? finishedAt - value.startedAt : undefined,
+            detail: "Stream ended before this operation completed",
+          },
+        );
+      }
+    }
     this.active.delete(streamerId);
     this.anomaly.clear(streamerId);
     this.voiceEvidence.clear(streamerId);
@@ -279,6 +474,18 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   }
 
   private scheduleMetadata(observation: LiveObservation): void {
+    const id = observation.streamer.id;
+    const sessionStartedAt = epoch(observation.status.startedAt);
+    const startedAt = Date.now();
+    const costBefore = livestreamSpendCents(startedAt);
+    this.updateStage(id, sessionStartedAt, "metadata", {
+      status: "running",
+      eligible: true,
+      startedAt,
+      detail: observation.titleChanged
+        ? "Classifying changed title"
+        : "Classifying stream title",
+    });
     void this.llmQueue
       .add(async () => {
         const semantic = await this.classifier.classifyMetadata({
@@ -287,7 +494,27 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           category: observation.status.category,
           dggViewers: observation.streamer.dgg?.viewers,
         });
-        if (!semantic || !this.active.has(observation.streamer.id)) return;
+        if (!semantic) {
+          const finishedAt = Date.now();
+          this.updateStage(id, sessionStartedAt, "metadata", {
+            status: "skipped",
+            eligible: true,
+            startedAt,
+            finishedAt,
+            durationMs: finishedAt - startedAt,
+            detail: "Monthly budget could not cover this classification",
+          });
+          this.recordEvent({
+            streamerId: id,
+            sessionStartedAt,
+            kind: "metadata",
+            status: "warning",
+            title: "Metadata classification skipped",
+            detail: "Monthly intelligence budget gate",
+          });
+          return;
+        }
+        if (!this.active.has(id)) return;
         const current = getLivestreamIntelligence(observation.streamer.id);
         if (
           !current ||
@@ -307,20 +534,75 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           relevanceReasons: relevance.reasons,
           updatedAt: Date.now(),
         });
+        const finishedAt = Date.now();
+        const costCents = Math.max(0, livestreamSpendCents(finishedAt) - costBefore);
+        this.updateStage(id, sessionStartedAt, "metadata", {
+          status: "success",
+          eligible: true,
+          startedAt,
+          finishedAt,
+          durationMs: finishedAt - startedAt,
+          detail: semantic.headline,
+          metrics: {
+            importance: semantic.importance,
+            topicCount: semantic.topics.length,
+            costCents,
+          },
+        });
+        this.recordEvent({
+          streamerId: id,
+          sessionStartedAt,
+          kind: "metadata",
+          status: "success",
+          title: "Semantic metadata updated",
+          detail: semantic.headline,
+          durationMs: finishedAt - startedAt,
+          costCents,
+          metrics: {
+            importance: semantic.importance,
+            contentKind: semantic.contentKind,
+          },
+        });
         await this.maybeNotifyCrossStreamTopic(semantic.topics);
       })
-      .catch((error) =>
+      .catch((error) => {
+        const finishedAt = Date.now();
+        const detail = (error as Error).message.slice(0, 500);
+        this.updateStage(id, sessionStartedAt, "metadata", {
+          status: "error",
+          eligible: true,
+          startedAt,
+          finishedAt,
+          durationMs: finishedAt - startedAt,
+          detail,
+        });
+        this.recordEvent({
+          streamerId: id,
+          sessionStartedAt,
+          kind: "metadata",
+          status: "error",
+          title: "Metadata classification failed",
+          detail,
+          durationMs: finishedAt - startedAt,
+        });
         this.logger.warn(
-          `Livestream metadata failed for ${observation.streamer.displayName}: ${(error as Error).message}`,
-        ),
-      );
+          `Livestream metadata failed for ${observation.streamer.displayName}: ${detail}`,
+        );
+      });
   }
 
   private scheduleVoiceSample(observation: LiveObservation): void {
     const id = observation.streamer.id;
     const sessionStartedAt = epoch(observation.status.startedAt);
+    const startedAt = Date.now();
     this.pendingVoice.set(id, sessionStartedAt);
-    this.lastVoiceSample.set(id, Date.now());
+    this.lastVoiceSample.set(id, startedAt);
+    this.updateStage(id, sessionStartedAt, "voice", {
+      status: "running",
+      eligible: true,
+      startedAt,
+      detail: "Capturing a bounded voice sample",
+    });
     void this.captureQueue
       .add(async () => {
         const audio = await this.capture.capture(
@@ -329,14 +611,34 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         );
         await this.speechQueue.add(async () => {
           const match = this.speech.detectDestiny(audio.samples);
-          await this.handleVoiceMatch(observation, audio.samples, match);
+          await this.handleVoiceMatch(observation, audio.samples, match, startedAt);
         });
       })
-      .catch((error) =>
+      .catch((error) => {
+        const finishedAt = Date.now();
+        const detail = (error as Error).message.slice(0, 500);
+        this.updateStage(id, sessionStartedAt, "voice", {
+          status: "error",
+          eligible: true,
+          startedAt,
+          finishedAt,
+          nextAt: startedAt + config.LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS * 1000,
+          durationMs: finishedAt - startedAt,
+          detail,
+        });
+        this.recordEvent({
+          streamerId: id,
+          sessionStartedAt,
+          kind: "voice",
+          status: "error",
+          title: "Voice scan failed",
+          detail,
+          durationMs: finishedAt - startedAt,
+        });
         this.logger.warn(
-          `Voice sampling failed for ${observation.streamer.displayName}: ${(error as Error).message}`,
-        ),
-      )
+          `Voice sampling failed for ${observation.streamer.displayName}: ${detail}`,
+        );
+      })
       .finally(() => {
         if (this.pendingVoice.get(id) === sessionStartedAt) {
           this.pendingVoice.delete(id);
@@ -348,12 +650,29 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     observation: LiveObservation,
     samples: Float32Array,
     match: { confidence: number; matchedWindows: number; checkedWindows: number },
+    startedAt: number,
   ): Promise<void> {
     const id = observation.streamer.id;
     const now = Date.now();
     const current = this.currentSession(observation);
     if (!current) return;
     const evidence = this.voiceEvidence.observe(id, match.matchedWindows, now);
+    const voiceDetail = `${match.matchedWindows}/${match.checkedWindows} windows matched at ${Math.round(match.confidence * 100)}% confidence`;
+    this.updateStage(id, current.sessionStartedAt, "voice", {
+      status: "success",
+      eligible: true,
+      startedAt,
+      finishedAt: now,
+      nextAt: startedAt + config.LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS * 1000,
+      durationMs: now - startedAt,
+      detail: evidence === "none" ? `No Destiny evidence; ${voiceDetail}` : voiceDetail,
+      metrics: {
+        confidence: match.confidence,
+        matchedWindows: match.matchedWindows,
+        checkedWindows: match.checkedWindows,
+        evidence,
+      },
+    });
     if (evidence === "none") return;
     if (evidence === "possible") {
       saveLivestreamIntelligence({
@@ -366,6 +685,20 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         },
         updatedAt: now,
       });
+      this.recordEvent({
+        streamerId: id,
+        sessionStartedAt: current.sessionStartedAt,
+        kind: "voice",
+        status: "warning",
+        title: "Possible Destiny voice match",
+        detail: `${voiceDetail}; awaiting another independent sample`,
+        durationMs: now - startedAt,
+        metrics: {
+          confidence: match.confidence,
+          matchedWindows: match.matchedWindows,
+          checkedWindows: match.checkedWindows,
+        },
+      });
       return;
     }
 
@@ -373,7 +706,17 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     const combined = concatSamples(samples, context.samples);
     const transcript = await this.speech.transcribe(combined);
     this.recordLocalTranscription("verify-destiny", combined.length / 16_000);
-    if (transcript.length < 30) return;
+    if (transcript.length < 30) {
+      this.recordEvent({
+        streamerId: id,
+        sessionStartedAt: current.sessionStartedAt,
+        kind: "voice",
+        status: "warning",
+        title: "Voice confirmation skipped",
+        detail: "The confirmation window did not contain enough transcribed speech",
+      });
+      return;
+    }
     const assessment = await this.llmQueue.add(() =>
       this.classifier.assessTranscript({
         displayName: observation.streamer.displayName,
@@ -385,7 +728,19 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         testingDestinyPresence: true,
       }),
     );
-    if (!assessment?.destinyIsLiveParticipant || assessment.confidence < 0.65) return;
+    if (!assessment?.destinyIsLiveParticipant || assessment.confidence < 0.65) {
+      this.recordEvent({
+        streamerId: id,
+        sessionStartedAt: current.sessionStartedAt,
+        kind: "voice",
+        status: "info",
+        title: "Destiny live participation not confirmed",
+        detail:
+          assessment?.summary ?? "Transcript assessment skipped by the budget gate",
+        metrics: { assessmentConfidence: assessment?.confidence ?? null },
+      });
+      return;
+    }
     const latest = this.currentSession(observation);
     if (!latest) return;
     saveLivestreamIntelligence({
@@ -397,6 +752,18 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         reason: assessment.summary,
       },
       updatedAt: Date.now(),
+    });
+    this.recordEvent({
+      streamerId: id,
+      sessionStartedAt: latest.sessionStartedAt,
+      kind: "voice",
+      status: "success",
+      title: "Destiny confirmed as a live participant",
+      detail: assessment.summary,
+      metrics: {
+        speakerConfidence: match.confidence,
+        assessmentConfidence: assessment.confidence,
+      },
     });
     await this.maybeNotify({
       observation,
@@ -411,8 +778,16 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   private scheduleSummary(observation: LiveObservation): void {
     const id = observation.streamer.id;
     const sessionStartedAt = epoch(observation.status.startedAt);
+    const startedAt = Date.now();
+    const costBefore = livestreamSpendCents(startedAt);
     this.pendingSummary.set(id, sessionStartedAt);
-    this.lastSummary.set(id, Date.now());
+    this.lastSummary.set(id, startedAt);
+    this.updateStage(id, sessionStartedAt, "summary", {
+      status: "running",
+      eligible: true,
+      startedAt,
+      detail: "Capturing and transcribing the current window",
+    });
     void this.captureQueue
       .add(async () => {
         const audio = await this.capture.capture(
@@ -423,7 +798,28 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           this.speech.transcribe(audio.samples),
         );
         this.recordLocalTranscription("rolling-summary", audio.durationSeconds);
-        if (!transcript || transcript.length < 30) return;
+        if (!transcript || transcript.length < 30) {
+          const finishedAt = Date.now();
+          this.updateStage(id, sessionStartedAt, "summary", {
+            status: "skipped",
+            eligible: true,
+            startedAt,
+            finishedAt,
+            nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
+            durationMs: finishedAt - startedAt,
+            detail: "Not enough speech in the captured window",
+          });
+          this.recordEvent({
+            streamerId: id,
+            sessionStartedAt,
+            kind: "summary",
+            status: "info",
+            title: "Summary window skipped",
+            detail: "Not enough transcribed speech",
+            durationMs: finishedAt - startedAt,
+          });
+          return;
+        }
         const current = this.currentSession(observation);
         if (!current) return;
         const assessment = await this.llmQueue.add(() =>
@@ -436,19 +832,90 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
             testingDestinyPresence: false,
           }),
         );
-        if (!assessment) return;
+        if (!assessment) {
+          const finishedAt = Date.now();
+          this.updateStage(id, sessionStartedAt, "summary", {
+            status: "skipped",
+            eligible: true,
+            startedAt,
+            finishedAt,
+            nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
+            durationMs: finishedAt - startedAt,
+            detail: "Monthly budget could not cover transcript assessment",
+          });
+          this.recordEvent({
+            streamerId: id,
+            sessionStartedAt,
+            kind: "summary",
+            status: "warning",
+            title: "Summary assessment skipped",
+            detail: "Monthly intelligence budget gate",
+          });
+          return;
+        }
         await this.saveAssessment(
           observation,
           transcript,
           audio.durationSeconds,
           assessment,
         );
+        const finishedAt = Date.now();
+        const costCents = Math.max(0, livestreamSpendCents(finishedAt) - costBefore);
+        this.updateStage(id, sessionStartedAt, "summary", {
+          status: "success",
+          eligible: true,
+          startedAt,
+          finishedAt,
+          nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
+          durationMs: finishedAt - startedAt,
+          detail: assessment.topic,
+          metrics: {
+            confidence: assessment.confidence,
+            audioSeconds: Math.round(audio.durationSeconds),
+            transcriptCharacters: transcript.length,
+            costCents,
+          },
+        });
+        this.recordEvent({
+          streamerId: id,
+          sessionStartedAt,
+          kind: "summary",
+          status: "success",
+          title: "Now summary updated",
+          detail: assessment.topic,
+          durationMs: finishedAt - startedAt,
+          costCents,
+          metrics: {
+            confidence: assessment.confidence,
+            audioSeconds: Math.round(audio.durationSeconds),
+          },
+        });
       })
-      .catch((error) =>
+      .catch((error) => {
+        const finishedAt = Date.now();
+        const detail = (error as Error).message.slice(0, 500);
+        this.updateStage(id, sessionStartedAt, "summary", {
+          status: "error",
+          eligible: true,
+          startedAt,
+          finishedAt,
+          nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
+          durationMs: finishedAt - startedAt,
+          detail,
+        });
+        this.recordEvent({
+          streamerId: id,
+          sessionStartedAt,
+          kind: "summary",
+          status: "error",
+          title: "Rolling summary failed",
+          detail,
+          durationMs: finishedAt - startedAt,
+        });
         this.logger.warn(
-          `Rolling summary failed for ${observation.streamer.displayName}: ${(error as Error).message}`,
-        ),
-      )
+          `Rolling summary failed for ${observation.streamer.displayName}: ${detail}`,
+        );
+      })
       .finally(() => {
         if (this.pendingSummary.get(id) === sessionStartedAt) {
           this.pendingSummary.delete(id);
@@ -503,7 +970,11 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         message: assessment.summary,
         reason: assessment.alertReason,
         confidence: assessment.confidence,
-      });
+      }).catch((error) =>
+        this.logger.warn(
+          `Semantic alert failed for ${observation.streamer.displayName}: ${(error as Error).message}`,
+        ),
+      );
     }
   }
 
@@ -539,17 +1010,40 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     reason: string;
     confidence: number;
   }): Promise<void> {
-    if (input.confidence < this.feedbackConfidenceFloor(input.type)) return;
-    const key = `${input.observation.streamer.id}:${input.type}`;
-    const previous = this.alertTimes.get(key) ?? 0;
-    if (Date.now() - previous < ALERT_COOLDOWN_MS) return;
     const current = this.currentSession(input.observation);
     if (!current) return;
+    const markSkipped = (detail: string) =>
+      this.updateStage(
+        input.observation.streamer.id,
+        current.sessionStartedAt,
+        "alert",
+        {
+          status: "skipped",
+          eligible: true,
+          finishedAt: Date.now(),
+          detail,
+          metrics: { type: input.type, confidence: input.confidence },
+        },
+      );
+    const confidenceFloor = this.feedbackConfidenceFloor(input.type);
+    if (input.confidence < confidenceFloor) {
+      markSkipped(
+        `${Math.round(input.confidence * 100)}% confidence was below the ${Math.round(confidenceFloor * 100)}% alert threshold`,
+      );
+      return;
+    }
+    const key = `${input.observation.streamer.id}:${input.type}`;
+    const previous = this.alertTimes.get(key) ?? 0;
+    if (Date.now() - previous < ALERT_COOLDOWN_MS) {
+      markSkipped("A matching alert was already sent within the 30-minute cooldown");
+      return;
+    }
     if (
       input.type === "destiny_guest" &&
       current.latestAlert?.type === "destiny_guest" &&
       current.latestAlert.createdAt >= current.sessionStartedAt
     ) {
+      markSkipped("Destiny was already reported during this live session");
       return;
     }
     const alert: LivestreamAlertRecord = {
@@ -562,6 +1056,13 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       createdAt: Date.now(),
     };
     this.alertTimes.set(key, alert.createdAt);
+    const alertStartedAt = Date.now();
+    this.updateStage(input.observation.streamer.id, current.sessionStartedAt, "alert", {
+      status: "running",
+      eligible: true,
+      startedAt: alertStartedAt,
+      detail: alert.title,
+    });
     try {
       await notify({
         title: alert.title,
@@ -575,6 +1076,29 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       });
     } catch (error) {
       if (this.alertTimes.get(key) === alert.createdAt) this.alertTimes.delete(key);
+      const finishedAt = Date.now();
+      const detail = (error as Error).message.slice(0, 500);
+      this.updateStage(
+        input.observation.streamer.id,
+        current.sessionStartedAt,
+        "alert",
+        {
+          status: "error",
+          eligible: true,
+          startedAt: alertStartedAt,
+          finishedAt,
+          durationMs: finishedAt - alertStartedAt,
+          detail,
+        },
+      );
+      this.recordEvent({
+        streamerId: input.observation.streamer.id,
+        sessionStartedAt: current.sessionStartedAt,
+        kind: "alert",
+        status: "error",
+        title: "Alert delivery failed",
+        detail,
+      });
       throw error;
     }
     const latest = this.currentSession(input.observation);
@@ -583,6 +1107,26 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       ...latest,
       latestAlert: alert,
       updatedAt: Date.now(),
+    });
+    const finishedAt = Date.now();
+    this.updateStage(input.observation.streamer.id, latest.sessionStartedAt, "alert", {
+      status: "success",
+      eligible: true,
+      startedAt: alertStartedAt,
+      finishedAt,
+      durationMs: finishedAt - alertStartedAt,
+      detail: alert.title,
+      metrics: { type: alert.type, confidence: alert.confidence },
+    });
+    this.recordEvent({
+      streamerId: input.observation.streamer.id,
+      sessionStartedAt: latest.sessionStartedAt,
+      kind: "alert",
+      status: "success",
+      title: `Alert sent: ${alert.title}`,
+      detail: alert.reason,
+      durationMs: finishedAt - alertStartedAt,
+      metrics: { type: alert.type, confidence: alert.confidence },
     });
   }
 
