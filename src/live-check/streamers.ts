@@ -19,6 +19,12 @@ export type PlatformBinding = {
 
 export type StreamerTier = "primary" | "background";
 
+export type DggPresence = {
+  hosted: boolean;
+  /** Number of Destiny.gg viewers showing this embed, when applicable. */
+  viewers: number | null;
+};
+
 export type Streamer = {
   id: string;
   displayName: string;
@@ -36,12 +42,8 @@ export type Streamer = {
    * "primary"; see notificationPolicy.ts for the exact semantics.
    */
   tier: StreamerTier;
-  /** Current placement metadata for a stream discovered through Destiny.gg. */
-  dgg?: {
-    hosted: boolean;
-    /** Number of Destiny.gg viewers showing this embed, when applicable. */
-    viewers: number | null;
-  };
+  /** Current Destiny.gg placement metadata, discovered or explicitly configured. */
+  dgg?: DggPresence;
 };
 
 export function normalizeId(displayName: string): string {

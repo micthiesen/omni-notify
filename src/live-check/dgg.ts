@@ -7,7 +7,7 @@ import {
   Platform,
   platformConfigs,
 } from "./platforms/index.js";
-import { normalizeId, type Streamer } from "./streamers.js";
+import { type DggPresence, normalizeId, type Streamer } from "./streamers.js";
 
 export const DGG_LIVE_URL = "wss://live.destiny.gg";
 const USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0";
@@ -237,8 +237,20 @@ type Candidate = {
   hosting?: DggHosting;
 };
 
-/** Selects up to `limit` usable, non-configured streams from a DGG snapshot. */
-export function selectDggStreams({
+export type ResolvedDggStreams = {
+  /** Unconfigured DGG sources that become transient background streamers. */
+  discovered: SelectedDggStream[];
+  /** DGG presence to overlay on configured streamers without changing behavior. */
+  configuredPresence: Map<string, DggPresence>;
+};
+
+/**
+ * Resolves one DGG snapshot into configured-streamer enrichment and up to
+ * `limit` additional background streamers. Configured matches never consume a
+ * discovery slot, and every candidate is scanned so lower-ranked configured
+ * sources retain their DGG metadata after the discovery limit is filled.
+ */
+export function resolveDggStreams({
   feed,
   limit,
   configuredStreamers,
@@ -248,22 +260,22 @@ export function selectDggStreams({
   limit: number;
   configuredStreamers: readonly Streamer[];
   availablePlatforms: ReadonlySet<Platform>;
-}): SelectedDggStream[] {
+}): ResolvedDggStreams {
   if (!Number.isInteger(limit) || limit < 0) {
     throw new Error(`DGG stream limit must be a non-negative integer, got ${limit}`);
   }
-  if (limit === 0) return [];
 
-  const configuredBindings = new Set(
-    configuredStreamers.flatMap((streamer) =>
-      streamer.bindings.map((binding) =>
+  const configuredByBinding = new Map<string, Streamer>();
+  const configuredByName = new Map<string, Streamer>();
+  for (const streamer of configuredStreamers) {
+    configuredByName.set(normalizeId(streamer.displayName), streamer);
+    for (const binding of streamer.bindings) {
+      configuredByBinding.set(
         canonicalBinding(binding.platform, binding.username),
-      ),
-    ),
-  );
-  const configuredNames = new Set(
-    configuredStreamers.map((streamer) => normalizeId(streamer.displayName)),
-  );
+        streamer,
+      );
+    }
+  }
 
   const candidates: Candidate[] = [];
   if (!feed.destinyLive && feed.hosting) {
@@ -315,19 +327,32 @@ export function selectDggStreams({
   }
 
   const seen = new Set<string>();
-  const selected: SelectedDggStream[] = [];
+  const discovered: SelectedDggStream[] = [];
+  const configuredPresence = new Map<string, DggPresence>();
   for (const candidate of candidates) {
     const binding = canonicalBinding(candidate.platform, candidate.id);
-    if (
-      seen.has(binding) ||
-      configuredBindings.has(binding) ||
-      configuredNames.has(normalizeId(candidate.displayName))
-    ) {
+    if (seen.has(binding)) continue;
+    seen.add(binding);
+
+    const configured =
+      configuredByBinding.get(binding) ??
+      configuredByName.get(normalizeId(candidate.displayName));
+    if (configured) {
+      const previous = configuredPresence.get(configured.id);
+      const viewers =
+        candidate.embedCount === undefined
+          ? (previous?.viewers ?? null)
+          : (previous?.viewers ?? 0) + candidate.embedCount;
+      configuredPresence.set(configured.id, {
+        hosted: previous?.hosted === true || candidate.hosting !== undefined,
+        viewers,
+      });
       continue;
     }
-    seen.add(binding);
+    if (discovered.length >= limit) continue;
+
     const url = streamUrl(candidate.platform, candidate.id);
-    selected.push({
+    discovered.push({
       streamer: {
         id: `dgg:${candidate.platform}:${encodeURIComponent(candidate.id.toLowerCase())}`,
         displayName: candidate.displayName,
@@ -352,8 +377,7 @@ export function selectDggStreams({
       hosted: candidate.hosting !== undefined,
       hosting: candidate.hosting,
     });
-    if (selected.length >= limit) break;
   }
 
-  return selected;
+  return { discovered, configuredPresence };
 }

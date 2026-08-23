@@ -4,7 +4,7 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import appConfig from "../utils/config.js";
 import type { DggFeed } from "./dgg.js";
-import { Platform } from "./platforms/index.js";
+import { LiveStatus, Platform, platformConfigs } from "./platforms/index.js";
 import type { Streamer } from "./streamers.js";
 import LiveCheckTask from "./task.js";
 
@@ -101,5 +101,66 @@ describe("LiveCheckTask DGG discovery", () => {
       "dgg:twitch:retained",
     ]);
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("enriches an explicit primary streamer without duplicating or replacing its polling", async () => {
+    const sharedStreamers: Streamer[] = [
+      {
+        id: "configured",
+        displayName: "Configured",
+        bindings: [{ platform: Platform.Twitch, username: "configured" }],
+        tier: "primary",
+      },
+    ];
+    const connector = vi
+      .spyOn(platformConfigs[Platform.Twitch], "fetchLiveStatus")
+      .mockResolvedValue({
+        status: LiveStatus.Live,
+        title: "Configured live",
+        viewerCount: 0,
+      });
+    const snapshots = [feed("configured"), feed()];
+    let dggFetches = 0;
+    const task = new LiveCheckTask(
+      sharedStreamers,
+      new Logger("DggConfiguredMergeTest"),
+      undefined,
+      {
+        topEmbeds: 1,
+        availablePlatforms: new Set(Object.values(Platform)),
+        fetchFeed: async () => snapshots[dggFetches++] ?? feed(),
+      },
+    );
+
+    try {
+      await task.run();
+      expect(sharedStreamers).toHaveLength(1);
+      expect(sharedStreamers[0]).toMatchObject({
+        id: "configured",
+        tier: "primary",
+        bindings: [{ platform: Platform.Twitch, username: "configured" }],
+        dgg: { hosted: false, viewers: 12 },
+      });
+      expect(dggFetches).toBe(1);
+      expect(connector).toHaveBeenCalledTimes(1);
+      expect(notify).toHaveBeenCalledTimes(1);
+
+      await task.run();
+      await task.run();
+      await task.run();
+      expect(dggFetches).toBe(2);
+      expect(connector).toHaveBeenCalledTimes(4);
+      expect(notify).toHaveBeenCalledTimes(1);
+      expect(sharedStreamers).toEqual([
+        {
+          id: "configured",
+          displayName: "Configured",
+          bindings: [{ platform: Platform.Twitch, username: "configured" }],
+          tier: "primary",
+        },
+      ]);
+    } finally {
+      connector.mockRestore();
+    }
   });
 });

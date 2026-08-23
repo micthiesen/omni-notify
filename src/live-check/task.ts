@@ -3,7 +3,7 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import appConfig from "../utils/config.js";
-import { fetchDggFeed, selectDggStreams } from "./dgg.js";
+import { fetchDggFeed, resolveDggStreams } from "./dgg.js";
 import { ViewerMetricsService } from "./metrics/index.js";
 import {
   getNotificationPermissions,
@@ -118,9 +118,9 @@ export default class LiveCheckTask extends ScheduledTask {
   private async refreshDggStreamers(): Promise<void> {
     if (!this.dggDiscovery) return;
 
-    let selected: ReturnType<typeof selectDggStreams>;
+    let resolution: ReturnType<typeof resolveDggStreams>;
     try {
-      selected = selectDggStreams({
+      resolution = resolveDggStreams({
         feed: await (this.dggDiscovery.fetchFeed ?? fetchDggFeed)(),
         limit: this.dggDiscovery.topEmbeds,
         configuredStreamers: this.configuredStreamers,
@@ -129,20 +129,19 @@ export default class LiveCheckTask extends ScheduledTask {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Failed to refresh Destiny.gg embeds: ${message}`);
-      for (const streamer of this.streamers) {
-        if (streamer.dgg) {
-          this.dggStatuses.set(streamer.id, {
-            status: LiveStatus.Unknown,
-            error: message,
-          });
-        }
+      for (const streamerId of this.dggStatuses.keys()) {
+        this.dggStatuses.set(streamerId, {
+          status: LiveStatus.Unknown,
+          error: message,
+        });
       }
       return;
     }
 
+    const selected = resolution.discovered;
     const nextIds = new Set(selected.map(({ streamer }) => streamer.id));
     const removed = this.streamers.filter(
-      (streamer) => streamer.dgg && !nextIds.has(streamer.id),
+      (streamer) => this.dggStatuses.has(streamer.id) && !nextIds.has(streamer.id),
     );
     for (const streamer of removed) {
       const previous = getStreamerStatus(streamer.id);
@@ -167,10 +166,14 @@ export default class LiveCheckTask extends ScheduledTask {
     for (const entry of selected) {
       this.dggStatuses.set(entry.streamer.id, entry.status);
     }
+    const enrichedConfigured = this.configuredStreamers.map((streamer) => {
+      const dgg = resolution.configuredPresence.get(streamer.id);
+      return dgg ? { ...streamer, dgg } : streamer;
+    });
     this.streamers.splice(
       0,
       this.streamers.length,
-      ...this.configuredStreamers,
+      ...enrichedConfigured,
       ...selected.map(({ streamer }) => streamer),
     );
     this.streamersById = new Map(

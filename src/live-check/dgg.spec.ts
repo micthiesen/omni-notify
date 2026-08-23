@@ -4,7 +4,7 @@ import {
   type DggFeed,
   type DggWebSocketFactory,
   fetchDggFeed,
-  selectDggStreams,
+  resolveDggStreams,
 } from "./dgg.js";
 import { Platform } from "./platforms/index.js";
 import type { Streamer } from "./streamers.js";
@@ -38,6 +38,10 @@ function embed({
       },
     },
   };
+}
+
+function selectDggStreams(options: Parameters<typeof resolveDggStreams>[0]) {
+  return resolveDggStreams(options).discovered;
 }
 
 describe("selectDggStreams", () => {
@@ -105,6 +109,93 @@ describe("selectDggStreams", () => {
       "dgg:kick:duplicate",
       "dgg:youtube:filled",
     ]);
+  });
+
+  it("merges hosted and viewer metadata onto a configured streamer", () => {
+    const configured: Streamer = {
+      id: "foo",
+      displayName: "Foo",
+      bindings: [{ platform: Platform.Kick, username: "foo-on-kick" }],
+      tier: "primary",
+    };
+    const resolution = resolveDggStreams({
+      feed: {
+        destinyLive: false,
+        hosting: {
+          platform: "twitch",
+          id: "foo-live",
+          displayName: "foo",
+        },
+        embeds: [
+          embed({
+            platform: "twitch",
+            id: "foo-live",
+            displayName: "Foo",
+            count: 81,
+          }),
+          embed({ platform: "kick", id: "discovered", count: 70 }),
+          embed({
+            platform: "kick",
+            id: "foo-on-kick",
+            displayName: "Foo",
+            count: 19,
+          }),
+        ],
+      },
+      limit: 1,
+      configuredStreamers: [configured],
+      availablePlatforms: new Set(Object.values(Platform)),
+    });
+
+    expect(resolution.configuredPresence.get("foo")).toEqual({
+      hosted: true,
+      viewers: 100,
+    });
+    expect(resolution.discovered.map((entry) => entry.streamer.id)).toEqual([
+      "dgg:kick:discovered",
+    ]);
+    expect(configured).toEqual({
+      id: "foo",
+      displayName: "Foo",
+      bindings: [{ platform: Platform.Kick, username: "foo-on-kick" }],
+      tier: "primary",
+    });
+  });
+
+  it("enriches configured sources after the discovery limit is full", () => {
+    const resolution = resolveDggStreams({
+      feed: {
+        destinyLive: false,
+        hosting: null,
+        embeds: [
+          embed({ platform: "kick", id: "first", count: 100 }),
+          embed({
+            platform: "youtube",
+            id: "video-id",
+            displayName: "Configured Late",
+            count: 5,
+          }),
+        ],
+      },
+      limit: 1,
+      configuredStreamers: [
+        {
+          id: "configured-late",
+          displayName: "Configured Late",
+          bindings: [{ platform: Platform.YouTube, username: "@configured" }],
+          tier: "background",
+        },
+      ],
+      availablePlatforms: new Set(Object.values(Platform)),
+    });
+
+    expect(resolution.discovered.map((entry) => entry.streamer.id)).toEqual([
+      "dgg:kick:first",
+    ]);
+    expect(resolution.configuredPresence.get("configured-late")).toEqual({
+      hosted: false,
+      viewers: 5,
+    });
   });
 
   it("prefers a host within the limit and retains DGG metadata", () => {
