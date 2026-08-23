@@ -63,11 +63,32 @@ function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
         </span>
       </div>
       <div className="live-title">{streamer.title}</div>
+      {streamer.intelligence?.summary ? (
+        <div className="live-now-summary">
+          <strong>Now:</strong> {streamer.intelligence.summary.text}
+        </div>
+      ) : (
+        streamer.intelligence?.semantic && (
+          <div className="live-now-summary">
+            <strong>Likely:</strong> {streamer.intelligence.semantic.headline}
+          </div>
+        )
+      )}
       <div className="meta-row live-meta">
         <span className="live-uptime">{formatUptime(now - streamer.startedAt)}</span>
         {viewers && <span>{viewers}</span>}
         {streamer.category && <span>{streamer.category}</span>}
         <DggPresenceTag dgg={streamer.dgg} />
+        {streamer.intelligence?.destinyPresence?.state === "confirmed" && (
+          <span className="intelligence-badge intelligence-badge-destiny">
+            Destiny Here
+          </span>
+        )}
+        {streamer.intelligence && streamer.intelligence.relevanceScore >= 70 && (
+          <span className="intelligence-badge">
+            Relevance {streamer.intelligence.relevanceScore}
+          </span>
+        )}
       </div>
       {/* Stretched-link pattern: the whole card opens the stream; the compact
           details control above it routes to the streamer detail page. Two

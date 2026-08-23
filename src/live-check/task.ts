@@ -4,6 +4,7 @@ import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import appConfig from "../utils/config.js";
 import { fetchDggFeed, resolveDggStreams } from "./dgg.js";
+import type { LivestreamIntelligenceObserver } from "./intelligence/service.js";
 import { ViewerMetricsService } from "./metrics/index.js";
 import {
   getNotificationPermissions,
@@ -65,6 +66,7 @@ export default class LiveCheckTask extends ScheduledTask {
       availablePlatforms: ReadonlySet<Platform>;
       fetchFeed?: typeof fetchDggFeed;
     },
+    private readonly intelligence?: LivestreamIntelligenceObserver,
   ) {
     super();
     this.streamers = streamers;
@@ -161,6 +163,7 @@ export default class LiveCheckTask extends ScheduledTask {
       this.titleDebouncer.clear(streamer.id);
       this.metricsService.discardPendingPeaks(streamer.id);
       this.dggStatuses.delete(streamer.id);
+      this.intelligence?.observeOffline(streamer.id);
     }
 
     for (const entry of selected) {
@@ -342,6 +345,12 @@ export default class LiveCheckTask extends ScheduledTask {
 
     upsertStreamerStatus(next);
     await this.recordViewersIfAny(streamer, next.primary, summedViewerCount);
+    this.intelligence?.observeLive({
+      streamer,
+      status: next,
+      wentLive: true,
+      titleChanged: false,
+    });
   }
 
   private async handleStillLive(
@@ -389,6 +398,12 @@ export default class LiveCheckTask extends ScheduledTask {
 
     upsertStreamerStatus(next);
     await this.recordViewersIfAny(streamer, next.primary, summedViewerCount);
+    this.intelligence?.observeLive({
+      streamer,
+      status: next,
+      wentLive: false,
+      titleChanged,
+    });
   }
 
   private async handleWentOffline(
@@ -427,6 +442,7 @@ export default class LiveCheckTask extends ScheduledTask {
     }
 
     upsertStreamerStatus(next);
+    this.intelligence?.observeOffline(streamer.id);
   }
 
   private async recordViewersIfAny(

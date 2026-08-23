@@ -47,6 +47,22 @@ Checks every 20 seconds (with random jitter) whether monitored channels are live
 
 Set `OFFLINE_NOTIFICATIONS=false` to only get notified when channels go live.
 
+### Livestream Intelligence
+
+Set `LIVESTREAM_INTELLIGENCE_ENABLED=true` to add a Boris-local semantic layer to live-check. The production image bundles Silero VAD, an English CAM++ speaker model, Parakeet TDT v3 INT8, and yt-dlp. It samples live audio without storing recordings, uses local inference for speech and speaker recognition, and sends only compact transcripts or titles to Luna. The dashboard then shows a current summary, relevance score, viewer anomalies, and recent topic chapters.
+
+Destiny guest detection runs only on third-party DGG streams. It requires two multi-window speaker matches within five minutes, followed by transcript confirmation that he is participating live rather than appearing in a clip. His own configured or DGG-discovered streams are always excluded. Alerts cover confirmed guest appearances, viewer surges, substantive debates, breaking news, major announcements, notable guests, and cross-stream topic convergence. Feedback on the streamer detail page raises the confidence threshold when an alert type accumulates negative corrections.
+
+Metered calls are restricted to `openai:gpt-5.6-luna` and capped at $3 per calendar month. Local audio inference records zero-cost usage events on the Costs page. Generate the persistent Destiny voiceprint inside the production container from at least two public clips where he is the only common speaker:
+
+```bash
+docker exec omni-notify node dist/tools/enroll-destiny-voice.js \
+  --source 'https://www.youtube.com/watch?v=FIRST' --seek 600 \
+  --source 'https://www.youtube.com/watch?v=SECOND' --seek 600
+```
+
+Set `LIVESTREAM_DESTINY_VOICEPRINT_PATH=/data/livestream-intelligence/destiny.json` after enrollment. `node dist/tools/livestream-intelligence-doctor.js --url <URL>` captures a bounded sample and reports transcript speed and speaker-match evidence.
+
 ## iPad Control Center
 
 The private **Omni Live** iOS app exposes four configurable Control Center slots.
@@ -204,6 +220,13 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)); required when `channels.json` has Kick channels |
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
+| `LIVESTREAM_INTELLIGENCE_ENABLED` | No | Enable Boris-local transcription, summaries, speaker detection, and semantic alerts (default: `false`) |
+| `LIVESTREAM_MONTHLY_BUDGET_USD` | No | Hard Luna spend ceiling for livestream intelligence, from $0 to $3 (default: `$3`) |
+| `LIVESTREAM_DESTINY_VOICEPRINT_PATH` | No | Persistent Destiny enrollment JSON; guest detection stays disabled when omitted |
+| `LIVESTREAM_DESTINY_SPEAKER_THRESHOLD` | No | CAM++ cosine threshold (default: `0.62`) |
+| `LIVESTREAM_MAX_VOICE_TARGETS` | No | Maximum concurrent DGG voice targets (default: `3`) |
+| `LIVESTREAM_VOICE_SAMPLE_SECONDS` / `LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS` | No | Voice sample length / cadence (defaults: `18` / `45`) |
+| `LIVESTREAM_SUMMARY_SAMPLE_SECONDS` / `LIVESTREAM_SUMMARY_INTERVAL_SECONDS` | No | Summary sample length / cadence (defaults: `75` / `240`) |
 | `BRIEFING_MODEL` | No | AI model for briefings (default: `openai:gpt-5.6-luna`) |
 | `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `openai:gpt-5.6-luna`) |
 | `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `openai:gpt-5.6-terra`) |

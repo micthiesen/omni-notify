@@ -47,6 +47,10 @@ import {
   sortLiveDisplay,
   sortOfflineDisplay,
 } from "./live-check/displayOrder.js";
+import {
+  getLivestreamIntelligence,
+  recordLivestreamFeedback,
+} from "./live-check/intelligence/persistence.js";
 import { getViewerMetrics } from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
@@ -277,6 +281,9 @@ function serializeBinding(binding: PlatformBinding) {
 
 function serializeStreamer(streamer: Streamer) {
   const status = getStreamerStatus(streamer.id);
+  const intelligence = status.isLive
+    ? getLivestreamIntelligence(streamer.id)
+    : undefined;
   const base = {
     id: streamer.id,
     displayName: streamer.displayName,
@@ -296,6 +303,7 @@ function serializeStreamer(streamer: Streamer) {
       viewerCount: status.viewerCount ?? null,
       category: status.category ?? null,
       primary: serializeBinding(status.primary),
+      intelligence,
     };
   }
   return {
@@ -569,6 +577,26 @@ export function startServer(
     }
     const sessions = [...getStreamSessions(id).sessions].reverse();
     return c.json({ sessions });
+  });
+
+  const livestreamFeedbackSchema = z.object({
+    alertId: z.string().uuid(),
+    verdict: z.enum(["useful", "not_useful", "false_positive"]),
+    note: z.string().max(500).optional(),
+  });
+
+  app.post("/api/streamers/:id/intelligence-feedback", async (c) => {
+    const id = c.req.param("id");
+    if (!streamers.some((streamer) => streamer.id === id)) {
+      return c.json({ error: "Unknown streamer" }, 404);
+    }
+    const parsed = livestreamFeedbackSchema.safeParse(
+      await c.req.json().catch(() => null),
+    );
+    if (!parsed.success) return c.json({ error: parsed.error.message }, 400);
+    const feedback = recordLivestreamFeedback({ streamerId: id, ...parsed.data });
+    if (!feedback) return c.json({ error: "Alert no longer exists" }, 404);
+    return c.json({ feedback }, 201);
   });
 
   // Full dashboard state in one payload; also the polling fallback when the

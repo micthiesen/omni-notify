@@ -7,7 +7,11 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { fetchStreamerMetrics, fetchStreamerSessions } from "../api";
+import {
+  fetchStreamerMetrics,
+  fetchStreamerSessions,
+  submitLivestreamFeedback,
+} from "../api";
 import type { StreamerMetrics, StreamerView, StreamSession } from "../api";
 import { DggPresenceTag } from "../components/LiveNow";
 import { PlatformIcon } from "../components/PlatformIcon";
@@ -343,6 +347,96 @@ function StreamerHeader({ streamer }: { streamer: StreamerView }) {
   );
 }
 
+function LivestreamIntelligencePanel({ streamer }: { streamer: StreamerView }) {
+  const [submitted, setSubmitted] = useState<string | null>(null);
+  const alertId = streamer.live
+    ? streamer.intelligence?.latestAlert?.alertId
+    : undefined;
+  useEffect(() => setSubmitted(null), [alertId]);
+  if (!streamer.live || !streamer.intelligence) return null;
+  const intelligence = streamer.intelligence;
+  const chapters = intelligence.chapters.slice(-8).reverse();
+  const submit = (verdict: "useful" | "not_useful" | "false_positive") => {
+    const alert = intelligence.latestAlert;
+    if (!alert) return;
+    setSubmitted(verdict);
+    void submitLivestreamFeedback(streamer.id, alert.alertId, verdict).catch(() =>
+      setSubmitted(null),
+    );
+  };
+
+  return (
+    <section className="page-section intelligence-panel">
+      <h2 className="section-title">Live Intelligence</h2>
+      <div className="intelligence-summary-card">
+        <div className="intelligence-summary-heading">
+          <strong>{intelligence.summary?.topic ?? "Current Read"}</strong>
+          <span className="intelligence-score">
+            Relevance {intelligence.relevanceScore}
+          </span>
+        </div>
+        <p>
+          {intelligence.summary?.text ??
+            intelligence.semantic?.headline ??
+            "Building a current summary…"}
+        </p>
+        <div className="meta-row">
+          {intelligence.summary && (
+            <span>Updated {formatRelative(intelligence.summary.updatedAt)}</span>
+          )}
+          {intelligence.trend?.anomalous && <span>{intelligence.trend.reason}</span>}
+          {intelligence.destinyPresence?.state === "confirmed" && (
+            <span>
+              Destiny detected, {Math.round(intelligence.destinyPresence.confidence * 100)}%
+              confidence
+            </span>
+          )}
+        </div>
+        {intelligence.relevanceReasons.length > 0 && (
+          <div className="intelligence-reasons">
+            {intelligence.relevanceReasons.map((reason) => (
+              <span key={reason}>{reason}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      {chapters.length > 0 && (
+        <div className="intelligence-chapters">
+          <h3>Recent Topics</h3>
+          {chapters.map((chapter) => (
+            <div key={chapter.chapterId} className="intelligence-chapter">
+              <div>
+                <strong>{chapter.title}</strong>
+                <span>{formatRelative(chapter.startedAt)}</span>
+              </div>
+              <p>{chapter.summary}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {intelligence.latestAlert && (
+        <div className="intelligence-alert-feedback">
+          <div>
+            <strong>Latest Alert: {intelligence.latestAlert.title}</strong>
+            <span>{intelligence.latestAlert.reason}</span>
+          </div>
+          {submitted ? (
+            <span className="muted">Feedback saved</span>
+          ) : (
+            <div className="intelligence-feedback-actions">
+              <button type="button" onClick={() => submit("useful")}>Useful</button>
+              <button type="button" onClick={() => submit("not_useful")}>Not Useful</button>
+              <button type="button" onClick={() => submit("false_positive")}>
+                False Positive
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function StreamerPage({ streamerId }: { streamerId: string }) {
   const { snapshot } = useLiveData();
   const [metrics, setMetrics] = useState<StreamerMetrics | null>(null);
@@ -416,6 +510,7 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
         ← Home
       </Link>
       <StreamerHeader streamer={streamer} />
+      <LivestreamIntelligencePanel streamer={streamer} />
       {error !== null && (
         <div className="error-inline">Failed to load viewer metrics: {error}</div>
       )}

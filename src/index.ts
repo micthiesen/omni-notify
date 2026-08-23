@@ -17,6 +17,10 @@ import EmailWatchdogTask from "./email/watchdogTask.js";
 import { ApnsControlClient } from "./ios-controls/apns.js";
 import { IOSControlService } from "./ios-controls/service.js";
 import { loadChannelsConfig } from "./live-check/channelsConfig.js";
+import {
+  createLivestreamIntelligenceService,
+  type LivestreamIntelligenceObserver,
+} from "./live-check/intelligence/service.js";
 import { Platform } from "./live-check/platforms/index.js";
 import {
   buildStreamers,
@@ -47,6 +51,7 @@ installLogCapture();
 installAlertThrottle();
 
 const logger = new Logger("Main");
+const livestreamIntelligence = createLivestreamIntelligenceService(logger);
 const importedCostEvents = importHistoricalCosts();
 if (importedCostEvents > 0) {
   logger.info(`Imported ${importedCostEvents} historical cost event(s)`);
@@ -120,6 +125,7 @@ function buildTasks(
   iosControls?: IOSControlService,
   dggTopEmbeds = 0,
   availablePlatforms: ReadonlySet<Platform> = new Set(Object.values(Platform)),
+  intelligence: LivestreamIntelligenceObserver | undefined = livestreamIntelligence,
 ): ScheduledTask[] {
   const tasks: ScheduledTask[] = [];
 
@@ -130,6 +136,7 @@ function buildTasks(
         logger,
         () => iosControls?.reconcile() ?? Promise.resolve(),
         dggTopEmbeds > 0 ? { topEmbeds: dggTopEmbeds, availablePlatforms } : undefined,
+        intelligence,
       ),
     );
   }
@@ -225,6 +232,7 @@ if (runTaskIndex !== -1) {
   try {
     await task.run();
   } finally {
+    await livestreamIntelligence?.close();
     oneOffControls.close();
   }
   logger.info(`Task "${task.name}" complete`);
@@ -342,6 +350,7 @@ if (!serverOnly) {
     iosControls.close();
     unsubscribeWorkspaceEmailRuns();
     await scheduler.shutdown();
+    await livestreamIntelligence?.close();
     await recoveryPromise;
     logger.info("Shutdown complete");
     process.exit(0);

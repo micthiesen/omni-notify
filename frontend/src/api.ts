@@ -62,6 +62,68 @@ interface StreamerBase {
   };
 }
 
+export type LivestreamAlertType =
+  | "destiny_guest"
+  | "breaking_news"
+  | "debate"
+  | "guest_joined"
+  | "major_announcement"
+  | "viewer_surge"
+  | "cross_stream_topic";
+
+export interface LivestreamIntelligence {
+  streamerId: string;
+  sessionStartedAt: number;
+  semantic?: {
+    headline: string;
+    topics: string[];
+    contentKind: string;
+    importance: number;
+    reason: string;
+    updatedAt: number;
+  };
+  trend?: {
+    percentChange: number;
+    viewersPerMinute: number;
+    dggPercentChange: number | null;
+    anomalous: boolean;
+    reason: string | null;
+    updatedAt: number;
+  };
+  relevanceScore: number;
+  relevanceReasons: string[];
+  summary?: {
+    text: string;
+    topic: string;
+    confidence: number;
+    transcriptExcerpt: string;
+    updatedAt: number;
+    windowSeconds: number;
+  };
+  chapters: Array<{
+    chapterId: string;
+    startedAt: number;
+    title: string;
+    summary: string;
+  }>;
+  destinyPresence?: {
+    state: "possible" | "confirmed";
+    confidence: number;
+    detectedAt: number;
+    reason: string;
+  };
+  latestAlert?: {
+    alertId: string;
+    type: LivestreamAlertType;
+    title: string;
+    message: string;
+    reason: string;
+    confidence: number;
+    createdAt: number;
+  };
+  updatedAt: number;
+}
+
 export type StreamerTier = "primary" | "background";
 
 export type LiveStreamer = StreamerBase & {
@@ -75,6 +137,7 @@ export type LiveStreamer = StreamerBase & {
   category: string | null;
   tier: StreamerTier;
   primary: StreamerBinding;
+  intelligence?: LivestreamIntelligence;
 };
 
 export type OfflineStreamer = StreamerBase & {
@@ -935,6 +998,18 @@ export function resolveWorkspaceAction(
 
 export function fetchCosts(range: CostRange): Promise<CostsResponse> {
   return apiGet<CostsResponse>(`/api/costs?days=${range}`);
+}
+
+export function submitLivestreamFeedback(
+  streamerId: string,
+  alertId: string,
+  verdict: "useful" | "not_useful" | "false_positive",
+  note?: string,
+): Promise<unknown> {
+  return apiPost(
+    `/api/streamers/${encodeURIComponent(streamerId)}/intelligence-feedback`,
+    { alertId, verdict, note },
+  );
 }
 
 export function fetchEmailActivity(

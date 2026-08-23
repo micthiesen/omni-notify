@@ -17,6 +17,10 @@ import { EmailStateEntity } from "./email/jmap/persistence.js";
 import { EmailDispatchEntity } from "./email/persistence.js";
 import { EmailRetryEntity } from "./email/retry.js";
 import { EmailRuleEntity } from "./email/senderRules.js";
+import {
+  LivestreamFeedbackEntity,
+  LivestreamIntelligenceEntity,
+} from "./live-check/intelligence/persistence.js";
 import { ViewerMetricsEntity } from "./live-check/metrics/persistence.js";
 import { StreamerStatusEntity } from "./live-check/persistence.js";
 import { StreamSessionsEntity } from "./live-check/sessions.js";
@@ -248,6 +252,14 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     description: "Daily viewer peaks and all-time records per streamer.",
     warning:
       "Deleted viewer records cannot be reconstructed outside the retained window.",
+  }),
+  createManagedEntity(LivestreamIntelligenceEntity, {
+    label: "Livestream intelligence",
+    description: "Current semantic metadata, summaries, chapters, and alert state.",
+  }),
+  createManagedEntity(LivestreamFeedbackEntity, {
+    label: "Livestream alert feedback",
+    description: "Useful, not-useful, and false-positive alert corrections.",
   }),
   createManagedEntity(RecommendationEntity, {
     label: "Media recommendations",

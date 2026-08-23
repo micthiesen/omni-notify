@@ -19,6 +19,18 @@ export function getBriefingModel(): { model: LanguageModel; modelId: string } {
   );
 }
 
+export function getLivestreamIntelligenceModel(operation: string): {
+  model: LanguageModel;
+  modelId: string;
+} {
+  return resolveModel(
+    config.LIVESTREAM_INTELLIGENCE_MODEL,
+    "openai:gpt-5.6-luna",
+    "livestream-intelligence",
+    operation,
+  );
+}
+
 export function getWorkspaceModel(operation = "run"): {
   model: LanguageModel;
   modelId: string;

@@ -13,6 +13,7 @@ import { BriefingHistoryEntity } from "../briefing-agent/persistence.js";
 import { EmailActivityEntity } from "../email/activity.js";
 import { recordEmailFeedback } from "../email/feedback.js";
 import { upsertEmailRule } from "../email/senderRules.js";
+import { LivestreamIntelligenceEntity } from "../live-check/intelligence/persistence.js";
 import { ViewerMetricsEntity } from "../live-check/metrics/persistence.js";
 import type { DailyBucket } from "../live-check/metrics/types.js";
 import { StreamerStatusEntity } from "../live-check/persistence.js";
@@ -198,6 +199,61 @@ StreamerStatusEntity.upsert({
   maxViewerCount: 340,
   viewerCount: 310,
   category: "Music",
+});
+
+LivestreamIntelligenceEntity.upsert({
+  streamerId: "pixeldust",
+  sessionStartedAt: now - 2.4 * HOUR,
+  semantic: {
+    headline: "A ranked VALORANT session with chat-controlled loadouts",
+    topics: ["VALORANT", "ranked climb"],
+    contentKind: "gaming",
+    importance: 35,
+    reason: "routine gaming stream",
+    updatedAt: now - 8 * MIN,
+  },
+  trend: {
+    percentChange: 68,
+    viewersPerMinute: 41,
+    dggPercentChange: null,
+    anomalous: true,
+    reason: "viewers up 68%",
+    updatedAt: now - 2 * MIN,
+  },
+  relevanceScore: 78,
+  relevanceReasons: ["primary channel", "viewers up 68%"],
+  summary: {
+    text: "Chat is choosing increasingly difficult loadouts during a close ranked promotion match.",
+    topic: "Ranked Promotion Match",
+    confidence: 0.91,
+    transcriptExcerpt: "chat gets to pick the next loadout",
+    updatedAt: now - 2 * MIN,
+    windowSeconds: 75,
+  },
+  chapters: [
+    {
+      chapterId: "preview-chapter-1",
+      startedAt: now - 24 * MIN,
+      title: "Promotion Match",
+      summary: "The session reached the final match needed for promotion.",
+    },
+    {
+      chapterId: "preview-chapter-2",
+      startedAt: now - 9 * MIN,
+      title: "Chat Picks the Loadout",
+      summary: "Viewers began choosing weapons and utility for each round.",
+    },
+  ],
+  latestAlert: {
+    alertId: "00000000-0000-4000-8000-000000000001",
+    type: "viewer_surge",
+    title: "PixelDust is surging",
+    message: "Viewer activity rose unusually quickly.",
+    reason: "viewers up 68%",
+    confidence: 0.85,
+    createdAt: now - 2 * MIN,
+  },
+  updatedAt: now - 2 * MIN,
 });
 
 // --- Viewer metrics ------------------------------------------------------------
