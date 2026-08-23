@@ -39,10 +39,6 @@ export function getLivestreamIntelligence(
   return LivestreamIntelligenceEntity.get({ streamerId });
 }
 
-export function getAllLivestreamIntelligence(): LivestreamIntelligenceData[] {
-  return LivestreamIntelligenceEntity.getAll();
-}
-
 export function saveLivestreamIntelligence(data: LivestreamIntelligenceData): void {
   LivestreamIntelligenceEntity.upsert(data);
 }

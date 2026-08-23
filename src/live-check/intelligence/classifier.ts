@@ -6,22 +6,7 @@ import { getCostEvents } from "../../costs/persistence.js";
 import config from "../../utils/config.js";
 import { buildLivestreamFeedbackDigest } from "./persistence.js";
 import { cleanLivestreamSummary, cleanLivestreamTopic } from "./summaryText.js";
-import type { LivestreamAlertType, SemanticMetadata } from "./types.js";
-
-const metadataSchema = z.object({
-  headline: z.string().min(1).max(120),
-  topics: z.array(z.string().min(1).max(40)).max(4),
-  contentKind: z.enum([
-    "politics",
-    "debate",
-    "news",
-    "gaming",
-    "conversation",
-    "other",
-  ]),
-  importance: z.number().int().min(0).max(100),
-  reason: z.string().min(1).max(180),
-});
+import type { LivestreamAlertType } from "./types.js";
 
 const transcriptSchema = z.object({
   summary: z.string().min(1).max(260),
@@ -86,37 +71,6 @@ export class LivestreamClassifier {
       `Skipping ${operation}: livestream intelligence monthly budget cannot cover the call`,
     );
     return undefined;
-  }
-
-  public async classifyMetadata(input: {
-    displayName: string;
-    title: string;
-    category?: string;
-    dggViewers?: number | null;
-  }): Promise<SemanticMetadata | undefined> {
-    const releaseBudget = this.reserveBudget("metadata classification", 0.1);
-    if (!releaseBudget) return undefined;
-    const { model, modelId } = getLivestreamIntelligenceModel("classify-metadata");
-    try {
-      const result = await generateText({
-        model,
-        maxOutputTokens: 500,
-        output: Output.object({ schema: metadataSchema }),
-        prompt: `Classify one currently live stream for a private dashboard. Be literal and conservative. The headline should clarify the supplied title without inventing facts. Importance means how likely this is to merit immediate attention for a user interested in online politics, debates, breaking news, notable guests, livestream culture, and occasional gaming. A vague routine title should score below 40. Return JSON only.
-
-Streamer: ${input.displayName.slice(0, 120)}
-Title: ${input.title.slice(0, 500)}
-Category: ${input.category?.slice(0, 120) ?? "unknown"}
-DGG viewers: ${input.dggViewers ?? "unknown"}`,
-      });
-      if (!result.output) throw new Error("Metadata classifier returned no output");
-      this.logger.info(
-        `Livestream metadata (${modelId}) ${input.displayName}: ${result.output.headline}`,
-      );
-      return { ...result.output, updatedAt: Date.now() };
-    } finally {
-      releaseBudget();
-    }
   }
 
   public async assessTranscript(input: {

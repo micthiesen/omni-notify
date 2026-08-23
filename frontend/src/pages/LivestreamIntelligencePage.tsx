@@ -14,7 +14,6 @@ import { formatDuration, formatRelative } from "../utils/format";
 type TimelineFilter = "key" | "all" | "voice" | "alerts" | "errors";
 
 const STAGES: Array<{ key: LivestreamPipelineStage; label: string }> = [
-  { key: "metadata", label: "Metadata" },
   { key: "voice", label: "Voice Detection" },
   { key: "summary", label: "Now Summary" },
   { key: "alert", label: "Alerts" },
@@ -276,16 +275,6 @@ export default function LivestreamIntelligencePage({
         <section className="page-section intelligence-current-evidence">
           <h2 className="section-title">Current Evidence</h2>
           <div className="intelligence-evidence-grid">
-            <article>
-              <h3>Semantic Read</h3>
-              <strong>{intelligence.semantic?.headline ?? "Not classified yet"}</strong>
-              {intelligence.semantic?.reason && <p>{intelligence.semantic.reason}</p>}
-              {intelligence.semantic?.topics && (
-                <div className="intelligence-topic-list">
-                  {intelligence.semantic.topics.map((topic) => <span key={topic}>{topic}</span>)}
-                </div>
-              )}
-            </article>
             <article>
               <h3>Latest Transcript Window</h3>
               {intelligence.summary ? (

@@ -209,14 +209,6 @@ StreamerStatusEntity.upsert({
 LivestreamIntelligenceEntity.upsert({
   streamerId: "pixeldust",
   sessionStartedAt: now - 2.4 * HOUR,
-  semantic: {
-    headline: "A ranked VALORANT session with chat-controlled loadouts",
-    topics: ["VALORANT", "ranked climb"],
-    contentKind: "gaming",
-    importance: 35,
-    reason: "routine gaming stream",
-    updatedAt: now - 8 * MIN,
-  },
   trend: {
     percentChange: 68,
     viewersPerMinute: 41,
@@ -263,13 +255,10 @@ LivestreamIntelligenceEntity.upsert({
 
 const previewSessionStart = now - 2.4 * HOUR;
 updateLivestreamStage("pixeldust", previewSessionStart, "metadata", {
-  status: "success",
-  eligible: true,
-  startedAt: now - 8 * MIN - 420,
+  status: "skipped",
+  eligible: false,
   finishedAt: now - 8 * MIN,
-  durationMs: 420,
-  detail: "A ranked VALORANT session with chat-controlled loadouts",
-  metrics: { importance: 35, topicCount: 2, costCents: 0.021 },
+  detail: "Title-only LLM classification is disabled",
 });
 updateLivestreamStage("pixeldust", previewSessionStart, "voice", {
   status: "success",

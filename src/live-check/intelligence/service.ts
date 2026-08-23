@@ -18,7 +18,6 @@ import {
 import { LocalSpeechRuntime } from "./localSpeech.js";
 import {
   buildLivestreamFeedbackDigest,
-  getAllLivestreamIntelligence,
   getLivestreamDiagnostics,
   getLivestreamIntelligence,
   recordLivestreamEvent,
@@ -40,7 +39,6 @@ import { VoiceEvidenceTracker } from "./voiceEvidence.js";
 const DESTINY_ID = "destiny";
 const PRESENCE_EXPIRY_MS = 10 * 60_000;
 const ALERT_COOLDOWN_MS = 30 * 60_000;
-const CROSS_STREAM_COOLDOWN_MS = 2 * 60 * 60_000;
 const MAX_CHAPTERS = 40;
 const TRANSCRIPT_EXCERPT_CHARS = 800;
 
@@ -139,7 +137,6 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   private readonly voiceEvidence = new VoiceEvidenceTracker();
   private readonly active = new Map<string, LiveObservation>();
   private readonly alertTimes = new Map<string, number>();
-  private readonly crossTopicAlertTimes = new Map<string, number>();
 
   public constructor(private readonly logger: Logger) {
     this.classifier = new LivestreamClassifier(logger);
@@ -240,9 +237,11 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     if (state.destinyPresence && !presenceFresh) {
       state = { ...state, destinyPresence: undefined };
     }
+    // Title-only model classification mostly paraphrased the visible title.
+    // Keep intelligence grounded in measured audience data and captured audio.
+    state = { ...state, semantic: undefined };
     const relevance = computeRelevance({
       streamer: observation.streamer,
-      semantic: state.semantic,
       trend,
       destinyConfirmed: state.destinyPresence?.state === "confirmed",
     });
@@ -268,16 +267,10 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     }
     if (isNewSession || previousDiagnostics?.sessionStartedAt !== sessionStartedAt) {
       this.updateStage(observation.streamer.id, sessionStartedAt, "metadata", {
-        status: state.semantic ? "success" : "idle",
-        eligible: true,
-        finishedAt: state.semantic?.updatedAt,
-        detail: state.semantic?.headline ?? "Waiting for semantic classification",
-        metrics: state.semantic
-          ? {
-              importance: state.semantic.importance,
-              topicCount: state.semantic.topics.length,
-            }
-          : undefined,
+        status: "skipped",
+        eligible: false,
+        finishedAt: now,
+        detail: "Title-only LLM classification is disabled",
       });
       this.updateStage(observation.streamer.id, sessionStartedAt, "voice", {
         status: "idle",
@@ -348,9 +341,6 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       );
     }
 
-    if (observation.wentLive || observation.titleChanged || !state.semantic) {
-      this.scheduleMetadata(observation);
-    }
     if (
       this.isVoiceTarget(observation) &&
       this.voiceDue(observation.streamer.id, now)
@@ -436,7 +426,6 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       observation.streamer.tier === "primary" ||
       state.destinyPresence?.state === "confirmed" ||
       state.trend?.anomalous === true ||
-      (state.semantic?.importance ?? 0) >= 65 ||
       state.relevanceScore >= 80
     );
   }
@@ -456,124 +445,6 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       now - (this.lastSummary.get(streamerId) ?? 0) >=
         config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000
     );
-  }
-
-  private scheduleMetadata(observation: LiveObservation): void {
-    const id = observation.streamer.id;
-    const sessionStartedAt = epoch(observation.status.startedAt);
-    const startedAt = Date.now();
-    const costBefore = livestreamSpendCents(startedAt);
-    this.updateStage(id, sessionStartedAt, "metadata", {
-      status: "running",
-      eligible: true,
-      startedAt,
-      detail: observation.titleChanged
-        ? "Classifying changed title"
-        : "Classifying stream title",
-    });
-    void this.llmQueue
-      .add(async () => {
-        const semantic = await this.classifier.classifyMetadata({
-          displayName: observation.streamer.displayName,
-          title: observation.status.primaryTitle,
-          category: observation.status.category,
-          dggViewers: observation.streamer.dgg?.viewers,
-        });
-        if (!semantic) {
-          const finishedAt = Date.now();
-          this.updateStage(id, sessionStartedAt, "metadata", {
-            status: "skipped",
-            eligible: true,
-            startedAt,
-            finishedAt,
-            durationMs: finishedAt - startedAt,
-            detail: "Monthly budget could not cover this classification",
-          });
-          this.recordEvent({
-            streamerId: id,
-            sessionStartedAt,
-            kind: "metadata",
-            status: "warning",
-            title: "Metadata classification skipped",
-            detail: "Monthly intelligence budget gate",
-          });
-          return;
-        }
-        if (!this.active.has(id)) return;
-        const current = getLivestreamIntelligence(observation.streamer.id);
-        if (
-          !current ||
-          current.sessionStartedAt !== epoch(observation.status.startedAt)
-        )
-          return;
-        const relevance = computeRelevance({
-          streamer: observation.streamer,
-          semantic,
-          trend: current.trend,
-          destinyConfirmed: current.destinyPresence?.state === "confirmed",
-        });
-        saveLivestreamIntelligence({
-          ...current,
-          semantic,
-          relevanceScore: relevance.score,
-          relevanceReasons: relevance.reasons,
-          updatedAt: Date.now(),
-        });
-        const finishedAt = Date.now();
-        const costCents = Math.max(0, livestreamSpendCents(finishedAt) - costBefore);
-        this.updateStage(id, sessionStartedAt, "metadata", {
-          status: "success",
-          eligible: true,
-          startedAt,
-          finishedAt,
-          durationMs: finishedAt - startedAt,
-          detail: semantic.headline,
-          metrics: {
-            importance: semantic.importance,
-            topicCount: semantic.topics.length,
-            costCents,
-          },
-        });
-        this.recordEvent({
-          streamerId: id,
-          sessionStartedAt,
-          kind: "metadata",
-          status: "success",
-          title: "Semantic metadata updated",
-          detail: semantic.headline,
-          durationMs: finishedAt - startedAt,
-          costCents,
-          metrics: {
-            importance: semantic.importance,
-            contentKind: semantic.contentKind,
-          },
-        });
-        await this.maybeNotifyCrossStreamTopic(semantic.topics);
-      })
-      .catch((error) => {
-        const finishedAt = Date.now();
-        const detail = (error as Error).message.slice(0, 500);
-        this.updateStage(id, sessionStartedAt, "metadata", {
-          status: "error",
-          eligible: true,
-          startedAt,
-          finishedAt,
-          durationMs: finishedAt - startedAt,
-          detail,
-        });
-        this.recordEvent({
-          streamerId: id,
-          sessionStartedAt,
-          kind: "metadata",
-          status: "error",
-          title: "Metadata classification failed",
-          detail,
-          durationMs: finishedAt - startedAt,
-        });
-        this.logger.warn(
-          `Livestream metadata failed for ${observation.streamer.displayName}: ${detail}`,
-        );
-      });
   }
 
   private scheduleVoiceSample(observation: LiveObservation): void {
@@ -1115,40 +986,6 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       durationMs: finishedAt - alertStartedAt,
       metrics: { type: alert.type, confidence: alert.confidence },
     });
-  }
-
-  private async maybeNotifyCrossStreamTopic(topics: string[]): Promise<void> {
-    const now = Date.now();
-    for (const topic of topics) {
-      const peers = getAllLivestreamIntelligence().filter(
-        (item) =>
-          this.active.has(item.streamerId) &&
-          item.semantic?.importance !== undefined &&
-          item.semantic.importance >= 60 &&
-          item.semantic.topics.some((candidate) =>
-            areSameLivestreamTopic(candidate, topic),
-          ),
-      );
-      if (peers.length < 2) continue;
-      const key = topic.toLowerCase();
-      if (now - (this.crossTopicAlertTimes.get(key) ?? 0) < CROSS_STREAM_COOLDOWN_MS) {
-        continue;
-      }
-      const first = this.active.get(peers[0]?.streamerId ?? "");
-      if (!first) continue;
-      this.crossTopicAlertTimes.set(key, now);
-      await this.maybeNotify({
-        observation: first,
-        type: "cross_stream_topic",
-        title: `Multiple streams are covering ${topic}`,
-        message: peers
-          .map((item) => this.active.get(item.streamerId)?.streamer.displayName)
-          .filter(Boolean)
-          .join(", "),
-        reason: `${peers.length} active streams independently converged on this topic`,
-        confidence: 0.85,
-      });
-    }
   }
 }
 

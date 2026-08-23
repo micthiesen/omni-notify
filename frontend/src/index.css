@@ -1570,7 +1570,7 @@ th.data-actions-column {
 }
 
 .intelligence-evidence-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .intelligence-evidence-grid article {
@@ -1578,20 +1578,6 @@ th.data-actions-column {
   align-content: start;
   gap: 0.65rem;
   padding: 1rem 1.15rem;
-}
-
-.intelligence-topic-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-}
-
-.intelligence-topic-list span {
-  padding: 0.15rem 0.42rem;
-  border-radius: var(--radius-xs);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 0.68rem;
 }
 
 .intelligence-transcript-excerpt {
