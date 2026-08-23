@@ -25,6 +25,7 @@ import {
   saveLivestreamIntelligence,
   updateLivestreamStage,
 } from "./persistence.js";
+import { areSameLivestreamTopic } from "./summaryText.js";
 import type {
   LivestreamAlertRecord,
   LivestreamAlertType,
@@ -110,22 +111,6 @@ function newState(
     chapters: [],
     updatedAt: now,
   };
-}
-
-function sameTopic(a: string, b: string): boolean {
-  const normalize = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9 ]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-  const left = normalize(a);
-  const right = normalize(b);
-  return (
-    left === right ||
-    (Math.min(left.length, right.length) >= 12 &&
-      (left.includes(right) || right.includes(left)))
-  );
 }
 
 function concatSamples(...parts: Float32Array[]): Float32Array {
@@ -723,6 +708,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         title: observation.status.primaryTitle,
         transcript,
         previousSummary: current.summary?.text,
+        previousTopic: current.summary?.topic,
         viewerAnomaly: current.trend?.reason,
         speakerMatchConfidence: match.confidence,
         testingDestinyPresence: true,
@@ -828,6 +814,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
             title: observation.status.primaryTitle,
             transcript,
             previousSummary: current.summary?.text,
+            previousTopic: current.summary?.topic,
             viewerAnomaly: current.trend?.reason,
             testingDestinyPresence: false,
           }),
@@ -942,7 +929,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     };
     const lastChapter = current.chapters.at(-1);
     const chapters =
-      lastChapter && sameTopic(lastChapter.title, assessment.topic)
+      lastChapter && areSameLivestreamTopic(lastChapter.title, assessment.topic)
         ? [
             ...current.chapters.slice(0, -1),
             { ...lastChapter, summary: assessment.summary },
@@ -1138,7 +1125,9 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           this.active.has(item.streamerId) &&
           item.semantic?.importance !== undefined &&
           item.semantic.importance >= 60 &&
-          item.semantic.topics.some((candidate) => sameTopic(candidate, topic)),
+          item.semantic.topics.some((candidate) =>
+            areSameLivestreamTopic(candidate, topic),
+          ),
       );
       if (peers.length < 2) continue;
       const key = topic.toLowerCase();

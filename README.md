@@ -226,7 +226,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `LIVESTREAM_DESTINY_SPEAKER_THRESHOLD` | No | CAM++ cosine threshold (default: `0.62`) |
 | `LIVESTREAM_MAX_VOICE_TARGETS` | No | Maximum concurrent DGG voice targets (default: `3`) |
 | `LIVESTREAM_VOICE_SAMPLE_SECONDS` / `LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS` | No | Voice sample length / cadence (defaults: `18` / `45`) |
-| `LIVESTREAM_SUMMARY_SAMPLE_SECONDS` / `LIVESTREAM_SUMMARY_INTERVAL_SECONDS` | No | Summary sample length / cadence (defaults: `75` / `240`) |
+| `LIVESTREAM_SUMMARY_SAMPLE_SECONDS` / `LIVESTREAM_SUMMARY_INTERVAL_SECONDS` | No | Summary sample length / cadence (defaults: `75` / `480`) |
 | `BRIEFING_MODEL` | No | AI model for briefings (default: `openai:gpt-5.6-luna`) |
 | `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `openai:gpt-5.6-luna`) |
 | `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `openai:gpt-5.6-terra`) |

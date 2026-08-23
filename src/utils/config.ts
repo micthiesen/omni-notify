@@ -50,7 +50,7 @@ const configSchema = baseConfigSchema
     /** Seconds captured for each rolling semantic summary. */
     LIVESTREAM_SUMMARY_SAMPLE_SECONDS: optionalPositiveInt.default(75),
     /** Minimum seconds between rolling summaries for one stream. */
-    LIVESTREAM_SUMMARY_INTERVAL_SECONDS: optionalPositiveInt.default(240),
+    LIVESTREAM_SUMMARY_INTERVAL_SECONDS: optionalPositiveInt.default(480),
     PUSHOVER_CALENDAR_TOKEN: z.string().optional(),
     PUSHOVER_BRIEFING_TOKEN: z.string().optional(),
     PUSHOVER_WORKSPACE_TOKEN: z.string().optional(),
