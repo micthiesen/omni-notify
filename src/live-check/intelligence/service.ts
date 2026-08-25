@@ -35,6 +35,7 @@ import type {
   RollingSummary,
 } from "./types.js";
 import { VoiceEvidenceTracker } from "./voiceEvidence.js";
+import { selectVoiceTargets } from "./voiceTargets.js";
 
 const DESTINY_ID = "destiny";
 const PRESENCE_EXPIRY_MS = 10 * 60_000;
@@ -63,6 +64,7 @@ export interface LiveObservation {
 export interface LivestreamIntelligenceObserver {
   observeLive(observation: LiveObservation): void;
   observeOffline(streamerId: string): void;
+  afterTick(): void;
   close(): Promise<void>;
 }
 
@@ -342,12 +344,6 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     }
 
     if (
-      this.isVoiceTarget(observation) &&
-      this.voiceDue(observation.streamer.id, now)
-    ) {
-      this.scheduleVoiceSample(observation);
-    }
-    if (
       this.isSummaryTarget(observation, state) &&
       this.summaryDue(observation.streamer.id, now)
     ) {
@@ -392,6 +388,21 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     this.lastSummary.delete(streamerId);
   }
 
+  public afterTick(): void {
+    const now = Date.now();
+    const targets = selectVoiceTargets(
+      [...this.active.values()].filter((observation) =>
+        this.isVoiceTarget(observation),
+      ),
+      config.LIVESTREAM_MAX_VOICE_TARGETS,
+    );
+    for (const observation of targets) {
+      if (this.voiceDue(observation.streamer.id, now)) {
+        this.scheduleVoiceSample(observation);
+      }
+    }
+  }
+
   public async close(): Promise<void> {
     await Promise.all([
       this.captureQueue.onIdle(),
@@ -434,8 +445,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     return (
       !this.pendingVoice.has(streamerId) &&
       now - (this.lastVoiceSample.get(streamerId) ?? 0) >=
-        config.LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS * 1000 &&
-      this.pendingVoice.size < config.LIVESTREAM_MAX_VOICE_TARGETS
+        config.LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS * 1000
     );
   }
 

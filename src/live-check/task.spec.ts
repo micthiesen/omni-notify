@@ -4,6 +4,7 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import appConfig from "../utils/config.js";
 import type { DggFeed } from "./dgg.js";
+import type { LivestreamIntelligenceObserver } from "./intelligence/service.js";
 import { LiveStatus, Platform, platformConfigs } from "./platforms/index.js";
 import type { Streamer } from "./streamers.js";
 import LiveCheckTask from "./task.js";
@@ -101,6 +102,34 @@ describe("LiveCheckTask DGG discovery", () => {
       "dgg:twitch:retained",
     ]);
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("schedules intelligence work only after every due streamer was observed", async () => {
+    const observer = {
+      observeLive: vi.fn(),
+      observeOffline: vi.fn(),
+      afterTick: vi.fn(),
+      close: vi.fn(async () => undefined),
+    } satisfies LivestreamIntelligenceObserver;
+    const task = new LiveCheckTask(
+      [],
+      new Logger("DggIntelligenceSchedulingTest"),
+      undefined,
+      {
+        topEmbeds: 1,
+        availablePlatforms: new Set(Object.values(Platform)),
+        fetchFeed: async () => feed("voice-target"),
+      },
+      observer,
+    );
+
+    await task.run();
+
+    expect(observer.observeLive).toHaveBeenCalledTimes(1);
+    expect(observer.afterTick).toHaveBeenCalledTimes(1);
+    expect(observer.observeLive.mock.invocationCallOrder[0]).toBeLessThan(
+      observer.afterTick.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
   it("enriches an explicit primary streamer without duplicating or replacing its polling", async () => {

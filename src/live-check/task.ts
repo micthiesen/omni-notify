@@ -105,6 +105,7 @@ export default class LiveCheckTask extends ScheduledTask {
     }
     const due = this.streamers.filter((s) => isStreamerDue(s.tier, tick));
     await Promise.all(due.map((s) => this.tickStreamer(s)));
+    this.intelligence?.afterTick();
     // Background streamers' unknown streaks (and thus outage detection) only
     // advance on their slower cadence, since they're skipped above otherwise.
     await this.reportOutage();
