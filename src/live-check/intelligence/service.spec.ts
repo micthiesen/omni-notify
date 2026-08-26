@@ -23,7 +23,7 @@ const { capture, detectDestiny } = vi.hoisted(() => ({
   })),
   detectDestiny: vi.fn(() => ({
     confidence: 0.755,
-    matchedWindows: 2,
+    matchedWindows: 1,
     checkedWindows: 4,
   })),
 }));

@@ -16,7 +16,7 @@ export class VoiceEvidenceTracker {
     // Silence is not counter-evidence. DGG guests often speak intermittently,
     // and VAD can legitimately produce 0/0 between their turns.
     if (checkedWindows === 0) return "none";
-    if (matchedWindows < 2) {
+    if (matchedWindows < 1) {
       const misses = (this.misses.get(streamerId) ?? 0) + 1;
       this.misses.set(streamerId, misses);
       if (misses >= SPEECH_MISSES_TO_RESET) this.hits.delete(streamerId);
