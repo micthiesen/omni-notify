@@ -30,7 +30,7 @@ const configSchema = baseConfigSchema
     LIVESTREAM_INTELLIGENCE_MODEL: z.literal("openai:gpt-5.6-luna").optional(),
     /** Hard monthly ceiling for this feature's metered model calls. */
     LIVESTREAM_MONTHLY_BUDGET_USD: optionalNonNegativeNumber
-      .pipe(z.number().max(3))
+      .pipe(z.number().max(10))
       .default(3),
     /** Directory containing the bundled sherpa-onnx models. */
     LIVESTREAM_MODEL_DIR: z

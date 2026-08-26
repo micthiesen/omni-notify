@@ -221,7 +221,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
 | `LIVESTREAM_INTELLIGENCE_ENABLED` | No | Enable Boris-local transcription, summaries, speaker detection, and semantic alerts (default: `false`) |
-| `LIVESTREAM_MONTHLY_BUDGET_USD` | No | Hard Luna spend ceiling for livestream intelligence, from $0 to $3 (default: `$3`) |
+| `LIVESTREAM_MONTHLY_BUDGET_USD` | No | Hard Luna spend ceiling for livestream intelligence, from $0 to $10 (default: `$3`) |
 | `LIVESTREAM_DESTINY_VOICEPRINT_PATH` | No | Persistent Destiny enrollment JSON; guest detection stays disabled when omitted |
 | `LIVESTREAM_DESTINY_SPEAKER_THRESHOLD` | No | CAM++ cosine threshold (default: `0.62`) |
 | `LIVESTREAM_MAX_VOICE_TARGETS` | No | Maximum concurrent DGG voice targets (default: `3`) |
