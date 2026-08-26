@@ -1,6 +1,6 @@
 import WebSocket from "ws";
 import { z } from "zod";
-
+import { canonicalBindingKey } from "./identityLinks.js";
 import {
   type FetchedStatusLive,
   LiveStatus,
@@ -212,10 +212,8 @@ function supportedPlatform(value: string): Platform | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
-function canonicalBinding(platform: Platform, username: string): string {
-  const normalized =
-    platform === Platform.YouTube ? username.trim() : username.trim().toLowerCase();
-  return `${platform}:${normalized}`;
+export function canonicalBinding(platform: Platform, username: string): string {
+  return canonicalBindingKey({ platform, username });
 }
 
 function streamUrl(platform: Platform, id: string): string {
@@ -242,6 +240,8 @@ export type ResolvedDggStreams = {
   discovered: SelectedDggStream[];
   /** DGG presence to overlay on configured streamers without changing behavior. */
   configuredPresence: Map<string, DggPresence>;
+  /** DGG-provided platform observations attached to a configured identity. */
+  configuredSources: Map<string, SelectedDggStream[]>;
 };
 
 /**
@@ -255,11 +255,14 @@ export function resolveDggStreams({
   limit,
   configuredStreamers,
   availablePlatforms,
+  identityAliases = new Map(),
 }: {
   feed: DggFeed;
   limit: number;
   configuredStreamers: readonly Streamer[];
   availablePlatforms: ReadonlySet<Platform>;
+  /** Canonical source binding -> canonical configured binding. */
+  identityAliases?: ReadonlyMap<string, string>;
 }): ResolvedDggStreams {
   if (!Number.isInteger(limit) || limit < 0) {
     throw new Error(`DGG stream limit must be a non-negative integer, got ${limit}`);
@@ -337,30 +340,23 @@ export function resolveDggStreams({
   const seen = new Set<string>();
   const discovered: SelectedDggStream[] = [];
   const configuredPresence = new Map<string, DggPresence>();
+  const configuredSources = new Map<string, SelectedDggStream[]>();
   for (const candidate of candidates) {
     const binding = canonicalBinding(candidate.platform, candidate.id);
     if (seen.has(binding)) continue;
     seen.add(binding);
 
+    const aliasTarget = identityAliases.get(binding);
+    const configuredExact = configuredByBinding.get(binding);
+    const configuredAlias = aliasTarget
+      ? configuredByBinding.get(aliasTarget)
+      : undefined;
     const configured =
-      configuredByBinding.get(binding) ??
+      configuredExact ??
+      configuredAlias ??
       configuredByName.get(normalizeId(candidate.displayName));
-    if (configured) {
-      const previous = configuredPresence.get(configured.id);
-      const viewers =
-        candidate.embedCount === undefined
-          ? (previous?.viewers ?? null)
-          : (previous?.viewers ?? 0) + candidate.embedCount;
-      configuredPresence.set(configured.id, {
-        hosted: previous?.hosted === true || candidate.hosting !== undefined,
-        viewers,
-      });
-      continue;
-    }
-    if (discovered.length >= limit) continue;
-
     const url = streamUrl(candidate.platform, candidate.id);
-    discovered.push({
+    const selected: SelectedDggStream = {
       streamer: {
         id: `dgg:${candidate.platform}:${encodeURIComponent(candidate.id.toLowerCase())}`,
         displayName: candidate.displayName,
@@ -385,8 +381,28 @@ export function resolveDggStreams({
       embedCount: candidate.embedCount,
       hosted: candidate.hosting !== undefined,
       hosting: candidate.hosting,
-    });
+    };
+    if (configured) {
+      const previous = configuredPresence.get(configured.id);
+      const viewers =
+        candidate.embedCount === undefined
+          ? (previous?.viewers ?? null)
+          : (previous?.viewers ?? 0) + candidate.embedCount;
+      configuredPresence.set(configured.id, {
+        hosted: previous?.hosted === true || candidate.hosting !== undefined,
+        viewers,
+      });
+      if (!configuredExact && configuredAlias) {
+        const sources = configuredSources.get(configured.id) ?? [];
+        sources.push(selected);
+        configuredSources.set(configured.id, sources);
+      }
+      continue;
+    }
+    if (discovered.length >= limit) continue;
+
+    discovered.push(selected);
   }
 
-  return { discovered, configuredPresence };
+  return { discovered, configuredPresence, configuredSources };
 }

@@ -19,6 +19,17 @@ function platformLabel(platform: string): string {
 
 /** Current viewers when known, else "peak" from this session's high-water mark. */
 function viewersLabel(streamer: LiveStreamer): string | null {
+  const knownSources = streamer.sources.filter(
+    (source) => source.viewerCount !== null,
+  );
+  if (knownSources.length > 1) {
+    return knownSources
+      .map(
+        (source) =>
+          `${formatCompactNumber(source.viewerCount ?? 0)} ${platformLabel(source.platform)}`,
+      )
+      .join(" + ");
+  }
   if (streamer.viewerCount !== null) {
     return `${formatCompactNumber(streamer.viewerCount)} watching`;
   }

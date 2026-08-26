@@ -201,6 +201,14 @@ export type LiveStreamer = StreamerBase & {
   maxViewerCount: number;
   /** Current viewer count, when the platform reports it live. */
   viewerCount: number | null;
+  /** Per-platform observations contributing to viewerCount. */
+  sources: Array<{
+    platform: string;
+    username: string;
+    title: string;
+    viewerCount: number | null;
+    category?: string;
+  }>;
   /** Twitch/Kick category or game name, when reported. */
   category: string | null;
   tier: StreamerTier;
@@ -229,6 +237,13 @@ export interface StreamerMetrics {
   dailyBuckets: DailyViewerBucket[];
   allTimeMax: number;
   allTimeMaxTimestamp: number;
+  platforms: Array<{
+    platform: string;
+    username: string;
+    dailyBuckets: DailyViewerBucket[];
+    allTimeMax: number;
+    allTimeMaxTimestamp: number;
+  }>;
 }
 
 export interface StreamSession {

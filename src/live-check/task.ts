@@ -3,9 +3,15 @@ import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { formatDistance, formatDistanceToNow } from "date-fns";
 import appConfig from "../utils/config.js";
-import { fetchDggFeed, resolveDggStreams } from "./dgg.js";
+import { canonicalBinding, fetchDggFeed, resolveDggStreams } from "./dgg.js";
+import {
+  forgetProfileIdentityLink,
+  getProfileIdentityLink,
+  ProfileIdentityLinkEntity,
+} from "./identityLinks.js";
 import type { LivestreamIntelligenceObserver } from "./intelligence/service.js";
 import { ViewerMetricsService } from "./metrics/index.js";
+import { recordPlatformViewerCount } from "./metrics/persistence.js";
 import {
   getNotificationPermissions,
   liveNotificationsEnabled,
@@ -31,14 +37,18 @@ import {
   type Platform,
   platformConfigs,
 } from "./platforms/index.js";
+import { learnProfileIdentity } from "./profileLinks.js";
 import { recordCompletedSession } from "./sessions.js";
-import { isStreamerDue, type PlatformBinding, type Streamer } from "./streamers.js";
+import { isStreamerDue, type Streamer } from "./streamers.js";
 import { TitleChangeDebouncer } from "./titleDebounce.js";
 import {
   type BindingFetchResult,
   decideTransition,
   type TickDecision,
 } from "./transitions.js";
+
+const PROFILE_IDENTITY_RETRY_MS = 24 * 60 * 60 * 1000;
+const PROFILE_IDENTITY_VERIFICATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default class LiveCheckTask extends ScheduledTask {
   public readonly name = "LiveCheckTask";
@@ -54,6 +64,7 @@ export default class LiveCheckTask extends ScheduledTask {
   private metricsService: ViewerMetricsService;
   private titleDebouncer = new TitleChangeDebouncer();
   private tickCount = 0;
+  private readonly profileIdentityAttempts = new Map<string, number>();
   private readonly configuredStreamers: Streamer[];
   private readonly dggStatuses = new Map<string, FetchedStatus>();
 
@@ -65,6 +76,7 @@ export default class LiveCheckTask extends ScheduledTask {
       topEmbeds: number;
       availablePlatforms: ReadonlySet<Platform>;
       fetchFeed?: typeof fetchDggFeed;
+      learnIdentity?: typeof learnProfileIdentity;
     },
     private readonly intelligence?: LivestreamIntelligenceObserver,
   ) {
@@ -123,17 +135,84 @@ export default class LiveCheckTask extends ScheduledTask {
 
     let resolution: ReturnType<typeof resolveDggStreams>;
     try {
-      resolution = resolveDggStreams({
-        feed: await (this.dggDiscovery.fetchFeed ?? fetchDggFeed)(),
-        limit: this.dggDiscovery.topEmbeds,
-        configuredStreamers: this.configuredStreamers,
-        availablePlatforms: this.dggDiscovery.availablePlatforms,
-      });
+      const feed = await (this.dggDiscovery.fetchFeed ?? fetchDggFeed)();
+      const resolve = () =>
+        resolveDggStreams({
+          feed,
+          limit: this.dggDiscovery?.topEmbeds ?? 0,
+          configuredStreamers: this.configuredStreamers,
+          availablePlatforms:
+            this.dggDiscovery?.availablePlatforms ?? new Set<Platform>(),
+          identityAliases: new Map(
+            ProfileIdentityLinkEntity.getAll().map((link) => [
+              link.sourceBinding,
+              link.targetBinding,
+            ]),
+          ),
+        });
+      resolution = resolve();
+      const configuredBindings = this.configuredStreamers.flatMap(
+        (streamer) => streamer.bindings,
+      );
+      const now = Date.now();
+      const identityCandidates = [
+        ...resolution.discovered.map((entry) => ({ entry, verify: false })),
+        ...[...resolution.configuredSources.values()]
+          .flat()
+          .filter((entry) => {
+            const source = entry.streamer.bindings[0];
+            if (!source) return false;
+            const link = getProfileIdentityLink(source);
+            return (
+              link !== undefined &&
+              now - link.verifiedAt >= PROFILE_IDENTITY_VERIFICATION_MS
+            );
+          })
+          .map((entry) => ({ entry, verify: true })),
+      ];
+      const identityChanged = await Promise.all(
+        identityCandidates.map(async ({ entry, verify }) => {
+          const source = entry.streamer.bindings[0];
+          if (!source) return false;
+          const sourceKey = canonicalBinding(source.platform, source.username);
+          const lastAttempt = this.profileIdentityAttempts.get(sourceKey);
+          if (
+            lastAttempt !== undefined &&
+            now - lastAttempt < PROFILE_IDENTITY_RETRY_MS
+          ) {
+            return false;
+          }
+          this.profileIdentityAttempts.set(sourceKey, now);
+          try {
+            const link = await (
+              this.dggDiscovery?.learnIdentity ?? learnProfileIdentity
+            )({
+              source,
+              configuredBindings,
+              forceRefresh: verify,
+            });
+            if (verify && link === undefined) {
+              forgetProfileIdentityLink(source);
+              this.logger.info(
+                `Removed stale profile identity for ${source.platform}:${source.username}`,
+              );
+              return true;
+            }
+            return link !== undefined;
+          } catch (error) {
+            this.logger.debug(
+              `Could not resolve profile identity for ${source.platform}:${source.username}: ${(error as Error).message}`,
+            );
+            return false;
+          }
+        }),
+      );
+      if (identityChanged.some(Boolean)) resolution = resolve();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Failed to refresh Destiny.gg embeds: ${message}`);
-      for (const streamerId of this.dggStatuses.keys()) {
-        this.dggStatuses.set(streamerId, {
+      for (const binding of this.dggStatuses.keys()) {
+        this.dggStatuses.set(binding, {
           status: LiveStatus.Unknown,
           error: message,
         });
@@ -144,7 +223,7 @@ export default class LiveCheckTask extends ScheduledTask {
     const selected = resolution.discovered;
     const nextIds = new Set(selected.map(({ streamer }) => streamer.id));
     const removed = this.streamers.filter(
-      (streamer) => this.dggStatuses.has(streamer.id) && !nextIds.has(streamer.id),
+      (streamer) => streamer.discoverySource === "dgg" && !nextIds.has(streamer.id),
     );
     for (const streamer of removed) {
       const previous = getStreamerStatus(streamer.id);
@@ -163,16 +242,48 @@ export default class LiveCheckTask extends ScheduledTask {
       this.unknownStreaks.delete(streamer.id);
       this.titleDebouncer.clear(streamer.id);
       this.metricsService.discardPendingPeaks(streamer.id);
-      this.dggStatuses.delete(streamer.id);
+      for (const binding of streamer.bindings) {
+        this.dggStatuses.delete(canonicalBinding(binding.platform, binding.username));
+      }
       this.intelligence?.observeOffline(streamer.id);
     }
 
+    this.dggStatuses.clear();
     for (const entry of selected) {
-      this.dggStatuses.set(entry.streamer.id, entry.status);
+      const binding = entry.streamer.bindings[0];
+      if (binding) {
+        this.dggStatuses.set(
+          canonicalBinding(binding.platform, binding.username),
+          entry.status,
+        );
+      }
+    }
+    for (const entries of resolution.configuredSources.values()) {
+      for (const entry of entries) {
+        const binding = entry.streamer.bindings[0];
+        if (binding) {
+          this.dggStatuses.set(
+            canonicalBinding(binding.platform, binding.username),
+            entry.status,
+          );
+        }
+      }
     }
     const enrichedConfigured = this.configuredStreamers.map((streamer) => {
       const dgg = resolution.configuredPresence.get(streamer.id);
-      return dgg ? { ...streamer, dgg } : streamer;
+      const linkedBindings = (resolution.configuredSources.get(streamer.id) ?? [])
+        .flatMap((entry) => entry.streamer.bindings)
+        .filter(
+          (binding) =>
+            !streamer.bindings.some(
+              (existing) =>
+                canonicalBinding(existing.platform, existing.username) ===
+                canonicalBinding(binding.platform, binding.username),
+            ),
+        );
+      return dgg || linkedBindings.length > 0
+        ? { ...streamer, dgg, bindings: [...streamer.bindings, ...linkedBindings] }
+        : streamer;
     });
     this.streamers.splice(
       0,
@@ -233,17 +344,16 @@ export default class LiveCheckTask extends ScheduledTask {
   }
 
   private async tickStreamer(streamer: Streamer): Promise<void> {
-    const dggStatus = this.dggStatuses.get(streamer.id);
-    const results = dggStatus
-      ? [{ binding: streamer.bindings[0], status: dggStatus }]
-      : await Promise.all(
-          streamer.bindings.map<Promise<BindingFetchResult>>(async (binding) => ({
-            binding,
-            status: await platformConfigs[binding.platform].fetchLiveStatus({
-              username: binding.username,
-            }),
+    const results = await Promise.all(
+      streamer.bindings.map<Promise<BindingFetchResult>>(async (binding) => ({
+        binding,
+        status:
+          this.dggStatuses.get(canonicalBinding(binding.platform, binding.username)) ??
+          (await platformConfigs[binding.platform].fetchLiveStatus({
+            username: binding.username,
           })),
-        );
+      })),
+    );
 
     for (const r of results) this.logBindingStatus(streamer.displayName, r);
 
@@ -345,7 +455,7 @@ export default class LiveCheckTask extends ScheduledTask {
     }
 
     upsertStreamerStatus(next);
-    await this.recordViewersIfAny(streamer, next.primary, summedViewerCount);
+    await this.recordViewersIfAny(streamer, next, summedViewerCount);
     this.intelligence?.observeLive({
       streamer,
       status: next,
@@ -398,7 +508,7 @@ export default class LiveCheckTask extends ScheduledTask {
     }
 
     upsertStreamerStatus(next);
-    await this.recordViewersIfAny(streamer, next.primary, summedViewerCount);
+    await this.recordViewersIfAny(streamer, next, summedViewerCount);
     this.intelligence?.observeLive({
       streamer,
       status: next,
@@ -448,20 +558,30 @@ export default class LiveCheckTask extends ScheduledTask {
 
   private async recordViewersIfAny(
     streamer: Streamer,
-    primary: PlatformBinding,
+    status: StreamerStatusLive,
     summedViewerCount: number,
   ): Promise<void> {
-    if (summedViewerCount <= 0) return;
-    await this.metricsService.recordViewerCount({
-      streamerId: streamer.id,
-      displayName: streamer.displayName,
-      viewerCount: summedViewerCount,
-      urlFields: getNotificationUrlFields(
-        primary.platform,
-        primary.username,
-        primary.urlOverride,
-      ),
-    });
+    if (summedViewerCount > 0) {
+      await this.metricsService.recordViewerCount({
+        streamerId: streamer.id,
+        displayName: streamer.displayName,
+        viewerCount: summedViewerCount,
+        urlFields: getNotificationUrlFields(
+          status.primary.platform,
+          status.primary.username,
+          status.primary.urlOverride,
+        ),
+      });
+    }
+    for (const source of status.sources ?? []) {
+      if (!source.viewerCount || source.viewerCount <= 0) continue;
+      recordPlatformViewerCount({
+        streamerId: streamer.id,
+        platform: source.platform,
+        username: source.username,
+        viewerCount: source.viewerCount,
+      });
+    }
   }
 
   private notificationPermissions(streamer: Streamer): NotificationPermissions {

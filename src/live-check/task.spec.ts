@@ -1,10 +1,15 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import appConfig from "../utils/config.js";
 import type { DggFeed } from "./dgg.js";
+import {
+  ProfileIdentityLinkEntity,
+  rememberProfileIdentityLink,
+} from "./identityLinks.js";
 import type { LivestreamIntelligenceObserver } from "./intelligence/service.js";
+import { getStreamerStatus, StreamerStatusEntity } from "./persistence.js";
 import { LiveStatus, Platform, platformConfigs } from "./platforms/index.js";
 import type { Streamer } from "./streamers.js";
 import LiveCheckTask from "./task.js";
@@ -42,6 +47,10 @@ function feed(id?: string): DggFeed {
 
 describe("LiveCheckTask DGG discovery", () => {
   beforeEach(() => vi.mocked(notify).mockClear());
+  afterEach(() => {
+    ProfileIdentityLinkEntity.deleteAll();
+    StreamerStatusEntity.deleteAll();
+  });
 
   it("refreshes and polls DGG streams only on the background cadence", async () => {
     const sharedStreamers: Streamer[] = [];
@@ -54,6 +63,7 @@ describe("LiveCheckTask DGG discovery", () => {
       {
         topEmbeds: 1,
         availablePlatforms: new Set(Object.values(Platform)),
+        learnIdentity: async () => undefined,
         fetchFeed: async () => snapshots[fetches++] ?? feed(),
       },
     );
@@ -85,6 +95,7 @@ describe("LiveCheckTask DGG discovery", () => {
       {
         topEmbeds: 1,
         availablePlatforms: new Set(Object.values(Platform)),
+        learnIdentity: async () => undefined,
         fetchFeed: async () => {
           fetches += 1;
           if (fetches === 1) return feed("retained");
@@ -118,6 +129,7 @@ describe("LiveCheckTask DGG discovery", () => {
       {
         topEmbeds: 1,
         availablePlatforms: new Set(Object.values(Platform)),
+        learnIdentity: async () => undefined,
         fetchFeed: async () => feed("voice-target"),
       },
       observer,
@@ -157,6 +169,7 @@ describe("LiveCheckTask DGG discovery", () => {
       {
         topEmbeds: 1,
         availablePlatforms: new Set(Object.values(Platform)),
+        learnIdentity: async () => undefined,
         fetchFeed: async () => snapshots[dggFetches++] ?? feed(),
       },
     );
@@ -190,6 +203,137 @@ describe("LiveCheckTask DGG discovery", () => {
       ]);
     } finally {
       connector.mockRestore();
+    }
+  });
+
+  it("learns a DGG profile identity and keeps per-platform observations", async () => {
+    const youtube = { platform: Platform.YouTube, username: "@imreallyimportant" };
+    const kick = { platform: Platform.Kick, username: "imreallyimportant" };
+    const sharedStreamers: Streamer[] = [
+      {
+        id: "iri",
+        displayName: "IRI",
+        bindings: [youtube],
+        tier: "background",
+      },
+    ];
+    const youtubeFetch = vi
+      .spyOn(platformConfigs[Platform.YouTube], "fetchLiveStatus")
+      .mockResolvedValue({
+        status: LiveStatus.Live,
+        title: "Election night",
+        viewerCount: 427,
+      });
+    const task = new LiveCheckTask(
+      sharedStreamers,
+      new Logger("DggProfileIdentityTest"),
+      undefined,
+      {
+        topEmbeds: 1,
+        availablePlatforms: new Set(Object.values(Platform)),
+        fetchFeed: async () => ({
+          destinyLive: false,
+          hosting: null,
+          embeds: [
+            {
+              platform: "kick",
+              id: "imreallyimportant",
+              count: 61,
+              mediaItem: {
+                identifier: {
+                  platform: "kick",
+                  mediaId: "imreallyimportant",
+                },
+                metadata: {
+                  displayName: "imreallyimportant",
+                  title: "Election night",
+                  live: true,
+                  viewers: 475,
+                },
+              },
+            },
+          ],
+        }),
+        learnIdentity: async ({ source }) =>
+          rememberProfileIdentityLink({ source, target: youtube }),
+      },
+    );
+
+    try {
+      await task.run();
+      expect(sharedStreamers).toHaveLength(1);
+      expect(sharedStreamers[0]?.bindings).toEqual([
+        youtube,
+        expect.objectContaining(kick),
+      ]);
+      expect(getStreamerStatus("iri")).toMatchObject({
+        isLive: true,
+        viewerCount: 902,
+        sources: [
+          expect.objectContaining({ platform: Platform.YouTube, viewerCount: 427 }),
+          expect.objectContaining({ platform: Platform.Kick, viewerCount: 475 }),
+        ],
+      });
+    } finally {
+      youtubeFetch.mockRestore();
+    }
+  });
+
+  it("removes a stale profile identity when direct ownership evidence disappears", async () => {
+    const youtube = { platform: Platform.YouTube, username: "@iri" };
+    const kick = { platform: Platform.Kick, username: "iri" };
+    rememberProfileIdentityLink({ source: kick, target: youtube, now: 0 });
+    const sharedStreamers: Streamer[] = [
+      {
+        id: "iri",
+        displayName: "IRI",
+        bindings: [youtube],
+        tier: "background",
+      },
+    ];
+    const youtubeFetch = vi
+      .spyOn(platformConfigs[Platform.YouTube], "fetchLiveStatus")
+      .mockResolvedValue({ status: LiveStatus.Offline });
+    const task = new LiveCheckTask(
+      sharedStreamers,
+      new Logger("DggStaleProfileIdentityTest"),
+      undefined,
+      {
+        topEmbeds: 1,
+        availablePlatforms: new Set(Object.values(Platform)),
+        fetchFeed: async () => ({
+          destinyLive: false,
+          hosting: null,
+          embeds: [
+            {
+              platform: "kick",
+              id: "iri",
+              count: 10,
+              mediaItem: {
+                identifier: { platform: "kick", mediaId: "iri" },
+                metadata: {
+                  displayName: "Different Display Name",
+                  title: "No longer linked",
+                  live: true,
+                  viewers: 20,
+                },
+              },
+            },
+          ],
+        }),
+        learnIdentity: async () => undefined,
+      },
+    );
+
+    try {
+      await task.run();
+      expect(ProfileIdentityLinkEntity.getAll()).toEqual([]);
+      expect(sharedStreamers.map((streamer) => streamer.id)).toEqual([
+        "iri",
+        "dgg:kick:iri",
+      ]);
+    } finally {
+      youtubeFetch.mockRestore();
     }
   });
 });

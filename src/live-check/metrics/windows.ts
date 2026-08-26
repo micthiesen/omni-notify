@@ -10,9 +10,10 @@ import type { DailyBucket, ViewerMetricsData, WindowConfig } from "./types.js";
 export function updateDailyBucket(
   buckets: DailyBucket[],
   viewerCount: number,
+  observedAt: Date = new Date(),
 ): DailyBucket[] {
-  const today = toDateStamp();
-  const now = Date.now();
+  const now = observedAt.getTime();
+  const today = toDateStamp(now);
 
   const existingIndex = buckets.findIndex((b) => b.date === today);
   if (existingIndex >= 0) {

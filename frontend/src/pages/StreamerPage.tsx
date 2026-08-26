@@ -139,6 +139,30 @@ function StreamerStats({ metrics }: { metrics: StreamerMetrics }) {
   );
 }
 
+function PlatformStats({ metrics }: { metrics: StreamerMetrics }) {
+  if (metrics.platforms.length === 0) return null;
+  return (
+    <section className="page-section">
+      <h2 className="section-title">Platform Records</h2>
+      <div className="stat-strip">
+        {metrics.platforms.map((source) => (
+          <div key={`${source.platform}:${source.username}`} className="stat-tile">
+            <span className="stat-label">
+              <PlatformIcon platform={source.platform} size={13} /> {source.platform}
+            </span>
+            <span className="stat-value">
+              {source.allTimeMax > 0
+                ? formatCompactNumber(source.allTimeMax)
+                : "—"}
+            </span>
+            <span className="stat-detail">{source.username} all-time</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ViewerChart({ metrics }: { metrics: StreamerMetrics }) {
   const [range, setRange] = useState<Range>("30d");
   const series = useMemo(() => buildDaySeries(metrics, range), [metrics, range]);
@@ -310,6 +334,16 @@ function StreamerHeader({ streamer }: { streamer: StreamerView }) {
                   </span>
                 )
               )}
+              {streamer.sources.length > 1 &&
+                streamer.sources.map(
+                  (source) =>
+                    source.viewerCount !== null && (
+                      <span key={`${source.platform}:${source.username}`}>
+                        <PlatformIcon platform={source.platform} size={12} />{" "}
+                        {formatCompactNumber(source.viewerCount)} {source.platform}
+                      </span>
+                    ),
+                )}
               {streamer.category && <span>{streamer.category}</span>}
             </span>
           </div>
@@ -537,6 +571,7 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
       {metrics !== null && hasMetrics && (
         <>
           <StreamerStats metrics={metrics} />
+          <PlatformStats metrics={metrics} />
           <ViewerChart metrics={metrics} />
         </>
       )}

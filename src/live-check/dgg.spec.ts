@@ -6,7 +6,7 @@ import {
   fetchDggFeed,
   resolveDggStreams,
 } from "./dgg.js";
-import { Platform } from "./platforms/index.js";
+import { LiveStatus, Platform } from "./platforms/index.js";
 import type { Streamer } from "./streamers.js";
 
 function embed({
@@ -232,6 +232,44 @@ describe("selectDggStreams", () => {
     expect(resolution.configuredPresence.get("configured-late")).toEqual({
       hosted: false,
       viewers: 5,
+    });
+  });
+
+  it("attaches a profile-linked platform source to its configured identity", () => {
+    const resolution = resolveDggStreams({
+      feed: {
+        destinyLive: false,
+        hosting: null,
+        embeds: [
+          embed({
+            platform: "kick",
+            id: "imreallyimportant",
+            displayName: "imreallyimportant",
+            viewers: 475,
+          }),
+        ],
+      },
+      limit: 1,
+      configuredStreamers: [
+        {
+          id: "iri",
+          displayName: "IRI",
+          bindings: [{ platform: Platform.YouTube, username: "@imreallyimportant" }],
+          tier: "background",
+        },
+      ],
+      availablePlatforms: new Set(Object.values(Platform)),
+      identityAliases: new Map([
+        ["kick:imreallyimportant", "youtube:@imreallyimportant"],
+      ]),
+    });
+
+    expect(resolution.discovered).toEqual([]);
+    expect(resolution.configuredSources.get("iri")?.[0]).toMatchObject({
+      streamer: {
+        bindings: [{ platform: Platform.Kick, username: "imreallyimportant" }],
+      },
+      status: { status: LiveStatus.Live, viewerCount: 475 },
     });
   });
 

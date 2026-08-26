@@ -17,13 +17,17 @@ import { EmailStateEntity } from "./email/jmap/persistence.js";
 import { EmailDispatchEntity } from "./email/persistence.js";
 import { EmailRetryEntity } from "./email/retry.js";
 import { EmailRuleEntity } from "./email/senderRules.js";
+import { ProfileIdentityLinkEntity } from "./live-check/identityLinks.js";
 import {
   LivestreamDiagnosticsEntity,
   LivestreamFeedbackEntity,
   LivestreamIntelligenceEntity,
   LivestreamIntelligenceEventEntity,
 } from "./live-check/intelligence/persistence.js";
-import { ViewerMetricsEntity } from "./live-check/metrics/persistence.js";
+import {
+  PlatformViewerMetricsEntity,
+  ViewerMetricsEntity,
+} from "./live-check/metrics/persistence.js";
 import { StreamerStatusEntity } from "./live-check/persistence.js";
 import { StreamSessionsEntity } from "./live-check/sessions.js";
 import { SubmittedDeliveryEntity } from "./parcel-tracker/persistence.js";
@@ -254,6 +258,14 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
     description: "Daily viewer peaks and all-time records per streamer.",
     warning:
       "Deleted viewer records cannot be reconstructed outside the retained window.",
+  }),
+  createManagedEntity(PlatformViewerMetricsEntity, {
+    label: "Streamer platform viewer metrics",
+    description: "Per-platform daily viewer peaks for grouped streamer identities.",
+  }),
+  createManagedEntity(ProfileIdentityLinkEntity, {
+    label: "Livestream profile identity links",
+    description: "Durable direct-profile associations between platform accounts.",
   }),
   createManagedEntity(LivestreamIntelligenceEntity, {
     label: "Livestream intelligence",

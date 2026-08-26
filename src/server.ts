@@ -54,7 +54,10 @@ import {
   recordLivestreamFeedback,
 } from "./live-check/intelligence/persistence.js";
 import type { LivestreamIntelligenceDiagnosticsProvider } from "./live-check/intelligence/service.js";
-import { getViewerMetrics } from "./live-check/metrics/persistence.js";
+import {
+  getPlatformViewerMetrics,
+  getViewerMetrics,
+} from "./live-check/metrics/persistence.js";
 import { getStreamerStatus } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
 import { getStreamSessions } from "./live-check/sessions.js";
@@ -304,6 +307,10 @@ function serializeStreamer(streamer: Streamer) {
       // Current (not max) summed viewer count; null when unknown/0-data —
       // e.g. rows persisted before this field existed.
       viewerCount: status.viewerCount ?? null,
+      sources: (status.sources ?? []).map((source) => ({
+        ...source,
+        viewerCount: source.viewerCount ?? null,
+      })),
       category: status.category ?? null,
       primary: serializeBinding(status.primary),
       intelligence,
@@ -570,6 +577,13 @@ export function startServer(
       dailyBuckets: metrics.dailyBuckets,
       allTimeMax: metrics.allTimeMax,
       allTimeMaxTimestamp: metrics.allTimeMaxTimestamp,
+      platforms: getPlatformViewerMetrics(id).map((platform) => ({
+        platform: platform.platform,
+        username: platform.username,
+        dailyBuckets: platform.dailyBuckets,
+        allTimeMax: platform.allTimeMax,
+        allTimeMaxTimestamp: platform.allTimeMaxTimestamp,
+      })),
     });
   });
 

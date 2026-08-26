@@ -75,6 +75,22 @@ describe("decideTransition", () => {
       expect(d.next.startedAt).toEqual(now);
       // Current (not max) viewer count is the summed count for this tick.
       expect(d.next.viewerCount).toBe(60);
+      expect(d.next.sources).toEqual([
+        {
+          platform: Platform.YouTube,
+          username: "@yt",
+          title: "yt-title",
+          viewerCount: 10,
+          category: undefined,
+        },
+        {
+          platform: Platform.Kick,
+          username: "ki",
+          title: "kick-title",
+          viewerCount: 50,
+          category: undefined,
+        },
+      ]);
     }
   });
 

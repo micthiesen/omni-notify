@@ -84,6 +84,13 @@ export function decideTransition(
     (acc, l) => acc + (l.status.viewerCount ?? 0),
     0,
   );
+  const sources = lives.map(({ binding, status }) => ({
+    platform: binding.platform,
+    username: binding.username,
+    title: status.title,
+    viewerCount: status.viewerCount,
+    category: status.category,
+  }));
   const pickByPriority = (): PlatformBinding => {
     const sorted = [...lives].sort((a, b) =>
       comparePlatformPriority(a.binding.platform, b.binding.platform),
@@ -136,6 +143,7 @@ export function decideTransition(
       startedAt,
       maxViewerCount: summedViewerCount,
       viewerCount: summedViewerCount,
+      sources,
       category: primaryLive.status.category,
     };
     return { kind: "went-live", next, summedViewerCount };
@@ -149,6 +157,7 @@ export function decideTransition(
     startedAt: previous.startedAt,
     maxViewerCount: Math.max(previous.maxViewerCount, summedViewerCount),
     viewerCount: summedViewerCount,
+    sources,
     // Category is display-only, so a transient fetch without one keeps the
     // last known value rather than blanking the dashboard; a primary switch
     // takes the new primary's category (stale cross-platform data is worse

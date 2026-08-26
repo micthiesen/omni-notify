@@ -31,6 +31,11 @@ export type ViewerMetricsData = {
   allTimeMaxTimestamp: number;
 };
 
+export type PlatformViewerMetricsData = ViewerMetricsData & {
+  platform: string;
+  username: string;
+};
+
 export type PendingPeak = {
   value: number;
   previousMax: number;

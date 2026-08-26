@@ -14,6 +14,18 @@ export type StreamerStatusLive = {
    */
   viewerCount?: number;
   /**
+   * Current per-platform observations that make up viewerCount. Older rows do
+   * not have this field; platform history intentionally starts when the
+   * account is first observed by the new collector.
+   */
+  sources?: Array<{
+    platform: PlatformBinding["platform"];
+    username: string;
+    title: string;
+    viewerCount?: number;
+    category?: string;
+  }>;
+  /**
    * The primary binding's category/game, when the platform reports one (e.g.
    * Twitch/Kick; YouTube never sets this). Optional for the same reason as
    * viewerCount.
