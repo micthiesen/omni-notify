@@ -13,7 +13,11 @@ import {
   recordLivestreamEvent,
   saveLivestreamIntelligence,
 } from "./persistence.js";
-import { isDestinyOwnedStream, LivestreamIntelligenceService } from "./service.js";
+import {
+  isDestinyOwnedStream,
+  LivestreamIntelligenceService,
+  viewerCountForAnomaly,
+} from "./service.js";
 
 const { capture, detectDestiny } = vi.hoisted(() => ({
   capture: vi.fn(async () => ({
@@ -106,6 +110,7 @@ function candidateStreamer(overrides: Partial<Streamer>): Streamer {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.mocked(notify).mockReset();
   capture.mockClear();
   detectDestiny.mockClear();
@@ -143,6 +148,57 @@ describe("isDestinyOwnedStream", () => {
 
   it("keeps a third-party DGG stream eligible", () => {
     expect(isDestinyOwnedStream(candidateStreamer({}))).toBe(false);
+  });
+});
+
+describe("viewerCountForAnomaly", () => {
+  it("uses the sticky primary source instead of summing overlapping bindings", () => {
+    expect(
+      viewerCountForAnomaly({
+        ...observation.status,
+        viewerCount: 1_700,
+        sources: [
+          {
+            platform: Platform.Kick,
+            username: "dariusirl",
+            title: "Live debate",
+            viewerCount: 700,
+          },
+          {
+            platform: Platform.YouTube,
+            username: "darius",
+            title: "Live debate",
+            viewerCount: 1_000,
+          },
+        ],
+      }),
+    ).toBe(700);
+  });
+
+  it("falls back to the aggregate for records without source observations", () => {
+    expect(viewerCountForAnomaly(observation.status)).toBe(700);
+  });
+
+  it("does not substitute secondary viewers when the primary count is missing", () => {
+    expect(
+      viewerCountForAnomaly({
+        ...observation.status,
+        viewerCount: 1_000,
+        sources: [
+          {
+            platform: Platform.Kick,
+            username: "dariusirl",
+            title: "Live debate",
+          },
+          {
+            platform: Platform.YouTube,
+            username: "darius",
+            title: "Live debate",
+            viewerCount: 1_000,
+          },
+        ],
+      }),
+    ).toBeNull();
   });
 });
 
@@ -211,5 +267,77 @@ describe("LivestreamIntelligenceService Destiny alert recovery", () => {
     await second.close();
 
     expect(notify).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("LivestreamIntelligenceService viewer surge alerts", () => {
+  it("sends one durable alert for a sustained late primary-source surge", async () => {
+    const primaryStreamer: Streamer = { ...streamer, tier: "primary" };
+    const clockBase = 2_000_000_000_000;
+    let now = clockBase;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const makeObservation = (viewerCount: number) => ({
+      ...observation,
+      streamer: primaryStreamer,
+      status: {
+        ...observation.status,
+        viewerCount: viewerCount + 1_000,
+        sources: [
+          {
+            platform: Platform.Kick,
+            username: "dariusirl",
+            title: "Live debate",
+            viewerCount,
+          },
+          {
+            platform: Platform.YouTube,
+            username: "darius",
+            title: "Live debate",
+            viewerCount: 1_000,
+          },
+        ],
+      },
+    });
+    const observeAtMinute = (
+      service: LivestreamIntelligenceService,
+      minute: number,
+      viewers: number,
+    ) => {
+      now = clockBase + minute * 60_000;
+      service.observeLive(makeObservation(viewers));
+    };
+
+    const first = new LivestreamIntelligenceService(new Logger("SurgeTest"));
+    for (let minute = 0; minute < 15; minute += 1) {
+      observeAtMinute(first, minute, 200);
+    }
+    observeAtMinute(first, 16, 430);
+    expect(notify).not.toHaveBeenCalled();
+    observeAtMinute(first, 17, 440);
+    expect(LivestreamIntelligenceEntity.get({ streamerId: "darius" })).toMatchObject({
+      relevanceScore: 79,
+      trend: {
+        anomalous: true,
+        baselineViewers: 200,
+        candidateObservations: 2,
+      },
+    });
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(notify).mock.calls[0]?.[0]).toMatchObject({
+      title: "Darius is surging",
+      message: expect.stringContaining("440 vs 200 baseline"),
+    });
+    expect(LivestreamIntelligenceEntity.get({ streamerId: "darius" })).toMatchObject({
+      alertedAtByType: { viewer_surge: expect.any(Number) },
+    });
+
+    const restarted = new LivestreamIntelligenceService(new Logger("SurgeRestartTest"));
+    for (let minute = 40; minute < 55; minute += 1) {
+      observeAtMinute(restarted, minute, 200);
+    }
+    observeAtMinute(restarted, 55, 430);
+    observeAtMinute(restarted, 56, 440);
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+    nowSpy.mockRestore();
   });
 });

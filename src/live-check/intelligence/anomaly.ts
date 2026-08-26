@@ -9,6 +9,9 @@ type ViewerSample = {
 
 const SAMPLE_WINDOW_MS = 30 * 60 * 1000;
 const MIN_BASELINE_AGE_MS = 4 * 60 * 1000;
+const MIN_SESSION_AGE_MS = 15 * 60 * 1000;
+const MIN_BASELINE_SAMPLES = 10;
+const SURGE_CONFIRMATION_OBSERVATIONS = 2;
 
 function median(values: number[]): number {
   if (values.length === 0) return 0;
@@ -26,11 +29,13 @@ function percentChange(current: number, baseline: number): number {
 
 export class ViewerAnomalyTracker {
   private readonly samples = new Map<string, ViewerSample[]>();
+  private readonly surgeStreaks = new Map<string, { viewers: number; dgg: number }>();
 
   observe(input: {
     streamerId: string;
     viewers: number | null;
     dggViewers: number | null;
+    sessionStartedAt: number;
     now?: number;
   }): ViewerTrend {
     const now = input.now ?? Date.now();
@@ -62,19 +67,61 @@ export class ViewerAnomalyTracker {
       input.dggViewers === null || dggBaseline <= 0
         ? null
         : percentChange(input.dggViewers, dggBaseline);
-    const viewerSurge =
-      viewerBaselineValues.length >= 2 &&
+    const sessionWarmed = now - input.sessionStartedAt >= MIN_SESSION_AGE_MS;
+    const viewerSurgeCandidate =
+      sessionWarmed &&
+      viewerBaselineValues.length >= MIN_BASELINE_SAMPLES &&
       input.viewers !== null &&
       viewerPercent >= 50 &&
       input.viewers - viewerBaseline >= Math.max(100, viewerBaseline * 0.2);
-    const dggSurge =
+    const dggBaselineValues = baselineSamples
+      .map((sample) => sample.dggViewers)
+      .filter((value): value is number => value !== null);
+    const dggSurgeCandidate =
+      sessionWarmed &&
+      dggBaselineValues.length >= MIN_BASELINE_SAMPLES &&
       dggPercent !== null &&
       dggPercent >= 100 &&
       (input.dggViewers ?? 0) - dggBaseline >= 30;
+    const previousStreaks = this.surgeStreaks.get(input.streamerId) ?? {
+      viewers: 0,
+      dgg: 0,
+    };
+    const streaks = {
+      viewers: viewerSurgeCandidate ? previousStreaks.viewers + 1 : 0,
+      dgg: dggSurgeCandidate ? previousStreaks.dgg + 1 : 0,
+    };
+    this.surgeStreaks.set(input.streamerId, streaks);
+    const viewerSurge = streaks.viewers >= SURGE_CONFIRMATION_OBSERVATIONS;
+    const dggSurge = streaks.dgg >= SURGE_CONFIRMATION_OBSERVATIONS;
+    const candidateObservations = Math.max(streaks.viewers, streaks.dgg);
     const anomalous = viewerSurge || dggSurge;
     const reasons: string[] = [];
-    if (viewerSurge) reasons.push(`viewers up ${Math.round(viewerPercent)}%`);
-    if (dggSurge) reasons.push(`DGG audience up ${Math.round(dggPercent ?? 0)}%`);
+    if (viewerSurge) {
+      reasons.push(
+        `viewers up ${Math.round(viewerPercent)}% (${input.viewers} vs ${Math.round(viewerBaseline)} baseline)`,
+      );
+    }
+    if (dggSurge) {
+      reasons.push(
+        `DGG audience up ${Math.round(dggPercent ?? 0)}% (${input.dggViewers} vs ${Math.round(dggBaseline)} baseline)`,
+      );
+    }
+    let suppressionReason: string | null = null;
+    if (!sessionWarmed) {
+      const minutesRemaining = Math.max(
+        1,
+        Math.ceil((MIN_SESSION_AGE_MS - (now - input.sessionStartedAt)) / 60_000),
+      );
+      suppressionReason = `Building a post-start baseline (${minutesRemaining}m remaining)`;
+    } else if (
+      viewerBaselineValues.length < MIN_BASELINE_SAMPLES &&
+      dggBaselineValues.length < MIN_BASELINE_SAMPLES
+    ) {
+      suppressionReason = `Waiting for ${MIN_BASELINE_SAMPLES} baseline samples`;
+    } else if ((viewerSurgeCandidate || dggSurgeCandidate) && !anomalous) {
+      suppressionReason = "Confirming the viewer rise with another observation";
+    }
     history.push({
       at: now,
       viewers: input.viewers,
@@ -87,12 +134,20 @@ export class ViewerAnomalyTracker {
       dggPercentChange: dggPercent,
       anomalous,
       reason: reasons.length > 0 ? reasons.join("; ") : null,
+      currentViewers: input.viewers,
+      baselineViewers: viewerBaselineValues.length > 0 ? viewerBaseline : null,
+      currentDggViewers: input.dggViewers,
+      baselineDggViewers: dggBaselineValues.length > 0 ? dggBaseline : null,
+      baselineSamples: Math.max(viewerBaselineValues.length, dggBaselineValues.length),
+      candidateObservations,
+      suppressionReason,
       updatedAt: now,
     };
   }
 
   clear(streamerId: string): void {
     this.samples.delete(streamerId);
+    this.surgeStreaks.delete(streamerId);
   }
 }
 

@@ -65,6 +65,16 @@ export interface LiveObservation {
   titleChanged: boolean;
 }
 
+export function viewerCountForAnomaly(status: StreamerStatusLive): number | null {
+  if (!status.sources) return status.viewerCount ?? null;
+  const primarySource = status.sources.find(
+    (source) =>
+      source.platform === status.primary.platform &&
+      source.username === status.primary.username,
+  );
+  return primarySource?.viewerCount ?? null;
+}
+
 export interface LivestreamIntelligenceObserver {
   observeLive(observation: LiveObservation): void;
   observeOffline(streamerId: string): void;
@@ -227,14 +237,16 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     const previous = getLivestreamIntelligence(observation.streamer.id);
     const sessionStartedAt = epoch(observation.status.startedAt);
     const isNewSession = previous?.sessionStartedAt !== sessionStartedAt;
+    if (isNewSession) this.anomaly.clear(observation.streamer.id);
     let state =
       previous?.sessionStartedAt === sessionStartedAt
         ? previous
         : newState(observation, now);
     const trend = this.anomaly.observe({
       streamerId: observation.streamer.id,
-      viewers: observation.status.viewerCount ?? null,
+      viewers: viewerCountForAnomaly(observation.status),
       dggViewers: observation.streamer.dgg?.viewers ?? null,
+      sessionStartedAt,
       now,
     });
     const presenceFresh =
@@ -959,10 +971,14 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       return;
     }
     if (
-      input.type === "destiny_guest" &&
-      alertSentInSession(current, "destiny_guest")
+      (input.type === "destiny_guest" || input.type === "viewer_surge") &&
+      alertSentInSession(current, input.type)
     ) {
-      markSkipped("Destiny was already reported during this live session");
+      markSkipped(
+        input.type === "destiny_guest"
+          ? "Destiny was already reported during this live session"
+          : "A viewer surge was already reported during this live session",
+      );
       return;
     }
     const alert: LivestreamAlertRecord = {

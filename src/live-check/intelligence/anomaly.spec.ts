@@ -11,65 +11,176 @@ const streamer: Streamer = {
 };
 
 describe("ViewerAnomalyTracker", () => {
-  it("flags a sustained viewer surge against older samples", () => {
+  const observeStableBaseline = (tracker: ViewerAnomalyTracker) => {
+    for (let minute = 0; minute < 15; minute += 1) {
+      tracker.observe({
+        streamerId: "hutch",
+        viewers: 200,
+        dggViewers: 30,
+        sessionStartedAt: 0,
+        now: minute * 60_000,
+      });
+    }
+  };
+
+  it("suppresses the normal audience ramp during the first fifteen minutes", () => {
     const tracker = new ViewerAnomalyTracker();
-    tracker.observe({ streamerId: "hutch", viewers: 200, dggViewers: 30, now: 0 });
-    tracker.observe({
+    for (let minute = 0; minute < 15; minute += 1) {
+      const trend = tracker.observe({
+        streamerId: "hutch",
+        viewers: minute === 0 ? 1 : 400,
+        dggViewers: minute === 0 ? 2 : 100,
+        sessionStartedAt: 0,
+        now: minute * 60_000,
+      });
+      expect(trend.anomalous).toBe(false);
+      expect(trend.suppressionReason).toContain("Building a post-start baseline");
+    }
+    const mature = tracker.observe({
       streamerId: "hutch",
-      viewers: 220,
-      dggViewers: 32,
-      now: 60_000,
+      viewers: 400,
+      dggViewers: 100,
+      sessionStartedAt: 0,
+      now: 15 * 60_000,
     });
-    const trend = tracker.observe({
+    expect(mature.anomalous).toBe(false);
+  });
+
+  it("flags a sustained late viewer surge against a mature baseline", () => {
+    const tracker = new ViewerAnomalyTracker();
+    observeStableBaseline(tracker);
+    const candidate = tracker.observe({
       streamerId: "hutch",
       viewers: 430,
       dggViewers: 70,
-      now: 5 * 60_000,
+      sessionStartedAt: 0,
+      now: 16 * 60_000,
+    });
+    expect(candidate.anomalous).toBe(false);
+    expect(candidate.suppressionReason).toContain("another observation");
+    const trend = tracker.observe({
+      streamerId: "hutch",
+      viewers: 440,
+      dggViewers: 72,
+      sessionStartedAt: 0,
+      now: 17 * 60_000,
     });
     expect(trend.anomalous).toBe(true);
     expect(trend.reason).toContain("viewers up");
+    expect(trend.reason).toContain("200 baseline");
     expect(trend.reason).toContain("DGG audience up");
   });
 
-  it("ignores ordinary movement and insufficient history", () => {
+  it("does not confirm a one-observation scrape spike", () => {
     const tracker = new ViewerAnomalyTracker();
-    expect(
-      tracker.observe({ streamerId: "hutch", viewers: 200, dggViewers: 30, now: 0 })
-        .anomalous,
-    ).toBe(false);
-    tracker.observe({
-      streamerId: "hutch",
-      viewers: 210,
-      dggViewers: 31,
-      now: 60_000,
-    });
+    observeStableBaseline(tracker);
+    const sample = (viewers: number, minute: number) =>
+      tracker.observe({
+        streamerId: "hutch",
+        viewers,
+        dggViewers: 30,
+        sessionStartedAt: 0,
+        now: minute * 60_000,
+      });
+    expect(sample(430, 16).anomalous).toBe(false);
+    expect(sample(205, 17).anomalous).toBe(false);
+    expect(sample(430, 18).anomalous).toBe(false);
+  });
+
+  it("does not combine unrelated platform and DGG spikes into confirmation", () => {
+    const tracker = new ViewerAnomalyTracker();
+    observeStableBaseline(tracker);
     expect(
       tracker.observe({
         streamerId: "hutch",
-        viewers: 250,
-        dggViewers: 35,
-        now: 5 * 60_000,
+        viewers: 430,
+        dggViewers: 30,
+        sessionStartedAt: 0,
+        now: 16 * 60_000,
+      }).anomalous,
+    ).toBe(false);
+    expect(
+      tracker.observe({
+        streamerId: "hutch",
+        viewers: 200,
+        dggViewers: 70,
+        sessionStartedAt: 0,
+        now: 17 * 60_000,
       }).anomalous,
     ).toBe(false);
   });
 
+  it("retains a PRSEK-shaped late seventy-one-percent surge", () => {
+    const tracker = new ViewerAnomalyTracker();
+    for (let minute = 0; minute < 15; minute += 1) {
+      tracker.observe({
+        streamerId: "prsek",
+        viewers: 150,
+        dggViewers: 30,
+        sessionStartedAt: 0,
+        now: minute * 60_000,
+      });
+    }
+    tracker.observe({
+      streamerId: "prsek",
+      viewers: 250,
+      dggViewers: 30,
+      sessionStartedAt: 0,
+      now: 16 * 60_000,
+    });
+    const trend = tracker.observe({
+      streamerId: "prsek",
+      viewers: 256,
+      dggViewers: 30,
+      sessionStartedAt: 0,
+      now: 17 * 60_000,
+    });
+    expect(trend.anomalous).toBe(true);
+    expect(trend.percentChange).toBeCloseTo(70.67, 2);
+  });
+
   it("does not turn missing platform viewer data into a synthetic zero", () => {
     const tracker = new ViewerAnomalyTracker();
-    tracker.observe({ streamerId: "hutch", viewers: 200, dggViewers: null, now: 0 });
-    tracker.observe({
-      streamerId: "hutch",
-      viewers: null,
-      dggViewers: null,
-      now: 60_000,
-    });
+    for (let minute = 0; minute < 15; minute += 1) {
+      tracker.observe({
+        streamerId: "hutch",
+        viewers: minute === 5 ? null : 200,
+        dggViewers: null,
+        sessionStartedAt: 0,
+        now: minute * 60_000,
+      });
+    }
     const trend = tracker.observe({
       streamerId: "hutch",
       viewers: 220,
       dggViewers: null,
-      now: 5 * 60_000,
+      sessionStartedAt: 0,
+      now: 16 * 60_000,
     });
     expect(trend.anomalous).toBe(false);
     expect(trend.percentChange).toBe(10);
+  });
+
+  it("clears confirmation evidence between sessions", () => {
+    const tracker = new ViewerAnomalyTracker();
+    observeStableBaseline(tracker);
+    tracker.observe({
+      streamerId: "hutch",
+      viewers: 430,
+      dggViewers: 30,
+      sessionStartedAt: 0,
+      now: 16 * 60_000,
+    });
+    tracker.clear("hutch");
+    const nextSession = tracker.observe({
+      streamerId: "hutch",
+      viewers: 430,
+      dggViewers: 30,
+      sessionStartedAt: 17 * 60_000,
+      now: 17 * 60_000,
+    });
+    expect(nextSession.anomalous).toBe(false);
+    expect(nextSession.candidateObservations).toBe(0);
   });
 });
 

@@ -86,4 +86,25 @@ describe("alertSentInSession", () => {
       ),
     ).toBe(false);
   });
+
+  it("durably deduplicates viewer surges by type within the session", () => {
+    expect(
+      alertSentInSession(
+        {
+          ...state,
+          alertedAtByType: { viewer_surge: 1_500 },
+          latestAlert: {
+            alertId: "later",
+            type: "destiny_guest",
+            title: "Destiny is present",
+            message: "Confirmed participant",
+            reason: "Voice evidence",
+            confidence: 0.8,
+            createdAt: 1_800,
+          },
+        },
+        "viewer_surge",
+      ),
+    ).toBe(true);
+  });
 });

@@ -24,6 +24,13 @@ export interface ViewerTrend {
   dggPercentChange: number | null;
   anomalous: boolean;
   reason: string | null;
+  currentViewers?: number | null;
+  baselineViewers?: number | null;
+  currentDggViewers?: number | null;
+  baselineDggViewers?: number | null;
+  baselineSamples?: number;
+  candidateObservations?: number;
+  suppressionReason?: string | null;
   updatedAt: number;
 }
 

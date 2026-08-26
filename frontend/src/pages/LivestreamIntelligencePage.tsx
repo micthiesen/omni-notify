@@ -292,6 +292,41 @@ export default function LivestreamIntelligencePage({
                 <p>No transcript-backed summary has been produced for this session.</p>
               )}
             </article>
+            <article>
+              <h3>Viewer Surge</h3>
+              {intelligence.trend ? (
+                <>
+                  <strong>
+                    {intelligence.trend.anomalous
+                      ? "Confirmed"
+                      : intelligence.trend.suppressionReason ?? "No unusual rise"}
+                  </strong>
+                  <p>
+                    Platform: {intelligence.trend.currentViewers ?? "Unavailable"}
+                    {intelligence.trend.baselineViewers != null
+                      ? ` vs ${Math.round(intelligence.trend.baselineViewers)} baseline`
+                      : ""}
+                  </p>
+                  {intelligence.trend.currentDggViewers != null && (
+                    <p>
+                      DGG: {intelligence.trend.currentDggViewers}
+                      {intelligence.trend.baselineDggViewers != null
+                        ? ` vs ${Math.round(intelligence.trend.baselineDggViewers)} baseline`
+                        : ""}
+                    </p>
+                  )}
+                  <div className="meta-row">
+                    <span>{intelligence.trend.baselineSamples ?? 0} baseline samples</span>
+                    <span>
+                      {Math.min(intelligence.trend.candidateObservations ?? 0, 2)} of 2
+                      confirmations
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <p>No viewer baseline has been collected for this session.</p>
+              )}
+            </article>
           </div>
         </section>
       )}
