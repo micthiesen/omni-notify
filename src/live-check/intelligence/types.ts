@@ -71,6 +71,7 @@ export interface LivestreamIntelligenceData {
   chapters: LivestreamChapter[];
   destinyPresence?: DestinyPresence;
   latestAlert?: LivestreamAlertRecord;
+  alertedAtByType?: Partial<Record<LivestreamAlertType, number>>;
   updatedAt: number;
 }
 

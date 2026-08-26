@@ -1,4 +1,5 @@
-const VOICE_HIT_WINDOW_MS = 5 * 60_000;
+const VOICE_HIT_WINDOW_MS = 10 * 60_000;
+const SPEECH_MISSES_TO_RESET = 5;
 
 export type VoiceEvidenceDecision = "none" | "possible" | "confirmed";
 
@@ -9,12 +10,16 @@ export class VoiceEvidenceTracker {
   public observe(
     streamerId: string,
     matchedWindows: number,
+    checkedWindows: number,
     now = Date.now(),
   ): VoiceEvidenceDecision {
+    // Silence is not counter-evidence. DGG guests often speak intermittently,
+    // and VAD can legitimately produce 0/0 between their turns.
+    if (checkedWindows === 0) return "none";
     if (matchedWindows < 2) {
       const misses = (this.misses.get(streamerId) ?? 0) + 1;
       this.misses.set(streamerId, misses);
-      if (misses >= 3) this.hits.delete(streamerId);
+      if (misses >= SPEECH_MISSES_TO_RESET) this.hits.delete(streamerId);
       return "none";
     }
     this.misses.set(streamerId, 0);

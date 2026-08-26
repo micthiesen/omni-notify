@@ -12,6 +12,7 @@ import type {
 
 const MAX_TIMELINE_EVENTS = 3_000;
 const PRUNE_BATCH_SIZE = 250;
+export const DESTINY_CONFIRMED_EVENT_TITLE = "Destiny confirmed as a live participant";
 
 export const LivestreamIntelligenceEntity = new Entity<
   LivestreamIntelligenceData,
@@ -110,6 +111,22 @@ export function getLivestreamEvents(
     .filter((event) => !streamerId || event.streamerId === streamerId)
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, Math.max(1, Math.min(limit, 200)));
+}
+
+export function getLatestDestinyConfirmation(
+  streamerId: string,
+  sessionStartedAt: number,
+): LivestreamIntelligenceEventData | undefined {
+  return LivestreamIntelligenceEventEntity.getAll()
+    .filter(
+      (event) =>
+        event.streamerId === streamerId &&
+        event.sessionStartedAt === sessionStartedAt &&
+        event.kind === "voice" &&
+        event.status === "success" &&
+        event.title === DESTINY_CONFIRMED_EVENT_TITLE,
+    )
+    .sort((left, right) => right.createdAt - left.createdAt)[0];
 }
 
 export function recordLivestreamFeedback(input: {

@@ -3,6 +3,8 @@ import { LogLevel } from "@micthiesen/mitools/logging";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   buildLivestreamFeedbackDigest,
+  DESTINY_CONFIRMED_EVENT_TITLE,
+  getLatestDestinyConfirmation,
   getLivestreamDiagnostics,
   getLivestreamEvents,
   LivestreamDiagnosticsEntity,
@@ -138,5 +140,24 @@ describe("livestream pipeline diagnostics", () => {
     expect(getLivestreamEvents("pisco", 1).map((event) => event.title)).toEqual([
       "Summary updated",
     ]);
+  });
+
+  it("recovers a durable Destiny confirmation for the same session", () => {
+    recordLivestreamEvent({
+      streamerId: "darius",
+      sessionStartedAt: 100,
+      kind: "voice",
+      status: "success",
+      title: DESTINY_CONFIRMED_EVENT_TITLE,
+      detail: "Live conversation confirmed",
+      metrics: { speakerConfidence: 0.706, assessmentConfidence: 0.91 },
+      createdAt: 200,
+    });
+
+    expect(getLatestDestinyConfirmation("darius", 100)).toMatchObject({
+      detail: "Live conversation confirmed",
+      metrics: { speakerConfidence: 0.706, assessmentConfidence: 0.91 },
+    });
+    expect(getLatestDestinyConfirmation("darius", 300)).toBeUndefined();
   });
 });

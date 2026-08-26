@@ -7,6 +7,7 @@ import config from "../../utils/config.js";
 import type { StreamerStatusLive } from "../persistence.js";
 import { getNotificationUrlFields } from "../platforms/index.js";
 import type { Streamer } from "../streamers.js";
+import { alertSentInSession, livestreamAlertConfidenceFloor } from "./alertPolicy.js";
 import { computeRelevance, ViewerAnomalyTracker } from "./anomaly.js";
 import { LivestreamAudioCapture } from "./audio.js";
 import {
@@ -18,12 +19,15 @@ import {
 import { LocalSpeechRuntime } from "./localSpeech.js";
 import {
   buildLivestreamFeedbackDigest,
+  DESTINY_CONFIRMED_EVENT_TITLE,
+  getLatestDestinyConfirmation,
   getLivestreamDiagnostics,
   getLivestreamIntelligence,
   recordLivestreamEvent,
   saveLivestreamIntelligence,
   updateLivestreamStage,
 } from "./persistence.js";
+import { decideVoiceMatchAction } from "./presencePolicy.js";
 import { areSameLivestreamTopic } from "./summaryText.js";
 import type {
   LivestreamAlertRecord,
@@ -522,7 +526,32 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     const now = Date.now();
     const current = this.currentSession(observation);
     if (!current) return;
-    const evidence = this.voiceEvidence.observe(id, match.matchedWindows, now);
+    const evidence = this.voiceEvidence.observe(
+      id,
+      match.matchedWindows,
+      match.checkedWindows,
+      now,
+    );
+    const priorConfirmation = getLatestDestinyConfirmation(
+      id,
+      current.sessionStartedAt,
+    );
+    const confirmedPresence =
+      current.destinyPresence?.state === "confirmed"
+        ? current.destinyPresence
+        : priorConfirmation
+          ? {
+              state: "confirmed" as const,
+              confidence: Math.min(
+                Number(priorConfirmation.metrics?.speakerConfidence ?? 0),
+                Number(priorConfirmation.metrics?.assessmentConfidence ?? 0),
+              ),
+              detectedAt: priorConfirmation.createdAt,
+              reason:
+                priorConfirmation.detail ?? "Live conversation previously confirmed",
+            }
+          : current.destinyPresence;
+    const action = decideVoiceMatchAction(evidence, confirmedPresence);
     const voiceDetail = `${match.matchedWindows}/${match.checkedWindows} windows matched at ${Math.round(match.confidence * 100)}% confidence`;
     this.updateStage(id, current.sessionStartedAt, "voice", {
       status: "success",
@@ -536,13 +565,39 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         confidence: match.confidence,
         matchedWindows: match.matchedWindows,
         checkedWindows: match.checkedWindows,
-        evidence,
+        evidence: action === "retain_confirmed" ? "confirmed" : evidence,
       },
     });
-    if (evidence === "none") return;
-    if (evidence === "possible") {
+    if (action === "ignore") return;
+    if (action === "retain_confirmed" && confirmedPresence) {
+      const presence = {
+        ...confirmedPresence,
+        detectedAt: now,
+      };
+      const latest = this.currentSession(observation);
+      if (!latest) return;
       saveLivestreamIntelligence({
-        ...current,
+        ...latest,
+        destinyPresence: presence,
+        updatedAt: now,
+      });
+      if (!alertSentInSession(latest, "destiny_guest")) {
+        await this.maybeNotify({
+          observation,
+          type: "destiny_guest",
+          title: `Destiny is on ${observation.streamer.displayName}`,
+          message: presence.reason,
+          reason: "Previously confirmed live participation plus fresh voice evidence",
+          confidence: presence.confidence,
+        });
+      }
+      return;
+    }
+    if (action === "record_possible") {
+      const latest = this.currentSession(observation);
+      if (!latest) return;
+      saveLivestreamIntelligence({
+        ...latest,
         destinyPresence: {
           state: "possible",
           confidence: match.confidence,
@@ -625,7 +680,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       sessionStartedAt: latest.sessionStartedAt,
       kind: "voice",
       status: "success",
-      title: "Destiny confirmed as a live participant",
+      title: DESTINY_CONFIRMED_EVENT_TITLE,
       detail: assessment.summary,
       metrics: {
         speakerConfidence: match.confidence,
@@ -860,14 +915,11 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   }
 
   private feedbackConfidenceFloor(type: LivestreamAlertType): number {
-    const relevant = buildLivestreamFeedbackDigest(100)
-      .split("\n")
-      .filter((line) => line.startsWith(`${type}:`));
-    if (relevant.length < 2) return 0.75;
-    const negative = relevant.filter(
-      (line) => line.includes("not_useful") || line.includes("false_positive"),
-    ).length;
-    return negative / relevant.length >= 0.6 ? 0.9 : 0.75;
+    return livestreamAlertConfidenceFloor({
+      type,
+      feedbackDigest: buildLivestreamFeedbackDigest(100),
+      destinySpeakerThreshold: config.LIVESTREAM_DESTINY_SPEAKER_THRESHOLD,
+    });
   }
 
   private async maybeNotify(input: {
@@ -900,7 +952,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       );
       return;
     }
-    const key = `${input.observation.streamer.id}:${input.type}`;
+    const key = `${input.observation.streamer.id}:${current.sessionStartedAt}:${input.type}`;
     const previous = this.alertTimes.get(key) ?? 0;
     if (Date.now() - previous < ALERT_COOLDOWN_MS) {
       markSkipped("A matching alert was already sent within the 30-minute cooldown");
@@ -908,8 +960,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     }
     if (
       input.type === "destiny_guest" &&
-      current.latestAlert?.type === "destiny_guest" &&
-      current.latestAlert.createdAt >= current.sessionStartedAt
+      alertSentInSession(current, "destiny_guest")
     ) {
       markSkipped("Destiny was already reported during this live session");
       return;
@@ -974,6 +1025,10 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     saveLivestreamIntelligence({
       ...latest,
       latestAlert: alert,
+      alertedAtByType: {
+        ...latest.alertedAtByType,
+        [alert.type]: alert.createdAt,
+      },
       updatedAt: Date.now(),
     });
     const finishedAt = Date.now();
