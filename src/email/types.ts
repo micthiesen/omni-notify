@@ -46,6 +46,27 @@ export interface EmailPoll {
   commit: () => void;
 }
 
+export interface EmailSearchOptions {
+  /** Full-text query across headers and body. */
+  query?: string;
+  /** Sender address or name fragment. */
+  from?: string;
+  /** Recipient address or name fragment. */
+  to?: string;
+  /** Subject fragment. */
+  subject?: string;
+  /** When set, restrict results by read/unread state. */
+  unread?: boolean;
+  /** IMAP internal date lower bound (inclusive, day precision). */
+  since?: Date;
+  /** IMAP internal date upper bound (exclusive, day precision). */
+  before?: Date;
+  /** Which monitored folder(s) to search. */
+  folder?: "inbox" | "archive" | "all";
+  /** Maximum number of messages to return across all folders. */
+  limit: number;
+}
+
 export interface EmailTransport {
   /** Short label for logs ("JMAP", "IMAP"). */
   readonly name: string;
@@ -62,6 +83,12 @@ export interface EmailTransport {
   pollNewEmails(): Promise<EmailPoll>;
   /** Re-fetch one email by its stable id (retry/reprocess); undefined when gone. */
   fetchEmailById(id: string): Promise<FetchedEmail | undefined>;
+  /**
+   * Search the monitored mailbox without exposing transport credentials or raw
+   * protocol access. Optional because the retiring JMAP adapter does not offer
+   * this capability; the active iCloud IMAP adapter does.
+   */
+  searchEmails?(options: EmailSearchOptions): Promise<FetchedEmail[]>;
   /** Download one attachment's bytes; undefined when unavailable. */
   downloadAttachment(
     attachment: EmailAttachment,

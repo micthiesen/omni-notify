@@ -15,6 +15,7 @@
     "format": "biome format .",
     "check": "biome check .",
     "check:write": "biome check --write .",
+    "mcp:policy": "tsx src/tools/generate-mcp-policy.ts",
     "test": "vitest",
     "docker:build": "docker build -t omni-notify .",
     "docker:publish": "docker push omni-notify",
@@ -37,6 +38,7 @@
     "@hono/node-server": "^2.1.0",
     "@micthiesen/mitools": "^3.0.4",
     "@mistralai/mistralai": "^2.5.0",
+    "@modelcontextprotocol/server": "2.0.0",
     "@mozilla/readability": "^0.6.0",
     "@postlight/parser": "^2.2.3",
     "ai": "^7.0.52",
@@ -72,6 +74,7 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.4",
     "@dotenvx/dotenvx": "^2.19.2",
+    "@modelcontextprotocol/client": "2.0.0",
     "@types/fluent-ffmpeg": "^2.1.28",
     "@types/html-to-text": "^9.0.4",
     "@types/mailparser": "^3.4.6",

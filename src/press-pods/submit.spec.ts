@@ -43,4 +43,13 @@ describe("submitEpisodeSchema", () => {
   it("rejects missing url field", () => {
     expect(() => submitEpisodeSchema.parse({})).toThrow();
   });
+
+  it.each([
+    "http://localhost/article",
+    "http://127.0.0.1/article",
+    "http://[::1]/article",
+    "file:///etc/passwd",
+  ])("rejects non-public URL %s", (url) => {
+    expect(() => submitEpisodeSchema.parse({ url })).toThrow();
+  });
 });

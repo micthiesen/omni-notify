@@ -1,5 +1,6 @@
 import { baseConfigSchema, logConfig, stringBoolean } from "@micthiesen/mitools/config";
 import { z } from "zod";
+import { validateMcpTokenConfiguration } from "../mcp/auth.js";
 
 const optionalPositiveInt = z.preprocess(
   (value) => (value === "" ? undefined : value),
@@ -152,6 +153,8 @@ const configSchema = baseConfigSchema
         return { email, password };
       }),
     FRONTEND_PORT: z.coerce.number().optional().default(3000),
+    /** Bearer token for the private streamable-HTTP MCP endpoint. */
+    OMNI_MCP_TOKEN: z.string().optional(),
     /** Enables PressPods (article → podcast) and authenticates its public routes. */
     PRESSPODS_AUTH_TOKEN: z.string().optional(),
     /**
@@ -229,7 +232,13 @@ const configSchema = baseConfigSchema
         : c.ICLOUD_USERNAME && c.ICLOUD_APP_PASSWORD
           ? ("icloud" as const)
           : undefined),
-    EMAIL_SELF_ADDRESS: c.EMAIL_SELF_ADDRESS ?? c.FASTMAIL_USERNAME,
+    EMAIL_SELF_ADDRESS:
+      c.EMAIL_SELF_ADDRESS ??
+      (c.EMAIL_TRANSPORT === "icloud"
+        ? c.ICLOUD_USERNAME
+        : c.EMAIL_TRANSPORT === "fastmail"
+          ? c.FASTMAIL_USERNAME
+          : (c.ICLOUD_USERNAME ?? c.FASTMAIL_USERNAME)),
     PUSHOVER_LIVE_TOKEN: c.PUSHOVER_LIVE_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_BRIEFING_TOKEN: c.PUSHOVER_BRIEFING_TOKEN ?? c.PUSHOVER_TOKEN,
     PUSHOVER_WORKSPACE_TOKEN: c.PUSHOVER_WORKSPACE_TOKEN ?? c.PUSHOVER_TOKEN,
@@ -242,6 +251,7 @@ const configSchema = baseConfigSchema
 export type Config = z.infer<typeof configSchema>;
 
 const config = configSchema.parse(process.env);
+validateMcpTokenConfiguration(config.OMNI_MCP_TOKEN, config.DOCKERIZED);
 logConfig(config);
 
 export default config;

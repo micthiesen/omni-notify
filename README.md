@@ -181,6 +181,31 @@ The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify 
 
 Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port — no extra ports needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
 
+### Executor MCP
+
+Omni exposes its existing personal capabilities through a streamable-HTTP MCP
+endpoint at `/mcp` on the same `FRONTEND_PORT`. Every MCP request must send
+`Authorization: Bearer <OMNI_MCP_TOKEN>`. Production refuses to start if the
+token is missing, shorter than 32 characters, or lacks sufficient character
+diversity. Generate and store the production token in deployment secrets; do
+not put it in this repository.
+
+The server provides bounded, typed tools for iCloud email and calendar,
+workspaces, tasks and run logs, livestreams, media and podcast services,
+PressPods, pets, costs, and briefing history. It calls the underlying services
+directly rather than looping through Omni's HTTP API. It does not expose raw
+credentials, environment variables, arbitrary shell/filesystem access, generic
+database entities, credential-bearing HTTP, or attachment/audio bytes.
+
+Executor must enforce [the generated policy inventory](docs/mcp-policy.json).
+Tools that communicate externally, mutate calendars or accounts, start media
+acquisition, publish content, send notifications, run paid models/search/TTS,
+or otherwise have consequential effects are marked `require_approval` there.
+MCP annotations describe behavior but are not an approval mechanism. The policy
+file is generated from the same definitions registered by the server and is
+checked in tests for drift. See [the MCP operations guide](docs/mcp.md) for the
+transport, authentication, tool-family, and deployment contract.
+
 To iterate on the frontend without real credentials, `src/tools/preview-server.ts` boots the real server with fake tasks, streamers, runs, recommendations, and a pet:
 
 ```bash
@@ -217,6 +242,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 |---|---|---|
 | `PUSHOVER_USER` | Yes | Pushover user key |
 | `PUSHOVER_TOKEN` | Yes | Pushover app token |
+| `OMNI_MCP_TOKEN` | In production | Random bearer token for authenticated streamable HTTP at `/mcp`; minimum 32 diverse characters |
 | `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)); required when `channels.json` has Kick channels |
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
@@ -231,9 +257,9 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `openai:gpt-5.6-luna`) |
 | `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `openai:gpt-5.6-terra`) |
 | `TRIAGE_MODEL` | No | AI model for shared email triage (default: `openai:gpt-5.6-luna`) |
-| `EMAIL_TRANSPORT` | No | Email transport: `fastmail` (JMAP) or `icloud` (IMAP). Defaults to `fastmail` while `FASTMAIL_API_TOKEN` is set, else `icloud` when its credentials exist. |
+| `EMAIL_TRANSPORT` | No | Email transport: `icloud` (production IMAP) or legacy `fastmail` (JMAP). Defaults from configured credentials when omitted. |
 | `CALDAV_PROVIDER` | No | CalDAV backend for calendar-event writes: `fastmail` or `icloud` (default: follows `EMAIL_TRANSPORT`) |
-| `EMAIL_SELF_ADDRESS` | No | Own receiving address for self-sent-mail filtering (default: `FASTMAIL_USERNAME`) |
+| `EMAIL_SELF_ADDRESS` | No | Own receiving address for self-sent-mail filtering (default: active transport username) |
 | `FASTMAIL_API_TOKEN` | No | Fastmail JMAP API token (enables the Fastmail email transport) |
 | `FASTMAIL_APP_PASSWORD` / `FASTMAIL_USERNAME` | No | Fastmail CalDAV credentials |
 | `FASTMAIL_CALENDAR_ID` | No | Pins the Fastmail calendar (default: auto-discover) |

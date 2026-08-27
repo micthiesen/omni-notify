@@ -1,6 +1,6 @@
 import { extractDomain } from "@micthiesen/mitools/strings";
-import got from "got";
 import { cleanText } from "../formatting/index.js";
+import { publicGot } from "../publicHttp.js";
 import type { Article } from "../types.js";
 import { extractTitleFromHtml } from "./constants.js";
 
@@ -28,17 +28,16 @@ export async function retrieveArticleWayback(
 ): Promise<Article> {
   const availabilityUrl = `${WAYBACK_AVAILABILITY_API}?url=${encodeURIComponent(url)}`;
 
-  const availabilityResponse = await got<WaybackResponse>(availabilityUrl, {
-    responseType: "json",
+  const availabilityResponse = await publicGot(availabilityUrl, {
     timeout: { request: 10000 },
-  });
+  }).json<WaybackResponse>();
 
-  const snapshot = availabilityResponse.body.archived_snapshots.closest;
+  const snapshot = availabilityResponse.archived_snapshots.closest;
   if (!snapshot?.available) {
     throw new Error("No archived snapshot available for this URL");
   }
 
-  const archivedResponse = await got(snapshot.url, {
+  const archivedResponse = await publicGot(snapshot.url, {
     headers: { "User-Agent": userAgent },
     timeout: { request: 20000 },
     retry: { limit: 2, methods: ["GET"] },

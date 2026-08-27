@@ -1,4 +1,34 @@
 const MAX_REDIRECTS = 5;
+export const CALDAV_REQUEST_TIMEOUT_MS = 15_000;
+
+function isIcloudCaldavHost(hostname: string): boolean {
+  return (
+    hostname === "caldav.icloud.com" || /^p\d+-caldav\.icloud\.com$/i.test(hostname)
+  );
+}
+
+/** Reject URLs that could disclose a provider password to another origin. */
+export function assertTrustedCaldavUrl(
+  url: string,
+  provider: "icloud" | "fastmail",
+): string {
+  const parsed = new URL(url);
+  const trusted =
+    parsed.protocol === "https:" &&
+    (provider === "icloud"
+      ? isIcloudCaldavHost(parsed.hostname)
+      : parsed.hostname === "caldav.fastmail.com");
+  if (!trusted) {
+    throw new Error(`Untrusted ${provider} CalDAV URL: ${parsed.origin}`);
+  }
+  return parsed.toString();
+}
+
+function isSafeRedirect(from: URL, to: URL): boolean {
+  if (to.protocol !== "https:") return false;
+  if (from.hostname === to.hostname) return true;
+  return isIcloudCaldavHost(from.hostname) && isIcloudCaldavHost(to.hostname);
+}
 
 /**
  * Issue a CalDAV PROPFIND, following redirects manually — fetch() won't
@@ -24,6 +54,7 @@ export async function propfind(
         Depth: depth,
       },
       body,
+      signal: AbortSignal.timeout(CALDAV_REQUEST_TIMEOUT_MS),
     });
 
     if (response.status >= 300 && response.status < 400) {
@@ -31,7 +62,13 @@ export async function propfind(
       if (!location) {
         throw new Error(`CalDAV PROPFIND redirect without Location (${current})`);
       }
-      current = new URL(location, current).toString();
+      const next = new URL(location, current);
+      if (!isSafeRedirect(new URL(current), next)) {
+        throw new Error(
+          `Refusing to forward CalDAV credentials across redirect (${new URL(current).origin} -> ${next.origin})`,
+        );
+      }
+      current = next.toString();
       continue;
     }
 

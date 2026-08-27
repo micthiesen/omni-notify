@@ -8,6 +8,7 @@ import {
   type PressPodsJobData,
   requeueJobNow,
 } from "./persistence.js";
+import { assertPublicHttpUrlSyntax } from "./publicHttp.js";
 import { normalizeUrl } from "./url.js";
 
 export const submitEpisodeSchema = z.object({
@@ -15,7 +16,17 @@ export const submitEpisodeSchema = z.object({
   url: z
     .string()
     .transform((s) => s.split("\n")[0].trim())
-    .pipe(z.string().url()),
+    .pipe(z.string().url())
+    .superRefine((url, context) => {
+      try {
+        assertPublicHttpUrlSyntax(url);
+      } catch (error) {
+        context.addIssue({
+          code: "custom",
+          message: error instanceof Error ? error.message : "URL must be public",
+        });
+      }
+    }),
 });
 
 /**

@@ -1,7 +1,8 @@
-import { extract } from "@extractus/article-extractor";
+import { extractFromHtml } from "@extractus/article-extractor";
 import { Logger } from "@micthiesen/mitools/logging";
 import { extractDomain } from "@micthiesen/mitools/strings";
 import { cleanText } from "../formatting/index.js";
+import { fetchPublicHtml } from "../publicHttp.js";
 import type { Article } from "../types.js";
 
 const LOGGER = new Logger("PressPods.retrievers.extractus");
@@ -10,7 +11,8 @@ export async function retrieveArticleExtractus(
   url: string,
   userAgent: string,
 ): Promise<Article> {
-  const result = await extract(url, {}, { headers: { "User-Agent": userAgent } });
+  const html = await fetchPublicHtml(url, userAgent);
+  const result = await extractFromHtml(html, url);
   if (!result?.content) throw new Error("Failed to extract article");
   LOGGER.debug("Parsed article with extractus:", result);
 

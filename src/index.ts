@@ -346,7 +346,7 @@ if (!serverOnly) {
     isShuttingDown = true;
 
     logger.info(`Received ${signal}, shutting down gracefully...`);
-    closeServer();
+    await closeServer();
     cleanupEmailTransport?.();
     iosControls.close();
     unsubscribeWorkspaceEmailRuns();

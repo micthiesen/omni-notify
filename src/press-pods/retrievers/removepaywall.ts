@@ -1,6 +1,6 @@
 import { extractDomain } from "@micthiesen/mitools/strings";
-import got from "got";
 import { cleanText } from "../formatting/index.js";
+import { publicGot } from "../publicHttp.js";
 import type { Article } from "../types.js";
 import { extractTitleFromHtml } from "./constants.js";
 
@@ -16,7 +16,7 @@ export async function retrieveArticleRemovepaywall(
 ): Promise<Article> {
   const proxyUrl = `${REMOVEPAYWALL_BASE}/search?url=${encodeURIComponent(url)}`;
 
-  const response = await got(proxyUrl, {
+  const response = await publicGot(proxyUrl, {
     timeout: { request: 30000 },
     retry: { limit: 2, methods: ["GET"] },
     followRedirect: true,

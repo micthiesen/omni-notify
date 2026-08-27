@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**omni-notify** monitors livestream platforms (YouTube, Twitch), emails (via Fastmail JMAP), and more — sending Pushover notifications and taking automated actions. Features include live-check notifications, AI briefing agents, parcel tracking from emails, and automatic calendar event creation from emails.
+**omni-notify** monitors livestream platforms (YouTube, Twitch), email through iCloud IMAP, and more — sending Pushover notifications and taking automated actions. Features include live-check notifications, AI briefing agents, parcel tracking from emails, and automatic calendar event creation through CalDAV. The Fastmail JMAP adapter remains available only as a legacy selectable transport.
 
 ## Quick Reference
 
@@ -96,6 +96,11 @@ src/
 │   └── tools/               # Shared AI agent tools (reusable across any agent)
 │       ├── webSearch.ts     # Tavily web search tool
 │       └── fetchUrl.ts      # URL fetcher: HTML → clean markdown via Readability + Turndown
+├── mcp/                     # Authenticated streamable-HTTP MCP endpoint for Executor
+│   ├── server.ts            # /mcp transport, instructions, and tool registration
+│   ├── auth.ts              # Strong bearer-token validation and constant-time comparison
+│   ├── policy.ts            # Generated Executor policy inventory serialization
+│   └── tools/               # Bounded adapters over Omni's existing personal services
 ├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
 │   ├── BriefingAgentTask.ts # Config-driven task class
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files

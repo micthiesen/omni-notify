@@ -1,8 +1,8 @@
 import { extractDomain } from "@micthiesen/mitools/strings";
-import got from "got";
 import { currentCostFeature, recordCostEventSafely } from "../../costs/persistence.js";
 import config from "../../utils/config.js";
 import { cleanText } from "../formatting/index.js";
+import { publicGot } from "../publicHttp.js";
 import type { Article } from "../types.js";
 import { extractTitleFromHtml } from "./constants.js";
 
@@ -28,7 +28,7 @@ export async function retrieveArticleJina(
 ): Promise<Article> {
   const jinaUrl = `${JINA_API_BASE}/${url}`;
 
-  const response = await got(jinaUrl, {
+  const response = await publicGot(jinaUrl, {
     headers: {
       Accept: "application/json",
       Authorization: `Bearer ${config.JINA_API_KEY}`,

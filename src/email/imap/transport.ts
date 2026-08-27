@@ -6,6 +6,7 @@ import type {
   DownloadedAttachment,
   EmailAttachment,
   EmailPoll,
+  EmailSearchOptions,
   EmailTransport,
   FetchedEmail,
 } from "../types.js";
@@ -416,6 +417,68 @@ export class ImapTransport implements EmailTransport {
     } finally {
       await this.restoreInbox(client);
     }
+  }
+
+  async searchEmails(options: EmailSearchOptions): Promise<FetchedEmail[]> {
+    const client = this.requireClient();
+    const folderNames =
+      options.folder === "inbox"
+        ? ["INBOX"]
+        : options.folder === "archive"
+          ? ["Archive"]
+          : FOLDERS;
+    const perFolderLimit = Math.min(Math.max(1, options.limit), 50);
+    const emails: FetchedEmail[] = [];
+
+    try {
+      for (const folder of folderNames) {
+        const lock = await client.getMailboxLock(folder, { readOnly: true });
+        try {
+          const criteria = {
+            ...(options.query ? { text: options.query } : {}),
+            ...(options.from ? { from: options.from } : {}),
+            ...(options.to ? { to: options.to } : {}),
+            ...(options.subject ? { subject: options.subject } : {}),
+            ...(options.unread === undefined ? {} : { seen: !options.unread }),
+            ...(options.since ? { since: options.since } : {}),
+            ...(options.before ? { before: options.before } : {}),
+          };
+          const found = await client.search(criteria, { uid: true });
+          if (!Array.isArray(found)) continue;
+
+          // IMAP SEARCH returns ascending sequence order. Read only the newest
+          // bounded slice, then merge the folders by parsed received time.
+          const uids = found.slice(-perFolderLimit).reverse();
+          const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
+          for (const uid of uids) {
+            const full = orUndefined(
+              await client.fetchOne(
+                String(uid),
+                { source: true, internalDate: true },
+                { uid: true },
+              ),
+            );
+            if (!full?.source) continue;
+            const parsed = await simpleParser(full.source);
+            emails.push(
+              mapParsedMessage(
+                parsed,
+                { folder, uidValidity: mailboxValidity, uid },
+                toDate(full.internalDate),
+              ),
+            );
+          }
+        } finally {
+          lock.release();
+        }
+      }
+    } finally {
+      await this.restoreInbox(client);
+    }
+
+    return emails
+      .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))
+      .slice(0, options.limit);
   }
 
   private async findInFolder(

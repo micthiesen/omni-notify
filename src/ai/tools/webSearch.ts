@@ -30,7 +30,10 @@ export async function searchWeb(options: {
         time_range: options.timeRange,
         max_results: options.maxResults ?? 5,
       },
-      headers: { Authorization: `Bearer ${config.TAVILY_API_KEY}` },
+      headers: {
+        Authorization: `Bearer ${config.TAVILY_API_KEY}`,
+        "User-Agent": "OpenAI File Downloader, XaiImageApiFetch/1.0",
+      },
     })
     .json<TavilySearchResponse>();
 

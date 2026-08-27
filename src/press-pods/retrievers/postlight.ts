@@ -1,6 +1,7 @@
 import { Logger } from "@micthiesen/mitools/logging";
 import Parser from "@postlight/parser";
 import { cleanText } from "../formatting/index.js";
+import { fetchPublicHtml } from "../publicHttp.js";
 import type { Article } from "../types.js";
 
 const LOGGER = new Logger("PressPods.retrievers.postlight");
@@ -9,9 +10,10 @@ export async function retrieveArticlePostlight(
   url: string,
   userAgent: string,
 ): Promise<Article> {
+  const html = await fetchPublicHtml(url, userAgent);
   const result = await Parser.parse(url, {
     contentType: "html",
-    headers: { "User-Agent": userAgent },
+    html,
   });
   LOGGER.debug("Parsed article with postlight:", result);
 

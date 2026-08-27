@@ -1,7 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import config from "../../utils/config.js";
 import type { CaldavSession } from "./api.js";
-import { basicAuth, propfind } from "./http.js";
+import { assertTrustedCaldavUrl, basicAuth, propfind } from "./http.js";
 import { extractCalendarCollections, pickCalendarCollection } from "./xml.js";
 
 const CALDAV_HOST = "https://caldav.fastmail.com";
@@ -44,7 +44,10 @@ export async function discoverFastmailCalendar(logger: Logger): Promise<CaldavSe
     throw new Error("No calendars found via Fastmail CalDAV PROPFIND");
   }
 
-  const calendarUrl = new URL(selected.href, url).toString();
+  const calendarUrl = assertTrustedCaldavUrl(
+    new URL(selected.href, url).toString(),
+    "fastmail",
+  );
   logger.info(`Using calendar: ${selected.name} (${calendarUrl})`);
   return { calendarUrl, authHeader };
 }

@@ -4,6 +4,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import config from "../../utils/config.js";
 import { getArticleMetadata, type Metadata } from "../agents/metadata.js";
 import type CostCounter from "../costs.js";
+import { assertPublicHttpUrl } from "../publicHttp.js";
 import type { Article, ArticleRetriever, ArticleRetrieverResult } from "../types.js";
 import { USER_AGENT } from "./constants.js";
 import { retrieveArticleExtractus } from "./extractus.js";
@@ -129,6 +130,7 @@ export async function getArticleFromUrl(
   retrieverName: string;
   allResults: ArticleRetrieverResult[];
 }> {
+  await assertPublicHttpUrl(url);
   const retrieved = await Promise.all(
     getArticleRetrievers(url).map((retriever) =>
       withTimeout(retrieveArticle(url, retriever), RETRIEVER_TIMEOUT_MS).catch(

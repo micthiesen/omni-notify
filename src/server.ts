@@ -67,6 +67,7 @@ import {
   streamerOrderingViewerCount,
 } from "./live-check/streamers.js";
 import { toTriggerChannels } from "./live-check/triggerChannels.js";
+import { registerOmniMcpRoute } from "./mcp/route.js";
 import {
   CARRIER_SENDER_DOMAINS as PARCEL_BUILTIN_AUTO_PASS,
   BLACKLISTED_SENDERS as PARCEL_BUILTIN_BLOCKED,
@@ -503,9 +504,21 @@ export function startServer(
   emailControls: EmailControls = {},
   iosControls?: IOSControlService,
   livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider,
-): () => void {
+): () => Promise<void> {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
+  const mcp = registerOmniMcpRoute(
+    app,
+    {
+      logger: parentLogger.extend("MCP"),
+      registry,
+      streamers,
+      emailControls,
+      iosControls,
+      livestreamDiagnostics,
+    },
+    config.OMNI_MCP_TOKEN,
+  );
 
   app.use("/api/*", async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
@@ -1369,12 +1382,16 @@ export function startServer(
     logger.info(`Server listening on port ${port}`);
   });
 
-  return () => {
+  return async () => {
     unsubscribe();
     clearInterval(heartbeat);
     clearTimeout(debounce);
-    server.close();
+    await mcp?.close();
+    const closed = new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
     // Open SSE streams would otherwise keep the process alive indefinitely.
     if ("closeAllConnections" in server) server.closeAllConnections();
+    await closed;
   };
 }

@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import type { CalendarEventExtraction } from "../extraction/schema.js";
+import { CALDAV_REQUEST_TIMEOUT_MS } from "./http.js";
 import { buildICalendar, generateUid } from "./ics.js";
 
 /** Resolved CalDAV target: a calendar collection URL plus the auth to use. */
@@ -11,6 +12,7 @@ export interface CaldavSession {
 
 type CreateResult =
   | { status: "success"; eventUid: string }
+  | { status: "already_exists"; eventUid: string }
   | { status: "error"; code: number; message: string };
 
 type DeleteResult =
@@ -39,11 +41,19 @@ export async function createCalendarEvent(
       "If-None-Match": "*", // Only create, don't overwrite
     },
     body: icsBody,
+    signal: AbortSignal.timeout(CALDAV_REQUEST_TIMEOUT_MS),
   });
 
   if (response.status === 201 || response.status === 204) {
     logger.info(`Created calendar event: ${event.title} (${uid})`);
     return { status: "success", eventUid: uid };
+  }
+
+  // A deterministic UID lets callers reconcile a request whose response was
+  // lost after the server committed the create.
+  if (response.status === 412) {
+    logger.info(`Calendar event already exists: ${uid}`);
+    return { status: "already_exists", eventUid: uid };
   }
 
   const text = await response.text();
@@ -77,6 +87,7 @@ export async function updateCalendarEvent(
       Authorization: session.authHeader,
     },
     body: icsBody,
+    signal: AbortSignal.timeout(CALDAV_REQUEST_TIMEOUT_MS),
   });
 
   if (response.status === 201 || response.status === 204) {
@@ -109,6 +120,7 @@ export async function deleteCalendarEvent(
   const response = await fetch(eventUrl, {
     method: "DELETE",
     headers: { Authorization: session.authHeader },
+    signal: AbortSignal.timeout(CALDAV_REQUEST_TIMEOUT_MS),
   });
 
   if (response.status === 204 || response.status === 200) {

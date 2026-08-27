@@ -1,0 +1,1020 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": "src/mcp tool definitions",
+  "tools": [
+    {
+      "name": "briefings_list",
+      "title": "List Briefings",
+      "description": "List a bounded, newest-first page of stored briefing notifications, optionally filtered by exact briefing name.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "calendar_event_create",
+      "title": "Create Calendar Event",
+      "description": "Create and locally track an event in the configured CalDAV calendar. Content-hash deduplication makes identical repeated calls no-ops. This external calendar mutation requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Creates an event in the configured external CalDAV calendar",
+        "Writes a local tracked-event record"
+      ],
+      "cost": "No paid API expected; one CalDAV discovery/write sequence",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "calendar_event_delete",
+      "title": "Delete Calendar Event",
+      "description": "Delete one Omni-tracked event from the external CalDAV calendar and retain a cancelled local tombstone to prevent accidental recreation. Requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Deletes an external CalDAV event",
+        "Marks the local tracked event cancelled"
+      ],
+      "cost": "No paid API expected; one CalDAV discovery/delete sequence",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "calendar_event_get",
+      "title": "Get Tracked Calendar Event",
+      "description": "Get one Omni-tracked calendar event by eventHash, including its stable CalDAV UID and local status.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "calendar_event_preview",
+      "title": "Preview Calendar Event",
+      "description": "Validate a proposed event and render the exact bounded iCalendar payload Omni would write. No local or remote state changes.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "calendar_event_update",
+      "title": "Update Calendar Event",
+      "description": "Patch one active Omni-tracked event and overwrite its external CalDAV representation. Null clears an optional field. This consequential external mutation requires approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Overwrites an event in the configured external CalDAV calendar",
+        "Updates local tracked-event identity and content"
+      ],
+      "cost": "No paid API expected; one CalDAV discovery/write sequence when changed",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "calendar_events_list",
+      "title": "List Tracked Calendar Events",
+      "description": "List Omni's locally tracked CalDAV events with bounded filtering and pagination. This does not enumerate unrelated events directly from the remote calendar.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "calendar_status",
+      "title": "Inspect Tracked Calendar Status",
+      "description": "Report the configured CalDAV provider and local tracked-event counts without contacting the provider or revealing calendar URLs or credentials.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "costs_read",
+      "title": "Read Omni Cost Telemetry",
+      "description": "Summarize Omni's persisted model, search, TTS, retrieval, and transcription costs for a fixed time range. Unknown-price events remain explicit.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_activity_get",
+      "title": "Get Email Pipeline Activity",
+      "description": "Get one pipeline outcome plus a bounded tail of its captured processing logs. Log messages are returned compactly and may be truncated.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_activity_list",
+      "title": "List Email Pipeline Activity",
+      "description": "List bounded, newest-first outcomes from the parcel and calendar email pipelines, including compact result details and attributed model cost.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_feedback_list",
+      "title": "List Email Feedback",
+      "description": "List explicit corrections used by the email relevance triage prompts, newest first.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_feedback_set",
+      "title": "Set Email Feedback",
+      "description": "Set or clear a not-relevant/missed correction for an existing email activity. Corrections influence future model triage decisions.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Changes persistent correction data injected into future triage prompts"
+      ],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_get",
+      "title": "Get Email",
+      "description": "Fetch one email by the stable identifier returned by email_search or email activity. Body text and attachment metadata are bounded; attachment bytes and credentials are never returned.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads one message from the configured personal mailbox"
+      ],
+      "cost": "No paid API; one bounded IMAP lookup",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_health",
+      "title": "Inspect Email and Calendar Health",
+      "description": "Report whether email monitoring, SMTP sending, and the active CalDAV provider are configured. This is a local configuration/runtime check and does not reveal credentials or probe external services.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_reprocess",
+      "title": "Reprocess Email",
+      "description": "Re-fetch an email and rerun its recorded parcel or calendar pipeline. This may invoke priced models and external Parcel, CalDAV, or notification services; dedup gates reduce but do not eliminate consequential effects.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Clears a queued retry for the activity",
+        "Reruns extraction and may submit a parcel, mutate CalDAV, or send a notification"
+      ],
+      "cost": "May incur configured LLM and third-party workflow costs",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "email_retry_clear",
+      "title": "Clear Email Retry",
+      "description": "Remove a persisted retry for one pipeline/email pair. This can prevent an otherwise scheduled external workflow from completing.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Deletes a pending persistent retry"
+      ],
+      "cost": "None",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "email_retry_list",
+      "title": "List Email Retries",
+      "description": "List bounded persisted retries for transient parcel or calendar pipeline failures, ordered by next attempt.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_rules_delete",
+      "title": "Delete Email Sender Rule",
+      "description": "Delete one user-managed sender rule by ruleId. Built-in rules cannot be deleted through MCP.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Deletes a persistent sender rule and changes future email filtering"
+      ],
+      "cost": "None",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "email_rules_list",
+      "title": "List Email Sender Rules",
+      "description": "List user-managed sender allow/block rules and the read-only built-in filter lists consulted by the parcel and calendar pipelines.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_rules_upsert",
+      "title": "Add or Update Email Sender Rule",
+      "description": "Add or replace a normalized sender allow/block rule for parcel processing, calendar processing, or both. This changes how future personal email is handled.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Changes persistent sender filtering for future email workflows"
+      ],
+      "cost": "None",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_search",
+      "title": "Search Email",
+      "description": "Search the active iCloud IMAP Inbox and Archive with bounded server-side criteria. Returns compact excerpts and attachment metadata, never attachment bytes.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads matching messages from the configured personal mailbox"
+      ],
+      "cost": "No paid API; bounded IMAP reads",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_send",
+      "title": "Send Email",
+      "description": "Send one plain-text email through Omni's configured SMTP account and configured sender address. This is an external communication and always requires Executor approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Sends an external email to the specified recipient"
+      ],
+      "cost": "No per-call paid API expected; consumes SMTP provider quota",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "ios_control_diagnostics",
+      "title": "Get iOS Control Diagnostics",
+      "description": "Get aggregate iOS control delivery diagnostics without exposing device identifiers, registrations, or APNs tokens.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "ios_control_slots",
+      "title": "List iOS Control Slots",
+      "description": "List populated user-visible iOS livestream control slots, numbered 1 through 4. No device identifiers, registrations, or APNs tokens are returned.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "livestream_get",
+      "title": "Get Livestream",
+      "description": "Get one streamer's persisted live state, with optional bounded viewer metrics, completed sessions, and intelligence diagnostics. This does not poll the platforms.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "livestreams_list",
+      "title": "List Livestreams",
+      "description": "List configured streamer identities and their current persisted live state without polling external platforms.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_catalog_browse",
+      "title": "Browse Media Catalog",
+      "description": "Browse weekly trending titles or a filtered TMDB discovery page. Results are bounded and adult titles are excluded by the underlying client.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the public TMDB catalog"
+      ],
+      "cost": "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_catalog_get",
+      "title": "Get Media Catalog Details",
+      "description": "Get bounded TMDB metadata for one movie or television series, including cast, creators, keywords, certification, and viewing commitment.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the public TMDB catalog"
+      ],
+      "cost": "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_catalog_search",
+      "title": "Search Media Catalog",
+      "description": "Search TMDB for movies or television series. This consumes the configured TMDB API quota but does not change any account.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the public TMDB catalog"
+      ],
+      "cost": "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_library_list",
+      "title": "List Plex Media",
+      "description": "List the configured Plex library, recent watch history, or in-progress items. An unavailable Plex server is reported as an error, never as an empty library.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Plex account and server"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_recommendation_feedback",
+      "title": "Record Media Recommendation Feedback",
+      "description": "Record a good-pick, not-for-me, or already-watched assessment and/or a bounded note. This changes only Omni's local recommendation state.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Updates local recommendation feedback used by future taste analysis"
+      ],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_recommendation_get",
+      "title": "Get Media Recommendation",
+      "description": "Get one persisted media recommendation by its recommendation ID.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_recommendations_list",
+      "title": "List Media Recommendations",
+      "description": "List persisted media recommendation attempts and outcomes, optionally filtered by status or feedback.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_taste_read",
+      "title": "Read Media Taste Data",
+      "description": "Read the latest derived media taste profile or paginated evidence rows supporting it.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_watchlist_add",
+      "title": "Add to Managed Watchlist",
+      "description": "Add a TMDB movie to Radarr or a TMDB series to Sonarr. This can begin acquisition and downloads on managed services, so Executor approval is required.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes the configured Radarr or Sonarr account",
+        "May begin media acquisition and downloads"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "media_watchlist_list",
+      "title": "List Managed Watchlist",
+      "description": "List titles tracked by the configured Radarr and Sonarr services. Either service being unavailable is reported as an error to avoid returning partial state.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Radarr and Sonarr accounts"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "pets_read",
+      "title": "Read Pet Weight Data",
+      "description": "List pets with bounded recent weight and visit history, or read a bounded slice for one pet. This uses only Omni's local synchronized data.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "podcast_account_list",
+      "title": "List Podcast Account Resources",
+      "description": "List bounded subscriptions, queue, inbox, or recent listening history from the configured podcast account. Unavailable account state is reported as an error.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured podcast account through its rate-limited client"
+      ],
+      "cost": "No expected monetary cost; consumes bounded private account API traffic",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "podcast_account_search",
+      "title": "Search Podcast Account",
+      "description": "Search shows or episodes through the configured podcast account client. Results are bounded and do not change subscriptions or queue state.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Searches the configured podcast account through its rate-limited client"
+      ],
+      "cost": "No expected monetary cost; consumes bounded private account API traffic",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "podcast_account_update",
+      "title": "Update Podcast Account",
+      "description": "Enqueue or dequeue an episode, clear an Inbox item, or subscribe to a show. These change an external podcast account and require Executor approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes queue, Inbox, or subscription state on an external podcast account"
+      ],
+      "cost": "No expected monetary cost; consumes private account API traffic",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "podcast_recommendation_feedback",
+      "title": "Record Podcast Recommendation Feedback",
+      "description": "Record good-pick or not-for-me feedback and/or a bounded note. This changes only Omni's local recommendation state.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Updates local podcast feedback used by future taste analysis"
+      ],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "podcast_recommendation_get",
+      "title": "Get Podcast Recommendation",
+      "description": "Get one persisted podcast recommendation by recommendation ID.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "podcast_recommendations_list",
+      "title": "List Podcast Recommendations",
+      "description": "List persisted podcast episode recommendations and outcomes.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "podcast_taste_read",
+      "title": "Read Podcast Taste Data",
+      "description": "Read the latest derived podcast taste profile or paginated evidence supporting it.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "presspods_delete",
+      "title": "Delete PressPods Resource",
+      "description": "Permanently delete an episode and its audio, or dismiss a non-processing job and its resume checkpoints. This is destructive and requires Executor approval.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Permanently removes local episode/audio data or a queued/failed job and its checkpoints"
+      ],
+      "cost": "No monetary cost",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "presspods_episode_get",
+      "title": "Get PressPods Episode",
+      "description": "Get compact metadata for one PressPods episode. Use presspods_transcript_read for bounded narration text.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "presspods_list",
+      "title": "List PressPods Resources",
+      "description": "List persisted PressPods episodes or queued, processing, and failed jobs. Audio filenames and bytes are not exposed.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "presspods_retry",
+      "title": "Retry PressPods Work",
+      "description": "Regenerate an existing episode or retry a failed job. This starts model/TTS work and can replace a published episode, so Executor approval is required.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Queues paid or self-hosted model and TTS work",
+        "May replace an existing published episode and send a notification"
+      ],
+      "cost": "May incur metadata/cleaning model and TTS charges",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "presspods_submit",
+      "title": "Submit PressPods Episode",
+      "description": "Queue a public article URL for retrieval, model cleaning, TTS synthesis, podcast publication, optional Karakeep bookmarking, and notification. This has material compute/model cost and external effects, so Executor approval is required.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Queues paid or self-hosted model and TTS work",
+        "May bookmark the URL in Karakeep",
+        "Publishes an episode to the personal feed and sends a notification after processing"
+      ],
+      "cost": "May incur metadata/cleaning model and TTS charges; ElevenLabs is approximately $0.10 per 1,000 characters when configured",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "presspods_transcript_read",
+      "title": "Read PressPods Transcript",
+      "description": "Read a bounded page of an episode's cleaned narration transcript. This never returns audio bytes or filesystem paths.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "system_status",
+      "title": "System Status",
+      "description": "Report which high-level Omni capabilities are configured without exposing account identifiers, credentials, configuration values, or host details.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "task_run",
+      "title": "Run Task",
+      "description": "Queue one registered task for immediate execution. The task may send notifications, call paid services, modify external systems, or perform other consequential work; inspect the task and obtain approval first.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Queues task execution",
+        "Effects depend on the selected task and may include external communications or external mutations"
+      ],
+      "cost": "task-dependent; some tasks invoke paid AI, search, notification, or media services",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "task_run_get",
+      "title": "Get Task Run",
+      "description": "Get one task run and a bounded page of its captured logs. Log messages are truncated to prevent oversized results.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "task_runs_list",
+      "title": "List Task Runs",
+      "description": "List recent persisted task runs, optionally filtered by exact task name. Results are newest first and bounded to the newest 500 runs.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "tasks_list",
+      "title": "List Tasks",
+      "description": "List registered Omni tasks with schedules, running state, upcoming executions, and the latest recorded run.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "web_search",
+      "title": "Search the Web",
+      "description": "Search current web or news results through Omni's configured Tavily account. Each call consumes Tavily quota and has an estimated direct cost.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Sends the search query to Tavily",
+        "Consumes Tavily quota"
+      ],
+      "cost": "estimated 0.8 USD cents and one Tavily search credit per call",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "workspace_action_approve",
+      "title": "Approve Workspace Action",
+      "description": "Approve and execute one pending or failed workspace proposal. Email-scope approvals broaden local email ingestion; calendar-event approvals write to the configured external CalDAV calendar. Executor approval is required.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Approves a durable workspace proposal",
+        "May broaden email ingestion scope or create an external calendar event"
+      ],
+      "cost": "no direct monetary cost; may perform a CalDAV network request",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "workspace_action_reject",
+      "title": "Reject Workspace Action",
+      "description": "Reject one pending workspace proposal without performing its proposed external effect.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Marks a pending local action proposal rejected"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "workspace_actions_list",
+      "title": "List Workspace Actions",
+      "description": "List reviewable workspace action proposals, optionally filtered by workspace, subject, or status. Payloads are parsed into typed JSON-compatible values.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "workspace_get",
+      "title": "Get Workspace",
+      "description": "Get a workspace overview or one subject dossier. Subject results include bounded current artifacts, messages, sources, actions, email scope, and open papercuts.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "workspace_message",
+      "title": "Message Workspace",
+      "description": "Send a user message to a workspace agent, optionally continuing an existing subject. This queues paid model and web-research work and may create reviewable action proposals, but does not approve them.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Queues a workspace agent run",
+        "Persists the message and resulting dossier revisions, sources, and proposals"
+      ],
+      "cost": "variable paid model and web-search cost",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "workspace_papercut_resolve",
+      "title": "Resolve Workspace Papercut",
+      "description": "Mark one workspace papercut addressed or dismissed with a durable local resolution note.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Updates a local papercut's resolution state"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "workspace_papercuts_list",
+      "title": "List Workspace Papercuts",
+      "description": "List structured workspace friction reports, optionally filtered by workspace and resolution status. Internal deduplication fingerprints are excluded.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "workspace_search",
+      "title": "Search Workspaces",
+      "description": "Search subject titles and summaries, current artifacts, recent messages, and recent sources across one or all workspaces. Results contain bounded snippets.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "workspace_subject_set_status",
+      "title": "Set Workspace Subject Status",
+      "description": "Set a workspace subject to active, paused, completed, or archived. This is a local preference/state change and does not run the workspace agent.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Updates local workspace subject state"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "workspaces_list",
+      "title": "List Workspaces",
+      "description": "List Omni's durable personal workspaces with compact definitions and current subject, approval, and papercut counts. Internal agent prompts are excluded.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    }
+  ]
+}

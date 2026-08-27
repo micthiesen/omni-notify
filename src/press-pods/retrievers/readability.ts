@@ -1,8 +1,8 @@
 import { extractDomain } from "@micthiesen/mitools/strings";
 import { Readability } from "@mozilla/readability";
-import got from "got";
 import { parseHTML } from "linkedom";
 import { cleanText } from "../formatting/index.js";
+import { fetchPublicHtml } from "../publicHttp.js";
 import type { Article } from "../types.js";
 
 /**
@@ -14,11 +14,7 @@ export async function retrieveArticleReadability(
   url: string,
   userAgent: string,
 ): Promise<Article> {
-  const html = await got(url, {
-    headers: { "User-Agent": userAgent, Accept: "text/html" },
-    timeout: { request: 20000 },
-    retry: { limit: 2, methods: ["GET"] },
-  }).text();
+  const html = await fetchPublicHtml(url, userAgent);
 
   const { document } = parseHTML(html);
   const leadImageUrl = document

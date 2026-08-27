@@ -268,6 +268,7 @@ export async function retrieveArticleX(
   const response = await fetch(`${FXTWITTER_THREAD_API}/${requested.id}`, {
     headers: { "User-Agent": userAgent, Accept: "application/json" },
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    redirect: "error",
   });
   if (!response.ok) {
     throw new Error(`FxTwitter request failed with HTTP ${response.status}`);
