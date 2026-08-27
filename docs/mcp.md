@@ -34,7 +34,8 @@ The server does not expose arbitrary shell or filesystem access, environment
 values, general database access, secret-bearing HTTP, raw attachment or audio
 bytes, or caller-selected SMTP identities. Inputs are typed and validated.
 Searches and listings use pagination or fixed bounds, and large text fields are
-truncated with explicit metadata.
+truncated with explicit metadata. Cost summaries are limited to 7, 30, or 90
+days and refuse to scan more than 100,000 stored events.
 
 Production email uses the active iCloud IMAP transport, SMTP client, and iCloud
 CalDAV discovery. The legacy Fastmail JMAP transport remains selectable but is

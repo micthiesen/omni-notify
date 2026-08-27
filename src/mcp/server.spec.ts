@@ -217,6 +217,12 @@ describe("Omni MCP streamable HTTP server", () => {
     });
     expect(malformed.isError).toBe(true);
 
+    const unboundedCosts = await client.callTool({
+      name: "costs_read",
+      arguments: { days: "all" },
+    });
+    expect(unboundedCosts.isError).toBe(true);
+
     const listed = (await client.listTools()).tools;
     expect(listed.find((tool) => tool.name === "task_run")?.annotations).toEqual({
       readOnlyHint: false,

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getCostEvents } from "../../costs/persistence.js";
+import { CostEventEntity, getCostEvents } from "../../costs/persistence.js";
 import { summarizeCosts } from "../../costs/summary.js";
 import {
   getAllPetsWithHistory,
@@ -86,6 +86,7 @@ import {
 
 const nullableString = z.string().nullable();
 const nullableNumber = z.number().nullable();
+const MAX_MCP_COST_EVENTS = 100_000;
 const mediaTypeSchema = z.enum([MediaType.Movie, MediaType.Tv]);
 const pageSchema = z.object({
   nextCursor: z.number().int().nonnegative().nullable(),
@@ -1628,9 +1629,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         "Summarize Omni's persisted model, search, TTS, retrieval, and transcription costs for a fixed time range. Unknown-price events remain explicit.",
       inputSchema: z
         .object({
-          days: z
-            .union([z.literal(7), z.literal(30), z.literal(90), z.literal("all")])
-            .default(30),
+          days: z.union([z.literal(7), z.literal(30), z.literal(90)]).default(30),
         })
         .strict(),
       outputSchema: z.object({
@@ -1711,11 +1710,15 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ days }) =>
-        summarizeCosts(getCostEvents(), {
-          days: days === "all" ? null : days,
-          timeZone: config.TZ,
-        }),
+      execute: async ({ days }) => {
+        const count = CostEventEntity.count();
+        if (count > MAX_MCP_COST_EVENTS) {
+          throw new Error(
+            `Cost telemetry exceeds the MCP scan limit (${count} events; maximum ${MAX_MCP_COST_EVENTS})`,
+          );
+        }
+        return summarizeCosts(getCostEvents(), { days, timeZone: config.TZ });
+      },
     }),
   );
 
