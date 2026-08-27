@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { searchWeb } from "../../ai/tools/webSearch.js";
 import { getAllBriefingHistories } from "../../briefing-agent/persistence.js";
 import {
   getLivestreamDiagnostics,
@@ -1034,94 +1033,6 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
           total: page.total,
         };
       },
-    }),
-    defineTool({
-      name: "web_search",
-      title: "Search the Web",
-      description:
-        "Search current web or news results through Omni's configured Tavily account. Each call consumes Tavily quota and has an estimated direct cost.",
-      inputSchema: z
-        .object({
-          query: z.string().trim().min(2).max(500),
-          topic: z.enum(["general", "news"]).default("general"),
-          timeRange: z.enum(["day", "week", "month", "year"]).optional(),
-          maxResults: z.number().int().min(1).max(10).default(5),
-          maxContentChars: z.number().int().min(100).max(4_000).default(1_500),
-        })
-        .strict(),
-      outputSchema: z.object({
-        results: z.array(
-          z.object({ title: z.string(), url: z.string().url(), content: z.string() }),
-        ),
-        responseTime: z.number().nonnegative(),
-      }),
-      annotations: annotations(true, false, false, true),
-      policy: {
-        sideEffects: ["Sends the search query to Tavily", "Consumes Tavily quota"],
-        cost: "estimated 0.8 USD cents and one Tavily search credit per call",
-        recommendedPolicy: "require_approval",
-      },
-      execute: async ({ query, topic, timeRange, maxResults, maxContentChars }) =>
-        searchWeb({ query, topic, timeRange, maxResults, maxContentChars }),
-    }),
-    defineTool({
-      name: "ios_control_slots",
-      title: "List iOS Control Slots",
-      description:
-        "List populated user-visible iOS livestream control slots, numbered 1 through 4. No device identifiers, registrations, or APNs tokens are returned.",
-      inputSchema: emptyInputSchema,
-      outputSchema: z.object({
-        available: z.boolean(),
-        slots: z.array(
-          z.object({
-            slot: z.number().int().min(1).max(4),
-            isLive: z.boolean(),
-            streamerId: nullableString,
-            displayName: z.string(),
-            title: nullableString,
-            platform: z.enum(["youtube", "twitch", "kick"]).nullable(),
-            url: z.string().url(),
-            viewerCount: nullableNumber,
-            startedAt: nullableNumber,
-            updatedAt: z.number(),
-          }),
-        ),
-      }),
-      annotations: annotations(true, false, true, false),
-      policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async () => ({
-        available: runtime.iosControls !== undefined,
-        slots: runtime.iosControls
-          ? [1, 2, 3, 4].flatMap((slot) => {
-              const value = runtime.iosControls?.getSlot(slot);
-              return value ? [value] : [];
-            })
-          : [],
-      }),
-    }),
-    defineTool({
-      name: "ios_control_diagnostics",
-      title: "Get iOS Control Diagnostics",
-      description:
-        "Get aggregate iOS control delivery diagnostics without exposing device identifiers, registrations, or APNs tokens.",
-      inputSchema: emptyInputSchema,
-      outputSchema: z.object({
-        available: z.boolean(),
-        diagnostics: z
-          .object({
-            apnsEnabled: z.boolean(),
-            registrationCount: z.number().int().nonnegative(),
-            undeliveredCount: z.number().int().nonnegative(),
-            lastReconciledAt: nullableNumber,
-          })
-          .nullable(),
-      }),
-      annotations: annotations(true, false, true, false),
-      policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async () => ({
-        available: runtime.iosControls !== undefined,
-        diagnostics: runtime.iosControls?.diagnostics() ?? null,
-      }),
     }),
     defineTool({
       name: "workspaces_list",

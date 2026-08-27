@@ -351,34 +351,6 @@
       "recommendedExecutorPolicy": "require_approval"
     },
     {
-      "name": "ios_control_diagnostics",
-      "title": "Get iOS Control Diagnostics",
-      "description": "Get aggregate iOS control delivery diagnostics without exposing device identifiers, registrations, or APNs tokens.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "sideEffects": [],
-      "cost": "none",
-      "recommendedExecutorPolicy": "allow"
-    },
-    {
-      "name": "ios_control_slots",
-      "title": "List iOS Control Slots",
-      "description": "List populated user-visible iOS livestream control slots, numbered 1 through 4. No device identifiers, registrations, or APNs tokens are returned.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "sideEffects": [],
-      "cost": "none",
-      "recommendedExecutorPolicy": "allow"
-    },
-    {
       "name": "livestream_get",
       "title": "Get Livestream",
       "description": "Get one streamer's persisted live state, with optional bounded viewer metrics, completed sessions, and intelligence diagnostics. This does not poll the platforms.",
@@ -846,23 +818,6 @@
       "sideEffects": [],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
-    },
-    {
-      "name": "web_search",
-      "title": "Search the Web",
-      "description": "Search current web or news results through Omni's configured Tavily account. Each call consumes Tavily quota and has an estimated direct cost.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": false,
-        "openWorldHint": true
-      },
-      "sideEffects": [
-        "Sends the search query to Tavily",
-        "Consumes Tavily quota"
-      ],
-      "cost": "estimated 0.8 USD cents and one Tavily search credit per call",
-      "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "workspace_action_approve",
