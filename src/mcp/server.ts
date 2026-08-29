@@ -37,7 +37,7 @@ export function createOmniMcpHandler(
   const handler = createMcpHandler(
     () => {
       const server = new McpServer(
-        { name: "omni-notify", version: "1.0.0" },
+        { name: "omni", version: "1.0.0" },
         { instructions: MCP_SERVER_INSTRUCTIONS },
       );
       for (const tool of tools) {

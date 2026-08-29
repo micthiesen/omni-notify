@@ -351,6 +351,22 @@
       "recommendedExecutorPolicy": "require_approval"
     },
     {
+      "name": "get_printer_status",
+      "title": "Get Monochrome Printer Status",
+      "description": "Read readiness, queue depth, toner level, and capabilities from Michael's fixed Brother HL-L2370DW monochrome laser printer. This does not print anything.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads status from the fixed LAN printer"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
       "name": "livestream_get",
       "title": "Get Livestream",
       "description": "Get one streamer's persisted live state, with optional bounded viewer metrics, completed sessions, and intelligence diagnostics. This does not poll the platforms.",
@@ -745,6 +761,24 @@
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
       "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "print_document",
+      "title": "Print PDF in Black and White",
+      "description": "Print a public HTTPS PDF on Michael's Brother HL-L2370DW monochrome laser printer. Black-and-white only. Uses two-sided long-edge printing and Letter paper by default. Every call requires approval because it consumes paper and toner and physically exposes the document.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Downloads a public PDF",
+        "Sends a physical print job to the fixed Brother printer",
+        "Physically exposes the printed document"
+      ],
+      "cost": "Consumes paper, toner, and electricity; no paid API",
+      "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "system_status",

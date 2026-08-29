@@ -184,7 +184,8 @@ Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port â€
 ### Executor MCP
 
 Omni exposes its existing personal capabilities through a streamable-HTTP MCP
-endpoint at `/mcp` on the same `FRONTEND_PORT`. Every MCP request must send
+endpoint at `/mcp` on the same `FRONTEND_PORT`, advertised under the general
+server name `omni`. Every MCP request must send
 `Authorization: Bearer <OMNI_MCP_TOKEN>`. Production refuses to start if the
 token is missing, shorter than 32 characters, or lacks sufficient character
 diversity. Generate and store the production token in deployment secrets; do
@@ -192,8 +193,11 @@ not put it in this repository.
 
 The server provides bounded, typed tools for iCloud email and calendar,
 workspaces, tasks and run logs, livestreams, media and podcast services,
-PressPods, pets, costs, and briefing history. It calls the underlying services
-directly rather than looping through Omni's HTTP API. It does not expose raw
+PressPods, pets, costs, briefing history, and an optional fixed IPP printer. The
+printer tools report status and print bounded public PDF URLs in monochrome,
+with long-edge duplex by default; every physical print requires approval. It
+calls the underlying services directly rather than looping through Omni's HTTP
+API. It does not expose raw
 credentials, environment variables, arbitrary shell/filesystem access, generic
 database entities, credential-bearing HTTP, or attachment/audio bytes.
 
@@ -243,6 +247,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `PUSHOVER_USER` | Yes | Pushover user key |
 | `PUSHOVER_TOKEN` | Yes | Pushover app token |
 | `OMNI_MCP_TOKEN` | In production | Random bearer token for authenticated streamable HTTP at `/mcp`; minimum 32 diverse characters |
+| `PRINTER_IPP_URL` | No | Fixed `ipp://` or `ipps://` endpoint that enables MCP printer status and approved monochrome PDF printing |
 | `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)); required when `channels.json` has Kick channels |
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |

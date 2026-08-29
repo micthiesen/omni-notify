@@ -706,6 +706,7 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
           iCloudCalendar: z.boolean(),
           webSearch: z.boolean(),
           iosControls: z.boolean(),
+          printing: z.boolean(),
           workspaces: z.boolean(),
         }),
       }),
@@ -727,6 +728,7 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
             iCloudCalendar: iCloudConfigured,
             webSearch: Boolean(process.env.TAVILY_API_KEY),
             iosControls: runtime.iosControls !== undefined,
+            printing: runtime.printer !== undefined,
             workspaces: workspaceDefinitions.some(({ taskName }) =>
               taskNames.has(taskName),
             ),

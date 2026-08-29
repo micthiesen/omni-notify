@@ -88,6 +88,7 @@ import {
 import { MAX_PODCAST_RECOMMENDATIONS_PER_RUN } from "./podcast-recs/pipeline.js";
 import { getLatestPodcastTasteProfile } from "./podcast-recs/reflection/index.js";
 import { registerPressPodsRoutes } from "./press-pods/routes.js";
+import { createPrinterService } from "./printer/service.js";
 import {
   getAllRecommendations,
   getOpenRecommendations,
@@ -516,6 +517,9 @@ export function startServer(
       emailControls,
       iosControls,
       livestreamDiagnostics,
+      printer: config.PRINTER_IPP_URL
+        ? createPrinterService(config.PRINTER_IPP_URL)
+        : undefined,
     },
     config.OMNI_MCP_TOKEN,
   );

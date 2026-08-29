@@ -54,8 +54,9 @@ RUN apt-get update \
 FROM node:24.19.0-slim AS runtime
 
 # ffmpeg: PressPods audio pipeline (loudnorm + intro concat)
+# ghostscript + pdfinfo: bounded PDF inspection and PWG rasterization for printing
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg \
+  && apt-get install -y --no-install-recommends ffmpeg ghostscript poppler-utils \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

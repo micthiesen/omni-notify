@@ -155,6 +155,16 @@ const configSchema = baseConfigSchema
     FRONTEND_PORT: z.coerce.number().optional().default(3000),
     /** Bearer token for the private streamable-HTTP MCP endpoint. */
     OMNI_MCP_TOKEN: z.string().optional(),
+    /** Enables MCP printing through one fixed IPP or IPPS printer endpoint. */
+    PRINTER_IPP_URL: z
+      .string()
+      .url()
+      .optional()
+      .refine(
+        (value) =>
+          value === undefined || ["ipp:", "ipps:"].includes(new URL(value).protocol),
+        "PRINTER_IPP_URL must use ipp:// or ipps://",
+      ),
     /** Enables PressPods (article → podcast) and authenticates its public routes. */
     PRESSPODS_AUTH_TOKEN: z.string().optional(),
     /**

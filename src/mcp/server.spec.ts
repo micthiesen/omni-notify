@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EmailTransport, FetchedEmail } from "../email/types.js";
 import type { PodcastAccountClient } from "../podcast-recs/account.js";
+import type { PrinterService } from "../printer/service.js";
 import type { TaskRegistry } from "../task-runs/registry.js";
 import { registerOmniMcpRoute } from "./route.js";
 import type { McpRuntime } from "./runtime.js";
@@ -119,7 +120,7 @@ describe("Omni MCP streamable HTTP server", () => {
     expect(unauthorized.headers.get("WWW-Authenticate")).toBe("Bearer");
 
     const client = await connectClient(configured.url);
-    expect(client.getServerVersion()).toMatchObject({ name: "omni-notify" });
+    expect(client.getServerVersion()).toMatchObject({ name: "omni" });
     expect((await client.listTools()).tools.length).toBe(
       configured.handler!.tools.length,
     );
@@ -133,7 +134,7 @@ describe("Omni MCP streamable HTTP server", () => {
     const client = await connectClient(handler);
 
     expect(client.getProtocolEra()).toBe("modern");
-    expect(client.getServerVersion()).toMatchObject({ name: "omni-notify" });
+    expect(client.getServerVersion()).toMatchObject({ name: "omni" });
     expect(client.getInstructions()).toBe(MCP_SERVER_INSTRUCTIONS);
     const { tools } = await client.listTools();
     expect(tools.length).toBe(handler.tools.length);
@@ -267,6 +268,102 @@ describe("Omni MCP streamable HTTP server", () => {
     expect(
       handler.tools.find((tool) => tool.name === "podcast_account_update")?.policy,
     ).toMatchObject({ recommendedPolicy: "require_approval" });
+  });
+
+  it("exposes guarded printer status and physical printing through a mocked service", async () => {
+    const status = vi.fn(async () => ({
+      configured: true as const,
+      name: "Brother HL-L2370DW series",
+      uri: "ipp://printer.test/ipp/print",
+      state: "idle" as const,
+      stateReasons: [],
+      ready: true,
+      acceptingJobs: true,
+      queuedJobCount: 0,
+      tonerPercent: 20,
+      monochromeOnly: true as const,
+      defaultSides: "two-sided-long-edge" as const,
+      supportedFormats: ["image/pwg-raster"],
+      supportedMedia: ["na_letter_8.5x11in"],
+    }));
+    const printPdf = vi.fn(async () => ({
+      accepted: true as const,
+      jobId: 42,
+      jobUri: "ipp://printer.test/jobs/42",
+      jobState: "pending" as const,
+      jobName: "Test document",
+      pages: 2,
+      copies: 1,
+      paper: "letter" as const,
+      sides: "two-sided-long-edge" as const,
+      message: "The printer accepted the job; physical completion is not confirmed",
+    }));
+    const handler = createOmniMcpHandler(
+      runtime({ printer: { status, printPdf } as PrinterService }),
+      TEST_TOKEN,
+    );
+    handlers.push(handler);
+    const client = await connectClient(handler);
+
+    const read = await client.callTool({
+      name: "get_printer_status",
+      arguments: {},
+    });
+    expect(read.isError).not.toBe(true);
+    expect(read.structuredContent).toMatchObject({
+      name: "Brother HL-L2370DW series",
+      ready: true,
+      tonerPercent: 20,
+    });
+
+    const print = await client.callTool({
+      name: "print_document",
+      arguments: {
+        url: "https://example.com/document.pdf",
+        jobName: "Test document",
+      },
+    });
+    expect(print.isError).not.toBe(true);
+    expect(print.structuredContent).toMatchObject({ accepted: true, jobId: 42 });
+    expect(printPdf).toHaveBeenCalledWith({
+      url: "https://example.com/document.pdf",
+      jobName: "Test document",
+      copies: 1,
+      paper: "letter",
+      sides: "two-sided-long-edge",
+      allowDuplicate: false,
+    });
+
+    const tool = handler.tools.find(({ name }) => name === "print_document");
+    expect(tool?.annotations).toEqual({
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    });
+    expect(tool?.policy.recommendedPolicy).toBe("require_approval");
+
+    const malformed = await client.callTool({
+      name: "print_document",
+      arguments: { url: "file:///tmp/document.pdf", copies: 99 },
+    });
+    expect(malformed.isError).toBe(true);
+    expect(printPdf).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports printer tools as unavailable when printing is not configured", async () => {
+    const handler = createOmniMcpHandler(runtime(), TEST_TOKEN);
+    handlers.push(handler);
+    const client = await connectClient(handler);
+    const result = await client.callTool({
+      name: "get_printer_status",
+      arguments: {},
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContainEqual({
+      type: "text",
+      text: "Printer is not configured",
+    });
   });
 
   it("bounds email body output and returns useful tool errors", async () => {

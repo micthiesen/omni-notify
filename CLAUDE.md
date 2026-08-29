@@ -101,6 +101,8 @@ src/
 │   ├── auth.ts              # Strong bearer-token validation and constant-time comparison
 │   ├── policy.ts            # Generated Executor policy inventory serialization
 │   └── tools/               # Bounded adapters over Omni's existing personal services
+├── printer/                 # Fixed Brother IPP printer integration for MCP
+│   └── service.ts           # Public PDF guard → inspect → monochrome PWG raster → IPP job
 ├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
 │   ├── BriefingAgentTask.ts # Config-driven task class
 │   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files

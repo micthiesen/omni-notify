@@ -2,8 +2,8 @@
 
 Omni serves a streamable-HTTP MCP endpoint at `/mcp` on its existing HTTP port,
 `FRONTEND_PORT` (3000 by default). The endpoint uses the official MCP server
-transport and supports the normal MCP initialization, discovery, and tool-call
-flow.
+transport, advertises the general server name `omni`, and supports the normal
+MCP initialization, discovery, and tool-call flow.
 
 Every request to `/mcp` requires this header:
 
@@ -29,6 +29,7 @@ families cover:
 - task status, task runs, livestreams, briefings, workspaces, actions, and papercuts
 - media library, watchlist, recommendations, podcast accounts, and podcast recommendations
 - PressPods jobs and episodes, pet weights, aggregate costs, web search, and iOS live-control diagnostics
+- optional fixed-printer status and bounded public-PDF printing
 
 The server does not expose arbitrary shell or filesystem access, environment
 values, general database access, secret-bearing HTTP, raw attachment or audio
@@ -40,6 +41,15 @@ days and refuse to scan more than 100,000 stored events.
 Production email uses the active iCloud IMAP transport, SMTP client, and iCloud
 CalDAV discovery. The legacy Fastmail JMAP transport remains selectable but is
 not the basis of the MCP design.
+
+Printing is enabled only when `PRINTER_IPP_URL` names one fixed `ipp://` or
+`ipps://` endpoint. The caller supplies a public HTTPS PDF URL, never a printer
+address. Omni rejects private document URLs, oversized or encrypted PDFs, and
+documents over the page limit, then converts accepted PDFs to monochrome PWG
+raster before submission. Long-edge duplex and Letter paper are the defaults.
+Every print requires explicit approval because it consumes paper and toner and
+physically exposes the document. A returned IPP job ID proves only that the
+printer accepted the job, not that the pages finished printing.
 
 ## Executor policy
 

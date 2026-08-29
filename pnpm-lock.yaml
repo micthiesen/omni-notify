@@ -41,6 +41,9 @@ importers:
       '@mozilla/readability':
         specifier: ^0.6.0
         version: 0.6.0
+      '@pnosolutions/ipp':
+        specifier: 0.2.0
+        version: 0.2.0
       '@postlight/parser':
         specifier: ^2.2.3
         version: 2.2.3
@@ -539,6 +542,12 @@ packages:
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
+
+  '@pnosolutions/ipp-core@0.2.0':
+    resolution: {integrity: sha512-321KUFh5EICLaql4N8g73leGig65V4KFBj6wMXhY97oXzsV36JhreE9dOHhe3nHL9GzA6UouUdoGBOz7l0kWpQ==}
+
+  '@pnosolutions/ipp@0.2.0':
+    resolution: {integrity: sha512-e/cenBkaDNOShwXfD5bbRcxNCVppcrQcFBL6RBfCkIPDkDK9fCBjXOHuL1gRmiI0ggFDqkuaQI0abWRVYdCBuQ==}
 
   '@postlight/ci-failed-test-reporter@1.0.26':
     resolution: {integrity: sha512-xfXzxyOiKhco7Gx2OLTe9b66b0dFJw0elg94KGHoQXf5F8JqqFvdo35J8wayGOor64CSMvn+4Bjlu2NKV+yTGA==}
@@ -2753,6 +2762,12 @@ snapshots:
   '@oxc-project/types@0.142.0': {}
 
   '@pinojs/redact@0.4.0': {}
+
+  '@pnosolutions/ipp-core@0.2.0': {}
+
+  '@pnosolutions/ipp@0.2.0':
+    dependencies:
+      '@pnosolutions/ipp-core': 0.2.0
 
   '@postlight/ci-failed-test-reporter@1.0.26':
     dependencies:
