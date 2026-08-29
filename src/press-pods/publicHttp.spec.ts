@@ -64,4 +64,46 @@ describe("PressPods public HTTP guard", () => {
       }),
     ).rejects.toThrow("resolve only to public addresses");
   });
+
+  it("preserves the all-address lookup shape used by Node 24", async () => {
+    const resolver = ((_hostname, options, callback) => {
+      expect(options.all).toBe(true);
+      callback(null, [
+        { address: "1.1.1.1", family: 4 },
+        { address: "2606:4700:4700::1111", family: 6 },
+      ]);
+    }) as Parameters<typeof createPublicDnsLookup>[0];
+    const guardedLookup = createPublicDnsLookup(resolver);
+
+    await expect(
+      new Promise((resolve, reject) => {
+        guardedLookup("example.com", { all: true }, (error, addresses) => {
+          if (error) reject(error);
+          else resolve(addresses);
+        });
+      }),
+    ).resolves.toEqual([
+      { address: "1.1.1.1", family: 4 },
+      { address: "2606:4700:4700::1111", family: 6 },
+    ]);
+  });
+
+  it("rejects an all-address lookup containing any private address", async () => {
+    const resolver = ((_hostname, _options, callback) => {
+      callback(null, [
+        { address: "1.1.1.1", family: 4 },
+        { address: "127.0.0.1", family: 4 },
+      ]);
+    }) as Parameters<typeof createPublicDnsLookup>[0];
+    const guardedLookup = createPublicDnsLookup(resolver);
+
+    await expect(
+      new Promise<void>((resolve, reject) => {
+        guardedLookup("example.com", { all: true }, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      }),
+    ).rejects.toThrow("resolve only to public addresses");
+  });
 });

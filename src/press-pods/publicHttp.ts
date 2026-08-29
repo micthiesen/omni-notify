@@ -109,26 +109,37 @@ export function createPublicDnsLookup(
   resolve: LookupFunction = lookup,
 ): LookupFunction {
   return (hostname, options, callback) => {
-    const family = typeof options === "number" ? options : options?.family;
     resolve(
       hostname,
-      { ...(family ? { family } : {}), all: false, verbatim: true },
+      { ...options, verbatim: true },
       (error, address, resultFamily) => {
-        const resolvedAddress =
-          typeof address === "string" ? address : address[0]?.address;
+        const resolvedAddresses =
+          typeof address === "string"
+            ? [{ address, family: resultFamily ?? isIP(address) }]
+            : (address ?? []);
         if (error) {
-          callback(error, resolvedAddress ?? "", resultFamily);
+          callback(error, options.all ? [] : "", resultFamily);
           return;
         }
-        if (!resolvedAddress || !isPublicAddress(resolvedAddress)) {
+        if (
+          resolvedAddresses.length === 0 ||
+          resolvedAddresses.some(
+            ({ address: resolvedAddress }) => !isPublicAddress(resolvedAddress),
+          )
+        ) {
           callback(
             new Error("PressPods URLs must resolve only to public addresses"),
-            resolvedAddress ?? "",
+            options.all ? [] : "",
             resultFamily,
           );
           return;
         }
-        callback(null, resolvedAddress, resultFamily);
+        if (options.all) {
+          callback(null, resolvedAddresses);
+          return;
+        }
+        const first = resolvedAddresses[0];
+        callback(null, first.address, first.family);
       },
     );
   };
