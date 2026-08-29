@@ -45,11 +45,13 @@ not the basis of the MCP design.
 Printing is enabled only when `PRINTER_IPP_URL` names one fixed `ipp://` or
 `ipps://` endpoint. The caller supplies a public HTTPS PDF URL, never a printer
 address. Omni rejects private document URLs, oversized or encrypted PDFs, and
-documents over the page limit, then converts accepted PDFs to monochrome PWG
-raster before submission. Long-edge duplex and Letter paper are the defaults.
+documents over the page limit, then converts accepted PDFs through the model-aware
+CUPS `brlaser` filter before submission and verifies the final IPP job state.
+Long-edge duplex and Letter paper are the defaults.
 Every print requires explicit approval because it consumes paper and toner and
-physically exposes the document. A returned IPP job ID proves only that the
-printer accepted the job, not that the pages finished printing.
+physically exposes the document. Omni waits for the final IPP job state and
+reports completion or a printer-reported failure; a timeout remains explicitly
+unconfirmed.
 
 ## Executor policy
 

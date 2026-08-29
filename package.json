@@ -41,6 +41,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@mozilla/readability": "^0.6.0",
     "@pnosolutions/ipp": "0.2.0",
+    "@pnosolutions/ipp-core": "0.2.0",
     "@postlight/parser": "^2.2.3",
     "ai": "^7.0.52",
     "amazon-cognito-identity-js": "^6.3.20",

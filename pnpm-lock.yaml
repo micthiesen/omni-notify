@@ -44,6 +44,9 @@ importers:
       '@pnosolutions/ipp':
         specifier: 0.2.0
         version: 0.2.0
+      '@pnosolutions/ipp-core':
+        specifier: 0.2.0
+        version: 0.2.0
       '@postlight/parser':
         specifier: ^2.2.3
         version: 2.2.3

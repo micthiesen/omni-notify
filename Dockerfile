@@ -54,9 +54,19 @@ RUN apt-get update \
 FROM node:24.19.0-slim AS runtime
 
 # ffmpeg: PressPods audio pipeline (loudnorm + intro concat)
-# ghostscript + pdfinfo: bounded PDF inspection and PWG rasterization for printing
+# CUPS + brlaser + pdfinfo: bounded, model-aware PDF conversion for Brother printing
+# The compatible HL-L2360D profile is physically verified on this HL-L2370DW, including duplex.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg ghostscript poppler-utils \
+  && apt-get install -y --no-install-recommends \
+    cups \
+    ffmpeg \
+    ghostscript \
+    poppler-utils \
+    printer-driver-brlaser \
+  && mkdir -p /usr/share/omni-printing /tmp/brlaser-ppd \
+  && ppdc -d /tmp/brlaser-ppd /usr/share/cups/drv/brlaser.drv \
+  && cp /tmp/brlaser-ppd/brl2360d.ppd /usr/share/omni-printing/brother-hll2370dw.ppd \
+  && rm -rf /tmp/brlaser-ppd \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

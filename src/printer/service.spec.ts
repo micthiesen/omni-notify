@@ -1,12 +1,4 @@
-import {
-  mkdtemp,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  truncate,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -25,7 +17,7 @@ function printerStatus(raw: Record<string, unknown> = {}) {
     uri: "ipp://10.10.1.47:631/ipp/print",
     state: "idle" as const,
     stateReasons: [],
-    supportedFormats: ["image/pwg-raster"],
+    supportedFormats: ["application/octet-stream"],
     supportedMedia: ["na_letter_8.5x11in"],
     readyMedia: null,
     supportedResolutions: [],
@@ -38,12 +30,19 @@ describe("IppPrinterService", () => {
   let tempRoot: string;
   let print: ReturnType<typeof vi.fn>;
   let status: ReturnType<typeof vi.fn>;
+  let jobStatus: ReturnType<typeof vi.fn>;
   let processCalls: Array<{ executable: string; args: string[] }>;
+  let binaryProcessCalls: Array<{
+    executable: string;
+    args: string[];
+    environment?: Record<string, string>;
+  }>;
   let dependencies: PrinterServiceDependencies;
 
   beforeEach(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), "omni-printer-test-"));
     processCalls = [];
+    binaryProcessCalls = [];
     print = vi.fn().mockResolvedValue({
       id: 42,
       uri: "ipp://10.10.1.47/jobs/42",
@@ -51,6 +50,11 @@ describe("IppPrinterService", () => {
       name: "MCP print job",
     });
     status = vi.fn().mockResolvedValue(printerStatus());
+    jobStatus = vi.fn().mockResolvedValue({
+      state: "completed",
+      stateReasons: ["job-completed-successfully"],
+      impressionsCompleted: 2,
+    });
     dependencies = {
       tempRoot,
       now: () => 1_000_000,
@@ -58,7 +62,10 @@ describe("IppPrinterService", () => {
         body: PDF,
         contentType: "application/pdf; charset=binary",
       }),
-      printer: { print, status } as NonNullable<PrinterServiceDependencies["printer"]>,
+      wait: vi.fn().mockResolvedValue(undefined),
+      printer: { print, status, jobStatus } as NonNullable<
+        PrinterServiceDependencies["printer"]
+      >,
       execFile: async (executable, args) => {
         processCalls.push({ executable, args });
         if (executable === "pdfinfo") {
@@ -66,12 +73,13 @@ describe("IppPrinterService", () => {
           expect(inputStat.mode & 0o777).toBe(0o600);
           return { stdout: "Pages: 2\nEncrypted: no\n", stderr: "" };
         }
-        const outputPath = args
-          .find((arg) => arg.startsWith("-sOutputFile="))
-          ?.slice("-sOutputFile=".length);
-        if (!outputPath) throw new Error("Missing Ghostscript output path");
-        await writeFile(outputPath, Buffer.from("RaS2fixture"));
-        return { stdout: "", stderr: "" };
+        throw new Error(`Unexpected process: ${executable}`);
+      },
+      execFileBuffer: async (executable, args, environment) => {
+        binaryProcessCalls.push({ executable, args, environment });
+        return executable.endsWith("cupsfilter")
+          ? Buffer.from("cups-raster-fixture")
+          : Buffer.from("brlaser-fixture");
       },
     };
   });
@@ -102,7 +110,7 @@ describe("IppPrinterService", () => {
     });
   });
 
-  it("converts and submits a monochrome duplex PWG raster job", async () => {
+  it("converts, submits, and confirms a monochrome duplex brlaser job", async () => {
     const service = new IppPrinterService({ dependencies });
     const result = await service.printPdf({
       url: "https://example.com/file.pdf",
@@ -113,24 +121,32 @@ describe("IppPrinterService", () => {
 
     expect(result).toMatchObject({
       accepted: true,
+      completed: true,
       jobId: 42,
       pages: 2,
       copies: 2,
       paper: "a4",
       sides: "two-sided-long-edge",
+      impressionsCompleted: 2,
     });
-    expect(result.message).toContain("physical completion is not confirmed");
+    expect(result.message).toContain("completed the job successfully");
     expect(processCalls[0]).toMatchObject({ executable: "pdfinfo" });
-    expect(processCalls[1]?.args).toEqual(
+    expect(binaryProcessCalls[0]?.executable).toBe("/usr/sbin/cupsfilter");
+    expect(binaryProcessCalls[0]?.args).toEqual(
       expect.arrayContaining([
-        "-dSAFER",
-        "-sDEVICE=pwgraster",
-        "-r600",
-        "-sColorConversionStrategy=Gray",
-        "-dFIXEDMEDIA",
-        "-dPDFFitPage",
-        "-sPAPERSIZE=a4",
+        "PageSize=A4",
+        "Duplex=DuplexNoTumble",
+        "print-scaling=fit",
       ]),
+    );
+    expect(binaryProcessCalls[1]).toMatchObject({
+      executable: "/usr/lib/cups/filter/rastertobrlaser",
+      environment: {
+        PPD: "/usr/share/omni-printing/brother-hll2370dw.ppd",
+      },
+    });
+    expect(binaryProcessCalls[1]?.args).toEqual(
+      expect.arrayContaining(["PageSize=A4 Duplex=DuplexNoTumble print-scaling=fit"]),
     );
     expect(print).toHaveBeenCalledWith(
       expect.any(Buffer),
@@ -139,11 +155,40 @@ describe("IppPrinterService", () => {
         media: "iso_a4_210x297mm",
         sides: "two-sided-long-edge",
         colorMode: "monochrome",
-        documentFormat: "image/pwg-raster",
+        documentFormat: "application/octet-stream",
         jobName: "Board packet",
       }),
     );
+    expect(print.mock.calls[0]?.[0]).toEqual(Buffer.from("brlaser-fixture"));
+    expect(jobStatus).toHaveBeenCalledWith("ipp://10.10.1.47/jobs/42");
     expect(await readdir(tempRoot)).toEqual([]);
+  });
+
+  it.each([
+    ["one-sided", "Duplex=None"],
+    ["two-sided-short-edge", "Duplex=DuplexTumble"],
+  ] as const)("passes %s through both CUPS filters", async (sides, duplexOption) => {
+    const service = new IppPrinterService({ dependencies });
+
+    await service.printPdf({ url: "https://example.com/file.pdf", sides });
+
+    expect(binaryProcessCalls[0]?.args).toEqual(expect.arrayContaining([duplexOption]));
+    expect(binaryProcessCalls[1]?.args).toEqual(
+      expect.arrayContaining([`PageSize=Letter ${duplexOption} print-scaling=fit`]),
+    );
+  });
+
+  it("reports a printer-aborted job as a failure", async () => {
+    jobStatus.mockResolvedValue({
+      state: "aborted",
+      stateReasons: ["document-format-error"],
+      impressionsCompleted: 0,
+    });
+    const service = new IppPrinterService({ dependencies });
+
+    await expect(
+      service.printPdf({ url: "https://example.com/file.pdf" }),
+    ).rejects.toThrow("Printer aborted the job: document-format-error");
   });
 
   it.each([
@@ -190,19 +235,9 @@ describe("IppPrinterService", () => {
     expect(await readdir(tempRoot)).toEqual([]);
   });
 
-  it("rejects an oversized raster before submission", async () => {
-    dependencies.execFile = async (executable, args) => {
-      if (executable === "pdfinfo") {
-        return { stdout: "Pages: 1\nEncrypted: no\n", stderr: "" };
-      }
-      const outputPath = args
-        .find((arg) => arg.startsWith("-sOutputFile="))
-        ?.slice("-sOutputFile=".length);
-      if (!outputPath) throw new Error("Missing Ghostscript output path");
-      await writeFile(outputPath, "x");
-      await truncate(outputPath, 256 * 1024 * 1024 + 1);
-      return { stdout: "", stderr: "" };
-    };
+  it("rejects oversized converted print data before submission", async () => {
+    dependencies.maxPrintDataBytes = 10;
+    dependencies.execFileBuffer = vi.fn().mockResolvedValue(Buffer.alloc(11));
     const service = new IppPrinterService({ dependencies });
 
     await expect(

@@ -72,6 +72,7 @@ export function createPrinterTools(runtime: McpRuntime): McpToolDefinition[] {
         .strict(),
       outputSchema: z.object({
         accepted: z.literal(true),
+        completed: z.boolean(),
         jobId: z.number().int().nullable(),
         jobUri: z.string(),
         jobState: z.string(),
@@ -80,6 +81,7 @@ export function createPrinterTools(runtime: McpRuntime): McpToolDefinition[] {
         copies: z.number().int().min(1).max(3),
         paper: paperSchema,
         sides: sidesSchema,
+        impressionsCompleted: z.number().int().nonnegative().nullable(),
         message: z.string(),
       }),
       annotations: annotations(false, false, false, true),

@@ -283,20 +283,22 @@ describe("Omni MCP streamable HTTP server", () => {
       tonerPercent: 20,
       monochromeOnly: true as const,
       defaultSides: "two-sided-long-edge" as const,
-      supportedFormats: ["image/pwg-raster"],
+      supportedFormats: ["application/octet-stream"],
       supportedMedia: ["na_letter_8.5x11in"],
     }));
     const printPdf = vi.fn(async () => ({
       accepted: true as const,
+      completed: true,
       jobId: 42,
       jobUri: "ipp://printer.test/jobs/42",
-      jobState: "pending" as const,
+      jobState: "completed" as const,
       jobName: "Test document",
       pages: 2,
       copies: 1,
       paper: "letter" as const,
       sides: "two-sided-long-edge" as const,
-      message: "The printer accepted the job; physical completion is not confirmed",
+      impressionsCompleted: 2,
+      message: "The printer completed the job successfully",
     }));
     const handler = createOmniMcpHandler(
       runtime({ printer: { status, printPdf } as PrinterService }),
