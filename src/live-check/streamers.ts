@@ -2,8 +2,8 @@ import type { ChannelsConfig } from "./channelsConfig.js";
 import { Platform } from "./platforms/index.js";
 
 // Tiebreak order when multiple bindings go live in the same tick.
-// Earlier = higher priority. Once a primary is elected, it sticks until it goes
-// offline; this list only matters for fresh go-live ticks or re-election.
+// Earlier = higher priority. Primaries are normally sticky, but transitions.ts
+// always promotes YouTube over a live Kick primary.
 export const PLATFORM_PRIORITY: readonly Platform[] = [
   Platform.YouTube,
   Platform.Twitch,

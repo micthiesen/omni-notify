@@ -173,9 +173,9 @@ describe("decideTransition", () => {
     }
   });
 
-  it("keeps previous primary when it is still live (stickiness)", () => {
-    // Previously primary was Kick. Now YouTube is also live; Kick still live.
-    // Primary must stay Kick even though YouTube has higher priority.
+  it("promotes YouTube over a live Kick primary", () => {
+    // This is the combined DGG case: Kick was observed first, then the
+    // configured YouTube source becomes live while Kick remains live.
     const results: BindingFetchResult[] = [
       { binding: YT, status: live("yt", 10) },
       { binding: KI, status: live("kick-new-title", 100, "Elden Ring") },
@@ -183,13 +183,27 @@ describe("decideTransition", () => {
     const d = decideTransition("s", liveStatus(KI, "kick-old"), results, now);
     expect(d.kind).toBe("still-live");
     if (d.kind === "still-live") {
-      expect(d.next.primary).toEqual(KI);
+      expect(d.next.primary).toEqual(YT);
+      expect(d.primarySwitched).toBe(true);
+      expect(d.titleChanged).toBe(false);
+      expect(d.next.primaryTitle).toBe("yt");
+      expect(d.next.viewerCount).toBe(110);
+      expect(d.next.category).toBeUndefined();
+    }
+  });
+
+  it("keeps a non-Kick primary sticky while it remains live", () => {
+    const results: BindingFetchResult[] = [
+      { binding: YT, status: live("yt", 10) },
+      { binding: TW, status: live("twitch-new-title", 100, "Elden Ring") },
+    ];
+    const d = decideTransition("s", liveStatus(TW, "twitch-old"), results, now);
+    expect(d.kind).toBe("still-live");
+    if (d.kind === "still-live") {
+      expect(d.next.primary).toEqual(TW);
       expect(d.primarySwitched).toBe(false);
       expect(d.titleChanged).toBe(true);
-      expect(d.next.primaryTitle).toBe("kick-new-title");
-      // Current viewer count is the summed count for this tick, and category
-      // tracks the (new, sticky) primary's live status.
-      expect(d.next.viewerCount).toBe(110);
+      expect(d.next.primaryTitle).toBe("twitch-new-title");
       expect(d.next.category).toBe("Elden Ring");
     }
   });

@@ -3,7 +3,7 @@ import type {
   StreamerStatusLive,
   StreamerStatusOffline,
 } from "./persistence.js";
-import { type FetchedStatus, LiveStatus } from "./platforms/index.js";
+import { type FetchedStatus, LiveStatus, Platform } from "./platforms/index.js";
 import { comparePlatformPriority, type PlatformBinding } from "./streamers.js";
 
 export type BindingFetchResult = {
@@ -98,21 +98,27 @@ export function decideTransition(
     return sorted[0].binding;
   };
 
+  const priorityPrimary = pickByPriority();
   let primary: PlatformBinding;
   let primarySwitched = false;
   if (!previous.isLive) {
-    primary = pickByPriority();
+    primary = priorityPrimary;
   } else {
-    // Sticky primary unless the previous primary fell offline.
+    // Keep the primary sticky to avoid cross-platform title churn, except that
+    // YouTube always supersedes Kick once both are live. This also covers a
+    // configured YouTube channel combined with its DGG-linked Kick source.
     const previousPrimaryStillLive = lives.some(
       (l) =>
         l.binding.platform === previous.primary.platform &&
         l.binding.username === previous.primary.username,
     );
-    if (previousPrimaryStillLive) {
+    const youtubeSupersedesKick =
+      previous.primary.platform === Platform.Kick &&
+      priorityPrimary.platform === Platform.YouTube;
+    if (previousPrimaryStillLive && !youtubeSupersedesKick) {
       primary = previous.primary;
     } else {
-      primary = pickByPriority();
+      primary = priorityPrimary;
       primarySwitched = true;
     }
   }
