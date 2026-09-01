@@ -126,6 +126,7 @@ export default function BriefingsPage() {
                     {formatAbsoluteWithYear(entry.timestamp)}
                   </span>
                 </div>
+                <p className="briefing-message">{entry.message}</p>
                 <div className="briefing-card-meta">
                   <span className="briefing-badge">
                     {toTitleCase(entry.briefingName)}
@@ -153,7 +154,6 @@ export default function BriefingsPage() {
                     </button>
                   )}
                 </div>
-                <p className="briefing-message">{entry.message}</p>
               </article>
             ))}
             {feed.length === 0 && (

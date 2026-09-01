@@ -357,26 +357,8 @@ export default function PodsDetailPage({ id }: { id: string }) {
           <span className="detail-back-arrow" aria-hidden="true">
             ←
           </span>
-          All episodes
+          All Episodes
         </Link>
-        <div className="pods-detail-actions">
-          <button
-            type="button"
-            className="pods-card-logs"
-            onClick={onRetry}
-            disabled={retrying}
-          >
-            {retrying ? "Retrying…" : "Retry"}
-          </button>
-          <button
-            type="button"
-            className="pods-card-logs pods-card-delete"
-            onClick={onDelete}
-            disabled={deleting}
-          >
-            {deleting ? "Deleting…" : "Delete"}
-          </button>
-        </div>
       </div>
 
       <div className="detail-head">
@@ -390,18 +372,21 @@ export default function PodsDetailPage({ id }: { id: string }) {
         <div className="detail-head-body">
           <h1 className="detail-title">{episode.title}</h1>
           {(episode.author || episode.publication) && (
-            <div className="pods-detail-byline">
-              {episode.author}
-              {episode.author && episode.authorGender && ` (${episode.authorGender})`}
-              {episode.author && episode.publication && " · "}
-              {episode.publication}
+            <div className="meta-row pods-detail-byline">
+              {episode.author && (
+                <span>
+                  {episode.author}
+                  {episode.authorGender && ` (${episode.authorGender})`}
+                </span>
+              )}
+              {episode.publication && <span>{episode.publication}</span>}
             </div>
           )}
           <div className="detail-badges">
             {episode.voiceName && (
-              <span className="pods-detail-voice-badge">
-                {episode.voiceName}
-                {episode.voiceProvider && ` · ${episode.voiceProvider}`}
+              <span className="meta-row pods-detail-voice-badge">
+                <span>{episode.voiceName}</span>
+                {episode.voiceProvider && <span>{episode.voiceProvider}</span>}
               </span>
             )}
             {formatAudioDuration(episode.durationSeconds) && (
@@ -414,83 +399,105 @@ export default function PodsDetailPage({ id }: { id: string }) {
                 {formatCents(episode.costCents)}
               </span>
             )}
+            {problemChunkCount > 0 && (
+              <span className="pods-chunk-warn-count pods-detail-quality-warning">
+                {problemChunkCount} audio chunk{problemChunkCount === 1 ? "" : "s"} flagged
+              </span>
+            )}
           </div>
-          <div className="rec-links">
-            <a href={episode.articleUrl} target="_blank" rel="noreferrer">
-              {episode.domain ?? "Article"} ↗
+          {/* biome-ignore lint/a11y/useMediaCaption: TTS audio has no captions */}
+          <audio
+            className="pods-detail-audio"
+            controls
+            preload="metadata"
+            src={episode.audioUrl}
+          />
+          <nav className="detail-service-links" aria-label="Episode links">
+            <a
+              href={episode.articleUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="detail-service-link detail-service-link-article"
+            >
+              <span className="detail-service-link-label">Read Article</span>
+              <span className="detail-service-link-hint">
+                Open on {episode.domain ?? "original site"}
+              </span>
             </a>
-            <a href={episode.audioUrl} target="_blank" rel="noreferrer">
-              Audio File ↗
+            <a
+              href={episode.audioUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="detail-metadata-link pods-detail-audio-download"
+              download
+            >
+              Download Audio
             </a>
-          </div>
+          </nav>
         </div>
       </div>
 
       <div className="detail-sections">
         <div className="pods-overview">
-        <section className="page-section">
-          <h2 className="section-title">Details</h2>
-          <dl className="detail-grid">
-            <DetailField label="Created">
-              {formatAbsoluteWithYear(episode.createdAt)}
-            </DetailField>
-            {episode.publishedAt !== null && (
-              <DetailField label="Published">
-                {formatAbsoluteWithYear(episode.publishedAt)}
-              </DetailField>
-            )}
-            <DetailField label="File Size">{formatBytes(episode.fileBytes)}</DetailField>
-            {episode.synthesizedSeconds !== null && (
-              <DetailField label="Synthesized Audio">
-                {formatAudioDuration(episode.synthesizedSeconds)}
-              </DetailField>
-            )}
-            {episode.retrieverSeconds !== null && (
-              <DetailField label="Retrieval Time">
-                {episode.retrieverSeconds.toFixed(1)}s
-              </DetailField>
-            )}
-          </dl>
-        </section>
+          {episode.chapters && episode.chapters.length > 0 && (
+            <section className="page-section">
+              <h2 className="section-title">Chapters</h2>
+              <ul className="pods-chapter-list">
+                {episode.chapters.map((chapter) => (
+                  <li
+                    key={`${chapter.startTimeSeconds}-${chapter.title}`}
+                    className="pods-chapter-row"
+                  >
+                    <span className="pods-chapter-time">
+                      {formatAudioDuration(chapter.startTimeSeconds)}
+                    </span>
+                    <span className="pods-chapter-title">{chapter.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
-        <section className="page-section">
-          <h2 className="section-title">Cost Breakdown</h2>
-          <CostTable episode={episode} />
-        </section>
-
-        {episode.retrieverAttempts && episode.retrieverAttempts.length > 0 && (
           <section className="page-section">
-            <h2 className="section-title">Retriever Attempts</h2>
-            <div className="pods-retriever-list">
-              {episode.retrieverAttempts.map((attempt) => (
-                <RetrieverRow
-                  key={attempt.name}
-                  attempt={attempt}
-                  isWinner={attempt.name === episode.retrieverName}
-                />
-              ))}
+            <h2 className="section-title">Transcript</h2>
+            <div
+              className={`pods-transcript ${transcriptExpanded ? "pods-transcript-expanded" : ""}`}
+            >
+              <TranscriptBody content={episode.content} />
             </div>
+            <button
+              type="button"
+              className="pods-transcript-toggle"
+              onClick={() => setTranscriptExpanded((v) => !v)}
+            >
+              {transcriptExpanded ? "Collapse Transcript" : "Show Full Transcript"}
+            </button>
           </section>
-        )}
 
-        {episode.chapters && episode.chapters.length > 0 && (
           <section className="page-section">
-            <h2 className="section-title">Chapters</h2>
-            <ul className="pods-chapter-list">
-              {episode.chapters.map((chapter) => (
-                <li
-                  key={`${chapter.startTimeSeconds}-${chapter.title}`}
-                  className="pods-chapter-row"
-                >
-                  <span className="pods-chapter-time">
-                    {formatAudioDuration(chapter.startTimeSeconds)}
-                  </span>
-                  <span className="pods-chapter-title">{chapter.title}</span>
-                </li>
-              ))}
-            </ul>
+            <h2 className="section-title">Details</h2>
+            <dl className="detail-grid">
+              <DetailField label="Created">
+                {formatAbsoluteWithYear(episode.createdAt)}
+              </DetailField>
+              {episode.publishedAt !== null && (
+                <DetailField label="Published">
+                  {formatAbsoluteWithYear(episode.publishedAt)}
+                </DetailField>
+              )}
+              <DetailField label="File Size">{formatBytes(episode.fileBytes)}</DetailField>
+              {episode.synthesizedSeconds !== null && (
+                <DetailField label="Synthesized Audio">
+                  {formatAudioDuration(episode.synthesizedSeconds)}
+                </DetailField>
+              )}
+              {episode.retrieverSeconds !== null && (
+                <DetailField label="Retrieval Time">
+                  {episode.retrieverSeconds.toFixed(1)}s
+                </DetailField>
+              )}
+            </dl>
           </section>
-        )}
         </div>
 
         <section className="page-section">
@@ -518,20 +525,46 @@ export default function PodsDetailPage({ id }: { id: string }) {
           )}
         </section>
 
+        {episode.retrieverAttempts && episode.retrieverAttempts.length > 0 && (
+          <section className="page-section">
+            <h2 className="section-title">Retriever Attempts</h2>
+            <div className="pods-retriever-list">
+              {episode.retrieverAttempts.map((attempt) => (
+                <RetrieverRow
+                  key={attempt.name}
+                  attempt={attempt}
+                  isWinner={attempt.name === episode.retrieverName}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="page-section">
-          <h2 className="section-title">Transcript</h2>
-          <div
-            className={`pods-transcript ${transcriptExpanded ? "pods-transcript-expanded" : ""}`}
-          >
-            <TranscriptBody content={episode.content} />
+          <h2 className="section-title">Cost Breakdown</h2>
+          <CostTable episode={episode} />
+        </section>
+
+        <section className="page-section pods-detail-admin">
+          <h2 className="section-title">Episode Administration</h2>
+          <div className="pods-detail-actions">
+            <button
+              type="button"
+              className="pods-card-logs"
+              onClick={onRetry}
+              disabled={retrying}
+            >
+              {retrying ? "Retrying…" : "Retry"}
+            </button>
+            <button
+              type="button"
+              className="pods-card-logs pods-card-delete"
+              onClick={onDelete}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
           </div>
-          <button
-            type="button"
-            className="pods-transcript-toggle"
-            onClick={() => setTranscriptExpanded((v) => !v)}
-          >
-            {transcriptExpanded ? "Collapse Transcript" : "Show Full Transcript"}
-          </button>
         </section>
       </div>
       <Toast toast={toast} />

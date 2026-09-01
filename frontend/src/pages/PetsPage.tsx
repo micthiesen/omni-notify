@@ -602,25 +602,25 @@ export default function PetsPage() {
     };
   }, []);
 
-  if (loading) {
-    return <div className="loading">Loading...</div>;
-  }
-
-  if (error) {
-    return (
-      <div className="error">
-        <div>Failed to load pet data</div>
-        <div className="error-detail">{error}</div>
-      </div>
-    );
-  }
-
   return (
     <>
-      <h1>Pet Weight Tracker</h1>
-      {pets.map((pet, i) => (
-        <PetCard key={pet.petId} pet={pet} colorIndex={i} />
-      ))}
+      <div className="page-header">
+        <div className="page-header-stack">
+          <h1>Pet Weight Tracker</h1>
+          <p className="page-subtitle">Weight trends and daily visit activity.</p>
+        </div>
+      </div>
+      {loading && <div className="loading">Loading...</div>}
+      {error && (
+        <div className="error">
+          <div>Failed to load pet data</div>
+          <div className="error-detail">{error}</div>
+        </div>
+      )}
+      {!loading && !error &&
+        pets.map((pet, i) => (
+          <PetCard key={pet.petId} pet={pet} colorIndex={i} />
+        ))}
     </>
   );
 }

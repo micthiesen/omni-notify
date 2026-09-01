@@ -171,18 +171,32 @@ export default function PodcastDetailPage({ id }: { id: string }) {
             </ul>
           )}
           {(rec.episodeUrl || rec.sourceUrl) && (
-            <div className="rec-links">
+            <nav className="detail-service-links" aria-label="Episode links">
               {rec.episodeUrl && (
-                <a href={rec.episodeUrl} target="_blank" rel="noreferrer">
-                  Episode Page
+                <a
+                  href={rec.episodeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="detail-service-link"
+                  aria-label={`Open ${rec.episodeTitle}`}
+                >
+                  <span className="detail-service-link-label">Open Episode</span>
+                  <span className="detail-service-link-hint">
+                    Listen on the episode site
+                  </span>
                 </a>
               )}
               {rec.sourceUrl && (
-                <a href={rec.sourceUrl} target="_blank" rel="noreferrer">
+                <a
+                  href={rec.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="detail-metadata-link"
+                >
                   Discussion
                 </a>
               )}
-            </div>
+            </nav>
           )}
           {canRate && (
             <div className="rec-feedback" aria-label="Recommendation feedback">

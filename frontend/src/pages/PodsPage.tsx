@@ -299,6 +299,32 @@ export default function PodsPage() {
                       {episode.title}
                     </Link>
                   </h2>
+                  {(episode.author || episode.publication) && (
+                    <div className="meta-row pods-card-byline">
+                      {episode.author && <span>{episode.author}</span>}
+                      {episode.publication && <span>{episode.publication}</span>}
+                    </div>
+                  )}
+                  {episode.excerpt && (
+                    <p className="pods-card-excerpt">{episode.excerpt}</p>
+                  )}
+                  {/* biome-ignore lint/a11y/useMediaCaption: TTS audio has no captions */}
+                  <audio
+                    className="pods-card-audio"
+                    controls
+                    preload="none"
+                    src={episode.audioUrl}
+                  />
+                  <div className="pods-card-links pods-card-article-link">
+                    <a
+                      href={episode.articleUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="pods-card-source"
+                    >
+                      {episode.domain ?? "Article"} ↗
+                    </a>
+                  </div>
                   <div className="meta-row pods-card-meta">
                     <span>{formatAbsolute(episode.createdAt)}</span>
                     {formatAudioDuration(episode.durationSeconds) && (
@@ -314,15 +340,7 @@ export default function PodsPage() {
                       </span>
                     )}
                   </div>
-                  <div className="pods-card-links">
-                    <a
-                      href={episode.articleUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="pods-card-source"
-                    >
-                      {episode.domain ?? "Article"} ↗
-                    </a>
+                  <div className="pods-card-links pods-card-admin-actions">
                     {episode.runId && (
                       <button
                         type="button"
@@ -347,18 +365,8 @@ export default function PodsPage() {
                       Delete
                     </button>
                   </div>
-                  {episode.excerpt && (
-                    <p className="pods-card-excerpt">{episode.excerpt}</p>
-                  )}
                 </div>
               </div>
-              {/* biome-ignore lint/a11y/useMediaCaption: TTS audio has no captions */}
-              <audio
-                className="pods-card-audio"
-                controls
-                preload="none"
-                src={episode.audioUrl}
-              />
             </article>
           ))}
           {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}

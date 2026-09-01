@@ -99,6 +99,28 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
                 {workspace.scheduledRuns === false && <span>On Demand</span>}
               </div>
             </div>
+            <div className="workspace-subject-list">
+              {workspace.subjects.map((subject) => (
+                <Link
+                  key={subject.subjectId}
+                  to={`/workspaces/${encodeURIComponent(workspace.id)}/${encodeURIComponent(subject.subjectId)}`}
+                  className="workspace-subject-row"
+                >
+                  <span>
+                    <strong>{subject.title}</strong>
+                    <small>{subject.summary || "Work just started."}</small>
+                  </span>
+                  <span className={`workspace-status status-${subject.status}`}>
+                    {subject.status}
+                  </span>
+                </Link>
+              ))}
+              {workspace.subjects.length === 0 && (
+                <div className="muted">
+                  Message the workspace to start the first {workspace.subjectLabel.toLowerCase()}.
+                </div>
+              )}
+            </div>
             <form
               className="workspace-compose"
               onSubmit={(event) => {
@@ -129,28 +151,6 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
                 {busyWorkspaceId === workspace.id ? "Starting…" : "Send"}
               </button>
             </form>
-            <div className="workspace-subject-list">
-              {workspace.subjects.map((subject) => (
-                <Link
-                  key={subject.subjectId}
-                  to={`/workspaces/${encodeURIComponent(workspace.id)}/${encodeURIComponent(subject.subjectId)}`}
-                  className="workspace-subject-row"
-                >
-                  <span>
-                    <strong>{subject.title}</strong>
-                    <small>{subject.summary || "Work just started."}</small>
-                  </span>
-                  <span className={`workspace-status status-${subject.status}`}>
-                    {subject.status}
-                  </span>
-                </Link>
-              ))}
-              {workspace.subjects.length === 0 && (
-                <div className="muted">
-                  Message the workspace to start the first {workspace.subjectLabel.toLowerCase()}.
-                </div>
-              )}
-            </div>
             {!workspaceId && (
               <Link to={`/workspaces/${workspace.id}`} className="workspace-open-link">
                 Open Workspace ›
@@ -264,6 +264,31 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
         </select>
       </div>
       {error && <div className="error">{error}</div>}
+
+      {detail.actions.length > 0 && (
+        <section className="workspace-section" id="actions">
+          <h2>Actions</h2>
+          <div className="workspace-action-list">
+            {detail.actions.map((action) => (
+              <article className="workspace-action-card" id={`action-${action.actionId}`} key={action.actionId}>
+                <div className="workspace-action-heading">
+                  <div><strong>{action.title}</strong><p>{action.description}</p></div>
+                  <span className={`workspace-status status-${action.status}`}>{action.status}</span>
+                </div>
+                <pre>{formatActionPayload(action.payload)}</pre>
+                {action.result && <p className="workspace-action-result">{action.result}</p>}
+                {(action.status === "pending" || action.status === "failed") && (
+                  <div className="workspace-action-buttons">
+                    <button type="button" onClick={() => void resolveAction(action.actionId, "approve")} disabled={busy}>{action.status === "failed" ? "Retry" : "Approve"}</button>
+                    {action.status === "pending" && <button type="button" className="danger-button" onClick={() => void resolveAction(action.actionId, "reject")} disabled={busy}>Reject</button>}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
       <form
         className="workspace-compose workspace-compose-detail"
         onSubmit={(event) => { event.preventDefault(); void send(); }}
@@ -279,29 +304,6 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
         />
         <button type="submit" disabled={busy || !message.trim()}>{busy ? "Working…" : "Send"}</button>
       </form>
-
-      <section className="workspace-section" id="actions">
-        <h2>Actions</h2>
-        {detail.actions.length === 0 && <p className="muted">No proposed actions.</p>}
-        <div className="workspace-action-list">
-          {detail.actions.map((action) => (
-            <article className="workspace-action-card" id={`action-${action.actionId}`} key={action.actionId}>
-              <div className="workspace-action-heading">
-                <div><strong>{action.title}</strong><p>{action.description}</p></div>
-                <span className={`workspace-status status-${action.status}`}>{action.status}</span>
-              </div>
-              <pre>{formatActionPayload(action.payload)}</pre>
-              {action.result && <p className="workspace-action-result">{action.result}</p>}
-              {(action.status === "pending" || action.status === "failed") && (
-                <div className="workspace-action-buttons">
-                  <button type="button" onClick={() => void resolveAction(action.actionId, "approve")} disabled={busy}>{action.status === "failed" ? "Retry" : "Approve"}</button>
-                  {action.status === "pending" && <button type="button" className="danger-button" onClick={() => void resolveAction(action.actionId, "reject")} disabled={busy}>Reject</button>}
-                </div>
-              )}
-            </article>
-          ))}
-        </div>
-      </section>
 
       <section className="workspace-section" id="artifacts">
         <h2>Artifacts</h2>

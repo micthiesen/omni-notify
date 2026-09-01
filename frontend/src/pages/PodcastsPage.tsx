@@ -94,6 +94,14 @@ function PodcastCard({
           <span className={`status-chip status-chip-${rec.status}`}>
             {STATUS_LABELS[rec.status]}
           </span>
+          {(rec.queueResult === "queued" || rec.queueResult === "already_queued") && (
+            <span
+              className="podrec-queued"
+              title="This episode is waiting in your Castro queue"
+            >
+              🎧 In Castro Queue
+            </span>
+          )}
         </div>
         <div className="podrec-show">{rec.showTitle}</div>
         {rec.matchedVoices && rec.matchedVoices.length > 0 && (
@@ -119,20 +127,12 @@ function PodcastCard({
           <span className="muted" title={formatAbsolute(rec.recommendedAt)}>
             Recommended {formatRelative(rec.recommendedAt)}
           </span>
-          {(rec.queueResult === "queued" || rec.queueResult === "already_queued") && (
-            <span
-              className="podrec-queued"
-              title="This episode is waiting in your Castro queue"
-            >
-              🎧 In Castro queue
-            </span>
-          )}
         </div>
         {(rec.episodeUrl || rec.sourceUrl) && (
           <div className="rec-links">
             {rec.episodeUrl && (
               <a href={rec.episodeUrl} target="_blank" rel="noreferrer">
-                Episode page
+                Episode Page
               </a>
             )}
             {rec.sourceUrl && (
@@ -194,6 +194,7 @@ function PodcastTasteBrain({
       subtitle="Castro listening and feedback are reflected into a versioned taste profile."
       emptyText="No profile yet. The reflection task will build one from Castro listen history and recommendation feedback."
       stats={stats}
+      collapsible
     />
   );
 }
@@ -208,8 +209,16 @@ export default function PodcastsPage() {
   const [tasteProfile, setTasteProfile] = useState<PodcastTasteProfile | null>(null);
   const [tasteLoading, setTasteLoading] = useState(true);
   const [tasteError, setTasteError] = useState<string | null>(null);
+  const [maxRecommendations, setMaxRecommendations] = useState(1);
   const { toast, showToast } = useToast();
-  const { snapshot } = useLiveData();
+  const { snapshot, runTask } = useLiveData();
+
+  const recTask = useMemo(
+    () => snapshot?.tasks.find((task) => task.name === TASK_NAME) ?? null,
+    [snapshot],
+  );
+  const running = recTask?.running ?? false;
+  const taskAvailable = snapshot === null || recTask !== null;
 
   const latestTasteRunId =
     snapshot?.runs.find((run) => run.taskName === TASTE_TASK_NAME)?.runId ?? null;
@@ -241,6 +250,7 @@ export default function PodcastsPage() {
   }, [latestTasteRunId]);
 
   useEffect(() => {
+    if (running) return;
     let cancelled = false;
     fetchPodcastRecommendations()
       .then((data) => {
@@ -257,7 +267,12 @@ export default function PodcastsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [running]);
+
+  const handleRun = async () => {
+    const result = await runTask(TASK_NAME, { maxRecommendations });
+    showToast(result.message, result.ok ? "info" : "error");
+  };
 
   const handleFeedback = async (
     recommendationId: string,
@@ -310,6 +325,44 @@ export default function PodcastsPage() {
     <>
       <div className="page-header">
         <h1>Podcasts</h1>
+        <div className="rec-run-controls">
+          <label className="rec-run-limit">
+            <span>Up To</span>
+            <select
+              aria-label="Maximum podcast recommendations"
+              value={maxRecommendations}
+              disabled={running || !taskAvailable}
+              onChange={(event) => setMaxRecommendations(Number(event.target.value))}
+            >
+              {Array.from({ length: 5 }, (_, index) => index + 1).map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="run-btn"
+            disabled={running || !taskAvailable}
+            title={
+              taskAvailable
+                ? undefined
+                : "Task disabled: missing podcast recommendation configuration"
+            }
+            onClick={handleRun}
+          >
+            {running ? (
+              <>
+                <span className="running-pulse" /> Running…
+              </>
+            ) : taskAvailable ? (
+              "Run Now"
+            ) : (
+              "Task Disabled"
+            )}
+          </button>
+        </div>
       </div>
       <Toast toast={toast} />
 
@@ -317,11 +370,6 @@ export default function PodcastsPage() {
         profile={tasteProfile}
         loading={tasteLoading}
         error={tasteError}
-      />
-
-      <RecommendationRuns
-        taskName={TASK_NAME}
-        latestRunId={latestRecommendationRunId}
       />
 
       {recs !== null && recs.length > 0 && (
@@ -368,6 +416,11 @@ export default function PodcastsPage() {
           {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
         </>
       )}
+
+      <RecommendationRuns
+        taskName={TASK_NAME}
+        latestRunId={latestRecommendationRunId}
+      />
     </>
   );
 }

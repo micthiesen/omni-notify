@@ -959,7 +959,11 @@ export function runTaskRequest(
   options?: ManualRunOptions,
 ): Promise<{ runId: string }> {
   if (options?.maxRecommendations !== undefined) {
-    return apiPost<{ runId: string }>("/api/recommendations/run", {
+    const path =
+      name === "PodcastRecs"
+        ? "/api/podcast-recommendations/run"
+        : "/api/recommendations/run";
+    return apiPost<{ runId: string }>(path, {
       maxRecommendations: options.maxRecommendations,
     });
   }

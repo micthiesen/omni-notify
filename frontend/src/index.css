@@ -2399,6 +2399,10 @@ button.task-last-run,
   margin-bottom: 1.5rem;
 }
 
+.rec-activity-section {
+  margin-top: 2.25rem;
+}
+
 .taste-heading {
   display: flex;
   align-items: flex-start;
@@ -4012,9 +4016,8 @@ button.history-row:last-child {
   flex-direction: column;
 }
 
-/* Compact metadata sections (Details, Cost, Retriever, Chapters) share one
-   responsive band; large sections (Audio Chunks, Transcript) sit full width
-   below so a long list never traps its siblings in a narrow column. */
+/* The listener-facing overview stays compact and responsive; processing
+   diagnostics remain full width below it. */
 .pods-overview {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -4282,6 +4285,7 @@ button.history-row:last-child {
 /* Collapsible user-editable sender rules */
 
 .mail-rules {
+  margin-top: 1.5rem;
   margin-bottom: 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -5042,6 +5046,7 @@ button.history-row:last-child {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
 .pods-card-body {
@@ -5077,6 +5082,12 @@ button.history-row:last-child {
   line-height: 1.35;
 }
 
+.pods-card-byline {
+  margin-top: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
 .pods-card-meta {
   margin-top: 0.3rem;
   color: var(--text-muted);
@@ -5088,6 +5099,14 @@ button.history-row:last-child {
   align-items: center;
   gap: 0.6rem;
   margin-top: 0.3rem;
+}
+
+.pods-card-article-link {
+  margin-top: 0.45rem;
+}
+
+.pods-card-admin-actions {
+  margin-top: 0.2rem;
 }
 
 .pods-card-source {
@@ -5152,7 +5171,6 @@ button.history-row:last-child {
   display: flex;
   align-items: center;
   gap: 0.9rem;
-  margin-bottom: 1rem;
 }
 
 .pods-detail-byline {
@@ -5176,6 +5194,25 @@ button.history-row:last-child {
   color: var(--accent);
   border-color: var(--accent-border);
   background: var(--accent-soft);
+}
+
+.pods-detail-audio {
+  display: block;
+  width: min(100%, 42rem);
+  height: 2.4rem;
+  margin-top: 0.15rem;
+}
+
+.detail-service-link-article {
+  border-color: var(--accent-border);
+}
+
+.pods-detail-admin {
+  color: var(--text-muted);
+}
+
+.pods-detail-admin .section-title {
+  color: var(--text-muted);
 }
 
 /* Retriever attempts: every extractor that ran, rated 0-10, best wins. */

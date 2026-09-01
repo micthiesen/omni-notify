@@ -257,20 +257,6 @@ export default function LivestreamIntelligencePage({
         </article>
       </section>
 
-      <section className="page-section">
-        <h2 className="section-title">Current Pipeline</h2>
-        <div className="intelligence-stage-grid">
-          {STAGES.map((stage) => (
-            <PipelineStageCard
-              key={stage.key}
-              label={stage.label}
-              stage={diagnostics?.stages[stage.key]}
-              now={now}
-            />
-          ))}
-        </div>
-      </section>
-
       {intelligence && (
         <section className="page-section intelligence-current-evidence">
           <h2 className="section-title">Current Evidence</h2>
@@ -330,6 +316,20 @@ export default function LivestreamIntelligencePage({
           </div>
         </section>
       )}
+
+      <section className="page-section">
+        <h2 className="section-title">Current Pipeline</h2>
+        <div className="intelligence-stage-grid">
+          {STAGES.map((stage) => (
+            <PipelineStageCard
+              key={stage.key}
+              label={stage.label}
+              stage={diagnostics?.stages[stage.key]}
+              now={now}
+            />
+          ))}
+        </div>
+      </section>
 
       <section className="page-section">
         <div className="intelligence-timeline-header">

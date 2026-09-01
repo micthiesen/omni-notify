@@ -428,8 +428,6 @@ export default function EmailActivityPage() {
         />
       )}
 
-      <SenderRulesSection />
-
       {activities === null && error === null && (
         <div className="loading">Loading…</div>
       )}
@@ -517,6 +515,7 @@ export default function EmailActivityPage() {
         </ul>
       )}
       {hasMore && <ShowMoreButton remaining={remaining} onClick={showMore} />}
+      <SenderRulesSection />
       {logsFor && (
         <EmailLogModal
           key={logsFor.activityId}
