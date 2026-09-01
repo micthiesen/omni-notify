@@ -1,5 +1,5 @@
 import { Logger } from "@micthiesen/mitools/logging";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { Cause, Deferred, Effect, Exit, Fiber } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CalendarExtractionError } from "./effect.js";
 
@@ -135,7 +135,7 @@ describe("CalendarEventPipeline reliability", () => {
     });
     const started = await Effect.runPromise(Deferred.make<void>());
     mocks.extract.mockReturnValueOnce(
-      Deferred.succeed(started, undefined).pipe(Effect.zipRight(Effect.never)),
+      Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
     );
     const { CalendarEventPipeline } = await import("./pipeline.js");
     const pipeline = new CalendarEventPipeline(
@@ -146,7 +146,7 @@ describe("CalendarEventPipeline reliability", () => {
 
     const exit = await Effect.runPromise(
       Effect.gen(function* () {
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           pipeline.handleEmailsEffect([
             {
               id: "mail-interrupted",
@@ -160,11 +160,12 @@ describe("CalendarEventPipeline reliability", () => {
           ]),
         );
         yield* Deferred.await(started);
-        return yield* Fiber.interrupt(fiber);
+        yield* Fiber.interrupt(fiber);
+        return yield* Fiber.await(fiber);
       }),
     );
 
-    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
     expect(mocks.record).not.toHaveBeenCalled();
   });
 

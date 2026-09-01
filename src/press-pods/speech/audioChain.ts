@@ -85,8 +85,8 @@ function tmpFile(ext: string): string {
   return path.join(os.tmpdir(), `pp_${randomBytes(8).toString("hex")}.${ext}`);
 }
 
-const DurationOutputSchema = Schema.NumberFromString.pipe(
-  Schema.filter((duration) => Number.isFinite(duration) && duration >= 0),
+const DurationOutputSchema = Schema.NumberFromString.check(
+  Schema.makeFilter((duration) => Number.isFinite(duration) && duration >= 0),
 );
 
 export function probeDurationSeconds(
@@ -100,7 +100,7 @@ export function probeDurationSeconds(
     ),
   ).pipe(
     Effect.flatMap(({ stdout }) =>
-      Schema.decodeUnknown(DurationOutputSchema)(stdout.trim()).pipe(
+      Schema.decodeUnknownEffect(DurationOutputSchema)(stdout.trim()).pipe(
         Effect.mapError(
           (cause) =>
             new InvalidPressPodsDataError({
@@ -154,7 +154,7 @@ function twoPassLoudnorm(
       catch: (cause) =>
         new InvalidPressPodsDataError({ operation: "parse loudnorm JSON", cause }),
     }).pipe(
-      Effect.flatMap(Schema.decodeUnknown(LoudnormSchema)),
+      Effect.flatMap(Schema.decodeUnknownEffect(LoudnormSchema)),
       Effect.mapError((cause) =>
         cause instanceof InvalidPressPodsDataError
           ? cause

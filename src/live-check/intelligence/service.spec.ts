@@ -31,7 +31,7 @@ describe("EffectWorkQueue close", () => {
     await vi.waitFor(() => expect(queue.pending).toBe(1));
     const late = await Effect.runPromiseExit(queue.run(Effect.void));
     expect(Exit.isFailure(late)).toBe(true);
-    expect(Effect.runSync(Fiber.poll(closing))._tag).toBe("None");
+    expect(closing.pollUnsafe()).toBeUndefined();
 
     await Effect.runPromise(Deferred.succeed(release, undefined));
     await Effect.runPromise(Fiber.join(closing));

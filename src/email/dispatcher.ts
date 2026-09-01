@@ -1,5 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { Cause, Data, Effect, Fiber, Queue } from "effect";
+import { Cause, Data, Effect, Fiber, Queue, Semaphore } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
 import { saveLastDispatchedAtEffect } from "./persistence.js";
 import type { EmailHandler, EmailTransport, FetchedEmail } from "./types.js";
@@ -22,9 +22,9 @@ export class EmailHandlerError extends Data.TaggedError("EmailHandlerError")<{
 
 export class EmailDispatcher {
   private readonly handlers: EmailHandler[] = [];
-  private readonly lifecycleSemaphore = Effect.unsafeMakeSemaphore(1);
+  private readonly lifecycleSemaphore = Semaphore.makeUnsafe(1);
   private triggerQueue: Queue.Queue<"trigger" | "stop"> | undefined;
-  private supervisor: Fiber.RuntimeFiber<void, never> | undefined;
+  private supervisor: Fiber.Fiber<void, never> | undefined;
 
   constructor(
     private readonly transport: EmailTransport,
@@ -43,17 +43,17 @@ export class EmailDispatcher {
     // This callback is a synchronous library boundary. `unsafeOffer` does not
     // create an unowned fiber. The capacity-one queue coalesces notification
     // bursts while preserving one final poll after an active pass.
-    this.triggerQueue?.unsafeOffer("trigger");
+    if (this.triggerQueue) Queue.offerUnsafe(this.triggerQueue, "trigger");
   }
 
   /** Start the owned trigger supervisor before push monitoring can emit. */
   public get startEffect(): Effect.Effect<void, unknown> {
     return this.lifecycleSemaphore.withPermits(1)(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         if (this.supervisor) return;
         const queue = yield* Queue.bounded<"trigger" | "stop">(1);
         this.triggerQueue = queue;
-        this.supervisor = yield* Effect.forkDaemon(this.superviseEffect(queue));
+        this.supervisor = yield* Effect.forkDetach(this.superviseEffect(queue));
         yield* this.transport
           .startEffect(() => this.onMailEvent())
           .pipe(
@@ -75,7 +75,7 @@ export class EmailDispatcher {
   }
 
   private get stopSupervisorEffect(): Effect.Effect<void, never> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const queue = this.triggerQueue;
       const supervisor = this.supervisor;
       if (!queue || !supervisor) return;
@@ -90,11 +90,11 @@ export class EmailDispatcher {
   private superviseEffect(
     queue: Queue.Queue<"trigger" | "stop">,
   ): Effect.Effect<void, never> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       while (true) {
         const message = yield* Queue.take(queue);
         if (message === "stop") return;
-        yield* Effect.catchAllCause(this.processPassEffect, (cause) =>
+        yield* Effect.catchCause(this.processPassEffect, (cause) =>
           Effect.sync(() => this.logger.error("Dispatcher error", Cause.pretty(cause))),
         );
       }
@@ -104,7 +104,7 @@ export class EmailDispatcher {
   /** Deterministic direct trigger for tests and manual polling. */
   public get onMailEventEffect(): Effect.Effect<void, never> {
     return this.processPassEffect.pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => this.logger.error("Dispatcher error", error.message)),
       ),
     );
@@ -114,7 +114,7 @@ export class EmailDispatcher {
     void,
     EmailHandlerError | PersistenceError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const poll = yield* this.transport.pollNewEmailsEffect.pipe(
         Effect.mapError(
           (cause) => new EmailHandlerError({ handler: this.transport.name, cause }),
@@ -132,7 +132,7 @@ export class EmailDispatcher {
   }
 
   private dispatchEffect(emails: FetchedEmail[]) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const results = yield* Effect.forEach(
         this.handlers,
         (handler) =>
@@ -140,15 +140,15 @@ export class EmailDispatcher {
             Effect.mapError(
               (cause) => new EmailHandlerError({ handler: handler.name, cause }),
             ),
-            Effect.either,
+            Effect.result,
           ),
         { concurrency: "unbounded" },
       );
-      const failures = results.filter((result) => result._tag === "Left");
+      const failures = results.filter((result) => result._tag === "Failure");
       for (const failure of failures) {
-        this.logger.error(failure.left.message);
+        this.logger.error(failure.failure.message);
       }
-      if (failures[0]) yield* Effect.fail(failures[0].left);
+      if (failures[0]) yield* Effect.fail(failures[0].failure);
       yield* saveLastDispatchedAtEffect();
     });
   }

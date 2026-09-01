@@ -8,7 +8,7 @@ export const runUiEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>
 export const forkUiEffect = <A, E>(effect: Effect.Effect<A, E>): (() => void) => {
   const fiber = Effect.runFork(effect);
   return () => {
-    fiber.unsafeInterruptAsFork(fiber.id());
+    fiber.interruptUnsafe();
   };
 };
 

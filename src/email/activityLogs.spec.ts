@@ -37,7 +37,7 @@ describe("email activity log capture", () => {
       withEmailLogCaptureEffect("ParcelTracker#e1", "ParcelTracker", () =>
         Effect.gen(function* () {
           logger.info("extracting");
-          yield* Effect.yieldNow();
+          yield* Effect.yieldNow;
           logger.info("submitted");
           return 42;
         }),

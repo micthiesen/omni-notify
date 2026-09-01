@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { it as effectIt } from "@effect/vitest";
-import { Duration, Effect, Fiber, TestClock } from "effect";
+import { Duration, Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import type { Metadata } from "../agents/metadata.js";
 import { PressPodsError } from "../effect.js";
 import type { Article } from "../types.js";
@@ -170,14 +171,14 @@ describe("runArticleRetrievers", () => {
       Effect.gen(function* () {
         let interrupted = false;
         const successful = article("complete", "successful");
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           runArticleRetrievers(
             "https://example.com/article",
             [
               {
                 name: "hung",
                 retrieve: () =>
-                  Effect.async<never>((resume) => {
+                  Effect.callback<never>((resume) => {
                     return Effect.sync(() => {
                       interrupted = true;
                       resume(Effect.interrupt);
@@ -189,7 +190,7 @@ describe("runArticleRetrievers", () => {
             5,
           ),
         );
-        yield* Effect.yieldNow();
+        yield* Effect.yieldNow;
         yield* TestClock.adjust(Duration.millis(5));
         const results = yield* Fiber.join(fiber);
 

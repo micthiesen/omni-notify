@@ -128,7 +128,7 @@ describe("WorkspaceEmailHandler", () => {
   it("does not mark sources triggered until the workspace run completes", async () => {
     let complete!: () => void;
     const trigger = vi.fn(() =>
-      Effect.async<void>((resume) => {
+      Effect.callback<void>((resume) => {
         complete = () => resume(Effect.void);
       }),
     );

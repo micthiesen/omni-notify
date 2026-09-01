@@ -220,7 +220,7 @@ function notifyEpisodeAvailable(
       url_title: "Open PressPods",
     }),
   ).pipe(
-    Effect.catchAll((error) => {
+    Effect.catch((error) => {
       // The episode exists and the feed will pick it up; delivery is best-effort.
       logger.warn("Failed to send episode notification", { error });
       return Effect.void;

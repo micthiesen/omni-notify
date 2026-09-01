@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
@@ -176,7 +177,7 @@ function buildTasks(
 
 function createIOSControlServiceEffect(
   streamers: Streamer[],
-): Effect.Effect<IOSControlService> {
+): EffectType<IOSControlService> {
   const apnsValues = [
     config.IOS_CONTROL_APNS_TEAM_ID,
     config.IOS_CONTROL_APNS_KEY_ID,
@@ -198,7 +199,7 @@ function createIOSControlServiceEffect(
         privateKeyPath: config.IOS_CONTROL_APNS_KEY_PATH as string,
         bundleId: config.IOS_CONTROL_BUNDLE_ID,
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             logger.warn(
               `iOS control APNs pushes disabled: failed to load signing key (${error.message})`,
@@ -269,7 +270,7 @@ function requestWorkspaceEmailRun(
   subjectId: string,
   message: string,
   trigger: "email" = "email",
-): Effect.Effect<void, WorkspaceOperationError> {
+): EffectType<void, WorkspaceOperationError> {
   const definition = workspaceDefinitions.find((item) => item.id === workspaceId);
   if (!definition) {
     return Effect.fail(
@@ -316,8 +317,8 @@ const closeServer = startServer(
   livestreamIntelligence,
 );
 
-let cleanupEmailTransportEffect: Effect.Effect<void, never> | undefined;
-let emailStartupFiber: Fiber.RuntimeFiber<void, unknown> | undefined;
+let cleanupEmailTransportEffect: EffectType<void, never> | undefined;
+let emailStartupFiber: Fiber.Fiber<void, unknown> | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
@@ -351,7 +352,7 @@ if (!serverOnly) {
     registry
       .recoverMissedTasksEffect()
       .pipe(
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.sync(() => logger.error("Failed to recover missed task runs", cause)),
         ),
       ),
@@ -360,14 +361,14 @@ if (!serverOnly) {
   // Graceful shutdown handling
   let isShuttingDown = false;
 
-  function shutdownEffect(signal: string): Effect.Effect<void> {
+  function shutdownEffect(signal: string): EffectType<void> {
     return Effect.suspend(() => {
       if (isShuttingDown) return Effect.void;
       isShuttingDown = true;
       logger.info(`Received ${signal}, shutting down gracefully...`);
-      const safely = (name: string, effect: Effect.Effect<unknown, unknown>) =>
+      const safely = (name: string, effect: EffectType<unknown, unknown>) =>
         effect.pipe(
-          Effect.catchAllCause((cause) =>
+          Effect.catchCause((cause) =>
             Effect.sync(() => logger.error(`${name} shutdown failed`, cause)),
           ),
         );
@@ -407,7 +408,7 @@ if (!serverOnly) {
 }
 
 interface EmailFeatures {
-  cleanupEffect: Effect.Effect<void, never>;
+  cleanupEffect: EffectType<void, never>;
   transport: EmailTransport;
   handlers: Map<string, EmailHandler>;
 }
@@ -419,7 +420,7 @@ interface EmailFeatures {
  * only the first failure alerts (errors reach Pushover), and the watchdog
  * covers the prolonged-outage case.
  */
-function startEmailWithRetryEffect(parentLogger: Logger): Effect.Effect<void, never> {
+function startEmailWithRetryEffect(parentLogger: Logger): EffectType<void, never> {
   let attempt = 0;
   return startEmailFeaturesEffect(parentLogger).pipe(
     Effect.tap((email) =>
@@ -444,10 +445,10 @@ function startEmailWithRetryEffect(parentLogger: Logger): Effect.Effect<void, ne
       }),
     ),
     Effect.retry(
-      Schedule.union(Schedule.exponential("30 seconds"), Schedule.spaced("5 minutes")),
+      Schedule.min([Schedule.exponential("30 seconds"), Schedule.spaced("5 minutes")]),
     ),
     Effect.asVoid,
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.sync(() => parentLogger.error("Email startup stopped", error)),
     ),
   );
@@ -455,7 +456,7 @@ function startEmailWithRetryEffect(parentLogger: Logger): Effect.Effect<void, ne
 
 function createEmailTransportEffect(
   logger: Logger,
-): Effect.Effect<
+): EffectType<
   EmailTransport | undefined,
   import("./effect/errors.js").IntegrationError
 > {
@@ -491,7 +492,7 @@ function createEmailTransportEffect(
 
 function startEmailFeaturesEffect(
   parentLogger: Logger,
-): Effect.Effect<
+): EffectType<
   EmailFeatures | undefined,
   import("./effect/errors.js").IntegrationError
 > {

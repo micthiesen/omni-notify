@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Data, Effect, Schema } from "effect";
 import {
   fetchPublicText,
@@ -26,14 +27,14 @@ export class PlatformRequestError extends Data.TaggedError("PlatformRequestError
   }
 }
 
-export function fetchGQL<A, I>(
+export function fetchGQL<A>(
   options: GQLRequestOptions,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Decoder<A>,
   dependencies: {
     readonly request?: PublicTextRequest;
     readonly maxResponseBytes?: number;
   } = {},
-): Effect.Effect<A, PlatformRequestError> {
+): EffectType<A, PlatformRequestError> {
   const { url, clientId, query } = options;
   const operation = `Failed to fetch GQL from ${url}`;
   return fetchPublicText(
@@ -51,7 +52,7 @@ export function fetchGQL<A, I>(
     dependencies.request,
     dependencies.maxResponseBytes ?? PLATFORM_GQL_MAX_BYTES,
   ).pipe(
-    Effect.flatMap(Schema.decodeUnknown(Schema.parseJson(schema))),
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(schema))),
     Effect.mapError((cause) => new PlatformRequestError({ operation, cause })),
   );
 }
@@ -62,7 +63,7 @@ export function fetchPageHtml(
     readonly request?: PublicTextRequest;
     readonly maxResponseBytes?: number;
   } = {},
-): Effect.Effect<string, PlatformRequestError> {
+): EffectType<string, PlatformRequestError> {
   const operation = `Failed to check live status for ${url}`;
   return fetchPublicText(
     url,

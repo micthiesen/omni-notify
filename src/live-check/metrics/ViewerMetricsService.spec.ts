@@ -1,7 +1,8 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, TestClock } from "effect";
+import { Effect, Exit } from "effect";
+import { TestClock } from "effect/testing";
 import { beforeEach, vi } from "vitest";
 import type { ViewerRecordScope } from "../notificationPolicy.js";
 import type { ViewerMetricsData } from "./types.js";

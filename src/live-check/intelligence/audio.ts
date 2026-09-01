@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { spawn } from "node:child_process";
 import { Data, Effect, Schema } from "effect";
 
@@ -13,9 +14,7 @@ export interface CapturedAudio {
 
 const resolvedMediaSchema = Schema.Struct({
   url: Schema.String,
-  http_headers: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.String }),
-  ),
+  http_headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
 });
 type ResolvedMedia = Schema.Schema.Type<typeof resolvedMediaSchema>;
 
@@ -28,74 +27,77 @@ export function runAudioProcess(
   command: string,
   args: string[],
   options: { timeoutMs: number; maxStdoutBytes: number },
-): Effect.Effect<{ stdout: Buffer; stderr: string }, AudioProcessError> {
-  const process = Effect.async<{ stdout: Buffer; stderr: string }, AudioProcessError>(
-    (resume) => {
-      const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-      const stdout: Buffer[] = [];
-      const stderr: Buffer[] = [];
-      let stdoutBytes = 0;
-      let stderrBytes = 0;
-      let settled = false;
-      const finish = (error?: AudioProcessError) => {
-        if (settled) return;
-        settled = true;
-        if (error) resume(Effect.fail(error));
-        else
-          resume(
-            Effect.succeed({
-              stdout: Buffer.concat(stdout),
-              stderr: Buffer.concat(stderr).toString(),
-            }),
-          );
-      };
-      child.on("error", (cause) =>
-        finish(new AudioProcessError({ message: cause.message, retryable: true })),
-      );
-      child.stdout.on("data", (chunk: Buffer) => {
-        stdoutBytes += chunk.length;
-        if (stdoutBytes > options.maxStdoutBytes) {
-          child.kill("SIGKILL");
-          finish(
-            new AudioProcessError({
-              message: `${command} exceeded output limit`,
-              retryable: false,
-            }),
-          );
-          return;
-        }
-        stdout.push(chunk);
-      });
-      child.stderr.on("data", (chunk: Buffer) => {
-        if (stderrBytes >= MAX_STDERR_BYTES) return;
-        const remaining = MAX_STDERR_BYTES - stderrBytes;
-        stderr.push(chunk.subarray(0, remaining));
-        stderrBytes += Math.min(chunk.length, remaining);
-      });
-      child.on("close", (code, signal) => {
-        if (code === 0) finish();
-        else
-          finish(
-            new AudioProcessError({
-              message: `${command} exited ${code ?? signal}: ${Buffer.concat(stderr).toString().slice(-500)}`,
-              retryable: true,
-            }),
-          );
-      });
-      return Effect.sync(() => {
-        settled = true;
+): EffectType<{ stdout: Buffer; stderr: string }, AudioProcessError> {
+  const process = Effect.callback<
+    { stdout: Buffer; stderr: string },
+    AudioProcessError
+  >((resume) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let settled = false;
+    const finish = (error?: AudioProcessError) => {
+      if (settled) return;
+      settled = true;
+      if (error) resume(Effect.fail(error));
+      else
+        resume(
+          Effect.succeed({
+            stdout: Buffer.concat(stdout),
+            stderr: Buffer.concat(stderr).toString(),
+          }),
+        );
+    };
+    child.on("error", (cause) =>
+      finish(new AudioProcessError({ message: cause.message, retryable: true })),
+    );
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.length;
+      if (stdoutBytes > options.maxStdoutBytes) {
         child.kill("SIGKILL");
-      });
-    },
-  );
+        finish(
+          new AudioProcessError({
+            message: `${command} exceeded output limit`,
+            retryable: false,
+          }),
+        );
+        return;
+      }
+      stdout.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (stderrBytes >= MAX_STDERR_BYTES) return;
+      const remaining = MAX_STDERR_BYTES - stderrBytes;
+      stderr.push(chunk.subarray(0, remaining));
+      stderrBytes += Math.min(chunk.length, remaining);
+    });
+    child.on("close", (code, signal) => {
+      if (code === 0) finish();
+      else
+        finish(
+          new AudioProcessError({
+            message: `${command} exited ${code ?? signal}: ${Buffer.concat(stderr).toString().slice(-500)}`,
+            retryable: true,
+          }),
+        );
+    });
+    return Effect.sync(() => {
+      settled = true;
+      child.kill("SIGKILL");
+    });
+  });
   return process.pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: `${options.timeoutMs} millis`,
-      onTimeout: () =>
-        new AudioProcessError({
-          message: `${command} timed out after ${options.timeoutMs}ms`,
-          retryable: false,
-        }),
+      orElse: () =>
+        Effect.fail(
+          new AudioProcessError({
+            message: `${command} timed out after ${options.timeoutMs}ms`,
+            retryable: false,
+          }),
+        ),
     }),
   );
 }
@@ -121,8 +123,8 @@ export class LivestreamAudioCapture {
 
   private resolve(
     streamUrl: string,
-  ): Effect.Effect<ResolvedMedia, AudioProcessError | AudioDecodeError> {
-    return Effect.gen(this, function* () {
+  ): EffectType<ResolvedMedia, AudioProcessError | AudioDecodeError> {
+    return Effect.gen({ self: this }, function* () {
       const cached = this.cache.get(streamUrl);
       if (cached && cached.expiresAt > Date.now()) return cached.media;
       const { stdout } = yield* runAudioProcess(
@@ -147,7 +149,7 @@ export class LivestreamAudioCapture {
         catch: (cause) =>
           new AudioDecodeError({ message: "yt-dlp returned invalid JSON", cause }),
       });
-      const parsed = yield* Schema.decodeUnknown(resolvedMediaSchema)(raw).pipe(
+      const parsed = yield* Schema.decodeUnknownEffect(resolvedMediaSchema)(raw).pipe(
         Effect.mapError(
           (cause) =>
             new AudioDecodeError({
@@ -165,14 +167,14 @@ export class LivestreamAudioCapture {
     streamUrl: string,
     durationSeconds: number,
     seekSeconds?: number,
-  ): Effect.Effect<CapturedAudio, AudioProcessError | AudioDecodeError> {
+  ): EffectType<CapturedAudio, AudioProcessError | AudioDecodeError> {
     const attempt = this.resolve(streamUrl).pipe(
       Effect.flatMap((media) =>
         this.captureResolved(media, durationSeconds, seekSeconds),
       ),
     );
     return attempt.pipe(
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         this.cache.delete(streamUrl);
         if (error instanceof AudioDecodeError || !error.retryable)
           return Effect.fail(error);
@@ -189,7 +191,7 @@ export class LivestreamAudioCapture {
     media: ResolvedMedia,
     durationSeconds: number,
     seekSeconds?: number,
-  ): Effect.Effect<CapturedAudio, AudioProcessError> {
+  ): EffectType<CapturedAudio, AudioProcessError> {
     const args = ["-hide_banner", "-loglevel", "error"];
     if (seekSeconds !== undefined && seekSeconds > 0) {
       args.push("-ss", String(seekSeconds));

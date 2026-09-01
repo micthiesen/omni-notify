@@ -102,7 +102,7 @@ export function markRecentUnreadReadEffect(
             ),
           (lock) => Effect.sync(() => lock.release()),
         ).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.sync(() =>
               logger.warn(
                 `IMAP auto-read failed for folder "${folder}": ${error.message}`,

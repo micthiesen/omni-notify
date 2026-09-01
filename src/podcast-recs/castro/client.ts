@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { generateKeyBetween } from "fractional-indexing";
-import { Cache, Clock, Effect, Ref } from "effect";
+import { Cache, Clock, Effect, Ref, Semaphore } from "effect";
 import config from "../../utils/config.js";
 import { type FetchResult, unavailable } from "../../utils/fetchResult.js";
 import {
@@ -40,7 +40,7 @@ const actionIdRef = Effect.runSync(Ref.make(0));
 // Queue placement is a read/decision/write transaction. Serialize it across
 // every CastroClient instance so overlapping tasks cannot both observe the
 // same queue and emit duplicate actions or the same fractional position.
-const enqueueSemaphore = Effect.unsafeMakeSemaphore(1);
+const enqueueSemaphore = Semaphore.makeUnsafe(1);
 
 export class CastroClient implements PodcastAccountClient {
   public readonly name = "Castro";
@@ -106,11 +106,11 @@ export class CastroClient implements PodcastAccountClient {
   // subscribeToShow; memoize for the client's (per-run) lifetime so a single
   // run makes one GET /profile/subscriptions instead of several.
   private getSubscriptions(): Effect.Effect<CastroProfileSubscription[], unknown> {
-    return this.subscriptionsCache.get("subscriptions");
+    return Cache.get(this.subscriptionsCache, "subscriptions");
   }
 
   public fetchSubscriptions(): Effect.Effect<FetchResult<PodcastSubscription[]>> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const subscriptions = yield* this.getSubscriptions();
       const podcasts = yield* Effect.forEach(
         subscriptions,
@@ -120,11 +120,11 @@ export class CastroClient implements PodcastAccountClient {
       const enriched = yield* Effect.forEach(
         podcasts,
         (podcast) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             const match = yield* this.findPodcastSearchResult(
               podcast.title,
               (result) => result.tentacles_id === podcast.public_id,
-            ).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+            ).pipe(Effect.catch(() => Effect.succeed(undefined)));
             return {
               title: podcast.title,
               feedUrl: match?.feed_url,
@@ -134,18 +134,18 @@ export class CastroClient implements PodcastAccountClient {
         { concurrency: READ_CONCURRENCY },
       );
       return { status: "ok" as const, value: enriched };
-    }).pipe(Effect.catchAll((error) => Effect.succeed(unavailable(error))));
+    }).pipe(Effect.catch((error) => Effect.succeed(unavailable(error))));
   }
 
   public fetchListenHistory(
     sinceMs?: number,
   ): Effect.Effect<FetchResult<ListenedEpisode[]>> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const subscriptions = yield* this.getSubscriptions();
       const states = yield* Effect.forEach(
         subscriptions,
         (subscription) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             const [podcast, state] = yield* Effect.all(
               [
                 this.fetchPodcast(subscription.podcast_id),
@@ -177,7 +177,7 @@ export class CastroClient implements PodcastAccountClient {
       const history = yield* Effect.forEach(
         recent,
         ({ podcast, episodeState }) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             const episode = yield* this.fetchEpisode(episodeState.episode_id);
             const completion = episodeState.is_played
               ? 1
@@ -204,11 +204,11 @@ export class CastroClient implements PodcastAccountClient {
       );
       history.sort((a, b) => b.listenedAt - a.listenedAt);
       return { status: "ok" as const, value: history };
-    }).pipe(Effect.catchAll((error) => Effect.succeed(unavailable(error))));
+    }).pipe(Effect.catch((error) => Effect.succeed(unavailable(error))));
   }
 
   public fetchQueue(): Effect.Effect<FetchResult<QueuedEpisode[]>> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const { queue_items } = yield* this.api.fetchQueue();
       const ordered = [...queue_items].sort((a, b) =>
         compareFractionalPositions(a.fractional_position, b.fractional_position),
@@ -216,7 +216,7 @@ export class CastroClient implements PodcastAccountClient {
       const queue = yield* Effect.forEach(
         ordered,
         (item) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             const [podcast, episode] = yield* Effect.all(
               [this.fetchPodcast(item.podcast_id), this.fetchEpisode(item.episode_id)],
               { concurrency: 2 },
@@ -231,16 +231,16 @@ export class CastroClient implements PodcastAccountClient {
         { concurrency: READ_CONCURRENCY },
       );
       return { status: "ok" as const, value: queue };
-    }).pipe(Effect.catchAll((error) => Effect.succeed(unavailable(error))));
+    }).pipe(Effect.catch((error) => Effect.succeed(unavailable(error))));
   }
 
   public fetchInbox(): Effect.Effect<FetchResult<InboxEpisode[]>> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const subscriptions = yield* this.getSubscriptions();
       const states = yield* Effect.forEach(
         subscriptions,
         (subscription) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             return {
               podcastId: subscription.podcast_id,
               state: yield* this.api.fetchPodcastState(subscription.podcast_id),
@@ -256,7 +256,7 @@ export class CastroClient implements PodcastAccountClient {
       const inbox = yield* Effect.forEach(
         newEpisodes,
         ({ podcastId, episodeState }) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             const [podcast, episode] = yield* Effect.all(
               [
                 this.fetchPodcast(podcastId),
@@ -275,13 +275,13 @@ export class CastroClient implements PodcastAccountClient {
         { concurrency: READ_CONCURRENCY },
       );
       return { status: "ok" as const, value: inbox };
-    }).pipe(Effect.catchAll((error) => Effect.succeed(unavailable(error))));
+    }).pipe(Effect.catch((error) => Effect.succeed(unavailable(error))));
   }
 
   public searchPodcasts(
     query: string,
   ): Effect.Effect<FetchResult<PodcastSearchResult[]>> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const results = yield* this.searchPodcastMetadata(query);
       return {
         status: "ok" as const,
@@ -295,13 +295,13 @@ export class CastroClient implements PodcastAccountClient {
           artworkUrl: result.artwork_url.large,
         })),
       };
-    }).pipe(Effect.catchAll((error) => Effect.succeed(unavailable(error))));
+    }).pipe(Effect.catch((error) => Effect.succeed(unavailable(error))));
   }
 
   public searchEpisodes(
     query: string,
   ): Effect.Effect<FetchResult<PodcastEpisodeSearchResult[]>> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const results = yield* this.api.searchEpisodes(query);
       return {
         status: "ok" as const,
@@ -317,13 +317,13 @@ export class CastroClient implements PodcastAccountClient {
           };
         }),
       };
-    }).pipe(Effect.catchAll((error) => Effect.succeed(unavailable(error))));
+    }).pipe(Effect.catch((error) => Effect.succeed(unavailable(error))));
   }
 
   public enqueueEpisode(
     request: EnqueueEpisodeRequest,
   ): Effect.Effect<PodcastWriteResult> {
-    const enqueue = Effect.gen(this, function* () {
+    const enqueue = Effect.gen({ self: this }, function* () {
       const resolved = yield* this.resolvePodcast(request);
       if (!resolved) return "not_found";
       const podcast = yield* this.fetchPodcast(resolved.tentacles_id);
@@ -367,7 +367,7 @@ export class CastroClient implements PodcastAccountClient {
     return enqueueSemaphore
       .withPermits(1)(enqueue)
       .pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           this.logger.error("Castro enqueue failed", (error as Error).message);
           return Effect.succeed("error" as const);
         }),
@@ -377,7 +377,7 @@ export class CastroClient implements PodcastAccountClient {
   public subscribeToShow(
     request: SubscribeToShowRequest,
   ): Effect.Effect<PodcastWriteResult> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const resolved = yield* this.resolvePodcast(request);
       if (!resolved) return "not_found";
       const subscriptions = yield* this.getSubscriptions();
@@ -395,7 +395,7 @@ export class CastroClient implements PodcastAccountClient {
         ? "added"
         : "error";
     }).pipe(
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         this.logger.error("Castro subscribe lookup failed", (error as Error).message);
         return Effect.succeed("error" as const);
       }),
@@ -403,12 +403,12 @@ export class CastroClient implements PodcastAccountClient {
   }
 
   public dequeueEpisode(episodeGuid: string): Effect.Effect<PodcastWriteResult> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const queue = yield* this.api.fetchQueue();
       const episodes = yield* Effect.forEach(
         queue.queue_items,
         (item) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             return {
               item,
               episode: yield* this.fetchEpisode(item.episode_id),
@@ -436,7 +436,7 @@ export class CastroClient implements PodcastAccountClient {
       yield* this.api.postActions(actions);
       return "removed";
     }).pipe(
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         this.logger.error("Castro dequeue failed", (error as Error).message);
         return Effect.succeed("error" as const);
       }),
@@ -444,7 +444,7 @@ export class CastroClient implements PodcastAccountClient {
   }
 
   public clearInboxEpisode(clientEpisodeId: string): Effect.Effect<PodcastWriteResult> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       const action = yield* this.actionEffect(
         clientEpisodeId,
@@ -454,7 +454,7 @@ export class CastroClient implements PodcastAccountClient {
       yield* this.api.postActions([action]);
     }).pipe(
       Effect.as("removed" as const),
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         this.logger.error("Castro inbox clear failed", (error as Error).message);
         return Effect.succeed("error" as const);
       }),
@@ -462,17 +462,17 @@ export class CastroClient implements PodcastAccountClient {
   }
 
   private fetchPodcast(publicId: string): Effect.Effect<CastroPodcast, unknown> {
-    return this.podcastCache.get(publicId);
+    return Cache.get(this.podcastCache, publicId);
   }
 
   private fetchEpisode(publicId: string): Effect.Effect<CastroEpisode, unknown> {
-    return this.episodeCache.get(publicId);
+    return Cache.get(this.episodeCache, publicId);
   }
 
   private searchPodcastMetadata(
     query: string,
   ): Effect.Effect<CastroPodcastSearchResult[], unknown> {
-    return this.searchCache.get(query);
+    return Cache.get(this.searchCache, query);
   }
 
   private findPodcastSearchResult(

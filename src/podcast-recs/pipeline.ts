@@ -466,11 +466,13 @@ function commitEffect(
           token: config.PUSHOVER_PODCAST_TOKEN,
         }),
       catch: (cause) => cause,
-    }).pipe(Effect.either);
-    if (notified._tag === "Left") {
+    }).pipe(Effect.result);
+    if (notified._tag === "Failure") {
       logger.error(
         `Notification failed for ${candidate.episodeTitle}`,
-        notified.left instanceof Error ? notified.left.message : String(notified.left),
+        notified.failure instanceof Error
+          ? notified.failure.message
+          : String(notified.failure),
       );
       return false;
     }

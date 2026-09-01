@@ -1,6 +1,6 @@
 import fsAsync from "node:fs/promises";
 import type { Logger } from "@micthiesen/mitools/logging";
-import { Clock, Effect, Either, Exit } from "effect";
+import { Clock, Effect, Result, Exit } from "effect";
 import type CostCounter from "../costs.js";
 import { errorCause, PressPodsError, tryPromise, trySync } from "../effect.js";
 import { isRetryableError } from "../errors.js";
@@ -145,7 +145,7 @@ function assessTake(
             `coverage=${(coverage.coverage * 100).toFixed(0)}% ratio=${coverage.wordRatio.toFixed(2)}`,
         } satisfies Assessment;
       }),
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         // STT down/erroring: fall through to the duration band for this take so a
         // flaky ASR server never blocks synthesis.
         logger.warn(
@@ -195,15 +195,17 @@ function synthesizeChunkAudio(
           );
           logger.info(`Resumed chunk from checkpoint (${text.length} chars)`);
           return { wavPath, durationSeconds };
-        }).pipe(Effect.either);
-        if (Either.isRight(resumed)) {
-          return { chunk: resumed.right, attempts: 0, passed: true };
+        }).pipe(Effect.result);
+        if (Result.isSuccess(resumed)) {
+          return { chunk: resumed.success, attempts: 0, passed: true };
         } else {
           // Corrupt/unreadable checkpoint: clean up the temp file it produced and
           // drop the bad entry so it isn't re-probed (and re-leaked) on every
           // future resume, then fall through to synthesize fresh.
           yield* deleteChunkCheckpoint(ckpt.workId, key);
-          logger.warn(`Discarded unreadable chunk checkpoint: ${resumed.left.message}`);
+          logger.warn(
+            `Discarded unreadable chunk checkpoint: ${resumed.failure.message}`,
+          );
         }
       }
     }
@@ -216,7 +218,7 @@ function synthesizeChunkAudio(
         fsAsync.readFile(chunk.wavPath, { signal }),
       ).pipe(
         Effect.flatMap((wav) => writeChunkCheckpoint(ckpt.workId, key, wav)),
-        Effect.catchAll(() => Effect.void),
+        Effect.catch(() => Effect.void),
       );
     };
 
@@ -258,10 +260,10 @@ function synthesizeChunkAudio(
             Effect.map((assessment) => ({ chunk, assessment })),
           ),
         ),
-        Effect.either,
+        Effect.result,
       );
-      if (Either.isRight(attempt)) {
-        const { chunk, assessment } = attempt.right;
+      if (Result.isSuccess(attempt)) {
+        const { chunk, assessment } = attempt.success;
         takes.push({ chunk, assessment });
         // Only stop early on a *verified* accept when content-verification is the
         // intended mode — a duration-band accept from a transiently-failed STT
@@ -274,17 +276,17 @@ function synthesizeChunkAudio(
           );
         }
       } else {
-        lastError = attempt.left;
+        lastError = attempt.failure;
         if (
           retryableError === undefined &&
-          isRetryableError(errorCause(attempt.left))
+          isRetryableError(errorCause(attempt.failure))
         ) {
-          retryableError = attempt.left;
+          retryableError = attempt.failure;
         }
         // A corrupt/truncated response can fail prepareChunk's ffmpeg; retry
         // rather than aborting the episode.
         logger.warn(
-          `Chunk synth/prepare failed (attempt ${i}/${maxAttempts}): ${attempt.left.message}`,
+          `Chunk synth/prepare failed (attempt ${i}/${maxAttempts}): ${attempt.failure.message}`,
         );
       }
     }
@@ -396,11 +398,11 @@ function synthesizeChunkAdaptive(
       logger,
       ckpt,
       splittable ? RESPLIT_PROBE_ATTEMPTS : MAX_SYNTH_ATTEMPTS,
-    ).pipe(Effect.either);
-    if (Either.isRight(attempt)) {
-      outcome = attempt.right;
+    ).pipe(Effect.result);
+    if (Result.isSuccess(attempt)) {
+      outcome = attempt.success;
     } else {
-      const error = attempt.left;
+      const error = attempt.failure;
       // Smaller chunks cannot repair an unavailable/rate-limited server. Let the
       // durable job retry use its backoff and existing verified checkpoints
       // instead of multiplying requests across a re-split tree.

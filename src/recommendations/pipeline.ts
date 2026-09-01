@@ -521,7 +521,7 @@ function reconcileStalePendingEffect(
             { notificationState: "reserved", notificationReservedAt: reservedAt },
           ),
         );
-        const notificationResult = yield* Effect.either(
+        const notificationResult = yield* Effect.result(
           integrationEffect("notify reconciled recommendation", () =>
             notify({
               title: `🎬 ${rec.title}${rec.year ? ` (${rec.year})` : ""}`,
@@ -532,7 +532,7 @@ function reconcileStalePendingEffect(
             }),
           ),
         );
-        if (notificationResult._tag === "Left") {
+        if (notificationResult._tag === "Failure") {
           yield* persistenceEffect(
             "record reconciled recommendation notification failure",
             () =>
@@ -543,7 +543,7 @@ function reconcileStalePendingEffect(
           );
           logger.warn(
             `Reconciled notification failed for ${rec.canonicalId}`,
-            effectMessage(notificationResult.left),
+            effectMessage(notificationResult.failure),
           );
           continue;
         }
@@ -590,7 +590,7 @@ function buildSeedsEffect(
       if (!canonicalId) continue;
       const tmdbId = Number(canonicalId.split(":")[2]);
       const genreIds = yield* fetchTitleGenreIds(item.mediaType, tmdbId).pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           logger.warn(`Genre lookup failed for ${canonicalId}`, effectMessage(error));
           return Effect.succeed([]);
         }),
@@ -713,7 +713,7 @@ function commitRecommendationEffect(
         { notificationState: "reserved", notificationReservedAt },
       ),
     );
-    const notificationResult = yield* Effect.either(
+    const notificationResult = yield* Effect.result(
       integrationEffect("send recommendation notification", () =>
         notify({
           title: pick.notification.title,
@@ -724,10 +724,10 @@ function commitRecommendationEffect(
         }),
       ),
     );
-    if (notificationResult._tag === "Left") {
+    if (notificationResult._tag === "Failure") {
       logger.error(
         `Notification failed for ${candidate.title}`,
-        effectMessage(notificationResult.left),
+        effectMessage(notificationResult.failure),
       );
       yield* persistenceEffect("record recommendation notification failure", () =>
         RecommendationEntity.patch(

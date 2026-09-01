@@ -45,7 +45,7 @@ describe("MCP Effect tool contract", () => {
     const exit = await Effect.runPromiseExit(tool.execute({}));
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      const failure = Cause.failureOption(exit.cause);
+      const failure = Cause.findErrorOption(exit.cause);
       expect(Option.isSome(failure)).toBe(true);
       if (Option.isSome(failure)) expect(failure.value).toBeInstanceOf(McpToolError);
     }
@@ -67,7 +67,7 @@ describe("MCP Effect tool contract", () => {
     const exit = await Effect.runPromiseExit(tool.execute({}));
     expect(Exit.isFailure(exit)).toBe(true);
     if (Exit.isFailure(exit)) {
-      expect(Option.isSome(Cause.failureOption(exit.cause))).toBe(true);
+      expect(Option.isSome(Cause.findErrorOption(exit.cause))).toBe(true);
     }
 
     const invalidInputExit = await Effect.runPromiseExit(
@@ -75,7 +75,7 @@ describe("MCP Effect tool contract", () => {
     );
     expect(Exit.isFailure(invalidInputExit)).toBe(true);
     if (Exit.isFailure(invalidInputExit)) {
-      const failure = Cause.failureOption(invalidInputExit.cause);
+      const failure = Cause.findErrorOption(invalidInputExit.cause);
       expect(Option.isSome(failure)).toBe(true);
       if (Option.isSome(failure)) expect(failure.value).toBeInstanceOf(McpToolError);
     }

@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { decode } from "html-entities";
 import { Clock, Data, Effect } from "effect";
 import { parseHTML } from "linkedom";
@@ -180,7 +181,7 @@ export function profilePageUrl(binding: PlatformBinding): string | undefined {
 function readBoundedText(
   response: Response,
   maxBytes: number,
-): Effect.Effect<string, ProfileLinkError> {
+): EffectType<string, ProfileLinkError> {
   const readError = (cause: unknown) =>
     new ProfileLinkError({ operation: "read bounded profile page", cause });
 
@@ -254,7 +255,7 @@ export function fetchProfileLinksEffect(
     timeoutMs?: number;
     maxBytes?: number;
   } = {},
-): Effect.Effect<PlatformBinding[], ProfileLinkError> {
+): EffectType<PlatformBinding[], ProfileLinkError> {
   const url = profilePageUrl(binding);
   if (!url) return Effect.succeed([]);
   return Effect.tryPromise({
@@ -339,10 +340,7 @@ export function learnProfileIdentityEffect({
   fetchImpl?: ProfilePageFetcher;
   now?: number;
   forceRefresh?: boolean;
-}): Effect.Effect<
-  ProfileIdentityLink | undefined,
-  ProfileLinkError | PersistenceError
-> {
+}): EffectType<ProfileIdentityLink | undefined, ProfileLinkError | PersistenceError> {
   return Effect.gen(function* () {
     const observedAt = now ?? (yield* Clock.currentTimeMillis);
     const configuredByKey = new Map(

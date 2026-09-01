@@ -55,7 +55,7 @@ export class DeliveryPipeline implements EmailHandler {
   }
 
   public handleEmailsEffect(emails: FetchedEmail[]): Effect.Effect<void, never> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const candidates = yield* Effect.forEach(emails, (email) =>
         filterTrackingCandidateEffect(email, this.logger, this.triage).pipe(
           Effect.map((result) => {
@@ -112,7 +112,7 @@ export class DeliveryPipeline implements EmailHandler {
                 });
               }),
             ),
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() => {
                 this.logger.error(
                   `Failed to process email "${email.subject}"`,
@@ -142,8 +142,8 @@ export class DeliveryPipeline implements EmailHandler {
             this.name,
             () => program,
           ).pipe(
-            Effect.catchAllCause((cause) =>
-              Cause.isInterrupted(cause) ? Effect.interrupt : Effect.logError(cause),
+            Effect.catchCause((cause) =>
+              Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.logError(cause),
             ),
           );
         },
@@ -169,7 +169,7 @@ export class DeliveryPipeline implements EmailHandler {
     { results: DeliveryResult[]; costCents: number | null },
     import("./effect.js").ParcelExtractionError | ParcelPersistenceError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.logger.info(`Extracting from: "${email.subject}" (from: ${email.from})`);
       const { deliveries, costCents } = yield* extractDeliveriesEffect(
         {
@@ -203,7 +203,7 @@ export class DeliveryPipeline implements EmailHandler {
     delivery: ExtractedDelivery,
     emailId: string,
   ): Effect.Effect<DeliveryResult, ParcelPersistenceError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const { tracking_number: trackingNumber, description } = delivery;
       const priorSubmission = yield* parcelPersistenceEffect(
         "read delivery reservation",
@@ -365,7 +365,9 @@ export class DeliveryPipeline implements EmailHandler {
       }
 
       // Unreachable: candidates is non-empty and every iteration returns or continues
-      return yield* Effect.dieMessage(`No submission attempted for ${trackingNumber}`);
+      return yield* Effect.die(
+        new Error(`No submission attempted for ${trackingNumber}`),
+      );
     });
   }
 }

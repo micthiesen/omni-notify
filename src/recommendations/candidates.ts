@@ -53,7 +53,7 @@ export function fetchCandidateBuckets(
         fetchSimilarBucketEffect(recentSeeds, logger),
         fetchDiscoverBucketEffect(topGenres, logger),
         fetchTrending().pipe(
-          Effect.catchAll((error) => {
+          Effect.catch((error) => {
             logger.warn("TMDB trending fetch failed", effectMessage(error));
             return Effect.succeed([]);
           }),
@@ -79,7 +79,7 @@ function fetchSimilarBucketEffect(
     seeds,
     (seed) =>
       fetchRecommendationsFor(seed.mediaType, seed.tmdbId).pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           logger.warn(
             `TMDB recommendations fetch failed for ${seed.canonicalId}`,
             effectMessage(error),
@@ -107,7 +107,7 @@ function fetchDiscoverBucketEffect(
         withGenres: topGenres,
         withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
       }).pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           logger.warn(`TMDB discover failed (${mediaType})`, effectMessage(error));
           return Effect.succeed([]);
         }),
@@ -128,7 +128,7 @@ function fetchNoveltyBucketEffect(
         withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
         minVoteCount: 1000,
       }).pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           logger.warn(
             `TMDB novelty discover failed (${mediaType})`,
             effectMessage(error),
@@ -233,7 +233,7 @@ export function enrichCandidates(
       pool,
       (candidate) =>
         fetchTitleDetails(candidate.mediaType, candidate.tmdbId).pipe(
-          Effect.catchAll((error) => {
+          Effect.catch((error) => {
             logger?.warn(
               `TMDB details fetch failed for ${candidate.canonicalId}`,
               effectMessage(error),

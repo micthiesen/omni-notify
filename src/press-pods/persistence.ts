@@ -307,13 +307,7 @@ const PressPodsEpisodeSchema = Schema.Struct({
   episodeId: Schema.String,
   title: Schema.String,
   author: Schema.optional(Schema.String),
-  authorGender: Schema.optional(
-    Schema.Union(
-      Schema.Literal("male"),
-      Schema.Literal("female"),
-      Schema.Literal("unknown"),
-    ),
-  ),
+  authorGender: Schema.optional(Schema.Literals(["male", "female", "unknown"])),
   publication: Schema.optional(Schema.String),
   domain: Schema.optional(Schema.String),
   articleUrl: Schema.String,
@@ -364,7 +358,7 @@ const PressPodsEpisodeSchema = Schema.Struct({
   retrieverAttempts: Schema.optional(
     Schema.mutable(
       Schema.Array(
-        Schema.Union(
+        Schema.Union([
           Schema.Struct({
             name: Schema.String,
             success: Schema.Literal(true),
@@ -376,7 +370,7 @@ const PressPodsEpisodeSchema = Schema.Struct({
             success: Schema.Literal(false),
             error: Schema.String,
           }),
-        ),
+        ]),
       ),
     ),
   ),
@@ -384,12 +378,12 @@ const PressPodsEpisodeSchema = Schema.Struct({
     Schema.Struct({
       llmCents: Schema.Number,
       ttsCents: Schema.Number,
-      detailCents: Schema.Record({ key: Schema.String, value: Schema.Number }),
-      detailTokens: Schema.Record({
-        key: Schema.String,
-        value: Schema.Struct({ input: Schema.Number, output: Schema.Number }),
-      }),
-      detailChars: Schema.Record({ key: Schema.String, value: Schema.Number }),
+      detailCents: Schema.Record(Schema.String, Schema.Number),
+      detailTokens: Schema.Record(
+        Schema.String,
+        Schema.Struct({ input: Schema.Number, output: Schema.Number }),
+      ),
+      detailChars: Schema.Record(Schema.String, Schema.Number),
     }),
   ),
   createdAt: Schema.Number,
@@ -401,11 +395,7 @@ const PressPodsJobSchema = Schema.Struct({
   jobId: Schema.String,
   url: Schema.String,
   normalizedUrl: Schema.optional(Schema.String),
-  status: Schema.Union(
-    Schema.Literal("queued"),
-    Schema.Literal("processing"),
-    Schema.Literal("failed"),
-  ),
+  status: Schema.Literals(["queued", "processing", "failed"]),
   attempts: Schema.Number,
   nextAttemptAt: Schema.Number,
   lastError: Schema.optional(Schema.String),
@@ -418,14 +408,14 @@ const PressPodsJobSchema = Schema.Struct({
 const decodeEpisode = (
   value: unknown,
 ): Effect.Effect<PressPodsEpisodeData, PressPodsError> =>
-  Schema.decodeUnknown(PressPodsEpisodeSchema)(value).pipe(
+  Schema.decodeUnknownEffect(PressPodsEpisodeSchema)(value).pipe(
     Effect.mapError(
       (cause) => new PressPodsError({ operation: "decode PressPods episode", cause }),
     ),
   );
 
 const decodeJob = (value: unknown): Effect.Effect<PressPodsJobData, PressPodsError> =>
-  Schema.decodeUnknown(PressPodsJobSchema)(value).pipe(
+  Schema.decodeUnknownEffect(PressPodsJobSchema)(value).pipe(
     Effect.map((decoded) => decoded as PressPodsJobData),
     Effect.mapError(
       (cause) => new PressPodsError({ operation: "decode PressPods job", cause }),

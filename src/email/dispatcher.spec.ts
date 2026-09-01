@@ -89,7 +89,7 @@ describe("EmailDispatcher durability", () => {
           pollCount++;
           if (pollCount === 1) {
             return Deferred.succeed(firstStarted, undefined).pipe(
-              Effect.zipRight(Deferred.await(releaseFirst)),
+              Effect.andThen(Deferred.await(releaseFirst)),
               Effect.as({ emails: [], commit: vi.fn() }),
             );
           }
@@ -118,7 +118,7 @@ describe("EmailDispatcher durability", () => {
     expect(pollCount).toBe(2);
 
     notify?.();
-    await runPromise(Effect.yieldNow());
+    await runPromise(Effect.yieldNow);
     expect(pollCount).toBe(2);
   });
 
@@ -145,7 +145,7 @@ describe("EmailDispatcher durability", () => {
     expect(stopped).toHaveBeenCalledOnce();
 
     dispatcher.onMailEvent();
-    await runPromise(Effect.yieldNow());
+    await runPromise(Effect.yieldNow);
     expect(pollCount).toBe(0);
   });
 });

@@ -55,7 +55,7 @@ function decodeContainer(
   operation: string,
   value: unknown,
 ): Effect.Effect<PlexContainer, RecommendationIntegrationError> {
-  return Schema.decodeUnknown(PlexResponseSchema)(value).pipe(
+  return Schema.decodeUnknownEffect(PlexResponseSchema)(value).pipe(
     Effect.map((decoded) => decoded.MediaContainer),
     Effect.mapError(
       (cause) =>
@@ -172,7 +172,7 @@ export class PlexClient {
         ).pipe(
           Effect.flatMap((value) => decodeContainer(`Plex metadata ${key}`, value)),
           Effect.map((container) => [key, container.Metadata?.[0]] as const),
-          Effect.catchAll(() => Effect.succeed([key, undefined] as const)),
+          Effect.catch(() => Effect.succeed([key, undefined] as const)),
         );
       },
       { concurrency: 6 },
@@ -196,7 +196,7 @@ export class PlexClient {
     WatchedItem[],
     RecommendationIntegrationError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const metadata: PlexMetadata[] = [];
       const size = 100;
       for (let start = 0; ; start += size) {
@@ -294,7 +294,7 @@ export class PlexClient {
     InProgressItem[],
     RecommendationIntegrationError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const raw = yield* integrationEffect("Plex continue watching", () =>
         this.get("/hubs/home/continueWatching", { includeGuids: 1 }),
       );
@@ -338,7 +338,7 @@ export class PlexClient {
     MediaItem[],
     RecommendationIntegrationError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const sectionsRaw = yield* integrationEffect("Plex library sections", () =>
         this.get("/library/sections"),
       );
@@ -353,7 +353,7 @@ export class PlexClient {
       const containers = yield* Effect.forEach(
         sections,
         (section) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             const metadata: PlexMetadata[] = [];
             const size = 500;
             for (let start = 0; ; start += size) {

@@ -240,7 +240,7 @@ export default function RecommendationsPage() {
             setRecsError(null);
           }),
         ),
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() =>
             setRecsError(
               err instanceof Error ? err.message : "Failed to fetch recommendations",
@@ -261,7 +261,7 @@ export default function RecommendationsPage() {
             setTasteLoading(false);
           }),
         ),
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() => {
             setTasteError(
               err instanceof Error ? err.message : "Failed to fetch taste profile",

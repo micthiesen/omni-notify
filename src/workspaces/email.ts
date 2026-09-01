@@ -28,7 +28,7 @@ export class WorkspaceEmailHandler implements EmailHandler {
   ) {}
 
   public handleEmailsEffect(emails: FetchedEmail[]) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const scopes = yield* workspaceRepositoryEffect(
         "list workspace email scopes",
         () => listAllWorkspaceEmailScopes(),

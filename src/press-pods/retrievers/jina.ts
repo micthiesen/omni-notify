@@ -47,7 +47,7 @@ export function retrieveArticleJina(
     "retrieve article with Jina",
   ).pipe(
     Effect.flatMap((raw) =>
-      Schema.decodeUnknown(JinaReaderResponseSchema)(raw).pipe(
+      Schema.decodeUnknownEffect(JinaReaderResponseSchema)(raw).pipe(
         Effect.mapError(
           (cause) =>
             new PressPodsError({ operation: "decode Jina Reader response", cause }),

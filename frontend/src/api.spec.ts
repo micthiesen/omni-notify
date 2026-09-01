@@ -8,8 +8,8 @@ import {
   WorkspaceDetailResponseSchema,
 } from "./api";
 
-const expectDecodeFailure = <A, I>(
-  schema: Schema.Schema<A, I, never>,
+const expectDecodeFailure = <A>(
+  schema: Schema.Decoder<A, never>,
   value: unknown,
 ): void => {
   expect(() => Schema.decodeUnknownSync(schema)(value)).toThrow();

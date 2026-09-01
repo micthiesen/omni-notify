@@ -122,7 +122,7 @@ function resolveViaNetworkEffect(
     if (findSource) {
       const matches = yield* findByExternalId(findSource.id, findSource.source).pipe(
         Effect.map((found) => found.filter((t) => t.mediaType === item.mediaType)),
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           logger.warn(
             `TMDB find failed for "${item.title}" (${findSource.source}=${findSource.id})`,
             effectMessage(error),
@@ -141,7 +141,7 @@ function resolveViaNetworkEffect(
 
     // Last resort: text search constrained by title/year.
     const results = yield* searchTitles(item.title, item.mediaType, item.year).pipe(
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         logger.warn(`TMDB search failed for "${item.title}"`, effectMessage(error));
         return Effect.succeed([]);
       }),

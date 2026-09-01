@@ -64,7 +64,7 @@ export function getMailboxRolesEffect(
         logger.debug(`Resolved ${roles.size} mailbox role(s)`);
         return roles;
       }),
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => {
           logger.warn(
             `Failed to resolve mailbox roles, processing all emails: ${(error as Error).message}`,

@@ -1,5 +1,5 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Entity } from "@micthiesen/mitools/entities";
-import type { Effect } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
 import { fromSync } from "../effect/interop.js";
 import type { PlatformBinding } from "./streamers.js";
@@ -57,7 +57,7 @@ export function getStreamerStatus(streamerId: string): StreamerStatus {
 
 export function getStreamerStatusEffect(
   streamerId: string,
-): Effect.Effect<StreamerStatus, PersistenceError> {
+): EffectType<StreamerStatus, PersistenceError> {
   return fromSync("read streamer status", () => getStreamerStatus(streamerId));
 }
 
@@ -67,6 +67,6 @@ export function upsertStreamerStatus(status: StreamerStatus): void {
 
 export function upsertStreamerStatusEffect(
   status: StreamerStatus,
-): Effect.Effect<void, PersistenceError> {
+): EffectType<void, PersistenceError> {
   return fromSync("upsert streamer status", () => upsertStreamerStatus(status));
 }

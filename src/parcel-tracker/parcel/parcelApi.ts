@@ -62,7 +62,7 @@ export function submitDeliveryEffect(
       );
       return { status: "success" } satisfies SubmitResult;
     }),
-    Effect.catchAll((error) => {
+    Effect.catch((error) => {
       const cause = error.cause as HTTPError;
       const statusCode = cause.response?.statusCode;
       const body = cause.response?.body ?? "no response body";

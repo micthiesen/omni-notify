@@ -83,11 +83,11 @@ Output ONLY the finished script wrapped in <cleaned_article> and </cleaned_artic
 
       const extracted = yield* trySync("extract cleaned PressPods narration", () =>
         extractBetweenTags(text, "cleaned_article"),
-      ).pipe(Effect.either);
-      if (extracted._tag === "Right") {
-        return { content: extracted.right };
+      ).pipe(Effect.result);
+      if (extracted._tag === "Success") {
+        return { content: extracted.success };
       } else {
-        lastError = extracted.left;
+        lastError = extracted.failure;
         LOGGER.info(
           `Narration cleaning attempt ${attempt}/${MAX_CLEAN_ATTEMPTS} produced no usable output; retrying`,
         );

@@ -851,9 +851,9 @@ const extractErrorMessage = (res: Response): Effect.Effect<string> =>
     try: () => res.clone().json() as Promise<unknown>,
     catch: () => undefined,
   }).pipe(
-    Effect.flatMap((body) => Schema.decodeUnknown(ErrorBodySchema)(body)),
+    Effect.flatMap((body) => Schema.decodeUnknownEffect(ErrorBodySchema)(body)),
     Effect.map((body) => body.error),
-    Effect.catchAll(() => Effect.succeed(`HTTP ${res.status}: ${res.statusText}`)),
+    Effect.catch(() => Effect.succeed(`HTTP ${res.status}: ${res.statusText}`)),
   );
 
 // Container restarts are routine and take up to ~30s; during one, fetches
@@ -861,10 +861,10 @@ const extractErrorMessage = (res: Response): Effect.Effect<string> =>
 // idempotent, so ride out restarts with backoff instead of erroring pages
 // into blank states. Application errors (4xx, 500) still surface immediately.
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
-const getRetrySchedule = Schedule.exponential("500 millis").pipe(
-  Schedule.union(Schedule.spaced("8 seconds")),
-  Schedule.intersect(Schedule.recurs(7)),
-);
+const getRetrySchedule = Schedule.max([
+  Schedule.min([Schedule.exponential("500 millis"), Schedule.spaced("8 seconds")]),
+  Schedule.recurs(7),
+]);
 
 const fetchResponse = (
   path: string,
@@ -887,10 +887,10 @@ const fetchGetWithRetry = (path: string): Effect.Effect<Response, ApiNetworkErro
     Effect.catchTag("RetryableGetError", ({ response }) => Effect.succeed(response)),
   );
 
-const decodeResponse = <A, I>(
+const decodeResponse = <A>(
   path: string,
   response: Response,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.Decoder<A, never>,
 ): Effect.Effect<A, ApiError | ApiDecodeError> =>
   Effect.gen(function* () {
     if (!response.ok) {
@@ -904,7 +904,7 @@ const decodeResponse = <A, I>(
       catch: (cause) =>
         new ApiDecodeError({ path, message: `Invalid JSON response: ${path}`, cause }),
     });
-    return yield* Schema.decodeUnknown(schema)(body).pipe(
+    return yield* Schema.decodeUnknownEffect(schema)(body).pipe(
       Effect.mapError(
         (cause) =>
           new ApiDecodeError({
@@ -916,18 +916,18 @@ const decodeResponse = <A, I>(
     );
   });
 
-export const apiGet = <A, I>(
+export const apiGet = <A>(
   path: string,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.Decoder<A, never>,
 ): Effect.Effect<A, ApiClientError> =>
   fetchGetWithRetry(path).pipe(
     Effect.flatMap((response) => decodeResponse(path, response, schema)),
   );
 
-const apiWrite = <A, I>(
+const apiWrite = <A>(
   method: "POST" | "DELETE",
   path: string,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.Decoder<A, never>,
   body?: unknown,
 ): Effect.Effect<A, ApiClientError> =>
   fetchResponse(path, {
@@ -940,15 +940,15 @@ const apiWrite = <A, I>(
         }),
   }).pipe(Effect.flatMap((response) => decodeResponse(path, response, schema)));
 
-export const apiPost = <A, I>(
+export const apiPost = <A>(
   path: string,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.Decoder<A, never>,
   body?: unknown,
 ): Effect.Effect<A, ApiClientError> => apiWrite("POST", path, schema, body);
 
-export const apiDelete = <A, I>(
+export const apiDelete = <A>(
   path: string,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.Decoder<A, never>,
   body?: unknown,
 ): Effect.Effect<A, ApiClientError> => apiWrite("DELETE", path, schema, body);
 
@@ -960,27 +960,27 @@ const DeletedTrueResponse = Schema.Struct({ deleted: Schema.Literal(true) });
 // existing React app uses mutable interfaces, while JSON decoding still returns
 // ordinary mutable arrays. This bridge changes only the static collection view;
 // every supplied schema below remains concrete and performs full runtime decoding.
-const browserSchema = <A>(schema: Schema.Schema.Any): Schema.Schema<A> =>
-  schema as Schema.Schema<A>;
+const browserSchema = <A>(schema: Schema.Top): Schema.Decoder<A, never> =>
+  schema as Schema.Decoder<A, never>;
 const listResponseSchema = <K extends string, A>(
   key: K,
   item: Schema.Schema<A>,
-): Schema.Schema<Record<K, A[]>> =>
+): Schema.Decoder<Record<K, A[]>, never> =>
   browserSchema(Schema.Struct({ [key]: Schema.Array(item) }));
 const itemResponseSchema = <K extends string, A>(
   key: K,
   item: Schema.Schema<A>,
-): Schema.Schema<Record<K, A>> => browserSchema(Schema.Struct({ [key]: item }));
+): Schema.Decoder<Record<K, A>, never> => browserSchema(Schema.Struct({ [key]: item }));
 
 export const TaskRunSchema = browserSchema<TaskRun>(
   Schema.Struct({
     runId: Schema.String,
     taskName: Schema.String,
-    trigger: Schema.Literal("schedule", "manual", "startup", "catchup"),
+    trigger: Schema.Literals(["schedule", "manual", "startup", "catchup"]),
     scheduledFor: Schema.NullOr(Schema.Number),
     startedAt: Schema.Number,
     finishedAt: Schema.NullOr(Schema.Number),
-    status: Schema.Literal("running", "success", "error"),
+    status: Schema.Literals(["running", "success", "error"]),
     error: Schema.NullOr(Schema.String),
     summary: Schema.NullOr(Schema.String),
   }),
@@ -1045,7 +1045,7 @@ const LivestreamChapterSchema = Schema.Struct({
 });
 const LivestreamAlertSchema = Schema.Struct({
   alertId: Schema.String,
-  type: Schema.Literal(
+  type: Schema.Literals([
     "destiny_guest",
     "breaking_news",
     "debate",
@@ -1053,7 +1053,7 @@ const LivestreamAlertSchema = Schema.Struct({
     "major_announcement",
     "viewer_surge",
     "cross_stream_topic",
-  ),
+  ]),
   title: Schema.String,
   message: Schema.String,
   reason: Schema.String,
@@ -1064,7 +1064,7 @@ const LivestreamFeedbackSchema = Schema.Struct({
   feedbackId: Schema.String,
   streamerId: Schema.String,
   alertId: Schema.String,
-  alertType: Schema.Literal(
+  alertType: Schema.Literals([
     "destiny_guest",
     "breaking_news",
     "debate",
@@ -1072,8 +1072,8 @@ const LivestreamFeedbackSchema = Schema.Struct({
     "major_announcement",
     "viewer_surge",
     "cross_stream_topic",
-  ),
-  verdict: Schema.Literal("useful", "not_useful", "false_positive"),
+  ]),
+  verdict: Schema.Literals(["useful", "not_useful", "false_positive"]),
   note: Schema.optional(Schema.String),
   createdAt: Schema.Number,
 });
@@ -1089,7 +1089,7 @@ export const LivestreamIntelligenceSchema = browserSchema<LivestreamIntelligence
     chapters: Schema.Array(LivestreamChapterSchema),
     destinyPresence: Schema.optional(
       Schema.Struct({
-        state: Schema.Literal("possible", "confirmed"),
+        state: Schema.Literals(["possible", "confirmed"]),
         confidence: Schema.Number,
         detectedAt: Schema.Number,
         reason: Schema.String,
@@ -1123,7 +1123,7 @@ export const LiveStreamerSchema = browserSchema<LiveStreamer>(
       }),
     ),
     category: Schema.NullOr(Schema.String),
-    tier: Schema.Literal("primary", "background"),
+    tier: Schema.Literals(["primary", "background"]),
     primary: StreamerBindingSchema,
     intelligence: Schema.optional(LivestreamIntelligenceSchema),
   }),
@@ -1135,17 +1135,17 @@ export const OfflineStreamerSchema = browserSchema<OfflineStreamer>(
     lastStartedAt: Schema.NullOr(Schema.Number),
     lastEndedAt: Schema.NullOr(Schema.Number),
     lastMaxViewerCount: Schema.NullOr(Schema.Number),
-    tier: Schema.Literal("primary", "background"),
+    tier: Schema.Literals(["primary", "background"]),
   }),
 );
 export const StreamerViewSchema = browserSchema<StreamerView>(
-  Schema.Union(LiveStreamerSchema, OfflineStreamerSchema),
+  Schema.Union([LiveStreamerSchema, OfflineStreamerSchema]),
 );
 
 const OnDeckItemSchema = Schema.Struct({
   recommendationId: Schema.String,
   title: Schema.String,
-  mediaType: Schema.Literal("movie", "tv"),
+  mediaType: Schema.Literals(["movie", "tv"]),
   year: Schema.NullOr(Schema.Number),
   posterPath: Schema.NullOr(Schema.String),
   whyForUser: Schema.NullOr(Schema.String),
@@ -1162,7 +1162,7 @@ export const SnapshotSchema = browserSchema<Snapshot>(
 export const RunLogLineSchema = browserSchema<RunLogLine>(
   Schema.Struct({
     t: Schema.Number,
-    level: Schema.Literal("debug", "info", "warn", "error"),
+    level: Schema.Literals(["debug", "info", "warn", "error"]),
     logger: Schema.String,
     msg: Schema.String,
   }),
@@ -1208,18 +1208,18 @@ export const StreamSessionSchema = browserSchema<StreamSession>(
   }),
 );
 
-const DiagnosticMetricValueSchema = Schema.Union(
+const DiagnosticMetricValueSchema = Schema.Union([
   Schema.Number,
   Schema.String,
   Schema.Boolean,
   Schema.Null,
+]);
+const DiagnosticMetricsSchema = Schema.Record(
+  Schema.String,
+  DiagnosticMetricValueSchema,
 );
-const DiagnosticMetricsSchema = Schema.Record({
-  key: Schema.String,
-  value: DiagnosticMetricValueSchema,
-});
 const StageDiagnosticSchema = Schema.Struct({
-  status: Schema.Literal("idle", "running", "success", "skipped", "error"),
+  status: Schema.Literals(["idle", "running", "success", "skipped", "error"]),
   eligible: Schema.optional(Schema.Boolean),
   startedAt: Schema.optional(Schema.Number),
   finishedAt: Schema.optional(Schema.Number),
@@ -1231,10 +1231,10 @@ const StageDiagnosticSchema = Schema.Struct({
 const LivestreamDiagnosticsSchema = Schema.Struct({
   streamerId: Schema.String,
   sessionStartedAt: Schema.optional(Schema.Number),
-  stages: Schema.Record({
-    key: Schema.Literal("metadata", "voice", "summary", "alert"),
-    value: StageDiagnosticSchema,
-  }),
+  stages: Schema.Record(
+    Schema.Literals(["metadata", "voice", "summary", "alert"]),
+    StageDiagnosticSchema,
+  ),
   updatedAt: Schema.Number,
 });
 const LivestreamEventSchema = Schema.Struct({
@@ -1242,7 +1242,7 @@ const LivestreamEventSchema = Schema.Struct({
   streamerId: Schema.String,
   sessionStartedAt: Schema.optional(Schema.Number),
   createdAt: Schema.Number,
-  kind: Schema.Literal(
+  kind: Schema.Literals([
     "session",
     "metadata",
     "voice",
@@ -1250,8 +1250,8 @@ const LivestreamEventSchema = Schema.Struct({
     "alert",
     "feedback",
     "anomaly",
-  ),
-  status: Schema.Literal("info", "success", "warning", "error"),
+  ]),
+  status: Schema.Literals(["info", "success", "warning", "error"]),
   title: Schema.String,
   detail: Schema.optional(Schema.String),
   durationMs: Schema.optional(Schema.Number),
@@ -1302,18 +1302,18 @@ export const RecommendationSchema = browserSchema<Recommendation>(
     recommendationId: Schema.String,
     canonicalId: Schema.String,
     tmdbId: Schema.Number,
-    mediaType: Schema.Literal("movie", "tv"),
+    mediaType: Schema.Literals(["movie", "tv"]),
     title: Schema.String,
     year: Schema.NullOr(Schema.Number),
     posterPath: Schema.NullOr(Schema.String),
-    status: Schema.Literal(
+    status: Schema.Literals([
       "pending",
       "notified",
       "watched",
       "abandoned",
       "ignored",
       "failed",
-    ),
+    ]),
     whyForUser: Schema.NullOr(Schema.String),
     caveats: Schema.Array(Schema.String),
     runDate: Schema.String,
@@ -1322,11 +1322,11 @@ export const RecommendationSchema = browserSchema<Recommendation>(
     startedAt: Schema.NullOr(Schema.Number),
     resolvedAt: Schema.NullOr(Schema.Number),
     watchlistResult: Schema.NullOr(
-      Schema.Literal("added", "already_exists", "available", "error"),
+      Schema.Literals(["added", "already_exists", "available", "error"]),
     ),
     confidence: Schema.NullOr(Schema.Number),
     feedback: Schema.NullOr(
-      Schema.Literal("good_pick", "not_for_me", "already_watched"),
+      Schema.Literals(["good_pick", "not_for_me", "already_watched"]),
     ),
     feedbackAt: Schema.NullOr(Schema.Number),
     feedbackNote: Schema.NullOr(Schema.String),
@@ -1375,15 +1375,15 @@ const TasteBehaviorStatsSchema = Schema.Struct({
     alreadyWatched: Schema.Number,
   }),
   averageHoursToStart: Schema.optional(Schema.Number),
-  sourcePerformance: Schema.Record({
-    key: Schema.String,
-    value: Schema.Struct({
+  sourcePerformance: Schema.Record(
+    Schema.String,
+    Schema.Struct({
       total: Schema.Number,
       watched: Schema.Number,
       goodPick: Schema.Number,
       notForMe: Schema.Number,
     }),
-  }),
+  ),
 });
 const TasteCommitmentSchema = Schema.Struct({
   preference: Schema.String,
@@ -1428,14 +1428,14 @@ export const PodcastRecommendationSchema = browserSchema<PodcastRecommendation>(
     episodeUrl: Schema.optional(Schema.String),
     publishedAt: Schema.Number,
     durationMinutes: Schema.optional(Schema.Number),
-    status: Schema.Literal(
+    status: Schema.Literals([
       "pending",
       "notified",
       "listened",
       "abandoned",
       "ignored",
       "failed",
-    ),
+    ]),
     whyForUser: Schema.optional(Schema.String),
     caveats: Schema.optional(Schema.Array(Schema.String)),
     confidence: Schema.optional(Schema.Number),
@@ -1446,9 +1446,9 @@ export const PodcastRecommendationSchema = browserSchema<PodcastRecommendation>(
     recommendedAt: Schema.Number,
     notifiedAt: Schema.optional(Schema.Number),
     queueResult: Schema.optional(
-      Schema.NullOr(Schema.Literal("queued", "already_queued", "not_queued")),
+      Schema.NullOr(Schema.Literals(["queued", "already_queued", "not_queued"])),
     ),
-    feedback: Schema.optional(Schema.Literal("good_pick", "not_for_me")),
+    feedback: Schema.optional(Schema.Literals(["good_pick", "not_for_me"])),
     feedbackAt: Schema.optional(Schema.Number),
     feedbackNote: Schema.optional(Schema.NullOr(Schema.String)),
   }),
@@ -1486,13 +1486,13 @@ export const PodcastTasteProfileSchema = browserSchema<PodcastTasteProfile>(
 export const EmailActivitySchema = browserSchema<EmailActivity>(
   Schema.Struct({
     activityId: Schema.String,
-    pipeline: Schema.Literal("ParcelTracker", "CalendarEvents"),
+    pipeline: Schema.Literals(["ParcelTracker", "CalendarEvents"]),
     emailId: Schema.String,
     subject: Schema.String,
     from: Schema.String,
     receivedAt: Schema.Number,
     processedAt: Schema.Number,
-    outcome: Schema.Literal(
+    outcome: Schema.Literals([
       "filtered",
       "skipped",
       "no_matches",
@@ -1500,7 +1500,7 @@ export const EmailActivitySchema = browserSchema<EmailActivity>(
       "partial",
       "failed",
       "error",
-    ),
+    ]),
     admitReason: Schema.NullOr(Schema.String),
     admitTier: Schema.NullOr(Schema.String),
     costCents: Schema.NullOr(Schema.Number),
@@ -1511,17 +1511,17 @@ export const EmailActivitySchema = browserSchema<EmailActivity>(
 const EmailRuleSchema = Schema.Struct({
   ruleId: Schema.String,
   pattern: Schema.String,
-  scope: Schema.Literal("parcel", "calendar", "both"),
-  verdict: Schema.Literal("block", "allow"),
+  scope: Schema.Literals(["parcel", "calendar", "both"]),
+  verdict: Schema.Literals(["block", "allow"]),
   createdAt: Schema.Number,
 });
 const EmailFeedbackSchema = Schema.Struct({
   activityId: Schema.String,
-  pipeline: Schema.Literal("ParcelTracker", "CalendarEvents"),
+  pipeline: Schema.Literals(["ParcelTracker", "CalendarEvents"]),
   emailId: Schema.String,
   subject: Schema.String,
   from: Schema.String,
-  verdict: Schema.Literal("not_relevant", "missed"),
+  verdict: Schema.Literals(["not_relevant", "missed"]),
   note: Schema.optional(Schema.String),
   createdAt: Schema.Number,
 });
@@ -1537,7 +1537,7 @@ const EmailBuiltinRulesSchema = Schema.Struct({
 });
 const CreateEmailRuleResultSchema = Schema.Struct({
   rule: Schema.optional(EmailRuleSchema),
-  status: Schema.Literal("created", "exists", "merged", "builtin"),
+  status: Schema.Literals(["created", "exists", "merged", "builtin"]),
   message: Schema.optional(Schema.String),
 });
 
@@ -1556,7 +1556,7 @@ const BriefingHistorySchema = browserSchema<BriefingHistory>(
   }),
 );
 
-const PressPodsRetrieverAttemptSchema = Schema.Union(
+const PressPodsRetrieverAttemptSchema = Schema.Union([
   Schema.Struct({
     name: Schema.String,
     success: Schema.Literal(true),
@@ -1568,7 +1568,7 @@ const PressPodsRetrieverAttemptSchema = Schema.Union(
     success: Schema.Literal(false),
     error: Schema.String,
   }),
-);
+]);
 const PressPodsChapterSchema = Schema.Struct({
   startTimeSeconds: Schema.Number,
   title: Schema.String,
@@ -1592,12 +1592,12 @@ const PressPodsChunkStatSchema = Schema.Struct({
 const PressPodsCostsSchema = Schema.Struct({
   llmCents: Schema.Number,
   ttsCents: Schema.Number,
-  detailCents: Schema.Record({ key: Schema.String, value: Schema.Number }),
-  detailTokens: Schema.Record({
-    key: Schema.String,
-    value: Schema.Struct({ input: Schema.Number, output: Schema.Number }),
-  }),
-  detailChars: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  detailCents: Schema.Record(Schema.String, Schema.Number),
+  detailTokens: Schema.Record(
+    Schema.String,
+    Schema.Struct({ input: Schema.Number, output: Schema.Number }),
+  ),
+  detailChars: Schema.Record(Schema.String, Schema.Number),
 });
 const PressPodsEpisodeFields = {
   episodeId: Schema.String,
@@ -1639,7 +1639,7 @@ export const PressPodsJobSchema = browserSchema<PressPodsJob>(
   Schema.Struct({
     jobId: Schema.String,
     url: Schema.String,
-    status: Schema.Literal("queued", "processing", "failed"),
+    status: Schema.Literals(["queued", "processing", "failed"]),
     attempts: Schema.Number,
     nextAttemptAt: Schema.NullOr(Schema.Number),
     lastError: Schema.NullOr(Schema.String),
@@ -1677,7 +1677,7 @@ export const WorkspaceSubjectSchema = browserSchema<WorkspaceSubject>(
     workspaceId: Schema.String,
     subjectId: Schema.String,
     title: Schema.String,
-    status: Schema.Literal("active", "paused", "completed", "archived"),
+    status: Schema.Literals(["active", "paused", "completed", "archived"]),
     summary: Schema.String,
     createdAt: Schema.Number,
     updatedAt: Schema.Number,
@@ -1686,8 +1686,8 @@ export const WorkspaceSubjectSchema = browserSchema<WorkspaceSubject>(
 );
 const WorkspaceActionSchema = Schema.Struct({
   actionId: Schema.String,
-  type: Schema.Literal("email_scope", "calendar_event"),
-  status: Schema.Literal("pending", "approved", "rejected", "failed"),
+  type: Schema.Literals(["email_scope", "calendar_event"]),
+  status: Schema.Literals(["pending", "approved", "rejected", "failed"]),
   title: Schema.String,
   description: Schema.String,
   payload: Schema.String,
@@ -1701,7 +1701,7 @@ const WorkspacePapercutSchema = Schema.Struct({
   detail: Schema.String,
   occurrences: Schema.Number,
   lastSeenAt: Schema.Number,
-  status: Schema.Literal("open", "addressed", "dismissed"),
+  status: Schema.Literals(["open", "addressed", "dismissed"]),
 });
 const WorkspaceArtifactSchema = Schema.Struct({
   revisionId: Schema.String,
@@ -1716,14 +1716,14 @@ const WorkspaceArtifactSchema = Schema.Struct({
 });
 const WorkspaceMessageSchema = Schema.Struct({
   messageId: Schema.String,
-  role: Schema.Literal("user", "assistant", "system"),
+  role: Schema.Literals(["user", "assistant", "system"]),
   text: Schema.String,
   createdAt: Schema.Number,
   runId: Schema.optional(Schema.String),
 });
 const WorkspaceSourceSchema = Schema.Struct({
   sourceId: Schema.String,
-  kind: Schema.Literal("web", "email"),
+  kind: Schema.Literals(["web", "email"]),
   title: Schema.String,
   url: Schema.optional(Schema.String),
   excerpt: Schema.String,
@@ -1772,7 +1772,7 @@ const DataStorageSummarySchema = Schema.Struct({
 });
 // Entity row columns are selected dynamically at runtime. Values are intentionally
 // open here, while the response envelope and entity metadata remain strict.
-const DataRowSchema = Schema.Record({ key: Schema.String, value: Schema.Unknown });
+const DataRowSchema = Schema.Record(Schema.String, Schema.Unknown);
 
 const HighestDaySchema = Schema.Struct({
   date: Schema.String,
@@ -1795,7 +1795,7 @@ const CostSummarySchema = Schema.Struct({
 const DailyCostSchema = Schema.Struct({
   date: Schema.String,
   costCents: Schema.Number,
-  byFeature: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  byFeature: Schema.Record(Schema.String, Schema.Number),
   pricedEventCount: Schema.Number,
   unknownEventCount: Schema.Number,
 });

@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
@@ -61,7 +62,7 @@ const PROFILE_IDENTITY_VERIFICATION_MS = 7 * 24 * 60 * 60 * 1000;
 function externalEffect<A>(
   operation: string,
   evaluate: () => A | PromiseLike<A>,
-): Effect.Effect<A, unknown> {
+): EffectType<A, unknown> {
   return Effect.suspend(() => {
     try {
       const value = evaluate();
@@ -99,7 +100,7 @@ export default class LiveCheckTask extends ScheduledTask {
     private readonly dggDiscovery?: {
       topEmbeds: number;
       availablePlatforms: ReadonlySet<Platform>;
-      fetchFeed?: () => Effect.Effect<DggFeed, unknown> | Promise<DggFeed>;
+      fetchFeed?: () => EffectType<DggFeed, unknown> | Promise<DggFeed>;
       learnIdentity?: (
         input: Parameters<typeof learnProfileIdentityEffect>[0],
       ) =>
@@ -138,8 +139,8 @@ export default class LiveCheckTask extends ScheduledTask {
     return runPromise(this.runEffect());
   }
 
-  public runEffect(): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+  public runEffect(): EffectType<void, unknown> {
+    return Effect.gen({ self: this }, function* () {
       // Background streamers skip ticks entirely (not just their notification
       // paths) — a skipped tick means no fetch, no transition, and no
       // unknown-streak change for that streamer this round. The startup run
@@ -161,7 +162,7 @@ export default class LiveCheckTask extends ScheduledTask {
         yield* fromPromise("reconcile iOS controls", () =>
           this.reconcileIOSControls!(),
         ).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.sync(() => {
               // Controls are a convenience surface. APNs or control-state failures
               // must never turn a successful live-status tick into a failed task run.
@@ -175,16 +176,16 @@ export default class LiveCheckTask extends ScheduledTask {
     });
   }
 
-  private refreshDggStreamers(): Effect.Effect<void, PersistenceError> {
+  private refreshDggStreamers(): EffectType<void, PersistenceError> {
     if (!this.dggDiscovery) return Effect.void;
     const discovery = this.dggDiscovery;
 
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       let resolution: ReturnType<typeof resolveDggStreams>;
       const feed = yield* Effect.suspend(() => {
         const feedValue = (discovery.fetchFeed ?? fetchDggFeed)();
         return Effect.isEffect(feedValue)
-          ? (feedValue as Effect.Effect<DggFeed, unknown>)
+          ? (feedValue as EffectType<DggFeed, unknown>)
           : fromPromise("fetch DGG feed", () => feedValue);
       }).pipe(
         Effect.mapError(
@@ -235,7 +236,7 @@ export default class LiveCheckTask extends ScheduledTask {
       const identityChanged = yield* Effect.forEach(
         identityCandidates,
         ({ entry, verify }) =>
-          Effect.gen(this, function* () {
+          Effect.gen({ self: this }, function* () {
             const source = entry.streamer.bindings[0];
             if (!source) return false;
             const sourceKey = canonicalBinding(source.platform, source.username);
@@ -254,17 +255,15 @@ export default class LiveCheckTask extends ScheduledTask {
               configuredBindings,
               forceRefresh: verify,
             });
-            const identityEffect: Effect.Effect<
-              ProfileIdentityLink | undefined,
-              unknown
-            > = Effect.isEffect(identityValue)
-              ? (identityValue as Effect.Effect<
-                  ProfileIdentityLink | undefined,
-                  unknown
-                >)
-              : fromPromise("learn profile identity", () => identityValue);
+            const identityEffect: EffectType<ProfileIdentityLink | undefined, unknown> =
+              Effect.isEffect(identityValue)
+                ? (identityValue as EffectType<
+                    ProfileIdentityLink | undefined,
+                    unknown
+                  >)
+                : fromPromise("learn profile identity", () => identityValue);
             const link = yield* identityEffect.pipe(
-              Effect.catchAll((error) => {
+              Effect.catch((error) => {
                 this.logger.debug(
                   `Could not resolve profile identity for ${source.platform}:${source.username}: ${String(error)}`,
                 );
@@ -375,9 +374,9 @@ export default class LiveCheckTask extends ScheduledTask {
         `Destiny.gg discovery selected ${selected.length}/${discovery.topEmbeds}${summary ? `: ${summary}` : ""}`,
       );
     }).pipe(
-      Effect.catchAllCause((cause) => {
-        if (Cause.isInterrupted(cause)) return Effect.interrupt;
-        const failure = Cause.failureOption(cause);
+      Effect.catchCause((cause) => {
+        if (Cause.hasInterrupts(cause)) return Effect.interrupt;
+        const failure = Cause.findErrorOption(cause);
         if (Option.isSome(failure) && failure.value instanceof PersistenceError) {
           return Effect.fail(failure.value);
         }
@@ -406,8 +405,8 @@ export default class LiveCheckTask extends ScheduledTask {
    * stays at warn/info for the same reason: those levels don't notify, so the
    * alert can't be delivered twice.
    */
-  private reportOutage(): Effect.Effect<void> {
-    return Effect.gen(this, function* () {
+  private reportOutage(): EffectType<void> {
+    return Effect.gen({ self: this }, function* () {
       const alert = this.outageAlerter.evaluate(
         [...this.unknownStreaks.values()],
         this.streamers.length,
@@ -422,7 +421,7 @@ export default class LiveCheckTask extends ScheduledTask {
       yield* externalEffect("send live-check outage notification", () =>
         notify({ title: alert.title, message: alert.message }),
       ).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             // A failed send must not fail the run — the outage state has already
             // advanced, so retrying this exact alert isn't possible anyway.
@@ -436,24 +435,19 @@ export default class LiveCheckTask extends ScheduledTask {
     });
   }
 
-  private tickStreamer(streamer: Streamer): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+  private tickStreamer(streamer: Streamer): EffectType<void, unknown> {
+    return Effect.gen({ self: this }, function* () {
       const results = yield* Effect.forEach(
         streamer.bindings,
         (binding) => {
           const discovered = this.dggStatuses.get(
             canonicalBinding(binding.platform, binding.username),
           );
-          const fetched =
-            discovered ??
-            platformConfigs[binding.platform].fetchLiveStatus({
-              username: binding.username,
-            });
-          const statusEffect = Effect.isEffect(fetched)
-            ? fetched
-            : fetched instanceof Promise
-              ? Effect.promise(() => fetched)
-              : Effect.succeed(fetched);
+          const statusEffect = discovered
+            ? Effect.succeed(discovered)
+            : platformConfigs[binding.platform].fetchLiveStatus({
+                username: binding.username,
+              });
           return statusEffect.pipe(
             Effect.map((status): BindingFetchResult => ({ binding, status })),
           );
@@ -536,8 +530,8 @@ export default class LiveCheckTask extends ScheduledTask {
     streamer: Streamer,
     previous: StreamerStatus,
     decision: Extract<TickDecision, { kind: "went-live" }>,
-  ): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+  ): EffectType<void, unknown> {
+    return Effect.gen({ self: this }, function* () {
       const { next, summedViewerCount } = decision;
       const now = yield* Clock.currentTimeMillis;
       this.logger.info(
@@ -585,8 +579,8 @@ export default class LiveCheckTask extends ScheduledTask {
   private handleStillLive(
     streamer: Streamer,
     decision: Extract<TickDecision, { kind: "still-live" }>,
-  ): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+  ): EffectType<void, unknown> {
+    return Effect.gen({ self: this }, function* () {
       const { next, summedViewerCount, titleChanged, primarySwitched } = decision;
       const now = yield* Clock.currentTimeMillis;
 
@@ -648,8 +642,8 @@ export default class LiveCheckTask extends ScheduledTask {
     streamer: Streamer,
     previousLive: StreamerStatusLive,
     next: StreamerStatusOffline,
-  ): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+  ): EffectType<void, unknown> {
+    return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       this.logger.info(`${streamer.displayName} is now offline`);
       this.titleDebouncer.clear(streamer.id);
@@ -699,8 +693,8 @@ export default class LiveCheckTask extends ScheduledTask {
     streamer: Streamer,
     status: StreamerStatusLive,
     summedViewerCount: number,
-  ): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+  ): EffectType<void, unknown> {
+    return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       if (summedViewerCount > 0) {
         yield* this.metricsService.recordViewerCountEffect({

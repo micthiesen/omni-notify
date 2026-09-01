@@ -376,7 +376,7 @@ const pressPodsJobSchema = z.object({
 });
 
 function serializeTmdbTitle(
-  title: Effect.Effect.Success<ReturnType<typeof searchTitlesEffect>>[number],
+  title: Effect.Success<ReturnType<typeof searchTitlesEffect>>[number],
 ) {
   return {
     ...title,

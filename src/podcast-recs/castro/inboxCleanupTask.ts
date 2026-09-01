@@ -57,7 +57,7 @@ export class CastroInboxCleanupTask extends ScheduledTask {
   }
 
   private runEffect(): Effect.Effect<void, CastroInboxCleanupError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const inbox = yield* this.account.fetchInbox();
       if (inbox.status === "unavailable") {
         return yield* Effect.fail(
@@ -70,7 +70,7 @@ export class CastroInboxCleanupTask extends ScheduledTask {
 
       const previews = inbox.value.filter(isFreePreviewEpisode);
       const results = yield* Effect.forEach(previews, (episode) =>
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const result = yield* this.account.clearInboxEpisode(episode.clientEpisodeId);
           if (result === "removed") {
             this.logger.info(

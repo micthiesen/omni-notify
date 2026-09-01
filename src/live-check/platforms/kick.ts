@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Data, Effect, Schema, SynchronizedRef } from "effect";
 import type { OptionsInit } from "got";
 import {
@@ -54,14 +55,14 @@ interface KickDependencies {
   readonly channelsMaxResponseBytes?: number;
 }
 
-function requestKickJson<A, I>(
+function requestKickJson<A>(
   url: string,
   options: OptionsInit,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Decoder<A>,
   operation: string,
   maxBytes: number,
   request: KickHttpRequest = publicGotStream,
-): Effect.Effect<
+): EffectType<
   { readonly statusCode: number; readonly body: string; readonly data?: A },
   KickApiError
 > {
@@ -81,7 +82,8 @@ function requestKickJson<A, I>(
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return Effect.succeed(response);
       }
-      return Schema.decodeUnknown(Schema.parseJson(schema))(response.body).pipe(
+      const jsonSchema = Schema.fromJsonString(schema);
+      return Schema.decodeUnknownEffect(jsonSchema)(response.body).pipe(
         Effect.map((data) => ({ ...response, data })),
         Effect.mapError(
           (cause) =>
@@ -94,7 +96,7 @@ function requestKickJson<A, I>(
 
 function fetchAccessToken(
   dependencies: KickDependencies,
-): Effect.Effect<CachedToken, KickApiError> {
+): EffectType<CachedToken, KickApiError> {
   const clientId = process.env.KICK_CLIENT_ID;
   const clientSecret = process.env.KICK_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
@@ -145,7 +147,7 @@ function fetchAccessToken(
 function getAccessToken(
   staleToken: string | undefined,
   dependencies: KickDependencies,
-): Effect.Effect<string, KickApiError> {
+): EffectType<string, KickApiError> {
   return SynchronizedRef.modifyEffect(tokenState, (cached) => {
     // On a 401, reuse a token that another caller already refreshed while this
     // caller was in flight. Only the caller still holding the stale generation
@@ -174,7 +176,9 @@ const streamSchema = Schema.NullOr(
 );
 const kickChannelSchema = Schema.Struct({
   slug: Schema.String,
-  stream_title: Schema.optionalWith(Schema.String, { default: () => "" }),
+  stream_title: Schema.String.pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed("")),
+  ),
   category: Schema.optional(categorySchema),
   stream: Schema.optional(streamSchema),
 });
@@ -212,7 +216,7 @@ export function fetchKickLiveStatus(
     username: string;
   },
   dependencies: KickDependencies = {},
-): Effect.Effect<FetchedStatus> {
+): EffectType<FetchedStatus> {
   return Effect.gen(function* () {
     let token = yield* getAccessToken(undefined, dependencies);
     let response = yield* requestChannels(username, token, dependencies);
@@ -234,7 +238,7 @@ export function fetchKickLiveStatus(
     }
     return extractLiveStatus(response.data);
   }).pipe(
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.succeed({
         status: LiveStatus.Unknown,
         error: error instanceof Error ? error.message : String(error),

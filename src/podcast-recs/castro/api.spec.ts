@@ -82,7 +82,7 @@ describe("CastroApi interruption", () => {
         const signal = options.signal as AbortSignal;
         signals.push(signal);
         await Effect.runPromise(
-          Effect.async<never, DOMException>((resume) => {
+          Effect.callback<never, DOMException>((resume) => {
             const onAbort = () =>
               resume(Effect.fail(new DOMException("Aborted", "AbortError")));
             signal.addEventListener("abort", onAbort, { once: true });

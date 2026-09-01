@@ -63,7 +63,7 @@ export default function PodsPage() {
               setError(null);
             }),
           ),
-          Effect.catchAll((err) =>
+          Effect.catch((err) =>
             Effect.sync(() =>
               setError(err instanceof Error ? err.message : "Failed to load episodes"),
             ),

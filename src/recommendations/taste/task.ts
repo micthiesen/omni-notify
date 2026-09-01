@@ -63,7 +63,7 @@ export class MediaTasteReflectionTask extends ScheduledTask {
   }
 
   public runEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const history = yield* fetchWatchHistory();
       if (history.status === "unavailable") {
         this.lastRunSummary = `skipped: ${history.reason}`;
@@ -135,7 +135,7 @@ export function buildCanonicalWatchEvidenceEffect(
         Effect.gen(function* () {
           const tmdbId = Number(canonicalId.split(":")[2]);
           const metadata = yield* fetchTitleDetails(item.mediaType, tmdbId).pipe(
-            Effect.catchAll((error) => {
+            Effect.catch((error) => {
               logger.warn(
                 `Taste metadata lookup failed for ${canonicalId}`,
                 effectMessage(error),

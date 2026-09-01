@@ -126,7 +126,7 @@ export function TaskCard({
             setHistoryError(null);
           }),
         ),
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() =>
             setHistoryError(
               err instanceof Error ? err.message : "Failed to fetch run history",

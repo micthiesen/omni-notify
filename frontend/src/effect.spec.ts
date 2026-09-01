@@ -14,7 +14,7 @@ describe("makeUiCallbackRuntime", () => {
           const runCallback = yield* makeUiCallbackRuntime();
           runCallback(
             Deferred.succeed(started, undefined).pipe(
-              Effect.zipRight(Effect.never),
+              Effect.andThen(Effect.never),
               Effect.tap(() =>
                 Effect.sync(() => {
                   updatedAfterCleanup = true;

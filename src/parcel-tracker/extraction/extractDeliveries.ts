@@ -80,7 +80,7 @@ ${body}${linksSection}`;
       catch: (cause) => new ParcelExtractionError({ cause, transient: true }),
     });
 
-    const decoded = yield* Schema.decodeUnknown(DeliveryExtractionEffectSchema)(
+    const decoded = yield* Schema.decodeUnknownEffect(DeliveryExtractionEffectSchema)(
       result.output ?? { deliveries: [] },
     ).pipe(
       Effect.mapError(

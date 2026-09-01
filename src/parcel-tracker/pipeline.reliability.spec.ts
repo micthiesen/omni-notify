@@ -115,7 +115,7 @@ describe("DeliveryPipeline reliability", () => {
   it("preserves interruption while delivery extraction is in progress", async () => {
     const started = await Effect.runPromise(Deferred.make<void>());
     mocks.extract.mockReturnValueOnce(
-      Deferred.succeed(started, undefined).pipe(Effect.zipRight(Effect.never)),
+      Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
     );
     const { DeliveryPipeline } = await import("./pipeline.js");
     const pipeline = new DeliveryPipeline(
@@ -126,7 +126,7 @@ describe("DeliveryPipeline reliability", () => {
 
     const exit = await Effect.runPromise(
       Effect.gen(function* () {
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           pipeline.handleEmailsEffect([
             {
               id: "mail-interrupted",
@@ -140,11 +140,12 @@ describe("DeliveryPipeline reliability", () => {
           ]),
         );
         yield* Deferred.await(started);
-        return yield* Fiber.interrupt(fiber);
+        yield* Fiber.interrupt(fiber);
+        return yield* Fiber.await(fiber);
       }),
     );
 
-    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(Exit.hasInterrupts(exit)).toBe(true);
     expect(mocks.record).not.toHaveBeenCalled();
   });
 

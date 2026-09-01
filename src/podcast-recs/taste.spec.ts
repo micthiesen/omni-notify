@@ -44,7 +44,7 @@ describe("loadTasteSeedEffect", () => {
         return Effect.runPromise(Effect.never);
       };
 
-      const fiber = yield* Effect.fork(loadTasteSeedEffect("taste.md", read));
+      const fiber = yield* Effect.forkChild(loadTasteSeedEffect("taste.md", read));
       yield* Deferred.await(started);
       yield* Fiber.interrupt(fiber);
 

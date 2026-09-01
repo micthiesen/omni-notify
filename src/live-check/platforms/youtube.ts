@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { decode } from "html-entities";
 import { fetchPageHtml } from "./common.js";
 import { type FetchedStatus, LiveStatus } from "./index.js";
@@ -6,12 +7,12 @@ export function fetchYouTubeLiveStatus({
   username,
 }: {
   username: string;
-}): Effect.Effect<FetchedStatus> {
+}): EffectType<FetchedStatus> {
   const url = getYouTubeLiveUrl(username);
 
   return fetchPageHtml(url).pipe(
     Effect.map(extractLiveStatus),
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.succeed({
         status: LiveStatus.Unknown,
         error: error.message,
@@ -89,8 +90,8 @@ function extractInitialPlayerResponse(html: string): YouTubePlayerResponse | nul
 
     try {
       const parsed: unknown = JSON.parse(json);
-      const decoded = Schema.decodeUnknownEither(youTubePlayerResponseSchema)(parsed);
-      if (decoded._tag === "Right") return decoded.right;
+      const decoded = Schema.decodeUnknownExit(youTubePlayerResponseSchema)(parsed);
+      if (decoded._tag === "Success") return decoded.value;
     } catch {
       // Keep looking in case an earlier reference was not the player response assignment.
     }

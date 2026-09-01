@@ -1,4 +1,4 @@
-import { Data, Clock, Effect, Ref, Schedule } from "effect";
+import { Clock, Data, Effect, Ref, Schedule, Semaphore } from "effect";
 import type { z } from "zod";
 import {
   type LimitedTextResponse,
@@ -89,7 +89,7 @@ interface RequestControl {
 
 const requestControl = Effect.runSync(
   Effect.gen(function* () {
-    const semaphore = yield* Effect.makeSemaphore(MAX_CONCURRENT_REQUESTS);
+    const semaphore = yield* Semaphore.make(MAX_CONCURRENT_REQUESTS);
     const rateState = yield* Ref.make({ windowStart: 0, used: 0 });
     const takeRatePermit: Effect.Effect<void> = Effect.suspend(() =>
       Effect.flatMap(Clock.currentTimeMillis, (now) =>
@@ -105,14 +105,14 @@ const requestControl = Effect.runSync(
       ).pipe(
         Effect.flatMap((waitMs) =>
           waitMs > 0
-            ? Effect.sleep(`${waitMs} millis`).pipe(Effect.zipRight(takeRatePermit))
+            ? Effect.sleep(`${waitMs} millis`).pipe(Effect.andThen(takeRatePermit))
             : Effect.void,
         ),
       ),
     );
     return {
       apply: (effect) =>
-        takeRatePermit.pipe(Effect.zipRight(semaphore.withPermits(1)(effect))),
+        takeRatePermit.pipe(Effect.andThen(semaphore.withPermits(1)(effect))),
     } satisfies RequestControl;
   }),
 );
@@ -298,11 +298,10 @@ export class CastroApi {
     const request =
       method === "GET"
         ? attempt.pipe(
-            Effect.retry(
-              Schedule.exponential("200 millis").pipe(
-                Schedule.compose(Schedule.recurs(2)),
-              ),
-            ),
+            Effect.retry({
+              schedule: Schedule.exponential("200 millis"),
+              times: 2,
+            }),
           )
         : attempt;
     return request.pipe(

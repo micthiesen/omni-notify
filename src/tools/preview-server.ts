@@ -74,7 +74,7 @@ class FakeTask extends ScheduledTask {
   // Emits a spread of levels over the fake duration so the log viewer has
   // something realistic to tail.
   protected runEffect(): Effect.Effect<void> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const steps = Math.max(3, Math.round(this.durationMs / 400));
       this.taskLogger.info(`Starting ${this.name} (${steps} steps)`);
       for (let i = 1; i <= steps; i++) {
@@ -118,7 +118,7 @@ class FakeRecommendationsTask extends FakeTask {
 class FakeWorkspaceTask extends FakeTask {
   public runManual(input: unknown): Promise<void> {
     return runPromise(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const request = input as { message?: string; subjectId?: string };
         if (request.message) {
           addWorkspaceMessage({

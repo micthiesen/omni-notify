@@ -171,7 +171,7 @@ describe("fetchProfileLinks", () => {
     const reader = {
       read: vi.fn(() =>
         Effect.runPromise(
-          Deferred.succeed(readStarted, undefined).pipe(Effect.zipRight(Effect.never)),
+          Deferred.succeed(readStarted, undefined).pipe(Effect.andThen(Effect.never)),
         ),
       ),
       cancel,
@@ -187,7 +187,7 @@ describe("fetchProfileLinks", () => {
 
     await Effect.runPromise(
       Effect.gen(function* () {
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           fetchProfileLinksEffect(
             { platform: Platform.Kick, username: "iri" },
             { fetchImpl },

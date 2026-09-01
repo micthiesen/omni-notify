@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "effect": "3.22.1",
+    "effect": "4.0.0-rc.112",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1"

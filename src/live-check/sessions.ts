@@ -1,5 +1,5 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Entity } from "@micthiesen/mitools/entities";
-import type { Effect } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
 import { fromSync } from "../effect/interop.js";
 import type { StreamerStatusLive } from "./persistence.js";
@@ -80,7 +80,7 @@ export function recordCompletedSession(live: StreamerStatusLive, endedAt: Date):
 export function recordCompletedSessionEffect(
   live: StreamerStatusLive,
   endedAt: Date,
-): Effect.Effect<void, PersistenceError> {
+): EffectType<void, PersistenceError> {
   return fromSync("record completed stream session", () =>
     recordCompletedSession(live, endedAt),
   );

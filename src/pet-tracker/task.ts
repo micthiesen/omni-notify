@@ -47,7 +47,7 @@ export default class PetTrackerTask extends ScheduledTask {
   }
 
   public runEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const { idToken, userId } = yield* authenticateWhisker(
         this.credentials.email,
         this.credentials.password,

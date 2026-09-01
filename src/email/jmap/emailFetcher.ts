@@ -71,14 +71,10 @@ const JmapEmailSchema = Schema.Struct({
   from: Schema.optional(Schema.NullOr(Schema.Array(EmailAddressSchema))),
   textBody: Schema.optional(Schema.NullOr(Schema.Array(EmailBodyPartSchema))),
   htmlBody: Schema.optional(Schema.NullOr(Schema.Array(EmailBodyPartSchema))),
-  bodyValues: Schema.optional(
-    Schema.Record({ key: Schema.String, value: EmailBodyValueSchema }),
-  ),
+  bodyValues: Schema.optional(Schema.Record(Schema.String, EmailBodyValueSchema)),
   receivedAt: Schema.optional(Schema.NullOr(Schema.String)),
   attachments: Schema.optional(Schema.NullOr(Schema.Array(EmailAttachmentSchema))),
-  mailboxIds: Schema.optional(
-    Schema.Record({ key: Schema.String, value: Schema.Boolean }),
-  ),
+  mailboxIds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
 });
 
 type JmapEmail = typeof JmapEmailSchema.Type;

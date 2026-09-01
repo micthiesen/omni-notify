@@ -63,7 +63,7 @@ describe("EmailTriageService memoization", () => {
   });
 
   it("shares one in-flight call between concurrent classifies of the same email", async () => {
-    const classifyFn = vi.fn(() => Effect.yieldNow().pipe(Effect.as(verdict)));
+    const classifyFn = vi.fn(() => Effect.yieldNow.pipe(Effect.as(verdict)));
     const triage = new EmailTriageService(mockLogger, classifyFn);
 
     const email = makeEmail("e1");
@@ -118,7 +118,7 @@ describe("EmailTriageService memoization", () => {
 
   it("never evicts an in-flight entry when the cache cap is exceeded", async () => {
     let resolveFirst: ((value: TriageVerdict) => void) | undefined;
-    const first = Effect.async<TriageVerdict>((resume) => {
+    const first = Effect.callback<TriageVerdict>((resume) => {
       resolveFirst = (value) => resume(Effect.succeed(value));
     });
     const classifyFn = vi.fn((email: TriageEmail) =>

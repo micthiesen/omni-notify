@@ -72,8 +72,8 @@ export function searchWebEffect(
       dependencies.request,
       dependencies.maxResponseBytes ?? TAVILY_RESPONSE_MAX_BYTES,
     ).pipe(Effect.mapError((cause) => new WebSearchError({ cause })));
-    const { results, response_time } = yield* Schema.decodeUnknown(
-      Schema.parseJson(TavilySearchResponse),
+    const { results, response_time } = yield* Schema.decodeUnknownEffect(
+      Schema.fromJsonString(TavilySearchResponse),
     )(responseText).pipe(Effect.mapError((cause) => new WebSearchError({ cause })));
 
     // Default/basic search consumes one credit. Use Tavily's public pay-as-you-go
@@ -106,7 +106,7 @@ export function searchWebEffect(
 /** Compatibility adapter for consumers not yet inside an Effect workflow. */
 export function searchWeb(
   options: Parameters<typeof searchWebEffect>[0],
-): Promise<Effect.Effect.Success<ReturnType<typeof searchWebEffect>>> {
+): Promise<Effect.Success<ReturnType<typeof searchWebEffect>>> {
   return runPromise(searchWebEffect(options));
 }
 

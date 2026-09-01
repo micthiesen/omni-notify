@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { Clock, Data, Effect } from "effect";
@@ -66,11 +67,8 @@ export class ViewerMetricsService {
     displayName,
     viewerCount,
     urlFields,
-  }: ViewerObservation): Effect.Effect<
-    void,
-    ViewerNotificationError | PersistenceError
-  > {
-    return Effect.gen(this, function* () {
+  }: ViewerObservation): EffectType<void, ViewerNotificationError | PersistenceError> {
+    return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       const observedAt = new Date(now);
       const metrics = yield* getViewerMetricsEffect(streamerId);
@@ -168,11 +166,11 @@ export class ViewerMetricsService {
     streamerId,
     displayName,
     urlFields,
-  }: Omit<ViewerObservation, "viewerCount">): Effect.Effect<
+  }: Omit<ViewerObservation, "viewerCount">): EffectType<
     void,
     ViewerNotificationError | PersistenceError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const state = this.streamerStates.get(streamerId);
       if (!state || state.pendingPeaks.size === 0) return;
       const scope = this.resolveRecordScope(streamerId);
@@ -233,7 +231,7 @@ export class ViewerMetricsService {
     streamerId: string,
     displayName: string,
     urlFields: NotificationUrlFields,
-  ): Effect.Effect<void, ViewerNotificationError> {
+  ): EffectType<void, ViewerNotificationError> {
     const sorted = [...confirmedPeaks].sort(
       (a, b) => b.config.priority - a.config.priority,
     );

@@ -11,7 +11,7 @@ import type { WorkspaceDefinition, WorkspaceRunResult } from "./types.js";
 const manualInputSchema = Schema.Struct({
   message: Schema.String,
   subjectId: Schema.optional(Schema.String),
-  trigger: Schema.optional(Schema.Literal("message", "email")),
+  trigger: Schema.optional(Schema.Literals(["message", "email"])),
 });
 
 export class WorkspaceTask extends ScheduledTask {
@@ -33,7 +33,7 @@ export class WorkspaceTask extends ScheduledTask {
   }
 
   private scheduledRunEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (this.definition.scheduledRuns === false) {
         this.lastSummary = "On-demand workspace; scheduled refresh skipped";
         return;
@@ -50,7 +50,7 @@ export class WorkspaceTask extends ScheduledTask {
       let actions = 0;
       const failures: string[] = [];
       const results = yield* Effect.forEach(subjects, (subject) =>
-        Effect.either(
+        Effect.result(
           runWorkspaceEffect(
             this.definition,
             { trigger: "scheduled", subjectId: subject.subjectId },
@@ -59,12 +59,12 @@ export class WorkspaceTask extends ScheduledTask {
         ).pipe(Effect.map((result) => ({ subject, result }))),
       );
       for (const { subject, result } of results) {
-        if (result._tag === "Right") {
-          const value = result.right;
+        if (result._tag === "Success") {
+          const value = result.success;
           updated += value.updatedSubjects;
           actions += value.createdActions;
         } else {
-          const message = result.left.message;
+          const message = result.failure.message;
           failures.push(`${subject.title}: ${message}`);
           this.logger.warn(`Workspace research failed for ${subject.title}`, message);
         }
@@ -83,8 +83,8 @@ export class WorkspaceTask extends ScheduledTask {
   }
 
   private manualRunEffect(input: unknown) {
-    return Effect.gen(this, function* () {
-      const parsed = yield* Schema.decodeUnknown(manualInputSchema)(input).pipe(
+    return Effect.gen({ self: this }, function* () {
+      const parsed = yield* Schema.decodeUnknownEffect(manualInputSchema)(input).pipe(
         Effect.mapError(
           (cause) =>
             new WorkspaceValidationError({

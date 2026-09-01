@@ -73,7 +73,7 @@ export function submitEpisodeUrlEffect(
     // so interruption and failures cannot leave an unobserved Promise behind.
     yield* tryPromise("bookmark PressPods article", () =>
       addBookmark({ url: validatedUrl, archived: true, tags: ["PressPods"] }, logger),
-    ).pipe(Effect.catchAll(() => Effect.void));
+    ).pipe(Effect.catch(() => Effect.void));
 
     yield* trySync("kick PressPods worker", kickWorker);
     return job;

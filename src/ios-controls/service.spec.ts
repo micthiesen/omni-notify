@@ -327,7 +327,7 @@ describe("IOSControlService", () => {
       {
         sendControlChangedEffect: () =>
           Deferred.succeed(started, undefined).pipe(
-            Effect.zipRight(Effect.never),
+            Effect.andThen(Effect.never),
             Effect.ensuring(Deferred.succeed(cancelled, undefined)),
           ),
         close: vi.fn(),

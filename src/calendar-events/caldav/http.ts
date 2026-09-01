@@ -6,9 +6,11 @@ export const CALDAV_REQUEST_TIMEOUT_MS = 15_000;
 export const CALDAV_XML_MAX_BYTES = 2 * 1024 * 1024;
 export const CALDAV_ERROR_MAX_BYTES = 64 * 1024;
 const CaldavXmlSchema = Schema.String.pipe(
-  Schema.filter((value) => value.trimStart().startsWith("<"), {
-    message: () => "CalDAV response is not XML",
-  }),
+  Schema.check(
+    Schema.makeFilter((value) => value.trimStart().startsWith("<"), {
+      message: "CalDAV response is not XML",
+    }),
+  ),
 );
 
 class CaldavResponseTooLargeError extends Error {}
@@ -191,7 +193,7 @@ export function propfindEffect(
         "read CalDAV PROPFIND response",
         CALDAV_XML_MAX_BYTES,
       );
-      const xml = yield* Schema.decodeUnknown(CaldavXmlSchema)(rawXml).pipe(
+      const xml = yield* Schema.decodeUnknownEffect(CaldavXmlSchema)(rawXml).pipe(
         Effect.mapError(
           (cause) =>
             new CaldavError({

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Effect, Exit, Fiber } from "effect";
+import { Cause, Effect, Exit, Fiber } from "effect";
 import type { ArrConfig } from "./client.js";
 import { addSonarrSeries, fetchSonarrSeries } from "./sonarr.js";
 
@@ -74,9 +74,10 @@ describe("Sonarr adapter", () => {
     const fiber = Effect.runFork(fetchSonarrSeries(config, fetchMock));
     await vi.waitFor(() => expect(pull).toHaveBeenCalled());
 
-    const exit = await Effect.runPromise(Fiber.interrupt(fiber));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    const exit = await Effect.runPromise(Fiber.await(fiber));
 
-    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
     expect(cancelled).toHaveBeenCalledTimes(1);
   });
 

@@ -15,14 +15,14 @@ export function getDuration(
     mm.parseBuffer(audioFile, undefined, { duration: true }),
   ).pipe(
     Effect.flatMap((metadata) =>
-      Schema.decodeUnknown(
+      Schema.decodeUnknownEffect(
         Schema.Struct({
           format: Schema.Struct({ duration: Schema.optional(Schema.Number) }),
         }),
       )(metadata),
     ),
     Effect.map((metadata) => metadata.format.duration),
-    Effect.catchAll((error) => {
+    Effect.catch((error) => {
       logger.error("Error getting audio duration:", { error });
       return Effect.succeed(undefined);
     }),
@@ -61,9 +61,9 @@ export function tagEpisodeAudio(
         },
         "fetch PressPods album art",
         PRESS_PODS_IMAGE_MAX_BYTES,
-      ).pipe(Effect.either);
-      if (imageResult._tag === "Right") {
-        const imageResponse = imageResult.right;
+      ).pipe(Effect.result);
+      if (imageResult._tag === "Success") {
+        const imageResponse = imageResult.success;
         const contentType = imageResponse.headers["content-type"];
         const respMime = Array.isArray(contentType) ? contentType[0] : contentType;
         if (!respMime?.includes("image")) {
@@ -78,7 +78,7 @@ export function tagEpisodeAudio(
           };
       } else {
         logger.warn("Error fetching album art:", {
-          error: extractHttpError(imageResult.left.cause),
+          error: extractHttpError(imageResult.failure.cause),
         });
       }
     }
@@ -91,7 +91,7 @@ export function tagEpisodeAudio(
 
     if (Object.keys(tags).length === 0) return audioFile;
 
-    const taggedResult = yield* Effect.async<Buffer, PressPodsError>((resume) => {
+    const taggedResult = yield* Effect.callback<Buffer, PressPodsError>((resume) => {
       NodeID3.write(tags, audioFile, (err, buffer) => {
         if (err || !buffer) {
           resume(
@@ -104,9 +104,9 @@ export function tagEpisodeAudio(
           );
         } else resume(Effect.succeed(buffer));
       });
-    }).pipe(Effect.either);
-    if (taggedResult._tag === "Right") {
-      const tagged = taggedResult.right;
+    }).pipe(Effect.result);
+    if (taggedResult._tag === "Success") {
+      const tagged = taggedResult.success;
       logger.info("Embedded ID3 tags", {
         art: Boolean(tags.image),
         chapters: chapterFrames?.chapter.length ?? 0,
@@ -114,7 +114,7 @@ export function tagEpisodeAudio(
       return tagged;
     } else {
       logger.warn("Error writing ID3 tags:", {
-        error: extractHttpError(taggedResult.left.cause),
+        error: extractHttpError(taggedResult.failure.cause),
       });
       return audioFile;
     }

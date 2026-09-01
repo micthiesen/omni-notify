@@ -80,7 +80,7 @@ export function discoverEpisodesEffect(
           maxContentChars: 700,
         }).pipe(
           Effect.map(({ results }) => ({ query, results })),
-          Effect.catchAll((error) => {
+          Effect.catch((error) => {
             logger.warn(`Discovery search failed: ${query}`, String(error));
             return Effect.succeed({ query, results: [] as WebSearchResult[] });
           }),

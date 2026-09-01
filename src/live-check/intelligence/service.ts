@@ -1,7 +1,8 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import { Data, Effect } from "effect";
+import { Data, Effect, Semaphore } from "effect";
 import { recordCostEventSafely } from "../../costs/persistence.js";
 import config from "../../utils/config.js";
 import type { StreamerStatusLive } from "../persistence.js";
@@ -92,10 +93,10 @@ export function viewerCountForAnomaly(status: StreamerStatusLive): number | null
 }
 
 export interface LivestreamIntelligenceObserver {
-  observeLive(observation: LiveObservation): Effect.Effect<void>;
-  observeOffline(streamerId: string): Effect.Effect<void>;
-  afterTick(): Effect.Effect<void>;
-  close(): Effect.Effect<void>;
+  observeLive(observation: LiveObservation): EffectType<void>;
+  observeOffline(streamerId: string): EffectType<void>;
+  afterTick(): EffectType<void>;
+  close(): EffectType<void>;
 }
 
 export interface LivestreamRuntimeDiagnostics {
@@ -170,20 +171,20 @@ export class EffectWorkQueueClosedError extends Data.TaggedError(
 )<{}> {}
 
 export class EffectWorkQueue {
-  private readonly semaphore: Effect.Semaphore;
-  private readonly drainWaiters = new Set<(effect: Effect.Effect<void>) => void>();
+  private readonly semaphore: Semaphore.Semaphore;
+  private readonly drainWaiters = new Set<(effect: EffectType<void>) => void>();
   private accepting = true;
   private outstanding = 0;
   public pending = 0;
   public size = 0;
 
   public constructor(concurrency: number) {
-    this.semaphore = Effect.unsafeMakeSemaphore(concurrency);
+    this.semaphore = Semaphore.makeUnsafe(concurrency);
   }
 
   private admit<A, E>(
-    job: Effect.Effect<A, E>,
-  ): Effect.Effect<Effect.Effect<A, E>, EffectWorkQueueClosedError> {
+    job: EffectType<A, E>,
+  ): EffectType<EffectType<A, E>, EffectWorkQueueClosedError> {
     return Effect.suspend(() => {
       if (!this.accepting) return Effect.fail(new EffectWorkQueueClosedError());
       this.outstanding += 1;
@@ -222,29 +223,29 @@ export class EffectWorkQueue {
   }
 
   public run<A, E>(
-    job: Effect.Effect<A, E>,
-  ): Effect.Effect<A, E | EffectWorkQueueClosedError> {
+    job: EffectType<A, E>,
+  ): EffectType<A, E | EffectWorkQueueClosedError> {
     return Effect.uninterruptibleMask((restore) =>
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const admitted = yield* this.admit(job);
         return yield* restore(admitted);
       }),
     );
   }
 
-  public fork<E>(job: Effect.Effect<unknown, E>): Effect.Effect<void> {
+  public fork<E>(job: EffectType<unknown, E>): EffectType<void> {
     return Effect.uninterruptibleMask(() =>
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const admitted = yield* this.admit(job);
-        yield* Effect.forkDaemon(Effect.interruptible(admitted));
+        yield* Effect.forkDetach(Effect.interruptible(admitted));
       }),
     ).pipe(Effect.catchTag("EffectWorkQueueClosedError", () => Effect.void));
   }
 
-  public onIdle(): Effect.Effect<void> {
+  public onIdle(): EffectType<void> {
     return Effect.suspend(() => {
       if (this.outstanding === 0) return Effect.void;
-      return Effect.async<void>((resume) => {
+      return Effect.callback<void>((resume) => {
         this.drainWaiters.add(resume);
         if (this.outstanding === 0) {
           this.drainWaiters.delete(resume);
@@ -255,7 +256,7 @@ export class EffectWorkQueue {
     });
   }
 
-  public close(): Effect.Effect<void> {
+  public close(): EffectType<void> {
     return Effect.sync(() => {
       this.accepting = false;
     }).pipe(Effect.andThen(this.onIdle()));
@@ -359,8 +360,8 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     }
   }
 
-  public observeLive(observation: LiveObservation): Effect.Effect<void> {
-    return Effect.gen(this, function* () {
+  public observeLive(observation: LiveObservation): EffectType<void> {
+    return Effect.gen({ self: this }, function* () {
       const now = Date.now();
       this.active.set(observation.streamer.id, observation);
       const previous = getLivestreamIntelligence(observation.streamer.id);
@@ -483,7 +484,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
             reason: trend.reason ?? "Unusual viewer acceleration",
             confidence: 0.85,
           }).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() =>
                 this.logger.warn(
                   `Viewer surge notification failed for ${observation.streamer.displayName}: ${failureMessage(error)}`,
@@ -503,7 +504,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     });
   }
 
-  public observeOffline(streamerId: string): Effect.Effect<void> {
+  public observeOffline(streamerId: string): EffectType<void> {
     return Effect.sync(() => {
       const current = getLivestreamIntelligence(streamerId);
       const diagnostics = getLivestreamDiagnostics(streamerId);
@@ -542,8 +543,8 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     });
   }
 
-  public afterTick(): Effect.Effect<void> {
-    return Effect.gen(this, function* () {
+  public afterTick(): EffectType<void> {
+    return Effect.gen({ self: this }, function* () {
       const now = Date.now();
       const targets = selectVoiceTargets(
         [...this.active.values()].filter((observation) =>
@@ -559,16 +560,16 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     });
   }
 
-  public close(): Effect.Effect<void> {
-    return Effect.all(
-      [
-        this.captureQueue.close(),
-        this.speechQueue.close(),
-        this.llmQueue.close(),
-        this.backgroundQueue.close(),
-      ],
-      { concurrency: "unbounded", discard: true },
-    );
+  public close(): EffectType<void> {
+    // Drain in dependency order: capture jobs may still enqueue speech work,
+    // and speech work may still enqueue classifier work.
+    return this.captureQueue
+      .close()
+      .pipe(
+        Effect.andThen(this.speechQueue.close()),
+        Effect.andThen(this.llmQueue.close()),
+        Effect.andThen(this.backgroundQueue.close()),
+      );
   }
 
   private captureEffect(url: string, seconds: number) {
@@ -629,7 +630,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     );
   }
 
-  private scheduleVoiceSample(observation: LiveObservation): Effect.Effect<void> {
+  private scheduleVoiceSample(observation: LiveObservation): EffectType<void> {
     const id = observation.streamer.id;
     const sessionStartedAt = epoch(observation.status.startedAt);
     const startedAt = Date.now();
@@ -641,19 +642,19 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       startedAt,
       detail: "Capturing a bounded voice sample",
     });
-    const job = Effect.gen(this, function* () {
+    const job = Effect.gen({ self: this }, function* () {
       const audio = yield* this.captureEffect(
         streamUrl(observation.status),
         config.LIVESTREAM_VOICE_SAMPLE_SECONDS,
       );
       yield* this.speechQueue.run(
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const match = yield* this.speech.detectDestinyEffect(audio.samples);
           yield* this.handleVoiceMatch(observation, audio.samples, match, startedAt);
         }),
       );
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => {
           const finishedAt = Date.now();
           const detail = failureMessage(error).slice(0, 500);
@@ -697,7 +698,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     match: { confidence: number; matchedWindows: number; checkedWindows: number },
     startedAt: number,
   ) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const id = observation.streamer.id;
       const now = Date.now();
       const current = this.currentSession(observation);
@@ -875,7 +876,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     });
   }
 
-  private scheduleSummary(observation: LiveObservation): Effect.Effect<void> {
+  private scheduleSummary(observation: LiveObservation): EffectType<void> {
     const id = observation.streamer.id;
     const sessionStartedAt = epoch(observation.status.startedAt);
     const startedAt = Date.now();
@@ -888,7 +889,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       startedAt,
       detail: "Capturing and transcribing the current window",
     });
-    const job = Effect.gen(this, function* () {
+    const job = Effect.gen({ self: this }, function* () {
       const audio = yield* this.captureEffect(
         streamUrl(observation.status),
         config.LIVESTREAM_SUMMARY_SAMPLE_SECONDS,
@@ -991,7 +992,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         },
       });
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => {
           const finishedAt = Date.now();
           const detail = failureMessage(error).slice(0, 500);
@@ -1034,8 +1035,8 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     transcript: string,
     durationSeconds: number,
     assessment: TranscriptAssessment,
-  ): Effect.Effect<void> {
-    return Effect.gen(this, function* () {
+  ): EffectType<void> {
+    return Effect.gen({ self: this }, function* () {
       const current = this.currentSession(observation);
       if (!current) return;
       const now = Date.now();
@@ -1078,7 +1079,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           reason: assessment.alertReason,
           confidence: assessment.confidence,
         }).pipe(
-          Effect.catchAll((error) =>
+          Effect.catch((error) =>
             Effect.sync(() =>
               this.logger.warn(
                 `Semantic alert failed for ${observation.streamer.displayName}: ${failureMessage(error)}`,
@@ -1118,8 +1119,8 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     message: string;
     reason: string;
     confidence: number;
-  }): Effect.Effect<void, LivestreamNotificationError> {
-    return Effect.gen(this, function* () {
+  }): EffectType<void, LivestreamNotificationError> {
+    return Effect.gen({ self: this }, function* () {
       const current = this.currentSession(input.observation);
       if (!current) return;
       const markSkipped = (detail: string) =>
@@ -1195,7 +1196,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           }),
         catch: (cause) => new LivestreamNotificationError({ cause }),
       }).pipe(
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           if (this.alertTimes.get(key) === alert.createdAt) this.alertTimes.delete(key);
           const finishedAt = Date.now();
           const detail = (
@@ -1267,7 +1268,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
 
 export function createLivestreamIntelligenceService(
   logger: Logger,
-): Effect.Effect<LivestreamIntelligenceService | undefined, SpeechRecognitionError> {
+): EffectType<LivestreamIntelligenceService | undefined, SpeechRecognitionError> {
   if (!config.LIVESTREAM_INTELLIGENCE_ENABLED) return Effect.succeed(undefined);
   return LocalSpeechRuntime.createEffect(
     config.LIVESTREAM_MODEL_DIR,

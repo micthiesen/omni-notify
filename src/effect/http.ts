@@ -133,12 +133,12 @@ export function readJsonBody(
 /** Read and decode an untrusted JSON request body with Effect Schema. */
 export function decodeJsonBody<A, I>(
   context: Context,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.Codec<A, I>,
   maxBytes = MAX_JSON_BODY_BYTES,
 ): Effect.Effect<A, HttpBodyError | HttpBodyTooLargeError> {
   return readJsonBody(context, maxBytes).pipe(
     Effect.flatMap((body) =>
-      Schema.decodeUnknown(schema)(body).pipe(
+      Schema.decodeUnknownEffect(schema)(body).pipe(
         Effect.mapError((cause) => new HttpBodyError({ cause })),
       ),
     ),

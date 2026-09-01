@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,8 +24,8 @@ function filesystemEffect<A>(operation: string, run: () => Promise<A>) {
 
 function withSpeechFixture<A, E>(
   voiceprintContents: string,
-  use: (fixture: { modelDir: string; voiceprintPath: string }) => Effect.Effect<A, E>,
-): Effect.Effect<A, E | SpeechRecognitionError> {
+  use: (fixture: { modelDir: string; voiceprintPath: string }) => EffectType<A, E>,
+): EffectType<A, E | SpeechRecognitionError> {
   return Effect.acquireUseRelease(
     filesystemEffect("create speech fixture", () =>
       mkdtemp(join(tmpdir(), "omni-local-speech-")),

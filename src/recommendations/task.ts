@@ -69,7 +69,7 @@ export class MediaRecommendationTask extends ScheduledTask {
   }
 
   private runPipelineEffect(maxRecommendations: number) {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const logFile = config.LOGS_PATH
         ? new LogFile(
             `${config.LOGS_PATH}/recommendations/${logTimestamp()}.md`,
@@ -101,7 +101,7 @@ const recommendationManualInputSchema = Schema.Struct({
 function decodeManualInput(
   input: unknown,
 ): Effect.Effect<RecommendationManualRunInput, RecommendationInputError> {
-  return Schema.decodeUnknown(recommendationManualInputSchema)(input).pipe(
+  return Schema.decodeUnknownEffect(recommendationManualInputSchema)(input).pipe(
     Effect.filterOrFail(
       ({ maxRecommendations }) =>
         Number.isInteger(maxRecommendations) &&

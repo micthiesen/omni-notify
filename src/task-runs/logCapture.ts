@@ -1,6 +1,7 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Logger } from "@micthiesen/mitools/logging";
-import { Effect, Exit, Fiber, Runtime } from "effect";
+import { Effect, Exit, Fiber } from "effect";
 import { runLogBus } from "./events.js";
 import { saveRunLogs, type TaskRunLogLine } from "./persistence.js";
 
@@ -84,20 +85,20 @@ export function runWithLogCapture<T>(runId: string, fn: () => Promise<T>): Promi
 
 /**
  * Run an Effect inside the same AsyncLocalStorage context used by the legacy
- * Promise task runner. Runtime.runFork is intentionally confined to this
+ * Promise task runner. Effect.runForkWith is intentionally confined to this
  * adapter because establishing an ALS scope requires starting the fiber while
  * `AsyncLocalStorage.run` is active.
  */
 export function runWithLogCaptureEffect<A, E, R>(
   runId: string,
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> {
-  return Effect.runtime<R>().pipe(
-    Effect.flatMap((runtime) =>
-      Effect.async<A, E>((resume) => {
+  effect: EffectType<A, E, R>,
+): EffectType<A, E, R> {
+  return Effect.context<R>().pipe(
+    Effect.flatMap((services) =>
+      Effect.callback<A, E>((resume) => {
         const taskName = buffers.get(runId)?.taskName ?? "Unknown";
         const fiber = runContext.run({ runId, taskName }, () =>
-          Runtime.runFork(runtime)(effect),
+          Effect.runForkWith(services)(effect),
         );
         fiber.addObserver((exit) =>
           resume(

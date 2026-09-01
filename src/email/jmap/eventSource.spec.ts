@@ -70,7 +70,7 @@ describe("JMAP EventSource resource ownership", () => {
     const keepAlive = await Effect.runPromise(Deferred.make<void>());
     const program = Effect.scoped(
       createEventSourceEffect(context(), vi.fn(), logger).pipe(
-        Effect.zipRight(Deferred.await(keepAlive)),
+        Effect.andThen(Deferred.await(keepAlive)),
       ),
     );
     const fiber = Effect.runFork(program);
@@ -100,7 +100,7 @@ describe("JMAP EventSource resource ownership", () => {
     const fiber = Effect.runFork(
       Effect.scoped(createEventSourceEffect(context(neverSession), vi.fn(), logger)),
     );
-    await Effect.runPromise(Effect.yieldNow());
+    await Effect.runPromise(Effect.yieldNow);
 
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(eventSourceState.instances).toHaveLength(0);
@@ -114,7 +114,7 @@ describe("JMAP EventSource resource ownership", () => {
       const fiber = Effect.runFork(
         Effect.scoped(
           createEventSourceEffect(context(), onEmailStateChange, logger).pipe(
-            Effect.zipRight(Deferred.await(keepAlive)),
+            Effect.andThen(Deferred.await(keepAlive)),
           ),
         ),
       );

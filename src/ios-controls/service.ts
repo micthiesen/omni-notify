@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Data, Effect, Schedule } from "effect";
 import { runPromise } from "../effect/interop.js";
@@ -73,8 +74,8 @@ export class IOSControlService {
   public registerDeviceEffect(
     deviceId: string,
     controls: ControlRegistrationInput[],
-  ): Effect.Effect<void> {
-    return Effect.gen(this, function* () {
+  ): EffectType<void> {
+    return Effect.gen({ self: this }, function* () {
       const previous = new Map(
         listIOSControlRegistrations()
           .filter((row) => row.deviceId === deviceId)
@@ -101,8 +102,8 @@ export class IOSControlService {
     return runPromise(this.reconcileEffect());
   }
 
-  public reconcileEffect(): Effect.Effect<void> {
-    return Effect.gen(this, function* () {
+  public reconcileEffect(): EffectType<void> {
+    return Effect.gen({ self: this }, function* () {
       const slots = buildLiveControlSlots(this.streamers, this.homeUrl);
       this.lastReconciledAt = Date.now();
       if (!this.apns) return;
@@ -138,11 +139,11 @@ export class IOSControlService {
 
   private deliverEffect(
     registrations: Array<{ registrationId: string; hash: string }>,
-  ): Effect.Effect<void> {
+  ): EffectType<void> {
     return Effect.forEach(
       registrations,
       ({ registrationId, hash }) =>
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const failureKey = `${registrationId}:${hash}`;
           if (this.permanentFailures.has(failureKey)) return;
           const outcome = yield* this.pushEffect(registrationId, hash);
@@ -164,13 +165,13 @@ export class IOSControlService {
   private pushEffect(
     registrationId: string,
     desiredHash: string,
-  ): Effect.Effect<"delivered" | "transient" | "permanent"> {
+  ): EffectType<"delivered" | "transient" | "permanent"> {
     const registration = listIOSControlRegistrations().find(
       (row) => row.registrationId === registrationId,
     );
     if (!registration || !this.apns) return Effect.succeed("delivered");
     const apns = this.apns;
-    const attempt = Effect.gen(this, function* () {
+    const attempt = Effect.gen({ self: this }, function* () {
       const result = yield* apns.sendControlChangedEffect(registration).pipe(
         Effect.mapError(
           (cause) =>

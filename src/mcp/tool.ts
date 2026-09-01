@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/server";
 import { Cause, Data, Effect } from "effect";
 import { z } from "zod";
@@ -28,7 +29,7 @@ export interface McpToolDefinition {
   policy: ToolPolicy;
   execute: (
     input: Record<string, unknown>,
-  ) => Effect.Effect<Record<string, unknown>, McpToolError>;
+  ) => EffectType<Record<string, unknown>, McpToolError>;
 }
 
 export class McpToolError extends Data.TaggedError("McpToolError")<{
@@ -59,7 +60,7 @@ type ToolDefinitionInput<
 > = Omit<McpToolDefinition, "inputSchema" | "outputSchema" | "execute"> & {
   inputSchema: TInput;
   outputSchema: z.ZodType<Record<string, unknown>>;
-  execute: (input: z.output<TInput>) => Effect.Effect<Record<string, unknown>, TError>;
+  execute: (input: z.output<TInput>) => EffectType<Record<string, unknown>, TError>;
 };
 
 export function defineTool<TInput extends z.ZodType<Record<string, unknown>>, TError>(
@@ -73,7 +74,7 @@ export function defineTool<TInput extends z.ZodType<Record<string, unknown>>, TE
           new McpToolError({ tool: definition.name, phase: "input", cause }),
       });
       const value = yield* definition.execute(decodedInput).pipe(
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.fail(
             new McpToolError({
               tool: definition.name,

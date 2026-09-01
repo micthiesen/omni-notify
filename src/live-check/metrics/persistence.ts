@@ -1,5 +1,5 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Entity } from "@micthiesen/mitools/entities";
-import type { Effect } from "effect";
 import type { PersistenceError } from "../../effect/errors.js";
 import { fromSync } from "../../effect/interop.js";
 import { canonicalBindingKey } from "../identityLinks.js";
@@ -27,7 +27,7 @@ export function getViewerMetrics(streamerId: string): ViewerMetricsData {
 
 export function getViewerMetricsEffect(
   streamerId: string,
-): Effect.Effect<ViewerMetricsData, PersistenceError> {
+): EffectType<ViewerMetricsData, PersistenceError> {
   return fromSync("read viewer metrics", () => getViewerMetrics(streamerId));
 }
 
@@ -37,7 +37,7 @@ export function upsertViewerMetrics(metrics: ViewerMetricsData): void {
 
 export function upsertViewerMetricsEffect(
   metrics: ViewerMetricsData,
-): Effect.Effect<void, PersistenceError> {
+): EffectType<void, PersistenceError> {
   return fromSync("upsert viewer metrics", () => upsertViewerMetrics(metrics));
 }
 
@@ -89,7 +89,7 @@ export function recordPlatformViewerCount(input: {
 
 export function recordPlatformViewerCountEffect(
   input: Parameters<typeof recordPlatformViewerCount>[0],
-): Effect.Effect<void, PersistenceError> {
+): EffectType<void, PersistenceError> {
   return fromSync("record platform viewer count", () =>
     recordPlatformViewerCount(input),
   );

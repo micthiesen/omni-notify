@@ -55,7 +55,7 @@ export class PodcastTasteReflectionTask extends ScheduledTask {
   }
 
   private runEffect(): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const account = resolvePodcastAccount(this.logger);
       if (!account) {
         this.lastRunSummary = "skipped: no podcast account client";

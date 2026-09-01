@@ -49,7 +49,7 @@ export default class EmailWatchdogTask extends ScheduledTask {
     return runPromise(this.runEffect);
   }
 
-  private readonly runEffect = Effect.gen(this, function* () {
+  private readonly runEffect = Effect.gen({ self: this }, function* () {
     const lastDispatchedAt = yield* getLastDispatchedAtEffect;
     const now = yield* Clock.currentTimeMillis;
 

@@ -56,11 +56,10 @@ function tmdbGet<T>(
         })
         .json<unknown>(),
     ).pipe(
-      Effect.retry(
-        Schedule.exponential(Duration.millis(200)).pipe(
-          Schedule.compose(Schedule.recurs(2)),
-        ),
-      ),
+      Effect.retry({
+        schedule: Schedule.exponential(Duration.millis(200)),
+        times: 2,
+      }),
     );
     const decoded = yield* Effect.try({
       try: () => schema.parse(Schema.decodeUnknownSync(Schema.Unknown)(raw)),

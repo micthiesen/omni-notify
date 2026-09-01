@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Effect, Schema } from "effect";
 import { fetchGQL } from "./common.js";
 import { type FetchedStatus, LiveStatus } from "./index.js";
@@ -35,7 +36,7 @@ export function fetchTwitchLiveStatus({
   username,
 }: {
   username: string;
-}): Effect.Effect<FetchedStatus> {
+}): EffectType<FetchedStatus> {
   const query = `query{user(login:"${username}"){stream{title viewersCount game{name}}broadcastSettings{liveUpNotification}}}`;
 
   return fetchGQL(
@@ -47,7 +48,7 @@ export function fetchTwitchLiveStatus({
     twitchGQLResponseSchema,
   ).pipe(
     Effect.map(extractLiveStatus),
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.succeed({
         status: LiveStatus.Unknown,
         error: error.message,

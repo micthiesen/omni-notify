@@ -55,7 +55,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
                   ),
                 ),
           ),
-          Effect.catchAll((cause) =>
+          Effect.catch((cause) =>
             Effect.sync(() => {
               setError(
                 cause instanceof Error ? cause.message : "Failed to fetch snapshot",
@@ -74,7 +74,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
             yield* Effect.acquireUseRelease(
               Effect.sync(() => new EventSource("/api/events")),
               (source) =>
-                Effect.async<void>((resume) => {
+                Effect.callback<void>((resume) => {
                   const onSnapshot = (event: Event) => {
                     const data = (event as MessageEvent<string>).data;
                     runCallback(
@@ -82,7 +82,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
                         try: () => JSON.parse(data) as unknown,
                         catch: (cause) => cause,
                       }).pipe(
-                        Effect.flatMap(Schema.decodeUnknown(SnapshotSchema)),
+                        Effect.flatMap(Schema.decodeUnknownEffect(SnapshotSchema)),
                         Effect.tap(() => Ref.set(isLive, true)),
                         Effect.tap((next) =>
                           Effect.sync(() => {
@@ -91,7 +91,7 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
                             setSnapshot(next);
                           }),
                         ),
-                        Effect.catchAll((cause) =>
+                        Effect.catch((cause) =>
                           Effect.sync(() =>
                             setError(
                               cause instanceof Error

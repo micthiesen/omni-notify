@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { generateText, Output } from "ai";
 import { Data, Effect } from "effect";
@@ -91,8 +92,8 @@ export class LivestreamClassifier {
 
   public assessTranscriptEffect(
     input: TranscriptAssessmentInput,
-  ): Effect.Effect<TranscriptAssessment | undefined, TranscriptAssessmentError> {
-    return Effect.gen(this, function* () {
+  ): EffectType<TranscriptAssessment | undefined, TranscriptAssessmentError> {
+    return Effect.gen({ self: this }, function* () {
       const releaseBudget = this.reserveBudget("transcript assessment", 0.55);
       if (!releaseBudget) return undefined;
       const feedback = buildLivestreamFeedbackDigest();

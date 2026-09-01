@@ -1,5 +1,5 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Entity } from "@micthiesen/mitools/entities";
-import type { Effect } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
 import { fromSync } from "../effect/interop.js";
 import { Platform } from "./platforms/index.js";
@@ -45,11 +45,11 @@ export function getProfileIdentityLink(
 
 export function getProfileIdentityLinkEffect(
   source: PlatformBinding,
-): Effect.Effect<ProfileIdentityLink | undefined, PersistenceError> {
+): EffectType<ProfileIdentityLink | undefined, PersistenceError> {
   return fromSync("read profile identity link", () => getProfileIdentityLink(source));
 }
 
-export function getAllProfileIdentityLinksEffect(): Effect.Effect<
+export function getAllProfileIdentityLinksEffect(): EffectType<
   ProfileIdentityLink[],
   PersistenceError
 > {
@@ -68,7 +68,7 @@ export function forgetProfileIdentityLink(source: PlatformBinding): void {
 
 export function forgetProfileIdentityLinkEffect(
   source: PlatformBinding,
-): Effect.Effect<void, PersistenceError> {
+): EffectType<void, PersistenceError> {
   return fromSync("delete profile identity link", () =>
     forgetProfileIdentityLink(source),
   );
@@ -99,7 +99,7 @@ export function rememberProfileIdentityLink({
 
 export function rememberProfileIdentityLinkEffect(
   input: Parameters<typeof rememberProfileIdentityLink>[0],
-): Effect.Effect<ProfileIdentityLink, PersistenceError> {
+): EffectType<ProfileIdentityLink, PersistenceError> {
   return fromSync("upsert profile identity link", () =>
     rememberProfileIdentityLink(input),
   );

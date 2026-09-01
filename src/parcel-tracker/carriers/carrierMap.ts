@@ -1,5 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { Effect, Schema } from "effect";
+import { Effect, Schema, Semaphore } from "effect";
 import {
   fetchPublicText,
   PUBLIC_HTTP_USER_AGENT,
@@ -13,14 +13,14 @@ let cachedCarriers: CarrierEntry[] | undefined;
 let cachedAt = 0;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 export const CARRIER_LIST_MAX_BYTES = 2 * 1024 * 1024;
-const refreshMutex = Effect.unsafeMakeSemaphore(1);
-const CarrierResponseSchema = Schema.Record({
-  key: Schema.String,
-  value: Schema.Union(
+const refreshMutex = Semaphore.makeUnsafe(1);
+const CarrierResponseSchema = Schema.Record(
+  Schema.String,
+  Schema.Union([
     Schema.String,
     Schema.Struct({ name: Schema.optional(Schema.String) }),
-  ),
-});
+  ]),
+);
 
 interface CarrierListDependencies {
   readonly request?: PublicTextRequest;
@@ -69,9 +69,11 @@ function fetchCarrierListEffect(
         dependencies.request,
         dependencies.maxResponseBytes ?? CARRIER_LIST_MAX_BYTES,
       ).pipe(
-        Effect.flatMap(Schema.decodeUnknown(Schema.parseJson(CarrierResponseSchema))),
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(Schema.fromJsonString(CarrierResponseSchema)),
+        ),
         Effect.mapError((cause) => new CarrierListError({ cause })),
-        Effect.catchAll((error) => {
+        Effect.catch((error) => {
           logger.warn(`Failed to fetch Parcel carrier list: ${error.message}`);
           return Effect.succeed(undefined);
         }),

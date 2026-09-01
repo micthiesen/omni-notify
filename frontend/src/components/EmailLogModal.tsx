@@ -121,7 +121,7 @@ export function EmailLogModal({
             setDropped(data.dropped);
           }),
         ),
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() =>
             setError(err instanceof Error ? err.message : "Failed to fetch logs"),
           ),
@@ -152,7 +152,7 @@ export function EmailLogModal({
           }),
         ),
         // Coverage status is decorative; the block button works without it.
-        Effect.catchAll(() => Effect.void),
+        Effect.catch(() => Effect.void),
       ),
     );
   }, []);

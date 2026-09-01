@@ -46,23 +46,23 @@ export function resolveCandidatesEffect(
       (item) =>
         resolveOneEffect(item, account).pipe(
           Effect.mapError((cause) => new CandidateResolutionError({ item, cause })),
-          Effect.either,
+          Effect.result,
         ),
       { concurrency: RESOLVE_CONCURRENCY },
     );
 
     const dropped = resolved
-      .filter((result) => result._tag === "Left")
+      .filter((result) => result._tag === "Failure")
       .map(
-        ({ left }) =>
-          `- ${left.item.showTitle} — ${left.item.episodeTitle}: ${left.cause instanceof Error ? left.cause.message : String(left.cause)}`,
+        ({ failure }) =>
+          `- ${failure.item.showTitle} — ${failure.item.episodeTitle}: ${failure.cause instanceof Error ? failure.cause.message : String(failure.cause)}`,
       );
 
     const seen = new Set<string>();
     const candidates: EpisodeCandidate[] = [];
     for (const result of resolved) {
-      if (result._tag === "Left") continue;
-      const candidate = result.right;
+      if (result._tag === "Failure") continue;
+      const candidate = result.success;
       if (seen.has(candidate.episodeId)) continue;
       seen.add(candidate.episodeId);
       candidates.push(candidate);

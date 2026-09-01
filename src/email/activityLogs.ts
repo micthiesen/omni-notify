@@ -75,12 +75,12 @@ export function withEmailLogCaptureEffect<T, E>(
         },
         catch: (cause) => new EmailLogCaptureError({ activityId, cause }),
       }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() =>
             logger.warn(
               `Could not persist diagnostic log for "${activityId}": ${error.message}`,
             ),
-          ).pipe(Effect.catchAllCause(() => Effect.void)),
+          ).pipe(Effect.catchCause(() => Effect.void)),
         ),
       );
       return yield* result;

@@ -94,7 +94,7 @@ export function readChunkCheckpoint(
 ): Effect.Effect<Buffer | null> {
   return tryPromise("read chunk checkpoint", (signal) =>
     fsAsync.readFile(path.join(checkpointDir(workId), key), { signal }),
-  ).pipe(Effect.catchAll(() => Effect.succeed(null)));
+  ).pipe(Effect.catch(() => Effect.succeed(null)));
 }
 
 /** Atomically cache a prepared chunk WAV (temp file + rename so a kill
@@ -126,7 +126,7 @@ export function writeChunkCheckpoint(
         ),
       ),
     );
-  }).pipe(Effect.catchAll(() => Effect.void));
+  }).pipe(Effect.catch(() => Effect.void));
 }
 
 /** Drop a single (e.g. corrupt) checkpoint file so it isn't retried forever. */

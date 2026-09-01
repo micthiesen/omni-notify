@@ -50,7 +50,7 @@ type ActionFailure =
 function decodePayload<A, I>(
   actionId: string,
   payload: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, I>,
 ) {
   return Effect.try({
     try: () => JSON.parse(payload) as unknown,
@@ -61,7 +61,7 @@ function decodePayload<A, I>(
       }),
   }).pipe(
     Effect.flatMap((value) =>
-      Schema.decodeUnknown(schema)(value).pipe(
+      Schema.decodeUnknownEffect(schema)(value).pipe(
         Effect.mapError(
           (cause) =>
             new WorkspaceValidationError({

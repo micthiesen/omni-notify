@@ -32,7 +32,7 @@ export function sendEmailEffect(params: SendEmailParams): Effect.Effect<boolean>
       Effect.tap(() =>
         Effect.sync(() => logger.debug(`Email sent: "${subject}" to ${to}`)),
       ),
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() => {
           logger.error(`Failed to send email "${subject}" to ${to}`, error);
           return false;

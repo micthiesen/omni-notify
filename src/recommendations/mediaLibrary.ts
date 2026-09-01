@@ -24,21 +24,21 @@ function unavailable(error: unknown): FetchResult<never> {
 export function fetchWatchHistoryEffect(): Effect.Effect<FetchResult<WatchedItem[]>> {
   return Effect.suspend(() => client().fetchWatchHistory()).pipe(
     Effect.map((value) => ({ status: "ok" as const, value })),
-    Effect.catchAll((error) => Effect.succeed(unavailable(error))),
+    Effect.catch((error) => Effect.succeed(unavailable(error))),
   );
 }
 
 export function fetchInProgressEffect(): Effect.Effect<FetchResult<InProgressItem[]>> {
   return Effect.suspend(() => client().fetchInProgress()).pipe(
     Effect.map((value) => ({ status: "ok" as const, value })),
-    Effect.catchAll((error) => Effect.succeed(unavailable(error))),
+    Effect.catch((error) => Effect.succeed(unavailable(error))),
   );
 }
 
 export function fetchLibraryIndexEffect(): Effect.Effect<FetchResult<MediaItem[]>> {
   return Effect.suspend(() => client().fetchLibraryIndex()).pipe(
     Effect.map((value) => ({ status: "ok" as const, value })),
-    Effect.catchAll((error) => Effect.succeed(unavailable(error))),
+    Effect.catch((error) => Effect.succeed(unavailable(error))),
   );
 }
 

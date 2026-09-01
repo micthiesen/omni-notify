@@ -1,6 +1,7 @@
+import type { Effect as EffectType } from "effect/Effect";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { Data, Effect, Fiber } from "effect";
+import { Data, Effect, Fiber, Semaphore } from "effect";
 import cron, { type ScheduledTask as CronScheduledTask } from "node-cron";
 import type { IntegrationError, PersistenceError } from "../effect/errors.js";
 import { fromPromise, fromSync, runPromise } from "../effect/interop.js";
@@ -72,14 +73,14 @@ export class TaskRegistry {
     string,
     {
       task: ScheduledTask;
-      semaphore: Effect.Semaphore;
+      semaphore: Semaphore.Semaphore;
       cronTask: CronScheduledTask;
     }
   >();
   private running = new Set<string>();
   private queued = new Map<string, number>();
   private hasRun = new Set<string>();
-  private backgroundFibers = new Set<Fiber.RuntimeFiber<void, unknown>>();
+  private backgroundFibers = new Set<Fiber.Fiber<void, unknown>>();
   private logger: Logger;
 
   constructor(parentLogger: Logger) {
@@ -100,7 +101,7 @@ export class TaskRegistry {
     }
     // Never-started cron instance, used purely to compute upcoming run times.
     const cronTask = cron.createTask(task.schedule, () => {});
-    const semaphore = Effect.runSync(Effect.makeSemaphore(1));
+    const semaphore = Semaphore.makeUnsafe(1);
     this.tasks.set(task.name, { task, semaphore, cronTask });
 
     const executeScheduled = () => this.execute(task.name, "schedule");
@@ -128,7 +129,7 @@ export class TaskRegistry {
     const runId = makeRunId(name);
     const fiber = Effect.runFork(
       this.queuedExecutionEffect(name, "manual", runId, undefined, input).pipe(
-        Effect.catchAllCause((cause) =>
+        Effect.catchCause((cause) =>
           Effect.sync(() => this.logger.error(`Manual run of "${name}" failed`, cause)),
         ),
       ),
@@ -146,7 +147,7 @@ export class TaskRegistry {
   public runNowAndWaitEffect(
     name: string,
     input?: unknown,
-  ): Effect.Effect<
+  ): EffectType<
     { runId: string },
     | TaskNotFoundError
     | TaskManualInputUnsupportedError
@@ -154,7 +155,7 @@ export class TaskRegistry {
     | IntegrationError
   > {
     return Effect.suspend(
-      (): Effect.Effect<
+      (): EffectType<
         { runId: string },
         | TaskNotFoundError
         | TaskManualInputUnsupportedError
@@ -175,15 +176,15 @@ export class TaskRegistry {
   }
 
   /** Interrupt task runs started outside the Scheduler during app shutdown. */
-  public shutdownEffect(): Effect.Effect<void> {
+  public shutdownEffect(): EffectType<void> {
     return Fiber.interruptAll([...this.backgroundFibers]);
   }
 
   /** Recover the newest eligible cron occurrence for each infrequent task. */
   public recoverMissedTasksEffect(
     now = Date.now(),
-  ): Effect.Effect<void, PersistenceError | TaskNotFoundError> {
-    return Effect.gen(this, function* () {
+  ): EffectType<void, PersistenceError | TaskNotFoundError> {
+    return Effect.gen({ self: this }, function* () {
       const recoveries: { name: string; scheduledFor: number }[] = [];
 
       for (const [name, entry] of this.tasks) {
@@ -244,7 +245,7 @@ export class TaskRegistry {
             undefined,
             recovery.scheduledFor,
           ).pipe(
-            Effect.catchAll((error) =>
+            Effect.catch((error) =>
               Effect.sync(() => {
                 this.logger.error(`Catch-up run of "${recovery.name}" failed`, error);
               }),
@@ -278,7 +279,7 @@ export class TaskRegistry {
     runId?: string,
     scheduledFor?: number,
     manualInput?: unknown,
-  ): Effect.Effect<void, TaskNotFoundError | PersistenceError | IntegrationError> {
+  ): EffectType<void, TaskNotFoundError | PersistenceError | IntegrationError> {
     this.queued.set(name, (this.queued.get(name) ?? 0) + 1);
     return this.executeEffect(name, trigger, runId, scheduledFor, manualInput).pipe(
       Effect.ensuring(
@@ -297,12 +298,12 @@ export class TaskRegistry {
     runId?: string,
     scheduledFor?: number,
     manualInput?: unknown,
-  ): Effect.Effect<void, TaskNotFoundError | PersistenceError | IntegrationError> {
+  ): EffectType<void, TaskNotFoundError | PersistenceError | IntegrationError> {
     const entry = this.tasks.get(name);
     if (!entry) return Effect.fail(new TaskNotFoundError({ name }));
 
     return entry.semaphore.withPermits(1)(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         // The Scheduler fires runOnStartup tasks through the same path as cron
         // runs. Do not consume startup state until durable run creation succeeds.
         const actualTrigger =
@@ -365,10 +366,10 @@ export class TaskRegistry {
     );
   }
 
-  private finishRunEffect(runId: string, name: string): Effect.Effect<void> {
+  private finishRunEffect(runId: string, name: string): EffectType<void> {
     const safely = (operation: string, action: () => void) =>
       Effect.try({ try: action, catch: (cause) => cause }).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => this.logger.error(`${operation} failed`, error)),
         ),
       );

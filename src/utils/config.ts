@@ -1,152 +1,160 @@
 import { logConfig } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
-import { Context, Data, Effect, Layer, Schema } from "effect";
+import { Context, Data, Effect, Layer, Schema, SchemaGetter } from "effect";
 import { validateMcpTokenConfiguration } from "../mcp/auth.js";
 
 const optionalString = Schema.optional(Schema.String);
 const defaultString = (value: string) =>
-  Schema.optionalWith(Schema.String, { default: () => value });
+  Schema.String.pipe(Schema.withDecodingDefaultType(Effect.succeed(value)));
 
-const booleanFromString = Schema.transform(
-  Schema.String.pipe(
-    Schema.filter((value) => ["true", "false"].includes(value.toLowerCase()), {
-      message: () => 'Expected "true" or "false"',
+const booleanFromString = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter((value) => ["true", "false"].includes(value.toLowerCase()), {
+      message: 'Expected "true" or "false"',
     }),
   ),
-  Schema.Boolean,
-  {
-    decode: (value) => value.toLowerCase() === "true",
-    encode: String,
-  },
-);
-
-const finiteNumberFromString = Schema.NumberFromString.pipe(Schema.finite());
-const positiveIntegerFromString = finiteNumberFromString.pipe(
-  Schema.int(),
-  Schema.positive(),
-);
-const emptyStringAsUndefined = Schema.transform(Schema.Literal(""), Schema.Undefined, {
-  decode: () => undefined,
-  encode: () => "" as const,
-});
-const emptyStringAsNumber = <const Value extends number>(value: Value) =>
-  Schema.transform(Schema.Literal(""), Schema.Literal(value), {
-    decode: () => value,
-    encode: () => "" as const,
-  });
-const coercedFiniteNumber = Schema.Union(
-  finiteNumberFromString,
-  emptyStringAsNumber(0),
-);
-const positiveIntegerWithDefault = <const Value extends number>(value: Value) =>
-  Schema.Union(positiveIntegerFromString, emptyStringAsNumber(value));
-const nonNegativeNumberWithDefault = <const Value extends number>(value: Value) =>
-  Schema.Union(
-    finiteNumberFromString.pipe(Schema.nonNegative()),
-    emptyStringAsNumber(value),
-  );
-const optionalPositiveInteger = Schema.optional(
-  Schema.Union(positiveIntegerFromString, emptyStringAsUndefined),
-);
-
-const trimmedOrigin = Schema.transform(Schema.String, Schema.String, {
-  decode: (value) => value.replace(/\/+$/, ""),
-  encode: (value) => value,
-});
-
-const urlString = Schema.String.pipe(
-  Schema.filter(
-    (value) => {
-      try {
-        new URL(value);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    { message: () => "Expected a valid URL" },
-  ),
-);
-
-const trimmedUrlString = Schema.transform(urlString, Schema.String, {
-  decode: (value) => value.replace(/\/+$/, ""),
-  encode: (value) => value,
-});
-
-const ippUrlString = urlString.pipe(
-  Schema.filter((value) => ["ipp:", "ipps:"].includes(new URL(value).protocol), {
-    message: () => "PRINTER_IPP_URL must use ipp:// or ipps://",
+  Schema.decodeTo(Schema.Boolean, {
+    decode: SchemaGetter.transform((value) => value.toLowerCase() === "true"),
+    encode: SchemaGetter.transform(String),
   }),
 );
 
-const whiskerCredentials = Schema.transform(
-  Schema.String.pipe(
-    Schema.filter(
+const finiteNumberFromString = Schema.FiniteFromString;
+const positiveIntegerFromString = finiteNumberFromString.pipe(
+  Schema.check(Schema.isInt(), Schema.isGreaterThan(0)),
+);
+const emptyStringAsUndefined = Schema.Literal("").pipe(
+  Schema.decodeTo(Schema.Undefined, {
+    decode: SchemaGetter.transform(() => undefined),
+    encode: SchemaGetter.transform(() => "" as const),
+  }),
+);
+const emptyStringAsNumber = <const Value extends number>(value: Value) =>
+  Schema.Literal("").pipe(
+    Schema.decodeTo(Schema.Literal(value), {
+      decode: SchemaGetter.transform(() => value),
+      encode: SchemaGetter.transform(() => "" as const),
+    }),
+  );
+const coercedFiniteNumber = Schema.Union([
+  finiteNumberFromString,
+  emptyStringAsNumber(0),
+]);
+const positiveIntegerWithDefault = <const Value extends number>(value: Value) =>
+  Schema.Union([positiveIntegerFromString, emptyStringAsNumber(value)]);
+const nonNegativeNumberWithDefault = <const Value extends number>(value: Value) =>
+  Schema.Union([
+    emptyStringAsNumber(value),
+    finiteNumberFromString.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
+  ]);
+const optionalPositiveInteger = Schema.optional(
+  Schema.Union([positiveIntegerFromString, emptyStringAsUndefined]),
+);
+
+const trimmedOrigin = Schema.String.pipe(
+  Schema.decode({
+    decode: SchemaGetter.transform((value) => value.replace(/\/+$/, "")),
+    encode: SchemaGetter.transform((value) => value),
+  }),
+);
+
+const urlString = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(
+      (value) => {
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      { message: "Expected a valid URL" },
+    ),
+  ),
+);
+
+const trimmedUrlString = urlString.pipe(
+  Schema.decode({
+    decode: SchemaGetter.transform((value) => value.replace(/\/+$/, "")),
+    encode: SchemaGetter.transform((value) => value),
+  }),
+);
+
+const ippUrlString = urlString.pipe(
+  Schema.check(
+    Schema.makeFilter((value) => ["ipp:", "ipps:"].includes(new URL(value).protocol), {
+      message: "PRINTER_IPP_URL must use ipp:// or ipps://",
+    }),
+  ),
+);
+
+const whiskerCredentials = Schema.String.pipe(
+  Schema.check(
+    Schema.makeFilter(
       (value) => {
         const separator = value.indexOf(":");
         return separator > 0 && separator < value.length - 1;
       },
-      { message: () => "WHISKER_CREDENTIALS must be email:password" },
+      { message: "WHISKER_CREDENTIALS must be email:password" },
     ),
   ),
-  Schema.Struct({ email: Schema.String, password: Schema.String }),
-  {
-    decode: (value) => {
+  Schema.decodeTo(Schema.Struct({ email: Schema.String, password: Schema.String }), {
+    decode: SchemaGetter.transform((value) => {
       const separator = value.indexOf(":");
       return {
         email: value.slice(0, separator),
         password: value.slice(separator + 1),
       };
-    },
-    encode: ({ email, password }) => `${email}:${password}`,
-  },
+    }),
+    encode: SchemaGetter.transform(({ email, password }) => `${email}:${password}`),
+  }),
 );
 
 const rawConfigSchema = Schema.Struct({
-  LOG_LEVEL: Schema.optionalWith(Schema.Enums(LogLevel), {
-    default: () => LogLevel.INFO,
-  }),
+  LOG_LEVEL: Schema.Enum(LogLevel).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(LogLevel.INFO)),
+  ),
   PUSHOVER_USER: optionalString,
   PUSHOVER_TOKEN: optionalString,
-  DOCKERIZED: Schema.optionalWith(booleanFromString, { default: () => false }),
+  DOCKERIZED: booleanFromString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(false)),
+  ),
   DB_NAME: defaultString("docstore.db"),
   KICK_CLIENT_ID: optionalString,
   KICK_CLIENT_SECRET: optionalString,
-  OFFLINE_NOTIFICATIONS: Schema.optionalWith(booleanFromString, {
-    default: () => true,
-  }),
+  OFFLINE_NOTIFICATIONS: booleanFromString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(true)),
+  ),
   PUSHOVER_LIVE_TOKEN: optionalString,
-  LIVESTREAM_INTELLIGENCE_ENABLED: Schema.optionalWith(booleanFromString, {
-    default: () => false,
-  }),
+  LIVESTREAM_INTELLIGENCE_ENABLED: booleanFromString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(false)),
+  ),
   LIVESTREAM_INTELLIGENCE_MODEL: Schema.optional(Schema.Literal("openai:gpt-5.6-luna")),
-  LIVESTREAM_MONTHLY_BUDGET_USD: Schema.optionalWith(
-    nonNegativeNumberWithDefault(3).pipe(Schema.lessThanOrEqualTo(10)),
-    { default: () => 3 },
+  LIVESTREAM_MONTHLY_BUDGET_USD: nonNegativeNumberWithDefault(3).pipe(
+    Schema.check(Schema.isLessThanOrEqualTo(10)),
+    Schema.withDecodingDefaultType(Effect.succeed(3)),
   ),
   LIVESTREAM_MODEL_DIR: defaultString("/app/assets/livestream-intelligence/models"),
   LIVESTREAM_DESTINY_VOICEPRINT_PATH: optionalString,
-  LIVESTREAM_DESTINY_SPEAKER_THRESHOLD: Schema.optionalWith(
-    coercedFiniteNumber.pipe(Schema.between(0, 1)),
-    { default: () => 0.62 },
+  LIVESTREAM_DESTINY_SPEAKER_THRESHOLD: coercedFiniteNumber.pipe(
+    Schema.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+    Schema.withDecodingDefaultType(Effect.succeed(0.62)),
   ),
-  LIVESTREAM_MAX_VOICE_TARGETS: Schema.optionalWith(positiveIntegerWithDefault(3), {
-    default: () => 3,
-  }),
-  LIVESTREAM_VOICE_SAMPLE_SECONDS: Schema.optionalWith(positiveIntegerWithDefault(18), {
-    default: () => 18,
-  }),
-  LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS: Schema.optionalWith(
-    positiveIntegerWithDefault(45),
-    { default: () => 45 },
+  LIVESTREAM_MAX_VOICE_TARGETS: positiveIntegerWithDefault(3).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(3)),
   ),
-  LIVESTREAM_SUMMARY_SAMPLE_SECONDS: Schema.optionalWith(
-    positiveIntegerWithDefault(75),
-    { default: () => 75 },
+  LIVESTREAM_VOICE_SAMPLE_SECONDS: positiveIntegerWithDefault(18).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(18)),
   ),
-  LIVESTREAM_SUMMARY_INTERVAL_SECONDS: Schema.optionalWith(
-    positiveIntegerWithDefault(480),
-    { default: () => 480 },
+  LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS: positiveIntegerWithDefault(45).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(45)),
+  ),
+  LIVESTREAM_SUMMARY_SAMPLE_SECONDS: positiveIntegerWithDefault(75).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(75)),
+  ),
+  LIVESTREAM_SUMMARY_INTERVAL_SECONDS: positiveIntegerWithDefault(480).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(480)),
   ),
   PUSHOVER_CALENDAR_TOKEN: optionalString,
   PUSHOVER_BRIEFING_TOKEN: optionalString,
@@ -154,9 +162,9 @@ const rawConfigSchema = Schema.Struct({
   BRIEFING_MODEL: optionalString,
   WORKSPACE_MODEL: optionalString,
   WORKSPACE_SCHEDULE: defaultString("0 0 9 * * 0"),
-  WORKSPACES_PUBLIC_URL: Schema.optionalWith(trimmedOrigin, {
-    default: () => "http://omni.boris",
-  }),
+  WORKSPACES_PUBLIC_URL: trimmedOrigin.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed("http://omni.boris")),
+  ),
   GOOGLE_GENERATIVE_AI_API_KEY: optionalString,
   ANTHROPIC_API_KEY: optionalString,
   OPENAI_API_KEY: optionalString,
@@ -164,8 +172,8 @@ const rawConfigSchema = Schema.Struct({
   LOGS_PATH: optionalString,
   CHANNELS_CONFIG_PATH: optionalString,
   BRIEFINGS_PATH: optionalString,
-  EMAIL_TRANSPORT: Schema.optional(Schema.Literal("fastmail", "icloud")),
-  CALDAV_PROVIDER: Schema.optional(Schema.Literal("fastmail", "icloud")),
+  EMAIL_TRANSPORT: Schema.optional(Schema.Literals(["fastmail", "icloud"])),
+  CALDAV_PROVIDER: Schema.optional(Schema.Literals(["fastmail", "icloud"])),
   FASTMAIL_API_TOKEN: optionalString,
   FASTMAIL_APP_PASSWORD: optionalString,
   FASTMAIL_USERNAME: optionalString,
@@ -192,16 +200,16 @@ const rawConfigSchema = Schema.Struct({
   PODCAST_TASTE_REFLECTION_MODEL: optionalString,
   PODCAST_TASTE_REFLECTION_SCHEDULE: defaultString("0 0 5 * * 0"),
   PUSHOVER_PODCAST_TOKEN: optionalString,
-  CASTRO_ACCESS_ID: Schema.optional(Schema.UUID),
+  CASTRO_ACCESS_ID: Schema.optional(Schema.String.pipe(Schema.check(Schema.isUUID()))),
   CASTRO_SECRET_KEY: optionalString,
   PODCASTINDEX_KEY: optionalString,
   PODCASTINDEX_SECRET: optionalString,
-  PODCAST_VOICE_ROTATION_MAX: Schema.optionalWith(positiveIntegerWithDefault(12), {
-    default: () => 12,
-  }),
-  PODCAST_MAX_GUEST_PICKS: Schema.optionalWith(positiveIntegerWithDefault(6), {
-    default: () => 6,
-  }),
+  PODCAST_VOICE_ROTATION_MAX: positiveIntegerWithDefault(12).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(12)),
+  ),
+  PODCAST_MAX_GUEST_PICKS: positiveIntegerWithDefault(6).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(6)),
+  ),
   PLEX_URL: optionalString,
   PLEX_TOKEN: optionalString,
   PLEX_ACCOUNT_ID: optionalPositiveInteger,
@@ -215,15 +223,17 @@ const rawConfigSchema = Schema.Struct({
   SONARR_QUALITY_PROFILE_ID: optionalPositiveInteger,
   TZ: defaultString("America/Vancouver"),
   SMTP_HOST: optionalString,
-  SMTP_PORT: Schema.optionalWith(coercedFiniteNumber, { default: () => 587 }),
+  SMTP_PORT: coercedFiniteNumber.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(587)),
+  ),
   SMTP_USER: optionalString,
   SMTP_PASS: optionalString,
   EMAIL_FROM: optionalString,
   LOGS_EMAIL_TO: optionalString,
   WHISKER_CREDENTIALS: Schema.optional(whiskerCredentials),
-  FRONTEND_PORT: Schema.optionalWith(coercedFiniteNumber, {
-    default: () => 3000,
-  }),
+  FRONTEND_PORT: coercedFiniteNumber.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(3000)),
+  ),
   OMNI_MCP_TOKEN: optionalString,
   PRINTER_IPP_URL: Schema.optional(ippUrlString),
   PRESSPODS_AUTH_TOKEN: optionalString,
@@ -231,9 +241,9 @@ const rawConfigSchema = Schema.Struct({
   PRESSPODS_AUDIO_DIR: optionalString,
   PRESSPODS_METADATA_MODEL: optionalString,
   PRESSPODS_CLEANING_MODEL: optionalString,
-  PRESSPODS_TTS_PROVIDER: Schema.optionalWith(Schema.Literal("higgs", "elevenlabs"), {
-    default: () => "higgs" as const,
-  }),
+  PRESSPODS_TTS_PROVIDER: Schema.Literals(["higgs", "elevenlabs"]).pipe(
+    Schema.withDecodingDefaultType(Effect.succeed("higgs" as const)),
+  ),
   PRESSPODS_TTS_URL: Schema.optional(trimmedOrigin),
   PRESSPODS_TTS_MODEL: optionalString,
   PRESSPODS_STT_URL: Schema.optional(trimmedOrigin),
@@ -246,10 +256,12 @@ const rawConfigSchema = Schema.Struct({
   MISTRAL_API_KEY: optionalString,
   JINA_API_KEY: optionalString,
   PUSHOVER_PRESSPODS_TOKEN: optionalString,
-  IOS_CONTROL_AUTH_TOKEN: Schema.optional(Schema.String.pipe(Schema.minLength(24))),
-  IOS_CONTROL_HOME_URL: Schema.optionalWith(trimmedUrlString, {
-    default: () => "http://omni.boris",
-  }),
+  IOS_CONTROL_AUTH_TOKEN: Schema.optional(
+    Schema.String.pipe(Schema.check(Schema.isMinLength(24))),
+  ),
+  IOS_CONTROL_HOME_URL: trimmedUrlString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed("http://omni.boris")),
+  ),
   IOS_CONTROL_APNS_TEAM_ID: optionalString,
   IOS_CONTROL_APNS_KEY_ID: optionalString,
   IOS_CONTROL_APNS_KEY_PATH: optionalString,
@@ -307,7 +319,7 @@ const privateConfigKeys = [
 export const loadConfigEffect = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): Effect.Effect<Config, ConfigLoadError> =>
-  Schema.decodeUnknown(rawConfigSchema)(environment).pipe(
+  Schema.decodeUnknownEffect(rawConfigSchema)(environment).pipe(
     Effect.map(deriveConfig),
     Effect.tap((parsed) =>
       Effect.try({
@@ -324,7 +336,7 @@ export const loadConfigEffect = (
   );
 
 /** Injectable configuration service for Effect-native workflows. */
-export class AppConfig extends Context.Tag("AppConfig")<AppConfig, Config>() {}
+export class AppConfig extends Context.Service<AppConfig, Config>()("AppConfig") {}
 
 export const makeAppConfigLayer = (
   environment: Readonly<Record<string, string | undefined>> = process.env,

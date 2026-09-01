@@ -154,9 +154,9 @@ interface NormalizedInput {
 
 const PrintInputSchema = Schema.Struct({
   url: Schema.String,
-  paper: Schema.optional(Schema.Literal("letter", "a4", "legal")),
+  paper: Schema.optional(Schema.Literals(["letter", "a4", "legal"])),
   sides: Schema.optional(
-    Schema.Literal("one-sided", "two-sided-long-edge", "two-sided-short-edge"),
+    Schema.Literals(["one-sided", "two-sided-long-edge", "two-sided-short-edge"]),
   ),
   copies: Schema.optional(Schema.Number),
   jobName: Schema.optional(Schema.String),
@@ -257,7 +257,7 @@ function childProcess(
   maxBuffer: number,
   environment?: Record<string, string>,
 ): Effect.Effect<string | Buffer, PrinterError> {
-  return Effect.async<string | Buffer, PrinterError>((resume) => {
+  return Effect.callback<string | Buffer, PrinterError>((resume) => {
     const child = execFileCallback(
       executable,
       args,
@@ -386,7 +386,7 @@ function createIppPrinterClient(url: string, timeout: number): PrinterClient {
   };
 }
 function normalizeInput(input: PrintPdfInput) {
-  return Schema.decodeUnknown(PrintInputSchema)(input).pipe(
+  return Schema.decodeUnknownEffect(PrintInputSchema)(input).pipe(
     Effect.mapError((cause) =>
       failure("validate print request", cause, "Invalid print request"),
     ),
@@ -481,7 +481,7 @@ export class IppPrinterService implements PrinterService {
   }
 
   statusEffect(): Effect.Effect<PrinterStatus, PrinterError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const printer = yield* this.requirePrinterEffect();
       const status = yield* promiseCall("read printer status", () => printer.status());
       const rawAccepting = firstRawValue(status.raw?.["printer-is-accepting-jobs"]);
@@ -510,7 +510,7 @@ export class IppPrinterService implements PrinterService {
   }
 
   printPdfEffect(input: PrintPdfInput): Effect.Effect<AcceptedPrintJob, PrinterError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const printer = yield* this.requirePrinterEffect();
       const options = yield* normalizeInput(input);
       const url = yield* Effect.try({
@@ -566,7 +566,7 @@ export class IppPrinterService implements PrinterService {
           ).pipe(
             // Cleanup must not replace the printer's authoritative accepted
             // result with a local filesystem failure.
-            Effect.catchAll(() => Effect.void),
+            Effect.catch(() => Effect.void),
           ),
       ).pipe(
         Effect.ensuring(
@@ -588,7 +588,7 @@ export class IppPrinterService implements PrinterService {
     options: NormalizedInput,
     duplicateKey: string,
   ): Effect.Effect<AcceptedPrintJob, PrinterError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const inputPath = join(directory, "input.pdf");
       const rasterPath = join(directory, "output.raster");
       yield* this.writePrivateFile(inputPath, pdf);
@@ -655,7 +655,7 @@ export class IppPrinterService implements PrinterService {
           return true as const;
         },
         catch: (cause) => failure("persist accepted print job", cause),
-      }).pipe(Effect.catchAll(() => Effect.succeed(false as const)));
+      }).pipe(Effect.catch(() => Effect.succeed(false as const)));
       const finalStatus = yield* this.waitForFinalJobStatus(printer, job);
       return {
         accepted: true,
@@ -707,7 +707,7 @@ export class IppPrinterService implements PrinterService {
     );
     return Effect.repeat(poll, {
       schedule: Schedule.addDelay(Schedule.recurs(JOB_STATUS_MAX_POLLS - 1), () =>
-        Duration.millis(JOB_STATUS_POLL_MS),
+        Effect.succeed(Duration.millis(JOB_STATUS_POLL_MS)),
       ),
       until: (status) =>
         status === undefined ||

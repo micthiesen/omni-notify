@@ -106,7 +106,7 @@ export class EmailTriageService {
       if (cached) return cached.effect;
 
       return Effect.uninterruptibleMask((restore) =>
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const deferred = yield* Deferred.make<TriageVerdict, TriageError>();
           const entry = {
             effect: Deferred.await(deferred),
@@ -165,7 +165,7 @@ export class EmailTriageService {
   private callModelEffect(
     email: TriageEmail,
   ): Effect.Effect<TriageVerdict, TriageError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const { model, modelId } = getTriageModel();
       const result = yield* Effect.tryPromise({
         try: () =>
@@ -182,7 +182,7 @@ export class EmailTriageService {
           cause: new Error("Triage model returned no output"),
         });
       }
-      const verdict = yield* Schema.decodeUnknown(TriageVerdictSchema)(
+      const verdict = yield* Schema.decodeUnknownEffect(TriageVerdictSchema)(
         result.output,
       ).pipe(Effect.mapError((cause) => new TriageError({ emailId: email.id, cause })));
 

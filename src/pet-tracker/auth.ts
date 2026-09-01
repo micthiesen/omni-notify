@@ -18,7 +18,7 @@ const userPool = new CognitoUserPool({
   ClientId: CLIENT_ID,
 });
 
-const cachedAuth = Ref.unsafeMake<{
+const cachedAuth = Ref.makeUnsafe<{
   idToken: string;
   userId: string;
   expiresAt: number;
@@ -59,15 +59,16 @@ export function authenticateWhisker(
       Pool: userPool,
     });
 
-    const session = yield* Effect.async<CognitoUserSession, WhiskerAuthenticationError>(
-      (resume) => {
-        cognitoUser.authenticateUser(authDetails, {
-          onSuccess: (result) => resume(Effect.succeed(result)),
-          onFailure: (cause) =>
-            resume(Effect.fail(new WhiskerAuthenticationError({ cause }))),
-        });
-      },
-    );
+    const session = yield* Effect.callback<
+      CognitoUserSession,
+      WhiskerAuthenticationError
+    >((resume) => {
+      cognitoUser.authenticateUser(authDetails, {
+        onSuccess: (result) => resume(Effect.succeed(result)),
+        onFailure: (cause) =>
+          resume(Effect.fail(new WhiskerAuthenticationError({ cause }))),
+      });
+    });
 
     const idToken = session.getIdToken().getJwtToken();
     const payload = yield* decodeJwtPayload(idToken);
@@ -97,7 +98,7 @@ function decodeJwtPayload(
       try: () => JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8")),
       catch: (cause) => new WhiskerAuthenticationError({ cause }),
     });
-    return yield* Schema.decodeUnknown(JwtPayload)(unknownPayload).pipe(
+    return yield* Schema.decodeUnknownEffect(JwtPayload)(unknownPayload).pipe(
       Effect.mapError((cause) => new WhiskerAuthenticationError({ cause })),
     );
   });

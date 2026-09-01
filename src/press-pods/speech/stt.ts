@@ -103,7 +103,7 @@ export function createSttClient(apiKey?: string): SttClient | null {
               cause,
             }),
         });
-        const body = yield* Schema.decodeUnknown(
+        const body = yield* Schema.decodeUnknownEffect(
           Schema.Struct({ text: Schema.optional(Schema.String) }),
         )(raw).pipe(
           Effect.mapError(

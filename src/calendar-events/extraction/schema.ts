@@ -100,7 +100,7 @@ const OptionalString = Schema.optional(Schema.String);
 export const CalendarEventExtractionEffectSchema = Schema.Struct({
   events: Schema.Array(
     Schema.Struct({
-      action: Schema.Literal("create", "cancel", "update"),
+      action: Schema.Literals(["create", "cancel", "update"]),
       eventId: OptionalString,
       title: Schema.String,
       startDate: Schema.String,
@@ -113,7 +113,7 @@ export const CalendarEventExtractionEffectSchema = Schema.Struct({
       timeZone: OptionalString,
       recurrence: Schema.optional(
         Schema.Struct({
-          frequency: Schema.Literal("daily", "weekly", "monthly"),
+          frequency: Schema.Literals(["daily", "weekly", "monthly"]),
           until: Schema.String,
         }),
       ),

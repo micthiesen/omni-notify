@@ -6,6 +6,7 @@ allowBuilds:
   # core-js@2 (via @postlight/parser) postinstall only prints a funding banner
   core-js: false
   esbuild: true
+  msgpackr-extract: false
 
 peerDependencyRules:
   ignoreMissing:

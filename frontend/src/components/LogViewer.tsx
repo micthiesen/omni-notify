@@ -93,7 +93,7 @@ export function LogViewer({
               setDropped(data.dropped);
             }),
           ),
-          Effect.catchAll((err) =>
+          Effect.catch((err) =>
             Effect.sync(() =>
               setError(err instanceof Error ? err.message : "Failed to fetch logs"),
             ),
@@ -108,16 +108,16 @@ export function LogViewer({
         yield* Effect.acquireUseRelease(
           Effect.sync(() => new EventSource(runLogStreamUrl(runId))),
           (source) =>
-            Effect.async<void>((resume) => {
-              const decodeEvent = <A, I>(
-                schema: Schema.Schema<A, I, never>,
+            Effect.callback<void>((resume) => {
+              const decodeEvent = <A,>(
+                schema: Schema.Decoder<A, never>,
                 event: Event,
               ) =>
                 Effect.try({
                   try: () =>
                     JSON.parse((event as MessageEvent<string>).data) as unknown,
                   catch: (cause) => cause,
-                }).pipe(Effect.flatMap(Schema.decodeUnknown(schema)));
+                }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(schema)));
               const reportDecodeFailure = (cause: unknown) =>
                 Effect.sync(() =>
                   setError(
@@ -135,7 +135,7 @@ export function LogViewer({
                         setError(null);
                       }),
                     ),
-                    Effect.catchAll(reportDecodeFailure),
+                    Effect.catch(reportDecodeFailure),
                   ),
                 );
               };
@@ -147,7 +147,7 @@ export function LogViewer({
                         setLines((prev) => (prev ? [...prev, line] : [line])),
                       ),
                     ),
-                    Effect.catchAll(reportDecodeFailure),
+                    Effect.catch(reportDecodeFailure),
                   ),
                 );
               };
@@ -161,7 +161,7 @@ export function LogViewer({
                         resume(Effect.void);
                       }),
                     ),
-                    Effect.catchAll(reportDecodeFailure),
+                    Effect.catch(reportDecodeFailure),
                   ),
                 );
               };

@@ -1,7 +1,16 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
-import { Clock, Data, Duration, Effect, Fiber, Random, Schedule } from "effect";
+import {
+  Clock,
+  Data,
+  Duration,
+  Effect,
+  Fiber,
+  Random,
+  Schedule,
+  Semaphore,
+} from "effect";
 import { getLastDispatchedAt } from "../persistence.js";
 import type {
   DownloadedAttachment,
@@ -90,8 +99,8 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   private logger: Logger;
   private client: ImapFlow | null = null;
   private onMailEvent: (() => void) | undefined;
-  private sweepFiber: Fiber.RuntimeFiber<void, never> | null = null;
-  private reconnectFiber: Fiber.RuntimeFiber<void, never> | null = null;
+  private sweepFiber: Fiber.Fiber<void, never> | null = null;
+  private reconnectFiber: Fiber.Fiber<void, never> | null = null;
   private stopped = false;
   /** Special-use mailboxes are rediscovered after every new connection. */
   private autoReadFolders: string[] | undefined;
@@ -99,8 +108,8 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   private lastSkipCounts = new Map<string, number>();
   /** imapflow mailbox selection is connection-global, so every complete
    * select/use/restore sequence and lifecycle transition shares one permit. */
-  private readonly operationSemaphore = Effect.unsafeMakeSemaphore(1);
-  private connectFiber: Fiber.RuntimeFiber<void, ImapOperationError> | null = null;
+  private readonly operationSemaphore = Semaphore.makeUnsafe(1);
+  private connectFiber: Fiber.Fiber<void, ImapOperationError> | null = null;
 
   constructor(auth: ImapAuth, logger: Logger) {
     this.auth = auth;
@@ -108,7 +117,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   }
 
   startEffect(onMailEvent: () => void): Effect.Effect<void, ImapOperationError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.stopped = false;
       this.onMailEvent = onMailEvent;
       // First connect fails to the boot retry boundary; later disconnects are
@@ -118,40 +127,44 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
       this.sweepFiber = yield* Effect.sleep(SWEEP_INTERVAL_MS).pipe(
         Effect.tap(() => Effect.sync(() => this.onMailEvent?.())),
         Effect.forever,
-        Effect.forkDaemon,
+        Effect.forkDetach,
       );
       onMailEvent();
     });
   }
 
-  readonly stopEffect: Effect.Effect<void, never> = Effect.gen(this, function* () {
-    this.stopped = true;
-    if (this.sweepFiber) yield* Fiber.interrupt(this.sweepFiber);
-    this.sweepFiber = null;
-    if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
-    this.reconnectFiber = null;
-    if (this.connectFiber) yield* Fiber.interrupt(this.connectFiber);
-    this.connectFiber = null;
-    this.logger.info("Closing IMAP connection");
-    yield* this.runSerializedEffect(
-      "IMAP stop",
-      Effect.gen(this, function* () {
-        const client = this.client;
-        this.client = null;
-        if (!client) return;
-        yield* Effect.tryPromise({
-          try: () => client.logout(),
-          catch: (cause) => new ImapOperationError({ operation: "IMAP logout", cause }),
-        }).pipe(Effect.catchAll(() => Effect.sync(() => client.close())));
-      }),
-    ).pipe(Effect.catchAll(() => Effect.void));
-  });
+  readonly stopEffect: Effect.Effect<void, never> = Effect.gen(
+    { self: this },
+    function* () {
+      this.stopped = true;
+      if (this.sweepFiber) yield* Fiber.interrupt(this.sweepFiber);
+      this.sweepFiber = null;
+      if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
+      this.reconnectFiber = null;
+      if (this.connectFiber) yield* Fiber.interrupt(this.connectFiber);
+      this.connectFiber = null;
+      this.logger.info("Closing IMAP connection");
+      yield* this.runSerializedEffect(
+        "IMAP stop",
+        Effect.gen({ self: this }, function* () {
+          const client = this.client;
+          this.client = null;
+          if (!client) return;
+          yield* Effect.tryPromise({
+            try: () => client.logout(),
+            catch: (cause) =>
+              new ImapOperationError({ operation: "IMAP logout", cause }),
+          }).pipe(Effect.catch(() => Effect.sync(() => client.close())));
+        }),
+      ).pipe(Effect.catch(() => Effect.void));
+    },
+  );
 
   private readonly connectSingleFlightEffect: Effect.Effect<void, ImapOperationError> =
     Effect.suspend(() => {
       if (this.connectFiber) return Fiber.join(this.connectFiber);
-      return Effect.gen(this, function* () {
-        let fiber!: Fiber.RuntimeFiber<void, ImapOperationError>;
+      return Effect.gen({ self: this }, function* () {
+        let fiber!: Fiber.Fiber<void, ImapOperationError>;
         fiber = yield* this.runSerializedEffect(
           "IMAP connect",
           this.connectEffect,
@@ -164,7 +177,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
           // The first caller owns the connection attempt. If startup is
           // interrupted, its child is interrupted too; a non-signal-aware
           // ImapFlow connect Promise cannot outlive transport ownership.
-          Effect.fork,
+          Effect.forkChild,
         );
         this.connectFiber = fiber;
         return yield* Fiber.join(fiber);
@@ -197,7 +210,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
         return client;
       }),
       (client) =>
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           yield* this.promiseEffect("connect", () => client.connect());
           if (this.stopped) {
             return yield* new ImapOperationError({
@@ -242,12 +255,12 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
       Duration.millis(INITIAL_BACKOFF_MS),
     ).pipe(
       Schedule.jittered,
-      Schedule.modifyDelay((_, delay) =>
-        Duration.min(delay, Duration.millis(MAX_BACKOFF_MS)),
+      Schedule.modifyDelay(({ duration }) =>
+        Effect.succeed(Duration.min(duration, Duration.millis(MAX_BACKOFF_MS))),
       ),
     );
-    let fiber: Fiber.RuntimeFiber<void, never>;
-    const reconnect = Effect.gen(this, function* () {
+    let fiber: Fiber.Fiber<void, never>;
+    const reconnect = Effect.gen({ self: this }, function* () {
       const initialJitter = yield* Random.nextIntBetween(0, 3_001);
       this.logger.warn(`IMAP connection closed, reconnecting in ${initialJitter}ms`);
       yield* Effect.sleep(Duration.millis(initialJitter));
@@ -267,7 +280,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
           if (this.reconnectFiber === fiber) this.reconnectFiber = null;
         }),
       ),
-      Effect.catchAll(() => Effect.void),
+      Effect.catch(() => Effect.void),
     );
     fiber = Effect.runFork(reconnect);
     this.reconnectFiber = fiber;
@@ -276,13 +289,13 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, ImapOperationError> =
     this.runSerializedEffect(
       "IMAP poll",
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const client = yield* this.requireClientEffect;
         const results = yield* Effect.forEach(
           FOLDERS,
           (folder) =>
             this.pollFolderEffect(client, folder).pipe(
-              Effect.catchAll((error) =>
+              Effect.catch((error) =>
                 Effect.sync(() => {
                   this.logger.warn(
                     `IMAP poll failed for folder "${folder}": ${error.message}`,
@@ -303,18 +316,18 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     );
 
   private autoReadEffect(client: ImapFlow): Effect.Effect<void, never> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       if (this.autoReadFolders === undefined) {
-        const discovered = yield* Effect.either(
+        const discovered = yield* Effect.result(
           discoverAutoReadFoldersEffect(client as AutoReadClient),
         );
-        if (discovered._tag === "Left") {
+        if (discovered._tag === "Failure") {
           this.logger.warn(
-            `IMAP auto-read mailbox discovery failed: ${discovered.left.message}`,
+            `IMAP auto-read mailbox discovery failed: ${discovered.failure.message}`,
           );
           return;
         }
-        this.autoReadFolders = discovered.right;
+        this.autoReadFolders = discovered.success;
       }
       yield* markRecentUnreadReadEffect(
         client as AutoReadClient,
@@ -331,7 +344,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     { emails: FetchedEmail[]; commit?: () => void },
     ImapOperationError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const status = yield* this.promiseEffect(`STATUS ${folder}`, () =>
         client.status(folder, { uidNext: true, uidValidity: true }),
       );
@@ -391,7 +404,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
         client.getMailboxLock(folder, { readOnly: true }),
       ),
       () =>
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const metas = yield* collectFetchMetadataEffect(client, fromUid, folder);
           const now = yield* Clock.currentTimeMillis;
           const cutoff = now - MAX_EMAIL_AGE_MS;
@@ -452,7 +465,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     { emails: FetchedEmail[]; commit?: () => void },
     ImapOperationError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const lastDispatchedAt = getLastDispatchedAt();
       const commit = () => saveFolderCursor(folder, uidValidity, uidNext);
       if (lastDispatchedAt === undefined) {
@@ -493,7 +506,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   ): Effect.Effect<FetchedEmail | undefined, ImapOperationError> {
     return this.runSerializedEffect(
       "IMAP fetch by id",
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const client = yield* this.requireClientEffect;
         const coords = decodeMessageId(id);
         for (const folder of FOLDERS) {
@@ -511,7 +524,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   ): Effect.Effect<FetchedEmail[], ImapOperationError> {
     return this.runSerializedEffect(
       "IMAP search",
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const client = yield* this.requireClientEffect;
         const folderNames =
           options.folder === "inbox"
@@ -528,7 +541,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
                 client.getMailboxLock(folder, { readOnly: true }),
               ),
               () =>
-                Effect.gen(this, function* () {
+                Effect.gen({ self: this }, function* () {
                   const criteria = {
                     ...(options.query ? { text: options.query } : {}),
                     ...(options.from ? { from: options.from } : {}),
@@ -591,7 +604,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
         client.getMailboxLock(folder, { readOnly: true }),
       ),
       () =>
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
 
           let uid: number | undefined;
@@ -622,7 +635,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   ): Effect.Effect<DownloadedAttachment | undefined, ImapOperationError> {
     return this.runSerializedEffect(
       "IMAP attachment download",
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const target = decodeAttachmentBlobId(attachment.blobId);
         if (!target) {
           this.logger.warn(`Unrecognized attachment handle: ${attachment.blobId}`);
@@ -635,7 +648,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
             client.getMailboxLock(target.folder, { readOnly: true }),
           ),
           () =>
-            Effect.gen(this, function* () {
+            Effect.gen({ self: this }, function* () {
               const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
               if (mailboxValidity !== target.uidValidity) {
                 this.logger.warn(
@@ -688,7 +701,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
       return this.promiseEffect("reselect INBOX", () =>
         client.mailboxOpen("INBOX", { readOnly: true }),
       ).pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() => {
             this.logger.debug(`Failed to reselect INBOX: ${error.message}`);
           }),
@@ -716,7 +729,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     uid: number,
     fallbackDate?: Date,
   ): Effect.Effect<FetchedEmail | undefined, ImapOperationError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const full = orUndefined(
         yield* this.promiseEffect(`fetch uid ${uid}`, () =>
           client.fetchOne(

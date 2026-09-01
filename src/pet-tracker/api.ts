@@ -45,7 +45,7 @@ function graphqlRequest<A, I>(
   idToken: string,
   query: string,
   variables: Record<string, unknown>,
-  dataSchema: Schema.Schema<A, I>,
+  dataSchema: Schema.Codec<A, I>,
 ): Effect.Effect<A, WhiskerApiError> {
   const operation = query.match(/query (\w+)/)?.[1] ?? "Whisker GraphQL request";
   const responseSchema = Schema.Struct({
@@ -69,7 +69,7 @@ function graphqlRequest<A, I>(
           .json<unknown>(),
       catch: (cause) => new WhiskerApiError({ operation, cause }),
     });
-    const decoded = yield* Schema.decodeUnknown(responseSchema)(response).pipe(
+    const decoded = yield* Schema.decodeUnknownEffect(responseSchema)(response).pipe(
       Effect.mapError((cause) => new WhiskerApiError({ operation, cause })),
     );
     if (decoded.errors?.length) {

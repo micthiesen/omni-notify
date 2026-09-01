@@ -38,7 +38,7 @@ export function isConfigured(config: ArrConfig): config is Required<ArrConfig> {
 export function requestJson<A, I>(
   config: ArrConnectionConfig,
   path: string,
-  schema: Schema.Schema<A, I, never>,
+  schema: Schema.Codec<A, I>,
   init: RequestInit = {},
   fetchImpl: FetchImplementation = fetch,
 ): Effect.Effect<HttpResult<A>> {
@@ -68,12 +68,12 @@ export function requestJson<A, I>(
     const raw = yield* integrationEffect(`parse Arr response ${path}`, () =>
       JSON.parse(body),
     );
-    const value = yield* Schema.decodeUnknown(schema)(raw);
+    const value = yield* Schema.decodeUnknownEffect(schema)(raw);
     return { status: "ok" as const, value };
   });
   return request.pipe(
     Effect.timeout("15 seconds"),
-    Effect.catchAll(() => Effect.succeed({ status: "unavailable" as const })),
+    Effect.catch(() => Effect.succeed({ status: "unavailable" as const })),
   );
 }
 

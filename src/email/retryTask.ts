@@ -55,7 +55,7 @@ export default class EmailRetryTask extends ScheduledTask {
     return runPromise(this.runEffect);
   }
 
-  private readonly runEffect = Effect.gen(this, function* () {
+  private readonly runEffect = Effect.gen({ self: this }, function* () {
     const due = selectDueRetries(EmailRetryEntity.getAll());
     if (due.length === 0) {
       this.logger.debug("No email retries due");
@@ -81,7 +81,7 @@ export default class EmailRetryTask extends ScheduledTask {
     yield* Effect.forEach(
       due,
       (row) =>
-        Effect.gen(this, function* () {
+        Effect.gen({ self: this }, function* () {
           const handler = handlers.get(row.pipeline);
           if (!handler) {
             this.logger.warn(

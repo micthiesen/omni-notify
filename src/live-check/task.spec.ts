@@ -2,7 +2,8 @@ import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, Fiber, TestClock } from "effect";
+import { Cause, Effect, Exit, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { afterEach, beforeEach, vi } from "vitest";
 import appConfig from "../utils/config.js";
 import type { DggFeed } from "./dgg.js";
@@ -133,9 +134,10 @@ describe("LiveCheckTask DGG discovery", () => {
     const fiber = Effect.runFork(task.runEffect());
     await vi.waitFor(() => expect(fetchFeed).toHaveBeenCalledTimes(1));
 
-    const exit = await Effect.runPromise(Fiber.interrupt(fiber));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    const exit = await Effect.runPromise(Fiber.await(fiber));
 
-    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
   });
 
   it.effect(
@@ -211,11 +213,13 @@ describe("LiveCheckTask DGG discovery", () => {
     ];
     const connector = vi
       .spyOn(platformConfigs[Platform.Twitch], "fetchLiveStatus")
-      .mockResolvedValue({
-        status: LiveStatus.Live,
-        title: "Configured live",
-        viewerCount: 0,
-      });
+      .mockReturnValue(
+        Effect.succeed({
+          status: LiveStatus.Live,
+          title: "Configured live",
+          viewerCount: 0,
+        }),
+      );
     const snapshots = [feed("configured"), feed()];
     let dggFetches = 0;
     const task = new LiveCheckTask(
@@ -275,11 +279,13 @@ describe("LiveCheckTask DGG discovery", () => {
     ];
     const youtubeFetch = vi
       .spyOn(platformConfigs[Platform.YouTube], "fetchLiveStatus")
-      .mockResolvedValue({
-        status: LiveStatus.Live,
-        title: "Election night",
-        viewerCount: 427,
-      });
+      .mockReturnValue(
+        Effect.succeed({
+          status: LiveStatus.Live,
+          title: "Election night",
+          viewerCount: 427,
+        }),
+      );
     const task = new LiveCheckTask(
       sharedStreamers,
       new Logger("DggProfileIdentityTest"),
@@ -349,7 +355,7 @@ describe("LiveCheckTask DGG discovery", () => {
     ];
     const youtubeFetch = vi
       .spyOn(platformConfigs[Platform.YouTube], "fetchLiveStatus")
-      .mockResolvedValue({ status: LiveStatus.Offline });
+      .mockReturnValue(Effect.succeed({ status: LiveStatus.Offline }));
     const task = new LiveCheckTask(
       sharedStreamers,
       new Logger("DggStaleProfileIdentityTest"),
@@ -402,10 +408,12 @@ describe("LiveCheckTask DGG discovery", () => {
     };
     const connector = vi
       .spyOn(platformConfigs[Platform.Twitch], "fetchLiveStatus")
-      .mockReturnValue({
-        status: LiveStatus.Live,
-        title: "Already recorded",
-      });
+      .mockReturnValue(
+        Effect.succeed({
+          status: LiveStatus.Live,
+          title: "Already recorded",
+        }),
+      );
     vi.mocked(notify).mockRejectedValueOnce(new Error("Pushover unavailable"));
     const task = new LiveCheckTask([streamer], new Logger("DurableLiveTest"));
 
@@ -433,9 +441,11 @@ describe("LiveCheckTask DGG discovery", () => {
     });
     const connector = vi
       .spyOn(platformConfigs[Platform.Twitch], "fetchLiveStatus")
-      .mockReturnValue({
-        status: LiveStatus.Offline,
-      });
+      .mockReturnValue(
+        Effect.succeed({
+          status: LiveStatus.Offline,
+        }),
+      );
     vi.mocked(notify).mockRejectedValueOnce(new Error("Pushover unavailable"));
     const task = new LiveCheckTask([streamer], new Logger("DurableOfflineTest"));
 
@@ -460,10 +470,12 @@ describe("LiveCheckTask DGG discovery", () => {
       };
       const connector = vi
         .spyOn(platformConfigs[Platform.Twitch], "fetchLiveStatus")
-        .mockReturnValue({
-          status: LiveStatus.Live,
-          title: "Virtual time",
-        });
+        .mockReturnValue(
+          Effect.succeed({
+            status: LiveStatus.Live,
+            title: "Virtual time",
+          }),
+        );
 
       try {
         const task = new LiveCheckTask([streamer], new Logger("ClockedLiveTest"));
@@ -488,7 +500,9 @@ describe("LiveCheckTask DGG discovery", () => {
       };
       const connector = vi
         .spyOn(platformConfigs[Platform.Twitch], "fetchLiveStatus")
-        .mockReturnValue({ status: LiveStatus.Live, title: "Cannot persist" });
+        .mockReturnValue(
+          Effect.succeed({ status: LiveStatus.Live, title: "Cannot persist" }),
+        );
       const upsert = vi
         .spyOn(StreamerStatusEntity, "upsert")
         .mockImplementationOnce(() => {

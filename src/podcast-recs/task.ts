@@ -71,7 +71,7 @@ export class PodcastRecommendationTask extends ScheduledTask {
   }
 
   private runPipelineEffect(maxRecommendations: number): Effect.Effect<void, unknown> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const logFile = config.LOGS_PATH
         ? new LogFile(
             `${config.LOGS_PATH}/podcast-recs/${logTimestamp()}.md`,

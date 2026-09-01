@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import sherpa from "sherpa-onnx-node";
@@ -9,14 +10,14 @@ const SAMPLE_RATE = 16_000;
 const SPEAKER_WINDOW_SECONDS = 4;
 const SPEAKER_STRIDE_SECONDS = 2;
 
-const EmbeddingSchema = Schema.Array(Schema.Finite).pipe(Schema.minItems(1));
+const EmbeddingSchema = Schema.Array(Schema.Finite).check(Schema.isMinLength(1));
 
 export const VoiceprintFileSchema = Schema.Struct({
   version: Schema.Literal(1),
   speaker: Schema.Literal("destiny"),
   model: Schema.String,
-  embeddings: Schema.Array(EmbeddingSchema).pipe(Schema.minItems(2)),
-  createdAt: Schema.NonNegative,
+  embeddings: Schema.Array(EmbeddingSchema).check(Schema.isMinLength(2)),
+  createdAt: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
   sources: Schema.Array(Schema.String),
 });
 
@@ -62,7 +63,7 @@ function modelFiles(modelDir: string) {
 
 function requireFilesEffect(
   paths: Record<string, string>,
-): Effect.Effect<void, SpeechRecognitionError> {
+): EffectType<void, SpeechRecognitionError> {
   return Effect.forEach(
     Object.values(paths),
     (path) =>
@@ -86,7 +87,7 @@ function requireFilesEffect(
 
 function loadVoiceprintEffect(
   path: string,
-): Effect.Effect<VoiceprintFile, SpeechRecognitionError> {
+): EffectType<VoiceprintFile, SpeechRecognitionError> {
   return Effect.tryPromise({
     try: () => readFile(path, "utf8"),
     catch: (cause) =>
@@ -100,7 +101,7 @@ function loadVoiceprintEffect(
       }),
     ),
     Effect.flatMap((value) =>
-      Schema.decodeUnknown(VoiceprintFileSchema)(value).pipe(
+      Schema.decodeUnknownEffect(VoiceprintFileSchema)(value).pipe(
         Effect.mapError(
           (cause) =>
             new SpeechRecognitionError({
@@ -136,7 +137,7 @@ export class LocalSpeechRuntime {
     modelDir: string,
     voiceprintPath?: string,
     speakerThreshold = 0.62,
-  ): Effect.Effect<LocalSpeechRuntime, SpeechRecognitionError> {
+  ): EffectType<LocalSpeechRuntime, SpeechRecognitionError> {
     return Effect.gen(function* () {
       const paths = modelFiles(modelDir);
       yield* requireFilesEffect(paths);
@@ -189,7 +190,7 @@ export class LocalSpeechRuntime {
 
   public extractSpeechEffect(
     samples: Float32Array,
-  ): Effect.Effect<Float32Array[], SpeechRecognitionError> {
+  ): EffectType<Float32Array[], SpeechRecognitionError> {
     return Effect.try({
       try: () => {
         const vad = new Vad(
@@ -230,7 +231,7 @@ export class LocalSpeechRuntime {
 
   public computeEmbeddingEffect(
     samples: Float32Array,
-  ): Effect.Effect<Float32Array, SpeechRecognitionError> {
+  ): EffectType<Float32Array, SpeechRecognitionError> {
     return Effect.try({
       try: () => {
         const stream = this.speakerExtractor.createStream();
@@ -262,11 +263,11 @@ export class LocalSpeechRuntime {
 
   public detectDestinyEffect(
     samples: Float32Array,
-  ): Effect.Effect<SpeakerMatch, SpeechRecognitionError> {
+  ): EffectType<SpeakerMatch, SpeechRecognitionError> {
     const voiceprint = this.voiceprint;
     if (!voiceprint)
       return Effect.succeed({ confidence: 0, matchedWindows: 0, checkedWindows: 0 });
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const speech = yield* this.extractSpeechEffect(samples);
       const windowSamples = SPEAKER_WINDOW_SECONDS * SAMPLE_RATE;
       const strideSamples = SPEAKER_STRIDE_SECONDS * SAMPLE_RATE;
@@ -306,7 +307,7 @@ export class LocalSpeechRuntime {
 
   public transcribeEffect(
     samples: Float32Array,
-  ): Effect.Effect<string, SpeechRecognitionError> {
+  ): EffectType<string, SpeechRecognitionError> {
     return Effect.tryPromise({
       try: () => {
         const stream = this.recognizer.createStream();

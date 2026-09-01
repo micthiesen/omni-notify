@@ -508,12 +508,12 @@ function waitForRun(runId: string): Effect.Effect<void, ApiError | Error> {
         if (run.status === "error") {
           return Effect.fail(new Error(run.error ?? "Workspace run failed"));
         }
-        return Effect.sleep("1 second").pipe(Effect.zipRight(poll));
+        return Effect.sleep("1 second").pipe(Effect.andThen(poll));
       }),
       Effect.catchTags({
         ApiError: (error) =>
           error.status === 404
-            ? Effect.sleep("250 millis").pipe(Effect.zipRight(poll))
+            ? Effect.sleep("250 millis").pipe(Effect.andThen(poll))
             : Effect.fail(error),
         ApiNetworkError: (error) => Effect.fail(new Error(error.message)),
         ApiDecodeError: (error) => Effect.fail(new Error(error.message)),
@@ -521,11 +521,13 @@ function waitForRun(runId: string): Effect.Effect<void, ApiError | Error> {
     ),
   );
   return poll.pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: "5 minutes",
-      onTimeout: () =>
-        new Error(
-          "Workspace research is still running. Refresh shortly to see the result.",
+      orElse: () =>
+        Effect.fail(
+          new Error(
+            "Workspace research is still running. Refresh shortly to see the result.",
+          ),
         ),
     }),
   );

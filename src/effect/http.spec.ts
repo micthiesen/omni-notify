@@ -16,7 +16,7 @@ function testApp() {
         Effect.catchTag("HttpBodyTooLargeError", () =>
           Effect.succeed(c.json({ error: "Request body too large" }, 413)),
         ),
-        Effect.catchAll(() => Effect.succeed(c.json({ error: "Invalid body" }, 400))),
+        Effect.catch(() => Effect.succeed(c.json({ error: "Invalid body" }, 400))),
       ),
     ),
   );
@@ -88,7 +88,7 @@ describe("bounded HTTP JSON bodies", () => {
       effectHandler((c) =>
         decodeJsonBody(c, BodySchema, TEST_BODY_LIMIT).pipe(
           Effect.map((body) => c.json(body)),
-          Effect.catchAll((error) => {
+          Effect.catch((error) => {
             captured = error;
             return Effect.succeed(c.body(null, 413));
           }),

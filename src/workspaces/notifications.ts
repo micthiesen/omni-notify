@@ -47,7 +47,7 @@ export function deliverWorkspaceNotificationEffect(
         markWorkspaceNotificationSending(notification.notificationId, attempts),
       ).pipe(
         Effect.andThen(
-          Effect.either(
+          Effect.result(
             Effect.tryPromise({
               try: () =>
                 notify({
@@ -66,12 +66,12 @@ export function deliverWorkspaceNotificationEffect(
           ),
         ),
         Effect.flatMap((delivery) => {
-          if (delivery._tag === "Right") {
+          if (delivery._tag === "Success") {
             return workspaceRepositoryEffect("mark workspace notification sent", () =>
               markWorkspaceNotificationSent(notification.notificationId),
             ).pipe(Effect.as(true));
           }
-          const message = delivery.left.message;
+          const message = delivery.failure.message;
           return workspaceRepositoryEffect(
             "record workspace notification provider failure",
             () =>
@@ -122,7 +122,7 @@ export class WorkspaceNotificationTask extends ScheduledTask {
   }
 
   private runEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const due = yield* workspaceRepositoryEffect(
         "list due workspace notifications",
         () => listDueWorkspaceNotifications(),

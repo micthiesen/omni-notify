@@ -134,7 +134,7 @@ function discoverViaPodcastIndexEffect(
         .map((episode) => podcastIndexToCandidate(episode, voice))
         .filter((candidate): candidate is EpisodeCandidate => candidate !== undefined),
     ),
-    Effect.catchAll((error) => {
+    Effect.catch((error) => {
       logger.warn(`Podcast Index byperson failed for ${voice}`, String(error));
       return Effect.succeed(undefined);
     }),
@@ -154,7 +154,7 @@ function discoverViaTavilyEffect(
       maxResults: 6,
       maxContentChars: 700,
     }).pipe(
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         logger.warn(`Tavily person-search failed for ${voice}`, String(error));
         return Effect.succeed(undefined);
       }),
@@ -179,7 +179,7 @@ Return JSON only; empty array if none clearly qualify.`;
         prompt,
       }),
     ).pipe(
-      Effect.catchAll((error) => {
+      Effect.catch((error) => {
         logger.warn(`Guest extraction failed for ${voice}`, String(error));
         return Effect.succeed(undefined);
       }),

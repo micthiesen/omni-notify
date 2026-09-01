@@ -25,10 +25,7 @@ const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
 
 const StateEventSchema = Schema.Struct({
-  changed: Schema.Record({
-    key: Schema.String,
-    value: Schema.Record({ key: Schema.String, value: Schema.String }),
-  }),
+  changed: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.String)),
 });
 
 export class EventSourceSetupError extends Data.TaggedError("EventSourceSetupError")<{
@@ -63,8 +60,8 @@ export class EventSourceSetupError extends Data.TaggedError("EventSourceSetupErr
  */
 class JmapEventSource {
   private es: EventSource | null = null;
-  private inactivityFiber: Fiber.RuntimeFiber<void, never> | null = null;
-  private reconnectFiber: Fiber.RuntimeFiber<void, never> | null = null;
+  private inactivityFiber: Fiber.Fiber<void, never> | null = null;
+  private reconnectFiber: Fiber.Fiber<void, never> | null = null;
   private backoffMs = 0;
   private connected = false;
   private closed = false;
@@ -132,7 +129,7 @@ class JmapEventSource {
    * `closed` and prevent later attempts.
    */
   private readonly rollbackConnectionEffect: Effect.Effect<void, never> = Effect.gen(
-    this,
+    { self: this },
     function* () {
       if (this.inactivityFiber) yield* Fiber.interrupt(this.inactivityFiber);
       this.inactivityFiber = null;
@@ -141,16 +138,19 @@ class JmapEventSource {
     },
   );
 
-  readonly closeEffect: Effect.Effect<void, never> = Effect.gen(this, function* () {
-    this.closed = true;
-    if (this.inactivityFiber) yield* Fiber.interrupt(this.inactivityFiber);
-    if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
-    this.inactivityFiber = null;
-    this.reconnectFiber = null;
-    this.logger.info("Closing EventSource connection");
-    this.es?.close();
-    this.es = null;
-  });
+  readonly closeEffect: Effect.Effect<void, never> = Effect.gen(
+    { self: this },
+    function* () {
+      this.closed = true;
+      if (this.inactivityFiber) yield* Fiber.interrupt(this.inactivityFiber);
+      if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
+      this.inactivityFiber = null;
+      this.reconnectFiber = null;
+      this.logger.info("Closing EventSource connection");
+      this.es?.close();
+      this.es = null;
+    },
+  );
 
   private handleStateEvent(event: MessageEvent): void {
     try {
@@ -193,38 +193,38 @@ class JmapEventSource {
     if (this.closed) return;
     const previous = this.inactivityFiber;
     this.inactivityFiber = Effect.runFork(
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         if (previous) yield* Fiber.interrupt(previous);
         yield* Effect.sleep(INACTIVITY_TIMEOUT_MS);
         if (this.closed) return;
         this.logger.warn("EventSource inactivity timeout, forcing reconnect");
         yield* this.reconnectEffect;
-      }).pipe(Effect.catchAllCause(() => Effect.void)),
+      }).pipe(Effect.catchCause(() => Effect.void)),
     );
   }
 
   private readonly reconnectEffect: Effect.Effect<void, never> = Effect.gen(
-    this,
+    { self: this },
     function* () {
       this.es?.close();
       this.es = null;
       if (this.closed) return;
       if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
-      let fiber!: Fiber.RuntimeFiber<void, never>;
+      let fiber!: Fiber.Fiber<void, never>;
       fiber = yield* this.reconnectLoopEffect.pipe(
         Effect.ensuring(
           Effect.sync(() => {
             if (this.reconnectFiber === fiber) this.reconnectFiber = null;
           }),
         ),
-        Effect.forkDaemon,
+        Effect.forkDetach,
       );
       this.reconnectFiber = fiber;
     },
   );
 
   private readonly reconnectLoopEffect: Effect.Effect<void, never> = Effect.gen(
-    this,
+    { self: this },
     function* () {
       const delay =
         this.backoffMs === 0
@@ -235,10 +235,10 @@ class JmapEventSource {
       yield* Effect.sleep(delay);
       if (this.closed) return;
       yield* this.connectEffect.pipe(
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.sync(() =>
             this.logger.warn(`EventSource reconnect failed: ${error.message}`),
-          ).pipe(Effect.zipRight(Effect.suspend(() => this.reconnectLoopEffect))),
+          ).pipe(Effect.andThen(Effect.suspend(() => this.reconnectLoopEffect))),
         ),
       );
     },

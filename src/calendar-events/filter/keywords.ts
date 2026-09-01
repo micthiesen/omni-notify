@@ -214,7 +214,7 @@ export function filterCalendarCandidateEffect(
         ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
         : { pass: false, reason: `triage: ${verdict.reason}` },
     ),
-    Effect.catchAll(() => Effect.succeed(keywordFallback(email))),
+    Effect.catch(() => Effect.succeed(keywordFallback(email))),
   );
 }
 

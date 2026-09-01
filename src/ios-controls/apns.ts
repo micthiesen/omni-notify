@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { createPrivateKey, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { type ClientHttp2Session, connect } from "node:http2";
@@ -29,7 +30,7 @@ export class ApnsTransportError extends Data.TaggedError("ApnsTransportError")<{
 }
 
 export interface ApnsClientDependencies {
-  readonly readPrivateKey: (path: string) => Effect.Effect<string, ApnsTransportError>;
+  readonly readPrivateKey: (path: string) => EffectType<string, ApnsTransportError>;
   readonly connect: (authority: string) => ClientHttp2Session;
 }
 
@@ -97,7 +98,7 @@ export class ApnsControlClient {
   public static createEffect(
     config: ApnsConfig,
     dependencies: ApnsClientDependencies = defaultDependencies,
-  ): Effect.Effect<ApnsControlClient, ApnsTransportError> {
+  ): EffectType<ApnsControlClient, ApnsTransportError> {
     return dependencies
       .readPrivateKey(config.privateKeyPath)
       .pipe(
@@ -110,7 +111,7 @@ export class ApnsControlClient {
   public static scoped(
     config: ApnsConfig,
     dependencies: ApnsClientDependencies = defaultDependencies,
-  ): Effect.Effect<ApnsControlClient, ApnsTransportError, Scope.Scope> {
+  ): EffectType<ApnsControlClient, ApnsTransportError, Scope.Scope> {
     return Effect.acquireRelease(
       ApnsControlClient.createEffect(config, dependencies),
       (client) => client.closeEffect(),
@@ -122,7 +123,7 @@ export class ApnsControlClient {
     this.sessions.clear();
   }
 
-  public closeEffect(): Effect.Effect<void> {
+  public closeEffect(): EffectType<void> {
     return Effect.sync(() => this.close());
   }
 
@@ -134,8 +135,8 @@ export class ApnsControlClient {
 
   public sendControlChangedEffect(
     registration: IOSControlRegistration,
-  ): Effect.Effect<ApnsControlPushResult, ApnsTransportError> {
-    return Effect.gen(this, function* () {
+  ): EffectType<ApnsControlPushResult, ApnsTransportError> {
+    return Effect.gen({ self: this }, function* () {
       const session = yield* this.sessionEffect(registration.environment);
       const providerToken = yield* this.providerTokenEffect();
       const { headers, body } = buildApnsControlRequest(
@@ -143,7 +144,7 @@ export class ApnsControlClient {
         registration.pushToken,
         providerToken,
       );
-      return yield* Effect.async<ApnsControlPushResult, ApnsTransportError>(
+      return yield* Effect.callback<ApnsControlPushResult, ApnsTransportError>(
         (resume) => {
           let request: ReturnType<ClientHttp2Session["request"]>;
           try {
@@ -189,18 +190,20 @@ export class ApnsControlClient {
         },
       );
     }).pipe(
-      Effect.timeoutFail({
+      Effect.timeoutOrElse({
         duration: "5 seconds",
-        onTimeout: () =>
-          new ApnsTransportError({
-            operation: "request",
-            cause: new Error("APNs control push timed out"),
-          }),
+        orElse: () =>
+          Effect.fail(
+            new ApnsTransportError({
+              operation: "request",
+              cause: new Error("APNs control push timed out"),
+            }),
+          ),
       }),
     );
   }
 
-  private providerTokenEffect(): Effect.Effect<string, ApnsTransportError> {
+  private providerTokenEffect(): EffectType<string, ApnsTransportError> {
     return Effect.try({
       try: () => {
         const issuedAt = Math.floor(Date.now() / 1000);
@@ -219,7 +222,7 @@ export class ApnsControlClient {
 
   private sessionEffect(
     environment: ApnsEnvironment,
-  ): Effect.Effect<ClientHttp2Session, ApnsTransportError> {
+  ): EffectType<ClientHttp2Session, ApnsTransportError> {
     return Effect.try({
       try: () => {
         const current = this.sessions.get(environment);

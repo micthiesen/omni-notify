@@ -66,7 +66,7 @@ describe("ImapTransport mailbox serialization", () => {
     let finish: (() => void) | undefined;
     const transport = new ImapTransport({ user: "u", pass: "p" }, logger);
     const connect = vi.fn(() =>
-      Effect.async<void>((resume) => {
+      Effect.callback<void>((resume) => {
         finish = () => resume(Effect.void);
       }),
     );
@@ -107,7 +107,7 @@ describe("ImapTransport mailbox serialization", () => {
       ),
     );
     const stop = Effect.runPromise(transport.stopEffect);
-    await Effect.runPromise(Effect.yieldNow());
+    await Effect.runPromise(Effect.yieldNow);
     expect(logout).not.toHaveBeenCalled();
 
     finish?.();
@@ -177,7 +177,7 @@ describe("ImapTransport mailbox serialization", () => {
     // Resolving the underlying Promise later cannot transfer the already
     // released client into the transport.
     finishConnect?.();
-    await Effect.runPromise(Effect.yieldNow());
+    await Effect.runPromise(Effect.yieldNow);
     expect(client.mailboxOpen).not.toHaveBeenCalled();
     expect((transport as unknown as { client: unknown }).client).toBeNull();
   });
@@ -205,7 +205,7 @@ describe("ImapTransport mailbox serialization", () => {
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(client.close).toHaveBeenCalledOnce();
     finishOpen?.();
-    await Effect.runPromise(Effect.yieldNow());
+    await Effect.runPromise(Effect.yieldNow);
     expect((transport as unknown as { client: unknown }).client).toBeNull();
   });
 });

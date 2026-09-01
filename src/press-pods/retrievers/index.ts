@@ -1,6 +1,6 @@
 import { extractHttpError } from "@micthiesen/mitools/http";
 import type { Logger } from "@micthiesen/mitools/logging";
-import { Duration, Effect, Either } from "effect";
+import { Duration, Effect, Result } from "effect";
 import config from "../../utils/config.js";
 import { getArticleMetadataEffect, type Metadata } from "../agents/metadata.js";
 import type CostCounter from "../costs.js";
@@ -33,11 +33,11 @@ export function runArticleRetrievers(
     (retriever) =>
       retrieveArticle(url, retriever).pipe(
         Effect.timeout(Duration.millis(timeoutMs)),
-        Effect.either,
+        Effect.result,
         Effect.map((result): RetrievedArticleResult =>
-          Either.isRight(result)
-            ? result.right
-            : { success: false, error: result.left, retrieverName: retriever.name },
+          Result.isSuccess(result)
+            ? result.success
+            : { success: false, error: result.failure, retrieverName: retriever.name },
         ),
       ),
     { concurrency: "unbounded" },
@@ -84,10 +84,10 @@ export function rateRetrievedArticles(
       [...groups.values()],
       (group) =>
         rateArticle(group[0].article).pipe(
-          Effect.either,
+          Effect.result,
           Effect.map((rated) => {
-            if (Either.isRight(rated)) {
-              const metadata = rated.right;
+            if (Result.isSuccess(rated)) {
+              const metadata = rated.success;
               for (const member of group) {
                 const retrieverName = retrieved[member.index].retrieverName;
                 results[member.index] = metadata.info.isValidArticle
@@ -99,7 +99,7 @@ export function rateRetrievedArticles(
                     };
               }
             } else {
-              const error = rated.left.cause;
+              const error = rated.failure.cause;
               for (const member of group) {
                 results[member.index] = {
                   success: false,

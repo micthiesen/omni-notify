@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import WebSocket from "ws";
 import { Data, Effect } from "effect";
 import { z } from "zod";
@@ -140,8 +141,8 @@ export function fetchDggFeed({
 }: {
   timeoutMs?: number;
   createSocket?: DggWebSocketFactory;
-} = {}): Effect.Effect<DggFeed, DggFeedError> {
-  const socketEffect = Effect.async<DggFeed, DggFeedError>((resume) => {
+} = {}): EffectType<DggFeed, DggFeedError> {
+  const socketEffect = Effect.callback<DggFeed, DggFeedError>((resume) => {
     let embeds: DggEmbed[] | undefined;
     let hosting: DggHosting | null | undefined;
     let destinyLive: boolean | undefined;
@@ -211,10 +212,12 @@ export function fetchDggFeed({
     });
   });
   return socketEffect.pipe(
-    Effect.timeoutFail({
+    Effect.timeoutOrElse({
       duration: `${timeoutMs} millis`,
-      onTimeout: () =>
-        new DggFeedError({ message: "Timed out waiting for DGG live snapshot" }),
+      orElse: () =>
+        Effect.fail(
+          new DggFeedError({ message: "Timed out waiting for DGG live snapshot" }),
+        ),
     }),
   );
 }

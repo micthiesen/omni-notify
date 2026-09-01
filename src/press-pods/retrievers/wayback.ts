@@ -37,7 +37,7 @@ export function retrieveArticleWayback(
     "query Wayback availability",
   ).pipe(
     Effect.flatMap((raw) =>
-      Schema.decodeUnknown(WaybackResponseSchema)(raw).pipe(
+      Schema.decodeUnknownEffect(WaybackResponseSchema)(raw).pipe(
         Effect.mapError(
           (cause) =>
             new PressPodsError({ operation: "decode Wayback response", cause }),

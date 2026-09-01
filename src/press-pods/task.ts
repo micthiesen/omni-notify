@@ -80,7 +80,7 @@ export default class PressPodsTask extends ScheduledTask {
   }
 
   private runEffect(): Effect.Effect<void, PressPodsError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       // First run of a fresh process: any `processing` job was orphaned by the
       // restart (single-process deployment), so make its claim immediately
       // reclaimable instead of waiting out the 30-minute stale window. The drain
@@ -124,7 +124,7 @@ export default class PressPodsTask extends ScheduledTask {
   private processJob(
     job: PressPodsJobData,
   ): Effect.Effect<"processed" | "requeued" | "failed", PressPodsError> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       // A stale `processing` claim means a previous run died mid-job. Two cases:
       // the crash happened after the episode was durably written (job cleanup
       // never ran — finish the bookkeeping, never reprocess), or before (count
@@ -176,12 +176,12 @@ export default class PressPodsTask extends ScheduledTask {
         job.url,
         getCurrentRunId(),
         this.logger,
-      ).pipe(Effect.either);
-      if (result._tag === "Right") {
+      ).pipe(Effect.result);
+      if (result._tag === "Success") {
         yield* PressPodsPersistence.completeJob(job.jobId);
         return "processed";
       } else {
-        const cause = errorCause(result.left);
+        const cause = errorCause(result.failure);
         const retryable = isRetryableError(cause);
         const summary = summarizeError(cause);
         const updated = yield* PressPodsPersistence.recordJobFailure(

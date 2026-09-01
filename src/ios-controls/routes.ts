@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { Logger } from "@micthiesen/mitools/logging";
 import type { Hono } from "hono";
@@ -13,17 +14,24 @@ import { IOS_CONTROL_SLOT_COUNT } from "./liveSlots.js";
 import type { IOSControlService } from "./service.js";
 
 const boundedString = (min: number, max: number) =>
-  Schema.String.pipe(Schema.trimmed(), Schema.minLength(min), Schema.maxLength(max));
+  Schema.String.check(
+    Schema.isTrimmed(),
+    Schema.isMinLength(min),
+    Schema.isMaxLength(max),
+  );
 const registrationSchema = Schema.Struct({
   deviceId: boundedString(8, 200),
   controls: Schema.Array(
     Schema.Struct({
       controlId: boundedString(1, 500),
-      slot: Schema.Number.pipe(Schema.int(), Schema.between(1, IOS_CONTROL_SLOT_COUNT)),
-      pushToken: Schema.String.pipe(Schema.pattern(/^[0-9a-fA-F]{32,512}$/)),
-      environment: Schema.Literal("sandbox", "production"),
+      slot: Schema.Number.check(
+        Schema.isInt(),
+        Schema.isBetween({ minimum: 1, maximum: IOS_CONTROL_SLOT_COUNT }),
+      ),
+      pushToken: Schema.String.check(Schema.isPattern(/^[0-9a-fA-F]{32,512}$/)),
+      environment: Schema.Literals(["sandbox", "production"]),
     }),
-  ).pipe(Schema.maxItems(32)),
+  ).check(Schema.isMaxLength(32)),
 });
 
 const AUTH_WINDOW_SECONDS = 300;
@@ -35,7 +43,7 @@ class IOSControlBodyTooLargeError extends Data.TaggedError(
 
 function readBoundedBody(
   request: Request,
-): Effect.Effect<
+): EffectType<
   { body: Buffer; bodyHash: string },
   HttpBodyError | IOSControlBodyTooLargeError
 > {
@@ -79,7 +87,7 @@ function readBoundedBody(
         ? fromPromise("release signed iOS control body reader", () =>
             reader.cancel(),
           ).pipe(
-            Effect.catchAll(() => Effect.void),
+            Effect.catch(() => Effect.void),
             Effect.ensuring(
               Effect.try({
                 try: () => reader.releaseLock(),
@@ -196,7 +204,7 @@ export function registerIOSControlRoutes(
               Effect.as(c.json({ registered: input.controls.length })),
             ),
         ),
-        Effect.catchAll(() =>
+        Effect.catch(() =>
           Effect.succeed(c.json({ error: "Invalid control registration" }, 400)),
         ),
       ),

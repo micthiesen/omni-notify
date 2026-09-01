@@ -2,7 +2,7 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
-import { Cause, Effect, Either } from "effect";
+import { Cause, Effect } from "effect";
 import {
   type AdmitTier,
   deriveItemsOutcome,
@@ -84,7 +84,7 @@ export class CalendarEventPipeline implements EmailHandler {
   }
 
   public handleEmailsEffect(emails: FetchedEmail[]): Effect.Effect<void, never> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const candidates = yield* Effect.forEach(emails, (email) =>
         filterCalendarCandidateEffect(email, this.triage).pipe(
           Effect.map((result) => {
@@ -114,13 +114,13 @@ export class CalendarEventPipeline implements EmailHandler {
 
       // Discover calendar URL once (lazy init + cache)
       if (candidates.length > 0 && !this.caldav) {
-        const discovery = yield* Effect.either(
+        const discovery = yield* Effect.result(
           discoverCaldavSessionEffect(this.logger),
         );
-        if (Either.isRight(discovery)) {
-          this.caldav = discovery.right;
+        if (discovery._tag === "Success") {
+          this.caldav = discovery.success;
         } else {
-          const error = discovery.left;
+          const error = discovery.failure;
           this.logger.error(
             "Failed to discover calendar URL, skipping batch",
             (error as Error).message,
@@ -173,8 +173,8 @@ export class CalendarEventPipeline implements EmailHandler {
             this.name,
             () => program,
           ).pipe(
-            Effect.catchAllCause((cause) =>
-              Cause.isInterrupted(cause) ? Effect.interrupt : Effect.logError(cause),
+            Effect.catchCause((cause) =>
+              Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.logError(cause),
             ),
           );
         },
@@ -198,7 +198,7 @@ export class CalendarEventPipeline implements EmailHandler {
     triageCostCents: number | null | undefined,
     runLog?: LogFile,
   ): Effect.Effect<void, never> {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       this.logger.info(
         `Extracting events from: "${email.subject}" (from: ${email.from})`,
       );
@@ -236,7 +236,7 @@ export class CalendarEventPipeline implements EmailHandler {
 
       let extraction: ExtractCalendarEventsResult;
       try {
-        const extracted = yield* Effect.either(
+        const extracted = yield* Effect.result(
           extractCalendarEventsEffect({
             email: {
               subject: email.subject,
@@ -250,8 +250,8 @@ export class CalendarEventPipeline implements EmailHandler {
             existingEvents,
           }),
         );
-        if (Either.isLeft(extracted)) throw extracted.left;
-        extraction = extracted.right;
+        if (extracted._tag === "Failure") throw extracted.failure;
+        extraction = extracted.success;
       } catch (error) {
         this.logger.error(
           `Extraction failed for "${email.subject}" from ${email.from}`,
@@ -317,12 +317,12 @@ export class CalendarEventPipeline implements EmailHandler {
               return this.handleUpdate(event, existingById, email.id);
           }
         })();
-        const outcome = yield* Effect.either(operation);
+        const outcome = yield* Effect.result(operation);
         let result: ItemResult;
-        if (Either.isLeft(outcome)) {
+        if (outcome._tag === "Failure") {
           // CalDAV calls throw on transport failures (fetch network errors), which
           // are retryable; HTTP-level failures come back as result objects instead.
-          const message = outcome.left.message;
+          const message = outcome.failure.message;
           this.logger.error(
             `Failed to process event "${event.title}" (${event.action})`,
             message,
@@ -332,7 +332,7 @@ export class CalendarEventPipeline implements EmailHandler {
             ok: false,
             transient: message,
           };
-        } else result = outcome.right;
+        } else result = outcome.success;
         items.push(result.line);
         itemsOk.push(result.ok);
         if (result.transient !== undefined) transientFailures.push(result.transient);
@@ -365,7 +365,7 @@ export class CalendarEventPipeline implements EmailHandler {
     ItemResult,
     import("./effect.js").CaldavError | CalendarPersistenceError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const eventHash = computeEventHash(event.title, event.startDate, event.startTime);
       const label = `"${event.title}" on ${event.startDate}`;
 
@@ -439,7 +439,7 @@ export class CalendarEventPipeline implements EmailHandler {
     ItemResult,
     import("./effect.js").CaldavError | CalendarPersistenceError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       // Cancels are destructive, so they require the explicit evt_N handle — a
       // title-only match (e.g. a payment receipt echoing an upcoming appointment's
       // title) must never delete an event.
@@ -497,7 +497,7 @@ export class CalendarEventPipeline implements EmailHandler {
     ItemResult,
     import("./effect.js").CaldavError | CalendarPersistenceError
   > {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const record = resolveEventReference(event, existingById);
       const label = `"${event.title}" on ${event.startDate}`;
 
@@ -612,7 +612,7 @@ export class CalendarEventPipeline implements EmailHandler {
         }),
       catch: (cause) => cause,
     }).pipe(
-      Effect.catchAll((error) =>
+      Effect.catch((error) =>
         Effect.sync(() =>
           this.logger.warn(
             "Failed to send notification",

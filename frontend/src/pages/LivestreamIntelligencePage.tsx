@@ -169,7 +169,7 @@ export default function LivestreamIntelligencePage({
           setError(null);
         }),
       ),
-      Effect.catchAll((reason) =>
+      Effect.catch((reason) =>
         Effect.sync(() =>
           setError(
             reason instanceof Error ? reason.message : "Failed to load diagnostics",

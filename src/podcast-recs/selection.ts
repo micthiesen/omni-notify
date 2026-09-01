@@ -108,7 +108,7 @@ export function researchFinalistsEffect(
             maxResults: 3,
             maxContentChars: 800,
           }).pipe(
-            Effect.catchAll((error) => {
+            Effect.catch((error) => {
               logger.warn(
                 `Research failed for ${candidate.episodeTitle}`,
                 String(error),

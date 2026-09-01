@@ -36,7 +36,7 @@ export function RecommendationRuns({
       fetchTaskRuns({ task: taskName, limit: 6 }).pipe(
         Effect.tap((data) => Effect.sync(() => setRuns(data.runs))),
         // Recommendation cards remain useful if activity history is unavailable.
-        Effect.catchAll(() => Effect.void),
+        Effect.catch(() => Effect.void),
       ),
     );
   }, [taskName, latestRunId]);

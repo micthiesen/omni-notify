@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { fetchKickLiveStatus, getKickLiveUrl } from "./kick.js";
 import { fetchTwitchLiveStatus, getTwitchLiveUrl } from "./twitch.js";
 import { fetchYouTubeLiveStatus, getYouTubeLiveUrl } from "./youtube.js";
@@ -41,9 +42,7 @@ export interface PlatformConfig {
   platform: Platform;
   displayName: string;
   getLiveUrl: (username: string) => string;
-  fetchLiveStatus: (args: {
-    username: string;
-  }) => Effect.Effect<FetchedStatus> | Promise<FetchedStatus> | FetchedStatus;
+  fetchLiveStatus: (args: { username: string }) => EffectType<FetchedStatus>;
 }
 
 export const platformConfigs: Record<Platform, PlatformConfig> = {
@@ -79,4 +78,3 @@ export function getNotificationUrlFields(
     url_title: `Watch on ${config.displayName}`,
   };
 }
-import type { Effect } from "effect";

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Clock, Effect, Either, Schema } from "effect";
+import { Clock, Effect, Exit, Schema } from "effect";
 import { getAllBriefingHistories } from "../../briefing-agent/persistence.js";
 import {
   getLivestreamDiagnostics,
@@ -408,7 +408,7 @@ const workspaceActionPayloadSchema = z.union([
   z.object({ unavailable: z.literal("Stored action payload is invalid") }),
 ]);
 
-const workspaceActionPayloadEffectSchema = Schema.Union(
+const workspaceActionPayloadEffectSchema = Schema.Union([
   Schema.Struct({
     senders: Schema.Array(Schema.String),
     domains: Schema.Array(Schema.String),
@@ -427,7 +427,7 @@ const workspaceActionPayloadEffectSchema = Schema.Union(
     allDay: Schema.Boolean,
     reminderMinutes: Schema.optional(Schema.Number),
   }),
-);
+]);
 
 const workspaceActionSchema = z.object({
   actionId: z.string(),
@@ -511,11 +511,11 @@ function serializeWorkspaceDefinition(
 }
 
 function parseActionPayload(payload: string): unknown {
-  const decoded = Schema.decodeUnknownEither(
-    Schema.parseJson(workspaceActionPayloadEffectSchema),
+  const decoded = Schema.decodeUnknownExit(
+    Schema.fromJsonString(workspaceActionPayloadEffectSchema),
   )(payload);
-  return Either.isRight(decoded)
-    ? decoded.right
+  return Exit.isSuccess(decoded)
+    ? decoded.value
     : { unavailable: "Stored action payload is invalid" };
 }
 

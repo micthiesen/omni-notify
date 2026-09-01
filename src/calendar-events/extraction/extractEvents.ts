@@ -267,7 +267,7 @@ function runExtractionOnce(args: {
 function validateExtraction(
   result: ExtractCalendarEventsResult,
 ): Effect.Effect<void, CalendarExtractionError> {
-  return Schema.decodeUnknown(CalendarEventExtractionEffectSchema)({
+  return Schema.decodeUnknownEffect(CalendarEventExtractionEffectSchema)({
     events: result.events,
   }).pipe(
     Effect.asVoid,

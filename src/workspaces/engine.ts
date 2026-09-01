@@ -100,7 +100,7 @@ const workspaceAgentOutputSchema = Schema.Struct({
     Schema.Struct({
       subject_id: Schema.String,
       title: Schema.String,
-      status: Schema.Literal("active", "paused", "completed", "archived"),
+      status: Schema.Literals(["active", "paused", "completed", "archived"]),
       summary: Schema.String,
       artifact_updates: Schema.Array(
         Schema.Struct({
@@ -121,7 +121,7 @@ const workspaceAgentOutputSchema = Schema.Struct({
   ),
   proposals: Schema.Array(
     Schema.Struct({
-      type: Schema.Literal("email_scope", "calendar_event"),
+      type: Schema.Literals(["email_scope", "calendar_event"]),
       subject_id: Schema.String,
       title: Schema.String,
       description: Schema.String,
@@ -239,7 +239,7 @@ export function runWorkspaceEffect(
       return yield* new WorkspaceValidationError({
         message: "Workspace agent returned no structured output",
       });
-    const output = yield* Schema.decodeUnknown(workspaceAgentOutputSchema)(
+    const output = yield* Schema.decodeUnknownEffect(workspaceAgentOutputSchema)(
       result.output,
     ).pipe(
       Effect.mapError(
@@ -379,7 +379,7 @@ export function applyWorkspaceOutputEffect(
   persistedUserMessageId?: string,
 ) {
   return Effect.gen(function* () {
-    const decoded = yield* Schema.decodeUnknown(workspaceAgentOutputSchema)(
+    const decoded = yield* Schema.decodeUnknownEffect(workspaceAgentOutputSchema)(
       output,
     ).pipe(
       Effect.mapError(

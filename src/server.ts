@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "@micthiesen/mitools/logging";
@@ -353,7 +354,7 @@ function serializeStreamer(streamer: Streamer) {
 }
 
 function serializeStreamersForDisplay(streamers: Streamer[]) {
-  type SerializedStreamer = Effect.Effect.Success<ReturnType<typeof serializeStreamer>>;
+  type SerializedStreamer = Effect.Success<ReturnType<typeof serializeStreamer>>;
   type SerializedLive = Extract<SerializedStreamer, { live: true }>;
   type SerializedOffline = Extract<SerializedStreamer, { live: false }>;
 
@@ -389,12 +390,12 @@ const SNAPSHOT_RUN_LIMIT = 30;
 const SSE_DEBOUNCE_MS = 150;
 const SSE_HEARTBEAT_MS = 25_000;
 
-const requestJsonEffect = (c: Context): Effect.Effect<unknown, HttpBodyTooLargeError> =>
+const requestJsonEffect = (c: Context): EffectType<unknown, HttpBodyTooLargeError> =>
   readJsonBody(c).pipe(Effect.catchTag("HttpBodyError", () => Effect.succeed(null)));
 
 const rejectOversizedJson = <A, E, R>(
   c: Context,
-  effect: Effect.Effect<A, E | HttpBodyTooLargeError, R>,
+  effect: EffectType<A, E | HttpBodyTooLargeError, R>,
 ) =>
   effect.pipe(
     Effect.catchTag("HttpBodyTooLargeError", () =>
@@ -420,7 +421,10 @@ function taskRunErrorResponse(c: Context, error: unknown): Response {
 // only in the per-run cap.
 const runRequestSchema = (max: number) =>
   Schema.Struct({
-    maxRecommendations: Schema.Number.pipe(Schema.int(), Schema.between(1, max)),
+    maxRecommendations: Schema.Number.check(
+      Schema.isInt(),
+      Schema.isBetween({ minimum: 1, maximum: max }),
+    ),
   });
 const runRequestError = (max: number) =>
   `maxRecommendations must be an integer from 1 to ${max}`;
@@ -433,7 +437,7 @@ function feedbackRoute<
   TData extends { status: string },
   TFeedback extends string,
 >(options: {
-  schema: Schema.Schema<{
+  schema: Schema.Decoder<{
     readonly feedback?: TFeedback;
     readonly note?: string;
   }>;
@@ -449,12 +453,12 @@ function feedbackRoute<
       c,
       requestJsonEffect(c).pipe(
         Effect.map((body): Response => {
-          const parsed = Schema.decodeUnknownEither(options.schema)(body);
-          if (parsed._tag === "Left") {
+          const parsed = Schema.decodeUnknownExit(options.schema)(body);
+          if (parsed._tag === "Failure") {
             return c.json({ error: "Invalid recommendation feedback" }, 400);
           }
           // A rating, a free-form note, or both, but at least one must be present.
-          if (parsed.right.feedback === undefined && !parsed.right.note?.trim()) {
+          if (parsed.value.feedback === undefined && !parsed.value.note?.trim()) {
             return c.json({ error: "A rating or a note is required" }, 400);
           }
           const id = c.req.param("id") ?? "";
@@ -469,8 +473,8 @@ function feedbackRoute<
             );
           }
           const recommendation = options.setFeedback(id, {
-            feedback: parsed.right.feedback,
-            note: parsed.right.note?.trim() || undefined,
+            feedback: parsed.value.feedback,
+            note: parsed.value.note?.trim() || undefined,
           });
           if (!recommendation) {
             return c.json({ error: "Recommendation not found" }, 404);
@@ -598,7 +602,7 @@ export function startServer(
             sameOrigin = yield* Effect.try({
               try: () => Boolean(host) && new URL(origin).host === host,
               catch: () => false,
-            }).pipe(Effect.merge);
+            }).pipe(Effect.catch(() => Effect.succeed(false)));
           }
           if (!sameOrigin) {
             return c.json({ error: "Cross-origin mutations are not allowed" }, 403);
@@ -728,9 +732,9 @@ export function startServer(
   );
 
   const livestreamFeedbackSchema = Schema.Struct({
-    alertId: Schema.UUID,
-    verdict: Schema.Literal("useful", "not_useful", "false_positive"),
-    note: Schema.optional(Schema.String.pipe(Schema.maxLength(500))),
+    alertId: Schema.String.check(Schema.isUUID()),
+    verdict: Schema.Literals(["useful", "not_useful", "false_positive"]),
+    note: Schema.optional(Schema.String.check(Schema.isMaxLength(500))),
   });
 
   app.post(
@@ -744,13 +748,13 @@ export function startServer(
             if (!streamers.some((streamer) => streamer.id === id)) {
               return c.json({ error: "Unknown streamer" }, 404);
             }
-            const parsed = Schema.decodeUnknownEither(livestreamFeedbackSchema)(body);
-            if (parsed._tag === "Left") {
-              return c.json({ error: String(parsed.left) }, 400);
+            const parsed = Schema.decodeUnknownExit(livestreamFeedbackSchema)(body);
+            if (parsed._tag === "Failure") {
+              return c.json({ error: String(parsed.cause) }, 400);
             }
             const feedback = recordLivestreamFeedback({
               streamerId: id,
-              ...parsed.right,
+              ...parsed.value,
             });
             if (!feedback) {
               return c.json({ error: "Alert no longer exists" }, 404);
@@ -798,7 +802,7 @@ export function startServer(
           data: payload,
           id: String(snapshotEventId++),
         };
-        for (const client of clients) Queue.unsafeOffer(client.frames, frame);
+        for (const client of clients) Queue.offerUnsafe(client.frames, frame);
       }),
     ),
     Effect.asVoid,
@@ -816,7 +820,7 @@ export function startServer(
             const client: SseClient = { frames };
             clients.add(client);
             const unsubscribeClient = taskRunBus.subscribe(() => {
-              Queue.unsafeOffer(changes, undefined);
+              Queue.offerUnsafe(changes, undefined);
             });
             yield* Effect.addFinalizer(() =>
               Effect.sync(() => {
@@ -837,7 +841,7 @@ export function startServer(
               Clock.currentTimeMillis.pipe(
                 Effect.tap((now) =>
                   Effect.sync(() =>
-                    Queue.unsafeOffer(frames, {
+                    Queue.offerUnsafe(frames, {
                       event: "ping",
                       data: String(now),
                     }),
@@ -857,14 +861,14 @@ export function startServer(
             ).pipe(Effect.forkScoped);
 
             const initialSnapshot = yield* buildSnapshot();
-            Queue.unsafeOffer(frames, {
+            Queue.offerUnsafe(frames, {
               event: "snapshot",
               data: JSON.stringify(initialSnapshot),
               id: String(snapshotEventId++),
             });
             yield* awaitSseWriter(
               writer,
-              Effect.async<void>((resume) => {
+              Effect.callback<void>((resume) => {
                 stream.onAbort(() => resume(Effect.void));
               }),
             );
@@ -959,17 +963,17 @@ export function startServer(
         c,
         requestJsonEffect(c).pipe(
           Effect.map((body): Response => {
-            const parsed = Schema.decodeUnknownEither(recommendationRunSchema)(body);
-            if (parsed._tag === "Left") {
+            const parsed = Schema.decodeUnknownExit(recommendationRunSchema)(body);
+            if (parsed._tag === "Failure") {
               return c.json(
                 { error: runRequestError(MAX_RECOMMENDATIONS_PER_RUN) },
                 400,
               );
             }
             try {
-              const { runId } = registry.runNow("Recommendations", parsed.right);
+              const { runId } = registry.runNow("Recommendations", parsed.value);
               logger.info(
-                `Manual recommendation run requested for up to ${parsed.right.maxRecommendations} item(s)`,
+                `Manual recommendation run requested for up to ${parsed.value.maxRecommendations} item(s)`,
               );
               return c.json({ runId }, 202);
             } catch (error) {
@@ -1036,7 +1040,7 @@ export function startServer(
             const sendDone = () => {
               if (completionQueued) return;
               completionQueued = true;
-              Queue.unsafeOffer(frames, {
+              Queue.offerUnsafe(frames, {
                 frame: {
                   event: "done",
                   data: JSON.stringify(serializeRun(getRun(runId) ?? run)),
@@ -1048,7 +1052,7 @@ export function startServer(
             const unsubscribeLogs = runLogBus.subscribe((event) => {
               if (event.runId !== runId) return;
               if (event.type === "line") {
-                Queue.unsafeOffer(frames, {
+                Queue.offerUnsafe(frames, {
                   frame: {
                     event: "line",
                     data: JSON.stringify(event.line),
@@ -1064,7 +1068,7 @@ export function startServer(
             );
 
             const logs = collectRunLogs(runId);
-            Queue.unsafeOffer(frames, {
+            Queue.offerUnsafe(frames, {
               frame: {
                 event: "init",
                 data: JSON.stringify({
@@ -1093,7 +1097,7 @@ export function startServer(
               Clock.currentTimeMillis.pipe(
                 Effect.tap((now) =>
                   Effect.sync(() =>
-                    Queue.unsafeOffer(frames, {
+                    Queue.offerUnsafe(frames, {
                       frame: { event: "ping", data: String(now) },
                     }),
                   ),
@@ -1107,7 +1111,7 @@ export function startServer(
               writer,
               Effect.raceFirst(
                 Deferred.await(finished),
-                Effect.async<void>((resume) => {
+                Effect.callback<void>((resume) => {
                   stream.onAbort(() => resume(Effect.void));
                 }),
               ),
@@ -1139,9 +1143,9 @@ export function startServer(
     feedbackRoute({
       schema: Schema.Struct({
         feedback: Schema.optional(
-          Schema.Literal("good_pick", "not_for_me", "already_watched"),
+          Schema.Literals(["good_pick", "not_for_me", "already_watched"]),
         ),
-        note: Schema.optional(Schema.String.pipe(Schema.maxLength(1000))),
+        note: Schema.optional(Schema.String.check(Schema.isMaxLength(1000))),
       }),
       get: getRecommendation,
       setFeedback: setRecommendationFeedback,
@@ -1171,8 +1175,8 @@ export function startServer(
     "/api/podcast-recommendations/:id/feedback",
     feedbackRoute({
       schema: Schema.Struct({
-        feedback: Schema.optional(Schema.Literal("good_pick", "not_for_me")),
-        note: Schema.optional(Schema.String.pipe(Schema.maxLength(1000))),
+        feedback: Schema.optional(Schema.Literals(["good_pick", "not_for_me"])),
+        note: Schema.optional(Schema.String.check(Schema.isMaxLength(1000))),
       }),
       get: getPodcastRecommendation,
       setFeedback: setPodcastRecommendationFeedback,
@@ -1189,17 +1193,17 @@ export function startServer(
         c,
         requestJsonEffect(c).pipe(
           Effect.map((body): Response => {
-            const parsed = Schema.decodeUnknownEither(podcastRunSchema)(body);
-            if (parsed._tag === "Left") {
+            const parsed = Schema.decodeUnknownExit(podcastRunSchema)(body);
+            if (parsed._tag === "Failure") {
               return c.json(
                 { error: runRequestError(MAX_PODCAST_RECOMMENDATIONS_PER_RUN) },
                 400,
               );
             }
             try {
-              const { runId } = registry.runNow("PodcastRecs", parsed.right);
+              const { runId } = registry.runNow("PodcastRecs", parsed.value);
               logger.info(
-                `Manual podcast recommendation run requested for up to ${parsed.right.maxRecommendations} episode(s)`,
+                `Manual podcast recommendation run requested for up to ${parsed.value.maxRecommendations} episode(s)`,
               );
               return c.json({ runId }, 202);
             } catch (error) {
@@ -1301,9 +1305,9 @@ export function startServer(
   });
 
   const emailRuleSchema = Schema.Struct({
-    pattern: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(200)),
-    scope: Schema.Literal("parcel", "calendar", "both"),
-    verdict: Schema.Literal("block", "allow"),
+    pattern: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+    scope: Schema.Literals(["parcel", "calendar", "both"]),
+    verdict: Schema.Literals(["block", "allow"]),
   });
 
   app.post(
@@ -1313,13 +1317,13 @@ export function startServer(
         c,
         requestJsonEffect(c).pipe(
           Effect.map((body): Response => {
-            const parsed = Schema.decodeUnknownEither(emailRuleSchema)(body);
-            if (parsed._tag === "Left") {
+            const parsed = Schema.decodeUnknownExit(emailRuleSchema)(body);
+            if (parsed._tag === "Failure") {
               return c.json({ error: "pattern, scope, and verdict are required" }, 400);
             }
-            const pattern = normalizeRulePattern(parsed.right.pattern);
-            const scope = parsed.right.scope as EmailRuleScope;
-            const verdict = parsed.right.verdict as EmailRuleVerdict;
+            const pattern = normalizeRulePattern(parsed.value.pattern);
+            const scope = parsed.value.scope as EmailRuleScope;
+            const verdict = parsed.value.verdict as EmailRuleVerdict;
             if (!pattern) {
               return c.json({ error: "pattern, scope, and verdict are required" }, 400);
             }
@@ -1369,19 +1373,19 @@ export function startServer(
           Effect.map((body): Response => {
             const activity = getEmailActivity(c.req.param("activityId") ?? "");
             if (!activity) return c.json({ error: "Unknown activity" }, 404);
-            const parsed = Schema.decodeUnknownEither(
+            const parsed = Schema.decodeUnknownExit(
               Schema.Struct({
-                verdict: Schema.NullOr(Schema.Literal("not_relevant", "missed")),
-                note: Schema.optional(Schema.String.pipe(Schema.maxLength(500))),
+                verdict: Schema.NullOr(Schema.Literals(["not_relevant", "missed"])),
+                note: Schema.optional(Schema.String.check(Schema.isMaxLength(500))),
               }),
             )(body);
-            if (parsed._tag === "Left") {
+            if (parsed._tag === "Failure") {
               return c.json(
                 { error: "A verdict (not_relevant | missed | null) is required" },
                 400,
               );
             }
-            if (parsed.right.verdict === null) {
+            if (parsed.value.verdict === null) {
               deleteEmailFeedback(activity.activityId);
               return c.json({ feedback: null });
             }
@@ -1390,8 +1394,8 @@ export function startServer(
               emailId: activity.emailId,
               subject: activity.subject,
               from: activity.from,
-              verdict: parsed.right.verdict as EmailFeedbackVerdict,
-              note: parsed.right.note,
+              verdict: parsed.value.verdict as EmailFeedbackVerdict,
+              note: parsed.value.note,
             });
             logger.info(
               `Email feedback: ${feedback.verdict} for "${activity.subject}" (${activity.pipeline})`,
@@ -1495,12 +1499,12 @@ export function startServer(
   });
 
   const workspaceMessageSchema = Schema.Struct({
-    message: Schema.String.pipe(
-      Schema.trimmed(),
-      Schema.minLength(1),
-      Schema.maxLength(20_000),
+    message: Schema.String.check(
+      Schema.isTrimmed(),
+      Schema.isMinLength(1),
+      Schema.isMaxLength(20_000),
     ),
-    subjectId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
+    subjectId: Schema.optional(Schema.String.check(Schema.isMinLength(1))),
   });
   app.post(
     "/api/workspaces/:workspaceId/messages",
@@ -1511,17 +1515,17 @@ export function startServer(
           Effect.map((body): Response => {
             const definition = getWorkspaceDefinition(c.req.param("workspaceId") ?? "");
             if (!definition) return c.json({ error: "Unknown workspace" }, 404);
-            const parsed = Schema.decodeUnknownEither(workspaceMessageSchema)(body);
-            if (parsed._tag === "Left")
+            const parsed = Schema.decodeUnknownExit(workspaceMessageSchema)(body);
+            if (parsed._tag === "Failure")
               return c.json({ error: "A message is required" }, 400);
             if (
-              parsed.right.subjectId &&
-              !getWorkspaceSubject(definition.id, parsed.right.subjectId)
+              parsed.value.subjectId &&
+              !getWorkspaceSubject(definition.id, parsed.value.subjectId)
             ) {
               return c.json({ error: "Unknown workspace subject" }, 404);
             }
             try {
-              const run = registry.runNow(definition.taskName, parsed.right);
+              const run = registry.runNow(definition.taskName, parsed.value);
               return c.json({ runId: run.runId }, 202);
             } catch (error) {
               if (error instanceof TaskAlreadyRunningError) {
@@ -1539,7 +1543,7 @@ export function startServer(
   );
 
   const subjectStatusSchema = Schema.Struct({
-    status: Schema.Literal("active", "paused", "completed", "archived"),
+    status: Schema.Literals(["active", "paused", "completed", "archived"]),
   });
   app.post(
     "/api/workspaces/:workspaceId/subjects/:subjectId/status",
@@ -1552,15 +1556,15 @@ export function startServer(
             const subjectId = c.req.param("subjectId") ?? "";
             const subject = getWorkspaceSubject(workspaceId, subjectId);
             if (!subject) return c.json({ error: "Unknown workspace subject" }, 404);
-            const parsed = Schema.decodeUnknownEither(subjectStatusSchema)(body);
-            if (parsed._tag === "Left")
+            const parsed = Schema.decodeUnknownExit(subjectStatusSchema)(body);
+            if (parsed._tag === "Failure")
               return c.json({ error: "A valid status is required" }, 400);
             return c.json({
               subject: upsertWorkspaceSubject({
                 workspaceId: subject.workspaceId,
                 subjectId: subject.subjectId,
                 title: subject.title,
-                status: parsed.right.status,
+                status: parsed.value.status,
                 summary: subject.summary,
                 createdAt: subject.createdAt,
                 lastResearchedAt: subject.lastResearchedAt,
@@ -1577,7 +1581,7 @@ export function startServer(
     effectHandler((c) =>
       approveWorkspaceActionEffect(c.req.param("actionId") ?? "", logger).pipe(
         Effect.map((action): Response => c.json({ action })),
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.succeed<Response>(
             c.json(
               { error: error instanceof Error ? error.message : "Action failed" },
@@ -1594,7 +1598,7 @@ export function startServer(
     effectHandler((c) =>
       rejectWorkspaceActionEffect(c.req.param("actionId") ?? "").pipe(
         Effect.map((action): Response => c.json({ action })),
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           Effect.succeed<Response>(
             c.json(
               { error: error instanceof Error ? error.message : "Action failed" },
@@ -1608,13 +1612,13 @@ export function startServer(
 
   app.get("/api/workspace-papercuts", (c) => {
     const status = c.req.query("status");
-    const parsed = Schema.decodeUnknownEither(
-      Schema.Literal("open", "addressed", "dismissed"),
+    const parsed = Schema.decodeUnknownExit(
+      Schema.Literals(["open", "addressed", "dismissed"]),
     )(status);
     return c.json({
       papercuts: listWorkspacePapercuts(
         c.req.query("workspaceId"),
-        parsed._tag === "Right" ? parsed.right : undefined,
+        parsed._tag === "Success" ? parsed.value : undefined,
       ),
     });
   });
@@ -1626,22 +1630,22 @@ export function startServer(
         c,
         requestJsonEffect(c).pipe(
           Effect.map((body): Response => {
-            const parsed = Schema.decodeUnknownEither(
+            const parsed = Schema.decodeUnknownExit(
               Schema.Struct({
-                status: Schema.Literal("addressed", "dismissed"),
-                resolution: Schema.String.pipe(
-                  Schema.trimmed(),
-                  Schema.minLength(1),
-                  Schema.maxLength(2_000),
+                status: Schema.Literals(["addressed", "dismissed"]),
+                resolution: Schema.String.check(
+                  Schema.isTrimmed(),
+                  Schema.isMinLength(1),
+                  Schema.isMaxLength(2_000),
                 ),
               }),
             )(body);
-            if (parsed._tag === "Left")
+            if (parsed._tag === "Failure")
               return c.json({ error: "Status and resolution are required" }, 400);
             const papercut = resolveWorkspacePapercut(
               c.req.param("papercutId") ?? "",
-              parsed.right.status,
-              parsed.right.resolution,
+              parsed.value.status,
+              parsed.value.resolution,
             );
             if (!papercut) return c.json({ error: "Unknown papercut" }, 404);
             return c.json({ papercut });
@@ -1732,7 +1736,7 @@ export function startServer(
     if (mcp) {
       yield* fromPromise("close MCP server", () => mcp.close());
     }
-    const closed = Effect.async<void, IntegrationError>((resume) => {
+    const closed = Effect.callback<void, IntegrationError>((resume) => {
       server.close((cause) =>
         resume(
           cause

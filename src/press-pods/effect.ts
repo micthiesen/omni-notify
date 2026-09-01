@@ -43,7 +43,7 @@ export const tryPromise = <A>(
 export const ignoreFailure = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<void> =>
   effect.pipe(
     Effect.asVoid,
-    Effect.catchAll(() => Effect.void),
+    Effect.catch(() => Effect.void),
   );
 
 export const errorCause = (error: unknown): unknown =>

@@ -1,3 +1,4 @@
+import type { Effect as EffectType } from "effect/Effect";
 import { Effect } from "effect";
 import type { TaskRunLogLine } from "./persistence.js";
 
@@ -25,7 +26,7 @@ class Bus<TEvent> {
     }
   }
 
-  public emitEffect(event: TEvent): Effect.Effect<void> {
+  public emitEffect(event: TEvent): EffectType<void> {
     return Effect.sync(() => this.emit(event));
   }
 

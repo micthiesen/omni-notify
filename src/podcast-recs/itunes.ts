@@ -29,9 +29,9 @@ const itunesResultSchema = Schema.Struct({
 });
 
 const itunesSearchResponseSchema = Schema.Struct({
-  results: Schema.optionalWith(Schema.Array(itunesResultSchema), {
-    default: () => [],
-  }),
+  results: Schema.Array(itunesResultSchema).pipe(
+    Schema.withDecodingDefaultTypeKey(Effect.succeed([])),
+  ),
 });
 
 class ItunesRequestError extends Data.TaggedError("ItunesRequestError")<{
@@ -65,8 +65,8 @@ export function searchItunesPodcastsEffect(
       dependencies.maxResponseBytes ?? ITUNES_RESPONSE_MAX_BYTES,
     ).pipe(Effect.mapError((cause) => new ItunesRequestError({ term, cause })));
 
-    const parsed = yield* Schema.decodeUnknown(
-      Schema.parseJson(itunesSearchResponseSchema),
+    const parsed = yield* Schema.decodeUnknownEffect(
+      Schema.fromJsonString(itunesSearchResponseSchema),
     )(responseText).pipe(
       Effect.mapError((cause) => new ItunesRequestError({ term, cause })),
     );

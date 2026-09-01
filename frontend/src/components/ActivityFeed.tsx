@@ -118,7 +118,7 @@ export function ActivityFeed({
             setFetchError(null);
           }),
         ),
-        Effect.catchAll((err) =>
+        Effect.catch((err) =>
           Effect.sync(() =>
             setFetchError(
               err instanceof Error ? err.message : "Failed to fetch task runs",

@@ -62,7 +62,7 @@ export class BriefingAgentTask extends ScheduledTask {
   }
 
   public runEffect() {
-    return Effect.gen(this, function* () {
+    return Effect.gen({ self: this }, function* () {
       const logFile = config.LOGS_PATH
         ? new LogFile(
             `${config.LOGS_PATH}/briefings/${this.name}-${logTimestamp()}.md`,
@@ -109,7 +109,7 @@ export class BriefingAgentTask extends ScheduledTask {
           }),
           execute: ({ title, message, url, url_title }) =>
             runPromise(
-              Effect.gen(this, function* () {
+              Effect.gen({ self: this }, function* () {
                 const runId = getCurrentRunId();
                 const contentHash = createHash("sha256")
                   .update(JSON.stringify({ title, message, url }))

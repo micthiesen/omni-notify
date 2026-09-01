@@ -125,7 +125,7 @@ export function downloadJmapAttachmentEffect(
       ),
     (controller) => Effect.sync(() => controller.abort()),
   ).pipe(
-    Effect.catchAll((error) =>
+    Effect.catch((error) =>
       Effect.sync(() => {
         logger.warn(`Error downloading "${attachment.name}"`, error.message);
         return undefined;
@@ -144,7 +144,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
 
   private ctx: JmapContext;
   private logger: Logger;
-  private eventSourceScope: Scope.CloseableScope | undefined;
+  private eventSourceScope: Scope.Closeable | undefined;
 
   private constructor(ctx: JmapContext, logger: Logger) {
     this.ctx = ctx;
@@ -165,7 +165,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
 
   startEffect(onMailEvent: () => void): Effect.Effect<void, JmapTransportError> {
     return Effect.uninterruptibleMask((restore) =>
-      Effect.gen(this, function* () {
+      Effect.gen({ self: this }, function* () {
         const previousScope = this.eventSourceScope;
         this.eventSourceScope = undefined;
         if (previousScope) {
@@ -199,7 +199,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
   });
 
   readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, JmapTransportError> =
-    Effect.gen(this, function* () {
+    Effect.gen({ self: this }, function* () {
       const sinceState = yield* getEmailStateEffect.pipe(
         Effect.mapError(
           (cause) => new JmapTransportError({ operation: "read state", cause }),
@@ -228,7 +228,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
           emails,
           commit: () => saveEmailState(newState),
         })),
-        Effect.catchAll((error) =>
+        Effect.catch((error) =>
           error.message.includes("cannotCalculateChanges")
             ? this.recoverFromStateResetEffect
             : Effect.fail(error),
@@ -245,7 +245,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
   private readonly recoverFromStateResetEffect: Effect.Effect<
     EmailPoll,
     JmapTransportError
-  > = Effect.gen(this, function* () {
+  > = Effect.gen({ self: this }, function* () {
     const lastDispatchedAt = yield* getLastDispatchedAtEffect.pipe(
       Effect.mapError(
         (cause) =>
@@ -306,7 +306,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
     catch: (cause) => new JmapTransportError({ operation: "fetch state", cause }),
   }).pipe(
     Effect.flatMap(([result]) =>
-      Schema.decodeUnknown(EmailStateResponseSchema)(result).pipe(
+      Schema.decodeUnknownEffect(EmailStateResponseSchema)(result).pipe(
         Effect.map((decoded) => decoded.state),
         Effect.mapError(
           (cause) => new JmapTransportError({ operation: "decode state", cause }),

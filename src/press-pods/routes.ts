@@ -101,13 +101,13 @@ export function registerPressPodsRoutes(
       if (!isAuthorized(c)) {
         return Effect.succeed(c.json({ error: "Unauthorized" }, 401));
       }
-      return Effect.either(decodeSubmitUrlEffect(c)).pipe(
+      return Effect.result(decodeSubmitUrlEffect(c)).pipe(
         Effect.flatMap((decoded): Effect.Effect<Response, PressPodsError> =>
-          decoded._tag === "Left"
+          decoded._tag === "Failure"
             ? Effect.succeed<Response>(
                 c.json({ error: "Body must be JSON: { url: string }" }, 400),
               )
-            : submitEpisodeUrlEffect(decoded.right, kickWorker, logger).pipe(
+            : submitEpisodeUrlEffect(decoded.success, kickWorker, logger).pipe(
                 Effect.map((job): Response => c.json({ jobId: job.jobId }, 202)),
               ),
         ),
@@ -151,12 +151,12 @@ export function registerPressPodsRoutes(
         return Effect.succeed(c.body(null, 404));
       }
       const filePath = episodeAudioPath(file);
-      return Effect.either(
+      return Effect.result(
         fromPromise("inspect PressPods audio file", () => fsAsync.stat(filePath)),
       ).pipe(
         Effect.map((result) => {
-          if (result._tag === "Left") return c.body(null, 404);
-          const size = result.right.size;
+          if (result._tag === "Failure") return c.body(null, 404);
+          const size = result.success.size;
           c.header("Accept-Ranges", "bytes");
           c.header("Content-Type", "audio/mpeg");
           // Content-addressed name: the file never changes once written.
@@ -190,14 +190,14 @@ export function registerPressPodsRoutes(
   app.get(
     "/pods/logo.jpeg",
     effectHandler((c) =>
-      Effect.either(
+      Effect.result(
         fromPromise("read PressPods logo", () => fsAsync.readFile(LOGO_PATH)),
       ).pipe(
         Effect.map((result) => {
-          if (result._tag === "Left") return c.body(null, 404);
+          if (result._tag === "Failure") return c.body(null, 404);
           c.header("Content-Type", "image/jpeg");
           c.header("Cache-Control", "public, max-age=31536000, immutable");
-          return c.body(new Uint8Array(result.right).buffer as ArrayBuffer);
+          return c.body(new Uint8Array(result.success).buffer as ArrayBuffer);
         }),
       ),
     ),
@@ -283,13 +283,13 @@ export function registerPressPodsRoutes(
   app.post(
     "/api/press-pods/submit",
     effectHandler((c) =>
-      Effect.either(decodeSubmitUrlEffect(c)).pipe(
+      Effect.result(decodeSubmitUrlEffect(c)).pipe(
         Effect.flatMap((decoded): Effect.Effect<Response, PressPodsError> =>
-          decoded._tag === "Left"
+          decoded._tag === "Failure"
             ? Effect.succeed<Response>(
                 c.json({ error: "A valid article URL is required" }, 400),
               )
-            : submitEpisodeUrlEffect(decoded.right, kickWorker, logger).pipe(
+            : submitEpisodeUrlEffect(decoded.success, kickWorker, logger).pipe(
                 Effect.map((job): Response => c.json({ job: serializeJob(job) }, 202)),
               ),
         ),

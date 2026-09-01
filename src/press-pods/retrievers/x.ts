@@ -299,7 +299,7 @@ export function retrieveArticleX(
       "parse X article JSON",
       () => JSON.parse(responseText) as unknown,
     );
-    const decoded = yield* Schema.decodeUnknown(FxTwitterThreadResponseSchema)(
+    const decoded = yield* Schema.decodeUnknownEffect(FxTwitterThreadResponseSchema)(
       raw,
     ).pipe(
       Effect.mapError(

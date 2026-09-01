@@ -36,7 +36,7 @@ import {
   Data,
   Duration,
   Effect,
-  Either,
+  Result,
   Random,
   Ref,
   Schedule,
@@ -125,10 +125,10 @@ const providerPromise = <A>(
 
 const decodeExternal = <A, I>(
   operation: string,
-  schema: Schema.Schema<A, I>,
+  schema: Schema.Codec<A, I>,
   value: unknown,
 ): Effect.Effect<A, BakeoffError> =>
-  Schema.decodeUnknown(schema)(value).pipe(
+  Schema.decodeUnknownEffect(schema)(value).pipe(
     Effect.mapError((cause) => new BakeoffError({ operation, cause })),
   );
 
@@ -139,7 +139,7 @@ function executeFile(
   executable: string,
   args: string[],
 ): Effect.Effect<{ stdout: string; stderr: string }, AudioProcessError> {
-  return Effect.async((resume) => {
+  return Effect.callback((resume) => {
     const child = execFile(
       executable,
       args,
@@ -280,7 +280,7 @@ function prepareChunkWav(
     Effect.succeed(trimmed),
     () =>
       ffmpeg(["-i", inFile, "-af", edge, "-ar", "44100", "-ac", "1", trimmed]).pipe(
-        Effect.zipRight(loudnessMatch(trimmed, outFile, { target: -19, wav: true })),
+        Effect.andThen(loudnessMatch(trimmed, outFile, { target: -19, wav: true })),
       ),
     removeIfPresent,
   );
@@ -439,7 +439,7 @@ function synthEleven(
     const chunkFiles: string[] = [];
 
     const rawFile = yield* makeSilenceWav(gapWav, 0.75).pipe(
-      Effect.zipRight(
+      Effect.andThen(
         Effect.gen(function* () {
           const wavs = yield* Effect.forEach(
             chunks,
@@ -517,7 +517,7 @@ function synthMinimaxEffect(
   text: string,
   outDir: string,
 ): Effect.Effect<SynthResult, ToolError> {
-  const IdSchema = Schema.Union(Schema.String, Schema.Number);
+  const IdSchema = Schema.Union([Schema.String, Schema.Number]);
   const CreateSchema = Schema.Struct({
     base_resp: Schema.optional(
       Schema.Struct({
@@ -661,7 +661,9 @@ function synthMinimaxEffect(
     );
     const fileId = yield* poll.pipe(
       Effect.retry({
-        schedule: Schedule.addDelay(Schedule.recurs(179), () => Duration.seconds(10)),
+        schedule: Schedule.addDelay(Schedule.recurs(179), () =>
+          Effect.succeed(Duration.seconds(10)),
+        ),
         while: (error) => error._tag === "MinimaxPending",
       }),
       Effect.catchTag("MinimaxPending", () =>
@@ -801,7 +803,7 @@ Rules:
           prompt: text,
         }),
     );
-    const out = yield* Schema.decodeUnknown(Schema.String)(response.text).pipe(
+    const out = yield* Schema.decodeUnknownEffect(Schema.String)(response.text).pipe(
       Effect.mapError(
         (cause) =>
           new ProviderError({
@@ -877,13 +879,13 @@ function runProvidersEffect({
     if (providers.includes("minimax")) jobs.push(synthMinimaxEffect(content, outDir));
     if (providers.includes("fish")) jobs.push(synthFish(content, outDir));
 
-    const settled = yield* Effect.forEach(jobs, (job) => job.pipe(Effect.either), {
+    const settled = yield* Effect.forEach(jobs, (job) => job.pipe(Effect.result), {
       concurrency: "unbounded",
     });
     const results: SynthResult[] = [];
     for (const s of settled) {
-      if (Either.isRight(s)) results.push(s.right);
-      else logger.error(`Provider failed: ${s.left.cause}`);
+      if (Result.isSuccess(s)) results.push(s.success);
+      else logger.error(`Provider failed: ${s.failure.cause}`);
     }
 
     // Loudness-match everything and summarize
@@ -899,15 +901,17 @@ function runProvidersEffect({
     for (const r of results) {
       const outFile = path.join(outDir, `${r.provider}.mp3`);
       const mastered = yield* loudnessMatch(r.rawFile, outFile).pipe(
-        Effect.zipRight(probeDuration(outFile)),
-        Effect.either,
+        Effect.andThen(probeDuration(outFile)),
+        Effect.result,
       );
-      if (Either.isRight(mastered)) {
+      if (Result.isSuccess(mastered)) {
         lines.push(
-          `| ${r.provider} | ${(mastered.right / 60).toFixed(1)} min | ${r.seconds.toFixed(0)}s | ${r.notes.join("; ")} |`,
+          `| ${r.provider} | ${(mastered.success / 60).toFixed(1)} min | ${r.seconds.toFixed(0)}s | ${r.notes.join("; ")} |`,
         );
       } else {
-        logger.error(`Loudness match failed for ${r.provider}: ${mastered.left.cause}`);
+        logger.error(
+          `Loudness match failed for ${r.provider}: ${mastered.failure.cause}`,
+        );
         lines.push(
           `| ${r.provider} | ? | ${r.seconds.toFixed(0)}s | loudnorm FAILED, use ${path.basename(r.rawFile)} |`,
         );
@@ -950,13 +954,13 @@ function mainEffect(): Effect.Effect<void, ToolError | PressPodsError> {
       );
     }
 
-    const ProviderSchema = Schema.Literal(
+    const ProviderSchema = Schema.Literals([
       "voxtral",
       "eleven",
       "eleven-tagged",
       "minimax",
       "fish",
-    );
+    ]);
     const providers: ProviderName[] = providersFlag
       ? [
           ...(yield* decodeExternal(

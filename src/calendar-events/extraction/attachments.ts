@@ -39,7 +39,7 @@ export function downloadSupportedAttachmentsEffect(
     supported,
     (attachment) =>
       transport.downloadAttachmentEffect(attachment).pipe(
-        Effect.catchAll((cause) => {
+        Effect.catch((cause) => {
           logger.warn(
             `Failed to download attachment "${attachment.name}": ${String(cause)}`,
           );

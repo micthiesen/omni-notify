@@ -151,7 +151,7 @@ export function filterTrackingCandidateEffect(
         ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
         : { pass: false, reason: `triage: ${verdict.reason}` },
     ),
-    Effect.catchAll(() => keywordFallbackEffect(email, logger)),
+    Effect.catch(() => keywordFallbackEffect(email, logger)),
   );
 }
 

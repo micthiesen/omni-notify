@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Exit, Fiber, TestClock } from "effect";
+import { Cause, Effect, Exit, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { AudioProcessError, runAudioProcess } from "./audio.js";
 
 describe("runAudioProcess", () => {
@@ -13,7 +14,8 @@ describe("runAudioProcess", () => {
       );
       expect(Exit.isFailure(exit)).toBe(true);
       if (Exit.isFailure(exit)) {
-        const failure = exit.cause._tag === "Fail" ? exit.cause.error : undefined;
+        const reason = exit.cause.reasons.find(Cause.isFailReason);
+        const failure = reason?.error;
         expect(failure).toBeInstanceOf(AudioProcessError);
         expect(failure?.retryable).toBe(false);
         expect(failure?.message).toContain("exceeded output limit");
@@ -25,7 +27,7 @@ describe("runAudioProcess", () => {
     "classifies a deterministic timeout as non-retryable and interrupts the child",
     () =>
       Effect.gen(function* () {
-        const fiber = yield* Effect.fork(
+        const fiber = yield* Effect.forkChild(
           Effect.exit(
             runAudioProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
               timeoutMs: 25,
@@ -37,7 +39,8 @@ describe("runAudioProcess", () => {
         const exit = yield* Fiber.join(fiber);
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isFailure(exit)) {
-          const failure = exit.cause._tag === "Fail" ? exit.cause.error : undefined;
+          const reason = exit.cause.reasons.find(Cause.isFailReason);
+          const failure = reason?.error;
           expect(failure).toBeInstanceOf(AudioProcessError);
           expect(failure?.retryable).toBe(false);
           expect(failure?.message).toContain("timed out after 25ms");
