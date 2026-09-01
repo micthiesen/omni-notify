@@ -12,7 +12,7 @@
 pnpm dev      # Development with hot reload
 pnpm build    # TypeScript compilation (run after changes)
 pnpm test     # Run tests (vitest)
-pnpm check    # Biome linting + formatting check
+pnpm check    # Oxlint linting + Oxfmt formatting check
 ```
 
 **Always run `pnpm check:write && pnpm test && pnpm build` after making changes.**
@@ -473,7 +473,8 @@ Tracks viewer records across rolling time windows (7d, 30d, 90d, all-time) using
 
 ## Code Style
 
-- **Biome** for formatting (88 char line width, 2-space indent) and linting
+- **Oxfmt** for formatting (88 char line width, 2-space indent) and **Oxlint** with its
+  high-signal correctness rules for linting
 - **2 spaces** for indentation (not tabs)
 - **Strong types**: Use enums, discriminated unions, explicit return types
 - **No over-engineering**: Simple solutions, no unnecessary abstractions

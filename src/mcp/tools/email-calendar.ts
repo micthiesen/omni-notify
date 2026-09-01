@@ -383,12 +383,12 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
           (value) =>
             Boolean(
               value.query ||
-                value.from ||
-                value.to ||
-                value.subject ||
-                value.since ||
-                value.before ||
-                value.unread !== undefined,
+              value.from ||
+              value.to ||
+              value.subject ||
+              value.since ||
+              value.before ||
+              value.unread !== undefined,
             ),
           "Provide at least one search criterion",
         )

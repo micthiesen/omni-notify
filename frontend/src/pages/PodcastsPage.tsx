@@ -120,9 +120,7 @@ function PodcastCard({
         <div className="rec-meta meta-row">
           <span>Released {formatDateOnly(rec.publishedAt)}</span>
           {rec.durationMinutes != null && (
-            <span className="muted">
-              {formatEpisodeDuration(rec.durationMinutes)}
-            </span>
+            <span className="muted">{formatEpisodeDuration(rec.durationMinutes)}</span>
           )}
           <span className="muted" title={formatAbsolute(rec.recommendedAt)}>
             Recommended {formatRelative(rec.recommendedAt)}
@@ -261,7 +259,9 @@ export default function PodcastsPage() {
       .catch((err: unknown) => {
         if (cancelled) return;
         setRecsError(
-          err instanceof Error ? err.message : "Failed to fetch podcast recommendations",
+          err instanceof Error
+            ? err.message
+            : "Failed to fetch podcast recommendations",
         );
       });
     return () => {
@@ -284,14 +284,18 @@ export default function PodcastsPage() {
         recommendationId,
         feedback,
       );
-      setRecs((current) =>
-        current?.map((rec) =>
-          rec.recommendationId === recommendationId ? result.recommendation : rec,
-        ) ?? null,
+      setRecs(
+        (current) =>
+          current?.map((rec) =>
+            rec.recommendationId === recommendationId ? result.recommendation : rec,
+          ) ?? null,
       );
       showToast("Feedback saved", "info");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to save feedback", "error");
+      showToast(
+        error instanceof Error ? error.message : "Failed to save feedback",
+        "error",
+      );
     } finally {
       setSavingId(null);
     }
@@ -309,9 +313,7 @@ export default function PodcastsPage() {
 
   const visible = useMemo(() => {
     if (recs === null) return null;
-    return statusFilter === ""
-      ? recs
-      : recs.filter((r) => r.status === statusFilter);
+    return statusFilter === "" ? recs : recs.filter((r) => r.status === statusFilter);
   }, [recs, statusFilter]);
 
   const {

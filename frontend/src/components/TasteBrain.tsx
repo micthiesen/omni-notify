@@ -33,7 +33,11 @@ function ClaimList({ claims }: { claims: TasteClaim[] }) {
   );
 }
 
-function TagGroup({ label, claims, explore }: {
+function TagGroup({
+  label,
+  claims,
+  explore,
+}: {
   label: string;
   claims: TasteClaim[];
   explore?: boolean;
@@ -143,11 +147,7 @@ export function TasteBrain({
             profile.currentSaturation.length > 0) && (
             <div className="taste-tags-row">
               {profile.explorationTargets.length > 0 && (
-                <TagGroup
-                  label="Explore"
-                  claims={profile.explorationTargets}
-                  explore
-                />
+                <TagGroup label="Explore" claims={profile.explorationTargets} explore />
               )}
               {profile.currentSaturation.length > 0 && (
                 <TagGroup

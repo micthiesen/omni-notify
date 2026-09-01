@@ -317,7 +317,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 pnpm dev        # Development with hot reload
 pnpm build      # TypeScript compilation
 pnpm test       # Run tests (vitest)
-pnpm check      # Biome linting + formatting
+pnpm check      # Oxlint linting + Oxfmt formatting
 ```
 
 Inspired by [youtube_live_alert](https://github.com/your-diary/youtube_live_alert).

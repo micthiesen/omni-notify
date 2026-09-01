@@ -283,7 +283,7 @@ const unsubscribeWorkspaceEmailRuns = taskRunBus.subscribe((event) => {
   );
   if (!definition) return;
   setTimeout(() => {
-    for (const pending of [...pendingWorkspaceEmailRuns.values()]) {
+    for (const pending of Array.from(pendingWorkspaceEmailRuns.values())) {
       if (pending.workspaceId !== definition.id) continue;
       requestWorkspaceEmailRun(pending.workspaceId, pending.subjectId, pending.message);
     }

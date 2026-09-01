@@ -127,7 +127,8 @@ function ChunkCard({ chunk }: { chunk: PressPodsChunkStat }) {
             className="pods-chunk-resplit-badge"
             title="A larger chunk kept failing verification and was re-split into smaller pieces to recover"
           >
-            Re-split{chunk.resplitDepth && chunk.resplitDepth > 1
+            Re-split
+            {chunk.resplitDepth && chunk.resplitDepth > 1
               ? ` ×${chunk.resplitDepth}`
               : ""}
           </span>
@@ -250,8 +251,8 @@ function CostTable({ episode }: { episode: PressPodsEpisodeDetail }) {
                   <div className="meta-row pods-cost-usage">
                     {tokens && (
                       <span>
-                        {tokens.input.toLocaleString()} / {tokens.output.toLocaleString()}{" "}
-                        tokens
+                        {tokens.input.toLocaleString()} /{" "}
+                        {tokens.output.toLocaleString()} tokens
                       </span>
                     )}
                     {chars !== undefined && <span>{chars.toLocaleString()} chars</span>}
@@ -401,11 +402,11 @@ export default function PodsDetailPage({ id }: { id: string }) {
             )}
             {problemChunkCount > 0 && (
               <span className="pods-chunk-warn-count pods-detail-quality-warning">
-                {problemChunkCount} audio chunk{problemChunkCount === 1 ? "" : "s"} flagged
+                {problemChunkCount} audio chunk{problemChunkCount === 1 ? "" : "s"}{" "}
+                flagged
               </span>
             )}
           </div>
-          {/* biome-ignore lint/a11y/useMediaCaption: TTS audio has no captions */}
           <audio
             className="pods-detail-audio"
             controls
@@ -485,7 +486,9 @@ export default function PodsDetailPage({ id }: { id: string }) {
                   {formatAbsoluteWithYear(episode.publishedAt)}
                 </DetailField>
               )}
-              <DetailField label="File Size">{formatBytes(episode.fileBytes)}</DetailField>
+              <DetailField label="File Size">
+                {formatBytes(episode.fileBytes)}
+              </DetailField>
               {episode.synthesizedSeconds !== null && (
                 <DetailField label="Synthesized Audio">
                   {formatAudioDuration(episode.synthesizedSeconds)}
@@ -503,7 +506,9 @@ export default function PodsDetailPage({ id }: { id: string }) {
         <section className="page-section">
           <h2 className="section-title">
             Audio Chunks
-            {episode.chunks && <span className="section-count">{episode.chunks.length}</span>}
+            {episode.chunks && (
+              <span className="section-count">{episode.chunks.length}</span>
+            )}
             {problemChunkCount > 0 && (
               <span className="pods-chunk-warn-count">{problemChunkCount} flagged</span>
             )}

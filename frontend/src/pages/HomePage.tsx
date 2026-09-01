@@ -1,9 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  fetchEmailActivity,
-  fetchWorkspaces,
-  type WorkspaceSummary,
-} from "../api";
+import { fetchEmailActivity, fetchWorkspaces, type WorkspaceSummary } from "../api";
 import { LiveNow } from "../components/LiveNow";
 import { OnDeck } from "../components/OnDeck";
 import { StatStrip } from "../components/StatStrip";
@@ -136,21 +132,45 @@ export default function HomePage() {
                   : `${attentionCount} item${attentionCount === 1 ? "" : "s"} need a look.`}
             </p>
           </div>
-          <span className={`attention-total ${attentionCount > 0 || attentionUnavailable ? "has-items" : ""}`}>
+          <span
+            className={`attention-total ${attentionCount > 0 || attentionUnavailable ? "has-items" : ""}`}
+          >
             {attentionUnavailable ? "!" : attentionCount}
           </span>
         </div>
         {attentionCount > 0 && (
           <div className="attention-links">
-            {pendingActions > 0 && <Link to="/workspaces" className="attention-item"><strong>{pendingActions}</strong><span>Research Approval{pendingActions === 1 ? "" : "s"}</span></Link>}
-            {failingTasks.length > 0 && <Link to="/operations" className="attention-item attention-danger"><strong>{failingTasks.length}</strong><span>Failed Task{failingTasks.length === 1 ? "" : "s"}</span></Link>}
-            {(research.recentEmailProblems ?? 0) > 0 && <Link to="/emails" className="attention-item attention-danger"><strong>{research.recentEmailProblems}</strong><span>Email Issue{research.recentEmailProblems === 1 ? "" : "s"}</span></Link>}
-            {openPapercuts > 0 && <Link to="/workspaces" className="attention-item"><strong>{openPapercuts}</strong><span>Papercut{openPapercuts === 1 ? "" : "s"}</span></Link>}
+            {pendingActions > 0 && (
+              <Link to="/workspaces" className="attention-item">
+                <strong>{pendingActions}</strong>
+                <span>Research Approval{pendingActions === 1 ? "" : "s"}</span>
+              </Link>
+            )}
+            {failingTasks.length > 0 && (
+              <Link to="/operations" className="attention-item attention-danger">
+                <strong>{failingTasks.length}</strong>
+                <span>Failed Task{failingTasks.length === 1 ? "" : "s"}</span>
+              </Link>
+            )}
+            {(research.recentEmailProblems ?? 0) > 0 && (
+              <Link to="/emails" className="attention-item attention-danger">
+                <strong>{research.recentEmailProblems}</strong>
+                <span>Email Issue{research.recentEmailProblems === 1 ? "" : "s"}</span>
+              </Link>
+            )}
+            {openPapercuts > 0 && (
+              <Link to="/workspaces" className="attention-item">
+                <strong>{openPapercuts}</strong>
+                <span>Papercut{openPapercuts === 1 ? "" : "s"}</span>
+              </Link>
+            )}
           </div>
         )}
         {attentionUnavailable && (
           <div className="attention-unavailable">
-            {research.workspaceError && <span>Research status could not be refreshed.</span>}
+            {research.workspaceError && (
+              <span>Research status could not be refreshed.</span>
+            )}
             {research.emailError && <span>Email status could not be refreshed.</span>}
           </div>
         )}
@@ -162,7 +182,9 @@ export default function HomePage() {
       <section className="page-section home-research">
         <div className="section-heading-row">
           <h2 className="section-title">Research</h2>
-          <Link to="/workspaces" className="section-view-all">View Workspaces ›</Link>
+          <Link to="/workspaces" className="section-view-all">
+            View Workspaces ›
+          </Link>
         </div>
         {activeSubjects.length > 0 ? (
           <div className="home-research-grid">
@@ -189,7 +211,9 @@ export default function HomePage() {
       <section className="page-section home-system-health">
         <div className="section-heading-row">
           <h2 className="section-title">System Health</h2>
-          <Link to="/operations" className="section-view-all">Open Operations ›</Link>
+          <Link to="/operations" className="section-view-all">
+            Open Operations ›
+          </Link>
         </div>
         <StatStrip snapshot={snapshot} />
       </section>

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchTaskRuns } from "../api";
 import type { Snapshot, TaskInfo, TaskRun } from "../api";
-import { formatAbsolute, formatRelative, taskLabel, taskLabelFromName } from "../utils/format";
+import {
+  formatAbsolute,
+  formatRelative,
+  taskLabel,
+  taskLabelFromName,
+} from "../utils/format";
 import { StatusDot, TriggerBadge } from "./badges";
 import { runDuration } from "./TaskCard";
 
@@ -112,9 +117,7 @@ export function ActivityFeed({
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        setFetchError(
-          err instanceof Error ? err.message : "Failed to fetch task runs",
-        );
+        setFetchError(err instanceof Error ? err.message : "Failed to fetch task runs");
       });
     return () => {
       cancelled = true;

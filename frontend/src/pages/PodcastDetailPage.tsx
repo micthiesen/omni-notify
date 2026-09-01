@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  fetchPodcastRecommendation,
-  sendPodcastRecommendationFeedback,
-} from "../api";
+import { fetchPodcastRecommendation, sendPodcastRecommendationFeedback } from "../api";
 import type { PodcastFeedback, PodcastRecommendation } from "../api";
 import { ImageWithFallback } from "../components/ImageWithFallback";
 import { Toast, useToast } from "../components/Toast";
@@ -90,7 +87,10 @@ export default function PodcastDetailPage({ id }: { id: string }) {
       setRec(result.recommendation);
       showToast("Feedback saved", "info");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Failed to save feedback", "error");
+      showToast(
+        err instanceof Error ? err.message : "Failed to save feedback",
+        "error",
+      );
     } finally {
       setSaving(false);
     }
@@ -147,8 +147,7 @@ export default function PodcastDetailPage({ id }: { id: string }) {
             <span className={`status-chip status-chip-${rec.status}`}>
               {PODCAST_STATUS_LABELS[rec.status]}
             </span>
-            {(rec.queueResult === "queued" ||
-              rec.queueResult === "already_queued") && (
+            {(rec.queueResult === "queued" || rec.queueResult === "already_queued") && (
               <span
                 className="podrec-queued"
                 title="This episode is waiting in your Castro queue"

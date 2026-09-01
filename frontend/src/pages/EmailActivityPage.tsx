@@ -151,8 +151,8 @@ function SenderRulesSection() {
           )}
           {rules !== null && rules.length === 0 && (
             <div className="muted mail-rules-note">
-              No sender rules yet. Rules match a full address (x@y.com) or a
-              domain (y.com).
+              No sender rules yet. Rules match a full address (x@y.com) or a domain
+              (y.com).
             </div>
           )}
           {rules !== null && rules.length > 0 && (
@@ -260,8 +260,8 @@ function SenderRulesSection() {
                     patterns={builtin.calendar.autoPass}
                   />
                   <div className="muted mail-rules-note">
-                    Built-ins ship with the app and live in code. An Allow rule
-                    above overrides a built-in block for that sender.
+                    Built-ins ship with the app and live in code. An Allow rule above
+                    overrides a built-in block for that sender.
                   </div>
                 </div>
               )}
@@ -369,15 +369,11 @@ export default function EmailActivityPage() {
   const handleActivityChange = (updated: EmailActivity) => {
     setActivities(
       (prev) =>
-        prev?.map((a) => (a.activityId === updated.activityId ? updated : a)) ??
-        prev,
+        prev?.map((a) => (a.activityId === updated.activityId ? updated : a)) ?? prev,
     );
   };
 
-  const handleFeedbackChange = (
-    activityId: string,
-    updated: EmailFeedback | null,
-  ) => {
+  const handleFeedbackChange = (activityId: string, updated: EmailFeedback | null) => {
     setFeedback((prev) => {
       const next = new Map(prev);
       if (updated) next.set(activityId, updated);
@@ -428,9 +424,7 @@ export default function EmailActivityPage() {
         />
       )}
 
-      {activities === null && error === null && (
-        <div className="loading">Loading…</div>
-      )}
+      {activities === null && error === null && <div className="loading">Loading…</div>}
       {error && activities === null && (
         <div className="error">
           <div>Failed to load email activity</div>

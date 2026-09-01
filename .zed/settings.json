@@ -6,51 +6,42 @@
   "remove_trailing_whitespace_on_save": true,
 
   "code_actions_on_format": {
-    "source.fixAll.biome": true,
-    "source.organizeImports.biome": true
-  },
-
-  "lsp": {
-    "biome": {
-      "settings": {
-        "require_config_file": true
-      }
-    }
+    "source.fixAll.oxc": true
   },
 
   "languages": {
     "TypeScript": {
       "formatter": {
         "language_server": {
-          "name": "biome"
+          "name": "oxfmt"
         }
       }
     },
     "TSX": {
       "formatter": {
         "language_server": {
-          "name": "biome"
+          "name": "oxfmt"
         }
       }
     },
     "JavaScript": {
       "formatter": {
         "language_server": {
-          "name": "biome"
+          "name": "oxfmt"
         }
       }
     },
     "JSON": {
       "formatter": {
         "language_server": {
-          "name": "biome"
+          "name": "oxfmt"
         }
       }
     },
     "JSONC": {
       "formatter": {
         "language_server": {
-          "name": "biome"
+          "name": "oxfmt"
         }
       }
     },

@@ -1,10 +1,4 @@
-import {
-  type FormEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   deletePressPodsEpisode,
   dismissPressPodsJob,
@@ -308,7 +302,6 @@ export default function PodsPage() {
                   {episode.excerpt && (
                     <p className="pods-card-excerpt">{episode.excerpt}</p>
                   )}
-                  {/* biome-ignore lint/a11y/useMediaCaption: TTS audio has no captions */}
                   <audio
                     className="pods-card-audio"
                     controls
@@ -335,9 +328,7 @@ export default function PodsPage() {
                       <span>{formatCents(episode.costCents)}</span>
                     )}
                     {retrieverSummary(episode) && (
-                      <span title="Winning retriever">
-                        {retrieverSummary(episode)}
-                      </span>
+                      <span title="Winning retriever">{retrieverSummary(episode)}</span>
                     )}
                   </div>
                   <div className="pods-card-links pods-card-admin-actions">

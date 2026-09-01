@@ -40,8 +40,10 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
         {
           ...response.workspace,
           subjects: response.subjects,
-          activeSubjectCount: response.subjects.filter((s) => s.status === "active").length,
-          pendingActionCount: response.actions.filter((a) => a.status === "pending").length,
+          activeSubjectCount: response.subjects.filter((s) => s.status === "active")
+            .length,
+          pendingActionCount: response.actions.filter((a) => a.status === "pending")
+            .length,
           openPapercutCount: response.papercuts.length,
         },
       ]);
@@ -76,9 +78,12 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
     <>
       <div className="page-header">
         <div className="page-header-stack">
-          <h1>{workspaceId ? workspaces?.[0]?.title ?? "Workspace" : "Workspaces"}</h1>
+          <h1>
+            {workspaceId ? (workspaces?.[0]?.title ?? "Workspace") : "Workspaces"}
+          </h1>
           <p className="page-subtitle">
-            Ongoing projects with durable context, practical artifacts, and human-approved actions.
+            Ongoing projects with durable context, practical artifacts, and
+            human-approved actions.
           </p>
         </div>
       </div>
@@ -117,7 +122,8 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
               ))}
               {workspace.subjects.length === 0 && (
                 <div className="muted">
-                  Message the workspace to start the first {workspace.subjectLabel.toLowerCase()}.
+                  Message the workspace to start the first{" "}
+                  {workspace.subjectLabel.toLowerCase()}.
                 </div>
               )}
             </div>
@@ -144,9 +150,7 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
               />
               <button
                 type="submit"
-                disabled={
-                  busyWorkspaceId !== null || !messages[workspace.id]?.trim()
-                }
+                disabled={busyWorkspaceId !== null || !messages[workspace.id]?.trim()}
               >
                 {busyWorkspaceId === workspace.id ? "Starting…" : "Send"}
               </button>
@@ -163,7 +167,13 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
   );
 }
 
-function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectId: string }) {
+function SubjectPage({
+  workspaceId,
+  subjectId,
+}: {
+  workspaceId: string;
+  subjectId: string;
+}) {
   const [detail, setDetail] = useState<WorkspaceDetailResponse | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -242,19 +252,28 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
     }
   };
 
-  if (!detail) return error ? <div className="error">{error}</div> : <div className="loading">Loading…</div>;
+  if (!detail)
+    return error ? (
+      <div className="error">{error}</div>
+    ) : (
+      <div className="loading">Loading…</div>
+    );
   return (
     <>
       <div className="page-header" id="workspace-summary">
         <div className="page-header-stack">
-          <Link to={`/workspaces/${workspaceId}`} className="workspace-back">← {detail.workspace.title}</Link>
+          <Link to={`/workspaces/${workspaceId}`} className="workspace-back">
+            ← {detail.workspace.title}
+          </Link>
           <h1>{detail.subject.title}</h1>
           <p className="page-subtitle">{detail.subject.summary}</p>
         </div>
         <select
           className="workspace-status-select"
           value={detail.subject.status}
-          onChange={(event) => void setStatus(event.target.value as WorkspaceSubjectStatus)}
+          onChange={(event) =>
+            void setStatus(event.target.value as WorkspaceSubjectStatus)
+          }
           aria-label="Subject status"
         >
           <option value="active">Active</option>
@@ -270,17 +289,43 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
           <h2>Actions</h2>
           <div className="workspace-action-list">
             {detail.actions.map((action) => (
-              <article className="workspace-action-card" id={`action-${action.actionId}`} key={action.actionId}>
+              <article
+                className="workspace-action-card"
+                id={`action-${action.actionId}`}
+                key={action.actionId}
+              >
                 <div className="workspace-action-heading">
-                  <div><strong>{action.title}</strong><p>{action.description}</p></div>
-                  <span className={`workspace-status status-${action.status}`}>{action.status}</span>
+                  <div>
+                    <strong>{action.title}</strong>
+                    <p>{action.description}</p>
+                  </div>
+                  <span className={`workspace-status status-${action.status}`}>
+                    {action.status}
+                  </span>
                 </div>
                 <pre>{formatActionPayload(action.payload)}</pre>
-                {action.result && <p className="workspace-action-result">{action.result}</p>}
+                {action.result && (
+                  <p className="workspace-action-result">{action.result}</p>
+                )}
                 {(action.status === "pending" || action.status === "failed") && (
                   <div className="workspace-action-buttons">
-                    <button type="button" onClick={() => void resolveAction(action.actionId, "approve")} disabled={busy}>{action.status === "failed" ? "Retry" : "Approve"}</button>
-                    {action.status === "pending" && <button type="button" className="danger-button" onClick={() => void resolveAction(action.actionId, "reject")} disabled={busy}>Reject</button>}
+                    <button
+                      type="button"
+                      onClick={() => void resolveAction(action.actionId, "approve")}
+                      disabled={busy}
+                    >
+                      {action.status === "failed" ? "Retry" : "Approve"}
+                    </button>
+                    {action.status === "pending" && (
+                      <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() => void resolveAction(action.actionId, "reject")}
+                        disabled={busy}
+                      >
+                        Reject
+                      </button>
+                    )}
                   </div>
                 )}
               </article>
@@ -291,7 +336,10 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
 
       <form
         className="workspace-compose workspace-compose-detail"
-        onSubmit={(event) => { event.preventDefault(); void send(); }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
       >
         <textarea
           value={message}
@@ -302,23 +350,41 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
           }
           aria-label="Message workspace"
         />
-        <button type="submit" disabled={busy || !message.trim()}>{busy ? "Working…" : "Send"}</button>
+        <button type="submit" disabled={busy || !message.trim()}>
+          {busy ? "Working…" : "Send"}
+        </button>
       </form>
 
       <section className="workspace-section" id="artifacts">
         <h2>Artifacts</h2>
         <div className="workspace-artifact-grid">
           {detail.workspace.artifacts.map((definition) => {
-            const artifact = detail.artifacts.find((item) => item.artifactKey === definition.key);
+            const artifact = detail.artifacts.find(
+              (item) => item.artifactKey === definition.key,
+            );
             return (
-              <article className="workspace-artifact-card" id={`artifact-${definition.key}`} key={definition.key}>
+              <article
+                className="workspace-artifact-card"
+                id={`artifact-${definition.key}`}
+                key={definition.key}
+              >
                 <div className="workspace-artifact-heading">
                   <h3>{definition.title}</h3>
-                  {artifact && <span>{revisions.get(definition.key)} revision{revisions.get(definition.key) === 1 ? "" : "s"}</span>}
+                  {artifact && (
+                    <span>
+                      {revisions.get(definition.key)} revision
+                      {revisions.get(definition.key) === 1 ? "" : "s"}
+                    </span>
+                  )}
                 </div>
                 {artifact ? (
-                  <><div className="workspace-artifact-content">{artifact.content}</div><small>Updated {formatRelative(artifact.createdAt)}</small></>
-                ) : <p className="muted">Not created yet.</p>}
+                  <>
+                    <div className="workspace-artifact-content">{artifact.content}</div>
+                    <small>Updated {formatRelative(artifact.createdAt)}</small>
+                  </>
+                ) : (
+                  <p className="muted">Not created yet.</p>
+                )}
               </article>
             );
           })}
@@ -330,32 +396,57 @@ function SubjectPage({ workspaceId, subjectId }: { workspaceId: string; subjectI
           <h2>Conversation</h2>
           <div className="workspace-message-list">
             {detail.messages.map((item) => (
-              <article className={`workspace-message workspace-message-${item.role}`} key={item.messageId}>
+              <article
+                className={`workspace-message workspace-message-${item.role}`}
+                key={item.messageId}
+              >
                 <strong>{item.role === "user" ? "You" : "Omni"}</strong>
-                <p>{item.text}</p><small>{formatAbsolute(item.createdAt)}</small>
+                <p>{item.text}</p>
+                <small>{formatAbsolute(item.createdAt)}</small>
               </article>
             ))}
           </div>
         </section>
         <section className="workspace-section" id="sources">
           <h2>Sources</h2>
-          {detail.emailScope && <div className="workspace-scope"><strong>Email Scope</strong><code>{JSON.stringify(detail.emailScope)}</code></div>}
+          {detail.emailScope && (
+            <div className="workspace-scope">
+              <strong>Email Scope</strong>
+              <code>{JSON.stringify(detail.emailScope)}</code>
+            </div>
+          )}
           <div className="workspace-source-list">
             {detail.sources.map((source) => (
               <article key={source.sourceId}>
                 <span className="workspace-source-kind">{source.kind}</span>
-                {safeSourceHref(source.url) ? <a href={safeSourceHref(source.url)} target="_blank" rel="noreferrer">{source.title}</a> : <strong>{source.title}</strong>}
+                {safeSourceHref(source.url) ? (
+                  <a href={safeSourceHref(source.url)} target="_blank" rel="noreferrer">
+                    {source.title}
+                  </a>
+                ) : (
+                  <strong>{source.title}</strong>
+                )}
                 <p>{source.excerpt}</p>
               </article>
             ))}
-            {detail.sources.length === 0 && <p className="muted">No sources captured yet.</p>}
+            {detail.sources.length === 0 && (
+              <p className="muted">No sources captured yet.</p>
+            )}
           </div>
         </section>
       </div>
       {detail.papercuts.length > 0 && (
         <section className="workspace-section workspace-papercuts">
           <h2>Papercuts</h2>
-          {detail.papercuts.map((item) => <article key={item.papercutId}><strong>{item.title}</strong><p>{item.detail}</p><small>{item.occurrences} occurrence{item.occurrences === 1 ? "" : "s"}</small></article>)}
+          {detail.papercuts.map((item) => (
+            <article key={item.papercutId}>
+              <strong>{item.title}</strong>
+              <p>{item.detail}</p>
+              <small>
+                {item.occurrences} occurrence{item.occurrences === 1 ? "" : "s"}
+              </small>
+            </article>
+          ))}
         </section>
       )}
     </>
@@ -401,5 +492,7 @@ async function waitForRun(runId: string): Promise<void> {
     if (run.status === "error") throw new Error(run.error ?? "Workspace run failed");
     await new Promise((resolve) => window.setTimeout(resolve, 1_000));
   }
-  throw new Error("Workspace research is still running. Refresh shortly to see the result.");
+  throw new Error(
+    "Workspace research is still running. Refresh shortly to see the result.",
+  );
 }

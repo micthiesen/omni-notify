@@ -316,10 +316,7 @@ export type RecommendationStatus =
   | "ignored"
   | "failed";
 export type WatchlistResult = "added" | "already_exists" | "available" | "error";
-export type RecommendationFeedback =
-  | "good_pick"
-  | "not_for_me"
-  | "already_watched";
+export type RecommendationFeedback = "good_pick" | "not_for_me" | "already_watched";
 
 export interface Recommendation {
   recommendationId: string;
@@ -925,10 +922,7 @@ export function fetchDataRows(
   );
 }
 
-export function deleteDataRow(
-  slug: string,
-  key: DataRow,
-): Promise<{ deleted: true }> {
+export function deleteDataRow(slug: string, key: DataRow): Promise<{ deleted: true }> {
   return apiDelete<{ deleted: true }>(
     `/api/data/entities/${encodeURIComponent(slug)}`,
     { key },
@@ -998,9 +992,7 @@ export function fetchRecommendations(): Promise<{
 }
 
 export function fetchTasteProfile(): Promise<{ profile: TasteProfile | null }> {
-  return apiGet<{ profile: TasteProfile | null }>(
-    "/api/recommendations/taste-profile",
-  );
+  return apiGet<{ profile: TasteProfile | null }>("/api/recommendations/taste-profile");
 }
 
 export function fetchPressPods(): Promise<{
@@ -1134,9 +1126,7 @@ export interface EmailActivityLogs {
   dropped: number;
 }
 
-export function fetchEmailActivityLogs(
-  activityId: string,
-): Promise<EmailActivityLogs> {
+export function fetchEmailActivityLogs(activityId: string): Promise<EmailActivityLogs> {
   return apiGet<EmailActivityLogs>(
     `/api/email-activity/${encodeURIComponent(activityId)}/logs`,
   );
@@ -1151,9 +1141,7 @@ export function fetchEmailRules(): Promise<{
   rules: EmailRule[];
   builtin: EmailBuiltinRules;
 }> {
-  return apiGet<{ rules: EmailRule[]; builtin: EmailBuiltinRules }>(
-    "/api/email-rules",
-  );
+  return apiGet<{ rules: EmailRule[]; builtin: EmailBuiltinRules }>("/api/email-rules");
 }
 
 export type CreateEmailRuleStatus = "created" | "exists" | "merged" | "builtin";
@@ -1173,9 +1161,7 @@ export function createEmailRule(input: {
 }
 
 export function deleteEmailRule(ruleId: string): Promise<{ deleted: true }> {
-  return apiDelete<{ deleted: true }>(
-    `/api/email-rules/${encodeURIComponent(ruleId)}`,
-  );
+  return apiDelete<{ deleted: true }>(`/api/email-rules/${encodeURIComponent(ruleId)}`);
 }
 
 export function fetchEmailFeedback(): Promise<{ feedback: EmailFeedback[] }> {

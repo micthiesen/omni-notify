@@ -1,0 +1,27 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "useTabs": false,
+  "tabWidth": 2,
+  "printWidth": 88,
+  "singleQuote": false,
+  "jsxSingleQuote": false,
+  "quoteProps": "as-needed",
+  "trailingComma": "all",
+  "semi": true,
+  "arrowParens": "always",
+  "bracketSameLine": false,
+  "bracketSpacing": true,
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".specs/**",
+    "**/*.md",
+    "docs/mcp-policy.json",
+    "frontend/tsconfig.tsbuildinfo",
+    "ios/**",
+    "patches/**",
+    "pnpm-lock.yaml"
+  ]
+}

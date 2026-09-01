@@ -14,9 +14,7 @@ export function StatStrip({ snapshot }: { snapshot: Snapshot }) {
 
   const liveCount = snapshot.streamers.filter((s) => s.live).length;
   const running = snapshot.tasks.filter((t) => t.running).length;
-  const failing = snapshot.tasks.filter(
-    (t) => t.lastRun?.status === "error",
-  ).length;
+  const failing = snapshot.tasks.filter((t) => t.lastRun?.status === "error").length;
 
   const next = snapshot.tasks
     .flatMap((t) => {

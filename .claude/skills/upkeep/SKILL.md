@@ -43,7 +43,7 @@ pnpm run typecheck
 CI=true pnpm test
 pnpm run build
 pnpm --filter frontend run build
-pnpm run check          # biome; run `biome migrate --write` if it flags schema version
+pnpm run check          # Oxlint linting + Oxfmt formatting
 ```
 
 Then a runtime smoke test of the real entrypoint (catches ESM/runtime breaks tests miss):

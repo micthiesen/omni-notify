@@ -23,9 +23,9 @@ export function hasArrConnection(
 export function isConfigured(config: ArrConfig): config is Required<ArrConfig> {
   return Boolean(
     config.url &&
-      config.apiKey &&
-      config.rootFolderPath &&
-      Number.isInteger(config.qualityProfileId),
+    config.apiKey &&
+    config.rootFolderPath &&
+    Number.isInteger(config.qualityProfileId),
   );
 }
 

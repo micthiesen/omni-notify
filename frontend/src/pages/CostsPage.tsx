@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   type CostEvent,
   type CostRange,
@@ -113,7 +106,8 @@ export default function CostsPage() {
       })) ?? [],
     [data],
   );
-  const hasPricedDailyData = data?.daily.some((day) => day.pricedEventCount > 0) ?? false;
+  const hasPricedDailyData =
+    data?.daily.some((day) => day.pricedEventCount > 0) ?? false;
 
   return (
     <>
@@ -189,7 +183,9 @@ export default function CostsPage() {
                   : "all recorded usage"}
               </span>
             </div>
-            <div className={`stat-tile ${data.summary.unknownEventCount ? "danger" : ""}`}>
+            <div
+              className={`stat-tile ${data.summary.unknownEventCount ? "danger" : ""}`}
+            >
               <span className="stat-label">Unpriced Events</span>
               <span className="stat-value">
                 {data.summary.unknownEventCount.toLocaleString()}
@@ -202,8 +198,12 @@ export default function CostsPage() {
             <span>{data.summary.requests.toLocaleString()} requests</span>
             {(data.summary.inputTokens > 0 || data.summary.outputTokens > 0) && (
               <>
-                <span>{formatCompactNumber(data.summary.inputTokens)} input tokens</span>
-                <span>{formatCompactNumber(data.summary.outputTokens)} output tokens</span>
+                <span>
+                  {formatCompactNumber(data.summary.inputTokens)} input tokens
+                </span>
+                <span>
+                  {formatCompactNumber(data.summary.outputTokens)} output tokens
+                </span>
               </>
             )}
             {data.summary.characters > 0 && (
@@ -216,14 +216,20 @@ export default function CostsPage() {
 
           <section className="page-section">
             <h2 className="section-title">Daily Spend by Feature</h2>
-            {!hasPricedDailyData || chartData.length === 0 || featureNames.length === 0 ? (
+            {!hasPricedDailyData ||
+            chartData.length === 0 ||
+            featureNames.length === 0 ? (
               <div className="no-data">No priced cost data in this range</div>
             ) : (
               <>
                 <div className="costs-chart-legend">
                   {featureNames.map((feature, index) => (
                     <span key={feature}>
-                      <i style={{ background: FEATURE_COLORS[index % FEATURE_COLORS.length] }} />
+                      <i
+                        style={{
+                          background: FEATURE_COLORS[index % FEATURE_COLORS.length],
+                        }}
+                      />
                       {toTitleCase(feature)}
                     </span>
                   ))}
@@ -240,7 +246,9 @@ export default function CostsPage() {
                         tick={{ fill: "#8888a8", fontSize: 12 }}
                         tickLine={{ stroke: "#3a3a5a" }}
                         axisLine={{ stroke: "#3a3a5a" }}
-                        tickFormatter={(date: string) => formatCalendarDate(date, false)}
+                        tickFormatter={(date: string) =>
+                          formatCalendarDate(date, false)
+                        }
                         minTickGap={40}
                       />
                       <YAxis
@@ -260,13 +268,17 @@ export default function CostsPage() {
                                 {formatCalendarDate(String(label))}
                               </div>
                               {payload.map((entry) => (
-                                <div key={String(entry.dataKey)} className="tooltip-row">
+                                <div
+                                  key={String(entry.dataKey)}
+                                  className="tooltip-row"
+                                >
                                   <i
                                     className="costs-tooltip-swatch"
                                     style={{ background: entry.color }}
                                   />
                                   <span>
-                                    {toTitleCase(String(entry.name))}: {formatCents(Number(entry.value))}
+                                    {toTitleCase(String(entry.name))}:{" "}
+                                    {formatCents(Number(entry.value))}
                                   </span>
                                 </div>
                               ))}
@@ -349,8 +361,8 @@ export default function CostsPage() {
                         {item.unknownEventCount === item.eventCount
                           ? "Unpriced"
                           : item.costCents === 0
-                          ? "Free"
-                          : formatCents(item.costCents)}
+                            ? "Free"
+                            : formatCents(item.costCents)}
                       </span>
                     </div>
                   );

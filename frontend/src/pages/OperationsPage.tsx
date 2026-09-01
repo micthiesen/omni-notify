@@ -19,14 +19,20 @@ export default function OperationsPage() {
   const { toast, showToast } = useToast();
   const [logRun, setLogRun] = useState<TaskRun | null>(null);
   const sortedTasks = useMemo(
-    () => snapshot ? [...snapshot.tasks].sort((a, b) => nextRunMs(a) - nextRunMs(b)) : [],
+    () =>
+      snapshot ? [...snapshot.tasks].sort((a, b) => nextRunMs(a) - nextRunMs(b)) : [],
     [snapshot],
   );
 
   if (!snapshot) {
     return error ? (
-      <div className="error"><div>Failed to load operations</div><div className="error-detail">{error}</div></div>
-    ) : <div className="loading">Loading…</div>;
+      <div className="error">
+        <div>Failed to load operations</div>
+        <div className="error-detail">{error}</div>
+      </div>
+    ) : (
+      <div className="loading">Loading…</div>
+    );
   }
 
   const run = async (name: string) => {
@@ -40,16 +46,31 @@ export default function OperationsPage() {
       <div className="page-header">
         <div className="page-header-stack">
           <h1>Operations</h1>
-          <p className="page-subtitle">Task health, controls, run history, and system activity.</p>
+          <p className="page-subtitle">
+            Task health, controls, run history, and system activity.
+          </p>
         </div>
       </div>
-      {error && <div className="error-inline stale-note">Refresh failed ({error}), showing last known state.</div>}
+      {error && (
+        <div className="error-inline stale-note">
+          Refresh failed ({error}), showing last known state.
+        </div>
+      )}
       <StatStrip snapshot={snapshot} />
       <section className="page-section">
         <h2 className="section-title">Tasks</h2>
-        {sortedTasks.length === 0 ? <div className="muted">No scheduled tasks registered.</div> : (
+        {sortedTasks.length === 0 ? (
+          <div className="muted">No scheduled tasks registered.</div>
+        ) : (
           <div className="task-grid">
-            {sortedTasks.map((task) => <TaskCard key={task.name} task={task} onRun={run} onViewLogs={setLogRun} />)}
+            {sortedTasks.map((task) => (
+              <TaskCard
+                key={task.name}
+                task={task}
+                onRun={run}
+                onViewLogs={setLogRun}
+              />
+            ))}
           </div>
         )}
       </section>

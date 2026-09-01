@@ -282,14 +282,18 @@ export default function RecommendationsPage() {
     setSavingId(recommendationId);
     try {
       const result = await sendRecommendationFeedback(recommendationId, feedback);
-      setRecs((current) =>
-        current?.map((rec) =>
-          rec.recommendationId === recommendationId ? result.recommendation : rec,
-        ) ?? null,
+      setRecs(
+        (current) =>
+          current?.map((rec) =>
+            rec.recommendationId === recommendationId ? result.recommendation : rec,
+          ) ?? null,
       );
       showToast("Feedback saved", "info");
     } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to save feedback", "error");
+      showToast(
+        error instanceof Error ? error.message : "Failed to save feedback",
+        "error",
+      );
     } finally {
       setSavingId(null);
     }
@@ -307,9 +311,7 @@ export default function RecommendationsPage() {
 
   const visible = useMemo(() => {
     if (recs === null) return null;
-    return statusFilter === ""
-      ? recs
-      : recs.filter((r) => r.status === statusFilter);
+    return statusFilter === "" ? recs : recs.filter((r) => r.status === statusFilter);
   }, [recs, statusFilter]);
 
   const {

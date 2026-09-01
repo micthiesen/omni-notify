@@ -95,14 +95,14 @@ export class TaskRegistry {
     const queue = new PQueue({ concurrency: 1 });
     this.tasks.set(task.name, { task, queue, cronTask });
 
-    const registry = this;
+    const executeScheduled = () => this.execute(task.name, "schedule");
     return new (class extends ScheduledTask {
       public readonly name = task.name;
       public readonly schedule = task.schedule;
       public override readonly jitterMs = task.jitterMs;
       public override readonly runOnStartup = task.runOnStartup;
       public run(): Promise<void> {
-        return registry.execute(task.name, "schedule");
+        return executeScheduled();
       }
     })();
   }

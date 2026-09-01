@@ -1,10 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { ApiError, fetchSnapshot, runTaskRequest } from "./api";
 import type { ManualRunOptions, Snapshot } from "./api";
@@ -110,35 +104,35 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const runTask = useCallback(async (
-    name: string,
-    options?: ManualRunOptions,
-  ): Promise<RunResult> => {
-    try {
-      await runTaskRequest(name, options);
-      // The SSE snapshot lands ~200ms later; flip the flag now so the button
-      // reacts instantly.
-      setSnapshot((prev) =>
-        prev
-          ? {
-              ...prev,
-              tasks: prev.tasks.map((t) =>
-                t.name === name ? { ...t, running: true } : t,
-              ),
-            }
-          : prev,
-      );
-      return { ok: true, message: `${name} started` };
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        return { ok: false, message: `${name} is already running` };
+  const runTask = useCallback(
+    async (name: string, options?: ManualRunOptions): Promise<RunResult> => {
+      try {
+        await runTaskRequest(name, options);
+        // The SSE snapshot lands ~200ms later; flip the flag now so the button
+        // reacts instantly.
+        setSnapshot((prev) =>
+          prev
+            ? {
+                ...prev,
+                tasks: prev.tasks.map((t) =>
+                  t.name === name ? { ...t, running: true } : t,
+                ),
+              }
+            : prev,
+        );
+        return { ok: true, message: `${name} started` };
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 409) {
+          return { ok: false, message: `${name} is already running` };
+        }
+        return {
+          ok: false,
+          message: err instanceof Error ? err.message : "Failed to start task",
+        };
       }
-      return {
-        ok: false,
-        message: err instanceof Error ? err.message : "Failed to start task",
-      };
-    }
-  }, []);
+    },
+    [],
+  );
 
   return (
     <LiveDataContext.Provider value={{ snapshot, connection, error, runTask }}>

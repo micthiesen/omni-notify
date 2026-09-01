@@ -79,7 +79,11 @@ function PipelineStageCard({
           {Object.entries(stage.metrics).map(([key, value]) => (
             <div key={key}>
               <dt>{metricLabel(key)}</dt>
-              <dd>{typeof value === "number" ? Math.round(value * 1000) / 1000 : String(value)}</dd>
+              <dd>
+                {typeof value === "number"
+                  ? Math.round(value * 1000) / 1000
+                  : String(value)}
+              </dd>
             </div>
           ))}
         </dl>
@@ -88,7 +92,10 @@ function PipelineStageCard({
   );
 }
 
-function eventVisible(event: LivestreamIntelligenceEvent, filter: TimelineFilter): boolean {
+function eventVisible(
+  event: LivestreamIntelligenceEvent,
+  filter: TimelineFilter,
+): boolean {
   if (filter === "all") return true;
   if (filter === "voice") return event.kind === "voice";
   if (filter === "alerts") return event.kind === "alert" || event.kind === "feedback";
@@ -113,7 +120,9 @@ function TimelineEvent({ event }: { event: LivestreamIntelligenceEvent }) {
             <span>{formatDuration(event.durationMs)} processing</span>
           )}
           {event.costCents !== undefined && (
-            <span>{event.costCents === 0 ? "$0 local" : moneyFromCents(event.costCents)}</span>
+            <span>
+              {event.costCents === 0 ? "$0 local" : moneyFromCents(event.costCents)}
+            </span>
           )}
         </div>
         {event.metrics && Object.keys(event.metrics).length > 0 && (
@@ -123,7 +132,11 @@ function TimelineEvent({ event }: { event: LivestreamIntelligenceEvent }) {
               {Object.entries(event.metrics).map(([key, value]) => (
                 <div key={key}>
                   <dt>{metricLabel(key)}</dt>
-                  <dd>{typeof value === "number" ? Math.round(value * 1000) / 1000 : String(value)}</dd>
+                  <dd>
+                    {typeof value === "number"
+                      ? Math.round(value * 1000) / 1000
+                      : String(value)}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -158,7 +171,9 @@ export default function LivestreamIntelligencePage({
         })
         .catch((reason) => {
           if (!cancelled) {
-            setError(reason instanceof Error ? reason.message : "Failed to load diagnostics");
+            setError(
+              reason instanceof Error ? reason.message : "Failed to load diagnostics",
+            );
           }
         });
     };
@@ -203,7 +218,10 @@ export default function LivestreamIntelligencePage({
     <>
       <div className="page-header intelligence-details-header">
         <div className="page-header-stack">
-          <Link className="back-link" to={`/streamers/${encodeURIComponent(streamerId)}`}>
+          <Link
+            className="back-link"
+            to={`/streamers/${encodeURIComponent(streamerId)}`}
+          >
             ← {streamer.displayName}
           </Link>
           <h1>Intelligence Details</h1>
@@ -221,7 +239,9 @@ export default function LivestreamIntelligencePage({
       <section className="intelligence-health-grid" aria-label="Intelligence health">
         <article>
           <span className="stat-label">Pipeline</span>
-          <strong>{runtime ? (hasStageError ? "Needs Attention" : "Healthy") : "Unavailable"}</strong>
+          <strong>
+            {runtime ? (hasStageError ? "Needs Attention" : "Healthy") : "Unavailable"}
+          </strong>
           <span>
             {hasStageError
               ? "A pipeline stage failed"
@@ -246,7 +266,10 @@ export default function LivestreamIntelligencePage({
               ? `${moneyFromCents(runtime.budget.spentCents)} of ${moneyFromCents(runtime.budget.limitCents)}`
               : "—"}
           </strong>
-          <div className="intelligence-budget-track" aria-label={`${Math.round(budgetPercent)}% used`}>
+          <div
+            className="intelligence-budget-track"
+            aria-label={`${Math.round(budgetPercent)}% used`}
+          >
             <span style={{ width: `${budgetPercent}%` }} />
           </div>
         </article>
@@ -270,7 +293,9 @@ export default function LivestreamIntelligencePage({
                     {intelligence.summary.transcriptExcerpt}
                   </p>
                   <div className="meta-row">
-                    <span>{Math.round(intelligence.summary.confidence * 100)}% confidence</span>
+                    <span>
+                      {Math.round(intelligence.summary.confidence * 100)}% confidence
+                    </span>
                     <span>{intelligence.summary.windowSeconds}s window</span>
                   </div>
                 </>
@@ -285,7 +310,7 @@ export default function LivestreamIntelligencePage({
                   <strong>
                     {intelligence.trend.anomalous
                       ? "Confirmed"
-                      : intelligence.trend.suppressionReason ?? "No unusual rise"}
+                      : (intelligence.trend.suppressionReason ?? "No unusual rise")}
                   </strong>
                   <p>
                     Platform: {intelligence.trend.currentViewers ?? "Unavailable"}
@@ -302,7 +327,9 @@ export default function LivestreamIntelligencePage({
                     </p>
                   )}
                   <div className="meta-row">
-                    <span>{intelligence.trend.baselineSamples ?? 0} baseline samples</span>
+                    <span>
+                      {intelligence.trend.baselineSamples ?? 0} baseline samples
+                    </span>
                     <span>
                       {Math.min(intelligence.trend.candidateObservations ?? 0, 2)} of 2
                       confirmations
@@ -349,7 +376,9 @@ export default function LivestreamIntelligencePage({
         </div>
         {events.length > 0 ? (
           <ol className="intelligence-event-list">
-            {events.map((event) => <TimelineEvent key={event.eventId} event={event} />)}
+            {events.map((event) => (
+              <TimelineEvent key={event.eventId} event={event} />
+            ))}
           </ol>
         ) : (
           <div className="no-data">No events match this filter yet.</div>

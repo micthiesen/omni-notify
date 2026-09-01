@@ -43,7 +43,7 @@ export async function rateRetrievedArticles(
   retrieved: RetrievedArticleResult[],
   rateArticle: (article: Article) => Promise<Metadata>,
 ): Promise<ArticleRetrieverResult[]> {
-  const results = new Array<ArticleRetrieverResult>(retrieved.length);
+  const results = Array<ArticleRetrieverResult>(retrieved.length);
   const groups = new Map<string, Array<{ index: number; article: Article }>>();
 
   for (const [index, result] of retrieved.entries()) {

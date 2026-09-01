@@ -16,7 +16,6 @@ export function useShowMore<T>(
   showMore: () => void;
 } {
   const [count, setCount] = useState(pageSize);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: resetKey identifies the view
   useEffect(() => {
     setCount(pageSize);
   }, [resetKey, pageSize]);

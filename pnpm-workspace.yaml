@@ -20,13 +20,4 @@ patchedDependencies:
   jmap-rfc-types@0.2.0: patches/jmap-rfc-types@0.2.0.patch
 
 minimumReleaseAgeExclude:
-  - '@micthiesen/mitools@3.0.1 || 3.0.2 || 3.0.3 || 3.0.4'
-  - '@biomejs/biome@2.5.4'
-  - '@biomejs/cli-darwin-arm64@2.5.4'
-  - '@biomejs/cli-darwin-x64@2.5.4'
-  - '@biomejs/cli-linux-arm64-musl@2.5.4'
-  - '@biomejs/cli-linux-arm64@2.5.4'
-  - '@biomejs/cli-linux-x64-musl@2.5.4'
-  - '@biomejs/cli-linux-x64@2.5.4'
-  - '@biomejs/cli-win32-arm64@2.5.4'
-  - '@biomejs/cli-win32-x64@2.5.4'
+  - "@micthiesen/mitools@3.0.1 || 3.0.2 || 3.0.3 || 3.0.4"

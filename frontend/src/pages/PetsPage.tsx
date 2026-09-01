@@ -30,14 +30,7 @@ interface Pet {
 type Range = "7d" | "30d" | "90d" | "all";
 type ChartMode = "weight" | "visits";
 
-const COLORS = [
-  "#4fc3f7",
-  "#81c784",
-  "#ffb74d",
-  "#e57373",
-  "#ba68c8",
-  "#4db6ac",
-];
+const COLORS = ["#4fc3f7", "#81c784", "#ffb74d", "#e57373", "#ba68c8", "#4db6ac"];
 
 const RANGE_DAYS: Record<Range, number | null> = {
   "7d": 7,
@@ -54,10 +47,7 @@ function filterByRange(history: WeightEntry[], range: Range): WeightEntry[] {
   return history.filter((e) => new Date(e.timestamp) >= cutoff);
 }
 
-function filterVisitsByRange(
-  visits: DailyVisit[],
-  range: Range,
-): DailyVisit[] {
+function filterVisitsByRange(visits: DailyVisit[], range: Range): DailyVisit[] {
   const days = RANGE_DAYS[range];
   if (days === null) return visits;
   const cutoff = new Date();
@@ -298,16 +288,12 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
   const sorted = useMemo(
     () =>
       [...pet.weightHistory].sort(
-        (a, b) =>
-          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       ),
     [pet.weightHistory],
   );
 
-  const filteredWeight = useMemo(
-    () => filterByRange(sorted, range),
-    [sorted, range],
-  );
+  const filteredWeight = useMemo(() => filterByRange(sorted, range), [sorted, range]);
   const filteredVisits = useMemo(
     () => filterVisitsByRange(pet.dailyVisits, range),
     [pet.dailyVisits, range],
@@ -351,8 +337,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
   );
 
   const { slopePerWeek, r2 } = weightResult;
-  const chartConfig =
-    mode === "weight" ? weightResult.config : visitResult.config;
+  const chartConfig = mode === "weight" ? weightResult.config : visitResult.config;
 
   const ranges: Range[] = ["7d", "30d", "90d", "all"];
 
@@ -461,9 +446,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                 tick={{ fill: "#8888a8", fontSize: 12 }}
                 tickLine={{ stroke: "#3a3a5a" }}
                 axisLine={{ stroke: "#3a3a5a" }}
-                tickFormatter={(v: number) =>
-                  formatDate(new Date(v).toISOString())
-                }
+                tickFormatter={(v: number) => formatDate(new Date(v).toISOString())}
                 minTickGap={50}
               />
               <YAxis
@@ -476,14 +459,11 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
               />
               <Tooltip
                 content={({ active, payload, label }) => {
-                  if (!active || !tooltipActive || !payload?.length)
-                    return null;
+                  if (!active || !tooltipActive || !payload?.length) return null;
                   return (
                     <div className="custom-tooltip">
                       <div className="tooltip-label">
-                        {formatTooltipDate(
-                          new Date(label as number).toISOString(),
-                        )}
+                        {formatTooltipDate(new Date(label as number).toISOString())}
                       </div>
                       {payload.map((entry) => {
                         const style = chartConfig.tooltipLines.find(
@@ -492,11 +472,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                         if (!style) return null;
                         return (
                           <div key={style.dataKey} className="tooltip-row">
-                            <svg
-                              width="20"
-                              height="12"
-                              className="tooltip-swatch"
-                            >
+                            <svg width="20" height="12" className="tooltip-swatch">
                               <line
                                 x1="0"
                                 y1="6"
@@ -509,8 +485,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                               />
                             </svg>
                             <span>
-                              {style.label}: {entry.value}{" "}
-                              {chartConfig.tooltipUnit}
+                              {style.label}: {entry.value} {chartConfig.tooltipUnit}
                             </span>
                           </div>
                         );
@@ -588,9 +563,7 @@ export default function PetsPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(
-            err instanceof Error ? err.message : "Failed to fetch pets",
-          );
+          setError(err instanceof Error ? err.message : "Failed to fetch pets");
           setLoading(false);
         }
       }
@@ -617,10 +590,9 @@ export default function PetsPage() {
           <div className="error-detail">{error}</div>
         </div>
       )}
-      {!loading && !error &&
-        pets.map((pet, i) => (
-          <PetCard key={pet.petId} pet={pet} colorIndex={i} />
-        ))}
+      {!loading &&
+        !error &&
+        pets.map((pet, i) => <PetCard key={pet.petId} pet={pet} colorIndex={i} />)}
     </>
   );
 }

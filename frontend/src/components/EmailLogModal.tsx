@@ -31,10 +31,7 @@ const ADMIT_TIER_LABELS: Record<string, string> = {
   "carrier-name": "Carrier Name",
 };
 
-const FEEDBACK_LABELS: Record<
-  EmailPipeline,
-  Record<EmailFeedbackVerdict, string>
-> = {
+const FEEDBACK_LABELS: Record<EmailPipeline, Record<EmailFeedbackVerdict, string>> = {
   ParcelTracker: { not_relevant: "Not a Parcel", missed: "Missed Parcel" },
   CalendarEvents: { not_relevant: "Not an Event", missed: "Missed Event" },
 };
@@ -108,9 +105,9 @@ export function EmailLogModal({
   // button still works if this fetch fails, just without the shortcut.
   const [rules, setRules] = useState<EmailRule[] | null>(null);
   const [builtin, setBuiltin] = useState<EmailBuiltinRules | null>(null);
-  const [coverageOverride, setCoverageOverride] = useState<
-    "rule" | "builtin" | null
-  >(null);
+  const [coverageOverride, setCoverageOverride] = useState<"rule" | "builtin" | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -234,7 +231,9 @@ export function EmailLogModal({
     // "@doordash.com"); the exact-address toggle narrows to just this address.
     const pattern = blockExact || !senderAtDomain ? senderEmail : senderAtDomain;
     const scopeLabel =
-      blockScope === "both" ? "Parcels & Calendar" : BLOCK_SCOPE_LABELS[current.pipeline];
+      blockScope === "both"
+        ? "Parcels & Calendar"
+        : BLOCK_SCOPE_LABELS[current.pipeline];
     const confirmed = window.confirm(
       `Block ${pattern} for ${scopeLabel}? Future emails from this sender will be filtered.`,
     );
@@ -242,7 +241,11 @@ export function EmailLogModal({
     setBlocking(true);
     setActionError(null);
     try {
-      const res = await createEmailRule({ pattern, scope: blockScope, verdict: "block" });
+      const res = await createEmailRule({
+        pattern,
+        scope: blockScope,
+        verdict: "block",
+      });
       switch (res.status) {
         case "created":
           setCoverageOverride("rule");
@@ -336,9 +339,7 @@ export function EmailLogModal({
           <div className="muted log-modal-error">{current.detail}</div>
         )}
         {current.admitReason && (
-          <div className="muted email-admit-line">
-            Admitted: {current.admitReason}
-          </div>
+          <div className="muted email-admit-line">Admitted: {current.admitReason}</div>
         )}
         {current.items.length > 0 && (
           <ul className="email-modal-items">
@@ -351,9 +352,7 @@ export function EmailLogModal({
                 trackingNumber !== null && forgotten.has(trackingNumber);
               return (
                 <li key={`${index}-${item}`}>
-                  <span
-                    className={isForgotten ? "email-item-forgotten" : undefined}
-                  >
+                  <span className={isForgotten ? "email-item-forgotten" : undefined}>
                     {item}
                   </span>
                   {isForgotten && (

@@ -60,8 +60,7 @@ export function describeCron(expr: string): string | null {
   if (parts.length !== 6) return null;
   const [sec, min, hour, dom, mon, dow] = parts;
 
-  const restIsStar =
-    isStar(hour) && isStar(dom) && isStar(mon) && isStar(dow);
+  const restIsStar = isStar(hour) && isStar(dom) && isStar(mon) && isStar(dow);
 
   const secStep = stepOf(sec);
   if (secStep !== null && isStar(min) && restIsStar) {

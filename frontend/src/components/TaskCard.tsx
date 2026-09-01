@@ -38,9 +38,7 @@ function LastRunSummary({
     >
       <div className="task-last-run-meta">
         <StatusDot status={run.status} />
-        <span className={`run-status-text run-status-${run.status}`}>
-          {run.status}
-        </span>
+        <span className={`run-status-text run-status-${run.status}`}>{run.status}</span>
         <span title={formatAbsolute(run.startedAt)}>
           {formatRelative(run.startedAt)}
         </span>
@@ -145,9 +143,7 @@ export function TaskCard({
           ) : (
             <span
               className={`status-dot status-${task.lastRun?.status ?? "none"}`}
-              title={
-                task.lastRun ? `Last run: ${task.lastRun.status}` : "No runs yet"
-              }
+              title={task.lastRun ? `Last run: ${task.lastRun.status}` : "No runs yet"}
             />
           )}
           <span className="task-name">{taskLabel(task)}</span>
@@ -168,10 +164,7 @@ export function TaskCard({
       <div className="task-next-run">
         <span className="field-label">Next Run</span>
         {nextRunMs !== null && !Number.isNaN(nextRunMs) ? (
-          <span
-            className="next-run-value meta-row"
-            title={formatAbsolute(nextRunMs)}
-          >
+          <span className="next-run-value meta-row" title={formatAbsolute(nextRunMs)}>
             <span>{formatCountdown(nextRunMs - now)}</span>
             <span className="muted">{formatAbsolute(nextRunMs)}</span>
           </span>

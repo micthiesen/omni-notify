@@ -11,10 +11,10 @@
     "livestream:doctor": "node dist/tools/livestream-intelligence-doctor.js",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "lint": "biome lint .",
-    "format": "biome format .",
-    "check": "biome check .",
-    "check:write": "biome check --write .",
+    "lint": "oxlint --report-unused-disable-directives .",
+    "format": "oxfmt --check .",
+    "check": "pnpm run lint && pnpm run format",
+    "check:write": "oxlint --fix --report-unused-disable-directives . && oxfmt --write .",
     "mcp:policy": "tsx src/tools/generate-mcp-policy.ts",
     "test": "vitest",
     "docker:build": "docker build -t omni-notify .",
@@ -74,7 +74,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.4",
     "@dotenvx/dotenvx": "^2.19.2",
     "@modelcontextprotocol/client": "2.0.0",
     "@types/fluent-ffmpeg": "^2.1.28",
@@ -84,6 +83,8 @@
     "@types/nodemailer": "^8.0.1",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.18.1",
+    "oxfmt": "0.65.0",
+    "oxlint": "1.80.0",
     "tsx": "^4.23.5",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"

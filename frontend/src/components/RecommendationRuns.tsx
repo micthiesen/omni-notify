@@ -65,10 +65,7 @@ export function RecommendationRuns({
                   <span className={`rec-run-outcome rec-run-${outcome.tone}`}>
                     {outcome.label}
                   </span>
-                  <span
-                    className="rec-run-time"
-                    title={formatAbsolute(run.startedAt)}
-                  >
+                  <span className="rec-run-time" title={formatAbsolute(run.startedAt)}>
                     {formatRelative(run.startedAt)}
                   </span>
                   {detail !== null && (

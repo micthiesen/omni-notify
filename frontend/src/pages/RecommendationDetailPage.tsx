@@ -91,7 +91,10 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
       setRec(result.recommendation);
       showToast("Feedback saved", "info");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "Failed to save feedback", "error");
+      showToast(
+        err instanceof Error ? err.message : "Failed to save feedback",
+        "error",
+      );
     } finally {
       setSaving(false);
     }
@@ -278,7 +281,9 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
               </DetailField>
             )}
             {rec.creators.length > 0 && (
-              <DetailField label={rec.mediaType === "movie" ? "Directed By" : "Created By"}>
+              <DetailField
+                label={rec.mediaType === "movie" ? "Directed By" : "Created By"}
+              >
                 {rec.creators.join(", ")}
               </DetailField>
             )}

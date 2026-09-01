@@ -50,28 +50,33 @@ export default function App() {
   const path = normalizePath(usePath());
 
   useEffect(() => {
-    const section = path.startsWith("/workspaces")
-      ? "Workspaces"
-      : PAGE_TITLES[path];
+    const section = path.startsWith("/workspaces") ? "Workspaces" : PAGE_TITLES[path];
     document.title = section ? `${section} · Omni Notify` : "Omni Notify";
   }, [path]);
 
   let page: ReactNode;
-  const feedbackMatch = path.match(
-    /^\/feedback\/(recommendations|podcasts)\/([^/]+)$/,
-  );
+  const feedbackMatch = path.match(/^\/feedback\/(recommendations|podcasts)\/([^/]+)$/);
   const mediaDetailMatch = path.match(/^\/media\/([^/]+)$/);
   const podcastDetailMatch = path.match(/^\/podcasts\/([^/]+)$/);
   const podsDetailMatch = path.match(/^\/pods\/([^/]+)$/);
   const workspaceSubjectMatch = path.match(/^\/workspaces\/([^/]+)\/([^/]+)$/);
   const workspaceMatch = path.match(/^\/workspaces\/([^/]+)$/);
-  const streamerIntelligenceMatch = path.match(
-    /^\/streamers\/([^/]+)\/intelligence$/,
-  );
+  const streamerIntelligenceMatch = path.match(/^\/streamers\/([^/]+)\/intelligence$/);
   if (workspaceSubjectMatch) {
-    page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage workspaceId={decodeURIComponent(workspaceSubjectMatch[1])} subjectId={decodeURIComponent(workspaceSubjectMatch[2])} /></Suspense>;
+    page = (
+      <Suspense fallback={<div className="loading">Loading…</div>}>
+        <WorkspacesPage
+          workspaceId={decodeURIComponent(workspaceSubjectMatch[1])}
+          subjectId={decodeURIComponent(workspaceSubjectMatch[2])}
+        />
+      </Suspense>
+    );
   } else if (workspaceMatch) {
-    page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage workspaceId={decodeURIComponent(workspaceMatch[1])} /></Suspense>;
+    page = (
+      <Suspense fallback={<div className="loading">Loading…</div>}>
+        <WorkspacesPage workspaceId={decodeURIComponent(workspaceMatch[1])} />
+      </Suspense>
+    );
   } else if (feedbackMatch) {
     const kind = feedbackMatch[1] as FeedbackKind;
     const id = decodeURIComponent(feedbackMatch[2]);
@@ -150,10 +155,18 @@ export default function App() {
         );
         break;
       case "/workspaces":
-        page = <Suspense fallback={<div className="loading">Loading…</div>}><WorkspacesPage /></Suspense>;
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <WorkspacesPage />
+          </Suspense>
+        );
         break;
       case "/operations":
-        page = <Suspense fallback={<div className="loading">Loading…</div>}><OperationsPage /></Suspense>;
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <OperationsPage />
+          </Suspense>
+        );
         break;
       default:
         page = <HomePage />;

@@ -22,9 +22,7 @@ interface FeedEntry {
 function buildFeed(briefings: BriefingHistory[], filter: string | null): FeedEntry[] {
   return briefings
     .filter((b) => filter === null || b.name === filter)
-    .flatMap((b) =>
-      b.notifications.map((n) => ({ briefingName: b.name, ...n })),
-    )
+    .flatMap((b) => b.notifications.map((n) => ({ briefingName: b.name, ...n })))
     .sort((a, b) => b.timestamp - a.timestamp);
 }
 
@@ -77,9 +75,7 @@ export default function BriefingsPage() {
         </div>
       </div>
 
-      {briefings === null && error === null && (
-        <div className="loading">Loading…</div>
-      )}
+      {briefings === null && error === null && <div className="loading">Loading…</div>}
       {error && briefings === null && (
         <div className="error">
           <div>Failed to load briefings</div>
@@ -142,7 +138,9 @@ export default function BriefingsPage() {
                     </a>
                   )}
                   {formatCents(entry.costCents) && (
-                    <span className="briefing-cost">{formatCents(entry.costCents)}</span>
+                    <span className="briefing-cost">
+                      {formatCents(entry.costCents)}
+                    </span>
                   )}
                   {entry.runId && (
                     <button

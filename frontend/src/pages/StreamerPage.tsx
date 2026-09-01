@@ -1,12 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   fetchStreamerMetrics,
   fetchStreamerSessions,
@@ -151,9 +144,7 @@ function PlatformStats({ metrics }: { metrics: StreamerMetrics }) {
               <PlatformIcon platform={source.platform} size={13} /> {source.platform}
             </span>
             <span className="stat-value">
-              {source.allTimeMax > 0
-                ? formatCompactNumber(source.allTimeMax)
-                : "—"}
+              {source.allTimeMax > 0 ? formatCompactNumber(source.allTimeMax) : "—"}
             </span>
             <span className="stat-detail">{source.username} all-time</span>
           </div>
@@ -435,8 +426,8 @@ function LivestreamIntelligencePanel({ streamer }: { streamer: StreamerView }) {
           {intelligence.trend?.anomalous && <span>{intelligence.trend.reason}</span>}
           {intelligence.destinyPresence?.state === "confirmed" && (
             <span>
-              Destiny detected, {Math.round(intelligence.destinyPresence.confidence * 100)}%
-              confidence
+              Destiny detected,{" "}
+              {Math.round(intelligence.destinyPresence.confidence * 100)}% confidence
             </span>
           )}
         </div>
@@ -472,8 +463,12 @@ function LivestreamIntelligencePanel({ streamer }: { streamer: StreamerView }) {
             <span className="muted">Feedback saved</span>
           ) : (
             <div className="intelligence-feedback-actions">
-              <button type="button" onClick={() => submit("useful")}>Useful</button>
-              <button type="button" onClick={() => submit("not_useful")}>Not Useful</button>
+              <button type="button" onClick={() => submit("useful")}>
+                Useful
+              </button>
+              <button type="button" onClick={() => submit("not_useful")}>
+                Not Useful
+              </button>
               <button type="button" onClick={() => submit("false_positive")}>
                 False Positive
               </button>
@@ -491,8 +486,7 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<StreamSession[] | null>(null);
 
-  const streamer =
-    snapshot?.streamers.find((s) => s.id === streamerId) ?? null;
+  const streamer = snapshot?.streamers.find((s) => s.id === streamerId) ?? null;
 
   useEffect(() => {
     if (streamer) document.title = `${streamer.displayName} · Omni Notify`;

@@ -11,9 +11,8 @@ Injector.configure({
   },
 });
 
-const { clearAllData, insertWeightReading, upsertPet } = await import(
-  "./persistence.js"
-);
+const { clearAllData, insertWeightReading, upsertPet } =
+  await import("./persistence.js");
 
 interface PetSeed {
   petId: string;

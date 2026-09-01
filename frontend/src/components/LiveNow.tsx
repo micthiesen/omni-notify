@@ -19,9 +19,7 @@ function platformLabel(platform: string): string {
 
 /** Current viewers when known, else "peak" from this session's high-water mark. */
 function viewersLabel(streamer: LiveStreamer): string | null {
-  const knownSources = streamer.sources.filter(
-    (source) => source.viewerCount !== null,
-  );
+  const knownSources = streamer.sources.filter((source) => source.viewerCount !== null);
   if (knownSources.length > 1) {
     return knownSources
       .map(
@@ -39,11 +37,7 @@ function viewersLabel(streamer: LiveStreamer): string | null {
   return null;
 }
 
-export function DggPresenceTag({
-  dgg,
-}: {
-  dgg: StreamerView["dgg"];
-}) {
+export function DggPresenceTag({ dgg }: { dgg: StreamerView["dgg"] }) {
   if (!dgg) return null;
 
   const label = dgg.hosted
@@ -53,9 +47,7 @@ export function DggPresenceTag({
       : "DGG";
 
   return (
-    <span className={`dgg-tag${dgg.hosted ? " dgg-tag-hosted" : ""}`}>
-      {label}
-    </span>
+    <span className={`dgg-tag${dgg.hosted ? " dgg-tag-hosted" : ""}`}>{label}</span>
   );
 }
 

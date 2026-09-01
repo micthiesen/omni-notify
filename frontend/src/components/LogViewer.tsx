@@ -129,7 +129,6 @@ export function LogViewer({
 
   const lineCount = lines?.length ?? 0;
   // Follow the tail only while the user hasn't scrolled up.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on new lines
   useEffect(() => {
     const body = bodyRef.current;
     if (body && stickToBottom.current) body.scrollTop = body.scrollHeight;

@@ -181,12 +181,7 @@ function RowDetail({
   }, [onClose]);
 
   return (
-    <div
-      className="modal-root"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Row detail"
-    >
+    <div className="modal-root" role="dialog" aria-modal="true" aria-label="Row detail">
       <button
         className="modal-backdrop"
         type="button"
@@ -306,8 +301,7 @@ export default function DataPage() {
     const rest = [...frequency.keys()]
       .filter(
         (property) =>
-          !selected.primaryKey.includes(property) &&
-          property !== MALFORMED_ROW_KEY,
+          !selected.primaryKey.includes(property) && property !== MALFORMED_ROW_KEY,
       )
       .sort(
         (a, b) =>
@@ -374,9 +368,7 @@ export default function DataPage() {
     const key = keyFor(row, selected.primaryKey);
     const label = getMalformedMetadata(row)?.rawKey ?? json(key);
     if (
-      !window.confirm(
-        `Delete ${selected.label} row ${label}? This cannot be undone.`,
-      )
+      !window.confirm(`Delete ${selected.label} row ${label}? This cannot be undone.`)
     ) {
       return;
     }
@@ -385,9 +377,7 @@ export default function DataPage() {
     try {
       await deleteDataRow(selected.slug, key);
       setRows((current) =>
-        current.filter(
-          (candidate) => rowId(candidate, selected.primaryKey) !== id,
-        ),
+        current.filter((candidate) => rowId(candidate, selected.primaryKey) !== id),
       );
       setEntities((current) =>
         current.map((entity) =>
@@ -405,10 +395,7 @@ export default function DataPage() {
         })
         .catch(() => {});
     } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : "Failed to delete row",
-        "error",
-      );
+      showToast(err instanceof Error ? err.message : "Failed to delete row", "error");
     } finally {
       setDeletingId(null);
     }
@@ -458,10 +445,7 @@ export default function DataPage() {
 
       <div className="data-layout">
         <aside className="data-entity-panel" aria-label="Entities">
-          <label
-            className="data-mobile-select-label"
-            htmlFor="data-entity-select"
-          >
+          <label className="data-mobile-select-label" htmlFor="data-entity-select">
             Entity
           </label>
           <select
@@ -524,7 +508,7 @@ export default function DataPage() {
                 <span className="data-row-count">
                   {visibleRows.length === rows.length
                     ? rows.length
-                    : `${visibleRows.length} of ${rows.length}`} {" "}
+                    : `${visibleRows.length} of ${rows.length}`}{" "}
                   rows
                 </span>
                 <button
@@ -570,9 +554,7 @@ export default function DataPage() {
                                 ? "Malformed Record"
                                 : column}
                               {sort?.column === column && (
-                                <span>
-                                  {sort.direction === "asc" ? " ↑" : " ↓"}
-                                </span>
+                                <span>{sort.direction === "asc" ? " ↑" : " ↓"}</span>
                               )}
                             </button>
                           </th>
