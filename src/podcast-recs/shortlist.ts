@@ -3,6 +3,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { Data, Effect } from "effect";
 import { z } from "zod";
 import { getRecsShortlistModel } from "../ai/registry.js";
 import { toDateStamp } from "../utils/dates.js";
@@ -46,76 +47,82 @@ export function computeComposite(score: {
 }
 
 /** Score all eligible episodes with the cheap model and keep the top N. */
-export async function shortlistEpisodes(
+class ShortlistError extends Data.TaggedError("ShortlistError")<{
+  readonly cause: unknown;
+}> {}
+
+export function shortlistEpisodesEffect(
   candidates: EpisodeCandidate[],
   tasteDigest: string,
   logger: Logger,
   logFile?: LogFile,
   finalistCount = FINALIST_COUNT,
-): Promise<ScoredEpisode[]> {
-  const { model, modelId } = getRecsShortlistModel();
+): Effect.Effect<ScoredEpisode[], ShortlistError> {
+  return Effect.gen(function* () {
+    const { model, modelId } = getRecsShortlistModel();
 
-  // Deterministic ordering to reduce position bias.
-  const ordered = [...candidates].sort((a, b) =>
-    a.episodeId.localeCompare(b.episodeId),
-  );
-  const prompt = buildPrompt(ordered, tasteDigest);
+    // Deterministic ordering to reduce position bias.
+    const ordered = [...candidates].sort((a, b) =>
+      a.episodeId.localeCompare(b.episodeId),
+    );
+    const prompt = buildPrompt(ordered, tasteDigest);
 
-  logFile?.log(
-    logger,
-    LogLevel.INFO,
-    `Podcast Shortlist Prompt (${modelId})`,
-    codeBlock(prompt),
-    { consoleSummary: `Scoring ${ordered.length} episodes (${modelId})` },
-  );
+    logFile?.log(
+      logger,
+      LogLevel.INFO,
+      `Podcast Shortlist Prompt (${modelId})`,
+      codeBlock(prompt),
+      { consoleSummary: `Scoring ${ordered.length} episodes (${modelId})` },
+    );
 
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: scoreSchema }),
-    prompt,
-  });
-  logger.info(
-    `Shortlist token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
-  );
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        generateText({ model, output: Output.object({ schema: scoreSchema }), prompt }),
+      catch: (cause) => new ShortlistError({ cause }),
+    });
+    logger.info(
+      `Shortlist token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+    );
 
-  const byId = new Map(candidates.map((c) => [c.episodeId, c]));
-  const scored: ScoredEpisode[] = [];
-  for (const score of result.output?.scores ?? []) {
-    const candidate = byId.get(score.candidate_id);
-    if (!candidate) {
-      logger.warn(`Shortlist returned unknown candidate_id: ${score.candidate_id}`);
-      continue;
-    }
-    scored.push({
-      candidate,
-      tasteMatch: score.taste_match,
-      novelty: score.novelty,
-      confidence: score.confidence,
-      risks: score.risks,
-      composite: computeComposite({
+    const byId = new Map(candidates.map((c) => [c.episodeId, c]));
+    const scored: ScoredEpisode[] = [];
+    for (const score of result.output?.scores ?? []) {
+      const candidate = byId.get(score.candidate_id);
+      if (!candidate) {
+        logger.warn(`Shortlist returned unknown candidate_id: ${score.candidate_id}`);
+        continue;
+      }
+      scored.push({
+        candidate,
         tasteMatch: score.taste_match,
         novelty: score.novelty,
         confidence: score.confidence,
-      }),
-    });
-  }
+        risks: score.risks,
+        composite: computeComposite({
+          tasteMatch: score.taste_match,
+          novelty: score.novelty,
+          confidence: score.confidence,
+        }),
+      });
+    }
 
-  scored.sort((a, b) => b.composite - a.composite);
-  const finalists = scored.slice(0, finalistCount);
+    scored.sort((a, b) => b.composite - a.composite);
+    const finalists = scored.slice(0, finalistCount);
 
-  logFile?.section(
-    "Podcast Shortlist Result",
-    codeBlock(
-      finalists
-        .map(
-          (s) =>
-            `${s.composite.toFixed(1)} ${s.candidate.showTitle} — ${s.candidate.episodeTitle} (taste=${s.tasteMatch} novelty=${s.novelty} conf=${s.confidence})`,
-        )
-        .join("\n"),
-    ),
-  );
+    logFile?.section(
+      "Podcast Shortlist Result",
+      codeBlock(
+        finalists
+          .map(
+            (s) =>
+              `${s.composite.toFixed(1)} ${s.candidate.showTitle} — ${s.candidate.episodeTitle} (taste=${s.tasteMatch} novelty=${s.novelty} conf=${s.confidence})`,
+          )
+          .join("\n"),
+      ),
+    );
 
-  return finalists;
+    return finalists;
+  });
 }
 
 function buildPrompt(candidates: EpisodeCandidate[], tasteDigest: string): string {

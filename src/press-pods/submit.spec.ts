@@ -1,55 +1,43 @@
-import { describe, expect, it } from "vitest";
-import { submitEpisodeSchema } from "./submit.js";
+import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
+import { describe, expect, it, vi } from "vitest";
+import { PressPodsError } from "./effect.js";
 
-describe("submitEpisodeSchema", () => {
-  it("parses a valid URL", () => {
-    const result = submitEpisodeSchema.parse({
-      url: "https://www.theatlantic.com/culture/archive/2022/04/article/629608/",
-    });
-    expect(result.url).toBe(
-      "https://www.theatlantic.com/culture/archive/2022/04/article/629608/",
-    );
-  });
+const mocks = vi.hoisted(() => ({
+  enqueue: vi.fn(),
+}));
 
-  it("trims whitespace from URL", () => {
-    const result = submitEpisodeSchema.parse({
-      url: "  https://example.com/article  ",
-    });
-    expect(result.url).toBe("https://example.com/article");
-  });
+vi.mock("@micthiesen/mitools/karakeep", () => ({ addBookmark: vi.fn() }));
+vi.mock("./persistence.js", () => ({
+  PressPodsPersistence: {
+    findActiveJobByNormalizedUrl: vi.fn(() => Effect.succeed(undefined)),
+    findFailedJobByNormalizedUrl: vi.fn(() => Effect.succeed(undefined)),
+    requeueJobNow: vi.fn(() => Effect.succeed(undefined)),
+    enqueueEpisodeJob: mocks.enqueue,
+  },
+}));
+vi.mock("./publicHttp.js", () => ({
+  assertPublicHttpUrlSyntax: (value: string) => new URL(value),
+  assertPublicHttpUrl: () =>
+    Effect.fail(
+      new PressPodsError({
+        operation: "validate public PressPods URL",
+        cause: new Error("host resolves to a private address"),
+      }),
+    ),
+}));
 
-  it("extracts first URL when duplicated with newline", () => {
-    const result = submitEpisodeSchema.parse({
-      url: "https://example.com/article\nhttps://example.com/article",
-    });
-    expect(result.url).toBe("https://example.com/article");
-  });
+import { submitEpisodeUrlEffect } from "./submit.js";
 
-  it("extracts first URL when followed by trailing newline", () => {
-    const result = submitEpisodeSchema.parse({
-      url: "https://example.com/article\n",
-    });
-    expect(result.url).toBe("https://example.com/article");
-  });
+describe("PressPods submission validation", () => {
+  it("rejects DNS-private hosts before durable enqueue or bookmarking", async () => {
+    const logger = { info: vi.fn() } as unknown as Logger;
 
-  it("rejects non-URL strings", () => {
-    expect(() => submitEpisodeSchema.parse({ url: "not a url" })).toThrow();
-  });
-
-  it("rejects empty string", () => {
-    expect(() => submitEpisodeSchema.parse({ url: "" })).toThrow();
-  });
-
-  it("rejects missing url field", () => {
-    expect(() => submitEpisodeSchema.parse({})).toThrow();
-  });
-
-  it.each([
-    "http://localhost/article",
-    "http://127.0.0.1/article",
-    "http://[::1]/article",
-    "file:///etc/passwd",
-  ])("rejects non-public URL %s", (url) => {
-    expect(() => submitEpisodeSchema.parse({ url })).toThrow();
+    await expect(
+      Effect.runPromise(
+        submitEpisodeUrlEffect("https://internal.example/article", vi.fn(), logger),
+      ),
+    ).rejects.toThrow("host resolves to a private address");
+    expect(mocks.enqueue).not.toHaveBeenCalled();
   });
 });

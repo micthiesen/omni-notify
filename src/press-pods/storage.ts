@@ -3,7 +3,9 @@ import fs from "node:fs";
 import fsAsync from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Effect } from "effect";
 import config from "../utils/config.js";
+import { ignoreFailure, PressPodsError, tryPromise, trySync } from "./effect.js";
 
 /** Only content-addressed names we generated ourselves are ever served. */
 export const AUDIO_FILE_RE = /^[A-Za-z0-9_-]+\.mp3$/;
@@ -17,9 +19,10 @@ export function getAudioDir(): string {
   return path.join(path.dirname(dbPath), "press-pods-audio");
 }
 
-export function ensureAudioDir(): void {
-  fs.mkdirSync(getAudioDir(), { recursive: true });
-}
+export const ensureAudioDir = (): Effect.Effect<void, PressPodsError> =>
+  trySync("create PressPods audio directory", () => {
+    fs.mkdirSync(getAudioDir(), { recursive: true });
+  });
 
 export function episodeAudioPath(fileName: string): string {
   if (!AUDIO_FILE_RE.test(fileName)) {
@@ -28,10 +31,16 @@ export function episodeAudioPath(fileName: string): string {
   return path.join(getAudioDir(), fileName);
 }
 
-export async function saveEpisodeAudio(fileName: string, audio: Buffer): Promise<void> {
-  ensureAudioDir();
-  await fsAsync.writeFile(episodeAudioPath(fileName), audio);
-}
+export const saveEpisodeAudio = (
+  fileName: string,
+  audio: Buffer,
+): Effect.Effect<void, PressPodsError> =>
+  Effect.gen(function* () {
+    yield* ensureAudioDir();
+    yield* tryPromise("write episode audio", (signal) =>
+      fsAsync.writeFile(episodeAudioPath(fileName), audio, { signal }),
+    );
+  });
 
 /**
  * Best-effort delete of an episode's audio file. Never throws: the DB row is the
@@ -39,14 +48,14 @@ export async function saveEpisodeAudio(fileName: string, audio: Buffer): Promise
  * unreferenced, unguessably-named MP3. Callers delete the row first, so this
  * failing must not turn a successful delete/replace into an error.
  */
-export async function deleteEpisodeAudio(fileName: string): Promise<void> {
-  if (!AUDIO_FILE_RE.test(fileName)) return;
-  try {
-    await fsAsync.rm(episodeAudioPath(fileName), { force: true });
-  } catch {
-    // ignore — the row is already gone; a stray file is not worth failing on.
-  }
-}
+export const deleteEpisodeAudio = (fileName: string): Effect.Effect<void> =>
+  AUDIO_FILE_RE.test(fileName)
+    ? ignoreFailure(
+        tryPromise("delete episode audio", () =>
+          fsAsync.rm(episodeAudioPath(fileName), { force: true }),
+        ),
+      )
+    : Effect.void;
 
 // ---------------------------------------------------------------------------
 // Per-chunk synthesis checkpoints (restart resilience). Each verified chunk's
@@ -79,64 +88,78 @@ export function checkpointKey(signature: string, text: string): string {
 }
 
 /** Cached prepared WAV bytes for a chunk, or null on miss / any read error. */
-export async function readChunkCheckpoint(
+export function readChunkCheckpoint(
   workId: string,
   key: string,
-): Promise<Buffer | null> {
-  try {
-    return await fsAsync.readFile(path.join(checkpointDir(workId), key));
-  } catch {
-    return null;
-  }
+): Effect.Effect<Buffer | null> {
+  return tryPromise("read chunk checkpoint", (signal) =>
+    fsAsync.readFile(path.join(checkpointDir(workId), key), { signal }),
+  ).pipe(Effect.catchAll(() => Effect.succeed(null)));
 }
 
 /** Atomically cache a prepared chunk WAV (temp file + rename so a kill
  * mid-write can never leave a truncated file that reads as a valid take). */
-export async function writeChunkCheckpoint(
+export function writeChunkCheckpoint(
   workId: string,
   key: string,
   wav: Buffer,
-): Promise<void> {
-  try {
+): Effect.Effect<void> {
+  return Effect.gen(function* () {
     const dir = checkpointDir(workId);
-    await fsAsync.mkdir(dir, { recursive: true });
+    yield* tryPromise("create checkpoint directory", () =>
+      fsAsync.mkdir(dir, { recursive: true }),
+    );
     const tmp = path.join(dir, `.tmp-${randomBytes(8).toString("hex")}`);
-    await fsAsync.writeFile(tmp, wav);
-    await fsAsync.rename(tmp, path.join(dir, key));
-  } catch {
-    // Best-effort: a failed checkpoint just means no resume speedup.
-  }
+    yield* tryPromise("write chunk checkpoint", (signal) =>
+      fsAsync.writeFile(tmp, wav, { signal }),
+    ).pipe(
+      Effect.flatMap(() =>
+        tryPromise("commit chunk checkpoint", () =>
+          fsAsync.rename(tmp, path.join(dir, key)),
+        ),
+      ),
+      Effect.ensuring(
+        ignoreFailure(
+          tryPromise("remove checkpoint temporary file", () =>
+            fsAsync.rm(tmp, { force: true }),
+          ),
+        ),
+      ),
+    );
+  }).pipe(Effect.catchAll(() => Effect.void));
 }
 
 /** Drop a single (e.g. corrupt) checkpoint file so it isn't retried forever. */
-export async function deleteChunkCheckpoint(
+export function deleteChunkCheckpoint(
   workId: string,
   key: string,
-): Promise<void> {
-  try {
-    await fsAsync.rm(path.join(checkpointDir(workId), key), { force: true });
-  } catch {
-    // Best-effort.
-  }
+): Effect.Effect<void> {
+  return ignoreFailure(
+    tryPromise("delete chunk checkpoint", () =>
+      fsAsync.rm(path.join(checkpointDir(workId), key), { force: true }),
+    ),
+  );
 }
 
 /** Drop an article's whole checkpoint set (episode finished or abandoned). */
-export async function clearChunkCheckpoints(workId: string): Promise<void> {
-  try {
-    await fsAsync.rm(checkpointDir(workId), { recursive: true, force: true });
-  } catch {
-    // Best-effort cleanup.
-  }
-}
+export const clearChunkCheckpoints = (workId: string): Effect.Effect<void> =>
+  ignoreFailure(
+    tryPromise("clear chunk checkpoints", () =>
+      fsAsync.rm(checkpointDir(workId), { recursive: true, force: true }),
+    ),
+  );
 
 /** Materialize cached WAV bytes to a fresh temp file so the rest of the
  * pipeline treats it exactly like a freshly-prepared chunk (and cleanupWavs
  * removes it normally). */
-export async function materializeCheckpointWav(wav: Buffer): Promise<string> {
+export function materializeCheckpointWav(
+  wav: Buffer,
+): Effect.Effect<string, PressPodsError> {
   const tmp = path.join(
     os.tmpdir(),
     `presspods-ckpt-${randomBytes(12).toString("hex")}.wav`,
   );
-  await fsAsync.writeFile(tmp, wav);
-  return tmp;
+  return tryPromise("materialize chunk checkpoint", (signal) =>
+    fsAsync.writeFile(tmp, wav, { signal }),
+  ).pipe(Effect.as(tmp));
 }

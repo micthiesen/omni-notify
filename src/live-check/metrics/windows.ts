@@ -37,8 +37,12 @@ export function updateDailyBucket(
 /**
  * Prune buckets older than the specified number of days
  */
-export function pruneBuckets(buckets: DailyBucket[], maxDays: number): DailyBucket[] {
-  const cutoffDate = new Date();
+export function pruneBuckets(
+  buckets: DailyBucket[],
+  maxDays: number,
+  observedAt: Date = new Date(),
+): DailyBucket[] {
+  const cutoffDate = new Date(observedAt);
   cutoffDate.setDate(cutoffDate.getDate() - maxDays);
   const cutoffString = toDateStamp(cutoffDate.getTime());
 
@@ -52,12 +56,13 @@ export function pruneBuckets(buckets: DailyBucket[], maxDays: number): DailyBuck
 export function calculateWindowMax(
   metrics: ViewerMetricsData,
   window: WindowConfig,
+  observedAt: Date = new Date(),
 ): number {
   if (window.days === null) {
     return metrics.allTimeMax;
   }
 
-  const cutoffDate = new Date();
+  const cutoffDate = new Date(observedAt);
   cutoffDate.setDate(cutoffDate.getDate() - window.days);
   const cutoffString = toDateStamp(cutoffDate.getTime());
 

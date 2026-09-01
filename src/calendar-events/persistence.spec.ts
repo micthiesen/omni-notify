@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   type CreatedCalendarEventData,
+  computeCalendarEventUid,
   computeEventHash,
   findEvent,
   hasEventChanged,
@@ -60,6 +61,17 @@ describe("computeEventHash", () => {
   it("differs when the date or time differs", () => {
     expect(computeEventHash("🦷 Dentist", "2026-06-17", "09:00")).not.toBe(
       computeEventHash("🦷 Dentist", "2026-06-17", "10:00"),
+    );
+  });
+});
+
+describe("computeCalendarEventUid", () => {
+  it("gives the same CalDAV resource to every replay of one logical event", () => {
+    const hash = computeEventHash("Dentist", "2026-06-17", "09:00");
+    expect(computeCalendarEventUid(hash)).toBe(computeCalendarEventUid(hash));
+    expect(computeCalendarEventUid(hash)).toMatch(/^omni-[a-f0-9]{32}@omni-notify$/);
+    expect(computeCalendarEventUid(`${hash}|changed`)).not.toBe(
+      computeCalendarEventUid(hash),
     );
   });
 });

@@ -1,13 +1,17 @@
+import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { JINA_READER_CENTS_PER_TOKEN, retrieveArticleJina } from "./jina.js";
 
 const mocks = vi.hoisted(() => ({
   got: vi.fn(),
+  stream: vi.fn(),
   json: vi.fn(),
   recordCostEventSafely: vi.fn(),
 }));
 
-vi.mock("got", () => ({ default: mocks.got }));
+vi.mock("got", () => ({
+  default: Object.assign(mocks.got, { stream: mocks.stream }),
+}));
 vi.mock("../../utils/config.js", () => ({
   default: { JINA_API_KEY: "test-key" },
 }));
@@ -21,7 +25,12 @@ const HTML = `<html><head><title>Fallback title</title></head><body><article>${"
 describe("retrieveArticleJina", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.got.mockReturnValue({ json: mocks.json });
+    mocks.stream.mockImplementation(() => ({
+      response: { headers: {} },
+      async *[Symbol.asyncIterator]() {
+        yield JSON.stringify(await mocks.json());
+      },
+    }));
   });
 
   it("requests JSON usage and records an estimated token cost", async () => {
@@ -33,14 +42,16 @@ describe("retrieveArticleJina", () => {
       },
     });
 
-    const article = await retrieveArticleJina("https://example.com/story", "ignored");
+    const article = await Effect.runPromise(
+      retrieveArticleJina("https://example.com/story", "ignored"),
+    );
 
     expect(article).toMatchObject({
       title: "Jina title",
       domain: "example.com",
       url: "https://example.com/story",
     });
-    expect(mocks.got).toHaveBeenCalledWith(
+    expect(mocks.stream).toHaveBeenCalledWith(
       "https://r.jina.ai/https://example.com/story",
       expect.objectContaining({
         headers: expect.objectContaining({
@@ -63,7 +74,9 @@ describe("retrieveArticleJina", () => {
   it("keeps missing usage explicitly unpriced instead of inventing a cost", async () => {
     mocks.json.mockResolvedValue({ data: { content: HTML } });
 
-    await retrieveArticleJina("https://example.com/story", "ignored");
+    await Effect.runPromise(
+      retrieveArticleJina("https://example.com/story", "ignored"),
+    );
 
     expect(mocks.recordCostEventSafely).toHaveBeenCalledWith(
       expect.objectContaining({

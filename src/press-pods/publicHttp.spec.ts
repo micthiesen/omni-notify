@@ -1,9 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
+import { describe, expect, it, vi } from "vitest";
+import type { LimitedTextResponse } from "../effect/publicHttp.js";
 import {
   assertPublicHttpUrlSyntax,
   createPublicDnsLookup,
+  fetchPublicBuffer,
+  fetchPublicHtml,
+  fetchPublicJson,
   isPublicAddress,
 } from "./publicHttp.js";
+
+function textResponse(
+  chunks: Array<string | Uint8Array>,
+  contentLength?: number,
+): LimitedTextResponse {
+  return {
+    response: {
+      headers:
+        contentLength === undefined ? {} : { "content-length": String(contentLength) },
+    },
+    async *[Symbol.asyncIterator]() {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
 
 describe("PressPods public HTTP guard", () => {
   it.each([
@@ -49,20 +69,50 @@ describe("PressPods public HTTP guard", () => {
     );
   });
 
-  it("rejects a private address returned at connection time", async () => {
-    const resolver = ((_hostname, _options, callback) => {
-      callback(null, "127.0.0.1", 4);
+  it.each([
+    ["public first", ["1.1.1.1", "127.0.0.1"]],
+    ["private first", ["127.0.0.1", "1.1.1.1"]],
+  ])(
+    "rejects mixed DNS answers with %s for a single lookup",
+    async (_label, answers) => {
+      const resolver = ((_hostname, options, callback) => {
+        expect(options.all).toBe(true);
+        callback(
+          null,
+          answers.map((address) => ({ address, family: 4 })),
+        );
+      }) as Parameters<typeof createPublicDnsLookup>[0];
+      const guardedLookup = createPublicDnsLookup(resolver);
+
+      await expect(
+        new Promise<void>((resolve, reject) => {
+          guardedLookup("redirect.example", { family: 4 }, (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        }),
+      ).rejects.toThrow("resolve only to public addresses");
+    },
+  );
+
+  it("validates every answer before returning the requested single shape", async () => {
+    const resolver = ((_hostname, options, callback) => {
+      expect(options.all).toBe(true);
+      callback(null, [
+        { address: "1.1.1.1", family: 4 },
+        { address: "2606:4700:4700::1111", family: 6 },
+      ]);
     }) as Parameters<typeof createPublicDnsLookup>[0];
     const guardedLookup = createPublicDnsLookup(resolver);
 
     await expect(
-      new Promise<void>((resolve, reject) => {
-        guardedLookup("redirect.example", { family: 4 }, (error) => {
+      new Promise((resolve, reject) => {
+        guardedLookup("example.com", {}, (error, address, family) => {
           if (error) reject(error);
-          else resolve();
+          else resolve({ address, family });
         });
       }),
-    ).rejects.toThrow("resolve only to public addresses");
+    ).resolves.toEqual({ address: "1.1.1.1", family: 4 });
   });
 
   it("preserves the all-address lookup shape used by Node 24", async () => {
@@ -105,5 +155,43 @@ describe("PressPods public HTTP guard", () => {
         });
       }),
     ).rejects.toThrow("resolve only to public addresses");
+  });
+
+  it("rejects an oversized fixed-length HTML response", async () => {
+    const request = vi.fn(() => textResponse(["not buffered"], 6));
+    await expect(
+      Effect.runPromise(
+        fetchPublicHtml("https://example.com/article", "test-agent", request, 5),
+      ),
+    ).rejects.toThrow("Response exceeds the 5-byte limit");
+  });
+
+  it("rejects an oversized chunked HTML response while streaming", async () => {
+    const request = vi.fn(() => textResponse(["123", "456"]));
+    await expect(
+      Effect.runPromise(
+        fetchPublicHtml("https://example.com/article", "test-agent", request, 5),
+      ),
+    ).rejects.toThrow("Response exceeds the 5-byte limit");
+  });
+
+  it("bounds fixed-length JSON before parsing", async () => {
+    const request = vi.fn(() => textResponse(['{"ok":true}'], 11));
+    await expect(
+      Effect.runPromise(
+        fetchPublicJson("https://example.com/data", {}, "test JSON", 10, request),
+      ),
+    ).rejects.toThrow("Response exceeds the 10-byte limit");
+  });
+
+  it("bounds chunked binary downloads and never returns a partial buffer", async () => {
+    const request = vi.fn(() =>
+      textResponse([new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])]),
+    );
+    await expect(
+      Effect.runPromise(
+        fetchPublicBuffer("https://example.com/image", {}, "test image", 5, request),
+      ),
+    ).rejects.toThrow("Response exceeds the 5-byte limit");
   });
 });

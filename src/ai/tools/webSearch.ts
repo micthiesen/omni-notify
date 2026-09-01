@@ -1,12 +1,35 @@
 import { tool } from "ai";
-import got from "got";
+import { Data, Effect, Schema } from "effect";
 import { z } from "zod";
 import { currentCostFeature, recordCostEventSafely } from "../../costs/persistence.js";
+import { runPromise } from "../../effect/interop.js";
+import {
+  fetchPublicText,
+  PUBLIC_HTTP_USER_AGENT,
+  type PublicTextRequest,
+} from "../../effect/publicHttp.js";
 import config from "../../utils/config.js";
 
-interface TavilySearchResponse {
-  results: Array<{ title: string; url: string; content: string }>;
-  response_time: number;
+const TAVILY_SEARCH_URL = "https://api.tavily.com/search";
+const TAVILY_RESPONSE_MAX_BYTES = 1024 * 1024;
+
+const TavilySearchResponse = Schema.Struct({
+  results: Schema.Array(
+    Schema.Struct({
+      title: Schema.String,
+      url: Schema.String,
+      content: Schema.String,
+    }),
+  ),
+  response_time: Schema.Number,
+});
+
+export class WebSearchError extends Data.TaggedError("WebSearchError")<{
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    return `Web search failed: ${this.cause instanceof Error ? this.cause.message : String(this.cause)}`;
+  }
 }
 
 export interface WebSearchResult {
@@ -15,52 +38,76 @@ export interface WebSearchResult {
   content: string;
 }
 
-export async function searchWeb(options: {
-  query: string;
-  topic?: "general" | "news";
-  timeRange?: "day" | "week" | "month" | "year";
-  maxResults?: number;
-  maxContentChars?: number;
-}): Promise<{ results: WebSearchResult[]; responseTime: number }> {
-  const { results, response_time } = await got
-    .post("https://api.tavily.com/search", {
-      json: {
-        query: options.query,
-        topic: options.topic,
-        time_range: options.timeRange,
-        max_results: options.maxResults ?? 5,
+export function searchWebEffect(
+  options: {
+    query: string;
+    topic?: "general" | "news";
+    timeRange?: "day" | "week" | "month" | "year";
+    maxResults?: number;
+    maxContentChars?: number;
+  },
+  dependencies: {
+    readonly request?: PublicTextRequest;
+    readonly maxResponseBytes?: number;
+  } = {},
+): Effect.Effect<{ results: WebSearchResult[]; responseTime: number }, WebSearchError> {
+  return Effect.gen(function* () {
+    const responseText = yield* fetchPublicText(
+      TAVILY_SEARCH_URL,
+      {
+        method: "POST",
+        json: {
+          query: options.query,
+          topic: options.topic,
+          time_range: options.timeRange,
+          max_results: options.maxResults ?? 5,
+        },
+        headers: {
+          Authorization: `Bearer ${config.TAVILY_API_KEY}`,
+          "User-Agent": PUBLIC_HTTP_USER_AGENT,
+        },
+        timeout: { request: 15_000 },
       },
-      headers: {
-        Authorization: `Bearer ${config.TAVILY_API_KEY}`,
-        "User-Agent": "OpenAI File Downloader, XaiImageApiFetch/1.0",
-      },
-    })
-    .json<TavilySearchResponse>();
+      "Tavily search request failed",
+      dependencies.request,
+      dependencies.maxResponseBytes ?? TAVILY_RESPONSE_MAX_BYTES,
+    ).pipe(Effect.mapError((cause) => new WebSearchError({ cause })));
+    const { results, response_time } = yield* Schema.decodeUnknown(
+      Schema.parseJson(TavilySearchResponse),
+    )(responseText).pipe(Effect.mapError((cause) => new WebSearchError({ cause })));
 
-  // Default/basic search consumes one credit. Use Tavily's public pay-as-you-go
-  // rate as an estimate; subscription/free-plan billing can make actual spend lower.
-  recordCostEventSafely({
-    category: "search",
-    feature: currentCostFeature("web-search"),
-    operation: "search",
-    service: "tavily",
-    model: "basic",
-    costCents: 0.8,
-    priceStatus: "estimated",
-    usage: { requests: 1, credits: 1 },
+    // Default/basic search consumes one credit. Use Tavily's public pay-as-you-go
+    // rate as an estimate; subscription/free-plan billing can make actual spend lower.
+    recordCostEventSafely({
+      category: "search",
+      feature: currentCostFeature("web-search"),
+      operation: "search",
+      service: "tavily",
+      model: "basic",
+      costCents: 0.8,
+      priceStatus: "estimated",
+      usage: { requests: 1, credits: 1 },
+    });
+
+    return {
+      results: results.map(({ title, url, content }) => ({
+        title,
+        url,
+        content:
+          options.maxContentChars === undefined
+            ? content
+            : content.slice(0, options.maxContentChars),
+      })),
+      responseTime: response_time,
+    };
   });
+}
 
-  return {
-    results: results.map(({ title, url, content }) => ({
-      title,
-      url,
-      content:
-        options.maxContentChars === undefined
-          ? content
-          : content.slice(0, options.maxContentChars),
-    })),
-    responseTime: response_time,
-  };
+/** Compatibility adapter for consumers not yet inside an Effect workflow. */
+export function searchWeb(
+  options: Parameters<typeof searchWebEffect>[0],
+): Promise<Effect.Effect.Success<ReturnType<typeof searchWebEffect>>> {
+  return runPromise(searchWebEffect(options));
 }
 
 export const webSearch = tool({
@@ -77,7 +124,6 @@ export const webSearch = tool({
       .optional()
       .describe("Filter results by recency"),
   }),
-  execute: async ({ query, topic, time_range }) => {
-    return searchWeb({ query, topic, timeRange: time_range });
-  },
+  execute: ({ query, topic, time_range }) =>
+    runPromise(searchWebEffect({ query, topic, timeRange: time_range })),
 });

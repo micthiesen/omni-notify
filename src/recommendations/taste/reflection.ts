@@ -1,4 +1,5 @@
 import { generateText, Output } from "ai";
+import { Effect } from "effect";
 import { z } from "zod";
 import { toDateStamp } from "../../utils/dates.js";
 import { RecommendationStatus } from "../persistence.js";
@@ -23,6 +24,13 @@ import type {
   TasteReflectionInput,
   TasteReflectionResult,
 } from "./types.js";
+import {
+  integrationEffect,
+  persistenceEffect,
+  RecommendationIntegrationError,
+  RecommendationPersistenceError,
+  TasteReflectionOutputError,
+} from "../effect.js";
 
 export const TASTE_PROMPT_VERSION = "taste-reflection-v1";
 const DEFAULT_MAX_EVIDENCE = 160;
@@ -60,70 +68,103 @@ type RawProfile = z.infer<typeof profileSchema>;
  * draft and a skeptical revision. Model output is constrained and claims that
  * cite missing or inadequate evidence are removed before persistence.
  */
-export async function runTasteReflection(
+export function runTasteReflection(
   input: TasteReflectionInput,
-): Promise<TasteReflectionResult> {
-  const incoming = [
-    ...deriveWatchEvidence(input.watched),
-    ...deriveRecommendationEvidence(input.recommendations),
-  ];
-  const insertedEvidence = insertTasteEvidence(incoming);
-  const allEvidence = getAllTasteEvidence();
-  if (allEvidence.length === 0) {
-    return { status: "insufficient_evidence", insertedEvidence };
-  }
+): Effect.Effect<
+  TasteReflectionResult,
+  | RecommendationIntegrationError
+  | RecommendationPersistenceError
+  | TasteReflectionOutputError
+> {
+  return Effect.gen(function* () {
+    const incoming = [
+      ...deriveWatchEvidence(input.watched),
+      ...deriveRecommendationEvidence(input.recommendations),
+    ];
+    const insertedEvidence = yield* persistenceEffect("insert taste evidence", () =>
+      insertTasteEvidence(incoming),
+    );
+    const allEvidence = yield* persistenceEffect("read taste evidence", () =>
+      getAllTasteEvidence(),
+    );
+    if (allEvidence.length === 0) {
+      return { status: "insufficient_evidence", insertedEvidence };
+    }
 
-  const evidenceFingerprint = fingerprintEvidence(allEvidence);
-  const latest = getLatestTasteProfile();
-  if (latest?.evidenceFingerprint === evidenceFingerprint) {
-    return { status: "unchanged", profile: latest, insertedEvidence };
-  }
+    const evidenceFingerprint = fingerprintEvidence(allEvidence);
+    const latest = yield* persistenceEffect("read latest taste profile", () =>
+      getLatestTasteProfile(),
+    );
+    if (latest?.evidenceFingerprint === evidenceFingerprint) {
+      return { status: "unchanged", profile: latest, insertedEvidence };
+    }
 
-  const boundedEvidence = selectReflectionEvidence(
-    allEvidence,
-    input.maxEvidence ?? DEFAULT_MAX_EVIDENCE,
-  );
-  const stats = computeBehavioralStats(allEvidence);
-  const evidenceJson = JSON.stringify(boundedEvidence.map(compactEvidence), null, 2);
-  const draftResult = await generateText({
-    model: input.model,
-    output: Output.object({ schema: profileSchema }),
-    prompt: buildDraftPrompt(evidenceJson, stats),
-  });
-  if (!draftResult.output) throw new Error("Taste reflection returned no draft");
+    const boundedEvidence = selectReflectionEvidence(
+      allEvidence,
+      input.maxEvidence ?? DEFAULT_MAX_EVIDENCE,
+    );
+    const stats = computeBehavioralStats(allEvidence);
+    const evidenceJson = JSON.stringify(boundedEvidence.map(compactEvidence), null, 2);
+    const draftResult = yield* integrationEffect(
+      "generate taste reflection draft",
+      () =>
+        generateText({
+          model: input.model,
+          output: Output.object({ schema: profileSchema }),
+          prompt: buildDraftPrompt(evidenceJson, stats),
+        }),
+    );
+    if (!draftResult.output) {
+      return yield* Effect.fail(
+        new TasteReflectionOutputError({
+          message: "Taste reflection returned no draft",
+        }),
+      );
+    }
 
-  const finalResult = await generateText({
-    model: input.model,
-    output: Output.object({ schema: profileSchema }),
-    prompt: buildCriticPrompt(
-      evidenceJson,
+    const finalResult = yield* integrationEffect(
+      "generate taste reflection revision",
+      () =>
+        generateText({
+          model: input.model,
+          output: Output.object({ schema: profileSchema }),
+          prompt: buildCriticPrompt(
+            evidenceJson,
+            stats,
+            JSON.stringify(draftResult.output, null, 2),
+          ),
+        }),
+    );
+    if (!finalResult.output) {
+      return yield* Effect.fail(
+        new TasteReflectionOutputError({
+          message: "Taste reflection returned no revision",
+        }),
+      );
+    }
+
+    const validated = validateProfile(finalResult.output, allEvidence);
+    const generatedAt = input.now ?? Date.now();
+    const version = (latest?.version ?? 0) + 1;
+    const profile: TasteProfileData = {
+      ...validated.profile,
+      profileId: `v${version}:${evidenceFingerprint}`,
+      version,
+      generatedAt,
+      evidenceFingerprint,
+      evidenceCount: allEvidence.length,
+      modelId: input.modelId,
+      promptVersion: TASTE_PROMPT_VERSION,
       stats,
-      JSON.stringify(draftResult.output, null, 2),
-    ),
+    };
+    yield* persistenceEffect("insert taste profile", () => insertTasteProfile(profile));
+    return {
+      status: "created",
+      profile,
+      insertedEvidence,
+      rejectedClaims: validated.rejectedClaims,
+    };
   });
-  if (!finalResult.output) throw new Error("Taste reflection returned no revision");
-
-  const validated = validateProfile(finalResult.output, allEvidence);
-  const generatedAt = input.now ?? Date.now();
-  const version = (latest?.version ?? 0) + 1;
-  const profile: TasteProfileData = {
-    ...validated.profile,
-    profileId: `v${version}:${evidenceFingerprint}`,
-    version,
-    generatedAt,
-    evidenceFingerprint,
-    evidenceCount: allEvidence.length,
-    modelId: input.modelId,
-    promptVersion: TASTE_PROMPT_VERSION,
-    stats,
-  };
-  insertTasteProfile(profile);
-  return {
-    status: "created",
-    profile,
-    insertedEvidence,
-    rejectedClaims: validated.rejectedClaims,
-  };
 }
 
 /** Prefer direct feedback, then recommendation outcomes, then recent watches. */

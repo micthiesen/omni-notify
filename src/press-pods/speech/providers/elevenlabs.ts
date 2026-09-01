@@ -1,7 +1,9 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import type { Logger } from "@micthiesen/mitools/logging";
 import got, { HTTPError } from "got";
+import { Duration, Effect, Schedule } from "effect";
+import { readBufferResponseWithLimit } from "../../../effect/publicHttp.js";
 import config from "../../../utils/config.js";
+import { PressPodsError, tryPromise } from "../../effect.js";
 import { getVoice, type Voice } from "../voices.js";
 import type { AuthorGender, TtsProvider } from "./types.js";
 
@@ -10,6 +12,7 @@ const MODEL = "eleven_v3";
 const ENDPOINT = "https://api.elevenlabs.io/v1/text-to-speech";
 const OUTPUT_FORMAT = "mp3_44100_128";
 const SEED = 4242;
+const MAX_TTS_CHUNK_BYTES = 25 * 1024 * 1024;
 
 export class ElevenLabsProvider implements TtsProvider {
   public readonly providerName = "ElevenLabs";
@@ -25,36 +28,49 @@ export class ElevenLabsProvider implements TtsProvider {
     this.voiceName = this.voice.name;
   }
 
-  public async synthesizeChunk(text: string, logger: Logger): Promise<Buffer> {
+  public synthesizeChunk(
+    text: string,
+    logger: Logger,
+  ): Effect.Effect<Buffer, PressPodsError> {
     const apiKey = config.ELEVENLABS_API_KEY;
-    if (!apiKey) throw new Error("ELEVENLABS_API_KEY is not set");
-
-    const maxAttempts = 3;
-    for (let attempt = 1; ; attempt++) {
-      try {
-        const bytes = await got
-          .post(`${ENDPOINT}/${this.voice.id}?output_format=${OUTPUT_FORMAT}`, {
-            headers: { "xi-api-key": apiKey },
-            json: {
-              text,
-              model_id: MODEL,
-              seed: SEED,
-              voice_settings: { stability: 0.5, use_speaker_boost: true },
-            },
-            timeout: { request: 5 * 60 * 1000 },
-          })
-          .buffer();
-        return Buffer.from(bytes);
-      } catch (error) {
-        const status = error instanceof HTTPError ? error.response.statusCode : 0;
-        const transient = status === 429 || status >= 500;
-        if (!transient || attempt >= maxAttempts) throw error;
-        const backoffMs = 2000 * 2 ** (attempt - 1);
-        logger.warn(
-          `ElevenLabs chunk failed (${status}); retry ${attempt}/${maxAttempts - 1} in ${backoffMs}ms`,
-        );
-        await sleep(backoffMs);
-      }
+    if (!apiKey) {
+      return Effect.fail(
+        new PressPodsError({
+          operation: "synthesize ElevenLabs chunk",
+          cause: new Error("ELEVENLABS_API_KEY is not set"),
+        }),
+      );
     }
+    const request = tryPromise("synthesize ElevenLabs chunk", (signal) =>
+      readBufferResponseWithLimit(
+        got.stream(`${ENDPOINT}/${this.voice.id}?output_format=${OUTPUT_FORMAT}`, {
+          method: "POST",
+          headers: { "xi-api-key": apiKey },
+          json: {
+            text,
+            model_id: MODEL,
+            seed: SEED,
+            voice_settings: { stability: 0.5, use_speaker_boost: true },
+          },
+          timeout: { request: 5 * 60 * 1000 },
+          signal,
+        }),
+        MAX_TTS_CHUNK_BYTES,
+      ),
+    );
+    return request.pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => logger.warn("ElevenLabs chunk request failed", { error })),
+      ),
+      Effect.retry({
+        times: 2,
+        schedule: Schedule.exponential(Duration.seconds(2)),
+        while: (error) => {
+          const cause = error.cause;
+          const status = cause instanceof HTTPError ? cause.response.statusCode : 0;
+          return status === 429 || status >= 500;
+        },
+      }),
+    );
   }
 }

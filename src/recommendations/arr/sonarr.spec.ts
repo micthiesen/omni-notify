@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Effect, Exit, Fiber } from "effect";
 import type { ArrConfig } from "./client.js";
 import { addSonarrSeries, fetchSonarrSeries } from "./sonarr.js";
 
@@ -31,7 +32,9 @@ describe("Sonarr adapter", () => {
       ]),
     );
 
-    await expect(fetchSonarrSeries(config, fetchMock)).resolves.toEqual({
+    await expect(
+      Effect.runPromise(fetchSonarrSeries(config, fetchMock)),
+    ).resolves.toEqual({
       status: "ok",
       value: [
         {
@@ -45,6 +48,38 @@ describe("Sonarr adapter", () => {
     });
   });
 
+  it("treats malformed tracked-series payloads as unavailable", async () => {
+    const nullPayload = vi.fn<typeof fetch>().mockResolvedValue(json(null));
+    await expect(
+      Effect.runPromise(fetchSonarrSeries(config, nullPayload)),
+    ).resolves.toEqual({ status: "unavailable" });
+
+    const malformedEntry = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(json([{ id: 12, title: "Severance", tvdbId: 371980 }, null]));
+    await expect(
+      Effect.runPromise(fetchSonarrSeries(config, malformedEntry)),
+    ).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("cancels an in-progress response read when interrupted", async () => {
+    const pull = vi.fn();
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ pull, cancel: cancelled });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(body, { headers: { "Content-Type": "application/json" } }),
+      );
+    const fiber = Effect.runFork(fetchSonarrSeries(config, fetchMock));
+    await vi.waitFor(() => expect(pull).toHaveBeenCalled());
+
+    const exit = await Effect.runPromise(Fiber.interrupt(fiber));
+
+    expect(Exit.isInterrupted(exit)).toBe(true);
+    expect(cancelled).toHaveBeenCalledTimes(1);
+  });
+
   it("looks up by TMDB, adds with search enabled, and verifies by TVDB", async () => {
     const lookup = { title: "Severance", year: 2022, tvdbId: 371980 };
     const fetchMock = vi
@@ -54,7 +89,9 @@ describe("Sonarr adapter", () => {
       .mockResolvedValueOnce(json({ id: 12, ...lookup }, 201))
       .mockResolvedValueOnce(json([{ id: 12, titleSlug: "severance", ...lookup }]));
 
-    await expect(addSonarrSeries(config, 95396, fetchMock)).resolves.toEqual({
+    await expect(
+      Effect.runPromise(addSonarrSeries(config, 95396, fetchMock)),
+    ).resolves.toEqual({
       result: "added",
       titleSlug: "severance",
     });
@@ -86,7 +123,9 @@ describe("Sonarr adapter", () => {
         },
       ]),
     );
-    await expect(addSonarrSeries(config, 95396, existing)).resolves.toEqual({
+    await expect(
+      Effect.runPromise(addSonarrSeries(config, 95396, existing)),
+    ).resolves.toEqual({
       result: "already_exists",
       titleSlug: "severance",
     });
@@ -99,7 +138,9 @@ describe("Sonarr adapter", () => {
       .mockResolvedValueOnce(json([{ id: 12, title: "Severance", tvdbId: 371980 }]))
       .mockResolvedValueOnce(json([{ title: "Severance", tvdbId: 371980 }]));
 
-    await expect(addSonarrSeries(config, 95396, existing)).resolves.toEqual({
+    await expect(
+      Effect.runPromise(addSonarrSeries(config, 95396, existing)),
+    ).resolves.toEqual({
       result: "already_exists",
       titleSlug: undefined,
     });
@@ -111,7 +152,9 @@ describe("Sonarr adapter", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(json([]))
       .mockResolvedValueOnce(json([]));
-    await expect(addSonarrSeries(config, 1, missing)).resolves.toEqual({
+    await expect(
+      Effect.runPromise(addSonarrSeries(config, 1, missing)),
+    ).resolves.toEqual({
       result: "not_found",
     });
   });
@@ -125,8 +168,20 @@ describe("Sonarr adapter", () => {
       .mockResolvedValueOnce(json({ id: 12, ...lookup }, 201))
       .mockResolvedValueOnce(json([]));
 
-    await expect(addSonarrSeries(config, 95396, fetchMock)).resolves.toEqual({
+    await expect(
+      Effect.runPromise(addSonarrSeries(config, 95396, fetchMock)),
+    ).resolves.toEqual({
       result: "error",
     });
+  });
+
+  it("does not inspect properties on a malformed lookup response", async () => {
+    const malformed = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json([]))
+      .mockResolvedValueOnce(json([null]));
+    await expect(
+      Effect.runPromise(addSonarrSeries(config, 95396, malformed)),
+    ).resolves.toEqual({ result: "unavailable" });
   });
 });

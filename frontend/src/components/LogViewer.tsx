@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchRunLogs, runLogStreamUrl } from "../api";
-import type { RunLogLevel, RunLogLine, RunLogs, TaskRun } from "../api";
+import { Effect, Schema } from "effect";
+import {
+  fetchRunLogs,
+  RunLogLineSchema,
+  RunLogsSchema,
+  runLogStreamUrl,
+  TaskRunSchema,
+} from "../api";
+import type { RunLogLevel, RunLogLine, TaskRun } from "../api";
+import { forkUiEffect, makeUiCallbackRuntime, runUiEffect } from "../effect";
 import { useNow } from "../hooks/useNow";
 import { downloadFile } from "../utils/download";
 import { formatAbsolute, toTitleCase } from "../utils/format";
@@ -76,43 +84,101 @@ export function LogViewer({
 
   useEffect(() => {
     if (!startedRunning) {
-      let cancelled = false;
-      fetchRunLogs(runId)
-        .then((data) => {
-          if (cancelled) return;
-          setRun(data.run);
-          setLines(data.lines);
-          setDropped(data.dropped);
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          setError(err instanceof Error ? err.message : "Failed to fetch logs");
-        });
-      return () => {
-        cancelled = true;
-      };
+      return forkUiEffect(
+        fetchRunLogs(runId).pipe(
+          Effect.tap((data) =>
+            Effect.sync(() => {
+              setRun(data.run);
+              setLines(data.lines);
+              setDropped(data.dropped);
+            }),
+          ),
+          Effect.catchAll((err) =>
+            Effect.sync(() =>
+              setError(err instanceof Error ? err.message : "Failed to fetch logs"),
+            ),
+          ),
+        ),
+      );
     }
 
-    const source = new EventSource(runLogStreamUrl(runId));
-    source.addEventListener("init", (event) => {
-      const data = JSON.parse((event as MessageEvent<string>).data) as RunLogs;
-      setRun(data.run);
-      setLines(data.lines);
-      setDropped(data.dropped);
-      setError(null);
-    });
-    source.addEventListener("line", (event) => {
-      const line = JSON.parse((event as MessageEvent<string>).data) as RunLogLine;
-      setLines((prev) => (prev ? [...prev, line] : [line]));
-    });
-    source.addEventListener("done", (event) => {
-      setRun(JSON.parse((event as MessageEvent<string>).data) as TaskRun);
-      setLive(false);
-      source.close();
-    });
-    // No onerror handler: EventSource retries transient failures itself, and
-    // each reconnect's "init" frame rebuilds the full state.
-    return () => source.close();
+    const lifecycle = Effect.scoped(
+      Effect.gen(function* () {
+        const runCallback = yield* makeUiCallbackRuntime();
+        yield* Effect.acquireUseRelease(
+          Effect.sync(() => new EventSource(runLogStreamUrl(runId))),
+          (source) =>
+            Effect.async<void>((resume) => {
+              const decodeEvent = <A, I>(
+                schema: Schema.Schema<A, I, never>,
+                event: Event,
+              ) =>
+                Effect.try({
+                  try: () =>
+                    JSON.parse((event as MessageEvent<string>).data) as unknown,
+                  catch: (cause) => cause,
+                }).pipe(Effect.flatMap(Schema.decodeUnknown(schema)));
+              const reportDecodeFailure = (cause: unknown) =>
+                Effect.sync(() =>
+                  setError(
+                    cause instanceof Error ? cause.message : "Invalid log event",
+                  ),
+                );
+              const onInit = (event: Event) => {
+                runCallback(
+                  decodeEvent(RunLogsSchema, event).pipe(
+                    Effect.tap((data) =>
+                      Effect.sync(() => {
+                        setRun(data.run);
+                        setLines([...data.lines]);
+                        setDropped(data.dropped);
+                        setError(null);
+                      }),
+                    ),
+                    Effect.catchAll(reportDecodeFailure),
+                  ),
+                );
+              };
+              const onLine = (event: Event) => {
+                runCallback(
+                  decodeEvent(RunLogLineSchema, event).pipe(
+                    Effect.tap((line) =>
+                      Effect.sync(() =>
+                        setLines((prev) => (prev ? [...prev, line] : [line])),
+                      ),
+                    ),
+                    Effect.catchAll(reportDecodeFailure),
+                  ),
+                );
+              };
+              const onDone = (event: Event) => {
+                runCallback(
+                  decodeEvent(TaskRunSchema, event).pipe(
+                    Effect.tap((nextRun) =>
+                      Effect.sync(() => {
+                        setRun(nextRun);
+                        setLive(false);
+                        resume(Effect.void);
+                      }),
+                    ),
+                    Effect.catchAll(reportDecodeFailure),
+                  ),
+                );
+              };
+              source.addEventListener("init", onInit);
+              source.addEventListener("line", onLine);
+              source.addEventListener("done", onDone);
+              return Effect.sync(() => {
+                source.removeEventListener("init", onInit);
+                source.removeEventListener("line", onLine);
+                source.removeEventListener("done", onDone);
+              });
+            }),
+          (source) => Effect.sync(() => source.close()),
+        );
+      }),
+    );
+    return forkUiEffect(lifecycle);
   }, [runId, startedRunning]);
 
   useEffect(() => {
@@ -165,7 +231,9 @@ export function LogViewer({
       )
       .join("\n");
     // runId is "TaskName:startedAt:seq"; colons are unfriendly in filenames.
-    downloadFile(`${runId.replace(/:/g, "-")}.log`, `${content}\n`, "text/plain");
+    void runUiEffect(
+      downloadFile(`${runId.replace(/:/g, "-")}.log`, `${content}\n`, "text/plain"),
+    );
   };
 
   return (

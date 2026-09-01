@@ -1,6 +1,8 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect, Exit, TestClock } from "effect";
+import { beforeEach, vi } from "vitest";
 import type { ViewerRecordScope } from "../notificationPolicy.js";
 import type { ViewerMetricsData } from "./types.js";
 import { ViewerMetricsService } from "./ViewerMetricsService.js";
@@ -10,6 +12,7 @@ vi.mock("@micthiesen/mitools/pushover", () => ({
 }));
 
 const store = vi.hoisted(() => new Map<string, ViewerMetricsData>());
+const persistenceState = vi.hoisted(() => ({ failRead: false, failWrite: false }));
 vi.mock("./persistence.js", () => ({
   getViewerMetrics: (streamerId: string): ViewerMetricsData =>
     store.get(streamerId) ?? {
@@ -21,6 +24,21 @@ vi.mock("./persistence.js", () => ({
   upsertViewerMetrics: (metrics: ViewerMetricsData): void => {
     store.set(metrics.streamerId, metrics);
   },
+  getViewerMetricsEffect: (streamerId: string) =>
+    persistenceState.failRead
+      ? Effect.fail(new Error("viewer metrics read failed"))
+      : Effect.succeed(
+          store.get(streamerId) ?? {
+            streamerId,
+            dailyBuckets: [],
+            allTimeMax: 0,
+            allTimeMaxTimestamp: 0,
+          },
+        ),
+  upsertViewerMetricsEffect: (metrics: ViewerMetricsData) =>
+    persistenceState.failWrite
+      ? Effect.fail(new Error("viewer metrics write failed"))
+      : Effect.sync(() => store.set(metrics.streamerId, metrics)),
 }));
 
 const noopLogger = {
@@ -47,6 +65,8 @@ function makeService(
 describe("ViewerMetricsService notifications", () => {
   beforeEach(() => {
     store.clear();
+    persistenceState.failRead = false;
+    persistenceState.failWrite = false;
     vi.mocked(notify).mockClear();
   });
 
@@ -99,6 +119,40 @@ describe("ViewerMetricsService notifications", () => {
 
     expect(notify).not.toHaveBeenCalled();
   });
+
+  it.effect("uses the Effect clock for bucket and confirmed-peak timestamps", () =>
+    Effect.gen(function* () {
+      yield* TestClock.adjust("42 seconds");
+      const service = makeService();
+      const base = { streamerId: "clocked", displayName: "Clocked", urlFields };
+
+      yield* service.recordViewerCountEffect({ ...base, viewerCount: 100 });
+      yield* service.recordViewerCountEffect({ ...base, viewerCount: 90 });
+
+      expect(store.get("clocked")?.allTimeMaxTimestamp).toBe(42_000);
+      expect(store.get("clocked")?.dailyBuckets[0]?.timestamp).toBe(42_000);
+    }),
+  );
+
+  it.effect("returns persistence writes as typed failures", () =>
+    Effect.gen(function* () {
+      persistenceState.failWrite = true;
+      const service = makeService();
+      const exit = yield* Effect.exit(
+        service.recordViewerCountEffect({
+          streamerId: "broken",
+          displayName: "Broken",
+          viewerCount: 100,
+          urlFields,
+        }),
+      );
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        expect(String(exit.cause)).toContain("viewer metrics write failed");
+      }
+    }),
+  );
 
   // Background-tier streamers resolve scope "all-time-only": every window is
   // still tracked/persisted (see recordViewerCount/flushPendingPeaks), but

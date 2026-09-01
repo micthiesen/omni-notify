@@ -28,14 +28,26 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { Logger } from "@micthiesen/mitools/logging";
 import { Mistral } from "@mistralai/mistralai";
 import { generateText } from "ai";
+import {
+  Clock,
+  Data,
+  Duration,
+  Effect,
+  Either,
+  Random,
+  Ref,
+  Schedule,
+  Schema,
+} from "effect";
 import got from "got";
+import { runPromise } from "../effect/interop.js";
 import { getPressPodsCleaningModel } from "../ai/registry.js";
 import { getCleanedArticle } from "../press-pods/agents/cleaner.js";
 import CostCounter from "../press-pods/costs.js";
+import type { PressPodsError } from "../press-pods/effect.js";
 import { buildFinalText } from "../press-pods/formatting/index.js";
 import { getArticleFromUrl } from "../press-pods/retrievers/index.js";
 import config from "../utils/config.js";
@@ -48,7 +60,6 @@ const VOXTRAL_VOICE = {
   name: "Paul - Neutral",
 };
 
-const execFileAsync = promisify(execFile);
 const logger = new Logger("Bakeoff");
 
 // ---------------------------------------------------------------------------
@@ -73,18 +84,92 @@ interface SynthResult {
   notes: string[];
 }
 
+class BakeoffError extends Data.TaggedError("BakeoffError")<{
+  operation: string;
+  cause: unknown;
+}> {}
+
+class ProviderError extends Data.TaggedError("ProviderError")<{
+  provider: ProviderName;
+  operation: string;
+  cause: unknown;
+}> {}
+
+class AudioProcessError extends Data.TaggedError("AudioProcessError")<{
+  operation: string;
+  cause: unknown;
+}> {}
+
+class MinimaxPending extends Data.TaggedError("MinimaxPending")<{}> {}
+
+type ToolError = BakeoffError | ProviderError | AudioProcessError;
+
+const fromPromise = <A>(
+  operation: string,
+  evaluate: (signal: AbortSignal) => PromiseLike<A>,
+) =>
+  Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) => new BakeoffError({ operation, cause }),
+  });
+
+const providerPromise = <A>(
+  provider: ProviderName,
+  operation: string,
+  evaluate: (signal: AbortSignal) => PromiseLike<A>,
+) =>
+  Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) => new ProviderError({ provider, operation, cause }),
+  });
+
+const decodeExternal = <A, I>(
+  operation: string,
+  schema: Schema.Schema<A, I>,
+  value: unknown,
+): Effect.Effect<A, BakeoffError> =>
+  Schema.decodeUnknown(schema)(value).pipe(
+    Effect.mapError((cause) => new BakeoffError({ operation, cause })),
+  );
+
 // ---------------------------------------------------------------------------
 // ffmpeg helpers
 // ---------------------------------------------------------------------------
-async function ffmpeg(args: string[]): Promise<string> {
-  const { stderr } = await execFileAsync("ffmpeg", ["-hide_banner", "-y", ...args], {
-    maxBuffer: 64 * 1024 * 1024,
+function executeFile(
+  executable: string,
+  args: string[],
+): Effect.Effect<{ stdout: string; stderr: string }, AudioProcessError> {
+  return Effect.async((resume) => {
+    const child = execFile(
+      executable,
+      args,
+      { maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) {
+          resume(
+            Effect.fail(
+              new AudioProcessError({
+                operation: `${executable} ${args.join(" ")}`,
+                cause: error,
+              }),
+            ),
+          );
+          return;
+        }
+        resume(Effect.succeed({ stdout, stderr }));
+      },
+    );
+    return Effect.sync(() => child.kill("SIGTERM"));
   });
-  return stderr;
 }
 
-async function probeDuration(file: string): Promise<number> {
-  const { stdout } = await execFileAsync("ffprobe", [
+const ffmpeg = (args: string[]): Effect.Effect<string, AudioProcessError> =>
+  executeFile("ffmpeg", ["-hide_banner", "-y", ...args]).pipe(
+    Effect.map(({ stderr }) => stderr),
+  );
+
+const probeDuration = (file: string): Effect.Effect<number, AudioProcessError> =>
+  executeFile("ffprobe", [
     "-v",
     "error",
     "-show_entries",
@@ -92,53 +177,86 @@ async function probeDuration(file: string): Promise<number> {
     "-of",
     "csv=p=0",
     file,
-  ]);
-  return Number.parseFloat(stdout.trim());
-}
+  ]).pipe(
+    Effect.flatMap(({ stdout }) => {
+      const duration = Number.parseFloat(stdout.trim());
+      return Number.isFinite(duration)
+        ? Effect.succeed(duration)
+        : Effect.fail(
+            new AudioProcessError({
+              operation: `parse duration for ${file}`,
+              cause: new Error(`Invalid ffprobe duration: ${stdout.trim()}`),
+            }),
+          );
+    }),
+  );
 
 /**
  * Two-pass linear loudnorm. Emits an MP3 (final master, -16 LUFS by default) or
  * a 44.1k mono WAV when `wav` is set (per-chunk leveling before concat).
  */
-async function loudnessMatch(
+function loudnessMatch(
   inFile: string,
   outFile: string,
   { target = -16, wav = false }: { target?: number; wav?: boolean } = {},
-): Promise<void> {
-  const spec = `I=${target}:TP=-1.5:LRA=11`;
-  const stderr = await ffmpeg([
-    "-i",
-    inFile,
-    "-af",
-    `loudnorm=${spec}:print_format=json`,
-    "-f",
-    "null",
-    "-",
-  ]);
-  const jsonMatch = stderr.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
-  if (!jsonMatch) throw new Error(`loudnorm pass 1 produced no JSON for ${inFile}`);
-  const m = JSON.parse(jsonMatch[0]);
-  const filter =
-    `loudnorm=${spec}:linear=true` +
-    `:measured_I=${m.input_i}:measured_TP=${m.input_tp}` +
-    `:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}` +
-    `:offset=${m.target_offset},aresample=44100`;
-  const encode = wav ? ["-c:a", "pcm_s16le"] : ["-c:a", "libmp3lame", "-b:a", "128k"];
-  await ffmpeg([
-    "-i",
-    inFile,
-    "-af",
-    filter,
-    "-ar",
-    "44100",
-    "-ac",
-    "1",
-    ...encode,
-    outFile,
-  ]);
+): Effect.Effect<void, AudioProcessError | BakeoffError> {
+  const LoudnormSchema = Schema.Struct({
+    input_i: Schema.String,
+    input_tp: Schema.String,
+    input_lra: Schema.String,
+    input_thresh: Schema.String,
+    target_offset: Schema.String,
+  });
+  return Effect.gen(function* () {
+    const spec = `I=${target}:TP=-1.5:LRA=11`;
+    const stderr = yield* ffmpeg([
+      "-i",
+      inFile,
+      "-af",
+      `loudnorm=${spec}:print_format=json`,
+      "-f",
+      "null",
+      "-",
+    ]);
+    const jsonMatch = stderr.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
+    if (!jsonMatch) {
+      return yield* Effect.fail(
+        new AudioProcessError({
+          operation: `measure loudness for ${inFile}`,
+          cause: new Error("loudnorm pass 1 produced no JSON"),
+        }),
+      );
+    }
+    const parsed = yield* Effect.try({
+      try: () => JSON.parse(jsonMatch[0]) as unknown,
+      catch: (cause) => new BakeoffError({ operation: "parse loudnorm JSON", cause }),
+    });
+    const m = yield* decodeExternal("decode loudnorm response", LoudnormSchema, parsed);
+    const filter =
+      `loudnorm=${spec}:linear=true` +
+      `:measured_I=${m.input_i}:measured_TP=${m.input_tp}` +
+      `:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}` +
+      `:offset=${m.target_offset},aresample=44100`;
+    const encode = wav ? ["-c:a", "pcm_s16le"] : ["-c:a", "libmp3lame", "-b:a", "128k"];
+    yield* ffmpeg([
+      "-i",
+      inFile,
+      "-af",
+      filter,
+      "-ar",
+      "44100",
+      "-ac",
+      "1",
+      ...encode,
+      outFile,
+    ]);
+  });
 }
 
 const CHUNK_EDGE_FADE = 0.012; // 12ms fade in/out at each chunk edge kills seam clicks
+
+const removeIfPresent = (file: string): Effect.Effect<void> =>
+  Effect.promise(() => fs.unlink(file)).pipe(Effect.ignore);
 
 /**
  * Turn a raw chunk MP3 into a concat-ready WAV: trim edge silence, apply short
@@ -146,7 +264,10 @@ const CHUNK_EDGE_FADE = 0.012; // 12ms fade in/out at each chunk edge kills seam
  * -19 LUFS so no chunk sits quieter than its neighbors. The areverse sandwich
  * lets us trim + fade the trailing edge without knowing the duration.
  */
-async function prepareChunkWav(inFile: string, outFile: string): Promise<void> {
+function prepareChunkWav(
+  inFile: string,
+  outFile: string,
+): Effect.Effect<void, ToolError> {
   const trimmed = outFile.replace(/\.wav$/, ".trim.wav");
   const edge =
     "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
@@ -155,13 +276,21 @@ async function prepareChunkWav(inFile: string, outFile: string): Promise<void> {
     "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.25," +
     `afade=t=in:st=0:d=${CHUNK_EDGE_FADE},` +
     "areverse";
-  await ffmpeg(["-i", inFile, "-af", edge, "-ar", "44100", "-ac", "1", trimmed]);
-  await loudnessMatch(trimmed, outFile, { target: -19, wav: true });
-  await fs.unlink(trimmed).catch(() => {});
+  return Effect.acquireUseRelease(
+    Effect.succeed(trimmed),
+    () =>
+      ffmpeg(["-i", inFile, "-af", edge, "-ar", "44100", "-ac", "1", trimmed]).pipe(
+        Effect.zipRight(loudnessMatch(trimmed, outFile, { target: -19, wav: true })),
+      ),
+    removeIfPresent,
+  );
 }
 
-async function makeSilenceWav(outFile: string, seconds: number): Promise<void> {
-  await ffmpeg([
+function makeSilenceWav(
+  outFile: string,
+  seconds: number,
+): Effect.Effect<void, AudioProcessError> {
+  return ffmpeg([
     "-f",
     "lavfi",
     "-i",
@@ -169,21 +298,37 @@ async function makeSilenceWav(outFile: string, seconds: number): Promise<void> {
     "-t",
     String(seconds),
     outFile,
-  ]);
+  ]).pipe(Effect.asVoid);
 }
 
 /** Concat WAVs (already same format) via the concat demuxer into one WAV. */
-async function concatWavs(files: string[], outFile: string): Promise<void> {
-  const listPath = path.join(os.tmpdir(), `bakeoff_list_${Date.now()}.txt`);
-  await fs.writeFile(
-    listPath,
-    files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"),
-  );
-  try {
-    await ffmpeg(["-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", outFile]);
-  } finally {
-    await fs.unlink(listPath).catch(() => {});
-  }
+function concatWavs(files: string[], outFile: string): Effect.Effect<void, ToolError> {
+  return Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const nonce = yield* Random.nextInt;
+    const listPath = path.join(os.tmpdir(), `bakeoff_list_${now}_${nonce}.txt`);
+    yield* Effect.acquireUseRelease(
+      fromPromise("write concat list", () =>
+        fs.writeFile(
+          listPath,
+          files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"),
+        ),
+      ),
+      () =>
+        ffmpeg([
+          "-f",
+          "concat",
+          "-safe",
+          "0",
+          "-i",
+          listPath,
+          "-c",
+          "copy",
+          outFile,
+        ]).pipe(Effect.asVoid),
+      () => removeIfPresent(listPath),
+    );
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -229,227 +374,421 @@ function chunkText(text: string, target: number, max: number): string[] {
 // ---------------------------------------------------------------------------
 // Providers
 // ---------------------------------------------------------------------------
-async function synthVoxtral(text: string, outDir: string): Promise<SynthResult> {
-  const start = Date.now();
-  const client = new Mistral({ apiKey: config.MISTRAL_API_KEY });
-  const response = await client.audio.speech.complete(
-    {
-      model: VOXTRAL_MODEL,
-      input: text,
-      voiceId: VOXTRAL_VOICE.id,
-      responseFormat: "mp3",
-      stream: false,
-    },
-    { timeoutMs: 15 * 60 * 1000 },
-  );
-  const rawFile = path.join(outDir, "voxtral-raw.mp3");
-  await fs.writeFile(rawFile, Buffer.from(response.audioData, "base64"));
-  return {
-    provider: "voxtral",
-    rawFile,
-    seconds: (Date.now() - start) / 1000,
-    notes: [`voice=${VOXTRAL_VOICE.name}`, `model=${VOXTRAL_MODEL}`],
-  };
+function synthVoxtral(
+  text: string,
+  outDir: string,
+): Effect.Effect<SynthResult, ToolError> {
+  const ResponseSchema = Schema.Struct({ audioData: Schema.String });
+  return Effect.gen(function* () {
+    const start = yield* Clock.currentTimeMillis;
+    const client = new Mistral({ apiKey: config.MISTRAL_API_KEY });
+    const response = yield* providerPromise("voxtral", "synthesize", () =>
+      client.audio.speech.complete(
+        {
+          model: VOXTRAL_MODEL,
+          input: text,
+          voiceId: VOXTRAL_VOICE.id,
+          responseFormat: "mp3",
+          stream: false,
+        },
+        { timeoutMs: 15 * 60 * 1000 },
+      ),
+    );
+    const decoded = yield* decodeExternal(
+      "decode voxtral response",
+      ResponseSchema,
+      response,
+    );
+    const rawFile = path.join(outDir, "voxtral-raw.mp3");
+    yield* providerPromise("voxtral", "write audio", () =>
+      fs.writeFile(rawFile, Buffer.from(decoded.audioData, "base64")),
+    );
+    const end = yield* Clock.currentTimeMillis;
+    return {
+      provider: "voxtral",
+      rawFile,
+      seconds: (end - start) / 1000,
+      notes: [`voice=${VOXTRAL_VOICE.name}`, `model=${VOXTRAL_MODEL}`],
+    };
+  });
 }
 
-async function synthEleven(
+function synthEleven(
   text: string,
   outDir: string,
   variant: "eleven" | "eleven-tagged",
-): Promise<SynthResult> {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
-  if (!apiKey) throw new Error("ELEVENLABS_API_KEY not set");
-  const start = Date.now();
-  const chunks = chunkText(text, ELEVEN_CHUNK_TARGET, ELEVEN_CHUNK_MAX);
-  logger.info(`[${variant}] synthesizing ${chunks.length} chunks`);
+): Effect.Effect<SynthResult, ToolError> {
+  return Effect.gen(function* () {
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+    if (!apiKey) {
+      return yield* Effect.fail(
+        new ProviderError({
+          provider: variant,
+          operation: "configure",
+          cause: new Error("ELEVENLABS_API_KEY not set"),
+        }),
+      );
+    }
+    const start = yield* Clock.currentTimeMillis;
+    const chunks = chunkText(text, ELEVEN_CHUNK_TARGET, ELEVEN_CHUNK_MAX);
+    logger.info(`[${variant}] synthesizing ${chunks.length} chunks`);
+    const random = yield* Random.nextInt;
+    const nonce = `${start}_${random}`;
+    const gapWav = path.join(os.tmpdir(), `bakeoff_gap_${nonce}.wav`);
+    const joined = path.join(os.tmpdir(), `bakeoff_el_join_${nonce}.wav`);
+    const chunkFiles: string[] = [];
 
-  const wavs: string[] = [];
-  const gapWav = path.join(os.tmpdir(), `bakeoff_gap_${Date.now()}.wav`);
-  await makeSilenceWav(gapWav, 0.75);
-
-  for (let i = 0; i < chunks.length; i++) {
-    const body = {
-      text: chunks[i],
-      model_id: "eleven_v3",
-      seed: ELEVEN_SEED,
-      // v3 stability: 0.0 Creative / 0.5 Natural / 1.0 Robust — Natural mode
-      voice_settings: { stability: 0.5, use_speaker_boost: true },
+    const rawFile = yield* makeSilenceWav(gapWav, 0.75).pipe(
+      Effect.zipRight(
+        Effect.gen(function* () {
+          const wavs = yield* Effect.forEach(
+            chunks,
+            (chunk, index) =>
+              Effect.gen(function* () {
+                const mp3 = path.join(os.tmpdir(), `bakeoff_el_${nonce}_${index}.mp3`);
+                const wav = mp3.replace(/\.mp3$/, ".wav");
+                chunkFiles.push(mp3, wav);
+                const audio = yield* providerPromise(
+                  variant,
+                  `synthesize chunk ${index + 1}`,
+                  (signal) =>
+                    got
+                      .post(
+                        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}?output_format=mp3_44100_128`,
+                        {
+                          headers: { "xi-api-key": apiKey },
+                          json: {
+                            text: chunk,
+                            model_id: "eleven_v3",
+                            seed: ELEVEN_SEED,
+                            voice_settings: {
+                              stability: 0.5,
+                              use_speaker_boost: true,
+                            },
+                          },
+                          timeout: { request: 5 * 60 * 1000 },
+                          signal,
+                        },
+                      )
+                      .buffer(),
+                );
+                yield* providerPromise(variant, `write chunk ${index + 1}`, () =>
+                  fs.writeFile(mp3, audio),
+                );
+                yield* prepareChunkWav(mp3, wav);
+                yield* removeIfPresent(mp3);
+                logger.info(`[${variant}] chunk ${index + 1}/${chunks.length} done`);
+                return wav;
+              }),
+            { concurrency: 2 },
+          );
+          const withGaps = wavs.flatMap((wav, index) =>
+            index === 0 ? [wav] : [gapWav, wav],
+          );
+          yield* concatWavs(withGaps, joined);
+          const output = path.join(outDir, `${variant}-raw.mp3`);
+          yield* ffmpeg(["-i", joined, "-c:a", "libmp3lame", "-b:a", "128k", output]);
+          return output;
+        }),
+      ),
+      Effect.ensuring(
+        Effect.suspend(() =>
+          Effect.forEach([...chunkFiles, gapWav, joined], removeIfPresent, {
+            discard: true,
+          }),
+        ),
+      ),
+    );
+    const end = yield* Clock.currentTimeMillis;
+    return {
+      provider: variant,
+      rawFile,
+      seconds: (end - start) / 1000,
+      notes: [
+        `voice=${ELEVEN_VOICE_ID}`,
+        `model=eleven_v3 (Natural, seed=${ELEVEN_SEED})`,
+        `chunks=${chunks.length} @ ~${ELEVEN_CHUNK_TARGET} chars, per-chunk -19 LUFS, 12ms edge fades, 0.75s gaps`,
+      ],
     };
-    const audio = await got
-      .post(
-        `https://api.elevenlabs.io/v1/text-to-speech/${ELEVEN_VOICE_ID}?output_format=mp3_44100_128`,
-        {
-          headers: { "xi-api-key": apiKey },
-          json: body,
-          timeout: { request: 5 * 60 * 1000 },
-        },
-      )
-      .buffer();
-    const mp3 = path.join(os.tmpdir(), `bakeoff_el_${Date.now()}_${i}.mp3`);
-    const wav = mp3.replace(/\.mp3$/, ".wav");
-    await fs.writeFile(mp3, audio);
-    await prepareChunkWav(mp3, wav);
-    await fs.unlink(mp3).catch(() => {});
-    if (i > 0) wavs.push(gapWav);
-    wavs.push(wav);
-    logger.info(`[${variant}] chunk ${i + 1}/${chunks.length} done`);
-  }
-
-  const joined = path.join(os.tmpdir(), `bakeoff_el_join_${Date.now()}.wav`);
-  await concatWavs(wavs, joined);
-  const rawFile = path.join(outDir, `${variant}-raw.mp3`);
-  await ffmpeg(["-i", joined, "-c:a", "libmp3lame", "-b:a", "128k", rawFile]);
-  for (const f of [...new Set(wavs), joined]) await fs.unlink(f).catch(() => {});
-
-  return {
-    provider: variant,
-    rawFile,
-    seconds: (Date.now() - start) / 1000,
-    notes: [
-      `voice=${ELEVEN_VOICE_ID}`,
-      `model=eleven_v3 (Natural, seed=${ELEVEN_SEED})`,
-      `chunks=${chunks.length} @ ~${ELEVEN_CHUNK_TARGET} chars, per-chunk -19 LUFS, 12ms edge fades, 0.75s gaps`,
-    ],
-  };
+  });
 }
 
-async function synthMinimax(text: string, outDir: string): Promise<SynthResult> {
-  const apiKey = process.env.MINIMAX_API_KEY;
-  const groupId = process.env.MINIMAX_GROUP_ID;
-  if (!apiKey || !groupId)
-    throw new Error("MINIMAX_API_KEY / MINIMAX_GROUP_ID not set");
-  const start = Date.now();
-  const headers = { Authorization: `Bearer ${apiKey}` };
-
-  const createRes = await got
-    .post(`https://api.minimax.io/v1/t2a_async_v2?GroupId=${groupId}`, {
-      headers,
-      json: {
-        model: "speech-2.8-hd",
-        text,
-        language_boost: "auto",
-        voice_setting: { voice_id: MINIMAX_VOICE_ID, speed: 1 },
-        audio_setting: {
-          audio_sample_rate: 44100,
-          bitrate: 128000,
-          format: "mp3",
-          channel: 1,
-        },
-      },
-      timeout: { request: 60_000 },
-    })
-    .json<Record<string, unknown>>();
-  logger.info("[minimax] task created", { createRes });
-  const baseResp = createRes.base_resp as
-    | { status_code?: number; status_msg?: string }
-    | undefined;
-  if (baseResp && baseResp.status_code !== 0) {
-    throw new Error(
-      `minimax create failed (${baseResp.status_code}): ${baseResp.status_msg}`,
-    );
-  }
-  const taskId =
-    (createRes.task_id as string | number | undefined) ??
-    ((createRes.data as Record<string, unknown> | undefined)?.task_id as
-      | string
-      | number
-      | undefined);
-  if (taskId === undefined || taskId === 0) {
-    throw new Error(`minimax: no task_id in response: ${JSON.stringify(createRes)}`);
-  }
-
-  // Poll up to 30 minutes
-  let fileId: string | number | undefined;
-  for (let attempt = 0; attempt < 180; attempt++) {
-    await new Promise((r) => setTimeout(r, 10_000));
-    const q = await got
-      .get(
-        `https://api.minimax.io/v1/query/t2a_async_query_v2?GroupId=${groupId}&task_id=${taskId}`,
-        { headers, timeout: { request: 60_000 } },
-      )
-      .json<Record<string, unknown>>();
-    const status = String(
-      q.status ?? (q.data as Record<string, unknown>)?.status ?? "",
-    );
-    if (attempt % 6 === 0) logger.info(`[minimax] poll status=${status || "?"}`, { q });
-    if (/success/i.test(status)) {
-      fileId =
-        (q.file_id as string | number | undefined) ??
-        ((q.data as Record<string, unknown> | undefined)?.file_id as
-          | string
-          | number
-          | undefined);
-      break;
+function synthMinimaxEffect(
+  text: string,
+  outDir: string,
+): Effect.Effect<SynthResult, ToolError> {
+  const IdSchema = Schema.Union(Schema.String, Schema.Number);
+  const CreateSchema = Schema.Struct({
+    base_resp: Schema.optional(
+      Schema.Struct({
+        status_code: Schema.optional(Schema.Number),
+        status_msg: Schema.optional(Schema.String),
+      }),
+    ),
+    task_id: Schema.optional(IdSchema),
+    data: Schema.optional(Schema.Struct({ task_id: Schema.optional(IdSchema) })),
+  });
+  const PollSchema = Schema.Struct({
+    status: Schema.optional(Schema.String),
+    file_id: Schema.optional(IdSchema),
+    data: Schema.optional(
+      Schema.Struct({
+        status: Schema.optional(Schema.String),
+        file_id: Schema.optional(IdSchema),
+      }),
+    ),
+  });
+  const DownloadSchema = Schema.Struct({
+    download_url: Schema.optional(Schema.String),
+    file: Schema.optional(
+      Schema.Struct({ download_url: Schema.optional(Schema.String) }),
+    ),
+    data: Schema.optional(
+      Schema.Struct({ download_url: Schema.optional(Schema.String) }),
+    ),
+  });
+  return Effect.gen(function* () {
+    const apiKey = process.env.MINIMAX_API_KEY;
+    const groupId = process.env.MINIMAX_GROUP_ID;
+    if (!apiKey || !groupId) {
+      return yield* Effect.fail(
+        new ProviderError({
+          provider: "minimax",
+          operation: "configure",
+          cause: new Error("MINIMAX_API_KEY / MINIMAX_GROUP_ID not set"),
+        }),
+      );
     }
-    if (/fail|expired/i.test(status)) {
-      throw new Error(`minimax task failed: ${JSON.stringify(q)}`);
+    const start = yield* Clock.currentTimeMillis;
+    const headers = { Authorization: `Bearer ${apiKey}` };
+    const createUnknown = yield* providerPromise("minimax", "create task", (signal) =>
+      got
+        .post(`https://api.minimax.io/v1/t2a_async_v2?GroupId=${groupId}`, {
+          headers,
+          json: {
+            model: "speech-2.8-hd",
+            text,
+            language_boost: "auto",
+            voice_setting: { voice_id: MINIMAX_VOICE_ID, speed: 1 },
+            audio_setting: {
+              audio_sample_rate: 44100,
+              bitrate: 128000,
+              format: "mp3",
+              channel: 1,
+            },
+          },
+          timeout: { request: 60_000 },
+          signal,
+        })
+        .json<unknown>(),
+    );
+    const createRes = yield* decodeExternal(
+      "decode minimax create response",
+      CreateSchema,
+      createUnknown,
+    );
+    logger.info("[minimax] task created", { createRes });
+    const baseResp = createRes.base_resp;
+    if (baseResp && baseResp.status_code !== 0) {
+      return yield* Effect.fail(
+        new ProviderError({
+          provider: "minimax",
+          operation: "create minimax task",
+          cause: new Error(
+            `minimax create failed (${baseResp.status_code}): ${baseResp.status_msg}`,
+          ),
+        }),
+      );
     }
-  }
-  if (fileId === undefined) throw new Error("minimax: timed out waiting for task");
+    const taskId = createRes.task_id ?? createRes.data?.task_id;
+    if (taskId === undefined || taskId === 0) {
+      return yield* Effect.fail(
+        new ProviderError({
+          provider: "minimax",
+          operation: "create minimax task",
+          cause: new Error(
+            `minimax: no task_id in response: ${JSON.stringify(createRes)}`,
+          ),
+        }),
+      );
+    }
 
-  const fileRes = await got.get(
-    `https://api.minimax.io/v1/files/retrieve_content?GroupId=${groupId}&file_id=${fileId}`,
-    { headers, timeout: { request: 5 * 60 * 1000 } },
-  );
-  let audio: Uint8Array = fileRes.rawBody;
-  // Some deployments return JSON metadata with a download_url instead of bytes
-  if (fileRes.headers["content-type"]?.includes("application/json")) {
-    const meta = JSON.parse(fileRes.rawBody.toString());
-    const url = meta.file?.download_url ?? meta.download_url ?? meta.data?.download_url;
-    if (!url) throw new Error(`minimax: no download_url: ${fileRes.rawBody}`);
-    audio = await got.get(url, { timeout: { request: 5 * 60 * 1000 } }).buffer();
-  }
-
-  const rawFile = path.join(outDir, "minimax-raw.mp3");
-  await fs.writeFile(rawFile, audio);
-  return {
-    provider: "minimax",
-    rawFile,
-    seconds: (Date.now() - start) / 1000,
-    notes: [`voice=${MINIMAX_VOICE_ID}`, "model=speech-2.8-hd (async, single request)"],
-  };
+    const attempt = yield* Ref.make(0);
+    const poll = providerPromise("minimax", "poll task", (signal) =>
+      got
+        .get(
+          `https://api.minimax.io/v1/query/t2a_async_query_v2?GroupId=${groupId}&task_id=${taskId}`,
+          { headers, timeout: { request: 60_000 }, signal },
+        )
+        .json<unknown>(),
+    ).pipe(
+      Effect.flatMap((response) =>
+        decodeExternal("decode minimax poll response", PollSchema, response),
+      ),
+      Effect.flatMap((response) => {
+        const status = response.status ?? response.data?.status ?? "";
+        return Ref.getAndUpdate(attempt, (count) => count + 1).pipe(
+          Effect.tap((count) =>
+            count % 6 === 0
+              ? Effect.sync(() =>
+                  logger.info(`[minimax] poll status=${status || "?"}`, {
+                    response,
+                  }),
+                )
+              : Effect.void,
+          ),
+          Effect.flatMap(
+            (): Effect.Effect<string | number, MinimaxPending | ProviderError> => {
+              if (/fail|expired/i.test(status)) {
+                return Effect.fail(
+                  new ProviderError({
+                    provider: "minimax",
+                    operation: "poll task",
+                    cause: new Error(`Task failed with status ${status}`),
+                  }),
+                );
+              }
+              const fileId = /success/i.test(status)
+                ? (response.file_id ?? response.data?.file_id)
+                : undefined;
+              return fileId === undefined
+                ? Effect.fail(new MinimaxPending())
+                : Effect.succeed(fileId);
+            },
+          ),
+        );
+      }),
+    );
+    const fileId = yield* poll.pipe(
+      Effect.retry({
+        schedule: Schedule.addDelay(Schedule.recurs(179), () => Duration.seconds(10)),
+        while: (error) => error._tag === "MinimaxPending",
+      }),
+      Effect.catchTag("MinimaxPending", () =>
+        new ProviderError({
+          provider: "minimax",
+          operation: "poll task",
+          cause: new Error("minimax: timed out waiting for task"),
+        }).pipe(Effect.fail),
+      ),
+    );
+    const fileRes = yield* providerPromise("minimax", "download audio", (signal) =>
+      got.get(
+        `https://api.minimax.io/v1/files/retrieve_content?GroupId=${groupId}&file_id=${fileId}`,
+        { headers, timeout: { request: 5 * 60 * 1000 }, signal },
+      ),
+    );
+    let audio: Uint8Array = fileRes.rawBody;
+    if (fileRes.headers["content-type"]?.includes("application/json")) {
+      const parsed = yield* Effect.try({
+        try: () => JSON.parse(fileRes.rawBody.toString()) as unknown,
+        catch: (cause) =>
+          new ProviderError({
+            provider: "minimax",
+            operation: "parse download response",
+            cause,
+          }),
+      });
+      const meta = yield* decodeExternal(
+        "decode minimax download response",
+        DownloadSchema,
+        parsed,
+      );
+      const url =
+        meta.file?.download_url ?? meta.download_url ?? meta.data?.download_url;
+      if (!url) {
+        return yield* Effect.fail(
+          new ProviderError({
+            provider: "minimax",
+            operation: "decode download response",
+            cause: new Error("minimax: no download_url"),
+          }),
+        );
+      }
+      audio = yield* providerPromise("minimax", "download audio URL", (signal) =>
+        got.get(url, { timeout: { request: 5 * 60 * 1000 }, signal }).buffer(),
+      );
+    }
+    const rawFile = path.join(outDir, "minimax-raw.mp3");
+    yield* providerPromise("minimax", "write audio", () =>
+      fs.writeFile(rawFile, audio),
+    );
+    const end = yield* Clock.currentTimeMillis;
+    return {
+      provider: "minimax",
+      rawFile,
+      seconds: (end - start) / 1000,
+      notes: [
+        `voice=${MINIMAX_VOICE_ID}`,
+        "model=speech-2.8-hd (async, single request)",
+      ],
+    };
+  });
 }
 
-async function synthFish(text: string, outDir: string): Promise<SynthResult> {
-  const apiKey = process.env.FISH_API_KEY;
-  if (!apiKey) throw new Error("FISH_API_KEY not set");
-  const start = Date.now();
-  const referenceId = FISH_REFERENCE_ID;
-  const audio = await got
-    .post("https://api.fish.audio/v1/tts", {
-      headers: { Authorization: `Bearer ${apiKey}`, model: FISH_MODEL },
-      json: {
-        text,
-        reference_id: referenceId,
-        format: "mp3",
-        normalize: true,
-        latency: "normal",
-        temperature: 0.7,
-      },
-      timeout: { request: 15 * 60 * 1000 },
-    })
-    .buffer();
-  const rawFile = path.join(outDir, "fish-raw.mp3");
-  await fs.writeFile(rawFile, audio);
-  return {
-    provider: "fish",
-    rawFile,
-    seconds: (Date.now() - start) / 1000,
-    notes: [
-      `voice=${referenceId}`,
-      `model=${FISH_MODEL} (single request, vendor chunking)`,
-    ],
-  };
+function synthFish(
+  text: string,
+  outDir: string,
+): Effect.Effect<SynthResult, ProviderError> {
+  return Effect.gen(function* () {
+    const apiKey = process.env.FISH_API_KEY;
+    if (!apiKey) {
+      return yield* Effect.fail(
+        new ProviderError({
+          provider: "fish",
+          operation: "configure",
+          cause: new Error("FISH_API_KEY not set"),
+        }),
+      );
+    }
+    const start = yield* Clock.currentTimeMillis;
+    const referenceId = FISH_REFERENCE_ID;
+    const audio = yield* providerPromise("fish", "synthesize", (signal) =>
+      got
+        .post("https://api.fish.audio/v1/tts", {
+          headers: { Authorization: `Bearer ${apiKey}`, model: FISH_MODEL },
+          json: {
+            text,
+            reference_id: referenceId,
+            format: "mp3",
+            normalize: true,
+            latency: "normal",
+            temperature: 0.7,
+          },
+          timeout: { request: 15 * 60 * 1000 },
+          signal,
+        })
+        .buffer(),
+    );
+    const rawFile = path.join(outDir, "fish-raw.mp3");
+    yield* providerPromise("fish", "write audio", () => fs.writeFile(rawFile, audio));
+    const end = yield* Clock.currentTimeMillis;
+    return {
+      provider: "fish",
+      rawFile,
+      seconds: (end - start) / 1000,
+      notes: [
+        `voice=${referenceId}`,
+        `model=${FISH_MODEL} (single request, vendor chunking)`,
+      ],
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Optional: LLM "director" pass adding ElevenLabs v3 audio tags
 // ---------------------------------------------------------------------------
-async function addAudioTags(text: string): Promise<string> {
-  const { model } = getPressPodsCleaningModel();
-  const { text: out } = await generateText({
-    model,
-    system: `You annotate a narration script with ElevenLabs v3 audio tags to make a single podcast-host voice more engaging. Insert inline square-bracket tags SPARINGLY.
+function addAudioTags(text: string): Effect.Effect<string, ProviderError> {
+  return Effect.gen(function* () {
+    const { model } = getPressPodsCleaningModel();
+    const response = yield* providerPromise(
+      "eleven-tagged",
+      "add audio tags",
+      (signal) =>
+        generateText({
+          model,
+          abortSignal: signal,
+          system: `You annotate a narration script with ElevenLabs v3 audio tags to make a single podcast-host voice more engaging. Insert inline square-bracket tags SPARINGLY.
 
 Rules:
 - Density ceiling: at most one tag per 3-4 sentences. Many paragraphs should have none. Never more than one tag per sentence.
@@ -459,9 +798,21 @@ Rules:
 - Preserve every spoken word exactly. Do not add, remove, or reorder any words. Only insert tags.
 - Match tags to the actual content: [curious] for questions/setups, [serious] for grave facts, [amused]/[chuckles] only where the text itself is genuinely wry.
 - Return ONLY the annotated script, no commentary.`,
-    prompt: text,
+          prompt: text,
+        }),
+    );
+    const out = yield* Schema.decodeUnknown(Schema.String)(response.text).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderError({
+            provider: "eleven-tagged",
+            operation: "decode tagged narration",
+            cause,
+          }),
+      ),
+    );
+    return out.trim();
   });
-  return out.trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -484,7 +835,7 @@ function detectProviders(): ProviderName[] {
   return p;
 }
 
-async function runProviders({
+function runProvidersEffect({
   content,
   outDir,
   title,
@@ -498,128 +849,180 @@ async function runProviders({
   url?: string;
   providers: ProviderName[];
   tagged: boolean;
-}): Promise<void> {
-  await fs.mkdir(outDir, { recursive: true });
-  await fs.writeFile(path.join(outDir, "narration.md"), content);
+}): Effect.Effect<void, ToolError> {
+  return Effect.gen(function* () {
+    yield* fromPromise("create output directory", () =>
+      fs.mkdir(outDir, { recursive: true }),
+    );
+    yield* fromPromise("write narration", () =>
+      fs.writeFile(path.join(outDir, "narration.md"), content),
+    );
 
-  let taggedContent: string | undefined;
-  if (tagged && providers.includes("eleven")) {
-    taggedContent = await addAudioTags(content);
-    await fs.writeFile(path.join(outDir, "narration-tagged.md"), taggedContent);
-    logger.info("Tagged narration variant ready");
-  }
-
-  const jobs: Array<() => Promise<SynthResult>> = [];
-  if (providers.includes("voxtral")) jobs.push(() => synthVoxtral(content, outDir));
-  if (providers.includes("eleven"))
-    jobs.push(() => synthEleven(content, outDir, "eleven"));
-  if (taggedContent) {
-    const t = taggedContent;
-    jobs.push(() => synthEleven(t, outDir, "eleven-tagged"));
-  }
-  if (providers.includes("minimax")) jobs.push(() => synthMinimax(content, outDir));
-  if (providers.includes("fish")) jobs.push(() => synthFish(content, outDir));
-
-  const settled = await Promise.allSettled(jobs.map((j) => j()));
-  const results: SynthResult[] = [];
-  for (const s of settled) {
-    if (s.status === "fulfilled") results.push(s.value);
-    else logger.error(`Provider failed: ${s.reason}`);
-  }
-
-  // Loudness-match everything and summarize
-  const lines: string[] = [
-    `# ${title}`,
-    "",
-    ...(url ? [`- URL: ${url}`] : []),
-    `- Narration: ${content.length} chars`,
-    "",
-    "| provider | duration | synth time | notes |",
-    "|---|---|---|---|",
-  ];
-  for (const r of results) {
-    const outFile = path.join(outDir, `${r.provider}.mp3`);
-    try {
-      await loudnessMatch(r.rawFile, outFile);
-      const dur = await probeDuration(outFile);
-      lines.push(
-        `| ${r.provider} | ${(dur / 60).toFixed(1)} min | ${r.seconds.toFixed(0)}s | ${r.notes.join("; ")} |`,
+    let taggedContent: string | undefined;
+    if (tagged && providers.includes("eleven")) {
+      taggedContent = yield* addAudioTags(content);
+      yield* fromPromise("write tagged narration", () =>
+        fs.writeFile(path.join(outDir, "narration-tagged.md"), taggedContent!),
       );
-    } catch (error) {
-      logger.error(`Loudness match failed for ${r.provider}: ${error}`);
-      lines.push(
-        `| ${r.provider} | ? | ${r.seconds.toFixed(0)}s | loudnorm FAILED, use ${path.basename(r.rawFile)} |`,
+      logger.info("Tagged narration variant ready");
+    }
+
+    const jobs: Array<Effect.Effect<SynthResult, ToolError>> = [];
+    if (providers.includes("voxtral")) jobs.push(synthVoxtral(content, outDir));
+    if (providers.includes("eleven")) jobs.push(synthEleven(content, outDir, "eleven"));
+    if (taggedContent) {
+      const t = taggedContent;
+      jobs.push(synthEleven(t, outDir, "eleven-tagged"));
+    }
+    if (providers.includes("minimax")) jobs.push(synthMinimaxEffect(content, outDir));
+    if (providers.includes("fish")) jobs.push(synthFish(content, outDir));
+
+    const settled = yield* Effect.forEach(jobs, (job) => job.pipe(Effect.either), {
+      concurrency: "unbounded",
+    });
+    const results: SynthResult[] = [];
+    for (const s of settled) {
+      if (Either.isRight(s)) results.push(s.right);
+      else logger.error(`Provider failed: ${s.left.cause}`);
+    }
+
+    // Loudness-match everything and summarize
+    const lines: string[] = [
+      `# ${title}`,
+      "",
+      ...(url ? [`- URL: ${url}`] : []),
+      `- Narration: ${content.length} chars`,
+      "",
+      "| provider | duration | synth time | notes |",
+      "|---|---|---|---|",
+    ];
+    for (const r of results) {
+      const outFile = path.join(outDir, `${r.provider}.mp3`);
+      const mastered = yield* loudnessMatch(r.rawFile, outFile).pipe(
+        Effect.zipRight(probeDuration(outFile)),
+        Effect.either,
+      );
+      if (Either.isRight(mastered)) {
+        lines.push(
+          `| ${r.provider} | ${(mastered.right / 60).toFixed(1)} min | ${r.seconds.toFixed(0)}s | ${r.notes.join("; ")} |`,
+        );
+      } else {
+        logger.error(`Loudness match failed for ${r.provider}: ${mastered.left.cause}`);
+        lines.push(
+          `| ${r.provider} | ? | ${r.seconds.toFixed(0)}s | loudnorm FAILED, use ${path.basename(r.rawFile)} |`,
+        );
+      }
+    }
+    const summary = lines.join("\n");
+    const summaryPath = path.join(outDir, "summary.md");
+    const existing = yield* fromPromise("read prior summary", () =>
+      fs.readFile(summaryPath, "utf8"),
+    ).pipe(Effect.option);
+    yield* fromPromise("write summary", () =>
+      fs.writeFile(
+        summaryPath,
+        existing._tag === "Some"
+          ? `${existing.value}\n\n## Rerun\n\n${summary}`
+          : summary,
+      ),
+    );
+    logger.info(`\n${summary}\n\nOutput: ${outDir}`);
+  });
+}
+
+function mainEffect(): Effect.Effect<void, ToolError | PressPodsError> {
+  return Effect.gen(function* () {
+    const args = process.argv.slice(2);
+    const urls = args.filter((a) => !a.startsWith("--"));
+    const providersFlag = args.find((a) => a.startsWith("--providers="));
+    const outFlag = args.find((a) => a.startsWith("--out="));
+    const narrationFlag = args.find((a) => a.startsWith("--narration="));
+    const tagged = args.includes("--tagged");
+    if (urls.length === 0 && !narrationFlag) {
+      return yield* Effect.fail(
+        new BakeoffError({
+          operation: "parse arguments",
+          cause: new Error(
+            "Usage: bun src/tools/tts-bakeoff.ts <article-url> [...urls] [--providers=...] [--tagged] [--out=dir]\n" +
+              "   or: bun src/tools/tts-bakeoff.ts --narration=path/to/narration.md [--providers=...]",
+          ),
+        }),
       );
     }
-  }
-  const summary = lines.join("\n");
-  const summaryPath = path.join(outDir, "summary.md");
-  const existing = await fs.readFile(summaryPath, "utf8").catch(() => undefined);
-  await fs.writeFile(
-    summaryPath,
-    existing ? `${existing}\n\n## Rerun\n\n${summary}` : summary,
-  );
-  logger.info(`\n${summary}\n\nOutput: ${outDir}`);
-}
 
-async function main(): Promise<void> {
-  const args = process.argv.slice(2);
-  const urls = args.filter((a) => !a.startsWith("--"));
-  const providersFlag = args.find((a) => a.startsWith("--providers="));
-  const outFlag = args.find((a) => a.startsWith("--out="));
-  const narrationFlag = args.find((a) => a.startsWith("--narration="));
-  const tagged = args.includes("--tagged");
-  if (urls.length === 0 && !narrationFlag) {
-    console.error(
-      "Usage: bun src/tools/tts-bakeoff.ts <article-url> [...urls] [--providers=...] [--tagged] [--out=dir]\n" +
-        "   or: bun src/tools/tts-bakeoff.ts --narration=path/to/narration.md [--providers=...]",
+    const ProviderSchema = Schema.Literal(
+      "voxtral",
+      "eleven",
+      "eleven-tagged",
+      "minimax",
+      "fish",
     );
-    process.exit(1);
-  }
+    const providers: ProviderName[] = providersFlag
+      ? [
+          ...(yield* decodeExternal(
+            "decode providers argument",
+            Schema.Array(ProviderSchema),
+            providersFlag.split("=")[1].split(","),
+          )),
+        ]
+      : detectProviders();
+    const outRoot =
+      outFlag?.split("=")[1] ?? path.join(os.homedir(), "Documents", "tts-bakeoff");
+    logger.info(
+      `Providers: ${providers.join(", ")}${tagged ? " + eleven-tagged" : ""}`,
+    );
 
-  const providers = providersFlag
-    ? (providersFlag.split("=")[1].split(",") as ProviderName[])
-    : detectProviders();
-  const outRoot =
-    outFlag?.split("=")[1] ?? path.join(os.homedir(), "Documents", "tts-bakeoff");
-  logger.info(`Providers: ${providers.join(", ")}${tagged ? " + eleven-tagged" : ""}`);
+    // Re-run providers against an existing narration file (identical text, so
+    // late entrants stay comparable with earlier outputs in the same directory).
+    if (narrationFlag) {
+      const narrationPath = narrationFlag.split("=")[1];
+      const content = yield* fromPromise("read narration", () =>
+        fs.readFile(narrationPath, "utf8"),
+      );
+      const outDir = path.dirname(path.resolve(narrationPath));
+      const title = path.basename(outDir);
+      yield* runProvidersEffect({ content, outDir, title, providers, tagged });
+      return;
+    }
 
-  // Re-run providers against an existing narration file (identical text, so
-  // late entrants stay comparable with earlier outputs in the same directory).
-  if (narrationFlag) {
-    const narrationPath = narrationFlag.split("=")[1];
-    const content = await fs.readFile(narrationPath, "utf8");
-    const outDir = path.dirname(path.resolve(narrationPath));
-    const title = path.basename(outDir);
-    await runProviders({ content, outDir, title, providers, tagged });
-    return;
-  }
+    yield* Effect.forEach(
+      urls,
+      (url) =>
+        Effect.gen(function* () {
+          logger.info(`=== Article: ${url}`);
+          const costCounter = new CostCounter();
+          const { article, metadata } = yield* getArticleFromUrl(
+            url,
+            costCounter,
+            logger,
+          );
+          const title = metadata.info.title ?? article.title ?? url;
+          const text = buildFinalText({
+            title,
+            domain: metadata.info.publication ?? article.domain,
+            author: metadata.info.author ?? article.author ?? "Anonymous",
+            coauthors: metadata.info.coauthors,
+            datePublished: metadata.info.publishedAtISO ?? article.publishedAt,
+            text: article.text,
+          });
+          const { content } = yield* getCleanedArticle(
+            { ...article, text },
+            costCounter,
+          );
+          logger.info(`Narration ready: ${content.length} chars`);
 
-  for (const url of urls) {
-    logger.info(`=== Article: ${url}`);
-    const costCounter = new CostCounter();
-    const { article, metadata } = await getArticleFromUrl(url, costCounter, logger);
-    const title = metadata.info.title ?? article.title ?? url;
-    const text = buildFinalText({
-      title,
-      domain: metadata.info.publication ?? article.domain,
-      author: metadata.info.author ?? article.author ?? "Anonymous",
-      coauthors: metadata.info.coauthors,
-      datePublished: metadata.info.publishedAtISO ?? article.publishedAt,
-      text: article.text,
-    });
-    const { content } = await getCleanedArticle({ ...article, text }, costCounter);
-    logger.info(`Narration ready: ${content.length} chars`);
-
-    await runProviders({
-      content,
-      outDir: path.join(outRoot, slugify(title)),
-      title,
-      url,
-      providers,
-      tagged,
-    });
-  }
+          yield* runProvidersEffect({
+            content,
+            outDir: path.join(outRoot, slugify(title)),
+            title,
+            url,
+            providers: [...providers],
+            tagged,
+          });
+        }),
+      { concurrency: 1, discard: true },
+    );
+  });
 }
 
-await main();
+await runPromise(mainEffect());

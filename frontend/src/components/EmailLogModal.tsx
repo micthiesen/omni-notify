@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Effect } from "effect";
 import {
   createEmailRule,
   fetchEmailActivityLogs,
@@ -7,6 +8,7 @@ import {
   reprocessEmailActivity,
   sendEmailActivityFeedback,
 } from "../api";
+import { forkUiEffect, runUiEffect } from "../effect";
 import type {
   EmailActivity,
   EmailBuiltinRules,
@@ -110,21 +112,22 @@ export function EmailLogModal({
   );
 
   useEffect(() => {
-    let cancelled = false;
     setLines(null);
-    fetchEmailActivityLogs(current.activityId)
-      .then((data) => {
-        if (cancelled) return;
-        setLines(data.lines);
-        setDropped(data.dropped);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to fetch logs");
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      fetchEmailActivityLogs(current.activityId).pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setLines(data.lines);
+            setDropped(data.dropped);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() =>
+            setError(err instanceof Error ? err.message : "Failed to fetch logs"),
+          ),
+        ),
+      ),
+    );
   }, [current.activityId, logsVersion]);
 
   useEffect(() => {
@@ -140,19 +143,18 @@ export function EmailLogModal({
   }, [onClose]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchEmailRules()
-      .then((res) => {
-        if (cancelled) return;
-        setRules(res.rules);
-        setBuiltin(res.builtin);
-      })
-      .catch(() => {
+    return forkUiEffect(
+      fetchEmailRules().pipe(
+        Effect.tap((res) =>
+          Effect.sync(() => {
+            setRules(res.rules);
+            setBuiltin(res.builtin);
+          }),
+        ),
         // Coverage status is decorative; the block button works without it.
-      });
-    return () => {
-      cancelled = true;
-    };
+        Effect.catchAll(() => Effect.void),
+      ),
+    );
   }, []);
 
   const pipelineScope = BLOCK_SCOPE[current.pipeline];
@@ -195,7 +197,7 @@ export function EmailLogModal({
     setReprocessing(true);
     setActionError(null);
     try {
-      const res = await reprocessEmailActivity(current.activityId);
+      const res = await runUiEffect(reprocessEmailActivity(current.activityId));
       setCurrent(res.activity);
       onActivityChange?.(res.activity);
       // The rerun may have resubmitted a forgotten number; stale strikethrough
@@ -215,7 +217,9 @@ export function EmailLogModal({
     setFbBusy(true);
     setActionError(null);
     try {
-      const res = await sendEmailActivityFeedback(current.activityId, next);
+      const res = await runUiEffect(
+        sendEmailActivityFeedback(current.activityId, next),
+      );
       setFb(res.feedback);
       onFeedbackChange?.(current.activityId, res.feedback);
     } catch (err) {
@@ -241,11 +245,13 @@ export function EmailLogModal({
     setBlocking(true);
     setActionError(null);
     try {
-      const res = await createEmailRule({
-        pattern,
-        scope: blockScope,
-        verdict: "block",
-      });
+      const res = await runUiEffect(
+        createEmailRule({
+          pattern,
+          scope: blockScope,
+          verdict: "block",
+        }),
+      );
       switch (res.status) {
         case "created":
           setCoverageOverride("rule");
@@ -279,7 +285,7 @@ export function EmailLogModal({
     setForgetting(trackingNumber);
     setActionError(null);
     try {
-      await forgetParcelDelivery(trackingNumber);
+      await runUiEffect(forgetParcelDelivery(trackingNumber));
       setForgotten((prev) => new Set(prev).add(trackingNumber));
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Forget failed");

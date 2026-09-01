@@ -1,4 +1,7 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import type { Effect } from "effect";
+import type { PersistenceError } from "../effect/errors.js";
+import { fromSync } from "../effect/interop.js";
 import type { StreamerStatusLive } from "./persistence.js";
 import type { Platform } from "./platforms/index.js";
 
@@ -71,5 +74,14 @@ export function recordCompletedSession(live: StreamerStatusLive, endedAt: Date):
   const data = getStreamSessions(live.streamerId);
   StreamSessionsEntity.upsert(
     appendSession(data, sessionFromLiveStatus(live, endedAt)),
+  );
+}
+
+export function recordCompletedSessionEffect(
+  live: StreamerStatusLive,
+  endedAt: Date,
+): Effect.Effect<void, PersistenceError> {
+  return fromSync("record completed stream session", () =>
+    recordCompletedSession(live, endedAt),
   );
 }

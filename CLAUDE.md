@@ -17,6 +17,38 @@ pnpm check    # Oxlint linting + Oxfmt formatting check
 
 **Always run `pnpm check:write && pnpm test && pnpm build` after making changes.**
 
+## Effect-First Development
+
+Effect is the application runtime and the default API for all effectful TypeScript.
+
+- Production functions that perform I/O, mutate state, use time or randomness,
+  retry, sleep, acquire resources, or can fail must return `Effect`. Keep
+  deterministic transformations as ordinary pure functions.
+- `Promise` and `async` are allowed only in the smallest adapter required by an
+  external framework or library, such as Hono, MCP, AI SDK callbacks, Node
+  callbacks, or `ScheduledTask.run()`. Interpret the Effect once at that edge
+  with the shared helpers in `src/effect/`; do not run nested Effects inside
+  application code.
+- Model expected failures with domain-specific `Data.TaggedError` types. Do not
+  throw strings, collapse failures to `unknown`, or use defects for recoverable
+  conditions. Wrap third-party Promise and throwing APIs with `Effect.tryPromise`
+  or `Effect.try` at the leaf boundary.
+- Define capabilities as services and compose implementations with `Layer`.
+  Inject configuration, persistence, HTTP, logging, notifications, clock, and
+  randomness instead of reading globals inside workflows.
+- Decode every untrusted external, persisted, environment, AI, and protocol
+  value with `Schema`. Zod may remain only at a protocol edge that requires its
+  Standard Schema implementation; convert to Effect data immediately afterward.
+- Use `Schedule` for retries and repetition, `Effect.forEach`/fibers/semaphores
+  for bounded structured concurrency, `Cache`/`Ref` for coordinated state, and
+  `Scope`/`acquireRelease` for resources. Do not introduce raw timers,
+  `Promise.all`, fire-and-forget Promises, `p-queue`, or manual cleanup chains.
+- Tests for Effects use `@effect/vitest`, test Layers, and `TestClock`. Assert
+  typed failures through `Exit`; avoid real sleeps and ambient service state.
+- Preserve failure semantics deliberately at side-effect ordering boundaries.
+  Durable state or an outbox must make notifications, enqueue operations,
+  external writes, and retries idempotent before the workflow reports success.
+
 ## Deployment & Ops (boris)
 
 Production runs as the `omni-notify` Docker container on **boris** (`10.10.1.100`),

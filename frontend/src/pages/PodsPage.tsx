@@ -1,4 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Effect } from "effect";
 import {
   deletePressPodsEpisode,
   dismissPressPodsJob,
@@ -11,6 +12,7 @@ import {
   submitPressPodsUrl,
   type TaskRun,
 } from "../api";
+import { forkUiEffect, runUiEffect } from "../effect";
 import { ImageWithFallback } from "../components/ImageWithFallback";
 import { LogViewer } from "../components/LogViewer";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
@@ -50,20 +52,29 @@ export default function PodsPage() {
   const [logRun, setLogRun] = useState<TaskRun | null>(null);
   const { toast, showToast } = useToast();
 
-  const load = useCallback(() => {
-    fetchPressPods()
-      .then((res) => {
-        setEpisodes(res.episodes);
-        setJobs(res.jobs);
-        setError(null);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load episodes");
-      });
-  }, []);
+  const load = useCallback(
+    () =>
+      forkUiEffect(
+        fetchPressPods().pipe(
+          Effect.tap((res) =>
+            Effect.sync(() => {
+              setEpisodes(res.episodes);
+              setJobs(res.jobs);
+              setError(null);
+            }),
+          ),
+          Effect.catchAll((err) =>
+            Effect.sync(() =>
+              setError(err instanceof Error ? err.message : "Failed to load episodes"),
+            ),
+          ),
+        ),
+      ),
+    [],
+  );
 
   useEffect(() => {
-    load();
+    return load();
   }, [load]);
 
   // Refresh whenever a PressPods run settles (episodes/jobs will have changed).
@@ -90,7 +101,7 @@ export default function PodsPage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await submitPressPodsUrl(trimmed);
+      await runUiEffect(submitPressPodsUrl(trimmed));
       setUrl("");
       load();
     } catch (err) {
@@ -102,7 +113,7 @@ export default function PodsPage() {
 
   const onRetry = async (jobId: string) => {
     try {
-      await retryPressPodsJob(jobId);
+      await runUiEffect(retryPressPodsJob(jobId));
       load();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to retry job", "error");
@@ -111,7 +122,7 @@ export default function PodsPage() {
 
   const onDismiss = async (jobId: string) => {
     try {
-      await dismissPressPodsJob(jobId);
+      await runUiEffect(dismissPressPodsJob(jobId));
       load();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to dismiss job", "error");
@@ -120,7 +131,7 @@ export default function PodsPage() {
 
   const onRetryEpisode = async (episode: PressPodsEpisode) => {
     try {
-      await retryPressPodsEpisode(episode.episodeId);
+      await runUiEffect(retryPressPodsEpisode(episode.episodeId));
       load();
       showToast("Re-queued for regeneration");
     } catch (err) {
@@ -137,7 +148,7 @@ export default function PodsPage() {
     );
     if (!confirmed) return;
     try {
-      await deletePressPodsEpisode(episode.episodeId);
+      await runUiEffect(deletePressPodsEpisode(episode.episodeId));
       setEpisodes((prev) =>
         prev ? prev.filter((e) => e.episodeId !== episode.episodeId) : prev,
       );
@@ -152,7 +163,7 @@ export default function PodsPage() {
 
   const openLogs = async (runId: string) => {
     try {
-      const { run } = await fetchRunLogs(runId);
+      const { run } = await runUiEffect(fetchRunLogs(runId));
       setLogRun(run);
     } catch {
       showToast("Logs for this episode are no longer available", "error");

@@ -1,5 +1,40 @@
+import { Effect, Schema } from "effect";
+import { CaldavError } from "../effect.js";
+
 const MAX_REDIRECTS = 5;
 export const CALDAV_REQUEST_TIMEOUT_MS = 15_000;
+export const CALDAV_XML_MAX_BYTES = 2 * 1024 * 1024;
+export const CALDAV_ERROR_MAX_BYTES = 64 * 1024;
+const CaldavXmlSchema = Schema.String.pipe(
+  Schema.filter((value) => value.trimStart().startsWith("<"), {
+    message: () => "CalDAV response is not XML",
+  }),
+);
+
+class CaldavResponseTooLargeError extends Error {}
+
+/**
+ * Run one bounded CalDAV request. Effect interruption and the request timeout
+ * both abort the underlying fetch, including requests whose side effect may
+ * otherwise continue after the caller has stopped waiting.
+ */
+export function requestCaldavEffect(
+  input: string,
+  init: RequestInit,
+  operation: string,
+): Effect.Effect<Response, CaldavError> {
+  return Effect.tryPromise({
+    try: (signal) =>
+      fetch(input, {
+        ...init,
+        signal: AbortSignal.any([
+          signal,
+          AbortSignal.timeout(CALDAV_REQUEST_TIMEOUT_MS),
+        ]),
+      }),
+    catch: (cause) => new CaldavError({ operation, cause, transient: true }),
+  });
+}
 
 function isIcloudCaldavHost(hostname: string): boolean {
   return (
@@ -30,6 +65,61 @@ function isSafeRedirect(from: URL, to: URL): boolean {
   return isIcloudCaldavHost(from.hostname) && isIcloudCaldavHost(to.hostname);
 }
 
+/** Read a CalDAV response without allowing a server to exhaust process memory. */
+export function readCaldavResponseText(
+  response: Response,
+  operation: string,
+  maxBytes: number,
+): Effect.Effect<string, CaldavError> {
+  return Effect.tryPromise({
+    try: async (signal) => {
+      const declaredBytes = Number(response.headers.get("content-length"));
+      if (Number.isFinite(declaredBytes) && declaredBytes > maxBytes) {
+        await response.body?.cancel().catch(() => undefined);
+        throw new CaldavResponseTooLargeError(
+          `response exceeds the ${maxBytes}-byte limit`,
+        );
+      }
+      if (!response.body) return "";
+
+      const reader = response.body.getReader();
+      const abort = () => {
+        void reader.cancel(signal.reason).catch(() => undefined);
+      };
+      signal.addEventListener("abort", abort, { once: true });
+
+      const decoder = new TextDecoder();
+      const parts: string[] = [];
+      let receivedBytes = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          receivedBytes += value.byteLength;
+          if (receivedBytes > maxBytes) {
+            await reader.cancel().catch(() => undefined);
+            throw new CaldavResponseTooLargeError(
+              `response exceeds the ${maxBytes}-byte limit`,
+            );
+          }
+          parts.push(decoder.decode(value, { stream: true }));
+        }
+        parts.push(decoder.decode());
+        return parts.join("");
+      } finally {
+        signal.removeEventListener("abort", abort);
+        reader.releaseLock();
+      }
+    },
+    catch: (cause) =>
+      new CaldavError({
+        operation,
+        cause,
+        transient: !(cause instanceof CaldavResponseTooLargeError),
+      }),
+  });
+}
+
 /**
  * Issue a CalDAV PROPFIND, following redirects manually — fetch() won't
  * replay a PROPFIND across a redirect, and iCloud's discovery chain redirects
@@ -37,51 +127,88 @@ function isSafeRedirect(from: URL, to: URL): boolean {
  * Returns the multistatus XML plus the URL that finally answered (needed to
  * resolve relative hrefs against the right host).
  */
-export async function propfind(
+export function propfindEffect(
   url: string,
   authHeader: string,
   depth: "0" | "1",
   body: string,
-): Promise<{ xml: string; url: string }> {
-  let current = url;
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const response = await fetch(current, {
-      method: "PROPFIND",
-      redirect: "manual",
-      headers: {
-        "Content-Type": "application/xml; charset=utf-8",
-        Authorization: authHeader,
-        Depth: depth,
-      },
-      body,
-      signal: AbortSignal.timeout(CALDAV_REQUEST_TIMEOUT_MS),
-    });
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) {
-        throw new Error(`CalDAV PROPFIND redirect without Location (${current})`);
-      }
-      const next = new URL(location, current);
-      if (!isSafeRedirect(new URL(current), next)) {
-        throw new Error(
-          `Refusing to forward CalDAV credentials across redirect (${new URL(current).origin} -> ${next.origin})`,
-        );
-      }
-      current = next.toString();
-      continue;
-    }
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(
-        `CalDAV PROPFIND failed: ${response.status} ${response.statusText} (${current})\n${text}`,
+): Effect.Effect<{ xml: string; url: string }, CaldavError> {
+  return Effect.gen(function* () {
+    let current = url;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      const response = yield* requestCaldavEffect(
+        current,
+        {
+          method: "PROPFIND",
+          redirect: "manual",
+          headers: {
+            "Content-Type": "application/xml; charset=utf-8",
+            Authorization: authHeader,
+            Depth: depth,
+          },
+          body,
+        },
+        "CalDAV PROPFIND",
       );
-    }
 
-    return { xml: await response.text(), url: current };
-  }
-  throw new Error(`CalDAV PROPFIND exceeded ${MAX_REDIRECTS} redirects (${url})`);
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) {
+          return yield* new CaldavError({
+            operation: "CalDAV PROPFIND redirect",
+            cause: `missing Location (${current})`,
+            transient: false,
+          });
+        }
+        const next = new URL(location, current);
+        if (!isSafeRedirect(new URL(current), next)) {
+          return yield* new CaldavError({
+            operation: "CalDAV PROPFIND redirect",
+            cause: `Refusing to forward CalDAV credentials across redirect (${new URL(current).origin} -> ${next.origin})`,
+            transient: false,
+          });
+        }
+        current = next.toString();
+        continue;
+      }
+
+      if (!response.ok) {
+        const text = yield* readCaldavResponseText(
+          response,
+          "read CalDAV PROPFIND error response",
+          CALDAV_ERROR_MAX_BYTES,
+        );
+        return yield* new CaldavError({
+          operation: "CalDAV PROPFIND",
+          cause: `${response.status} ${response.statusText} (${current})\n${text}`,
+          transient: response.status >= 500,
+          statusCode: response.status,
+        });
+      }
+
+      const rawXml = yield* readCaldavResponseText(
+        response,
+        "read CalDAV PROPFIND response",
+        CALDAV_XML_MAX_BYTES,
+      );
+      const xml = yield* Schema.decodeUnknown(CaldavXmlSchema)(rawXml).pipe(
+        Effect.mapError(
+          (cause) =>
+            new CaldavError({
+              operation: "decode CalDAV XML",
+              cause,
+              transient: false,
+            }),
+        ),
+      );
+      return { xml, url: current };
+    }
+    return yield* new CaldavError({
+      operation: "CalDAV PROPFIND",
+      cause: `exceeded ${MAX_REDIRECTS} redirects (${url})`,
+      transient: false,
+    });
+  });
 }
 
 export function basicAuth(username: string, password: string): string {

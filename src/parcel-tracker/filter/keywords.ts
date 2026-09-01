@@ -1,9 +1,10 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import type { AdmitTier } from "../../email/activity.js";
 import { findSenderRule } from "../../email/senderRules.js";
 import type { EmailTriageService } from "../../email/triage.js";
 import config from "../../utils/config.js";
-import { getCarrierNamePatterns } from "../carriers/carrierMap.js";
+import { getCarrierNamePatternsEffect } from "../carriers/carrierMap.js";
 
 // Exported read-only so the rules UI can show what ships built in.
 export const BLACKLISTED_SENDERS = [
@@ -103,51 +104,55 @@ export type FilterResult =
   | { pass: true; reason: string; admitTier: AdmitTier }
   | { pass: false; reason: string };
 
-export async function filterTrackingCandidate(
+export function filterTrackingCandidateEffect(
   email: EmailCandidate,
   logger: Logger,
   triage: EmailTriageService,
-): Promise<FilterResult> {
+): Effect.Effect<FilterResult, never> {
   const fromLower = email.from.toLowerCase();
 
   // User rules beat the built-in lists in both directions: an explicit allow
   // overrides a shipped blacklist entry (block still beats allow among rules).
   const rule = findSenderRule(email.from, "parcel");
   if (rule?.verdict === "block") {
-    return { pass: false, reason: `blocked by rule ${rule.pattern}` };
+    return Effect.succeed({ pass: false, reason: `blocked by rule ${rule.pattern}` });
   }
   if (rule?.verdict === "allow") {
-    return {
+    return Effect.succeed({
       pass: true,
       reason: `allowed by rule ${rule.pattern}`,
       admitTier: "rule",
-    };
+    });
   }
 
   // Blacklisted senders are always rejected
   if (isBlacklistedSender(fromLower)) {
-    return { pass: false, reason: "blacklisted sender" };
+    return Effect.succeed({ pass: false, reason: "blacklisted sender" });
   }
 
   // AliExpress order-status emails never carry tracking info
   if (isAliexpressOrderStatus(fromLower, email.subject)) {
-    return { pass: false, reason: "aliexpress order-status" };
+    return Effect.succeed({ pass: false, reason: "aliexpress order-status" });
   }
 
   // Known carrier/shipping sender domains auto-pass
   if (CARRIER_SENDER_DOMAINS.some((domain) => fromLower.includes(domain))) {
-    return { pass: true, reason: "carrier sender", admitTier: "builtin" };
+    return Effect.succeed({
+      pass: true,
+      reason: "carrier sender",
+      admitTier: "builtin",
+    });
   }
 
   // Cheap-LLM triage decides everything else; keywords are only the fallback
-  try {
-    const verdict = await triage.classify(email);
-    return verdict.parcel
-      ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
-      : { pass: false, reason: `triage: ${verdict.reason}` };
-  } catch {
-    return keywordFallback(email, logger);
-  }
+  return triage.classifyEffect(email).pipe(
+    Effect.map((verdict): FilterResult =>
+      verdict.parcel
+        ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
+        : { pass: false, reason: `triage: ${verdict.reason}` },
+    ),
+    Effect.catchAll(() => keywordFallbackEffect(email, logger)),
+  );
 }
 
 function isBlacklistedSender(fromLower: string): boolean {
@@ -158,30 +163,29 @@ function isBlacklistedSender(fromLower: string): boolean {
 }
 
 /** Degraded path when the triage model is unavailable. */
-async function keywordFallback(
+function keywordFallbackEffect(
   email: EmailCandidate,
   logger: Logger,
-): Promise<FilterResult> {
+): Effect.Effect<FilterResult, never> {
   const searchText = `${email.subject} ${email.textBody}`.toLowerCase();
   const matchedKeyword = TRACKING_KEYWORDS.find((kw) => searchText.includes(kw));
   if (matchedKeyword) {
-    return {
+    return Effect.succeed({
       pass: true,
       reason: `keyword "${matchedKeyword}" (triage unavailable)`,
       admitTier: "keyword-fallback",
-    };
+    });
   }
 
   // Carrier name mentioned (word-boundary match)
-  const patterns = await getCarrierNamePatterns(logger);
-  const fullText = `${email.subject} ${email.textBody}`;
-  if (patterns.some((pattern) => pattern.test(fullText))) {
-    return {
-      pass: true,
-      reason: "carrier name match (triage unavailable)",
-      admitTier: "carrier-name",
-    };
-  }
-
-  return { pass: false, reason: "no keyword match (triage unavailable)" };
+  return Effect.map(getCarrierNamePatternsEffect(logger), (patterns): FilterResult => {
+    const fullText = `${email.subject} ${email.textBody}`;
+    if (patterns.some((pattern) => pattern.test(fullText)))
+      return {
+        pass: true,
+        reason: "carrier name match (triage unavailable)",
+        admitTier: "carrier-name",
+      };
+    return { pass: false, reason: "no keyword match (triage unavailable)" };
+  });
 }

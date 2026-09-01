@@ -16,6 +16,9 @@ vi.mock("@micthiesen/mitools/entities", () => {
         for (const k of this.keys) keyObj[k] = data[k];
         store.set(`${this.name}:${JSON.stringify(keyObj)}`, data);
       }
+      delete(key: Record<string, string>) {
+        return store.delete(`${this.name}:${JSON.stringify(key)}`);
+      }
       static _store = store;
     },
   };
@@ -25,8 +28,11 @@ import { Entity } from "@micthiesen/mitools/entities";
 import {
   addBriefingNotification,
   type BriefingNotification,
+  completeBriefingDelivery,
   formatNotifications,
   getBriefingHistory,
+  releaseBriefingDelivery,
+  reserveBriefingDelivery,
   resolveHistoryPlaceholders,
 } from "./persistence.js";
 
@@ -107,6 +113,22 @@ describe("addBriefingNotification", () => {
     expect(history.notifications).toHaveLength(50);
     expect(history.notifications[0].title).toBe("N5");
     expect(history.notifications[49].title).toBe("N54");
+  });
+});
+
+describe("briefing delivery idempotency", () => {
+  beforeEach(() => clearStore());
+
+  it("suppresses a duplicate reservation after delivery", () => {
+    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(true);
+    completeBriefingDelivery("News", "run-1:hash");
+    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(false);
+  });
+
+  it("allows retry after a confirmed provider failure", () => {
+    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(true);
+    releaseBriefingDelivery("News", "run-1:hash");
+    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(true);
   });
 });
 

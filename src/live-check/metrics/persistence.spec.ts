@@ -1,11 +1,14 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "@effect/vitest";
+import { Effect, Exit } from "effect";
+import { afterEach, vi } from "vitest";
 import { Platform } from "../platforms/index.js";
 import {
   getPlatformViewerMetrics,
   PlatformViewerMetricsEntity,
   recordPlatformViewerCount,
+  recordPlatformViewerCountEffect,
 } from "./persistence.js";
 
 Injector.configure({
@@ -65,4 +68,28 @@ describe("platform viewer metrics", () => {
       ]),
     );
   });
+
+  it.effect("maps an Entity write failure to PersistenceError", () =>
+    Effect.gen(function* () {
+      vi.spyOn(PlatformViewerMetricsEntity, "upsert").mockImplementationOnce(() => {
+        throw new Error("metrics database unavailable");
+      });
+
+      const exit = yield* Effect.exit(
+        recordPlatformViewerCountEffect({
+          streamerId: "iri",
+          platform: Platform.Kick,
+          username: "iri",
+          viewerCount: 10,
+          now: new Date(0),
+        }),
+      );
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        expect(String(exit.cause)).toContain("PersistenceError");
+        expect(String(exit.cause)).toContain("metrics database unavailable");
+      }
+    }),
+  );
 });

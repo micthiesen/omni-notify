@@ -3,11 +3,14 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { Effect } from "effect";
 import { z } from "zod";
 import { getRecsSelectionModel } from "../ai/registry.js";
-import { searchWeb } from "../ai/tools/webSearch.js";
+import { searchWebEffect } from "../ai/tools/webSearch.js";
 import type { ScoredCandidate } from "./shortlist.js";
 import { formatCandidateDetails } from "./shortlist.js";
+import { effectMessage, integrationEffect } from "./effect.js";
+import type { RecommendationIntegrationError } from "./effect.js";
 
 const notificationSchema = z.object({
   title: z
@@ -45,76 +48,84 @@ export type SelectionDecision = z.infer<typeof decisionSchema>;
  * title or no_add in a single model call. Keeping research outside an agentic
  * loop avoids repeatedly billing the growing tool transcript on every step.
  */
-export async function selectRecommendation(
+export function selectRecommendation(
   finalists: ScoredCandidate[],
   historyDigest: string,
   research: Map<string, string>,
   logger: Logger,
   logFile?: LogFile,
-): Promise<SelectionDecision | undefined> {
-  const { model, modelId } = getRecsSelectionModel();
-  const prompt = buildPrompt(finalists, historyDigest, research);
+): Effect.Effect<SelectionDecision | undefined, RecommendationIntegrationError> {
+  return Effect.gen(function* () {
+    const { model, modelId } = getRecsSelectionModel();
+    const prompt = buildPrompt(finalists, historyDigest, research);
 
-  logFile?.log(
-    logger,
-    LogLevel.INFO,
-    `Selection Prompt (${modelId})`,
-    codeBlock(prompt),
-    {
-      consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})`,
-    },
-  );
-
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: decisionSchema }),
-    prompt,
-  });
-  logger.info(
-    `Selection token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
-  );
-
-  const decision = result.output;
-  if (decision) {
-    logFile?.section(
-      "Selection Decision",
-      codeBlock(JSON.stringify(decision, null, 2), "json"),
+    logFile?.log(
+      logger,
+      LogLevel.INFO,
+      `Selection Prompt (${modelId})`,
+      codeBlock(prompt),
+      {
+        consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})`,
+      },
     );
-  }
-  return decision ?? undefined;
+
+    const result = yield* integrationEffect("generate recommendation selection", () =>
+      generateText({
+        model,
+        output: Output.object({ schema: decisionSchema }),
+        prompt,
+      }),
+    );
+    logger.info(
+      `Selection token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+    );
+
+    const decision = result.output;
+    if (decision) {
+      logFile?.section(
+        "Selection Decision",
+        codeBlock(JSON.stringify(decision, null, 2), "json"),
+      );
+    }
+    return decision ?? undefined;
+  });
 }
 
-export async function researchFinalists(
+export function researchFinalists(
   finalists: ScoredCandidate[],
   logger: Logger,
   logFile?: LogFile,
-): Promise<Map<string, string>> {
-  const entries = await Promise.all(
-    finalists.map(async ({ candidate }) => {
-      const query = `${candidate.title} ${candidate.year ?? ""} critical reception audience reviews ending quality`;
-      logger.info(`Selection research: ${query}`);
-      const response = await searchWeb({
-        query,
-        maxResults: 3,
-        maxContentChars: 900,
-      }).catch((error) => {
-        logger.warn(`Research failed for ${candidate.title}`, (error as Error).message);
-        return { results: [] };
-      });
-      const summary = response.results
-        .map(
-          (result) =>
-            `- ${result.title} (${result.url})\n  ${result.content.replace(/\s+/g, " ")}`,
-        )
-        .join("\n");
-      logFile?.section(`Research: ${candidate.title}`, summary || "No results");
-      return [
-        candidate.canonicalId,
-        summary || "No research results available.",
-      ] as const;
-    }),
-  );
-  return new Map(entries);
+): Effect.Effect<Map<string, string>> {
+  return Effect.forEach(
+    finalists,
+    ({ candidate }) =>
+      Effect.gen(function* () {
+        const query = `${candidate.title} ${candidate.year ?? ""} critical reception audience reviews ending quality`;
+        logger.info(`Selection research: ${query}`);
+        const response = yield* searchWebEffect({
+          query,
+          maxResults: 3,
+          maxContentChars: 900,
+        }).pipe(
+          Effect.catchAll((error) => {
+            logger.warn(`Research failed for ${candidate.title}`, effectMessage(error));
+            return Effect.succeed({ results: [] });
+          }),
+        );
+        const summary = response.results
+          .map(
+            (result) =>
+              `- ${result.title} (${result.url})\n  ${result.content.replace(/\s+/g, " ")}`,
+          )
+          .join("\n");
+        logFile?.section(`Research: ${candidate.title}`, summary || "No results");
+        return [
+          candidate.canonicalId,
+          summary || "No research results available.",
+        ] as const;
+      }),
+    { concurrency: 4 },
+  ).pipe(Effect.map((entries) => new Map(entries)));
 }
 
 function buildPrompt(

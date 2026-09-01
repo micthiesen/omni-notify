@@ -1,23 +1,35 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { saveLastDispatchedAt } from "./persistence.js";
+import { Cause, Data, Effect, Fiber, Queue } from "effect";
+import type { PersistenceError } from "../effect/errors.js";
+import { saveLastDispatchedAtEffect } from "./persistence.js";
 import type { EmailHandler, EmailTransport, FetchedEmail } from "./types.js";
 
 /**
  * Transport-agnostic fan-out: on every mail event, polls the transport for
  * new emails and dispatches them to all registered handlers. Events that
- * land mid-processing set a pending flag and re-run (never dropped).
+ * land mid-processing receive a ticket and force another pass (never dropped).
  */
-export class EmailDispatcher {
-  private transport: EmailTransport;
-  private logger: Logger;
-  private handlers: EmailHandler[] = [];
-  private processing = false;
-  private pending = false;
-
-  constructor(transport: EmailTransport, logger: Logger) {
-    this.transport = transport;
-    this.logger = logger;
+export class EmailHandlerError extends Data.TaggedError("EmailHandlerError")<{
+  readonly handler: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `Handler "${this.handler}" failed: ${detail}`;
   }
+}
+
+export class EmailDispatcher {
+  private readonly handlers: EmailHandler[] = [];
+  private readonly lifecycleSemaphore = Effect.unsafeMakeSemaphore(1);
+  private triggerQueue: Queue.Queue<"trigger" | "stop"> | undefined;
+  private supervisor: Fiber.RuntimeFiber<void, never> | undefined;
+
+  constructor(
+    private readonly transport: EmailTransport,
+    private readonly logger: Logger,
+  ) {}
 
   register(handler: EmailHandler): void {
     this.handlers.push(handler);
@@ -28,52 +40,116 @@ export class EmailDispatcher {
   }
 
   onMailEvent(): void {
-    if (this.processing) {
-      // Don't drop the signal: re-run once the current pass finishes so mail
-      // events that land mid-processing are never lost.
-      this.pending = true;
-      this.logger.debug("Dispatcher already processing, queueing another pass");
-      return;
-    }
-
-    this.processing = true;
-    void this.processLoop();
+    // This callback is a synchronous library boundary. `unsafeOffer` does not
+    // create an unowned fiber. The capacity-one queue coalesces notification
+    // bursts while preserving one final poll after an active pass.
+    this.triggerQueue?.unsafeOffer("trigger");
   }
 
-  private async processLoop(): Promise<void> {
-    try {
-      do {
-        this.pending = false;
-        try {
-          const { emails, commit } = await this.transport.pollNewEmails();
-          if (emails.length > 0) {
-            await this.dispatch(emails);
-          }
-          commit();
-        } catch (error) {
-          this.logger.error("Dispatcher error", (error as Error).message);
-        }
-      } while (this.pending);
-    } finally {
-      this.processing = false;
-    }
-  }
-
-  private async dispatch(emails: FetchedEmail[]): Promise<void> {
-    const results = await Promise.allSettled(
-      this.handlers.map((handler) => handler.handleEmails(emails)),
+  /** Start the owned trigger supervisor before push monitoring can emit. */
+  public get startEffect(): Effect.Effect<void, unknown> {
+    return this.lifecycleSemaphore.withPermits(1)(
+      Effect.gen(this, function* () {
+        if (this.supervisor) return;
+        const queue = yield* Queue.bounded<"trigger" | "stop">(1);
+        this.triggerQueue = queue;
+        this.supervisor = yield* Effect.forkDaemon(this.superviseEffect(queue));
+        yield* this.transport
+          .startEffect(() => this.onMailEvent())
+          .pipe(
+            Effect.onError(() =>
+              this.transport.stopEffect.pipe(
+                Effect.ensuring(this.stopSupervisorEffect),
+              ),
+            ),
+          );
+      }),
     );
+  }
 
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      if (result.status === "rejected") {
-        this.logger.error(
-          `Handler "${this.handlers[i].name}" failed`,
-          (result.reason as Error).message,
+  /** Stop notifications, drain the queued final poll, then join the supervisor. */
+  public get stopEffect(): Effect.Effect<void, never> {
+    return this.lifecycleSemaphore.withPermits(1)(
+      this.transport.stopEffect.pipe(Effect.ensuring(this.stopSupervisorEffect)),
+    );
+  }
+
+  private get stopSupervisorEffect(): Effect.Effect<void, never> {
+    return Effect.gen(this, function* () {
+      const queue = this.triggerQueue;
+      const supervisor = this.supervisor;
+      if (!queue || !supervisor) return;
+      yield* Queue.offer(queue, "stop");
+      yield* Fiber.join(supervisor);
+      yield* Queue.shutdown(queue);
+      this.triggerQueue = undefined;
+      this.supervisor = undefined;
+    });
+  }
+
+  private superviseEffect(
+    queue: Queue.Queue<"trigger" | "stop">,
+  ): Effect.Effect<void, never> {
+    return Effect.gen(this, function* () {
+      while (true) {
+        const message = yield* Queue.take(queue);
+        if (message === "stop") return;
+        yield* Effect.catchAllCause(this.processPassEffect, (cause) =>
+          Effect.sync(() => this.logger.error("Dispatcher error", Cause.pretty(cause))),
         );
       }
-    }
+    });
+  }
 
-    saveLastDispatchedAt();
+  /** Deterministic direct trigger for tests and manual polling. */
+  public get onMailEventEffect(): Effect.Effect<void, never> {
+    return this.processPassEffect.pipe(
+      Effect.catchAll((error) =>
+        Effect.sync(() => this.logger.error("Dispatcher error", error.message)),
+      ),
+    );
+  }
+
+  private get processPassEffect(): Effect.Effect<
+    void,
+    EmailHandlerError | PersistenceError
+  > {
+    return Effect.gen(this, function* () {
+      const poll = yield* this.transport.pollNewEmailsEffect.pipe(
+        Effect.mapError(
+          (cause) => new EmailHandlerError({ handler: this.transport.name, cause }),
+        ),
+      );
+      if (poll.emails.length > 0) yield* this.dispatchEffect(poll.emails);
+      // Cursor advancement is valid only after every handler durably accepts the
+      // batch. On failure, replay is intentional and downstream dedup is the gate.
+      yield* Effect.try({
+        try: poll.commit,
+        catch: (cause) =>
+          new EmailHandlerError({ handler: `${this.transport.name} cursor`, cause }),
+      });
+    });
+  }
+
+  private dispatchEffect(emails: FetchedEmail[]) {
+    return Effect.gen(this, function* () {
+      const results = yield* Effect.forEach(
+        this.handlers,
+        (handler) =>
+          handler.handleEmailsEffect(emails).pipe(
+            Effect.mapError(
+              (cause) => new EmailHandlerError({ handler: handler.name, cause }),
+            ),
+            Effect.either,
+          ),
+        { concurrency: "unbounded" },
+      );
+      const failures = results.filter((result) => result._tag === "Left");
+      for (const failure of failures) {
+        this.logger.error(failure.left.message);
+      }
+      if (failures[0]) yield* Effect.fail(failures[0].left);
+      yield* saveLastDispatchedAtEffect();
+    });
   }
 }

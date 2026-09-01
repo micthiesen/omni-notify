@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
 import { CandidateSource, MediaType } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   upsert: vi.fn(),
   patch: vi.fn(),
+  getAll: vi.fn(),
   getOpenRecommendations: vi.fn(),
   fetchTitleGenreIds: vi.fn(),
 }));
@@ -33,19 +35,32 @@ vi.mock("./mediaLibrary.js", () => ({
   fetchWatchHistory: mocks.fetchWatchHistory,
   fetchInProgress: mocks.fetchInProgress,
   fetchLibraryIndex: mocks.fetchLibraryIndex,
+  fetchWatchHistoryEffect: (...args: unknown[]) =>
+    Effect.promise(() => mocks.fetchWatchHistory(...args)),
+  fetchInProgressEffect: (...args: unknown[]) =>
+    Effect.promise(() => mocks.fetchInProgress(...args)),
+  fetchLibraryIndexEffect: (...args: unknown[]) =>
+    Effect.promise(() => mocks.fetchLibraryIndex(...args)),
 }));
 vi.mock("./watchlist.js", () => ({
   fetchWatchlist: mocks.fetchWatchlist,
   addToWatchlist: mocks.addToWatchlist,
+  fetchWatchlistEffect: (...args: unknown[]) =>
+    Effect.promise(() => mocks.fetchWatchlist(...args)),
+  addToWatchlistEffect: (...args: unknown[]) =>
+    Effect.promise(() => mocks.addToWatchlist(...args)),
 }));
 vi.mock("./identity.js", () => ({
   RESOLUTION_CONFIDENCE_THRESHOLD: 0.8,
-  resolveIdentity: mocks.resolveIdentity,
+  resolveIdentity: (...args: unknown[]) =>
+    Effect.promise(() => mocks.resolveIdentity(...args)),
 }));
 vi.mock("./candidates.js", () => ({
-  fetchCandidateBuckets: mocks.fetchCandidateBuckets,
+  fetchCandidateBuckets: (...args: unknown[]) =>
+    Effect.promise(() => mocks.fetchCandidateBuckets(...args)),
   assemblePool: mocks.assemblePool,
-  enrichCandidates: mocks.enrichCandidates,
+  enrichCandidates: (...args: unknown[]) =>
+    Effect.promise(() => mocks.enrichCandidates(...args)),
 }));
 vi.mock("./filters.js", () => ({ filterEligible: mocks.filterEligible }));
 vi.mock("./history.js", () => ({
@@ -60,7 +75,7 @@ vi.mock("./persistence.js", () => ({
     Failed: "failed",
   },
   RecommendationEntity: {
-    getAll: () => [],
+    getAll: mocks.getAll,
     upsert: mocks.upsert,
     patch: mocks.patch,
   },
@@ -70,20 +85,31 @@ vi.mock("./persistence.js", () => ({
 }));
 vi.mock("./shortlist.js", () => ({
   FINALIST_COUNT: 5,
-  shortlistCandidates: mocks.shortlistCandidates,
+  shortlistCandidates: (...args: unknown[]) =>
+    Effect.promise(() => mocks.shortlistCandidates(...args)),
 }));
 vi.mock("./selection.js", () => ({
-  researchFinalists: mocks.researchFinalists,
-  selectRecommendation: mocks.selectRecommendation,
+  researchFinalists: (...args: unknown[]) =>
+    Effect.promise(() => mocks.researchFinalists(...args)),
+  selectRecommendation: (...args: unknown[]) =>
+    Effect.promise(() => mocks.selectRecommendation(...args)),
 }));
 vi.mock("./tmdb/client.js", () => ({
   fetchTitleGenreIds: mocks.fetchTitleGenreIds,
+  fetchTitleGenreIdsEffect: (...args: unknown[]) =>
+    Effect.promise(() => mocks.fetchTitleGenreIds(...args)),
 }));
 vi.mock("./taste/index.js", () => ({
   formatTasteProfileDigest: () => "taste profile",
 }));
 
-import { runRecommendationPipeline } from "./pipeline.js";
+import { runRecommendationPipelineEffect } from "./pipeline.js";
+
+const runRecommendationPipeline = (
+  logger: never,
+  logFile?: never,
+  options?: Parameters<typeof runRecommendationPipelineEffect>[2],
+) => Effect.runPromise(runRecommendationPipelineEffect(logger, logFile, options));
 
 const watched = {
   guid: "watched",
@@ -153,6 +179,7 @@ const logger = {
 describe("recommendation pipeline orchestration", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.patch.mockReset();
     mocks.fetchWatchHistory.mockResolvedValue({ status: "ok", value: [watched] });
     mocks.fetchInProgress.mockResolvedValue({ status: "ok", value: [] });
     mocks.fetchLibraryIndex.mockResolvedValue({ status: "ok", value: [library] });
@@ -164,6 +191,7 @@ describe("recommendation pipeline orchestration", () => {
     }));
     mocks.fetchTitleGenreIds.mockResolvedValue([]);
     mocks.getOpenRecommendations.mockReturnValue([]);
+    mocks.getAll.mockReturnValue([]);
     mocks.fetchCandidateBuckets.mockResolvedValue([]);
     mocks.assemblePool.mockReturnValue([candidate]);
     mocks.filterEligible.mockReturnValue({ kept: [candidate], dropped: [] });
@@ -221,6 +249,72 @@ describe("recommendation pipeline orchestration", () => {
     expect(mocks.patch).toHaveBeenCalledWith(
       expect.objectContaining({ recommendationId: expect.any(String) }),
       expect.objectContaining({ status: "failed", watchlistResult: "error" }),
+    );
+  });
+
+  it("timestamps an already-tracked recommendation when closing its pending row", async () => {
+    mocks.selectRecommendation.mockResolvedValue(selection(candidate.canonicalId));
+    mocks.addToWatchlist.mockResolvedValue({ result: "already_exists" });
+
+    await expect(runRecommendationPipeline(logger)).resolves.toBe(
+      "no_add: selected and backup are already tracked",
+    );
+    expect(mocks.patch).toHaveBeenCalledWith(
+      expect.objectContaining({ recommendationId: expect.any(String) }),
+      expect.objectContaining({
+        status: "failed",
+        watchlistResult: "already_exists",
+        resolvedAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("does not resend when delivery succeeded before the notified patch failed", async () => {
+    mocks.selectRecommendation.mockResolvedValue(selection(candidate.canonicalId));
+    mocks.addToWatchlist.mockResolvedValue({ result: "added" });
+    mocks.notify.mockResolvedValue(undefined);
+    mocks.patch.mockImplementation((_key: unknown, patch: { status?: string }) => {
+      if (patch.status === "notified") throw new Error("database unavailable");
+    });
+
+    await expect(runRecommendationPipeline(logger)).rejects.toThrow();
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
+    const inserted = mocks.upsert.mock.calls[0]![0];
+
+    mocks.patch.mockReset();
+    mocks.getAll.mockReturnValue([
+      {
+        ...inserted,
+        recommendedAt: Date.now() - 2 * 60 * 60 * 1000,
+        watchlistResult: "added",
+        notificationState: "reserved",
+        notificationReservedAt: Date.now() - 2 * 60 * 60 * 1000,
+      },
+    ]);
+    mocks.fetchWatchlist.mockResolvedValue({
+      status: "ok",
+      value: [
+        {
+          ...tracked,
+          externalIds: { tmdb: 4 },
+        },
+      ],
+    });
+    mocks.selectRecommendation.mockResolvedValue({
+      decision: "no_add",
+      selected: null,
+      backup: null,
+      no_add_reason: "not today",
+    });
+
+    await runRecommendationPipeline(logger);
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
+    expect(mocks.patch).toHaveBeenCalledWith(
+      { recommendationId: inserted.recommendationId },
+      expect.objectContaining({
+        status: "notified",
+        notificationState: "unknown",
+      }),
     );
   });
 

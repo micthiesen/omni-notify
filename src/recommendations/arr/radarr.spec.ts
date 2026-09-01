@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ArrConfig } from "./client.js";
+import { Effect } from "effect";
+import { ARR_JSON_MAX_BYTES, type ArrConfig } from "./client.js";
 import { addRadarrMovie, fetchRadarrMovies } from "./radarr.js";
 
 const config: ArrConfig = {
@@ -25,7 +26,9 @@ describe("Radarr adapter", () => {
       ]),
     );
 
-    await expect(fetchRadarrMovies(config, fetchMock)).resolves.toEqual({
+    await expect(
+      Effect.runPromise(fetchRadarrMovies(config, fetchMock)),
+    ).resolves.toEqual({
       status: "ok",
       value: [
         {
@@ -45,14 +48,64 @@ describe("Radarr adapter", () => {
     );
   });
 
+  it("treats malformed tracked-movie payloads as unavailable", async () => {
+    const nullPayload = vi.fn<typeof fetch>().mockResolvedValue(json(null));
+    await expect(
+      Effect.runPromise(fetchRadarrMovies(config, nullPayload)),
+    ).resolves.toEqual({ status: "unavailable" });
+
+    const malformedEntry = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(json([{ id: 8, title: "Arrival", tmdbId: 329865 }, null]));
+    await expect(
+      Effect.runPromise(fetchRadarrMovies(config, malformedEntry)),
+    ).resolves.toEqual({ status: "unavailable" });
+  });
+
+  it("rejects an oversized declared response before buffering it", async () => {
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ cancel: cancelled });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(body, {
+        headers: { "content-length": String(ARR_JSON_MAX_BYTES + 1) },
+      }),
+    );
+
+    await expect(
+      Effect.runPromise(fetchRadarrMovies(config, fetchMock)),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(cancelled).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a chunked response as soon as it crosses the byte limit", async () => {
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(ARR_JSON_MAX_BYTES));
+        controller.enqueue(new Uint8Array(1));
+      },
+      cancel: cancelled,
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(body, { headers: { "Content-Type": "application/json" } }),
+      );
+
+    await expect(
+      Effect.runPromise(fetchRadarrMovies(config, fetchMock)),
+    ).resolves.toEqual({ status: "unavailable" });
+    expect(cancelled).toHaveBeenCalledTimes(1);
+  });
+
   it("reports an existing movie without looking it up or writing", async () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValue(json([{ id: 8, title: "Arrival", tmdbId: 329865 }]));
 
-    await expect(addRadarrMovie(config, 329865, fetchMock)).resolves.toBe(
-      "already_exists",
-    );
+    await expect(
+      Effect.runPromise(addRadarrMovie(config, 329865, fetchMock)),
+    ).resolves.toBe("already_exists");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -65,7 +118,9 @@ describe("Radarr adapter", () => {
       .mockResolvedValueOnce(json({ id: 8, ...lookup }, 201))
       .mockResolvedValueOnce(json([{ id: 8, ...lookup }]));
 
-    await expect(addRadarrMovie(config, 329865, fetchMock)).resolves.toBe("added");
+    await expect(
+      Effect.runPromise(addRadarrMovie(config, 329865, fetchMock)),
+    ).resolves.toBe("added");
     const [url, init] = fetchMock.mock.calls[2];
     expect(url.toString()).toBe("http://radarr:7878/api/v3/movie");
     expect(init?.method).toBe("POST");
@@ -83,16 +138,32 @@ describe("Radarr adapter", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(json([]))
       .mockResolvedValueOnce(json({}));
-    await expect(addRadarrMovie(config, 1, missing)).resolves.toBe("not_found");
+    await expect(Effect.runPromise(addRadarrMovie(config, 1, missing))).resolves.toBe(
+      "not_found",
+    );
 
     const unavailable = vi.fn<typeof fetch>().mockRejectedValue(new Error("offline"));
-    await expect(addRadarrMovie(config, 1, unavailable)).resolves.toBe("unavailable");
+    await expect(
+      Effect.runPromise(addRadarrMovie(config, 1, unavailable)),
+    ).resolves.toBe("unavailable");
 
     const rejected = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(json([]))
       .mockResolvedValueOnce(json({ title: "Movie", tmdbId: 1 }))
       .mockResolvedValueOnce(json({ message: "invalid" }, 400));
-    await expect(addRadarrMovie(config, 1, rejected)).resolves.toBe("error");
+    await expect(Effect.runPromise(addRadarrMovie(config, 1, rejected))).resolves.toBe(
+      "error",
+    );
+  });
+
+  it("does not inspect properties on a malformed lookup response", async () => {
+    const malformed = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(json([]))
+      .mockResolvedValueOnce(json(null));
+    await expect(Effect.runPromise(addRadarrMovie(config, 1, malformed))).resolves.toBe(
+      "unavailable",
+    );
   });
 });

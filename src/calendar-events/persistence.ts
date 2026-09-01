@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
 import { toDateStamp } from "../utils/dates.js";
 
@@ -63,6 +64,17 @@ export function computeEventHash(
 ): string {
   const key = `${normalizeTitle(title)}|${startDate}|${startTime ?? "allday"}`;
   return key;
+}
+
+/**
+ * Stable CalDAV resource identity for a logical event. A replay after the
+ * server accepted the PUT but before local persistence uses the same resource
+ * URL, so If-None-Match turns the replay into `already_exists` instead of a
+ * duplicate calendar event.
+ */
+export function computeCalendarEventUid(eventHash: string): string {
+  const digest = createHash("sha256").update(eventHash).digest("hex").slice(0, 32);
+  return `omni-${digest}@omni-notify`;
 }
 
 /** Pure: active events within a window of 7 days past through `futureDays` ahead. */

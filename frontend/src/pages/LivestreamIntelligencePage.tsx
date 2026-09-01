@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Effect, Schedule } from "effect";
 import {
   fetchLivestreamIntelligenceDetails,
   type LivestreamIntelligenceDetails,
@@ -6,6 +7,7 @@ import {
   type LivestreamPipelineStage,
   type LivestreamStageDiagnostic,
 } from "../api";
+import { forkUiEffect } from "../effect";
 import { useNow } from "../hooks/useNow";
 import { useLiveData } from "../live";
 import { Link } from "../router";
@@ -160,29 +162,22 @@ export default function LivestreamIntelligencePage({
   const streamer = snapshot?.streamers.find((item) => item.id === streamerId);
 
   useEffect(() => {
-    let cancelled = false;
-    const refresh = () => {
-      fetchLivestreamIntelligenceDetails(streamerId)
-        .then((next) => {
-          if (!cancelled) {
-            setDetails(next);
-            setError(null);
-          }
-        })
-        .catch((reason) => {
-          if (!cancelled) {
-            setError(
-              reason instanceof Error ? reason.message : "Failed to load diagnostics",
-            );
-          }
-        });
-    };
-    refresh();
-    const timer = window.setInterval(refresh, 10_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
+    const refresh = fetchLivestreamIntelligenceDetails(streamerId).pipe(
+      Effect.tap((next) =>
+        Effect.sync(() => {
+          setDetails(next);
+          setError(null);
+        }),
+      ),
+      Effect.catchAll((reason) =>
+        Effect.sync(() =>
+          setError(
+            reason instanceof Error ? reason.message : "Failed to load diagnostics",
+          ),
+        ),
+      ),
+    );
+    return forkUiEffect(Effect.repeat(refresh, Schedule.spaced("10 seconds")));
   }, [streamerId]);
 
   useEffect(() => {

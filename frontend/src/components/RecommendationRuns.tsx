@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Effect } from "effect";
 import { fetchTaskRuns } from "../api";
 import type { TaskRun } from "../api";
+import { forkUiEffect } from "../effect";
 import { formatAbsolute, formatRelative } from "../utils/format";
 import { LogViewer } from "./LogViewer";
 
@@ -30,17 +32,13 @@ export function RecommendationRuns({
   const [logRun, setLogRun] = useState<TaskRun | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchTaskRuns({ task: taskName, limit: 6 })
-      .then((data) => {
-        if (!cancelled) setRuns(data.runs);
-      })
-      .catch(() => {
+    return forkUiEffect(
+      fetchTaskRuns({ task: taskName, limit: 6 }).pipe(
+        Effect.tap((data) => Effect.sync(() => setRuns(data.runs))),
         // Recommendation cards remain useful if activity history is unavailable.
-      });
-    return () => {
-      cancelled = true;
-    };
+        Effect.catchAll(() => Effect.void),
+      ),
+    );
   }, [taskName, latestRunId]);
 
   return (

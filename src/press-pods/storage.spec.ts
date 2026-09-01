@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { Injector } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 // getAudioDir() derives from DB_NAME's directory when PRESSPODS_AUDIO_DIR is
@@ -73,40 +74,46 @@ describe("chunk checkpoint round-trip", () => {
   const workId = "workid-roundtrip";
 
   it("returns null on a miss", async () => {
-    expect(await readChunkCheckpoint(workId, checkpointKey("s", "missing"))).toBeNull();
+    expect(
+      await Effect.runPromise(
+        readChunkCheckpoint(workId, checkpointKey("s", "missing")),
+      ),
+    ).toBeNull();
   });
 
   it("writes then reads back the exact bytes", async () => {
     const key = checkpointKey("s", "chunk one");
     const wav = Buffer.from("fake-wav-bytes");
-    await writeChunkCheckpoint(workId, key, wav);
-    const read = await readChunkCheckpoint(workId, key);
+    await Effect.runPromise(writeChunkCheckpoint(workId, key, wav));
+    const read = await Effect.runPromise(readChunkCheckpoint(workId, key));
     expect(read?.equals(wav)).toBe(true);
   });
 
   it("deletes a single checkpoint", async () => {
     const key = checkpointKey("s", "chunk two");
-    await writeChunkCheckpoint(workId, key, Buffer.from("x"));
-    await deleteChunkCheckpoint(workId, key);
-    expect(await readChunkCheckpoint(workId, key)).toBeNull();
+    await Effect.runPromise(writeChunkCheckpoint(workId, key, Buffer.from("x")));
+    await Effect.runPromise(deleteChunkCheckpoint(workId, key));
+    expect(await Effect.runPromise(readChunkCheckpoint(workId, key))).toBeNull();
   });
 
   it("clears the whole work set", async () => {
     const key = checkpointKey("s", "chunk three");
-    await writeChunkCheckpoint(workId, key, Buffer.from("y"));
-    await clearChunkCheckpoints(workId);
-    expect(await readChunkCheckpoint(workId, key)).toBeNull();
+    await Effect.runPromise(writeChunkCheckpoint(workId, key, Buffer.from("y")));
+    await Effect.runPromise(clearChunkCheckpoints(workId));
+    expect(await Effect.runPromise(readChunkCheckpoint(workId, key))).toBeNull();
   });
 
   it("clearing a non-existent work set is a no-op (never throws)", async () => {
-    await expect(clearChunkCheckpoints("never-created")).resolves.toBeUndefined();
+    await expect(
+      Effect.runPromise(clearChunkCheckpoints("never-created")),
+    ).resolves.toBeUndefined();
   });
 });
 
 describe("materializeCheckpointWav", () => {
   it("writes the bytes to a fresh readable temp file", async () => {
     const wav = Buffer.from("materialized");
-    const p = await materializeCheckpointWav(wav);
+    const p = await Effect.runPromise(materializeCheckpointWav(wav));
     expect((await fsAsync.readFile(p)).equals(wav)).toBe(true);
     await fsAsync.rm(p, { force: true });
   });
@@ -114,10 +121,14 @@ describe("materializeCheckpointWav", () => {
 
 describe("deleteEpisodeAudio", () => {
   it("never throws for a missing file", async () => {
-    await expect(deleteEpisodeAudio("does-not-exist.mp3")).resolves.toBeUndefined();
+    await expect(
+      Effect.runPromise(deleteEpisodeAudio("does-not-exist.mp3")),
+    ).resolves.toBeUndefined();
   });
 
   it("ignores names that aren't valid audio files", async () => {
-    await expect(deleteEpisodeAudio("../escape")).resolves.toBeUndefined();
+    await expect(
+      Effect.runPromise(deleteEpisodeAudio("../escape")),
+    ).resolves.toBeUndefined();
   });
 });

@@ -3,9 +3,10 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { Data, Effect } from "effect";
 import { z } from "zod";
 import { getRecsSelectionModel } from "../ai/registry.js";
-import { searchWeb } from "../ai/tools/webSearch.js";
+import { searchWebEffect } from "../ai/tools/webSearch.js";
 import { toDateStamp } from "../utils/dates.js";
 import type { ScoredEpisode } from "./shortlist.js";
 
@@ -42,80 +43,98 @@ export type PodcastSelectionDecision = z.infer<typeof decisionSchema>;
  * episode (or no_add) per call against a shrinking finalist set — the same
  * research-outside-the-loop shape as the media recommendations selector.
  */
-export async function selectEpisode(
+class PodcastSelectionError extends Data.TaggedError("PodcastSelectionError")<{
+  readonly operation: "select" | "research";
+  readonly cause: unknown;
+}> {}
+
+export function selectEpisodeEffect(
   finalists: ScoredEpisode[],
   tasteDigest: string,
   research: Map<string, string>,
   logger: Logger,
   logFile?: LogFile,
-): Promise<PodcastSelectionDecision | undefined> {
-  const { model, modelId } = getRecsSelectionModel();
-  const prompt = buildPrompt(finalists, tasteDigest, research);
+): Effect.Effect<PodcastSelectionDecision | undefined, PodcastSelectionError> {
+  return Effect.gen(function* () {
+    const { model, modelId } = getRecsSelectionModel();
+    const prompt = buildPrompt(finalists, tasteDigest, research);
 
-  logFile?.log(
-    logger,
-    LogLevel.INFO,
-    `Podcast Selection Prompt (${modelId})`,
-    codeBlock(prompt),
-    { consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})` },
-  );
-
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: decisionSchema }),
-    prompt,
-  });
-  logger.info(
-    `Selection token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
-  );
-
-  const decision = result.output;
-  if (decision) {
-    logFile?.section(
-      "Podcast Selection Decision",
-      codeBlock(JSON.stringify(decision, null, 2), "json"),
+    logFile?.log(
+      logger,
+      LogLevel.INFO,
+      `Podcast Selection Prompt (${modelId})`,
+      codeBlock(prompt),
+      { consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})` },
     );
-  }
-  return decision ?? undefined;
+
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        generateText({
+          model,
+          output: Output.object({ schema: decisionSchema }),
+          prompt,
+        }),
+      catch: (cause) => new PodcastSelectionError({ operation: "select", cause }),
+    });
+    logger.info(
+      `Selection token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+    );
+
+    const decision = result.output;
+    if (decision) {
+      logFile?.section(
+        "Podcast Selection Decision",
+        codeBlock(JSON.stringify(decision, null, 2), "json"),
+      );
+    }
+    return decision ?? undefined;
+  });
 }
 
-export async function researchFinalists(
+export function researchFinalistsEffect(
   finalists: ScoredEpisode[],
   logger: Logger,
   logFile?: LogFile,
-): Promise<Map<string, string>> {
-  const entries = await Promise.all(
-    finalists.map(async ({ candidate }) => {
-      const query = `"${candidate.showTitle}" podcast ${candidate.episodeTitle} review discussion`;
-      logger.info(`Selection research: ${query}`);
-      const response = await searchWeb({
-        query,
-        maxResults: 3,
-        maxContentChars: 800,
-      }).catch((error) => {
-        logger.warn(
-          `Research failed for ${candidate.episodeTitle}`,
-          (error as Error).message,
-        );
-        return { results: [] };
-      });
-      const summary = response.results
-        .map(
-          (result) =>
-            `- ${result.title} (${result.url})\n  ${result.content.replace(/\s+/g, " ")}`,
-        )
-        .join("\n");
-      logFile?.section(
-        `Research: ${candidate.showTitle} — ${candidate.episodeTitle}`,
-        summary || "No results",
-      );
-      return [
-        candidate.episodeId,
-        summary || "No research results available.",
-      ] as const;
-    }),
-  );
-  return new Map(entries);
+): Effect.Effect<Map<string, string>> {
+  return Effect.gen(function* () {
+    const entries = yield* Effect.forEach(
+      finalists,
+      ({ candidate }) =>
+        Effect.gen(function* () {
+          const query = `"${candidate.showTitle}" podcast ${candidate.episodeTitle} review discussion`;
+          logger.info(`Selection research: ${query}`);
+          const response = yield* searchWebEffect({
+            query,
+            maxResults: 3,
+            maxContentChars: 800,
+          }).pipe(
+            Effect.catchAll((error) => {
+              logger.warn(
+                `Research failed for ${candidate.episodeTitle}`,
+                String(error),
+              );
+              return Effect.succeed({ results: [] });
+            }),
+          );
+          const summary = response.results
+            .map(
+              (result) =>
+                `- ${result.title} (${result.url})\n  ${result.content.replace(/\s+/g, " ")}`,
+            )
+            .join("\n");
+          logFile?.section(
+            `Research: ${candidate.showTitle} — ${candidate.episodeTitle}`,
+            summary || "No results",
+          );
+          return [
+            candidate.episodeId,
+            summary || "No research results available.",
+          ] as const;
+        }),
+      { concurrency: "unbounded" },
+    );
+    return new Map(entries);
+  });
 }
 
 function buildPrompt(

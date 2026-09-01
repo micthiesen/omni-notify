@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
 import { MediaType } from "../types.js";
 import { PlexClient, type PlexGet, parseExternalIds } from "./client.js";
 
@@ -63,7 +64,7 @@ describe("PlexClient", () => {
       throw new Error(`unexpected request ${path}`);
     });
 
-    const result = await new PlexClient(get).fetchWatchHistory();
+    const result = await Effect.runPromise(new PlexClient(get).fetchWatchHistory());
 
     expect(result).toEqual([
       {
@@ -106,7 +107,9 @@ describe("PlexClient", () => {
       });
     };
 
-    await expect(new PlexClient(get).fetchInProgress()).resolves.toEqual([
+    await expect(
+      Effect.runPromise(new PlexClient(get).fetchInProgress()),
+    ).resolves.toEqual([
       {
         guid: "plex://movie/one",
         title: "Movie One",
@@ -152,7 +155,7 @@ describe("PlexClient", () => {
       throw new Error(`unexpected request ${path}`);
     };
 
-    const history = await new PlexClient(get).fetchWatchHistory();
+    const history = await Effect.runPromise(new PlexClient(get).fetchWatchHistory());
     expect(history[0]?.externalIds).toEqual({ tmdb: 99 });
   });
 
@@ -194,7 +197,9 @@ describe("PlexClient", () => {
       throw new Error(`unexpected request ${path}`);
     };
 
-    await expect(new PlexClient(get).fetchLibraryIndex()).resolves.toEqual([
+    await expect(
+      Effect.runPromise(new PlexClient(get).fetchLibraryIndex()),
+    ).resolves.toEqual([
       {
         guid: "plex://movie/a",
         title: "A",
@@ -213,9 +218,33 @@ describe("PlexClient", () => {
   });
 
   it("rejects malformed Plex responses", async () => {
-    await expect(new PlexClient(async () => ({})).fetchLibraryIndex()).rejects.toThrow(
-      "MediaContainer",
-    );
+    await expect(
+      Effect.runPromise(new PlexClient(async () => ({})).fetchLibraryIndex()),
+    ).rejects.toThrow("MediaContainer");
+  });
+
+  it("rejects malformed nested Plex metadata with a typed integration error", async () => {
+    const malformed: PlexGet = async () =>
+      response({ Metadata: [{ type: "movie", title: null }] });
+
+    await expect(
+      Effect.runPromise(new PlexClient(malformed).fetchInProgress().pipe(Effect.flip)),
+    ).resolves.toMatchObject({
+      _tag: "RecommendationIntegrationError",
+      operation: "decode Plex continue watching",
+    });
+  });
+
+  it("rejects null Plex containers before reading nested properties", async () => {
+    const malformed: PlexGet = async () => ({ MediaContainer: null });
+    await expect(
+      Effect.runPromise(
+        new PlexClient(malformed).fetchLibraryIndex().pipe(Effect.flip),
+      ),
+    ).resolves.toMatchObject({
+      _tag: "RecommendationIntegrationError",
+      operation: "decode Plex library sections",
+    });
   });
 
   it("rejects unscoped history containing multiple Plex accounts", async () => {
@@ -227,14 +256,14 @@ describe("PlexClient", () => {
           { type: "movie", accountID: 2, guid: "plex://movie/2", title: "Two" },
         ],
       });
-    await expect(new PlexClient(get).fetchWatchHistory()).rejects.toThrow(
-      "PLEX_ACCOUNT_ID",
-    );
+    await expect(
+      Effect.runPromise(new PlexClient(get).fetchWatchHistory()),
+    ).rejects.toThrow("PLEX_ACCOUNT_ID");
   });
 
   it("passes the configured Plex account filter to history requests", async () => {
     const get = vi.fn<PlexGet>(async () => response({ totalSize: 0, Metadata: [] }));
-    await new PlexClient(get, 7).fetchWatchHistory();
+    await Effect.runPromise(new PlexClient(get, 7).fetchWatchHistory());
     expect(get).toHaveBeenCalledWith(
       "/status/sessions/history/all",
       expect.objectContaining({ accountID: 7 }),

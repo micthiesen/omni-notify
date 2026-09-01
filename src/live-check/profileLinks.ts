@@ -1,10 +1,12 @@
 import { decode } from "html-entities";
+import { Clock, Data, Effect } from "effect";
 import { parseHTML } from "linkedom";
+import type { PersistenceError } from "../effect/errors.js";
 import {
   canonicalBindingKey,
-  getProfileIdentityLink,
+  getProfileIdentityLinkEffect,
   type ProfileIdentityLink,
-  rememberProfileIdentityLink,
+  rememberProfileIdentityLinkEffect,
 } from "./identityLinks.js";
 import { Platform } from "./platforms/index.js";
 import type { PlatformBinding } from "./streamers.js";
@@ -34,6 +36,17 @@ export type ProfilePageFetcher = (
   input: string | URL,
   init?: RequestInit,
 ) => Promise<Response>;
+
+export class ProfileLinkError extends Data.TaggedError("ProfileLinkError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `${this.operation}: ${detail}`;
+  }
+}
 
 function validHandle(value: string): boolean {
   return /^[A-Za-z0-9_.-]{2,100}$/.test(value);
@@ -164,38 +177,73 @@ export function profilePageUrl(binding: PlatformBinding): string | undefined {
   }
 }
 
-async function readBoundedText(response: Response, maxBytes: number): Promise<string> {
-  if (!response.ok) throw new Error(`Profile page returned HTTP ${response.status}`);
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw new Error(`Profile page exceeds ${maxBytes} byte limit`);
-  }
-  if (!response.body) return "";
+function readBoundedText(
+  response: Response,
+  maxBytes: number,
+): Effect.Effect<string, ProfileLinkError> {
+  const readError = (cause: unknown) =>
+    new ProfileLinkError({ operation: "read bounded profile page", cause });
 
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > maxBytes) {
-      await reader.cancel();
-      throw new Error(`Profile page exceeds ${maxBytes} byte limit`);
+  return Effect.gen(function* () {
+    if (!response.ok) {
+      return yield* readError(
+        new Error(`Profile page returned HTTP ${response.status}`),
+      );
     }
-    chunks.push(value);
-  }
-  const combined = new Uint8Array(bytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combined.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(combined);
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      return yield* readError(new Error(`Profile page exceeds ${maxBytes} byte limit`));
+    }
+    if (!response.body) return "";
+
+    return yield* Effect.acquireUseRelease(
+      Effect.try({
+        try: () => response.body!.getReader(),
+        catch: readError,
+      }),
+      (reader) =>
+        Effect.tryPromise({
+          try: async () => {
+            const chunks: Uint8Array[] = [];
+            let bytes = 0;
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              bytes += value.byteLength;
+              if (bytes > maxBytes) {
+                throw new Error(`Profile page exceeds ${maxBytes} byte limit`);
+              }
+              chunks.push(value);
+            }
+            const combined = new Uint8Array(bytes);
+            let offset = 0;
+            for (const chunk of chunks) {
+              combined.set(chunk, offset);
+              offset += chunk.byteLength;
+            }
+            return new TextDecoder().decode(combined);
+          },
+          catch: readError,
+        }),
+      (reader) =>
+        Effect.tryPromise({
+          try: () => reader.cancel(),
+          catch: readError,
+        }).pipe(
+          Effect.ignore,
+          Effect.ensuring(
+            Effect.try({
+              try: () => reader.releaseLock(),
+              catch: readError,
+            }).pipe(Effect.ignore),
+          ),
+        ),
+    );
+  });
 }
 
 /** Fetches exactly the canonical page for the supplied supported account. */
-export async function fetchProfileLinks(
+export function fetchProfileLinksEffect(
   binding: PlatformBinding,
   {
     fetchImpl = fetch,
@@ -206,20 +254,38 @@ export async function fetchProfileLinks(
     timeoutMs?: number;
     maxBytes?: number;
   } = {},
-): Promise<PlatformBinding[]> {
+): Effect.Effect<PlatformBinding[], ProfileLinkError> {
   const url = profilePageUrl(binding);
-  if (!url) return [];
-  const response = await fetchImpl(url, {
-    headers: {
-      Accept: "text/html,application/xhtml+xml",
-      "User-Agent": USER_AGENT,
-    },
-    // Refuse redirects so a platform-controlled response cannot turn this
-    // bounded crawler into a fetch of an unrelated host.
-    redirect: "error",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  return extractProfileLinks(await readBoundedText(response, maxBytes));
+  if (!url) return Effect.succeed([]);
+  return Effect.tryPromise({
+    try: (signal) =>
+      fetchImpl(url, {
+        headers: {
+          Accept: "text/html,application/xhtml+xml",
+          "User-Agent": USER_AGENT,
+        },
+        // Refuse redirects so a platform-controlled response cannot turn this
+        // bounded crawler into a fetch of an unrelated host.
+        redirect: "error",
+        signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+      }),
+    catch: (cause) =>
+      new ProfileLinkError({ operation: `fetch profile page ${url}`, cause }),
+  }).pipe(
+    Effect.flatMap((response) => readBoundedText(response, maxBytes)),
+    Effect.map(extractProfileLinks),
+  );
+}
+
+export function fetchProfileLinks(
+  binding: PlatformBinding,
+  options: {
+    fetchImpl?: ProfilePageFetcher;
+    timeoutMs?: number;
+    maxBytes?: number;
+  } = {},
+): Promise<PlatformBinding[]> {
+  return Effect.runPromise(fetchProfileLinksEffect(binding, options));
 }
 
 function normalizedHandle(binding: PlatformBinding): string | undefined {
@@ -261,11 +327,11 @@ export function profileIdentityEvidence({
  * Learns a durable source -> configured-binding alias from deterministic profile
  * evidence: a direct link with equal handles, or reciprocal direct profile links.
  */
-export async function learnProfileIdentity({
+export function learnProfileIdentityEffect({
   source,
   configuredBindings,
   fetchImpl = fetch,
-  now = Date.now(),
+  now,
   forceRefresh = false,
 }: {
   source: PlatformBinding;
@@ -273,43 +339,65 @@ export async function learnProfileIdentity({
   fetchImpl?: ProfilePageFetcher;
   now?: number;
   forceRefresh?: boolean;
-}): Promise<ProfileIdentityLink | undefined> {
-  const configuredByKey = new Map(
-    configuredBindings.map((binding) => [canonicalBindingKey(binding), binding]),
-  );
-  const existing = getProfileIdentityLink(source);
-  if (!forceRefresh && existing && configuredByKey.has(existing.targetBinding)) {
-    return existing;
-  }
-  const sourceKey = canonicalBindingKey(source);
-  const directLinks = await fetchProfileLinks(source, { fetchImpl });
-  for (const directTarget of directLinks) {
-    const configuredTarget = configuredByKey.get(canonicalBindingKey(directTarget));
-    if (!configuredTarget || canonicalBindingKey(configuredTarget) === sourceKey) {
-      continue;
+}): Effect.Effect<
+  ProfileIdentityLink | undefined,
+  ProfileLinkError | PersistenceError
+> {
+  return Effect.gen(function* () {
+    const observedAt = now ?? (yield* Clock.currentTimeMillis);
+    const configuredByKey = new Map(
+      configuredBindings.map((binding) => [canonicalBindingKey(binding), binding]),
+    );
+    const existing = yield* getProfileIdentityLinkEffect(source);
+    if (!forceRefresh && existing && configuredByKey.has(existing.targetBinding)) {
+      return existing;
     }
+    const sourceKey = canonicalBindingKey(source);
+    const directLinks = yield* fetchProfileLinksEffect(source, { fetchImpl });
+    for (const directTarget of directLinks) {
+      const configuredTarget = configuredByKey.get(canonicalBindingKey(directTarget));
+      if (!configuredTarget || canonicalBindingKey(configuredTarget) === sourceKey) {
+        continue;
+      }
 
-    if (
-      profileIdentityEvidence({
-        source,
-        target: configuredTarget,
-        directLinks,
-      }) === "equal-handle"
-    ) {
-      return rememberProfileIdentityLink({ source, target: configuredTarget, now });
-    }
+      if (
+        profileIdentityEvidence({
+          source,
+          target: configuredTarget,
+          directLinks,
+        }) === "equal-handle"
+      ) {
+        return yield* rememberProfileIdentityLinkEffect({
+          source,
+          target: configuredTarget,
+          now: observedAt,
+        });
+      }
 
-    const reciprocalLinks = await fetchProfileLinks(configuredTarget, { fetchImpl });
-    if (
-      profileIdentityEvidence({
-        source,
-        target: configuredTarget,
-        directLinks,
-        reciprocalLinks,
-      }) === "reciprocal"
-    ) {
-      return rememberProfileIdentityLink({ source, target: configuredTarget, now });
+      const reciprocalLinks = yield* fetchProfileLinksEffect(configuredTarget, {
+        fetchImpl,
+      });
+      if (
+        profileIdentityEvidence({
+          source,
+          target: configuredTarget,
+          directLinks,
+          reciprocalLinks,
+        }) === "reciprocal"
+      ) {
+        return yield* rememberProfileIdentityLinkEffect({
+          source,
+          target: configuredTarget,
+          now: observedAt,
+        });
+      }
     }
-  }
-  return undefined;
+    return undefined;
+  });
+}
+
+export function learnProfileIdentity(
+  input: Parameters<typeof learnProfileIdentityEffect>[0],
+): Promise<ProfileIdentityLink | undefined> {
+  return Effect.runPromise(learnProfileIdentityEffect(input));
 }

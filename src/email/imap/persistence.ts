@@ -1,4 +1,6 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { Schema } from "effect";
+import { fromSync } from "../../effect/interop.js";
 
 export type ImapFolderCursorData = {
   folder: string;
@@ -8,6 +10,13 @@ export type ImapFolderCursorData = {
   uidNext: number;
   updatedAt: number;
 };
+
+const ImapFolderCursorSchema = Schema.Struct({
+  folder: Schema.String,
+  uidValidity: Schema.String,
+  uidNext: Schema.Number,
+  updatedAt: Schema.Number,
+});
 
 /** Per-folder IMAP delta cursor (iCloud transport only). */
 export const ImapFolderCursorEntity = new Entity<ImapFolderCursorData, ["folder"]>(
@@ -30,4 +39,21 @@ export function saveFolderCursor(
     uidNext,
     updatedAt: Date.now(),
   });
+}
+
+export function getFolderCursorEffect(folder: string) {
+  return fromSync("read IMAP folder cursor", () => {
+    const row = ImapFolderCursorEntity.get({ folder });
+    return row ? Schema.decodeUnknownSync(ImapFolderCursorSchema)(row) : undefined;
+  });
+}
+
+export function saveFolderCursorEffect(
+  folder: string,
+  uidValidity: string,
+  uidNext: number,
+) {
+  return fromSync("save IMAP folder cursor", () =>
+    saveFolderCursor(folder, uidValidity, uidNext),
+  );
 }

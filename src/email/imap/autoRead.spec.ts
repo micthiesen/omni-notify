@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
 import {
   type AutoReadClient,
   type AutoReadMailbox,
-  markRecentUnreadRead,
+  markRecentUnreadReadEffect,
   selectAutoReadFolders,
 } from "./autoRead.js";
 
@@ -51,7 +52,7 @@ describe("markRecentUnreadRead", () => {
     const client = makeClient();
     const logger = { warn: vi.fn() };
 
-    await markRecentUnreadRead(client, ["Archive"], logger);
+    await Effect.runPromise(markRecentUnreadReadEffect(client, ["Archive"], logger));
 
     expect(client.messageFlagsAdd).not.toHaveBeenCalled();
     expect(client.getMailboxLock).toHaveBeenCalledWith("Archive", { readOnly: false });
@@ -67,7 +68,7 @@ describe("markRecentUnreadRead", () => {
     const logger = { warn: vi.fn() };
 
     try {
-      await markRecentUnreadRead(client, ["Archive"], logger);
+      await Effect.runPromise(markRecentUnreadReadEffect(client, ["Archive"], logger));
     } finally {
       vi.useRealTimers();
     }
@@ -90,7 +91,9 @@ describe("markRecentUnreadRead", () => {
     });
     const logger = { warn: vi.fn() };
 
-    await markRecentUnreadRead(successClient, ["Archive"], logger);
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(successClient, ["Archive"], logger),
+    );
 
     expect(successRelease).toHaveBeenCalledOnce();
 
@@ -102,7 +105,9 @@ describe("markRecentUnreadRead", () => {
       }),
     });
 
-    await markRecentUnreadRead(errorClient, ["Archive"], logger);
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(errorClient, ["Archive"], logger),
+    );
 
     expect(errorRelease).toHaveBeenCalledOnce();
     expect(logger.warn).toHaveBeenCalledWith(
@@ -120,7 +125,9 @@ describe("markRecentUnreadRead", () => {
     });
     const logger = { warn: vi.fn() };
 
-    await markRecentUnreadRead(client, ["Junk", "Trash"], logger);
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(client, ["Junk", "Trash"], logger),
+    );
 
     expect(client.search).toHaveBeenCalledTimes(1);
     expect(client.messageFlagsAdd).toHaveBeenCalledWith([8], ["\\Seen"], {
@@ -144,7 +151,9 @@ describe("markRecentUnreadRead", () => {
     });
     const logger = { warn: vi.fn() };
 
-    await markRecentUnreadRead(client, ["Junk", "Trash"], logger);
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(client, ["Junk", "Trash"], logger),
+    );
 
     expect(client.search).toHaveBeenCalledTimes(2);
     expect(client.messageFlagsAdd).toHaveBeenCalledOnce();

@@ -1,6 +1,7 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
+import { Deferred, Effect, Exit, Fiber } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Platform } from "../platforms/index.js";
 import type { Streamer } from "../streamers.js";
@@ -16,15 +17,66 @@ import {
 import {
   isDestinyOwnedStream,
   LivestreamIntelligenceService,
+  EffectWorkQueue,
   viewerCountForAnomaly,
 } from "./service.js";
 
+describe("EffectWorkQueue close", () => {
+  it("closes admission before draining work already accepted", async () => {
+    const queue = new EffectWorkQueue(1);
+    const release = Effect.runSync(Deferred.make<void>());
+    await Effect.runPromise(queue.fork(Deferred.await(release)));
+
+    const closing = Effect.runFork(queue.close());
+    await vi.waitFor(() => expect(queue.pending).toBe(1));
+    const late = await Effect.runPromiseExit(queue.run(Effect.void));
+    expect(Exit.isFailure(late)).toBe(true);
+    expect(Effect.runSync(Fiber.poll(closing))._tag).toBe("None");
+
+    await Effect.runPromise(Deferred.succeed(release, undefined));
+    await Effect.runPromise(Fiber.join(closing));
+    expect(queue.pending).toBe(0);
+    expect(queue.size).toBe(0);
+  });
+
+  it("drains an admitted job interrupted while waiting for a permit", async () => {
+    const queue = new EffectWorkQueue(1);
+    const release = Effect.runSync(Deferred.make<void>());
+    await Effect.runPromise(queue.fork(Deferred.await(release)));
+    await vi.waitFor(() => expect(queue.pending).toBe(1));
+    const waiting = Effect.runFork(queue.run(Effect.never));
+    await vi.waitFor(() => expect(queue.size).toBe(1));
+    const closing = Effect.runFork(queue.close());
+
+    await Effect.runPromise(Fiber.interrupt(waiting));
+    expect(queue.size).toBe(0);
+    await Effect.runPromise(Deferred.succeed(release, undefined));
+    await Effect.runPromise(Fiber.join(closing));
+    expect(queue.pending).toBe(0);
+  });
+
+  it("cannot leak admission when fork is interrupted during startup", async () => {
+    const queue = new EffectWorkQueue(1);
+    const release = Effect.runSync(Deferred.make<void>());
+    const forking = Effect.runFork(queue.fork(Deferred.await(release)));
+
+    await Effect.runPromise(Fiber.interrupt(forking));
+    await Effect.runPromise(Deferred.succeed(release, undefined));
+    await Effect.runPromise(queue.close());
+
+    expect(queue.pending).toBe(0);
+    expect(queue.size).toBe(0);
+  });
+});
+
 const { capture, detectDestiny } = vi.hoisted(() => ({
-  capture: vi.fn(async () => ({
-    samples: new Float32Array(18 * 16_000),
-    sampleRate: 16_000,
-    durationSeconds: 18,
-  })),
+  capture: vi.fn(() =>
+    Effect.succeed({
+      samples: new Float32Array(18 * 16_000),
+      sampleRate: 16_000,
+      durationSeconds: 18,
+    }),
+  ),
   detectDestiny: vi.fn(() => ({
     confidence: 0.755,
     matchedWindows: 1,
@@ -49,14 +101,16 @@ vi.mock("../../utils/config.js", () => ({
 }));
 vi.mock("./audio.js", () => ({
   LivestreamAudioCapture: class {
-    public capture = capture;
+    public captureEffect = capture;
   },
 }));
 vi.mock("./localSpeech.js", () => ({
   LocalSpeechRuntime: class {
     public readonly hasVoiceprint = true;
-    public detectDestiny = detectDestiny;
-    public transcribe = vi.fn(async () => "unused transcript");
+    public detectDestinyEffect = vi.fn((_samples: Float32Array) =>
+      Effect.sync(() => detectDestiny()),
+    );
+    public transcribeEffect = vi.fn(() => Effect.succeed("unused transcript"));
   },
 }));
 vi.mock("./classifier.js", () => ({
@@ -64,6 +118,14 @@ vi.mock("./classifier.js", () => ({
   LivestreamClassifier: class {},
   livestreamSpendCents: () => 0,
 }));
+
+const speechDependency = {
+  hasVoiceprint: true,
+  detectDestinyEffect: vi.fn((_samples: Float32Array) =>
+    Effect.sync(() => detectDestiny()),
+  ),
+  transcribeEffect: vi.fn(() => Effect.succeed("unused transcript")),
+};
 
 Injector.configure({
   config: {
@@ -112,6 +174,7 @@ function candidateStreamer(overrides: Partial<Streamer>): Streamer {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.mocked(notify).mockReset();
+  vi.mocked(notify).mockResolvedValue(undefined);
   capture.mockClear();
   detectDestiny.mockClear();
   LivestreamFeedbackEntity.deleteAll();
@@ -232,10 +295,12 @@ describe("LivestreamIntelligenceService Destiny alert recovery", () => {
       createdAt: 21_000,
     });
 
-    const first = new LivestreamIntelligenceService(new Logger("VoiceRetryTest"));
-    first.observeLive(observation);
-    first.afterTick();
-    await first.close();
+    const first = new LivestreamIntelligenceService(new Logger("VoiceRetryTest"), {
+      speech: speechDependency,
+    });
+    await Effect.runPromise(first.observeLive(observation));
+    await Effect.runPromise(first.afterTick());
+    await Effect.runPromise(first.close());
 
     expect(notify).toHaveBeenCalledTimes(1);
     expect(vi.mocked(notify).mock.calls[0]?.[0]).toMatchObject({
@@ -261,10 +326,12 @@ describe("LivestreamIntelligenceService Destiny alert recovery", () => {
         createdAt: Date.now(),
       },
     });
-    const second = new LivestreamIntelligenceService(new Logger("VoiceDedupTest"));
-    second.observeLive(observation);
-    second.afterTick();
-    await second.close();
+    const second = new LivestreamIntelligenceService(new Logger("VoiceDedupTest"), {
+      speech: speechDependency,
+    });
+    await Effect.runPromise(second.observeLive(observation));
+    await Effect.runPromise(second.afterTick());
+    await Effect.runPromise(second.close());
 
     expect(notify).toHaveBeenCalledTimes(1);
   });
@@ -298,22 +365,24 @@ describe("LivestreamIntelligenceService viewer surge alerts", () => {
         ],
       },
     });
-    const observeAtMinute = (
+    const observeAtMinute = async (
       service: LivestreamIntelligenceService,
       minute: number,
       viewers: number,
     ) => {
       now = clockBase + minute * 60_000;
-      service.observeLive(makeObservation(viewers));
+      await Effect.runPromise(service.observeLive(makeObservation(viewers)));
     };
 
-    const first = new LivestreamIntelligenceService(new Logger("SurgeTest"));
+    const first = new LivestreamIntelligenceService(new Logger("SurgeTest"), {
+      speech: speechDependency,
+    });
     for (let minute = 0; minute < 15; minute += 1) {
-      observeAtMinute(first, minute, 200);
+      await observeAtMinute(first, minute, 200);
     }
-    observeAtMinute(first, 16, 430);
+    await observeAtMinute(first, 16, 430);
     expect(notify).not.toHaveBeenCalled();
-    observeAtMinute(first, 17, 440);
+    await observeAtMinute(first, 17, 440);
     expect(LivestreamIntelligenceEntity.get({ streamerId: "darius" })).toMatchObject({
       relevanceScore: 79,
       trend: {
@@ -331,12 +400,15 @@ describe("LivestreamIntelligenceService viewer surge alerts", () => {
       alertedAtByType: { viewer_surge: expect.any(Number) },
     });
 
-    const restarted = new LivestreamIntelligenceService(new Logger("SurgeRestartTest"));
+    const restarted = new LivestreamIntelligenceService(
+      new Logger("SurgeRestartTest"),
+      { speech: speechDependency },
+    );
     for (let minute = 40; minute < 55; minute += 1) {
-      observeAtMinute(restarted, minute, 200);
+      await observeAtMinute(restarted, minute, 200);
     }
-    observeAtMinute(restarted, 55, 430);
-    observeAtMinute(restarted, 56, 440);
+    await observeAtMinute(restarted, 55, 430);
+    await observeAtMinute(restarted, 56, 440);
     await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
     nowSpy.mockRestore();
   });

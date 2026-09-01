@@ -7,6 +7,9 @@ export type SubmittedDeliveryData = {
   description: string;
   submittedAt: number;
   emailId: string;
+  /** Missing on legacy rows, which are already terminal submissions. */
+  status?: "pending" | "submitted" | "rejected";
+  attempts?: number;
 };
 
 export const SubmittedDeliveryEntity = new Entity<
@@ -15,11 +18,22 @@ export const SubmittedDeliveryEntity = new Entity<
 >("parcel-submitted-delivery", ["trackingNumber"]);
 
 export function hasSubmittedDelivery(trackingNumber: string): boolean {
-  return SubmittedDeliveryEntity.get({ trackingNumber }) !== undefined;
+  const row = SubmittedDeliveryEntity.get({ trackingNumber });
+  return row !== undefined && row.status !== "pending";
+}
+
+export function getDeliverySubmission(
+  trackingNumber: string,
+): SubmittedDeliveryData | undefined {
+  return SubmittedDeliveryEntity.get({ trackingNumber });
 }
 
 export function getAllTrackingNumbers(): Set<string> {
-  return new Set(SubmittedDeliveryEntity.getAll().map((d) => d.trackingNumber));
+  return new Set(
+    SubmittedDeliveryEntity.getAll()
+      .filter((delivery) => delivery.status !== "pending")
+      .map((delivery) => delivery.trackingNumber),
+  );
 }
 
 /** Both strings must be at least this long for a containment match. */
@@ -50,4 +64,18 @@ export function findNearDuplicateTracking(
 
 export function recordSubmittedDelivery(data: SubmittedDeliveryData): void {
   SubmittedDeliveryEntity.upsert(data);
+}
+
+/** Persist intent before calling Parcel so an interrupted request is replayable. */
+export function reserveDeliverySubmission(
+  data: Omit<SubmittedDeliveryData, "status" | "attempts">,
+): SubmittedDeliveryData {
+  const prior = getDeliverySubmission(data.trackingNumber);
+  const row: SubmittedDeliveryData = {
+    ...data,
+    status: "pending",
+    attempts: (prior?.attempts ?? 0) + 1,
+  };
+  SubmittedDeliveryEntity.upsert(row);
+  return row;
 }

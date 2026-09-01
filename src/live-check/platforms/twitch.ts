@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { Effect, Schema } from "effect";
 import { fetchGQL } from "./common.js";
 import { type FetchedStatus, LiveStatus } from "./index.js";
 
@@ -8,59 +8,52 @@ const TWITCH_GQL_URL = "https://gql.twitch.tv/gql";
 // No authentication required. See: https://github.com/nicknsy/twitch-api/wiki/Public-GraphQL-queries
 const TWITCH_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
-const twitchStreamSchema = z.object({
-  title: z.string(),
-  viewersCount: z.number(),
-  game: z.object({ name: z.string() }).nullable(),
+const twitchStreamSchema = Schema.Struct({
+  title: Schema.String,
+  viewersCount: Schema.Number,
+  game: Schema.NullOr(Schema.Struct({ name: Schema.String })),
 });
 
-const twitchBroadcastSettingsSchema = z.object({
-  liveUpNotification: z.string().nullable(),
+const twitchBroadcastSettingsSchema = Schema.Struct({
+  liveUpNotification: Schema.NullOr(Schema.String),
 });
 
-const twitchGQLResponseSchema = z.object({
-  data: z.object({
-    user: z
-      .object({
-        stream: twitchStreamSchema.nullable(),
+const twitchGQLResponseSchema = Schema.Struct({
+  data: Schema.Struct({
+    user: Schema.NullOr(
+      Schema.Struct({
+        stream: Schema.NullOr(twitchStreamSchema),
         broadcastSettings: twitchBroadcastSettingsSchema,
-      })
-      .nullable(),
+      }),
+    ),
   }),
 });
 
-type TwitchGQLResponse = z.infer<typeof twitchGQLResponseSchema>;
+type TwitchGQLResponse = Schema.Schema.Type<typeof twitchGQLResponseSchema>;
 
-export async function fetchTwitchLiveStatus({
+export function fetchTwitchLiveStatus({
   username,
 }: {
   username: string;
-}): Promise<FetchedStatus> {
+}): Effect.Effect<FetchedStatus> {
   const query = `query{user(login:"${username}"){stream{title viewersCount game{name}}broadcastSettings{liveUpNotification}}}`;
 
-  let raw: unknown;
-  try {
-    raw = await fetchGQL<unknown>({
+  return fetchGQL(
+    {
       url: TWITCH_GQL_URL,
       clientId: TWITCH_CLIENT_ID,
       query,
-    });
-  } catch (error) {
-    return {
-      status: LiveStatus.Unknown,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-
-  const result = twitchGQLResponseSchema.safeParse(raw);
-  if (!result.success) {
-    return {
-      status: LiveStatus.Unknown,
-      error: `Invalid API response: ${result.error.message}`,
-    };
-  }
-
-  return extractLiveStatus(result.data);
+    },
+    twitchGQLResponseSchema,
+  ).pipe(
+    Effect.map(extractLiveStatus),
+    Effect.catchAll((error) =>
+      Effect.succeed({
+        status: LiveStatus.Unknown,
+        error: error.message,
+      } as FetchedStatus),
+    ),
+  );
 }
 
 export function extractLiveStatus(data: TwitchGQLResponse): FetchedStatus {

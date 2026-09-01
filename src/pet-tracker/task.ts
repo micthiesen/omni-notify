@@ -1,6 +1,8 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Effect } from "effect";
 
+import { runPromise } from "../effect/interop.js";
 import type { Config } from "../utils/config.js";
 import { fetchPetsByUser } from "./api.js";
 import { authenticateWhisker } from "./auth.js";
@@ -40,53 +42,59 @@ export default class PetTrackerTask extends ScheduledTask {
     this.logger = logger.extend("PetTracker");
   }
 
-  public async run(): Promise<void> {
-    const { idToken, userId } = await authenticateWhisker(
-      this.credentials.email,
-      this.credentials.password,
-    );
+  public run(): Promise<void> {
+    return runPromise(this.runEffect());
+  }
 
-    const pets = await fetchPetsByUser(idToken, userId);
+  public runEffect() {
+    return Effect.gen(this, function* () {
+      const { idToken, userId } = yield* authenticateWhisker(
+        this.credentials.email,
+        this.credentials.password,
+      );
 
-    const affectedPets: PetSyncResult[] = [];
-    let totalNew = 0;
-    const now = new Date().toISOString();
+      const pets = yield* fetchPetsByUser(idToken, userId);
 
-    for (const pet of pets) {
-      upsertPet({
-        pet_id: pet.petId,
-        name: pet.name,
-        current_weight: pet.weight,
-        updated_at: now,
-      });
+      const affectedPets: PetSyncResult[] = [];
+      let totalNew = 0;
+      const now = new Date().toISOString();
 
-      let newReadings = 0;
-      for (const reading of pet.weightHistory) {
-        const isNew = insertWeightReading({
+      for (const pet of pets) {
+        upsertPet({
           pet_id: pet.petId,
-          timestamp: reading.timestamp,
-          weight: reading.weight,
-        });
-        if (isNew) newReadings++;
-      }
-      totalNew += newReadings;
-
-      if (newReadings > 0) {
-        affectedPets.push({
-          petId: pet.petId,
           name: pet.name,
-          currentWeight: pet.weight,
+          current_weight: pet.weight,
+          updated_at: now,
         });
+
+        let newReadings = 0;
+        for (const reading of pet.weightHistory) {
+          const isNew = insertWeightReading({
+            pet_id: pet.petId,
+            timestamp: reading.timestamp,
+            weight: reading.weight,
+          });
+          if (isNew) newReadings++;
+        }
+        totalNew += newReadings;
+
+        if (newReadings > 0) {
+          affectedPets.push({
+            petId: pet.petId,
+            name: pet.name,
+            currentWeight: pet.weight,
+          });
+        }
       }
-    }
 
-    const syncMsg = `Synced ${pets.length} pets, ${totalNew} new / ${pets.reduce((s, p) => s + p.weightHistory.length, 0)} total readings`;
-    this.logger[totalNew > 0 ? "info" : "debug"](syncMsg);
+      const syncMsg = `Synced ${pets.length} pets, ${totalNew} new / ${pets.reduce((s, p) => s + p.weightHistory.length, 0)} total readings`;
+      this.logger[totalNew > 0 ? "info" : "debug"](syncMsg);
 
-    if (affectedPets.length > 0) {
-      const lines = affectedPets.map((p) => formatPetLine(p));
-      this.logger.info(lines.join(", "));
-    }
+      if (affectedPets.length > 0) {
+        const lines = affectedPets.map((p) => formatPetLine(p));
+        this.logger.info(lines.join(", "));
+      }
+    });
   }
 }
 

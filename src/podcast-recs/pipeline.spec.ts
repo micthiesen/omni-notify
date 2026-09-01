@@ -1,8 +1,56 @@
 import { describe, expect, it } from "vitest";
+import { it as effectIt } from "@effect/vitest";
+import { Effect } from "effect";
 import type { PodcastWriteResult } from "./account.js";
 import type { PodcastRecommendationData } from "./persistence.js";
 import { PodcastRecommendationStatus } from "./persistence.js";
-import { listenHistorySince, toQueueResult } from "./pipeline.js";
+import {
+  enqueueAndPersistEffect,
+  listenHistorySince,
+  loadPipelineTasteSeedEffect,
+  PodcastPipelineError,
+  toQueueResult,
+} from "./pipeline.js";
+import { TasteSeedError } from "./taste.js";
+
+describe("loadPipelineTasteSeedEffect", () => {
+  effectIt.effect("maps a malformed seed to a recoverable pipeline failure", () =>
+    loadPipelineTasteSeedEffect("taste.md", () =>
+      Effect.runPromise(Effect.succeed(" \n ")),
+    ).pipe(
+      Effect.flip,
+      Effect.tap((error) =>
+        Effect.sync(() => {
+          expect(error).toBeInstanceOf(PodcastPipelineError);
+          expect(error.cause).toBeInstanceOf(TasteSeedError);
+          expect((error.cause as TasteSeedError).reason).toBe("malformed");
+        }),
+      ),
+      Effect.asVoid,
+    ),
+  );
+});
+
+describe("enqueueAndPersistEffect", () => {
+  effectIt.effect("persists the Castro result before returning to notification", () => {
+    const events: string[] = [];
+    return enqueueAndPersistEffect(
+      () =>
+        Effect.sync(() => {
+          events.push("enqueue");
+          return "added" as const;
+        }),
+      (result) => events.push(`persist:${result}`),
+    ).pipe(
+      Effect.tap(() => Effect.sync(() => events.push("notify-boundary"))),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          expect(events).toEqual(["enqueue", "persist:queued", "notify-boundary"]);
+        }),
+      ),
+    );
+  });
+});
 
 describe("toQueueResult", () => {
   const cases: [PodcastWriteResult, string][] = [

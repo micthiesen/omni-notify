@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Effect, Schema } from "effect";
 import {
   Brush,
   Line,
@@ -8,6 +9,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { apiGet } from "../api";
+import { forkUiEffect } from "../effect";
 
 interface WeightEntry {
   timestamp: string;
@@ -26,6 +29,18 @@ interface Pet {
   weightHistory: WeightEntry[];
   dailyVisits: DailyVisit[];
 }
+
+const PetSchema = Schema.Struct({
+  petId: Schema.String,
+  name: Schema.String,
+  currentWeight: Schema.Number,
+  weightHistory: Schema.Array(
+    Schema.Struct({ timestamp: Schema.String, weight: Schema.Number }),
+  ),
+  dailyVisits: Schema.Array(
+    Schema.Struct({ date: Schema.String, count: Schema.Number }),
+  ),
+});
 
 type Range = "7d" | "30d" | "90d" | "all";
 type ChartMode = "weight" | "visits";
@@ -548,31 +563,22 @@ export default function PetsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function fetchPets() {
-      try {
-        const res = await fetch("/api/pets");
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
-        const data: Pet[] = await res.json();
-        if (!cancelled) {
-          setPets(data);
-          setLoading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to fetch pets");
-          setLoading(false);
-        }
-      }
-    }
-
-    fetchPets();
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      apiGet("/api/pets", Schema.Array(PetSchema)).pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setPets(data as Pet[]);
+            setLoading(false);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            setError(err instanceof Error ? err.message : "Failed to fetch pets");
+            setLoading(false);
+          }),
+        ),
+      ),
+    );
   }, []);
 
   return (

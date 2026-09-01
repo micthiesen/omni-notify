@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import type { FetchResult } from "../utils/fetchResult.js";
 import type { PodcastAccountClient, PodcastSubscription } from "./account.js";
 import { normalizeTitle } from "./titles.js";
@@ -23,25 +24,27 @@ export interface SubscriptionState {
  * - no account configured → empty with a warning (the seed taste profile still
  *   drives prompt-level exclusion, but hard subscribed-show filtering is off)
  */
-export async function resolveSubscriptions(
+export function resolveSubscriptionsEffect(
   account: PodcastAccountClient | undefined,
   logger: Logger,
-): Promise<FetchResult<SubscriptionState>> {
-  if (!account) {
-    logger.warn(
-      "No podcast account configured; subscribed-show exclusion falls back to the taste profile only",
-    );
-    return { status: "ok", value: buildState([], "none") };
-  }
+): Effect.Effect<FetchResult<SubscriptionState>, unknown> {
+  return Effect.gen(function* () {
+    if (!account) {
+      logger.warn(
+        "No podcast account configured; subscribed-show exclusion falls back to the taste profile only",
+      );
+      return { status: "ok", value: buildState([], "none") };
+    }
 
-  const result = await account.fetchSubscriptions();
-  if (result.status === "unavailable") {
-    return {
-      status: "unavailable",
-      reason: `${account.name} subscriptions unavailable: ${result.reason}`,
-    };
-  }
-  return { status: "ok", value: buildState(result.value, "account") };
+    const result = yield* account.fetchSubscriptions();
+    if (result.status === "unavailable") {
+      return {
+        status: "unavailable",
+        reason: `${account.name} subscriptions unavailable: ${result.reason}`,
+      };
+    }
+    return { status: "ok", value: buildState(result.value, "account") };
+  });
 }
 
 function buildState(

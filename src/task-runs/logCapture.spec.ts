@@ -1,5 +1,6 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Deferred, Effect } from "effect";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { runLogBus } from "./events.js";
 import {
@@ -82,15 +83,16 @@ describe("log capture", () => {
   it("keeps concurrent runs separate", async () => {
     startRunLogCapture("run-a", "TaskA");
     startRunLogCapture("run-b", "TaskB");
+    const releaseA = await Effect.runPromise(Deferred.make<void>());
     await Promise.all([
       runWithLogCapture("run-a", async () => {
         logger.info("from A");
-        await new Promise((resolve) => setTimeout(resolve, 5));
+        await Effect.runPromise(Deferred.await(releaseA));
         logger.info("from A again");
       }),
       runWithLogCapture("run-b", async () => {
-        await new Promise((resolve) => setTimeout(resolve, 2));
         logger.info("from B");
+        await Effect.runPromise(Deferred.succeed(releaseA, undefined));
       }),
     ]);
 

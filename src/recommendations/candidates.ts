@@ -1,11 +1,12 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import PQueue from "p-queue";
+import { Effect } from "effect";
+import { effectMessage, RecommendationIntegrationError } from "./effect.js";
 import {
-  discoverTitles,
-  fetchRecommendationsFor,
-  fetchTitleDetails,
-  fetchTrending,
-  getGenreMap,
+  discoverTitlesEffect as discoverTitles,
+  fetchRecommendationsForEffect as fetchRecommendationsFor,
+  fetchTitleDetailsEffect as fetchTitleDetails,
+  fetchTrendingEffect as fetchTrending,
+  getGenreMapEffect as getGenreMap,
 } from "./tmdb/client.js";
 import type { TmdbTitle } from "./tmdb/types.js";
 import {
@@ -40,91 +41,103 @@ export interface SourceBucket {
  * completed watches, discover on the user's top genres, this week's trending,
  * and a novelty bucket outside the top genres.
  */
-export async function fetchCandidateBuckets(
+export function fetchCandidateBuckets(
   seeds: WatchSeed[],
   logger: Logger,
-): Promise<SourceBucket[]> {
-  const recentSeeds = seeds.slice(0, SEED_LIMIT);
-  const topGenres = rankGenres(seeds).slice(0, 3);
-
-  const [similar, discover, trending, novelty] = await Promise.all([
-    fetchSimilarBucket(recentSeeds, logger),
-    fetchDiscoverBucket(topGenres, logger),
-    fetchTrending().catch((error) => {
-      logger.warn("TMDB trending fetch failed", (error as Error).message);
-      return [];
-    }),
-    fetchNoveltyBucket(topGenres, logger),
-  ]);
-
-  return [
-    { source: CandidateSource.Similar, titles: englishOnly(similar) },
-    { source: CandidateSource.Discover, titles: englishOnly(discover) },
-    { source: CandidateSource.Trending, titles: englishOnly(trending) },
-    { source: CandidateSource.Novelty, titles: englishOnly(novelty) },
-  ];
+): Effect.Effect<SourceBucket[]> {
+  return Effect.gen(function* () {
+    const recentSeeds = seeds.slice(0, SEED_LIMIT);
+    const topGenres = rankGenres(seeds).slice(0, 3);
+    const [similar, discover, trending, novelty] = yield* Effect.all(
+      [
+        fetchSimilarBucketEffect(recentSeeds, logger),
+        fetchDiscoverBucketEffect(topGenres, logger),
+        fetchTrending().pipe(
+          Effect.catchAll((error) => {
+            logger.warn("TMDB trending fetch failed", effectMessage(error));
+            return Effect.succeed([]);
+          }),
+        ),
+        fetchNoveltyBucketEffect(topGenres, logger),
+      ] as const,
+      { concurrency: "unbounded" },
+    );
+    return [
+      { source: CandidateSource.Similar, titles: englishOnly(similar) },
+      { source: CandidateSource.Discover, titles: englishOnly(discover) },
+      { source: CandidateSource.Trending, titles: englishOnly(trending) },
+      { source: CandidateSource.Novelty, titles: englishOnly(novelty) },
+    ];
+  });
 }
 
-async function fetchSimilarBucket(
+function fetchSimilarBucketEffect(
   seeds: WatchSeed[],
   logger: Logger,
-): Promise<TmdbTitle[]> {
-  const results = await Promise.all(
-    seeds.map((seed) =>
-      fetchRecommendationsFor(seed.mediaType, seed.tmdbId).catch((error) => {
-        logger.warn(
-          `TMDB recommendations fetch failed for ${seed.canonicalId}`,
-          (error as Error).message,
-        );
-        return [];
-      }),
+): Effect.Effect<TmdbTitle[]> {
+  return Effect.forEach(
+    seeds,
+    (seed) =>
+      fetchRecommendationsFor(seed.mediaType, seed.tmdbId).pipe(
+        Effect.catchAll((error) => {
+          logger.warn(
+            `TMDB recommendations fetch failed for ${seed.canonicalId}`,
+            effectMessage(error),
+          );
+          return Effect.succeed([]);
+        }),
+      ),
+    { concurrency: "unbounded" },
+  ).pipe(
+    Effect.map((results) =>
+      interleave(results.map((r) => r.filter(isEligibleOriginalLanguage).slice(0, 12))),
     ),
   );
-  // Interleave per-seed results so one seed can't dominate the bucket.
-  return interleave(
-    results.map((r) => r.filter(isEligibleOriginalLanguage).slice(0, 12)),
-  );
 }
 
-async function fetchDiscoverBucket(
+function fetchDiscoverBucketEffect(
   topGenres: number[],
   logger: Logger,
-): Promise<TmdbTitle[]> {
-  if (topGenres.length === 0) return [];
-  const results = await Promise.all(
-    [MediaType.Movie, MediaType.Tv].map((mediaType) =>
+): Effect.Effect<TmdbTitle[]> {
+  if (topGenres.length === 0) return Effect.succeed([]);
+  return Effect.forEach(
+    [MediaType.Movie, MediaType.Tv],
+    (mediaType) =>
       discoverTitles(mediaType, {
         withGenres: topGenres,
         withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
-      }).catch((error) => {
-        logger.warn(`TMDB discover failed (${mediaType})`, (error as Error).message);
-        return [];
-      }),
-    ),
-  );
-  return interleave(results);
+      }).pipe(
+        Effect.catchAll((error) => {
+          logger.warn(`TMDB discover failed (${mediaType})`, effectMessage(error));
+          return Effect.succeed([]);
+        }),
+      ),
+    { concurrency: "unbounded" },
+  ).pipe(Effect.map(interleave));
 }
 
-async function fetchNoveltyBucket(
+function fetchNoveltyBucketEffect(
   topGenres: number[],
   logger: Logger,
-): Promise<TmdbTitle[]> {
-  const results = await Promise.all(
-    [MediaType.Movie, MediaType.Tv].map((mediaType) =>
+): Effect.Effect<TmdbTitle[]> {
+  return Effect.forEach(
+    [MediaType.Movie, MediaType.Tv],
+    (mediaType) =>
       discoverTitles(mediaType, {
         withoutGenres: topGenres,
         withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
         minVoteCount: 1000,
-      }).catch((error) => {
-        logger.warn(
-          `TMDB novelty discover failed (${mediaType})`,
-          (error as Error).message,
-        );
-        return [];
-      }),
-    ),
-  );
-  return interleave(results);
+      }).pipe(
+        Effect.catchAll((error) => {
+          logger.warn(
+            `TMDB novelty discover failed (${mediaType})`,
+            effectMessage(error),
+          );
+          return Effect.succeed([]);
+        }),
+      ),
+    { concurrency: "unbounded" },
+  ).pipe(Effect.map(interleave));
 }
 
 export function rankGenres(seeds: WatchSeed[]): number[] {
@@ -206,41 +219,41 @@ function englishOnly(titles: TmdbTitle[]): TmdbTitle[] {
 }
 
 /** Attach genre names (via the TMDB genre maps) and library presence. */
-export async function enrichCandidates(
+export function enrichCandidates(
   pool: PooledCandidate[],
   libraryIds: Set<string>,
   logger?: Logger,
-): Promise<Candidate[]> {
-  const [movieGenres, tvGenres] = await Promise.all([
-    getGenreMap(MediaType.Movie),
-    getGenreMap(MediaType.Tv),
-  ]);
-  const detailsQueue = new PQueue({ concurrency: 6 });
-  const details = await Promise.all(
-    pool.map((candidate) =>
-      detailsQueue.add(async () => {
-        try {
-          return await fetchTitleDetails(candidate.mediaType, candidate.tmdbId);
-        } catch (error) {
-          logger?.warn(
-            `TMDB details fetch failed for ${candidate.canonicalId}`,
-            (error as Error).message,
-          );
-          return undefined;
-        }
-      }),
-    ),
-  );
-  return pool.map(({ genreIds, ...c }, index) => {
-    const genreMap = c.mediaType === MediaType.Movie ? movieGenres : tvGenres;
-    return {
-      ...c,
-      ...details[index],
-      genres: genreIds
-        .map((id) => genreMap.get(id))
-        .filter((g): g is string => g !== undefined),
-      inLibrary: libraryIds.has(c.canonicalId),
-    };
+): Effect.Effect<Candidate[], RecommendationIntegrationError> {
+  return Effect.gen(function* () {
+    const [movieGenres, tvGenres] = yield* Effect.all(
+      [getGenreMap(MediaType.Movie), getGenreMap(MediaType.Tv)] as const,
+      { concurrency: "unbounded" },
+    );
+    const details = yield* Effect.forEach(
+      pool,
+      (candidate) =>
+        fetchTitleDetails(candidate.mediaType, candidate.tmdbId).pipe(
+          Effect.catchAll((error) => {
+            logger?.warn(
+              `TMDB details fetch failed for ${candidate.canonicalId}`,
+              effectMessage(error),
+            );
+            return Effect.succeed(undefined);
+          }),
+        ),
+      { concurrency: 6 },
+    );
+    return pool.map(({ genreIds, ...c }, index) => {
+      const genreMap = c.mediaType === MediaType.Movie ? movieGenres : tvGenres;
+      return {
+        ...c,
+        ...details[index],
+        genres: genreIds
+          .map((id) => genreMap.get(id))
+          .filter((g): g is string => g !== undefined),
+        inLibrary: libraryIds.has(c.canonicalId),
+      };
+    });
   });
 }
 

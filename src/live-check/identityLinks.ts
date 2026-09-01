@@ -1,4 +1,7 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import type { Effect } from "effect";
+import type { PersistenceError } from "../effect/errors.js";
+import { fromSync } from "../effect/interop.js";
 import { Platform } from "./platforms/index.js";
 import type { PlatformBinding } from "./streamers.js";
 
@@ -40,12 +43,35 @@ export function getProfileIdentityLink(
   });
 }
 
+export function getProfileIdentityLinkEffect(
+  source: PlatformBinding,
+): Effect.Effect<ProfileIdentityLink | undefined, PersistenceError> {
+  return fromSync("read profile identity link", () => getProfileIdentityLink(source));
+}
+
+export function getAllProfileIdentityLinksEffect(): Effect.Effect<
+  ProfileIdentityLink[],
+  PersistenceError
+> {
+  return fromSync("list profile identity links", () =>
+    ProfileIdentityLinkEntity.getAll(),
+  );
+}
+
 export function getProfileIdentityTarget(source: PlatformBinding): string | undefined {
   return getProfileIdentityLink(source)?.targetBinding;
 }
 
 export function forgetProfileIdentityLink(source: PlatformBinding): void {
   ProfileIdentityLinkEntity.delete({ sourceBinding: canonicalBindingKey(source) });
+}
+
+export function forgetProfileIdentityLinkEffect(
+  source: PlatformBinding,
+): Effect.Effect<void, PersistenceError> {
+  return fromSync("delete profile identity link", () =>
+    forgetProfileIdentityLink(source),
+  );
 }
 
 export function rememberProfileIdentityLink({
@@ -69,4 +95,12 @@ export function rememberProfileIdentityLink({
   };
   ProfileIdentityLinkEntity.upsert(row);
   return row;
+}
+
+export function rememberProfileIdentityLinkEffect(
+  input: Parameters<typeof rememberProfileIdentityLink>[0],
+): Effect.Effect<ProfileIdentityLink, PersistenceError> {
+  return fromSync("upsert profile identity link", () =>
+    rememberProfileIdentityLink(input),
+  );
 }

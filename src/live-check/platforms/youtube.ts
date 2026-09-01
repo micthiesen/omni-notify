@@ -2,24 +2,22 @@ import { decode } from "html-entities";
 import { fetchPageHtml } from "./common.js";
 import { type FetchedStatus, LiveStatus } from "./index.js";
 
-export async function fetchYouTubeLiveStatus({
+export function fetchYouTubeLiveStatus({
   username,
 }: {
   username: string;
-}): Promise<FetchedStatus> {
+}): Effect.Effect<FetchedStatus> {
   const url = getYouTubeLiveUrl(username);
 
-  let html: string;
-  try {
-    html = await fetchPageHtml(url);
-  } catch (error) {
-    return {
-      status: LiveStatus.Unknown,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-
-  return extractLiveStatus(html);
+  return fetchPageHtml(url).pipe(
+    Effect.map(extractLiveStatus),
+    Effect.catchAll((error) =>
+      Effect.succeed({
+        status: LiveStatus.Unknown,
+        error: error.message,
+      } as FetchedStatus),
+    ),
+  );
 }
 
 export function extractLiveStatus(html: string): FetchedStatus {
@@ -62,15 +60,22 @@ export function extractLiveStatus(html: string): FetchedStatus {
   };
 }
 
-interface YouTubePlayerResponse {
-  microformat?: {
-    playerMicroformatRenderer?: {
-      liveBroadcastDetails?: {
-        isLiveNow?: boolean;
-      };
-    };
-  };
-}
+const youTubePlayerResponseSchema = Schema.Struct({
+  microformat: Schema.optional(
+    Schema.Struct({
+      playerMicroformatRenderer: Schema.optional(
+        Schema.Struct({
+          liveBroadcastDetails: Schema.optional(
+            Schema.Struct({
+              isLiveNow: Schema.optional(Schema.Boolean),
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+});
+type YouTubePlayerResponse = Schema.Schema.Type<typeof youTubePlayerResponseSchema>;
 
 function extractInitialPlayerResponse(html: string): YouTubePlayerResponse | null {
   const assignment = /\bytInitialPlayerResponse\s*=\s*/g;
@@ -84,9 +89,8 @@ function extractInitialPlayerResponse(html: string): YouTubePlayerResponse | nul
 
     try {
       const parsed: unknown = JSON.parse(json);
-      if (typeof parsed === "object" && parsed !== null) {
-        return parsed as YouTubePlayerResponse;
-      }
+      const decoded = Schema.decodeUnknownEither(youTubePlayerResponseSchema)(parsed);
+      if (decoded._tag === "Right") return decoded.right;
     } catch {
       // Keep looking in case an earlier reference was not the player response assignment.
     }
@@ -144,3 +148,4 @@ function extractViewerCount(html: string): number | undefined {
 export function getYouTubeLiveUrl(username: string): string {
   return `https://www.youtube.com/${username}/live`;
 }
+import { Effect, Schema } from "effect";

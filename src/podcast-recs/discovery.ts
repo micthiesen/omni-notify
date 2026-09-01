@@ -3,9 +3,10 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { Data, Effect } from "effect";
 import { z } from "zod";
 import { getRecsShortlistModel } from "../ai/registry.js";
-import { searchWeb, type WebSearchResult } from "../ai/tools/webSearch.js";
+import { searchWebEffect, type WebSearchResult } from "../ai/tools/webSearch.js";
 import type { DiscoveredEpisode } from "./types.js";
 
 const MAX_DISCOVERED = 12;
@@ -57,83 +58,94 @@ const extractionSchema = z.object({
  * unverified — release dates and identities are established later from the
  * shows' actual RSS feeds, never from search snippets.
  */
-export async function discoverEpisodes(
+class DiscoveryModelError extends Data.TaggedError("DiscoveryModelError")<{
+  readonly cause: unknown;
+}> {}
+
+export function discoverEpisodesEffect(
   tasteDigest: string,
   recentRecommendationsDigest: string,
   logger: Logger,
   logFile?: LogFile,
-): Promise<DiscoveredEpisode[]> {
-  const searches = await Promise.all(
-    DISCOVERY_QUERIES.map(async ({ query, topic, timeRange }) => {
-      try {
-        const { results } = await searchWeb({
+): Effect.Effect<DiscoveredEpisode[], DiscoveryModelError> {
+  return Effect.gen(function* () {
+    const searches = yield* Effect.forEach(
+      DISCOVERY_QUERIES,
+      ({ query, topic, timeRange }) =>
+        searchWebEffect({
           query,
           topic,
           timeRange,
           maxResults: 8,
           maxContentChars: 700,
-        });
-        return { query, results };
-      } catch (error) {
-        logger.warn(`Discovery search failed: ${query}`, (error as Error).message);
-        return { query, results: [] as WebSearchResult[] };
-      }
-    }),
-  );
+        }).pipe(
+          Effect.map(({ results }) => ({ query, results })),
+          Effect.catchAll((error) => {
+            logger.warn(`Discovery search failed: ${query}`, String(error));
+            return Effect.succeed({ query, results: [] as WebSearchResult[] });
+          }),
+        ),
+      { concurrency: "unbounded" },
+    );
 
-  const resultCount = searches.reduce((sum, s) => sum + s.results.length, 0);
-  if (resultCount === 0) {
-    logger.warn("Discovery produced no search results");
-    return [];
-  }
+    const resultCount = searches.reduce((sum, s) => sum + s.results.length, 0);
+    if (resultCount === 0) {
+      logger.warn("Discovery produced no search results");
+      return [];
+    }
 
-  const { model, modelId } = getRecsShortlistModel("discover-episodes");
-  const prompt = buildExtractionPrompt(
-    searches,
-    tasteDigest,
-    recentRecommendationsDigest,
-  );
-  logFile?.log(
-    logger,
-    LogLevel.INFO,
-    `Discovery Extraction Prompt (${modelId})`,
-    codeBlock(prompt),
-    {
-      consoleSummary: `Extracting candidates from ${resultCount} results (${modelId})`,
-    },
-  );
+    const { model, modelId } = getRecsShortlistModel("discover-episodes");
+    const prompt = buildExtractionPrompt(
+      searches,
+      tasteDigest,
+      recentRecommendationsDigest,
+    );
+    logFile?.log(
+      logger,
+      LogLevel.INFO,
+      `Discovery Extraction Prompt (${modelId})`,
+      codeBlock(prompt),
+      {
+        consoleSummary: `Extracting candidates from ${resultCount} results (${modelId})`,
+      },
+    );
 
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: extractionSchema }),
-    prompt,
-  });
-  logger.info(
-    `Discovery token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
-  );
-
-  const seen = new Set<string>();
-  const episodes: DiscoveredEpisode[] = [];
-  for (const item of result.output?.episodes ?? []) {
-    const key = `${item.show_title.toLowerCase()}::${item.episode_title.toLowerCase()}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    episodes.push({
-      showTitle: item.show_title,
-      episodeTitle: item.episode_title,
-      context: item.context,
-      sourceUrl: item.source_url ?? undefined,
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        generateText({
+          model,
+          output: Output.object({ schema: extractionSchema }),
+          prompt,
+        }),
+      catch: (cause) => new DiscoveryModelError({ cause }),
     });
-    if (episodes.length >= MAX_DISCOVERED) break;
-  }
+    logger.info(
+      `Discovery token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+    );
 
-  logFile?.section(
-    "Discovered Episodes",
-    episodes
-      .map((e) => `- ${e.showTitle} — ${e.episodeTitle} (${e.context})`)
-      .join("\n") || "none",
-  );
-  return episodes;
+    const seen = new Set<string>();
+    const episodes: DiscoveredEpisode[] = [];
+    for (const item of result.output?.episodes ?? []) {
+      const key = `${item.show_title.toLowerCase()}::${item.episode_title.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      episodes.push({
+        showTitle: item.show_title,
+        episodeTitle: item.episode_title,
+        context: item.context,
+        sourceUrl: item.source_url ?? undefined,
+      });
+      if (episodes.length >= MAX_DISCOVERED) break;
+    }
+
+    logFile?.section(
+      "Discovered Episodes",
+      episodes
+        .map((e) => `- ${e.showTitle} — ${e.episodeTitle} (${e.context})`)
+        .join("\n") || "none",
+    );
+    return episodes;
+  });
 }
 
 function buildExtractionPrompt(

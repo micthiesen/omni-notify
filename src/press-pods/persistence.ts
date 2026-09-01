@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
+import { Clock, Effect, Schema } from "effect";
 import type { Costs } from "./costs.js";
+import { PressPodsError, trySync } from "./effect.js";
 import type { Chapter, ChunkStat, RetrieverAttempt } from "./types.js";
 import { normalizeUrl } from "./url.js";
 
@@ -113,8 +115,7 @@ const BASE_RETRY_DELAY_MS = 60_000; // 1min, doubling per attempt
 /** A `processing` claim older than this is presumed crashed and reclaimed. */
 export const STALE_CLAIM_MS = 30 * 60_000;
 
-export function enqueueEpisodeJob(url: string): PressPodsJobData {
-  const now = Date.now();
+export function enqueueEpisodeJob(url: string, now = Date.now()): PressPodsJobData {
   const job: PressPodsJobData = {
     jobId: secureId(),
     url,
@@ -177,8 +178,11 @@ export function selectDueJobs(
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
-export function claimJob(jobId: string, runId: string | undefined): void {
-  const now = Date.now();
+export function claimJob(
+  jobId: string,
+  runId: string | undefined,
+  now = Date.now(),
+): void {
   PressPodsJobEntity.patch(
     { jobId },
     { status: "processing", claimedAt: now, updatedAt: now, lastRunId: runId },
@@ -194,8 +198,8 @@ export function recordJobFailure(
   job: PressPodsJobData,
   error: string,
   retryable: boolean,
+  now = Date.now(),
 ): PressPodsJobData {
-  const now = Date.now();
   // Base the update on the live row, not the caller's pre-claim snapshot —
   // otherwise fields written since selection (e.g. claimJob's lastRunId) are
   // silently wiped. A missing row means a concurrent delete: compute the
@@ -231,10 +235,12 @@ export function getJob(jobId: string): PressPodsJobData | undefined {
  * shot a still-`MAX_JOB_ATTEMPTS` counter would leave (which would re-fail on
  * the next transient blip).
  */
-export function requeueJobNow(jobId: string): PressPodsJobData | undefined {
+export function requeueJobNow(
+  jobId: string,
+  now = Date.now(),
+): PressPodsJobData | undefined {
   const job = PressPodsJobEntity.get({ jobId });
   if (job?.status !== "failed") return undefined;
-  const now = Date.now();
   const updated: PressPodsJobData = {
     ...job,
     status: "queued",
@@ -296,3 +302,231 @@ export function deleteEpisodesByNormalizedUrlExcept(
   }
   return stale;
 }
+
+const PressPodsEpisodeSchema = Schema.Struct({
+  episodeId: Schema.String,
+  title: Schema.String,
+  author: Schema.optional(Schema.String),
+  authorGender: Schema.optional(
+    Schema.Union(
+      Schema.Literal("male"),
+      Schema.Literal("female"),
+      Schema.Literal("unknown"),
+    ),
+  ),
+  publication: Schema.optional(Schema.String),
+  domain: Schema.optional(Schema.String),
+  articleUrl: Schema.String,
+  normalizedUrl: Schema.optional(Schema.String),
+  leadImageUrl: Schema.optional(Schema.String),
+  excerpt: Schema.optional(Schema.String),
+  content: Schema.String,
+  voiceName: Schema.optional(Schema.String),
+  voiceProvider: Schema.optional(Schema.String),
+  synthesizedSeconds: Schema.optional(Schema.Number),
+  chapters: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({
+          startTimeSeconds: Schema.Number,
+          title: Schema.String,
+        }),
+      ),
+    ),
+  ),
+  chunks: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({
+          index: Schema.Number,
+          sectionIndex: Schema.Number,
+          sectionTitle: Schema.optional(Schema.String),
+          text: Schema.String,
+          charCount: Schema.Number,
+          durationSeconds: Schema.Number,
+          startTimeSeconds: Schema.Number,
+          secPerChar: Schema.Number,
+          attempts: Schema.Number,
+          coverage: Schema.optional(Schema.Number),
+          wordRatio: Schema.optional(Schema.Number),
+          expectedWords: Schema.optional(Schema.Number),
+          resplit: Schema.optional(Schema.Boolean),
+          resplitDepth: Schema.optional(Schema.Number),
+        }),
+      ),
+    ),
+  ),
+  audioFile: Schema.String,
+  durationSeconds: Schema.optional(Schema.Number),
+  fileBytes: Schema.Number,
+  retrieverName: Schema.optional(Schema.String),
+  retrieverSeconds: Schema.optional(Schema.Number),
+  retrieverAttempts: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Union(
+          Schema.Struct({
+            name: Schema.String,
+            success: Schema.Literal(true),
+            contentRating: Schema.Number,
+            textChars: Schema.Number,
+          }),
+          Schema.Struct({
+            name: Schema.String,
+            success: Schema.Literal(false),
+            error: Schema.String,
+          }),
+        ),
+      ),
+    ),
+  ),
+  costs: Schema.optional(
+    Schema.Struct({
+      llmCents: Schema.Number,
+      ttsCents: Schema.Number,
+      detailCents: Schema.Record({ key: Schema.String, value: Schema.Number }),
+      detailTokens: Schema.Record({
+        key: Schema.String,
+        value: Schema.Struct({ input: Schema.Number, output: Schema.Number }),
+      }),
+      detailChars: Schema.Record({ key: Schema.String, value: Schema.Number }),
+    }),
+  ),
+  createdAt: Schema.Number,
+  publishedAt: Schema.optional(Schema.Number),
+  runId: Schema.optional(Schema.String),
+});
+
+const PressPodsJobSchema = Schema.Struct({
+  jobId: Schema.String,
+  url: Schema.String,
+  normalizedUrl: Schema.optional(Schema.String),
+  status: Schema.Union(
+    Schema.Literal("queued"),
+    Schema.Literal("processing"),
+    Schema.Literal("failed"),
+  ),
+  attempts: Schema.Number,
+  nextAttemptAt: Schema.Number,
+  lastError: Schema.optional(Schema.String),
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+  claimedAt: Schema.optional(Schema.Number),
+  lastRunId: Schema.optional(Schema.String),
+});
+
+const decodeEpisode = (
+  value: unknown,
+): Effect.Effect<PressPodsEpisodeData, PressPodsError> =>
+  Schema.decodeUnknown(PressPodsEpisodeSchema)(value).pipe(
+    Effect.mapError(
+      (cause) => new PressPodsError({ operation: "decode PressPods episode", cause }),
+    ),
+  );
+
+const decodeJob = (value: unknown): Effect.Effect<PressPodsJobData, PressPodsError> =>
+  Schema.decodeUnknown(PressPodsJobSchema)(value).pipe(
+    Effect.map((decoded) => decoded as PressPodsJobData),
+    Effect.mapError(
+      (cause) => new PressPodsError({ operation: "decode PressPods job", cause }),
+    ),
+  );
+
+/** Canonical Effect API. The synchronous exports above remain compatibility
+ * facades for Hono, RSS serialization, data export, and legacy cross-tree
+ * consumers; application workflows use this object so persistence failures
+ * stay typed in the Effect error channel. */
+export const PressPodsPersistence = {
+  getAllEpisodes: (): Effect.Effect<PressPodsEpisodeData[], PressPodsError> =>
+    trySync("read PressPods episodes", getAllEpisodes).pipe(
+      Effect.flatMap((rows) => Effect.forEach(rows, decodeEpisode)),
+    ),
+  getEpisode: (
+    episodeId: string,
+  ): Effect.Effect<PressPodsEpisodeData | undefined, PressPodsError> =>
+    trySync("read PressPods episode", () => getEpisode(episodeId)).pipe(
+      Effect.flatMap((row) => (row ? decodeEpisode(row) : Effect.succeed(undefined))),
+    ),
+  findEpisodeForJob: (
+    job: PressPodsJobData,
+  ): Effect.Effect<PressPodsEpisodeData | undefined, PressPodsError> =>
+    trySync("find episode for PressPods job", () => findEpisodeForJob(job)).pipe(
+      Effect.flatMap((row) => (row ? decodeEpisode(row) : Effect.succeed(undefined))),
+    ),
+  upsertEpisode: (episode: PressPodsEpisodeData): Effect.Effect<void, PressPodsError> =>
+    trySync("persist PressPods episode", () => {
+      PressPodsEpisodeEntity.upsert(episode);
+    }),
+  enqueueEpisodeJob: (url: string): Effect.Effect<PressPodsJobData, PressPodsError> =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) =>
+        trySync("enqueue PressPods job", () => enqueueEpisodeJob(url, now)),
+      ),
+    ),
+  findActiveJobByNormalizedUrl: (
+    normalizedUrl: string,
+  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
+    trySync("find active PressPods job", () =>
+      findActiveJobByNormalizedUrl(normalizedUrl),
+    ),
+  findFailedJobByNormalizedUrl: (
+    normalizedUrl: string,
+  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
+    trySync("find failed PressPods job", () =>
+      findFailedJobByNormalizedUrl(normalizedUrl),
+    ),
+  claimJob: (
+    jobId: string,
+    runId: string | undefined,
+  ): Effect.Effect<void, PressPodsError> =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) =>
+        trySync("claim PressPods job", () => claimJob(jobId, runId, now)),
+      ),
+    ),
+  completeJob: (jobId: string): Effect.Effect<void, PressPodsError> =>
+    trySync("complete PressPods job", () => completeJob(jobId)),
+  recordJobFailure: (
+    job: PressPodsJobData,
+    error: string,
+    retryable: boolean,
+  ): Effect.Effect<PressPodsJobData, PressPodsError> =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) =>
+        trySync("record PressPods job failure", () =>
+          recordJobFailure(job, error, retryable, now),
+        ),
+      ),
+    ),
+  getJob: (
+    jobId: string,
+  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
+    trySync("read PressPods job", () => getJob(jobId)).pipe(
+      Effect.flatMap((row) => (row ? decodeJob(row) : Effect.succeed(undefined))),
+    ),
+  requeueJobNow: (
+    jobId: string,
+  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) =>
+        trySync("requeue PressPods job", () => requeueJobNow(jobId, now)),
+      ),
+    ),
+  getAllJobs: (): Effect.Effect<PressPodsJobData[], PressPodsError> =>
+    trySync("read PressPods jobs", getAllJobs).pipe(
+      Effect.flatMap((rows) => Effect.forEach(rows, decodeJob)),
+    ),
+  reclaimProcessingJobsAtBoot: (): Effect.Effect<number, PressPodsError> =>
+    trySync("reclaim PressPods jobs at boot", reclaimProcessingJobsAtBoot),
+  deleteEpisode: (
+    episodeId: string,
+  ): Effect.Effect<PressPodsEpisodeData | undefined, PressPodsError> =>
+    trySync("delete PressPods episode", () => deleteEpisode(episodeId)),
+  deleteEpisodesByNormalizedUrlExcept: (
+    normalizedUrl: string,
+    keepEpisodeId: string,
+  ): Effect.Effect<PressPodsEpisodeData[], PressPodsError> =>
+    trySync("delete replaced PressPods episodes", () =>
+      deleteEpisodesByNormalizedUrlExcept(normalizedUrl, keepEpisodeId),
+    ),
+} as const;

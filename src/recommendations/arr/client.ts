@@ -1,3 +1,9 @@
+import { Effect, Schema } from "effect";
+import { readFetchResponseTextWithLimit } from "../../effect/publicHttp.js";
+import { integrationEffect } from "../effect.js";
+
+export const ARR_JSON_MAX_BYTES = 8 * 1024 * 1024;
+
 export interface ArrConfig {
   url?: string;
   apiKey?: string;
@@ -29,34 +35,46 @@ export function isConfigured(config: ArrConfig): config is Required<ArrConfig> {
   );
 }
 
-export async function requestJson<T>(
+export function requestJson<A, I>(
   config: ArrConnectionConfig,
   path: string,
+  schema: Schema.Schema<A, I, never>,
   init: RequestInit = {},
   fetchImpl: FetchImplementation = fetch,
-): Promise<HttpResult<T>> {
+): Effect.Effect<HttpResult<A>> {
   const url = new URL(
     `api/v3/${path.replace(/^\//, "")}`,
     `${config.url.replace(/\/+$/, "")}/`,
   );
 
-  try {
-    const response = await fetchImpl(url, {
-      ...init,
-      headers: {
-        Accept: "application/json",
-        "X-Api-Key": config.apiKey,
-        ...init.headers,
-      },
-      signal: init.signal ?? AbortSignal.timeout(15_000),
-    });
+  const request = Effect.gen(function* () {
+    const response = yield* integrationEffect(`Arr request ${path}`, (signal) =>
+      fetchImpl(url, {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          "X-Api-Key": config.apiKey,
+          ...init.headers,
+        },
+        signal: init.signal ?? signal,
+      }),
+    );
     if (!response.ok) {
-      return { status: "http_error", statusCode: response.status };
+      return { status: "http_error" as const, statusCode: response.status };
     }
-    return { status: "ok", value: (await response.json()) as T };
-  } catch {
-    return { status: "unavailable" };
-  }
+    const body = yield* integrationEffect(`read Arr response ${path}`, (signal) =>
+      readFetchResponseTextWithLimit(response, ARR_JSON_MAX_BYTES, signal),
+    );
+    const raw = yield* integrationEffect(`parse Arr response ${path}`, () =>
+      JSON.parse(body),
+    );
+    const value = yield* Schema.decodeUnknown(schema)(raw);
+    return { status: "ok" as const, value };
+  });
+  return request.pipe(
+    Effect.timeout("15 seconds"),
+    Effect.catchAll(() => Effect.succeed({ status: "unavailable" as const })),
+  );
 }
 
 export function postJson(value: unknown): RequestInit {
@@ -65,12 +83,4 @@ export function postJson(value: unknown): RequestInit {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(value),
   };
-}
-
-export function optionalNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-export function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
 }

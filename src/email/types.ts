@@ -1,3 +1,5 @@
+import { Effect, Schema } from "effect";
+
 /**
  * Transport-agnostic email pipeline types. Two transports implement
  * EmailTransport: Fastmail JMAP (src/email/jmap/) and iCloud IMAP
@@ -25,15 +27,32 @@ export interface FetchedEmail {
   attachments: EmailAttachment[];
 }
 
+export const EmailAttachmentSchema = Schema.Struct({
+  blobId: Schema.String,
+  name: Schema.String,
+  type: Schema.String,
+  size: Schema.Number,
+});
+
+export const FetchedEmailSchema = Schema.Struct({
+  id: Schema.String,
+  subject: Schema.String,
+  from: Schema.String,
+  textBody: Schema.String,
+  links: Schema.Array(Schema.String),
+  receivedAt: Schema.String,
+  attachments: Schema.Array(EmailAttachmentSchema),
+});
+
 export interface DownloadedAttachment {
   name: string;
   mimeType: string;
   data: Buffer;
 }
 
-export interface EmailHandler {
+export interface EmailHandler<out E = unknown> {
   name: string;
-  handleEmails(emails: FetchedEmail[]): Promise<void>;
+  handleEmailsEffect(emails: FetchedEmail[]): Effect.Effect<void, E>;
 }
 
 export interface EmailPoll {
@@ -67,7 +86,7 @@ export interface EmailSearchOptions {
   limit: number;
 }
 
-export interface EmailTransport {
+export interface EmailTransport<out E = unknown> {
   /** Short label for logs ("JMAP", "IMAP"). */
   readonly name: string;
   /**
@@ -77,20 +96,20 @@ export interface EmailTransport {
    * boot-retry loop can alert and try again. Later disconnects self-heal
    * with backoff inside the transport.
    */
-  start(onMailEvent: () => void): Promise<void>;
-  stop(): void;
+  startEffect(onMailEvent: () => void): Effect.Effect<void, E>;
+  readonly stopEffect: Effect.Effect<void, never>;
   /** Fetch emails that arrived since the persisted cursor. */
-  pollNewEmails(): Promise<EmailPoll>;
+  readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, E>;
   /** Re-fetch one email by its stable id (retry/reprocess); undefined when gone. */
-  fetchEmailById(id: string): Promise<FetchedEmail | undefined>;
+  fetchEmailByIdEffect(id: string): Effect.Effect<FetchedEmail | undefined, E>;
   /**
    * Search the monitored mailbox without exposing transport credentials or raw
    * protocol access. Optional because the retiring JMAP adapter does not offer
    * this capability; the active iCloud IMAP adapter does.
    */
-  searchEmails?(options: EmailSearchOptions): Promise<FetchedEmail[]>;
+  searchEmailsEffect?(options: EmailSearchOptions): Effect.Effect<FetchedEmail[], E>;
   /** Download one attachment's bytes; undefined when unavailable. */
-  downloadAttachment(
+  downloadAttachmentEffect(
     attachment: EmailAttachment,
-  ): Promise<DownloadedAttachment | undefined>;
+  ): Effect.Effect<DownloadedAttachment | undefined, E>;
 }

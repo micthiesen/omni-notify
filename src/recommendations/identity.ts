@@ -1,6 +1,15 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
+import {
+  effectMessage,
+  persistenceEffect,
+  RecommendationPersistenceError,
+} from "./effect.js";
 import { IdentityAliasEntity } from "./persistence.js";
-import { findByExternalId, searchTitles } from "./tmdb/client.js";
+import {
+  findByExternalIdEffect as findByExternalId,
+  searchTitlesEffect as searchTitles,
+} from "./tmdb/client.js";
 import type { CanonicalId, ExternalIds, MediaItem } from "./types.js";
 import { type MediaType, makeCanonicalId } from "./types.js";
 
@@ -42,71 +51,84 @@ export function parseGuidExternalIds(guid: string): ExternalIds {
  * (including failures) are cached by GUID so each library item costs at most
  * one round of TMDB lookups.
  */
-export async function resolveIdentity(
+export function resolveIdentity(
   item: MediaItem,
   logger: Logger,
   options: { allowNetwork?: boolean } = {},
-): Promise<Resolution> {
-  const allowNetwork = options.allowNetwork ?? true;
-  const cached = IdentityAliasEntity.get({ guid: item.guid });
-  if (cached) {
-    return {
-      canonicalId: cached.canonicalId as CanonicalId | null,
-      confidence: cached.confidence,
-      resolutionPath: cached.resolutionPath,
-    };
-  }
+): Effect.Effect<Resolution, RecommendationPersistenceError> {
+  return Effect.gen(function* () {
+    const allowNetwork = options.allowNetwork ?? true;
+    const cached = yield* persistenceEffect("read identity alias", () =>
+      IdentityAliasEntity.get({ guid: item.guid }),
+    );
+    if (cached) {
+      return {
+        canonicalId: cached.canonicalId as CanonicalId | null,
+        confidence: cached.confidence,
+        resolutionPath: cached.resolutionPath,
+      };
+    }
 
-  const external = { ...parseGuidExternalIds(item.guid), ...item.externalIds };
+    const external = { ...parseGuidExternalIds(item.guid), ...item.externalIds };
 
-  // Direct TMDB id: born canonical, no network needed.
-  if (external.tmdb !== undefined) {
-    const resolution: Resolution = {
-      canonicalId: makeCanonicalId(item.mediaType, external.tmdb),
-      confidence: 1,
-      resolutionPath: "external-id",
-    };
-    cacheResolution(item, resolution);
+    // Direct TMDB id: born canonical, no network needed.
+    if (external.tmdb !== undefined) {
+      const resolution: Resolution = {
+        canonicalId: makeCanonicalId(item.mediaType, external.tmdb),
+        confidence: 1,
+        resolutionPath: "external-id",
+      };
+      yield* cacheResolutionEffect(item, resolution);
+      return resolution;
+    }
+
+    // Without network access, leave the item unresolved and UNcached so a
+    // later full-resolution pass can still fill it in.
+    if (!allowNetwork) {
+      return { canonicalId: null, confidence: 0, resolutionPath: "unresolved" };
+    }
+
+    const resolution = yield* resolveViaNetworkEffect(item, external, logger);
+    yield* cacheResolutionEffect(item, resolution);
     return resolution;
-  }
-
-  // Without network access, leave the item unresolved and UNcached so a
-  // later full-resolution pass can still fill it in.
-  if (!allowNetwork) {
-    return { canonicalId: null, confidence: 0, resolutionPath: "unresolved" };
-  }
-
-  const resolution = await resolveViaNetwork(item, external, logger);
-  cacheResolution(item, resolution);
-  return resolution;
-}
-
-function cacheResolution(item: MediaItem, resolution: Resolution): void {
-  IdentityAliasEntity.upsert({
-    guid: item.guid,
-    canonicalId: resolution.canonicalId,
-    confidence: resolution.confidence,
-    resolutionPath: resolution.resolutionPath,
-    title: item.title,
-    resolvedAt: Date.now(),
   });
 }
 
-async function resolveViaNetwork(
+function cacheResolutionEffect(item: MediaItem, resolution: Resolution) {
+  return persistenceEffect("write identity alias", () =>
+    IdentityAliasEntity.upsert({
+      guid: item.guid,
+      canonicalId: resolution.canonicalId,
+      confidence: resolution.confidence,
+      resolutionPath: resolution.resolutionPath,
+      title: item.title,
+      resolvedAt: Date.now(),
+    }),
+  );
+}
+
+function resolveViaNetworkEffect(
   item: MediaItem,
   external: ExternalIds,
   logger: Logger,
-): Promise<Resolution> {
-  // IMDb/TVDB id via TMDB /find.
-  const findSource = external.imdb
-    ? ({ id: external.imdb, source: "imdb_id" } as const)
-    : external.tvdb !== undefined
-      ? ({ id: String(external.tvdb), source: "tvdb_id" } as const)
-      : undefined;
-  if (findSource) {
-    try {
-      const matches = (await findByExternalId(findSource.id, findSource.source)).filter(
-        (t) => t.mediaType === item.mediaType,
+): Effect.Effect<Resolution> {
+  return Effect.gen(function* () {
+    // IMDb/TVDB id via TMDB /find.
+    const findSource = external.imdb
+      ? ({ id: external.imdb, source: "imdb_id" } as const)
+      : external.tvdb !== undefined
+        ? ({ id: String(external.tvdb), source: "tvdb_id" } as const)
+        : undefined;
+    if (findSource) {
+      const matches = yield* findByExternalId(findSource.id, findSource.source).pipe(
+        Effect.map((found) => found.filter((t) => t.mediaType === item.mediaType)),
+        Effect.catchAll((error) => {
+          logger.warn(
+            `TMDB find failed for "${item.title}" (${findSource.source}=${findSource.id})`,
+            effectMessage(error),
+          );
+          return Effect.succeed([]);
+        }),
       );
       if (matches.length === 1) {
         return {
@@ -115,24 +137,20 @@ async function resolveViaNetwork(
           resolutionPath: "tmdb-find",
         };
       }
-    } catch (error) {
-      logger.warn(
-        `TMDB find failed for "${item.title}" (${findSource.source}=${findSource.id})`,
-        (error as Error).message,
-      );
     }
-  }
 
-  // Last resort: text search constrained by title/year.
-  try {
-    const results = await searchTitles(item.title, item.mediaType, item.year);
+    // Last resort: text search constrained by title/year.
+    const results = yield* searchTitles(item.title, item.mediaType, item.year).pipe(
+      Effect.catchAll((error) => {
+        logger.warn(`TMDB search failed for "${item.title}"`, effectMessage(error));
+        return Effect.succeed([]);
+      }),
+    );
     const scored = scoreSearchResults(item, results);
     if (scored) return scored;
-  } catch (error) {
-    logger.warn(`TMDB search failed for "${item.title}"`, (error as Error).message);
-  }
 
-  return { canonicalId: null, confidence: 0, resolutionPath: "unresolved" };
+    return { canonicalId: null, confidence: 0, resolutionPath: "unresolved" };
+  });
 }
 
 export function scoreSearchResults(

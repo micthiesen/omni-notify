@@ -1,12 +1,13 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { installLogCapture } from "../task-runs/logCapture.js";
 import {
   EmailActivityLogEntity,
   getEmailActivityLogs,
   saveEmailActivityLogs,
-  withEmailLogCapture,
+  withEmailLogCaptureEffect,
 } from "./activityLogs.js";
 
 Injector.configure({
@@ -32,15 +33,15 @@ afterEach(() => {
 
 describe("email activity log capture", () => {
   it("captures lines logged during processing and persists them", async () => {
-    const result = await withEmailLogCapture(
-      "ParcelTracker#e1",
-      "ParcelTracker",
-      async () => {
-        logger.info("extracting");
-        await Promise.resolve();
-        logger.info("submitted");
-        return 42;
-      },
+    const result = await Effect.runPromise(
+      withEmailLogCaptureEffect("ParcelTracker#e1", "ParcelTracker", () =>
+        Effect.gen(function* () {
+          logger.info("extracting");
+          yield* Effect.yieldNow();
+          logger.info("submitted");
+          return 42;
+        }),
+      ),
     );
 
     expect(result).toBe(42);
@@ -50,7 +51,9 @@ describe("email activity log capture", () => {
   });
 
   it("persists no row when nothing was logged", async () => {
-    await withEmailLogCapture("ParcelTracker#e2", "ParcelTracker", async () => {});
+    await Effect.runPromise(
+      withEmailLogCaptureEffect("ParcelTracker#e2", "ParcelTracker", () => Effect.void),
+    );
     expect(getEmailActivityLogs("ParcelTracker#e2")).toBeUndefined();
   });
 
@@ -62,20 +65,70 @@ describe("email activity log capture", () => {
     });
     expect(getEmailActivityLogs("ParcelTracker#e3")).toBeDefined();
 
-    await withEmailLogCapture("ParcelTracker#e3", "ParcelTracker", async () => {});
+    await Effect.runPromise(
+      withEmailLogCaptureEffect("ParcelTracker#e3", "ParcelTracker", () => Effect.void),
+    );
     expect(getEmailActivityLogs("ParcelTracker#e3")).toBeUndefined();
   });
 
   it("still persists the capture when fn throws", async () => {
     await expect(
-      withEmailLogCapture("ParcelTracker#e4", "ParcelTracker", async () => {
-        logger.info("before failure");
-        throw new Error("boom");
-      }),
+      Effect.runPromise(
+        withEmailLogCaptureEffect("ParcelTracker#e4", "ParcelTracker", () =>
+          Effect.gen(function* () {
+            logger.info("before failure");
+            return yield* Effect.fail(new Error("boom"));
+          }),
+        ),
+      ),
     ).rejects.toThrow("boom");
 
     expect(getEmailActivityLogs("ParcelTracker#e4")?.lines.map((l) => l.msg)).toEqual([
       "before failure",
     ]);
+  });
+
+  it("preserves successful handler acceptance when diagnostic persistence fails", async () => {
+    const failure = new Error("database unavailable");
+    const upsert = vi
+      .spyOn(EmailActivityLogEntity, "upsert")
+      .mockImplementationOnce(() => {
+        throw failure;
+      });
+
+    const result = await Effect.runPromise(
+      withEmailLogCaptureEffect("ParcelTracker#e5", "ParcelTracker", () =>
+        Effect.sync(() => {
+          logger.info("external action completed");
+          return "accepted";
+        }),
+      ),
+    );
+
+    expect(result).toBe("accepted");
+    upsert.mockRestore();
+  });
+
+  it("preserves the original handler failure when diagnostic persistence also fails", async () => {
+    const handlerFailure = new Error("submission failed");
+    const upsert = vi
+      .spyOn(EmailActivityLogEntity, "upsert")
+      .mockImplementationOnce(() => {
+        throw new Error("database unavailable");
+      });
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        withEmailLogCaptureEffect("ParcelTracker#e6", "ParcelTracker", () =>
+          Effect.gen(function* () {
+            logger.info("before handler failure");
+            return yield* Effect.fail(handlerFailure);
+          }),
+        ),
+      ),
+    );
+
+    expect(error).toBe(handlerFailure);
+    upsert.mockRestore();
   });
 });

@@ -1,12 +1,12 @@
-import got from "got";
+import { Data, Effect } from "effect";
 import { decode } from "html-entities";
 import { DOMParser } from "linkedom";
 import { normalizeTitle } from "./titles.js";
+import { fetchPublicText, PUBLIC_HTTP_USER_AGENT } from "../effect/publicHttp.js";
 
 const DEFAULT_MAX_EPISODES = 30;
 const DESCRIPTION_MAX_CHARS = 500;
 const REQUEST_TIMEOUT_MS = 15_000;
-const USER_AGENT = "omni-notify/1.0";
 
 /** One episode parsed from a podcast's RSS feed. */
 export interface FeedEpisode {
@@ -26,15 +26,26 @@ export interface FeedEpisode {
 }
 
 /** Fetches a podcast's RSS feed and parses its episodes. Errors propagate to the caller. */
-export async function fetchFeedEpisodes(
+class FeedRequestError extends Data.TaggedError("FeedRequestError")<{
+  readonly feedUrl: string;
+  readonly cause: unknown;
+}> {}
+
+export function fetchFeedEpisodesEffect(
   feedUrl: string,
   options: { maxEpisodes?: number } = {},
-): Promise<FeedEpisode[]> {
-  const xml = await got(feedUrl, {
-    timeout: { request: REQUEST_TIMEOUT_MS },
-    headers: { "User-Agent": USER_AGENT },
-  }).text();
-  return parseFeedEpisodes(xml, options.maxEpisodes);
+) {
+  return fetchPublicText(
+    feedUrl,
+    {
+      timeout: { request: REQUEST_TIMEOUT_MS },
+      headers: { "User-Agent": PUBLIC_HTTP_USER_AGENT },
+    },
+    "fetch public podcast feed",
+  ).pipe(
+    Effect.mapError((cause) => new FeedRequestError({ feedUrl, cause })),
+    Effect.map((xml) => parseFeedEpisodes(xml, options.maxEpisodes)),
+  );
 }
 
 /**

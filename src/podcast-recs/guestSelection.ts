@@ -3,6 +3,7 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { Data, Effect } from "effect";
 import { z } from "zod";
 import { getRecsSelectionModel } from "../ai/registry.js";
 import { toDateStamp } from "../utils/dates.js";
@@ -87,44 +88,59 @@ export function applyGuestDecisions(
  * (all survivors up to `max`), which is what lets a press-tour week surface
  * several appearances at once.
  */
-export async function selectGuestAppearances(
+class GuestSelectionError extends Data.TaggedError("GuestSelectionError")<{
+  readonly cause: unknown;
+}> {}
+
+export function selectGuestAppearancesEffect(
   candidates: EpisodeCandidate[],
   tasteDigest: string,
   logger: Logger,
   logFile: LogFile | undefined,
   max: number,
-): Promise<GuestPick[]> {
-  if (candidates.length === 0) return [];
-  const { model, modelId } = getRecsSelectionModel("select-guest-appearances");
-  const prompt = buildPrompt(candidates, tasteDigest, max);
+): Effect.Effect<GuestPick[], GuestSelectionError> {
+  return Effect.gen(function* () {
+    if (candidates.length === 0) return [];
+    const { model, modelId } = getRecsSelectionModel("select-guest-appearances");
+    const prompt = buildPrompt(candidates, tasteDigest, max);
 
-  logFile?.log(
-    logger,
-    LogLevel.INFO,
-    `Guest Gate Prompt (${modelId})`,
-    codeBlock(prompt),
-    { consoleSummary: `Gating ${candidates.length} guest candidate(s) (${modelId})` },
-  );
+    logFile?.log(
+      logger,
+      LogLevel.INFO,
+      `Guest Gate Prompt (${modelId})`,
+      codeBlock(prompt),
+      { consoleSummary: `Gating ${candidates.length} guest candidate(s) (${modelId})` },
+    );
 
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: decisionSchema }),
-    prompt,
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        generateText({
+          model,
+          output: Output.object({ schema: decisionSchema }),
+          prompt,
+        }),
+      catch: (cause) => new GuestSelectionError({ cause }),
+    });
+    logger.info(
+      `Guest gate token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+    );
+
+    const byId = new Map(candidates.map((c) => [c.episodeId, c]));
+    const picks = applyGuestDecisions(
+      result.output?.decisions ?? [],
+      byId,
+      max,
+      logger,
+    );
+
+    logFile?.section(
+      "Guest Gate",
+      picks
+        .map((p) => `INCLUDE ${p.candidate.showTitle} — ${p.candidate.episodeTitle}`)
+        .join("\n") || "none included",
+    );
+    return picks;
   });
-  logger.info(
-    `Guest gate token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
-  );
-
-  const byId = new Map(candidates.map((c) => [c.episodeId, c]));
-  const picks = applyGuestDecisions(result.output?.decisions ?? [], byId, max, logger);
-
-  logFile?.section(
-    "Guest Gate",
-    picks
-      .map((p) => `INCLUDE ${p.candidate.showTitle} — ${p.candidate.episodeTitle}`)
-      .join("\n") || "none included",
-  );
-  return picks;
 }
 
 function buildPrompt(

@@ -20,12 +20,60 @@ export type BriefingHistoryData = {
   notifications: BriefingNotification[];
 };
 
+type BriefingDeliveryData = {
+  briefingName: string;
+  deliveryId: string;
+  status: "sending" | "delivered";
+  updatedAt: number;
+};
+
 const MAX_NOTIFICATIONS = 50;
 
 export const BriefingHistoryEntity = new Entity<BriefingHistoryData, ["briefingName"]>(
   "briefing-history",
   ["briefingName"],
 );
+
+export const BriefingDeliveryEntity = new Entity<
+  BriefingDeliveryData,
+  ["briefingName", "deliveryId"]
+>("briefing-delivery", ["briefingName", "deliveryId"]);
+
+/** Reserve one model tool call before Pushover so AI retries cannot duplicate it. */
+export function reserveBriefingDelivery(
+  briefingName: string,
+  deliveryId: string,
+): boolean {
+  const key = { briefingName, deliveryId };
+  if (BriefingDeliveryEntity.get(key)) return false;
+  BriefingDeliveryEntity.upsert({
+    ...key,
+    status: "sending",
+    updatedAt: Date.now(),
+  });
+  return true;
+}
+
+/** Keep successful delivery reservations permanently as idempotency records. */
+export function completeBriefingDelivery(
+  briefingName: string,
+  deliveryId: string,
+): void {
+  BriefingDeliveryEntity.upsert({
+    briefingName,
+    deliveryId,
+    status: "delivered",
+    updatedAt: Date.now(),
+  });
+}
+
+/** A confirmed provider failure is safe to retry. */
+export function releaseBriefingDelivery(
+  briefingName: string,
+  deliveryId: string,
+): void {
+  BriefingDeliveryEntity.delete({ briefingName, deliveryId });
+}
 
 export function getBriefingHistory(briefingName: string): BriefingHistoryData {
   return (

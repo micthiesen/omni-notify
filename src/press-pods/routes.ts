@@ -4,7 +4,9 @@ import fsAsync from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { Logger } from "@micthiesen/mitools/logging";
 import type { Context, Hono } from "hono";
-import type { z } from "zod";
+import { Effect, Schema } from "effect";
+import { decodeJsonBody, effectHandler } from "../effect/http.js";
+import { fromPromise } from "../effect/interop.js";
 import {
   TaskAlreadyRunningError,
   TaskNotFoundError,
@@ -12,18 +14,15 @@ import {
 } from "../task-runs/registry.js";
 import config from "../utils/config.js";
 import {
-  deleteEpisode,
-  getAllEpisodes,
-  getAllJobs,
-  getEpisode,
-  getJob,
   jobNormalizedUrl,
   type PressPodsEpisodeData,
   type PressPodsJobData,
   PressPodsJobEntity,
-  requeueJobNow,
+  PressPodsPersistence,
 } from "./persistence.js";
-import { buildPressPodsFeed, latestEpisodeId } from "./rss.js";
+import { PressPodsError, trySync } from "./effect.js";
+import { assertPublicHttpUrlSyntax } from "./publicHttp.js";
+import { buildPressPodsFeedEffect, latestEpisodeIdEffect } from "./rss.js";
 import {
   AUDIO_FILE_RE,
   checkpointWorkId,
@@ -31,9 +30,22 @@ import {
   deleteEpisodeAudio,
   episodeAudioPath,
 } from "./storage.js";
-import { submitEpisodeSchema, submitEpisodeUrl } from "./submit.js";
+import { submitEpisodeUrlEffect } from "./submit.js";
 
 const LOGO_PATH = "assets/press-pods/logo.jpeg";
+const SubmitEpisodeBodySchema = Schema.Struct({ url: Schema.String });
+
+function decodeSubmitUrlEffect(c: Context) {
+  return decodeJsonBody(c, SubmitEpisodeBodySchema).pipe(
+    Effect.map((body) => body.url.split("\n")[0].trim()),
+    Effect.flatMap((url) =>
+      trySync("validate PressPods article URL", () => {
+        assertPublicHttpUrlSyntax(url);
+        return url;
+      }),
+    ),
+  );
+}
 
 /**
  * PressPods HTTP surface. The `/pods/*` routes are meant to be exposed
@@ -83,153 +95,264 @@ export function registerPressPodsRoutes(
   // Public routes (token-gated; expose /pods/* through the reverse proxy)
   // -------------------------------------------------------------------------
 
-  app.post("/pods/episodes", async (c) => {
-    if (!isAuthorized(c)) return c.json({ error: "Unauthorized" }, 401);
-    let parsed: z.infer<typeof submitEpisodeSchema>;
-    try {
-      parsed = submitEpisodeSchema.parse(await c.req.json());
-    } catch {
-      return c.json({ error: "Body must be JSON: { url: string }" }, 400);
-    }
-    const job = submitEpisodeUrl(parsed.url, kickWorker, logger);
-    return c.json({ jobId: job.jobId }, 202);
-  });
+  app.post(
+    "/pods/episodes",
+    effectHandler((c) => {
+      if (!isAuthorized(c)) {
+        return Effect.succeed(c.json({ error: "Unauthorized" }, 401));
+      }
+      return Effect.either(decodeSubmitUrlEffect(c)).pipe(
+        Effect.flatMap((decoded): Effect.Effect<Response, PressPodsError> =>
+          decoded._tag === "Left"
+            ? Effect.succeed<Response>(
+                c.json({ error: "Body must be JSON: { url: string }" }, 400),
+              )
+            : submitEpisodeUrlEffect(decoded.right, kickWorker, logger).pipe(
+                Effect.map((job): Response => c.json({ jobId: job.jobId }, 202)),
+              ),
+        ),
+      );
+    }),
+  );
 
-  app.on(["GET", "HEAD"], "/pods/rss", (c) => {
-    if (!isAuthorized(c)) return c.json({ error: "Unauthorized" }, 401);
+  app.on(
+    ["GET", "HEAD"],
+    "/pods/rss",
+    effectHandler((c) => {
+      if (!isAuthorized(c)) {
+        return Effect.succeed(c.json({ error: "Unauthorized" }, 401));
+      }
+      return latestEpisodeIdEffect().pipe(
+        Effect.flatMap((latestId): Effect.Effect<Response, PressPodsError> => {
+          const etag = `"${latestId}"`;
+          c.header("ETag", etag);
+          c.header("Cache-Control", "no-cache");
+          c.header("Content-Type", "application/xml; charset=utf-8");
+          if (c.req.header("if-none-match") === etag) {
+            return Effect.succeed<Response>(c.body(null, 304));
+          }
+          if (c.req.method === "HEAD") {
+            return Effect.succeed<Response>(c.body(null));
+          }
+          return buildPressPodsFeedEffect(resolveBaseUrl(c)).pipe(
+            Effect.map((feed): Response => c.body(feed)),
+          );
+        }),
+      );
+    }),
+  );
 
-    const etag = `"${latestEpisodeId()}"`;
-    c.header("ETag", etag);
-    c.header("Cache-Control", "no-cache");
-    c.header("Content-Type", "application/xml; charset=utf-8");
-    if (c.req.header("if-none-match") === etag) return c.body(null, 304);
-    if (c.req.method === "HEAD") return c.body(null);
-    return c.body(buildPressPodsFeed(resolveBaseUrl(c)));
-  });
+  app.on(
+    ["GET", "HEAD"],
+    "/pods/audio/:file",
+    effectHandler((c) => {
+      const file = c.req.param("file");
+      if (!file || !AUDIO_FILE_RE.test(file)) {
+        return Effect.succeed(c.body(null, 404));
+      }
+      const filePath = episodeAudioPath(file);
+      return Effect.either(
+        fromPromise("inspect PressPods audio file", () => fsAsync.stat(filePath)),
+      ).pipe(
+        Effect.map((result) => {
+          if (result._tag === "Left") return c.body(null, 404);
+          const size = result.right.size;
+          c.header("Accept-Ranges", "bytes");
+          c.header("Content-Type", "audio/mpeg");
+          // Content-addressed name: the file never changes once written.
+          c.header("Cache-Control", "public, max-age=31536000, immutable");
 
-  app.on(["GET", "HEAD"], "/pods/audio/:file", async (c) => {
-    const file = c.req.param("file");
-    if (!AUDIO_FILE_RE.test(file)) return c.notFound();
-    const filePath = episodeAudioPath(file);
-    let size: number;
-    try {
-      size = (await fsAsync.stat(filePath)).size;
-    } catch {
-      return c.notFound();
-    }
+          const range = parseByteRange(c.req.header("range"), size);
+          if (range === "invalid") {
+            c.header("Content-Range", `bytes */${size}`);
+            return c.body(null, 416);
+          }
+          if (c.req.method === "HEAD") {
+            c.header("Content-Length", String(size));
+            return c.body(null);
+          }
+          if (range) {
+            c.header("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
+            c.header("Content-Length", String(range.end - range.start + 1));
+            const stream = createReadStream(filePath, {
+              start: range.start,
+              end: range.end,
+            });
+            return c.body(Readable.toWeb(stream) as ReadableStream, 206);
+          }
+          c.header("Content-Length", String(size));
+          return c.body(Readable.toWeb(createReadStream(filePath)) as ReadableStream);
+        }),
+      );
+    }),
+  );
 
-    c.header("Accept-Ranges", "bytes");
-    c.header("Content-Type", "audio/mpeg");
-    // Content-addressed name: the file never changes once written.
-    c.header("Cache-Control", "public, max-age=31536000, immutable");
-
-    const range = parseByteRange(c.req.header("range"), size);
-    if (range === "invalid") {
-      c.header("Content-Range", `bytes */${size}`);
-      return c.body(null, 416);
-    }
-    if (c.req.method === "HEAD") {
-      c.header("Content-Length", String(size));
-      return c.body(null);
-    }
-    if (range) {
-      c.header("Content-Range", `bytes ${range.start}-${range.end}/${size}`);
-      c.header("Content-Length", String(range.end - range.start + 1));
-      const stream = createReadStream(filePath, {
-        start: range.start,
-        end: range.end,
-      });
-      return c.body(Readable.toWeb(stream) as ReadableStream, 206);
-    }
-    c.header("Content-Length", String(size));
-    return c.body(Readable.toWeb(createReadStream(filePath)) as ReadableStream);
-  });
-
-  app.get("/pods/logo.jpeg", async (c) => {
-    try {
-      const logo = await fsAsync.readFile(LOGO_PATH);
-      c.header("Content-Type", "image/jpeg");
-      c.header("Cache-Control", "public, max-age=31536000, immutable");
-      return c.body(new Uint8Array(logo).buffer as ArrayBuffer);
-    } catch {
-      return c.notFound();
-    }
-  });
+  app.get(
+    "/pods/logo.jpeg",
+    effectHandler((c) =>
+      Effect.either(
+        fromPromise("read PressPods logo", () => fsAsync.readFile(LOGO_PATH)),
+      ).pipe(
+        Effect.map((result) => {
+          if (result._tag === "Left") return c.body(null, 404);
+          c.header("Content-Type", "image/jpeg");
+          c.header("Cache-Control", "public, max-age=31536000, immutable");
+          return c.body(new Uint8Array(result.right).buffer as ArrayBuffer);
+        }),
+      ),
+    ),
+  );
 
   // -------------------------------------------------------------------------
   // Internal API for the web UI (same-origin; no token)
   // -------------------------------------------------------------------------
 
-  app.get("/api/press-pods/episodes", (c) =>
-    c.json({
-      episodes: getAllEpisodes().map(serializeEpisode),
-      jobs: getAllJobs().map(serializeJob),
-    }),
+  app.get(
+    "/api/press-pods/episodes",
+    effectHandler((c) =>
+      Effect.all(
+        [PressPodsPersistence.getAllEpisodes(), PressPodsPersistence.getAllJobs()],
+        { concurrency: 2 },
+      ).pipe(
+        Effect.map(([episodes, jobs]) =>
+          c.json({
+            episodes: episodes.map(serializeEpisode),
+            jobs: jobs.map(serializeJob),
+          }),
+        ),
+      ),
+    ),
   );
 
-  app.get("/api/press-pods/episodes/:id", (c) => {
-    const episode = getEpisode(c.req.param("id"));
-    if (!episode) return c.json({ error: "Unknown episode" }, 404);
-    return c.json({ episode: serializeEpisodeDetail(episode) });
-  });
+  app.get(
+    "/api/press-pods/episodes/:id",
+    effectHandler((c) =>
+      PressPodsPersistence.getEpisode(c.req.param("id") ?? "").pipe(
+        Effect.map((episode) =>
+          episode
+            ? c.json({ episode: serializeEpisodeDetail(episode) })
+            : c.json({ error: "Unknown episode" }, 404),
+        ),
+      ),
+    ),
+  );
 
   // Manual delete from the UI: drop the row and its audio file. Episodes are
   // never pruned automatically, so this is the only way one goes away.
-  app.delete("/api/press-pods/episodes/:id", async (c) => {
-    const deleted = deleteEpisode(c.req.param("id"));
-    if (!deleted) return c.json({ error: "Unknown episode" }, 404);
-    await deleteEpisodeAudio(deleted.audioFile);
-    logger.info(`Deleted episode ${deleted.episodeId} ("${deleted.title}")`);
-    return c.json({ deleted: true });
-  });
+  app.delete(
+    "/api/press-pods/episodes/:id",
+    effectHandler((c) =>
+      PressPodsPersistence.deleteEpisode(c.req.param("id") ?? "").pipe(
+        Effect.flatMap((deleted): Effect.Effect<Response> => {
+          if (!deleted) {
+            return Effect.succeed<Response>(c.json({ error: "Unknown episode" }, 404));
+          }
+          return deleteEpisodeAudio(deleted.audioFile).pipe(
+            Effect.tap(() =>
+              Effect.sync(() =>
+                logger.info(
+                  `Deleted episode ${deleted.episodeId} ("${deleted.title}")`,
+                ),
+              ),
+            ),
+            Effect.map((): Response => c.json({ deleted: true })),
+          );
+        }),
+      ),
+    ),
+  );
 
   // Manual retry/regenerate from the UI: re-run the article through the pipeline.
   // Goes through the shared submit path, so it dedups onto any in-flight job and
   // the fresh episode replaces this one on completion.
-  app.post("/api/press-pods/episodes/:id/retry", (c) => {
-    const episode = getEpisode(c.req.param("id"));
-    if (!episode) return c.json({ error: "Unknown episode" }, 404);
-    const job = submitEpisodeUrl(episode.articleUrl, kickWorker, logger);
-    return c.json({ job: serializeJob(job) }, 202);
-  });
+  app.post(
+    "/api/press-pods/episodes/:id/retry",
+    effectHandler((c) =>
+      PressPodsPersistence.getEpisode(c.req.param("id") ?? "").pipe(
+        Effect.flatMap((episode): Effect.Effect<Response, PressPodsError> =>
+          episode
+            ? submitEpisodeUrlEffect(episode.articleUrl, kickWorker, logger).pipe(
+                Effect.map((job): Response => c.json({ job: serializeJob(job) }, 202)),
+              )
+            : Effect.succeed<Response>(c.json({ error: "Unknown episode" }, 404)),
+        ),
+      ),
+    ),
+  );
 
-  app.post("/api/press-pods/submit", async (c) => {
-    let parsed: z.infer<typeof submitEpisodeSchema>;
-    try {
-      parsed = submitEpisodeSchema.parse(await c.req.json());
-    } catch {
-      return c.json({ error: "A valid article URL is required" }, 400);
-    }
-    const job = submitEpisodeUrl(parsed.url, kickWorker, logger);
-    return c.json({ job: serializeJob(job) }, 202);
-  });
+  app.post(
+    "/api/press-pods/submit",
+    effectHandler((c) =>
+      Effect.either(decodeSubmitUrlEffect(c)).pipe(
+        Effect.flatMap((decoded): Effect.Effect<Response, PressPodsError> =>
+          decoded._tag === "Left"
+            ? Effect.succeed<Response>(
+                c.json({ error: "A valid article URL is required" }, 400),
+              )
+            : submitEpisodeUrlEffect(decoded.right, kickWorker, logger).pipe(
+                Effect.map((job): Response => c.json({ job: serializeJob(job) }, 202)),
+              ),
+        ),
+      ),
+    ),
+  );
 
-  app.post("/api/press-pods/jobs/:jobId/retry", (c) => {
-    const jobId = c.req.param("jobId");
-    const existing = getJob(jobId);
-    if (!existing) return c.json({ error: "Unknown job" }, 404);
-    if (existing.status !== "failed") {
-      return c.json({ error: "Only failed jobs can be retried" }, 409);
-    }
-    const job = requeueJobNow(jobId);
-    if (!job) return c.json({ error: "Unknown job" }, 404);
-    kickWorker();
-    return c.json({ job: serializeJob(job) });
-  });
+  app.post(
+    "/api/press-pods/jobs/:jobId/retry",
+    effectHandler((c) => {
+      const jobId = c.req.param("jobId") ?? "";
+      return PressPodsPersistence.getJob(jobId).pipe(
+        Effect.flatMap((existing): Effect.Effect<Response, PressPodsError> => {
+          if (!existing) {
+            return Effect.succeed<Response>(c.json({ error: "Unknown job" }, 404));
+          }
+          if (existing.status !== "failed") {
+            return Effect.succeed<Response>(
+              c.json({ error: "Only failed jobs can be retried" }, 409),
+            );
+          }
+          return PressPodsPersistence.requeueJobNow(jobId).pipe(
+            Effect.flatMap((job): Effect.Effect<Response, PressPodsError> => {
+              if (!job) {
+                return Effect.succeed<Response>(c.json({ error: "Unknown job" }, 404));
+              }
+              return trySync("kick PressPods worker", kickWorker).pipe(
+                Effect.map((): Response => c.json({ job: serializeJob(job) })),
+              );
+            }),
+          );
+        }),
+      );
+    }),
+  );
 
-  app.delete("/api/press-pods/jobs/:jobId", async (c) => {
-    const jobId = c.req.param("jobId");
-    const existing = getJob(jobId);
-    if (!existing) return c.json({ error: "Unknown job" }, 404);
-    if (existing.status === "processing") {
-      return c.json({ error: "Job is currently processing" }, 409);
-    }
-    PressPodsJobEntity.delete({ jobId });
-    // Dismissing a job means giving up on it — drop any per-chunk resume cache
-    // so an abandoned article doesn't leave checkpoint WAVs on disk forever.
-    await clearChunkCheckpoints(checkpointWorkId(jobNormalizedUrl(existing)));
-    return c.json({ deleted: true });
-  });
+  app.delete(
+    "/api/press-pods/jobs/:jobId",
+    effectHandler((c) => {
+      const jobId = c.req.param("jobId") ?? "";
+      return PressPodsPersistence.getJob(jobId).pipe(
+        Effect.flatMap((existing): Effect.Effect<Response, PressPodsError> => {
+          if (!existing) {
+            return Effect.succeed<Response>(c.json({ error: "Unknown job" }, 404));
+          }
+          if (existing.status === "processing") {
+            return Effect.succeed<Response>(
+              c.json({ error: "Job is currently processing" }, 409),
+            );
+          }
+          return trySync("delete PressPods job", () =>
+            PressPodsJobEntity.delete({ jobId }),
+          ).pipe(
+            // Dismissing a job means giving up on it, including resume cache.
+            Effect.andThen(
+              clearChunkCheckpoints(checkpointWorkId(jobNormalizedUrl(existing))),
+            ),
+            Effect.map((): Response => c.json({ deleted: true })),
+          );
+        }),
+      );
+    }),
+  );
 }
 
 function isAuthorized(c: Context): boolean {

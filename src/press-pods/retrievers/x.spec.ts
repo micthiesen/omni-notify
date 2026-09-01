@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   articleBlocksToMarkdown,
@@ -81,9 +82,11 @@ describe("retrieveArticleX", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await retrieveArticleX(
-      "https://x.com/edels0n/status/2077031491045929255?s=46&t=tracking",
-      "PressPods Test",
+    const result = await Effect.runPromise(
+      retrieveArticleX(
+        "https://x.com/edels0n/status/2077031491045929255?s=46&t=tracking",
+        "PressPods Test",
+      ),
     );
 
     expect(result).toEqual({
@@ -157,9 +160,11 @@ Out every Tuesday.`,
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await retrieveArticleX(
-      `https://x.com/DmitryRybin1/status/${ROOT_ID}`,
-      "PressPods Test",
+    const result = await Effect.runPromise(
+      retrieveArticleX(
+        `https://x.com/DmitryRybin1/status/${ROOT_ID}`,
+        "PressPods Test",
+      ),
     );
 
     expect(result.text).toBe(
@@ -189,9 +194,8 @@ Out every Tuesday.`,
       ),
     );
 
-    const result = await retrieveArticleX(
-      `https://twitter.com/DmitryRybin1/status/${ROOT_ID}`,
-      "test",
+    const result = await Effect.runPromise(
+      retrieveArticleX(`https://twitter.com/DmitryRybin1/status/${ROOT_ID}`, "test"),
     );
     expect(result.text).toBe(ROOT_TEXT);
     expect(result.url).toBe(`https://x.com/DmitryRybin1/status/${ROOT_ID}`);
@@ -218,9 +222,8 @@ Out every Tuesday.`,
       ),
     );
 
-    const result = await retrieveArticleX(
-      `https://x.com/i/web/status/${ROOT_ID}`,
-      "test",
+    const result = await Effect.runPromise(
+      retrieveArticleX(`https://x.com/i/web/status/${ROOT_ID}`, "test"),
     );
     expect(result.text).toBe(SECOND_TEXT);
     expect(result.title).toBe("Media-only article");
@@ -239,7 +242,7 @@ Out every Tuesday.`,
       vi.fn().mockResolvedValue(new Response("down", { status: 503 })),
     );
     await expect(
-      retrieveArticleX("https://x.com/user/status/123", "test"),
+      Effect.runPromise(retrieveArticleX("https://x.com/user/status/123", "test")),
     ).rejects.toThrow("HTTP 503");
 
     vi.stubGlobal(
@@ -249,7 +252,7 @@ Out every Tuesday.`,
         .mockResolvedValue(jsonResponse({ code: 404, message: "Tweet not found" })),
     );
     await expect(
-      retrieveArticleX("https://x.com/user/status/123", "test"),
+      Effect.runPromise(retrieveArticleX("https://x.com/user/status/123", "test")),
     ).rejects.toThrow("code 404: Tweet not found");
   });
 

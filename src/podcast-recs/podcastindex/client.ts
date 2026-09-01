@@ -1,13 +1,13 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import got from "got";
-import PQueue from "p-queue";
-import { z } from "zod";
+import { Data, Clock, Effect, Ref, Schedule, Schema } from "effect";
+import { fetchPublicText, PUBLIC_HTTP_USER_AGENT } from "../../effect/publicHttp.js";
 import config from "../../utils/config.js";
 import { type PodcastIndexCredentials, podcastIndexAuthHeaders } from "./auth.js";
 import type { PodcastIndexEpisode } from "./types.js";
 
 const BASE_URL = "https://api.podcastindex.org/api/1.0";
 const DEFAULT_MAX_RESULTS = 20;
+const PODCAST_INDEX_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 
 const MAX_CONCURRENT_REQUESTS = 4;
 const MAX_REQUESTS_PER_INTERVAL = 6;
@@ -17,37 +17,70 @@ const RATE_INTERVAL_MS = 1000;
 // pull the handful of fields we care about, and every one of them is
 // optional here so a missing/renamed field degrades to a skip rather than a
 // thrown parse error.
-const rawEpisodeSchema = z
-  .object({
-    // `.nullish()` (not `.optional()`) — Podcast Index returns explicit `null`
-    // for absent fields (e.g. feedItunesId, images), which optional() rejects.
-    // mapEpisode already treats null as absent via `??`/truthy checks.
-    title: z.string().nullish(),
-    feedTitle: z.string().nullish(),
-    feedUrl: z.string().nullish(),
-    feedItunesId: z.number().nullish(),
-    guid: z.string().nullish(),
-    enclosureUrl: z.string().nullish(),
-    link: z.string().nullish(),
-    datePublished: z.number().nullish(),
-    duration: z.number().nullish(),
-    description: z.string().nullish(),
-    image: z.string().nullish(),
-    feedImage: z.string().nullish(),
-  })
-  .passthrough();
+const rawEpisodeSchema = Schema.Struct({
+  // `.nullish()` (not `.optional()`) — Podcast Index returns explicit `null`
+  // for absent fields (e.g. feedItunesId, images), which optional() rejects.
+  // mapEpisode already treats null as absent via `??`/truthy checks.
+  title: Schema.optional(Schema.NullOr(Schema.String)),
+  feedTitle: Schema.optional(Schema.NullOr(Schema.String)),
+  feedUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  feedItunesId: Schema.optional(Schema.NullOr(Schema.Number)),
+  guid: Schema.optional(Schema.NullOr(Schema.String)),
+  enclosureUrl: Schema.optional(Schema.NullOr(Schema.String)),
+  link: Schema.optional(Schema.NullOr(Schema.String)),
+  datePublished: Schema.optional(Schema.NullOr(Schema.Number)),
+  duration: Schema.optional(Schema.NullOr(Schema.Number)),
+  description: Schema.optional(Schema.NullOr(Schema.String)),
+  image: Schema.optional(Schema.NullOr(Schema.String)),
+  feedImage: Schema.optional(Schema.NullOr(Schema.String)),
+});
 
-export type RawPodcastIndexEpisode = z.infer<typeof rawEpisodeSchema>;
+export type RawPodcastIndexEpisode = Schema.Schema.Type<typeof rawEpisodeSchema>;
 
-const searchByPersonResponseSchema = z
-  .object({
-    status: z.unknown(),
-    // Coerce a null/absent items to [] — PI returns explicit null on some
-    // error/no-result responses, which a plain optional().default() rejects.
-    items: z.preprocess((value) => value ?? [], z.array(rawEpisodeSchema)),
-    count: z.unknown(),
-  })
-  .passthrough();
+const searchByPersonResponseSchema = Schema.Struct({
+  // Coerce a null/absent items to [] — PI returns explicit null on some
+  // error/no-result responses, which a plain optional().default() rejects.
+  items: Schema.optional(Schema.NullOr(Schema.Array(rawEpisodeSchema))),
+});
+
+class PodcastIndexRequestError extends Data.TaggedError("PodcastIndexRequestError")<{
+  readonly name: string;
+  readonly cause: unknown;
+}> {}
+
+interface RequestControl {
+  readonly apply: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+}
+
+const requestControl = Effect.runSync(
+  Effect.gen(function* () {
+    const semaphore = yield* Effect.makeSemaphore(MAX_CONCURRENT_REQUESTS);
+    const rateState = yield* Ref.make({ windowStart: 0, used: 0 });
+    const takeRatePermit: Effect.Effect<void> = Effect.suspend(() =>
+      Effect.flatMap(Clock.currentTimeMillis, (now) =>
+        Ref.modify(rateState, (state) => {
+          if (now - state.windowStart >= RATE_INTERVAL_MS) {
+            return [0, { windowStart: now, used: 1 }] as const;
+          }
+          if (state.used < MAX_REQUESTS_PER_INTERVAL) {
+            return [0, { ...state, used: state.used + 1 }] as const;
+          }
+          return [state.windowStart + RATE_INTERVAL_MS - now, state] as const;
+        }),
+      ).pipe(
+        Effect.flatMap((waitMs) =>
+          waitMs > 0
+            ? Effect.sleep(`${waitMs} millis`).pipe(Effect.zipRight(takeRatePermit))
+            : Effect.void,
+        ),
+      ),
+    );
+    return {
+      apply: (effect) =>
+        takeRatePermit.pipe(Effect.zipRight(semaphore.withPermits(1)(effect))),
+    } satisfies RequestControl;
+  }),
+);
 
 /**
  * Maps a raw search result to our episode shape. Returns undefined (the skip
@@ -81,48 +114,62 @@ export function mapEpisode(
 }
 
 export interface PodcastIndexClient {
-  searchByPerson(name: string): Promise<PodcastIndexEpisode[]>;
+  searchByPerson(name: string): Effect.Effect<PodcastIndexEpisode[], unknown>;
 }
 
 class PodcastIndexApiClient implements PodcastIndexClient {
-  // One process-wide queue so every request (present and future methods)
-  // stays under Podcast Index's rate limits regardless of caller fan-out.
-  private readonly queue = new PQueue({
-    concurrency: MAX_CONCURRENT_REQUESTS,
-    interval: RATE_INTERVAL_MS,
-    intervalCap: MAX_REQUESTS_PER_INTERVAL,
-  });
-
   public constructor(
     private readonly credentials: PodcastIndexCredentials,
     private readonly logger: Logger,
   ) {}
 
-  public async searchByPerson(name: string): Promise<PodcastIndexEpisode[]> {
-    const response = await this.queue.add(() =>
-      got
-        .get(`${BASE_URL}/search/byperson`, {
-          searchParams: { q: name, max: DEFAULT_MAX_RESULTS },
-          headers: podcastIndexAuthHeaders(this.credentials),
-          retry: { limit: 2 },
-          timeout: { request: 15_000 },
-        })
-        .json<unknown>(),
-    );
+  public searchByPerson(name: string): Effect.Effect<PodcastIndexEpisode[], unknown> {
+    return this.searchByPersonEffect(name);
+  }
 
-    const parsed = searchByPersonResponseSchema.parse(response);
-    const episodes: PodcastIndexEpisode[] = [];
-    for (const raw of parsed.items) {
-      const episode = mapEpisode(raw);
-      if (episode) {
-        episodes.push(episode);
-      } else {
-        this.logger.debug(`Skipping Podcast Index episode missing required fields`, {
-          title: raw.title,
-        });
+  private searchByPersonEffect(name: string) {
+    return Effect.gen(this, function* () {
+      const attempt = requestControl.apply(
+        fetchPublicText(
+          `${BASE_URL}/search/byperson`,
+          {
+            searchParams: { q: name, max: DEFAULT_MAX_RESULTS },
+            headers: {
+              ...podcastIndexAuthHeaders(this.credentials),
+              "User-Agent": PUBLIC_HTTP_USER_AGENT,
+            },
+            retry: { limit: 0 },
+            timeout: { request: 15_000 },
+          },
+          `Podcast Index byperson request failed for ${name}`,
+          undefined,
+          PODCAST_INDEX_RESPONSE_MAX_BYTES,
+        ).pipe(
+          Effect.mapError((cause) => new PodcastIndexRequestError({ name, cause })),
+        ),
+      );
+      const responseText = yield* attempt.pipe(
+        Effect.retry(
+          Schedule.exponential("200 millis").pipe(Schedule.compose(Schedule.recurs(2))),
+        ),
+      );
+
+      const parsed = yield* Schema.decodeUnknown(
+        Schema.parseJson(searchByPersonResponseSchema),
+      )(responseText);
+      const episodes: PodcastIndexEpisode[] = [];
+      for (const raw of parsed.items ?? []) {
+        const episode = mapEpisode(raw);
+        if (episode) {
+          episodes.push(episode);
+        } else {
+          this.logger.debug(`Skipping Podcast Index episode missing required fields`, {
+            title: raw.title,
+          });
+        }
       }
-    }
-    return episodes;
+      return episodes;
+    });
   }
 }
 

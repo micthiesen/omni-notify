@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { Effect } from "effect";
 import { fetchTaskRuns } from "../api";
 import type { TaskInfo, TaskRun } from "../api";
+import { forkUiEffect } from "../effect";
 import { useNow } from "../hooks/useNow";
 import { describeCron } from "../utils/cron";
 import {
@@ -114,24 +116,25 @@ export function TaskCard({
   const lastRunFinished = task.lastRun?.finishedAt ?? null;
   useEffect(() => {
     if (!expanded) return;
-    let cancelled = false;
     // Fetch one extra: the newest run already shows in the card's last-run
     // line, so it's excluded from the accordion below.
-    fetchTaskRuns({ task: task.name, limit: HISTORY_LIMIT + 1 })
-      .then((data) => {
-        if (cancelled) return;
-        setHistory(data.runs);
-        setHistoryError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setHistoryError(
-          err instanceof Error ? err.message : "Failed to fetch run history",
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      fetchTaskRuns({ task: task.name, limit: HISTORY_LIMIT + 1 }).pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setHistory(data.runs);
+            setHistoryError(null);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() =>
+            setHistoryError(
+              err instanceof Error ? err.message : "Failed to fetch run history",
+            ),
+          ),
+        ),
+      ),
+    );
   }, [expanded, task.name, lastRunId, lastRunFinished]);
 
   return (

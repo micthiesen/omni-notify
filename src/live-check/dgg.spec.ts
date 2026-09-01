@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 
 import {
   type DggFeed,
@@ -419,20 +420,25 @@ describe("fetchDggFeed", () => {
   it("rejects when a complete snapshot does not arrive before the timeout", async () => {
     const socket = new FakeSocket();
     await expect(
-      fetchDggFeed({
-        timeoutMs: 5,
-        createSocket: (() => socket) as DggWebSocketFactory,
-      }),
+      Effect.runPromise(
+        fetchDggFeed({
+          timeoutMs: 5,
+          createSocket: (() => socket) as DggWebSocketFactory,
+        }),
+      ),
     ).rejects.toThrow("Timed out waiting for DGG live snapshot");
     expect(socket.closed).toBe(true);
   });
 
   it("waits for the complete snapshot in any order and suppresses stale hosting", async () => {
     const socket = new FakeSocket();
-    const promise = fetchDggFeed({
-      timeoutMs: 1_000,
-      createSocket: (() => socket) as DggWebSocketFactory,
-    });
+    const promise = Effect.runPromise(
+      fetchDggFeed({
+        timeoutMs: 1_000,
+        createSocket: (() => socket) as DggWebSocketFactory,
+      }),
+    );
+    await Promise.resolve();
 
     socket.message({
       type: "dggApi:hosting",
@@ -464,10 +470,13 @@ describe("fetchDggFeed", () => {
 
   it("rejects malformed relevant payloads instead of returning a partial feed", async () => {
     const socket = new FakeSocket();
-    const promise = fetchDggFeed({
-      timeoutMs: 1_000,
-      createSocket: (() => socket) as DggWebSocketFactory,
-    });
+    const promise = Effect.runPromise(
+      fetchDggFeed({
+        timeoutMs: 1_000,
+        createSocket: (() => socket) as DggWebSocketFactory,
+      }),
+    );
+    await Promise.resolve();
 
     socket.message({ type: "dggApi:embeds", data: [{ nope: true }] });
 

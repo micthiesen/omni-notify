@@ -1,7 +1,9 @@
-import { setTimeout as sleep } from "node:timers/promises";
 import type { Logger } from "@micthiesen/mitools/logging";
 import got, { HTTPError, RequestError } from "got";
+import { Duration, Effect, Schedule } from "effect";
+import { readBufferResponseWithLimit } from "../../../effect/publicHttp.js";
 import config from "../../../utils/config.js";
+import { PressPodsError, tryPromise } from "../../effect.js";
 import type { AuthorGender, TtsProvider } from "./types.js";
 
 /** Higgs Audio v3 via a self-hosted mlx-audio server (OpenAI-shaped API). */
@@ -15,6 +17,7 @@ const MAX_TOKENS = 3000;
 /** One request per chunk should finish in well under this; a runaway hits the
  * token cap first. Bounds a genuinely hung server. */
 const REQUEST_TIMEOUT_MS = 4 * 60 * 1000;
+const MAX_TTS_CHUNK_BYTES = 25 * 1024 * 1024;
 
 interface RefVoice {
   refAudio: string;
@@ -52,7 +55,10 @@ export class HiggsProvider implements TtsProvider {
     this.voiceName = this.refVoice ? "Higgs (cloned)" : `Higgs (${this.gender})`;
   }
 
-  public async synthesizeChunk(text: string, logger: Logger): Promise<Buffer> {
+  public synthesizeChunk(
+    text: string,
+    logger: Logger,
+  ): Effect.Effect<Buffer, PressPodsError> {
     // A reference clip defines the voice, so gender is omitted when cloning.
     const voiceParams = this.refVoice
       ? { ref_audio: this.refVoice.refAudio, ref_text: this.refVoice.refText }
@@ -60,38 +66,43 @@ export class HiggsProvider implements TtsProvider {
     // Only network blips retry here; content-quality retries (truncation /
     // runaway) are the length-verify's job in synthesize.ts, so keep this small
     // to avoid the two loops compounding into a long stall.
-    const maxAttempts = 2;
-    for (let attempt = 1; ; attempt++) {
-      try {
-        const bytes = await got
-          .post(`${this.baseUrl}/v1/audio/speech`, {
-            json: {
-              model: this.modelId,
-              input: text,
-              ...voiceParams,
-              speed: SPEED,
-              max_tokens: MAX_TOKENS,
-              response_format: "mp3",
-            },
-            timeout: { request: REQUEST_TIMEOUT_MS },
-          })
-          .buffer();
-        return Buffer.from(bytes);
-      } catch (error) {
-        // Retry 5xx/429 and non-HTTP errors (connection resets, timeouts,
-        // truncated streams) — but NOT 4xx: HTTPError extends RequestError, so
-        // classify by whether there's an HTTP response first.
-        const transient =
-          error instanceof HTTPError
-            ? error.response.statusCode === 429 || error.response.statusCode >= 500
-            : error instanceof RequestError;
-        if (!transient || attempt >= maxAttempts) throw error;
-        const backoffMs = 2000 * 2 ** (attempt - 1);
-        logger.warn(
-          `Higgs request failed (${(error as Error).message}); retry ${attempt}/${maxAttempts - 1} in ${backoffMs}ms`,
-        );
-        await sleep(backoffMs);
-      }
-    }
+    const request = tryPromise("synthesize Higgs chunk", (signal) =>
+      readBufferResponseWithLimit(
+        got.stream(`${this.baseUrl}/v1/audio/speech`, {
+          method: "POST",
+          json: {
+            model: this.modelId,
+            input: text,
+            ...voiceParams,
+            speed: SPEED,
+            max_tokens: MAX_TOKENS,
+            response_format: "mp3",
+          },
+          timeout: { request: REQUEST_TIMEOUT_MS },
+          signal,
+        }),
+        MAX_TTS_CHUNK_BYTES,
+      ),
+    );
+    return request.pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => logger.warn("Higgs chunk request failed", { error })),
+      ),
+      Effect.retry({
+        times: 1,
+        schedule: Schedule.exponential(Duration.seconds(2)),
+        while: (error) => {
+          const cause = error.cause;
+          // Retry 5xx/429 and non-HTTP errors (connection resets, timeouts,
+          // truncated streams) — but NOT 4xx: HTTPError extends RequestError, so
+          // classify by whether there's an HTTP response first.
+          const transient =
+            cause instanceof HTTPError
+              ? cause.response.statusCode === 429 || cause.response.statusCode >= 500
+              : cause instanceof RequestError;
+          return transient;
+        },
+      }),
+    );
   }
 }

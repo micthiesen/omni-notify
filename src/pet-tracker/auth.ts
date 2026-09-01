@@ -4,6 +4,7 @@ import {
   CognitoUser,
   CognitoUserPool,
 } from "amazon-cognito-identity-js";
+import { Data, Effect, Ref, Schema } from "effect";
 
 const USER_POOL_ID = "us-east-1_rjhNnZVAm";
 const CLIENT_ID = "4552ujeu3aic90nf8qn53levmn";
@@ -17,58 +18,87 @@ const userPool = new CognitoUserPool({
   ClientId: CLIENT_ID,
 });
 
-let cachedAuth: { idToken: string; userId: string; expiresAt: number } | null = null;
+const cachedAuth = Ref.unsafeMake<{
+  idToken: string;
+  userId: string;
+  expiresAt: number;
+} | null>(null);
 
-export async function authenticateWhisker(
+export class WhiskerAuthenticationError extends Data.TaggedError(
+  "WhiskerAuthenticationError",
+)<{ readonly cause: unknown }> {
+  public override get message(): string {
+    return `Whisker authentication failed: ${this.cause instanceof Error ? this.cause.message : String(this.cause)}`;
+  }
+}
+
+const JwtPayload = Schema.Struct({
+  mid: Schema.String,
+  exp: Schema.optional(Schema.Number),
+});
+
+export function authenticateWhisker(
   email: string,
   password: string,
-): Promise<{ idToken: string; userId: string }> {
-  if (cachedAuth && Date.now() < cachedAuth.expiresAt - TOKEN_EXPIRY_BUFFER_MS) {
-    logger.debug("Using cached credentials");
-    return { idToken: cachedAuth.idToken, userId: cachedAuth.userId };
-  }
+): Effect.Effect<{ idToken: string; userId: string }, WhiskerAuthenticationError> {
+  return Effect.gen(function* () {
+    const cached = yield* Ref.get(cachedAuth);
+    const now = yield* Effect.sync(() => Date.now());
+    if (cached && now < cached.expiresAt - TOKEN_EXPIRY_BUFFER_MS) {
+      logger.debug("Using cached credentials");
+      return { idToken: cached.idToken, userId: cached.userId };
+    }
 
-  const authDetails = new AuthenticationDetails({
-    Username: email,
-    Password: password,
-  });
-
-  const cognitoUser = new CognitoUser({
-    Username: email,
-    Pool: userPool,
-  });
-
-  const session = await new Promise<CognitoUserSession>((resolve, reject) => {
-    cognitoUser.authenticateUser(authDetails, {
-      onSuccess: (result) => resolve(result),
-      onFailure: (err) => reject(err),
+    const authDetails = new AuthenticationDetails({
+      Username: email,
+      Password: password,
     });
+
+    const cognitoUser = new CognitoUser({
+      Username: email,
+      Pool: userPool,
+    });
+
+    const session = yield* Effect.async<CognitoUserSession, WhiskerAuthenticationError>(
+      (resume) => {
+        cognitoUser.authenticateUser(authDetails, {
+          onSuccess: (result) => resume(Effect.succeed(result)),
+          onFailure: (cause) =>
+            resume(Effect.fail(new WhiskerAuthenticationError({ cause }))),
+        });
+      },
+    );
+
+    const idToken = session.getIdToken().getJwtToken();
+    const payload = yield* decodeJwtPayload(idToken);
+    const userId = payload.mid;
+    const expiresAt = payload.exp ? payload.exp * 1000 : now + 60 * 60 * 1000;
+
+    yield* Ref.set(cachedAuth, { idToken, userId, expiresAt });
+    logger.debug("Authenticated (fresh)", { userId });
+    return { idToken, userId };
   });
-
-  const idToken = session.getIdToken().getJwtToken();
-  const payload = decodeJwtPayload(idToken);
-  const userId = payload.mid;
-
-  if (typeof userId !== "string") {
-    throw new Error("Missing 'mid' claim in id token");
-  }
-
-  const exp = payload.exp;
-  const expiresAt = typeof exp === "number" ? exp * 1000 : Date.now() + 60 * 60 * 1000;
-
-  cachedAuth = { idToken, userId, expiresAt };
-  logger.debug("Authenticated (fresh)", { userId });
-  return { idToken, userId };
 }
 
 type CognitoUserSession = ReturnType<CognitoUser["getSignInUserSession"]> &
   NonNullable<unknown>;
 
-function decodeJwtPayload(token: string): Record<string, unknown> {
-  const parts = token.split(".");
-  if (parts.length !== 3) {
-    throw new Error("Invalid JWT format");
-  }
-  const payload = Buffer.from(parts[1], "base64url").toString("utf-8");
-  return JSON.parse(payload);
+function decodeJwtPayload(
+  token: string,
+): Effect.Effect<Schema.Schema.Type<typeof JwtPayload>, WhiskerAuthenticationError> {
+  return Effect.gen(function* () {
+    const parts = token.split(".");
+    if (parts.length !== 3 || !parts[1]) {
+      return yield* new WhiskerAuthenticationError({
+        cause: new Error("Invalid JWT format"),
+      });
+    }
+    const unknownPayload = yield* Effect.try({
+      try: () => JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8")),
+      catch: (cause) => new WhiskerAuthenticationError({ cause }),
+    });
+    return yield* Schema.decodeUnknown(JwtPayload)(unknownPayload).pipe(
+      Effect.mapError((cause) => new WhiskerAuthenticationError({ cause })),
+    );
+  });
 }

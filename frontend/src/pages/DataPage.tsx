@@ -8,6 +8,7 @@ import {
   type DataStorageSummary,
   type DataValue,
 } from "../api";
+import { forkUiRequest, runUiEffect } from "../effect";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { Toast, useToast } from "../components/Toast";
 import { downloadFile } from "../utils/download";
@@ -234,52 +235,53 @@ export default function DataPage() {
   const rowsRequest = useRef(0);
   const { toast, showToast } = useToast();
 
+  const refreshEntities = useCallback(
+    (reportError = false) =>
+      forkUiRequest(fetchDataEntities(), {
+        onSuccess: ({ entities: fetched, storage: fetchedStorage }) => {
+          setEntities(fetched);
+          setStorage(fetchedStorage);
+          setSelectedSlug((current) => current || fetched[0]?.slug || "");
+          setError(null);
+          setLoadingEntities(false);
+        },
+        onFailure: (err) => {
+          if (reportError) {
+            setError(err instanceof Error ? err.message : "Failed to load entities");
+          }
+          setLoadingEntities(false);
+        },
+      }),
+    [],
+  );
+
   useEffect(() => {
-    let cancelled = false;
-    void fetchDataEntities()
-      .then(({ entities: fetched, storage: fetchedStorage }) => {
-        if (cancelled) return;
-        setEntities(fetched);
-        setStorage(fetchedStorage);
-        setSelectedSlug((current) => current || fetched[0]?.slug || "");
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load entities");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingEntities(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return refreshEntities(true);
+  }, [refreshEntities]);
 
   const selected = entities.find((entity) => entity.slug === selectedSlug) ?? null;
 
-  const loadRows = useCallback(async () => {
-    if (!selectedSlug) return;
+  const loadRows = useCallback(() => {
+    if (!selectedSlug) return () => {};
     const request = ++rowsRequest.current;
     setLoadingRows(true);
-    try {
-      const { summary, rows: fetched } = await fetchDataRows(selectedSlug);
-      if (request !== rowsRequest.current) return;
-      setRows(fetched);
-      // Default to newest-first on the best recency column, unless the user
-      // already picked a sort for this entity.
-      setSort((current) => current ?? defaultSort(fetched));
-      setEntities((current) =>
-        current.map((entity) => (entity.slug === summary.slug ? summary : entity)),
-      );
-      setError(null);
-    } catch (err) {
-      if (request !== rowsRequest.current) return;
-      setError(err instanceof Error ? err.message : "Failed to load rows");
-    } finally {
-      if (request === rowsRequest.current) setLoadingRows(false);
-    }
+    return forkUiRequest(fetchDataRows(selectedSlug), {
+      onSuccess: ({ summary, rows: fetched }) => {
+        if (request !== rowsRequest.current) return;
+        setRows(fetched);
+        setSort((current) => current ?? defaultSort(fetched));
+        setEntities((current) =>
+          current.map((entity) => (entity.slug === summary.slug ? summary : entity)),
+        );
+        setError(null);
+        setLoadingRows(false);
+      },
+      onFailure: (err) => {
+        if (request !== rowsRequest.current) return;
+        setError(err instanceof Error ? err.message : "Failed to load rows");
+        setLoadingRows(false);
+      },
+    });
   }, [selectedSlug]);
 
   useEffect(() => {
@@ -287,7 +289,7 @@ export default function DataPage() {
     setQuery("");
     setSort(null);
     setDetailRow(null);
-    void loadRows();
+    return loadRows();
   }, [loadRows]);
 
   const columns = useMemo(() => {
@@ -348,10 +350,12 @@ export default function DataPage() {
   const downloadRows = () => {
     if (!selected) return;
     const suffix = query.trim() ? "-filtered" : "";
-    downloadFile(
-      `${selected.slug}${suffix}.json`,
-      JSON.stringify(visibleRows, null, 2),
-      "application/json",
+    void runUiEffect(
+      downloadFile(
+        `${selected.slug}${suffix}.json`,
+        JSON.stringify(visibleRows, null, 2),
+        "application/json",
+      ),
     );
   };
 
@@ -375,7 +379,7 @@ export default function DataPage() {
     const id = rowId(row, selected.primaryKey);
     setDeletingId(id);
     try {
-      await deleteDataRow(selected.slug, key);
+      await runUiEffect(deleteDataRow(selected.slug, key));
       setRows((current) =>
         current.filter((candidate) => rowId(candidate, selected.primaryKey) !== id),
       );
@@ -388,12 +392,7 @@ export default function DataPage() {
       );
       setDetailRow(null);
       showToast("Row deleted", "info");
-      void fetchDataEntities()
-        .then(({ entities: fetched, storage: fetchedStorage }) => {
-          setEntities(fetched);
-          setStorage(fetchedStorage);
-        })
-        .catch(() => {});
+      refreshEntities();
     } catch (err) {
       showToast(err instanceof Error ? err.message : "Failed to delete row", "error");
     } finally {
@@ -428,13 +427,8 @@ export default function DataPage() {
             className="run-btn"
             type="button"
             onClick={() => {
-              void loadRows();
-              void fetchDataEntities()
-                .then(({ entities: fetched, storage: fetchedStorage }) => {
-                  setEntities(fetched);
-                  setStorage(fetchedStorage);
-                })
-                .catch(() => {});
+              loadRows();
+              refreshEntities();
             }}
             disabled={loadingRows}
           >

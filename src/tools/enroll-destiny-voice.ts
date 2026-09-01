@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { Data, Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
 import { LivestreamAudioCapture } from "../live-check/intelligence/audio.js";
 import {
   cosineSimilarity,
@@ -46,6 +48,11 @@ function parseArgs(args: string[]): {
 
 type SourcedEmbedding = { embedding: Float32Array; sourceIndex: number };
 
+class EnrollmentError extends Data.TaggedError("EnrollmentError")<{
+  operation: string;
+  cause: unknown;
+}> {}
+
 function selectCrossSourceCluster(embeddings: SourcedEmbedding[]): Float32Array[] {
   const CLUSTER_SIMILARITY = 0.5;
   const ranked = embeddings
@@ -75,51 +82,95 @@ function selectCrossSourceCluster(embeddings: SourcedEmbedding[]): Float32Array[
     .map((item) => item.embedding);
 }
 
-async function main(): Promise<void> {
-  const { output, modelDir, sources } = parseArgs(process.argv.slice(2));
-  const speech = new LocalSpeechRuntime(modelDir);
-  const capture = new LivestreamAudioCapture();
-  const embeddings: SourcedEmbedding[] = [];
-  for (const [sourceIndex, source] of sources.entries()) {
-    const audio = await capture.capture(source.url, 60, source.seek);
-    const segments = speech.extractSpeech(audio.samples);
-    let sourceEmbeddings = 0;
-    for (const segment of segments) {
-      for (
-        let offset = 0;
-        offset + WINDOW_SAMPLES <= segment.length;
-        offset += WINDOW_SAMPLES
-      ) {
-        embeddings.push({
-          embedding: speech.computeEmbedding(
-            segment.subarray(offset, offset + WINDOW_SAMPLES),
+function mainEffect(): Effect.Effect<void, EnrollmentError> {
+  return Effect.gen(function* () {
+    const { output, modelDir, sources } = yield* Effect.try({
+      try: () => parseArgs(process.argv.slice(2)),
+      catch: (cause) => new EnrollmentError({ operation: "parse arguments", cause }),
+    });
+    const speech = yield* LocalSpeechRuntime.createEffect(modelDir).pipe(
+      Effect.mapError(
+        (cause) =>
+          new EnrollmentError({ operation: "initialize speech runtime", cause }),
+      ),
+    );
+    const capture = new LivestreamAudioCapture();
+    const embeddings: SourcedEmbedding[] = [];
+    for (const [sourceIndex, source] of sources.entries()) {
+      const audio = yield* capture
+        .captureEffect(source.url, 60, source.seek)
+        .pipe(
+          Effect.mapError(
+            (cause) => new EnrollmentError({ operation: "capture audio", cause }),
           ),
-          sourceIndex,
-        });
-        sourceEmbeddings += 1;
+        );
+      const segments = yield* speech
+        .extractSpeechEffect(audio.samples)
+        .pipe(
+          Effect.mapError(
+            (cause) => new EnrollmentError({ operation: "extract speech", cause }),
+          ),
+        );
+      let sourceEmbeddings = 0;
+      for (const segment of segments) {
+        for (
+          let offset = 0;
+          offset + WINDOW_SAMPLES <= segment.length;
+          offset += WINDOW_SAMPLES
+        ) {
+          const embedding = yield* speech
+            .computeEmbeddingEffect(segment.subarray(offset, offset + WINDOW_SAMPLES))
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new EnrollmentError({ operation: "compute embedding", cause }),
+              ),
+            );
+          embeddings.push({
+            embedding,
+            sourceIndex,
+          });
+          sourceEmbeddings += 1;
+        }
       }
+      process.stdout.write(
+        `Captured ${audio.durationSeconds.toFixed(1)}s from ${source.url}, ${sourceEmbeddings} speech windows\n`,
+      );
     }
-    process.stdout.write(
-      `Captured ${audio.durationSeconds.toFixed(1)}s from ${source.url}, ${sourceEmbeddings} speech windows\n`,
+    const selected = selectCrossSourceCluster(embeddings);
+    if (selected.length < 6) {
+      return yield* Effect.fail(
+        new EnrollmentError({
+          operation: "select enrollment windows",
+          cause: new Error(
+            `Only ${selected.length} consistent speech windows found; need at least 6`,
+          ),
+        }),
+      );
+    }
+    const voiceprint: VoiceprintFile = {
+      version: 1,
+      speaker: "destiny",
+      model: "3dspeaker-campplus-en-voxceleb-16k",
+      embeddings: selected.map((embedding) => Array.from(embedding)),
+      createdAt: Date.now(),
+      sources: sources.map((source) => `${source.url}#t=${source.seek}`),
+    };
+    yield* Effect.tryPromise({
+      try: () => mkdir(dirname(output), { recursive: true }),
+      catch: (cause) =>
+        new EnrollmentError({ operation: "create output directory", cause }),
+    });
+    yield* Effect.tryPromise({
+      try: () => writeFile(output, `${JSON.stringify(voiceprint)}\n`, { mode: 0o600 }),
+      catch: (cause) => new EnrollmentError({ operation: "write voiceprint", cause }),
+    });
+    yield* Effect.sync(() =>
+      process.stdout.write(
+        `Wrote ${selected.length} enrollment embeddings to ${output}\n`,
+      ),
     );
-  }
-  const selected = selectCrossSourceCluster(embeddings);
-  if (selected.length < 6) {
-    throw new Error(
-      `Only ${selected.length} consistent speech windows found; need at least 6`,
-    );
-  }
-  const voiceprint: VoiceprintFile = {
-    version: 1,
-    speaker: "destiny",
-    model: "3dspeaker-campplus-en-voxceleb-16k",
-    embeddings: selected.map((embedding) => Array.from(embedding)),
-    createdAt: Date.now(),
-    sources: sources.map((source) => `${source.url}#t=${source.seek}`),
-  };
-  await mkdir(dirname(output), { recursive: true });
-  await writeFile(output, `${JSON.stringify(voiceprint)}\n`, { mode: 0o600 });
-  process.stdout.write(`Wrote ${selected.length} enrollment embeddings to ${output}\n`);
+  });
 }
 
-await main();
+await runPromise(mainEffect());

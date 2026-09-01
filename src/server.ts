@@ -3,7 +3,16 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { type Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { z } from "zod";
+import {
+  Clock,
+  Deferred,
+  Duration,
+  Effect,
+  Queue,
+  Schedule,
+  Schema,
+  Stream,
+} from "effect";
 import { getAllBriefingHistories } from "./briefing-agent/persistence.js";
 import {
   AUTO_PASS_SENDERS as CALENDAR_BUILTIN_AUTO_PASS,
@@ -56,9 +65,9 @@ import {
 import type { LivestreamIntelligenceDiagnosticsProvider } from "./live-check/intelligence/service.js";
 import {
   getPlatformViewerMetrics,
-  getViewerMetrics,
+  getViewerMetricsEffect,
 } from "./live-check/metrics/persistence.js";
-import { getStreamerStatus } from "./live-check/persistence.js";
+import { getStreamerStatusEffect } from "./live-check/persistence.js";
 import { platformConfigs } from "./live-check/platforms/index.js";
 import { getStreamSessions } from "./live-check/sessions.js";
 import {
@@ -68,6 +77,15 @@ import {
 } from "./live-check/streamers.js";
 import { toTriggerChannels } from "./live-check/triggerChannels.js";
 import { registerOmniMcpRoute } from "./mcp/route.js";
+import {
+  effectHandler,
+  effectMiddleware,
+  HttpBodyTooLargeError,
+  readJsonBody,
+} from "./effect/http.js";
+import { IntegrationError } from "./effect/errors.js";
+import { fromPromise, fromSync, runPromise } from "./effect/interop.js";
+import { awaitSseWriter } from "./effect/sse.js";
 import {
   CARRIER_SENDER_DOMAINS as PARCEL_BUILTIN_AUTO_PASS,
   BLACKLISTED_SENDERS as PARCEL_BUILTIN_BLOCKED,
@@ -114,7 +132,10 @@ import {
   type TaskRegistry,
 } from "./task-runs/registry.js";
 import config from "./utils/config.js";
-import { approveWorkspaceAction, rejectWorkspaceAction } from "./workspaces/actions.js";
+import {
+  approveWorkspaceActionEffect,
+  rejectWorkspaceActionEffect,
+} from "./workspaces/actions.js";
 import {
   getWorkspaceDefinition,
   workspaceDefinitions,
@@ -288,75 +309,98 @@ function serializeBinding(binding: PlatformBinding) {
 }
 
 function serializeStreamer(streamer: Streamer) {
-  const status = getStreamerStatus(streamer.id);
-  const intelligence = status.isLive
-    ? getLivestreamIntelligence(streamer.id)
-    : undefined;
-  const base = {
-    id: streamer.id,
-    displayName: streamer.displayName,
-    bindings: streamer.bindings.map(serializeBinding),
-    tier: streamer.tier,
-    dgg: streamer.dgg,
-  };
-  if (status.isLive) {
+  return Effect.gen(function* () {
+    const status = yield* getStreamerStatusEffect(streamer.id);
+    const intelligence = status.isLive
+      ? yield* fromSync("read livestream intelligence", () =>
+          getLivestreamIntelligence(streamer.id),
+        )
+      : undefined;
+    const base = {
+      id: streamer.id,
+      displayName: streamer.displayName,
+      bindings: streamer.bindings.map(serializeBinding),
+      tier: streamer.tier,
+      dgg: streamer.dgg,
+    };
+    if (status.isLive) {
+      return {
+        ...base,
+        live: true as const,
+        title: status.primaryTitle,
+        startedAt: toEpochMs(status.startedAt),
+        maxViewerCount: status.maxViewerCount,
+        // Current (not max) summed viewer count; null when unknown/0-data —
+        // e.g. rows persisted before this field existed.
+        viewerCount: status.viewerCount ?? null,
+        sources: (status.sources ?? []).map((source) => ({
+          ...source,
+          viewerCount: source.viewerCount ?? null,
+        })),
+        category: status.category ?? null,
+        primary: serializeBinding(status.primary),
+        intelligence,
+      };
+    }
     return {
       ...base,
-      live: true as const,
-      title: status.primaryTitle,
-      startedAt: toEpochMs(status.startedAt),
-      maxViewerCount: status.maxViewerCount,
-      // Current (not max) summed viewer count; null when unknown/0-data —
-      // e.g. rows persisted before this field existed.
-      viewerCount: status.viewerCount ?? null,
-      sources: (status.sources ?? []).map((source) => ({
-        ...source,
-        viewerCount: source.viewerCount ?? null,
-      })),
-      category: status.category ?? null,
-      primary: serializeBinding(status.primary),
-      intelligence,
+      live: false as const,
+      lastStartedAt: status.lastStartedAt ? toEpochMs(status.lastStartedAt) : null,
+      lastEndedAt: status.lastEndedAt ? toEpochMs(status.lastEndedAt) : null,
+      lastMaxViewerCount: status.lastMaxViewerCount ?? null,
     };
-  }
-  return {
-    ...base,
-    live: false as const,
-    lastStartedAt: status.lastStartedAt ? toEpochMs(status.lastStartedAt) : null,
-    lastEndedAt: status.lastEndedAt ? toEpochMs(status.lastEndedAt) : null,
-    lastMaxViewerCount: status.lastMaxViewerCount ?? null,
-  };
+  });
 }
 
 function serializeStreamersForDisplay(streamers: Streamer[]) {
-  type SerializedStreamer = ReturnType<typeof serializeStreamer>;
+  type SerializedStreamer = Effect.Effect.Success<ReturnType<typeof serializeStreamer>>;
   type SerializedLive = Extract<SerializedStreamer, { live: true }>;
   type SerializedOffline = Extract<SerializedStreamer, { live: false }>;
 
   const live: Array<LiveDisplayItem & { serialized: SerializedLive }> = [];
   const offline: SerializedOffline[] = [];
-  for (const streamer of streamers) {
-    const serialized = serializeStreamer(streamer);
-    if (serialized.live) {
-      live.push({
-        serialized,
-        tier: serialized.tier,
-        viewerCount: serialized.viewerCount,
-        maxViewerCount: serialized.maxViewerCount,
-        orderingViewerCount: streamerOrderingViewerCount(streamer),
-      });
-    } else {
-      offline.push(serialized);
+  return Effect.gen(function* () {
+    const serializedStreamers = yield* Effect.forEach(streamers, (streamer) =>
+      serializeStreamer(streamer).pipe(
+        Effect.map((serialized) => ({ streamer, serialized })),
+      ),
+    );
+    for (const { streamer, serialized } of serializedStreamers) {
+      if (serialized.live) {
+        live.push({
+          serialized,
+          tier: serialized.tier,
+          viewerCount: serialized.viewerCount,
+          maxViewerCount: serialized.maxViewerCount,
+          orderingViewerCount: streamerOrderingViewerCount(streamer),
+        });
+      } else {
+        offline.push(serialized);
+      }
     }
-  }
-  return [
-    ...sortLiveDisplay(live).map((entry) => entry.serialized),
-    ...sortOfflineDisplay(offline),
-  ];
+    return [
+      ...sortLiveDisplay(live).map((entry) => entry.serialized),
+      ...sortOfflineDisplay(offline),
+    ];
+  });
 }
 
 const SNAPSHOT_RUN_LIMIT = 30;
 const SSE_DEBOUNCE_MS = 150;
 const SSE_HEARTBEAT_MS = 25_000;
+
+const requestJsonEffect = (c: Context): Effect.Effect<unknown, HttpBodyTooLargeError> =>
+  readJsonBody(c).pipe(Effect.catchTag("HttpBodyError", () => Effect.succeed(null)));
+
+const rejectOversizedJson = <A, E, R>(
+  c: Context,
+  effect: Effect.Effect<A, E | HttpBodyTooLargeError, R>,
+) =>
+  effect.pipe(
+    Effect.catchTag("HttpBodyTooLargeError", () =>
+      Effect.succeed<Response>(c.json({ error: "Request body too large" }, 413)),
+    ),
+  );
 
 /** Maps manual-run registry errors to responses; anything else rethrows. */
 function taskRunErrorResponse(c: Context, error: unknown): Response {
@@ -375,7 +419,9 @@ function taskRunErrorResponse(c: Context, error: unknown): Response {
 // Both manual recommendation-run endpoints take the same body, differing
 // only in the per-run cap.
 const runRequestSchema = (max: number) =>
-  z.object({ maxRecommendations: z.number().int().min(1).max(max) });
+  Schema.Struct({
+    maxRecommendations: Schema.Number.pipe(Schema.int(), Schema.between(1, max)),
+  });
 const runRequestError = (max: number) =>
   `maxRecommendations must be an integer from 1 to ${max}`;
 
@@ -387,7 +433,10 @@ function feedbackRoute<
   TData extends { status: string },
   TFeedback extends string,
 >(options: {
-  schema: z.ZodType<{ feedback?: TFeedback; note?: string }>;
+  schema: Schema.Schema<{
+    readonly feedback?: TFeedback;
+    readonly note?: string;
+  }>;
   get: (id: string) => TData | undefined;
   setFeedback: (
     id: string,
@@ -395,29 +444,42 @@ function feedbackRoute<
   ) => TData | undefined;
   serialize: (data: TData) => unknown;
 }) {
-  return async (c: Context) => {
-    const parsed = options.schema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) {
-      return c.json({ error: "Invalid recommendation feedback" }, 400);
-    }
-    // A rating, a free-form note, or both — but at least one must be present.
-    if (parsed.data.feedback === undefined && !parsed.data.note?.trim()) {
-      return c.json({ error: "A rating or a note is required" }, 400);
-    }
-    // Both routes bind :id, but the generic Context can't prove it.
-    const id = c.req.param("id") ?? "";
-    const existing = options.get(id);
-    if (!existing) return c.json({ error: "Recommendation not found" }, 404);
-    if (existing.status === "pending" || existing.status === "failed") {
-      return c.json({ error: "Undelivered recommendations cannot be rated" }, 409);
-    }
-    const recommendation = options.setFeedback(id, {
-      feedback: parsed.data.feedback,
-      note: parsed.data.note?.trim() || undefined,
-    });
-    if (!recommendation) return c.json({ error: "Recommendation not found" }, 404);
-    return c.json({ recommendation: options.serialize(recommendation) });
-  };
+  return effectHandler((c: Context) =>
+    rejectOversizedJson(
+      c,
+      requestJsonEffect(c).pipe(
+        Effect.map((body): Response => {
+          const parsed = Schema.decodeUnknownEither(options.schema)(body);
+          if (parsed._tag === "Left") {
+            return c.json({ error: "Invalid recommendation feedback" }, 400);
+          }
+          // A rating, a free-form note, or both, but at least one must be present.
+          if (parsed.right.feedback === undefined && !parsed.right.note?.trim()) {
+            return c.json({ error: "A rating or a note is required" }, 400);
+          }
+          const id = c.req.param("id") ?? "";
+          const existing = options.get(id);
+          if (!existing) {
+            return c.json({ error: "Recommendation not found" }, 404);
+          }
+          if (existing.status === "pending" || existing.status === "failed") {
+            return c.json(
+              { error: "Undelivered recommendations cannot be rated" },
+              409,
+            );
+          }
+          const recommendation = options.setFeedback(id, {
+            feedback: parsed.right.feedback,
+            note: parsed.right.note?.trim() || undefined,
+          });
+          if (!recommendation) {
+            return c.json({ error: "Recommendation not found" }, 404);
+          }
+          return c.json({ recommendation: options.serialize(recommendation) });
+        }),
+      ),
+    ),
+  );
 }
 
 function serializeEmailActivity(a: {
@@ -524,25 +586,29 @@ export function startServer(
     config.OMNI_MCP_TOKEN,
   );
 
-  app.use("/api/*", async (c, next) => {
-    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-      const origin = c.req.header("Origin");
-      const host = c.req.header("Host");
-      let sameOrigin = true;
-      if (origin) {
-        try {
-          sameOrigin = Boolean(host) && new URL(origin).host === host;
-        } catch {
-          sameOrigin = false;
+  app.use(
+    "/api/*",
+    effectMiddleware((c, next) =>
+      Effect.gen(function* () {
+        if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+          const origin = c.req.header("Origin");
+          const host = c.req.header("Host");
+          let sameOrigin = true;
+          if (origin) {
+            sameOrigin = yield* Effect.try({
+              try: () => Boolean(host) && new URL(origin).host === host,
+              catch: () => false,
+            }).pipe(Effect.merge);
+          }
+          if (!sameOrigin) {
+            return c.json({ error: "Cross-origin mutations are not allowed" }, 403);
+          }
         }
-      }
-      if (!sameOrigin) {
-        return c.json({ error: "Cross-origin mutations are not allowed" }, 403);
-      }
-    }
-    await next();
-    c.header("X-Content-Type-Options", "nosniff");
-  });
+        yield* next;
+        c.header("X-Content-Type-Options", "nosniff");
+      }),
+    ),
+  );
 
   if (iosControls) {
     registerIOSControlRoutes(
@@ -553,15 +619,19 @@ export function startServer(
     );
   }
 
-  const buildSnapshot = () => ({
-    tasks: registry.list().map((task) => ({
-      ...task,
-      lastRun: task.lastRun ? serializeRun(task.lastRun) : null,
-    })),
-    streamers: serializeStreamersForDisplay(streamers),
-    runs: getRuns(undefined, SNAPSHOT_RUN_LIMIT).map(serializeRun),
-    onDeck: buildOnDeck(),
-  });
+  const buildSnapshot = () =>
+    Effect.gen(function* () {
+      const serializedStreamers = yield* serializeStreamersForDisplay(streamers);
+      return yield* fromSync("build dashboard snapshot", () => ({
+        tasks: registry.list().map((task) => ({
+          ...task,
+          lastRun: task.lastRun ? serializeRun(task.lastRun) : null,
+        })),
+        streamers: serializedStreamers,
+        runs: getRuns(undefined, SNAPSHOT_RUN_LIMIT).map(serializeRun),
+        onDeck: buildOnDeck(),
+      }));
+    });
 
   app.get("/api/tasks", (c) =>
     c.json({
@@ -572,8 +642,13 @@ export function startServer(
     }),
   );
 
-  app.get("/api/streamers", (c) =>
-    c.json({ streamers: serializeStreamersForDisplay(streamers) }),
+  app.get(
+    "/api/streamers",
+    effectHandler((c) =>
+      serializeStreamersForDisplay(streamers).pipe(
+        Effect.map((serialized) => c.json({ streamers: serialized })),
+      ),
+    ),
   );
 
   // Channel list for the homebridge-stream-triggers Homebridge plugin: one
@@ -584,124 +659,219 @@ export function startServer(
 
   // Viewer metrics history for the streamer detail page: daily peak-viewer
   // buckets (~100 days retained) plus the all-time record.
-  app.get("/api/streamers/:id/metrics", (c) => {
-    const id = c.req.param("id");
-    if (!streamers.some((s) => s.id === id)) {
-      return c.json({ error: "Unknown streamer" }, 404);
-    }
-    const metrics = getViewerMetrics(id);
-    return c.json({
-      dailyBuckets: metrics.dailyBuckets,
-      allTimeMax: metrics.allTimeMax,
-      allTimeMaxTimestamp: metrics.allTimeMaxTimestamp,
-      platforms: getPlatformViewerMetrics(id).map((platform) => ({
-        platform: platform.platform,
-        username: platform.username,
-        dailyBuckets: platform.dailyBuckets,
-        allTimeMax: platform.allTimeMax,
-        allTimeMaxTimestamp: platform.allTimeMaxTimestamp,
-      })),
-    });
-  });
+  app.get(
+    "/api/streamers/:id/metrics",
+    effectHandler((c) => {
+      const id = c.req.param("id") ?? "";
+      if (!streamers.some((s) => s.id === id)) {
+        return Effect.succeed(c.json({ error: "Unknown streamer" }, 404) as Response);
+      }
+      return Effect.gen(function* () {
+        const metrics = yield* getViewerMetricsEffect(id);
+        const platforms = yield* fromSync("read platform viewer metrics", () =>
+          getPlatformViewerMetrics(id),
+        );
+        return c.json({
+          dailyBuckets: metrics.dailyBuckets,
+          allTimeMax: metrics.allTimeMax,
+          allTimeMaxTimestamp: metrics.allTimeMaxTimestamp,
+          platforms: platforms.map((platform) => ({
+            platform: platform.platform,
+            username: platform.username,
+            dailyBuckets: platform.dailyBuckets,
+            allTimeMax: platform.allTimeMax,
+            allTimeMaxTimestamp: platform.allTimeMaxTimestamp,
+          })),
+        }) as Response;
+      });
+    }),
+  );
 
   // Completed live sessions for the streamer detail page, newest first.
-  app.get("/api/streamers/:id/sessions", (c) => {
-    const id = c.req.param("id");
-    if (!streamers.some((s) => s.id === id)) {
-      return c.json({ error: "Unknown streamer" }, 404);
-    }
-    const sessions = [...getStreamSessions(id).sessions].reverse();
-    return c.json({ sessions });
+  app.get(
+    "/api/streamers/:id/sessions",
+    effectHandler((c) => {
+      const id = c.req.param("id") ?? "";
+      if (!streamers.some((s) => s.id === id)) {
+        return Effect.succeed(c.json({ error: "Unknown streamer" }, 404) as Response);
+      }
+      return fromSync("read stream sessions", () => getStreamSessions(id)).pipe(
+        Effect.map(
+          ({ sessions }) => c.json({ sessions: [...sessions].reverse() }) as Response,
+        ),
+      );
+    }),
+  );
+
+  app.get(
+    "/api/streamers/:id/intelligence-details",
+    effectHandler((c) => {
+      const id = c.req.param("id") ?? "";
+      if (!streamers.some((streamer) => streamer.id === id)) {
+        return Effect.succeed(c.json({ error: "Unknown streamer" }, 404) as Response);
+      }
+      const limitParam = Number(c.req.query("limit"));
+      const limit = Number.isInteger(limitParam) && limitParam > 0 ? limitParam : 100;
+      return Effect.gen(function* () {
+        const details = yield* fromSync("read livestream intelligence details", () => ({
+          intelligence: getLivestreamIntelligence(id) ?? null,
+          diagnostics: getLivestreamDiagnostics(id) ?? null,
+          events: getLivestreamEvents(id, limit),
+          runtime: livestreamDiagnostics?.getRuntimeDiagnostics() ?? null,
+        }));
+        return c.json({
+          ...details,
+          generatedAt: yield* Clock.currentTimeMillis,
+        }) as Response;
+      });
+    }),
+  );
+
+  const livestreamFeedbackSchema = Schema.Struct({
+    alertId: Schema.UUID,
+    verdict: Schema.Literal("useful", "not_useful", "false_positive"),
+    note: Schema.optional(Schema.String.pipe(Schema.maxLength(500))),
   });
 
-  app.get("/api/streamers/:id/intelligence-details", (c) => {
-    const id = c.req.param("id");
-    if (!streamers.some((streamer) => streamer.id === id)) {
-      return c.json({ error: "Unknown streamer" }, 404);
-    }
-    const limitParam = Number(c.req.query("limit"));
-    const limit = Number.isInteger(limitParam) && limitParam > 0 ? limitParam : 100;
-    return c.json({
-      intelligence: getLivestreamIntelligence(id) ?? null,
-      diagnostics: getLivestreamDiagnostics(id) ?? null,
-      events: getLivestreamEvents(id, limit),
-      runtime: livestreamDiagnostics?.getRuntimeDiagnostics() ?? null,
-      generatedAt: Date.now(),
-    });
-  });
-
-  const livestreamFeedbackSchema = z.object({
-    alertId: z.string().uuid(),
-    verdict: z.enum(["useful", "not_useful", "false_positive"]),
-    note: z.string().max(500).optional(),
-  });
-
-  app.post("/api/streamers/:id/intelligence-feedback", async (c) => {
-    const id = c.req.param("id");
-    if (!streamers.some((streamer) => streamer.id === id)) {
-      return c.json({ error: "Unknown streamer" }, 404);
-    }
-    const parsed = livestreamFeedbackSchema.safeParse(
-      await c.req.json().catch(() => null),
-    );
-    if (!parsed.success) return c.json({ error: parsed.error.message }, 400);
-    const feedback = recordLivestreamFeedback({ streamerId: id, ...parsed.data });
-    if (!feedback) return c.json({ error: "Alert no longer exists" }, 404);
-    return c.json({ feedback }, 201);
-  });
+  app.post(
+    "/api/streamers/:id/intelligence-feedback",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const id = c.req.param("id") ?? "";
+            if (!streamers.some((streamer) => streamer.id === id)) {
+              return c.json({ error: "Unknown streamer" }, 404);
+            }
+            const parsed = Schema.decodeUnknownEither(livestreamFeedbackSchema)(body);
+            if (parsed._tag === "Left") {
+              return c.json({ error: String(parsed.left) }, 400);
+            }
+            const feedback = recordLivestreamFeedback({
+              streamerId: id,
+              ...parsed.right,
+            });
+            if (!feedback) {
+              return c.json({ error: "Alert no longer exists" }, 404);
+            }
+            return c.json({ feedback }, 201);
+          }),
+        ),
+      ),
+    ),
+  );
 
   // Full dashboard state in one payload; also the polling fallback when the
   // SSE stream is unavailable.
-  app.get("/api/snapshot", (c) => c.json(buildSnapshot()));
+  app.get(
+    "/api/snapshot",
+    effectHandler((c) =>
+      buildSnapshot().pipe(Effect.map((snapshot) => c.json(snapshot))),
+    ),
+  );
 
   // Realtime dashboard updates. The snapshot is built and serialized once per
   // bus event (debounced to coalesce bursts) and fanned out to every connected
   // client; per-client writes are chained so a slow consumer can't interleave
   // SSE frames. Identical consecutive payloads are skipped.
+  interface SseFrame {
+    data: string;
+    event?: string;
+    id?: string;
+    retry?: number;
+  }
   interface SseClient {
-    write(payload: string): void;
-    ping(): void;
+    readonly frames: Queue.Queue<SseFrame>;
   }
   const clients = new Set<SseClient>();
   let lastBroadcast: string | undefined;
-  let debounce: NodeJS.Timeout | undefined;
-  const broadcast = () => {
-    const payload = JSON.stringify(buildSnapshot());
-    if (payload === lastBroadcast) return;
-    lastBroadcast = payload;
-    for (const client of clients) client.write(payload);
-  };
-  const unsubscribe = taskRunBus.subscribe(() => {
-    clearTimeout(debounce);
-    debounce = setTimeout(broadcast, SSE_DEBOUNCE_MS);
-  });
-  const heartbeat = setInterval(() => {
-    for (const client of clients) client.ping();
-  }, SSE_HEARTBEAT_MS);
+  let snapshotEventId = 0;
+  const broadcastEffect = buildSnapshot().pipe(
+    Effect.map(JSON.stringify),
+    Effect.tap((payload) =>
+      Effect.sync(() => {
+        if (payload === lastBroadcast) return;
+        lastBroadcast = payload;
+        const frame = {
+          event: "snapshot",
+          data: payload,
+          id: String(snapshotEventId++),
+        };
+        for (const client of clients) Queue.unsafeOffer(client.frames, frame);
+      }),
+    ),
+    Effect.asVoid,
+  );
 
   app.get("/api/events", (c) => {
     // nginx-family proxies honor this and pass the stream through unbuffered.
     c.header("X-Accel-Buffering", "no");
-    return streamSSE(c, async (stream) => {
-      let eventId = 0;
-      let queue: Promise<void> = Promise.resolve();
-      const enqueue = (frame: Parameters<typeof stream.writeSSE>[0]) => {
-        queue = queue.then(() => stream.writeSSE(frame)).catch(() => {});
-      };
-      const client: SseClient = {
-        write: (payload) =>
-          enqueue({ event: "snapshot", data: payload, id: String(eventId++) }),
-        ping: () => enqueue({ event: "ping", data: String(Date.now()) }),
-      };
-      clients.add(client);
-      client.write(JSON.stringify(buildSnapshot()));
-      await new Promise<void>((resolve) => {
-        stream.onAbort(() => {
-          clients.delete(client);
-          resolve();
-        });
-      });
-    });
+    return streamSSE(c, (stream) =>
+      runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const frames = yield* Queue.unbounded<SseFrame>();
+            const changes = yield* Queue.unbounded<void>();
+            const client: SseClient = { frames };
+            clients.add(client);
+            const unsubscribeClient = taskRunBus.subscribe(() => {
+              Queue.unsafeOffer(changes, undefined);
+            });
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                unsubscribeClient();
+                clients.delete(client);
+              }).pipe(
+                Effect.andThen(Queue.shutdown(frames)),
+                Effect.andThen(Queue.shutdown(changes)),
+              ),
+            );
+
+            yield* Stream.fromQueue(changes).pipe(
+              Stream.debounce(Duration.millis(SSE_DEBOUNCE_MS)),
+              Stream.runForEach(() => broadcastEffect),
+              Effect.forkScoped,
+            );
+            yield* Effect.repeat(
+              Clock.currentTimeMillis.pipe(
+                Effect.tap((now) =>
+                  Effect.sync(() =>
+                    Queue.unsafeOffer(frames, {
+                      event: "ping",
+                      data: String(now),
+                    }),
+                  ),
+                ),
+              ),
+              { schedule: Schedule.spaced(Duration.millis(SSE_HEARTBEAT_MS)) },
+            ).pipe(Effect.forkScoped);
+            const writer = yield* Effect.forever(
+              Queue.take(frames).pipe(
+                Effect.flatMap((frame) =>
+                  fromPromise("write dashboard SSE frame", () =>
+                    stream.writeSSE(frame),
+                  ),
+                ),
+              ),
+            ).pipe(Effect.forkScoped);
+
+            const initialSnapshot = yield* buildSnapshot();
+            Queue.unsafeOffer(frames, {
+              event: "snapshot",
+              data: JSON.stringify(initialSnapshot),
+              id: String(snapshotEventId++),
+            });
+            yield* awaitSseWriter(
+              writer,
+              Effect.async<void>((resume) => {
+                stream.onAbort(() => resume(Effect.void));
+              }),
+            );
+          }),
+        ),
+      ),
+    );
   });
 
   app.get("/api/data/entities", (c) => {
@@ -718,39 +888,56 @@ export function startServer(
     return c.json(data);
   });
 
-  app.delete("/api/data/entities/:slug", async (c) => {
-    const body: unknown = await c.req.json().catch(() => null);
-    if (
-      typeof body !== "object" ||
-      body === null ||
-      !("key" in body) ||
-      typeof body.key !== "object" ||
-      body.key === null ||
-      Array.isArray(body.key)
-    ) {
-      return c.json({ error: "A primary key object is required" }, 400);
-    }
-    const result = deleteManagedEntityRow(
-      c.req.param("slug"),
-      body.key as Record<string, unknown>,
-    );
-    if (!result) return c.json({ error: "Unknown entity" }, 404);
-    switch (result.status) {
-      case "invalid-key":
-        return c.json({ error: "The primary key does not match this entity" }, 400);
-      case "not-found":
-        return c.json({ error: "Row not found" }, 404);
-      case "blocked":
-        return c.json({ error: result.reason }, 409);
-      case "deleted":
-        logger.info(
-          `Deleted row from "${c.req.param("slug")}"`,
-          body.key as Record<string, unknown>,
-        );
-        broadcast();
-        return c.json({ deleted: true });
-    }
-  });
+  app.delete(
+    "/api/data/entities/:slug",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.flatMap((body) =>
+            Effect.gen(function* () {
+              if (
+                typeof body !== "object" ||
+                body === null ||
+                !("key" in body) ||
+                typeof body.key !== "object" ||
+                body.key === null ||
+                Array.isArray(body.key)
+              ) {
+                return c.json(
+                  { error: "A primary key object is required" },
+                  400,
+                ) as Response;
+              }
+              const result = deleteManagedEntityRow(
+                c.req.param("slug") ?? "",
+                body.key as Record<string, unknown>,
+              );
+              if (!result) return c.json({ error: "Unknown entity" }, 404) as Response;
+              switch (result.status) {
+                case "invalid-key":
+                  return c.json(
+                    { error: "The primary key does not match this entity" },
+                    400,
+                  ) as Response;
+                case "not-found":
+                  return c.json({ error: "Row not found" }, 404) as Response;
+                case "blocked":
+                  return c.json({ error: result.reason }, 409) as Response;
+                case "deleted":
+                  logger.info(
+                    `Deleted row from "${c.req.param("slug")}"`,
+                    body.key as Record<string, unknown>,
+                  );
+                  yield* broadcastEffect;
+                  return c.json({ deleted: true }) as Response;
+              }
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
 
   app.post("/api/tasks/:name/run", (c) => {
     const name = c.req.param("name");
@@ -765,23 +952,34 @@ export function startServer(
 
   const recommendationRunSchema = runRequestSchema(MAX_RECOMMENDATIONS_PER_RUN);
 
-  app.post("/api/recommendations/run", async (c) => {
-    const parsed = recommendationRunSchema.safeParse(
-      await c.req.json().catch(() => null),
-    );
-    if (!parsed.success) {
-      return c.json({ error: runRequestError(MAX_RECOMMENDATIONS_PER_RUN) }, 400);
-    }
-    try {
-      const { runId } = registry.runNow("Recommendations", parsed.data);
-      logger.info(
-        `Manual recommendation run requested for up to ${parsed.data.maxRecommendations} item(s)`,
-      );
-      return c.json({ runId }, 202);
-    } catch (error) {
-      return taskRunErrorResponse(c, error);
-    }
-  });
+  app.post(
+    "/api/recommendations/run",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const parsed = Schema.decodeUnknownEither(recommendationRunSchema)(body);
+            if (parsed._tag === "Left") {
+              return c.json(
+                { error: runRequestError(MAX_RECOMMENDATIONS_PER_RUN) },
+                400,
+              );
+            }
+            try {
+              const { runId } = registry.runNow("Recommendations", parsed.right);
+              logger.info(
+                `Manual recommendation run requested for up to ${parsed.right.maxRecommendations} item(s)`,
+              );
+              return c.json({ runId }, 202);
+            } catch (error) {
+              return taskRunErrorResponse(c, error);
+            }
+          }),
+        ),
+      ),
+    ),
+  );
 
   app.get("/api/task-runs", (c) => {
     const task = c.req.query("task");
@@ -823,61 +1021,101 @@ export function startServer(
     const run = getRun(runId);
     if (!run) return c.json({ error: "Unknown run" }, 404);
     c.header("X-Accel-Buffering", "no");
-    return streamSSE(c, async (stream) => {
-      let eventId = 0;
-      let queue: Promise<void> = Promise.resolve();
-      const enqueue = (frame: Parameters<typeof stream.writeSSE>[0]) => {
-        queue = queue.then(() => stream.writeSSE(frame)).catch(() => {});
-      };
-      let resolveDone!: () => void;
-      const done = new Promise<void>((resolve) => {
-        resolveDone = resolve;
-      });
-      const sendDone = () => {
-        const settled = getRun(runId) ?? run;
-        enqueue({
-          event: "done",
-          data: JSON.stringify(serializeRun(settled)),
-          id: String(eventId++),
-        });
-        resolveDone();
-      };
-      const unsubscribe = runLogBus.subscribe((event) => {
-        if (event.runId !== runId) return;
-        if (event.type === "line") {
-          enqueue({
-            event: "line",
-            data: JSON.stringify(event.line),
-            id: String(eventId++),
-          });
-        } else {
-          sendDone();
-        }
-      });
-      // Same synchronous block as the subscribe above, so no line can slip
-      // between the snapshot and the subscription.
-      const logs = collectRunLogs(runId);
-      enqueue({
-        event: "init",
-        data: JSON.stringify({
-          run: serializeRun(run),
-          lines: logs.lines,
-          dropped: logs.dropped,
-        }),
-        id: String(eventId++),
-      });
-      if (run.status !== "running") sendDone();
-      const pingTimer = setInterval(
-        () => enqueue({ event: "ping", data: String(Date.now()) }),
-        SSE_HEARTBEAT_MS,
-      );
-      stream.onAbort(() => resolveDone());
-      await done;
-      clearInterval(pingTimer);
-      unsubscribe();
-      // Flush queued frames (the final "done") before the stream closes.
-      await queue;
-    });
+    return streamSSE(c, (stream) =>
+      runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            interface LogFrame {
+              readonly frame: SseFrame;
+              readonly written?: Deferred.Deferred<void>;
+            }
+            const frames = yield* Queue.unbounded<LogFrame>();
+            const finished = yield* Deferred.make<void>();
+            let eventId = 0;
+            let completionQueued = false;
+            const sendDone = () => {
+              if (completionQueued) return;
+              completionQueued = true;
+              Queue.unsafeOffer(frames, {
+                frame: {
+                  event: "done",
+                  data: JSON.stringify(serializeRun(getRun(runId) ?? run)),
+                  id: String(eventId++),
+                },
+                written: finished,
+              });
+            };
+            const unsubscribeLogs = runLogBus.subscribe((event) => {
+              if (event.runId !== runId) return;
+              if (event.type === "line") {
+                Queue.unsafeOffer(frames, {
+                  frame: {
+                    event: "line",
+                    data: JSON.stringify(event.line),
+                    id: String(eventId++),
+                  },
+                });
+              } else {
+                sendDone();
+              }
+            });
+            yield* Effect.addFinalizer(() =>
+              Effect.sync(unsubscribeLogs).pipe(Effect.andThen(Queue.shutdown(frames))),
+            );
+
+            const logs = collectRunLogs(runId);
+            Queue.unsafeOffer(frames, {
+              frame: {
+                event: "init",
+                data: JSON.stringify({
+                  run: serializeRun(run),
+                  lines: logs.lines,
+                  dropped: logs.dropped,
+                }),
+                id: String(eventId++),
+              },
+            });
+
+            const writer = yield* Effect.forever(
+              Queue.take(frames).pipe(
+                Effect.flatMap(({ frame, written }) =>
+                  fromPromise("write task log SSE frame", () =>
+                    stream.writeSSE(frame),
+                  ).pipe(
+                    Effect.tap(() =>
+                      written ? Deferred.succeed(written, undefined) : Effect.void,
+                    ),
+                  ),
+                ),
+              ),
+            ).pipe(Effect.forkScoped);
+            yield* Effect.repeat(
+              Clock.currentTimeMillis.pipe(
+                Effect.tap((now) =>
+                  Effect.sync(() =>
+                    Queue.unsafeOffer(frames, {
+                      frame: { event: "ping", data: String(now) },
+                    }),
+                  ),
+                ),
+              ),
+              { schedule: Schedule.spaced(Duration.millis(SSE_HEARTBEAT_MS)) },
+            ).pipe(Effect.forkScoped);
+
+            if (run.status !== "running") sendDone();
+            yield* awaitSseWriter(
+              writer,
+              Effect.raceFirst(
+                Deferred.await(finished),
+                Effect.async<void>((resume) => {
+                  stream.onAbort(() => resume(Effect.void));
+                }),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
   });
 
   app.get("/api/recommendations", (c) => {
@@ -899,9 +1137,11 @@ export function startServer(
   app.post(
     "/api/recommendations/:id/feedback",
     feedbackRoute({
-      schema: z.object({
-        feedback: z.enum(["good_pick", "not_for_me", "already_watched"]).optional(),
-        note: z.string().max(1000).optional(),
+      schema: Schema.Struct({
+        feedback: Schema.optional(
+          Schema.Literal("good_pick", "not_for_me", "already_watched"),
+        ),
+        note: Schema.optional(Schema.String.pipe(Schema.maxLength(1000))),
       }),
       get: getRecommendation,
       setFeedback: setRecommendationFeedback,
@@ -930,9 +1170,9 @@ export function startServer(
   app.post(
     "/api/podcast-recommendations/:id/feedback",
     feedbackRoute({
-      schema: z.object({
-        feedback: z.enum(["good_pick", "not_for_me"]).optional(),
-        note: z.string().max(1000).optional(),
+      schema: Schema.Struct({
+        feedback: Schema.optional(Schema.Literal("good_pick", "not_for_me")),
+        note: Schema.optional(Schema.String.pipe(Schema.maxLength(1000))),
       }),
       get: getPodcastRecommendation,
       setFeedback: setPodcastRecommendationFeedback,
@@ -942,24 +1182,34 @@ export function startServer(
 
   const podcastRunSchema = runRequestSchema(MAX_PODCAST_RECOMMENDATIONS_PER_RUN);
 
-  app.post("/api/podcast-recommendations/run", async (c) => {
-    const parsed = podcastRunSchema.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) {
-      return c.json(
-        { error: runRequestError(MAX_PODCAST_RECOMMENDATIONS_PER_RUN) },
-        400,
-      );
-    }
-    try {
-      const { runId } = registry.runNow("PodcastRecs", parsed.data);
-      logger.info(
-        `Manual podcast recommendation run requested for up to ${parsed.data.maxRecommendations} episode(s)`,
-      );
-      return c.json({ runId }, 202);
-    } catch (error) {
-      return taskRunErrorResponse(c, error);
-    }
-  });
+  app.post(
+    "/api/podcast-recommendations/run",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const parsed = Schema.decodeUnknownEither(podcastRunSchema)(body);
+            if (parsed._tag === "Left") {
+              return c.json(
+                { error: runRequestError(MAX_PODCAST_RECOMMENDATIONS_PER_RUN) },
+                400,
+              );
+            }
+            try {
+              const { runId } = registry.runNow("PodcastRecs", parsed.right);
+              logger.info(
+                `Manual podcast recommendation run requested for up to ${parsed.right.maxRecommendations} episode(s)`,
+              );
+              return c.json({ runId }, 202);
+            } catch (error) {
+              return taskRunErrorResponse(c, error);
+            }
+          }),
+        ),
+      ),
+    ),
+  );
 
   // Per-email outcomes recorded by the parcel and calendar pipelines,
   // newest first.
@@ -999,27 +1249,36 @@ export function startServer(
 
   // Re-fetch the email from the mail server and run it through its pipeline again.
   // Dedup gates make this safe: anything that already landed is skipped.
-  app.post("/api/email-activity/:activityId/reprocess", async (c) => {
-    const activityId = c.req.param("activityId");
-    const activity = getEmailActivity(activityId);
-    if (!activity) return c.json({ error: "Unknown activity" }, 404);
-    const { transport, handlers } = emailControls;
-    const handler = handlers?.get(activity.pipeline);
-    if (!transport || !handler) {
-      return c.json({ error: "Email pipelines are not active" }, 503);
-    }
-    const email = await transport.fetchEmailById(activity.emailId);
-    if (!email) {
-      return c.json({ error: "Email no longer exists in the mailbox" }, 404);
-    }
-    logger.info(`Reprocessing "${activity.subject}" through ${activity.pipeline}`);
-    // A queued retry for this email is superseded by the manual run (and
-    // clearing it narrows the window for a concurrent duplicate pass).
-    clearEmailRetry(activity.pipeline, activity.emailId);
-    await handler.handleEmails([email]);
-    const updated = getEmailActivity(activityId) ?? activity;
-    return c.json({ activity: serializeEmailActivity(updated) });
-  });
+  app.post(
+    "/api/email-activity/:activityId/reprocess",
+    effectHandler((c) =>
+      Effect.gen(function* () {
+        const activityId = c.req.param("activityId") ?? "";
+        const activity = getEmailActivity(activityId);
+        if (!activity) {
+          return c.json({ error: "Unknown activity" }, 404) as Response;
+        }
+        const { transport, handlers } = emailControls;
+        const handler = handlers?.get(activity.pipeline);
+        if (!transport || !handler) {
+          return c.json({ error: "Email pipelines are not active" }, 503) as Response;
+        }
+        const email = yield* transport.fetchEmailByIdEffect(activity.emailId);
+        if (!email) {
+          return c.json(
+            { error: "Email no longer exists in the mailbox" },
+            404,
+          ) as Response;
+        }
+        logger.info(`Reprocessing "${activity.subject}" through ${activity.pipeline}`);
+        // Clear only after the handler succeeds, preserving durable retries on failure.
+        yield* handler.handleEmailsEffect([email]);
+        yield* Effect.sync(() => clearEmailRetry(activity.pipeline, activity.emailId));
+        const updated = getEmailActivity(activityId) ?? activity;
+        return c.json({ activity: serializeEmailActivity(updated) }) as Response;
+      }),
+    ),
+  );
 
   // User-editable sender rules plus the read-only built-in lists, so the UI
   // can show everything the filters consult. User allow rules override the
@@ -1041,46 +1300,58 @@ export function startServer(
     });
   });
 
-  const emailRuleSchema = z.object({
-    pattern: z.string().min(1).max(200),
-    scope: z.enum(["parcel", "calendar", "both"]),
-    verdict: z.enum(["block", "allow"]),
+  const emailRuleSchema = Schema.Struct({
+    pattern: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(200)),
+    scope: Schema.Literal("parcel", "calendar", "both"),
+    verdict: Schema.Literal("block", "allow"),
   });
 
-  app.post("/api/email-rules", async (c) => {
-    const body: unknown = await c.req.json().catch(() => null);
-    const parsed = emailRuleSchema.safeParse(body);
-    if (!parsed.success) {
-      return c.json({ error: "pattern, scope, and verdict are required" }, 400);
-    }
-    const pattern = normalizeRulePattern(parsed.data.pattern);
-    const scope = parsed.data.scope as EmailRuleScope;
-    const verdict = parsed.data.verdict as EmailRuleVerdict;
-    if (!pattern) {
-      return c.json({ error: "pattern, scope, and verdict are required" }, 400);
-    }
+  app.post(
+    "/api/email-rules",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const parsed = Schema.decodeUnknownEither(emailRuleSchema)(body);
+            if (parsed._tag === "Left") {
+              return c.json({ error: "pattern, scope, and verdict are required" }, 400);
+            }
+            const pattern = normalizeRulePattern(parsed.right.pattern);
+            const scope = parsed.right.scope as EmailRuleScope;
+            const verdict = parsed.right.verdict as EmailRuleVerdict;
+            if (!pattern) {
+              return c.json({ error: "pattern, scope, and verdict are required" }, 400);
+            }
 
-    // A block rule a built-in list already covers is redundant — surface that
-    // rather than silently storing a no-op user rule. (Allow rules are the
-    // escape hatch from built-ins, so they're never rejected this way.)
-    if (verdict === "block" && matchesBuiltinBlock(pattern, scope)) {
-      return c.json(
-        { status: "builtin", message: "Already blocked by a built-in list" },
-        200,
-      );
-    }
+            // A block rule a built-in list already covers is redundant — surface that
+            // rather than silently storing a no-op user rule. (Allow rules are the
+            // escape hatch from built-ins, so they're never rejected this way.)
+            if (verdict === "block" && matchesBuiltinBlock(pattern, scope)) {
+              return c.json(
+                { status: "builtin", message: "Already blocked by a built-in list" },
+                200,
+              );
+            }
 
-    const result = upsertEmailRuleChecked({ pattern, scope, verdict });
-    const status = result.alreadyExists
-      ? "exists"
-      : result.merged
-        ? "merged"
-        : "created";
-    logger.info(
-      `Email rule ${status}: ${result.rule.verdict} ${result.rule.pattern} (${result.rule.scope})`,
-    );
-    return c.json({ rule: result.rule, status }, status === "created" ? 201 : 200);
-  });
+            const result = upsertEmailRuleChecked({ pattern, scope, verdict });
+            const status = result.alreadyExists
+              ? "exists"
+              : result.merged
+                ? "merged"
+                : "created";
+            logger.info(
+              `Email rule ${status}: ${result.rule.verdict} ${result.rule.pattern} (${result.rule.scope})`,
+            );
+            return c.json(
+              { rule: result.rule, status },
+              status === "created" ? 201 : 200,
+            );
+          }),
+        ),
+      ),
+    ),
+  );
 
   app.delete("/api/email-rules/:ruleId", (c) => {
     const deleted = deleteEmailRule(c.req.param("ruleId"));
@@ -1089,39 +1360,48 @@ export function startServer(
   });
 
   // Explicit user feedback on an email's outcome; feeds triage corrections.
-  app.post("/api/email-activity/:activityId/feedback", async (c) => {
-    const activity = getEmailActivity(c.req.param("activityId"));
-    if (!activity) return c.json({ error: "Unknown activity" }, 404);
-    const body: unknown = await c.req.json().catch(() => null);
-    const parsed = z
-      .object({
-        verdict: z.enum(["not_relevant", "missed"]).nullable(),
-        note: z.string().max(500).optional(),
-      })
-      .safeParse(body);
-    if (!parsed.success) {
-      return c.json(
-        { error: "A verdict (not_relevant | missed | null) is required" },
-        400,
-      );
-    }
-    if (parsed.data.verdict === null) {
-      deleteEmailFeedback(activity.activityId);
-      return c.json({ feedback: null });
-    }
-    const feedback = recordEmailFeedback({
-      pipeline: activity.pipeline,
-      emailId: activity.emailId,
-      subject: activity.subject,
-      from: activity.from,
-      verdict: parsed.data.verdict as EmailFeedbackVerdict,
-      note: parsed.data.note,
-    });
-    logger.info(
-      `Email feedback: ${feedback.verdict} for "${activity.subject}" (${activity.pipeline})`,
-    );
-    return c.json({ feedback });
-  });
+  app.post(
+    "/api/email-activity/:activityId/feedback",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const activity = getEmailActivity(c.req.param("activityId") ?? "");
+            if (!activity) return c.json({ error: "Unknown activity" }, 404);
+            const parsed = Schema.decodeUnknownEither(
+              Schema.Struct({
+                verdict: Schema.NullOr(Schema.Literal("not_relevant", "missed")),
+                note: Schema.optional(Schema.String.pipe(Schema.maxLength(500))),
+              }),
+            )(body);
+            if (parsed._tag === "Left") {
+              return c.json(
+                { error: "A verdict (not_relevant | missed | null) is required" },
+                400,
+              );
+            }
+            if (parsed.right.verdict === null) {
+              deleteEmailFeedback(activity.activityId);
+              return c.json({ feedback: null });
+            }
+            const feedback = recordEmailFeedback({
+              pipeline: activity.pipeline,
+              emailId: activity.emailId,
+              subject: activity.subject,
+              from: activity.from,
+              verdict: parsed.right.verdict as EmailFeedbackVerdict,
+              note: parsed.right.note,
+            });
+            logger.info(
+              `Email feedback: ${feedback.verdict} for "${activity.subject}" (${activity.pipeline})`,
+            );
+            return c.json({ feedback });
+          }),
+        ),
+      ),
+    ),
+  );
 
   app.get("/api/email-feedback", (c) => {
     return c.json({ feedback: listEmailFeedback() });
@@ -1180,7 +1460,7 @@ export function startServer(
   });
 
   app.get("/api/workspaces/:workspaceId", (c) => {
-    const definition = getWorkspaceDefinition(c.req.param("workspaceId"));
+    const definition = getWorkspaceDefinition(c.req.param("workspaceId") ?? "");
     if (!definition) return c.json({ error: "Unknown workspace" }, 404);
     return c.json({
       workspace: definition,
@@ -1191,8 +1471,8 @@ export function startServer(
   });
 
   app.get("/api/workspaces/:workspaceId/subjects/:subjectId", (c) => {
-    const workspaceId = c.req.param("workspaceId");
-    const subjectId = c.req.param("subjectId");
+    const workspaceId = c.req.param("workspaceId") ?? "";
+    const subjectId = c.req.param("subjectId") ?? "";
     const definition = getWorkspaceDefinition(workspaceId);
     const subject = getWorkspaceSubject(workspaceId, subjectId);
     if (!definition || !subject)
@@ -1214,130 +1494,184 @@ export function startServer(
     });
   });
 
-  const workspaceMessageSchema = z.object({
-    message: z.string().trim().min(1).max(20_000),
-    subjectId: z.string().min(1).optional(),
+  const workspaceMessageSchema = Schema.Struct({
+    message: Schema.String.pipe(
+      Schema.trimmed(),
+      Schema.minLength(1),
+      Schema.maxLength(20_000),
+    ),
+    subjectId: Schema.optional(Schema.String.pipe(Schema.minLength(1))),
   });
-  app.post("/api/workspaces/:workspaceId/messages", async (c) => {
-    const definition = getWorkspaceDefinition(c.req.param("workspaceId"));
-    if (!definition) return c.json({ error: "Unknown workspace" }, 404);
-    const body: unknown = await c.req.json().catch(() => null);
-    const parsed = workspaceMessageSchema.safeParse(body);
-    if (!parsed.success) return c.json({ error: "A message is required" }, 400);
-    if (
-      parsed.data.subjectId &&
-      !getWorkspaceSubject(definition.id, parsed.data.subjectId)
-    ) {
-      return c.json({ error: "Unknown workspace subject" }, 404);
-    }
-    try {
-      const run = registry.runNow(definition.taskName, parsed.data);
-      return c.json({ runId: run.runId }, 202);
-    } catch (error) {
-      if (error instanceof TaskAlreadyRunningError) {
-        return c.json({ error: "Workspace agent is already running" }, 409);
-      }
-      if (error instanceof TaskNotFoundError) {
-        return c.json({ error: "Workspace task is unavailable" }, 503);
-      }
-      throw error;
-    }
-  });
+  app.post(
+    "/api/workspaces/:workspaceId/messages",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const definition = getWorkspaceDefinition(c.req.param("workspaceId") ?? "");
+            if (!definition) return c.json({ error: "Unknown workspace" }, 404);
+            const parsed = Schema.decodeUnknownEither(workspaceMessageSchema)(body);
+            if (parsed._tag === "Left")
+              return c.json({ error: "A message is required" }, 400);
+            if (
+              parsed.right.subjectId &&
+              !getWorkspaceSubject(definition.id, parsed.right.subjectId)
+            ) {
+              return c.json({ error: "Unknown workspace subject" }, 404);
+            }
+            try {
+              const run = registry.runNow(definition.taskName, parsed.right);
+              return c.json({ runId: run.runId }, 202);
+            } catch (error) {
+              if (error instanceof TaskAlreadyRunningError) {
+                return c.json({ error: "Workspace agent is already running" }, 409);
+              }
+              if (error instanceof TaskNotFoundError) {
+                return c.json({ error: "Workspace task is unavailable" }, 503);
+              }
+              throw error;
+            }
+          }),
+        ),
+      ),
+    ),
+  );
 
-  const subjectStatusSchema = z.object({
-    status: z.enum(["active", "paused", "completed", "archived"]),
+  const subjectStatusSchema = Schema.Struct({
+    status: Schema.Literal("active", "paused", "completed", "archived"),
   });
-  app.post("/api/workspaces/:workspaceId/subjects/:subjectId/status", async (c) => {
-    const workspaceId = c.req.param("workspaceId");
-    const subjectId = c.req.param("subjectId");
-    const subject = getWorkspaceSubject(workspaceId, subjectId);
-    if (!subject) return c.json({ error: "Unknown workspace subject" }, 404);
-    const body: unknown = await c.req.json().catch(() => null);
-    const parsed = subjectStatusSchema.safeParse(body);
-    if (!parsed.success) return c.json({ error: "A valid status is required" }, 400);
-    return c.json({
-      subject: upsertWorkspaceSubject({
-        workspaceId: subject.workspaceId,
-        subjectId: subject.subjectId,
-        title: subject.title,
-        status: parsed.data.status,
-        summary: subject.summary,
-        createdAt: subject.createdAt,
-        lastResearchedAt: subject.lastResearchedAt,
-      }),
-    });
-  });
+  app.post(
+    "/api/workspaces/:workspaceId/subjects/:subjectId/status",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const workspaceId = c.req.param("workspaceId") ?? "";
+            const subjectId = c.req.param("subjectId") ?? "";
+            const subject = getWorkspaceSubject(workspaceId, subjectId);
+            if (!subject) return c.json({ error: "Unknown workspace subject" }, 404);
+            const parsed = Schema.decodeUnknownEither(subjectStatusSchema)(body);
+            if (parsed._tag === "Left")
+              return c.json({ error: "A valid status is required" }, 400);
+            return c.json({
+              subject: upsertWorkspaceSubject({
+                workspaceId: subject.workspaceId,
+                subjectId: subject.subjectId,
+                title: subject.title,
+                status: parsed.right.status,
+                summary: subject.summary,
+                createdAt: subject.createdAt,
+                lastResearchedAt: subject.lastResearchedAt,
+              }),
+            });
+          }),
+        ),
+      ),
+    ),
+  );
 
-  app.post("/api/workspace-actions/:actionId/approve", async (c) => {
-    try {
-      return c.json({
-        action: await approveWorkspaceAction(c.req.param("actionId"), logger),
-      });
-    } catch (error) {
-      return c.json(
-        { error: error instanceof Error ? error.message : "Action failed" },
-        409,
-      );
-    }
-  });
+  app.post(
+    "/api/workspace-actions/:actionId/approve",
+    effectHandler((c) =>
+      approveWorkspaceActionEffect(c.req.param("actionId") ?? "", logger).pipe(
+        Effect.map((action): Response => c.json({ action })),
+        Effect.catchAll((error) =>
+          Effect.succeed<Response>(
+            c.json(
+              { error: error instanceof Error ? error.message : "Action failed" },
+              409,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
-  app.post("/api/workspace-actions/:actionId/reject", (c) => {
-    try {
-      return c.json({ action: rejectWorkspaceAction(c.req.param("actionId")) });
-    } catch (error) {
-      return c.json(
-        { error: error instanceof Error ? error.message : "Action failed" },
-        409,
-      );
-    }
-  });
+  app.post(
+    "/api/workspace-actions/:actionId/reject",
+    effectHandler((c) =>
+      rejectWorkspaceActionEffect(c.req.param("actionId") ?? "").pipe(
+        Effect.map((action): Response => c.json({ action })),
+        Effect.catchAll((error) =>
+          Effect.succeed<Response>(
+            c.json(
+              { error: error instanceof Error ? error.message : "Action failed" },
+              409,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
   app.get("/api/workspace-papercuts", (c) => {
     const status = c.req.query("status");
-    const parsed = z.enum(["open", "addressed", "dismissed"]).safeParse(status);
+    const parsed = Schema.decodeUnknownEither(
+      Schema.Literal("open", "addressed", "dismissed"),
+    )(status);
     return c.json({
       papercuts: listWorkspacePapercuts(
         c.req.query("workspaceId"),
-        parsed.success ? parsed.data : undefined,
+        parsed._tag === "Right" ? parsed.right : undefined,
       ),
     });
   });
 
-  app.post("/api/workspace-papercuts/:papercutId/resolve", async (c) => {
-    const body: unknown = await c.req.json().catch(() => null);
-    const parsed = z
-      .object({
-        status: z.enum(["addressed", "dismissed"]),
-        resolution: z.string().trim().min(1).max(2_000),
-      })
-      .safeParse(body);
-    if (!parsed.success)
-      return c.json({ error: "Status and resolution are required" }, 400);
-    const papercut = resolveWorkspacePapercut(
-      c.req.param("papercutId"),
-      parsed.data.status,
-      parsed.data.resolution,
-    );
-    if (!papercut) return c.json({ error: "Unknown papercut" }, 404);
-    return c.json({ papercut });
-  });
+  app.post(
+    "/api/workspace-papercuts/:papercutId/resolve",
+    effectHandler((c) =>
+      rejectOversizedJson(
+        c,
+        requestJsonEffect(c).pipe(
+          Effect.map((body): Response => {
+            const parsed = Schema.decodeUnknownEither(
+              Schema.Struct({
+                status: Schema.Literal("addressed", "dismissed"),
+                resolution: Schema.String.pipe(
+                  Schema.trimmed(),
+                  Schema.minLength(1),
+                  Schema.maxLength(2_000),
+                ),
+              }),
+            )(body);
+            if (parsed._tag === "Left")
+              return c.json({ error: "Status and resolution are required" }, 400);
+            const papercut = resolveWorkspacePapercut(
+              c.req.param("papercutId") ?? "",
+              parsed.right.status,
+              parsed.right.resolution,
+            );
+            if (!papercut) return c.json({ error: "Unknown papercut" }, 404);
+            return c.json({ papercut });
+          }),
+        ),
+      ),
+    ),
+  );
 
   app.get("/api/health", (c) => c.json({ status: "ok" }));
 
-  app.get("/api/pets", async (c) => {
-    const pets = getAllPetsWithHistory();
-    const response = pets.map((pet) => ({
-      petId: pet.pet_id,
-      name: pet.name,
-      currentWeight: round(pet.current_weight),
-      weightHistory: pet.weightHistory.map((entry) => ({
-        timestamp: entry.timestamp,
-        weight: round(entry.weight),
-      })),
-      dailyVisits: getDailyVisitCounts(pet.pet_id),
-    }));
-    return c.json(response);
-  });
+  app.get(
+    "/api/pets",
+    effectHandler((c) =>
+      Effect.sync((): Response => {
+        const pets = getAllPetsWithHistory();
+        const response = pets.map((pet) => ({
+          petId: pet.pet_id,
+          name: pet.name,
+          currentWeight: round(pet.current_weight),
+          weightHistory: pet.weightHistory.map((entry) => ({
+            timestamp: entry.timestamp,
+            weight: round(entry.weight),
+          })),
+          dailyVisits: getDailyVisitCounts(pet.pet_id),
+        }));
+        return c.json(response);
+      }),
+    ),
+  );
 
   app.get("/api/pets/:petId/export.csv", (c) => {
     const petId = c.req.param("petId");
@@ -1371,14 +1705,22 @@ export function startServer(
 
   // Vite content-hashes asset filenames, so they can be cached forever; the
   // HTML must revalidate so deploys pick up new asset hashes.
-  app.use("*", async (c, next) => {
-    await next();
-    if (c.req.path.startsWith("/assets/")) {
-      c.res.headers.set("Cache-Control", "public, max-age=31536000, immutable");
-    } else if (c.res.headers.get("Content-Type")?.includes("text/html")) {
-      c.res.headers.set("Cache-Control", "no-cache");
-    }
-  });
+  app.use(
+    "*",
+    effectMiddleware((c, next) =>
+      next.pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (c.req.path.startsWith("/assets/")) {
+              c.res.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+            } else if (c.res.headers.get("Content-Type")?.includes("text/html")) {
+              c.res.headers.set("Cache-Control", "no-cache");
+            }
+          }),
+        ),
+      ),
+    ),
+  );
   app.use("*", serveStatic({ root: "./frontend/dist" }));
   app.use("*", serveStatic({ root: "./frontend/dist", path: "index.html" }));
 
@@ -1386,16 +1728,24 @@ export function startServer(
     logger.info(`Server listening on port ${port}`);
   });
 
-  return async () => {
-    unsubscribe();
-    clearInterval(heartbeat);
-    clearTimeout(debounce);
-    await mcp?.close();
-    const closed = new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
+  const closeEffect = Effect.gen(function* () {
+    if (mcp) {
+      yield* fromPromise("close MCP server", () => mcp.close());
+    }
+    const closed = Effect.async<void, IntegrationError>((resume) => {
+      server.close((cause) =>
+        resume(
+          cause
+            ? Effect.fail(
+                new IntegrationError({ operation: "close HTTP server", cause }),
+              )
+            : Effect.void,
+        ),
+      );
     });
     // Open SSE streams would otherwise keep the process alive indefinitely.
     if ("closeAllConnections" in server) server.closeAllConnections();
-    await closed;
-  };
+    yield* closed;
+  });
+  return () => runPromise(closeEffect);
 }

@@ -2,10 +2,19 @@ import { Injector } from "@micthiesen/mitools/config";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
 import { EmailRuleEntity, upsertEmailRule } from "../../email/senderRules.js";
-import { EmailTriageService, type TriageVerdict } from "../../email/triage.js";
+import {
+  EmailTriageService,
+  TriageError,
+  type TriageVerdict,
+} from "../../email/triage.js";
 import config from "../../utils/config.js";
-import { filterTrackingCandidate, isAliexpressOrderStatus } from "./keywords.js";
+import { filterTrackingCandidateEffect, isAliexpressOrderStatus } from "./keywords.js";
+
+const filterTrackingCandidate = (
+  ...args: Parameters<typeof filterTrackingCandidateEffect>
+) => Effect.runPromise(filterTrackingCandidateEffect(...args));
 
 Injector.configure({
   config: {
@@ -35,15 +44,20 @@ const make = (from: string, subject: string, textBody = "") => ({
 
 /** Triage stub with a fixed verdict; asserts on whether it was consulted. */
 function stubTriage(verdict: TriageVerdict) {
-  const classifyFn = vi.fn(async () => verdict);
+  const classifyFn = vi.fn(() => Effect.succeed(verdict));
   return { triage: new EmailTriageService(mockLogger, classifyFn), classifyFn };
 }
 
 /** Triage stub whose model is down. */
 function downTriage() {
-  const classifyFn = vi.fn(async (): Promise<TriageVerdict> => {
-    throw new Error("model down");
-  });
+  const classifyFn = vi.fn(() =>
+    Effect.fail(
+      new TriageError({
+        emailId: "test",
+        cause: new Error("model down"),
+      }),
+    ),
+  );
   return { triage: new EmailTriageService(mockLogger, classifyFn), classifyFn };
 }
 

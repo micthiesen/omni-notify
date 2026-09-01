@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Clock, Effect, Either, Schema } from "effect";
 import { getAllBriefingHistories } from "../../briefing-agent/persistence.js";
 import {
   getLivestreamDiagnostics,
@@ -7,16 +8,17 @@ import {
 } from "../../live-check/intelligence/persistence.js";
 import {
   getPlatformViewerMetrics,
-  getViewerMetrics,
+  getViewerMetricsEffect,
 } from "../../live-check/metrics/persistence.js";
-import { getStreamerStatus } from "../../live-check/persistence.js";
+import { getStreamerStatusEffect } from "../../live-check/persistence.js";
 import { platformConfigs } from "../../live-check/platforms/index.js";
 import { getStreamSessions } from "../../live-check/sessions.js";
+import { fromSync } from "../../effect/interop.js";
 import { getActiveRunLogs } from "../../task-runs/logCapture.js";
 import { getRun, getRunLogs, getRuns } from "../../task-runs/persistence.js";
 import {
-  approveWorkspaceAction,
-  rejectWorkspaceAction,
+  approveWorkspaceActionEffect,
+  rejectWorkspaceActionEffect,
 } from "../../workspaces/actions.js";
 import {
   getWorkspaceDefinition,
@@ -406,6 +408,27 @@ const workspaceActionPayloadSchema = z.union([
   z.object({ unavailable: z.literal("Stored action payload is invalid") }),
 ]);
 
+const workspaceActionPayloadEffectSchema = Schema.Union(
+  Schema.Struct({
+    senders: Schema.Array(Schema.String),
+    domains: Schema.Array(Schema.String),
+    subjectKeywords: Schema.Array(Schema.String),
+    bodyKeywords: Schema.Array(Schema.String),
+  }),
+  Schema.Struct({
+    title: Schema.String,
+    startDate: Schema.String,
+    endDate: Schema.optional(Schema.String),
+    startTime: Schema.optional(Schema.String),
+    endTime: Schema.optional(Schema.String),
+    location: Schema.optional(Schema.String),
+    description: Schema.optional(Schema.String),
+    timeZone: Schema.optional(Schema.String),
+    allDay: Schema.Boolean,
+    reminderMinutes: Schema.optional(Schema.Number),
+  }),
+);
+
 const workspaceActionSchema = z.object({
   actionId: z.string(),
   workspaceId: z.string(),
@@ -488,15 +511,12 @@ function serializeWorkspaceDefinition(
 }
 
 function parseActionPayload(payload: string): unknown {
-  try {
-    const parsed: unknown = JSON.parse(payload);
-    const validated = workspaceActionPayloadSchema.safeParse(parsed);
-    return validated.success
-      ? validated.data
-      : { unavailable: "Stored action payload is invalid" };
-  } catch {
-    return { unavailable: "Stored action payload is invalid" };
-  }
+  const decoded = Schema.decodeUnknownEither(
+    Schema.parseJson(workspaceActionPayloadEffectSchema),
+  )(payload);
+  return Either.isRight(decoded)
+    ? decoded.right
+    : { unavailable: "Stored action payload is invalid" };
 }
 
 function searchSnippet(value: string, query: string, maxChars: number): string {
@@ -530,64 +550,70 @@ function serializePapercut(
 
 function serializeStreamer(runtime: McpRuntime, streamerId: string) {
   const streamer = runtime.streamers.find(({ id }) => id === streamerId);
-  if (!streamer) throw new Error(`Unknown livestream "${streamerId}"`);
-  const status = getStreamerStatus(streamer.id);
-  const bindings = streamer.bindings.map((binding) => ({
-    platform: binding.platform,
-    username: binding.username,
-    url:
-      binding.urlOverride ??
-      platformConfigs[binding.platform].getLiveUrl(binding.username),
-  }));
-  if (!status.isLive) {
+  return Effect.gen(function* () {
+    if (!streamer) {
+      return yield* fromSync("resolve livestream", () => {
+        throw new Error(`Unknown livestream "${streamerId}"`);
+      });
+    }
+    const status = yield* getStreamerStatusEffect(streamer.id);
+    const bindings = streamer.bindings.map((binding) => ({
+      platform: binding.platform,
+      username: binding.username,
+      url:
+        binding.urlOverride ??
+        platformConfigs[binding.platform].getLiveUrl(binding.username),
+    }));
+    if (!status.isLive) {
+      return {
+        id: streamer.id,
+        displayName: streamer.displayName,
+        tier: streamer.tier,
+        bindings,
+        dgg: streamer.dgg ?? null,
+        live: false as const,
+        title: null,
+        category: null,
+        viewerCount: null,
+        maxViewerCount: status.lastMaxViewerCount ?? null,
+        startedAt: null,
+        lastStartedAt: epoch(status.lastStartedAt),
+        lastEndedAt: epoch(status.lastEndedAt),
+        primary: null,
+        sources: [],
+      };
+    }
+    const primary = {
+      platform: status.primary.platform,
+      username: status.primary.username,
+      url:
+        status.primary.urlOverride ??
+        platformConfigs[status.primary.platform].getLiveUrl(status.primary.username),
+    };
     return {
       id: streamer.id,
       displayName: streamer.displayName,
       tier: streamer.tier,
       bindings,
       dgg: streamer.dgg ?? null,
-      live: false,
-      title: null,
-      category: null,
-      viewerCount: null,
-      maxViewerCount: status.lastMaxViewerCount ?? null,
-      startedAt: null,
-      lastStartedAt: epoch(status.lastStartedAt),
-      lastEndedAt: epoch(status.lastEndedAt),
-      primary: null,
-      sources: [],
+      live: true as const,
+      title: status.primaryTitle,
+      category: status.category ?? null,
+      viewerCount: status.viewerCount ?? null,
+      maxViewerCount: status.maxViewerCount,
+      startedAt: epoch(status.startedAt),
+      lastStartedAt: null,
+      lastEndedAt: null,
+      primary,
+      sources: (status.sources ?? []).map((source) => ({
+        platform: source.platform,
+        username: source.username,
+        title: source.title,
+        viewerCount: source.viewerCount ?? null,
+        category: source.category ?? null,
+      })),
     };
-  }
-  const primary = {
-    platform: status.primary.platform,
-    username: status.primary.username,
-    url:
-      status.primary.urlOverride ??
-      platformConfigs[status.primary.platform].getLiveUrl(status.primary.username),
-  };
-  return {
-    id: streamer.id,
-    displayName: streamer.displayName,
-    tier: streamer.tier,
-    bindings,
-    dgg: streamer.dgg ?? null,
-    live: true,
-    title: status.primaryTitle,
-    category: status.category ?? null,
-    viewerCount: status.viewerCount ?? null,
-    maxViewerCount: status.maxViewerCount,
-    startedAt: epoch(status.startedAt),
-    lastStartedAt: null,
-    lastEndedAt: null,
-    primary,
-    sources: (status.sources ?? []).map((source) => ({
-      platform: source.platform,
-      username: source.username,
-      title: source.title,
-      viewerCount: source.viewerCount ?? null,
-      category: source.category ?? null,
-    })),
-  };
+  });
 }
 
 function workspaceSearchMatches(input: {
@@ -712,29 +738,30 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async () => {
-        const taskNames = new Set(runtime.registry.list().map(({ name }) => name));
-        const iCloudConfigured = Boolean(
-          process.env.ICLOUD_USERNAME && process.env.ICLOUD_APP_PASSWORD,
-        );
-        return {
-          capabilities: {
-            taskControls: taskNames.size > 0,
-            livestreams: runtime.streamers.length > 0,
-            livestreamIntelligence: runtime.livestreamDiagnostics !== undefined,
-            briefings: Boolean(process.env.BRIEFINGS_PATH),
-            iCloudEmail:
-              runtime.emailControls.transport !== undefined && iCloudConfigured,
-            iCloudCalendar: iCloudConfigured,
-            webSearch: Boolean(process.env.TAVILY_API_KEY),
-            iosControls: runtime.iosControls !== undefined,
-            printing: runtime.printer !== undefined,
-            workspaces: workspaceDefinitions.some(({ taskName }) =>
-              taskNames.has(taskName),
-            ),
-          },
-        };
-      },
+      execute: () =>
+        Effect.sync(() => {
+          const taskNames = new Set(runtime.registry.list().map(({ name }) => name));
+          const iCloudConfigured = Boolean(
+            process.env.ICLOUD_USERNAME && process.env.ICLOUD_APP_PASSWORD,
+          );
+          return {
+            capabilities: {
+              taskControls: taskNames.size > 0,
+              livestreams: runtime.streamers.length > 0,
+              livestreamIntelligence: runtime.livestreamDiagnostics !== undefined,
+              briefings: Boolean(process.env.BRIEFINGS_PATH),
+              iCloudEmail:
+                runtime.emailControls.transport !== undefined && iCloudConfigured,
+              iCloudCalendar: iCloudConfigured,
+              webSearch: Boolean(process.env.TAVILY_API_KEY),
+              iosControls: runtime.iosControls !== undefined,
+              printing: runtime.printer !== undefined,
+              workspaces: workspaceDefinitions.some(({ taskName }) =>
+                taskNames.has(taskName),
+              ),
+            },
+          };
+        }),
     }),
     defineTool({
       name: "tasks_list",
@@ -745,17 +772,18 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       outputSchema: z.object({ tasks: z.array(taskSchema), ...pageSchema }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ cursor, limit }) => {
-        const page = paginate(runtime.registry.list(), cursor, limit);
-        return {
-          tasks: page.items.map((task) => ({
-            ...task,
-            displayName: task.displayName ?? null,
-          })),
-          nextCursor: page.nextCursor,
-          total: page.total,
-        };
-      },
+      execute: ({ cursor, limit }) =>
+        Effect.sync(() => {
+          const page = paginate(runtime.registry.list(), cursor, limit);
+          return {
+            tasks: page.items.map((task) => ({
+              ...task,
+              displayName: task.displayName ?? null,
+            })),
+            nextCursor: page.nextCursor,
+            total: page.total,
+          };
+        }),
     }),
     defineTool({
       name: "task_run",
@@ -785,11 +813,12 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         cost: "task-dependent; some tasks invoke paid AI, search, notification, or media services",
         recommendedPolicy: "require_approval",
       },
-      execute: async ({ taskName, input }) => ({
-        ...runtime.registry.runNow(taskName, input),
-        taskName,
-        queued: true as const,
-      }),
+      execute: ({ taskName, input }) =>
+        Effect.sync(() => ({
+          ...runtime.registry.runNow(taskName, input),
+          taskName,
+          queued: true as const,
+        })),
     }),
     defineTool({
       name: "task_runs_list",
@@ -810,17 +839,18 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ taskName, cursor, limit }) => {
-        const runs = getRuns(taskName, 501);
-        const truncatedWindow = runs.length > 500;
-        const page = paginate(runs.slice(0, 500), cursor, limit);
-        return {
-          runs: page.items,
-          nextCursor: page.nextCursor,
-          total: page.total,
-          resultWindowTruncated: truncatedWindow,
-        };
-      },
+      execute: ({ taskName, cursor, limit }) =>
+        Effect.sync(() => {
+          const runs = getRuns(taskName, 501);
+          const truncatedWindow = runs.length > 500;
+          const page = paginate(runs.slice(0, 500), cursor, limit);
+          return {
+            runs: page.items,
+            nextCursor: page.nextCursor,
+            total: page.total,
+            resultWindowTruncated: truncatedWindow,
+          };
+        }),
     }),
     defineTool({
       name: "task_run_get",
@@ -852,29 +882,30 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ runId, logCursor, logLimit, maxMessageChars }) => {
-        const run = getRun(runId);
-        if (!run) throw new Error(`Unknown task run "${runId}"`);
-        const stored = getActiveRunLogs(runId) ?? getRunLogs(runId);
-        const lines = stored?.lines ?? [];
-        const page = paginate(lines, logCursor, logLimit);
-        return {
-          run,
-          logs: page.items.map((line) => {
-            const message = truncate(line.msg, maxMessageChars);
-            return {
-              timestamp: line.t,
-              level: line.level,
-              logger: line.logger,
-              message: message.text,
-              messageTruncated: message.truncated,
-            };
-          }),
-          logNextCursor: page.nextCursor,
-          logTotal: page.total,
-          droppedLogs: stored?.dropped ?? 0,
-        };
-      },
+      execute: ({ runId, logCursor, logLimit, maxMessageChars }) =>
+        Effect.sync(() => {
+          const run = getRun(runId);
+          if (!run) throw new Error(`Unknown task run "${runId}"`);
+          const stored = getActiveRunLogs(runId) ?? getRunLogs(runId);
+          const lines = stored?.lines ?? [];
+          const page = paginate(lines, logCursor, logLimit);
+          return {
+            run,
+            logs: page.items.map((line) => {
+              const message = truncate(line.msg, maxMessageChars);
+              return {
+                timestamp: line.t,
+                level: line.level,
+                logger: line.logger,
+                message: message.text,
+                messageTruncated: message.truncated,
+              };
+            }),
+            logNextCursor: page.nextCursor,
+            logTotal: page.total,
+            droppedLogs: stored?.dropped ?? 0,
+          };
+        }),
     }),
     defineTool({
       name: "livestreams_list",
@@ -890,23 +921,25 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       outputSchema: z.object({ livestreams: z.array(streamerSchema), ...pageSchema }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ liveOnly, cursor, limit }) => {
-        const values = runtime.streamers
-          .map(({ id }) => serializeStreamer(runtime, id))
-          .filter(({ live }) => !liveOnly || live)
-          .sort(
-            (a, b) =>
-              Number(b.live) - Number(a.live) ||
-              (b.viewerCount ?? 0) - (a.viewerCount ?? 0) ||
-              a.displayName.localeCompare(b.displayName),
-          );
-        const page = paginate(values, cursor, limit);
-        return {
-          livestreams: page.items,
-          nextCursor: page.nextCursor,
-          total: page.total,
-        };
-      },
+      execute: ({ liveOnly, cursor, limit }) =>
+        Effect.gen(function* () {
+          const values = (yield* Effect.forEach(runtime.streamers, ({ id }) =>
+            serializeStreamer(runtime, id),
+          ))
+            .filter(({ live }) => !liveOnly || live)
+            .sort(
+              (a, b) =>
+                Number(b.live) - Number(a.live) ||
+                (b.viewerCount ?? 0) - (a.viewerCount ?? 0) ||
+                a.displayName.localeCompare(b.displayName),
+            );
+          const page = paginate(values, cursor, limit);
+          return {
+            livestreams: page.items,
+            nextCursor: page.nextCursor,
+            total: page.total,
+          };
+        }),
     }),
     defineTool({
       name: "livestream_get",
@@ -933,55 +966,66 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({
+      execute: ({
         streamerId,
         include,
         metricsDays,
         sessionLimit,
         intelligenceEventLimit,
-      }) => {
-        const requested = new Set(include);
-        const cutoff = Date.now() - metricsDays * 86_400_000;
-        const aggregate = requested.has("metrics")
-          ? getViewerMetrics(streamerId)
-          : undefined;
-        const metrics = aggregate
-          ? {
-              dailyBuckets: aggregate.dailyBuckets.filter(
-                ({ timestamp }) => timestamp >= cutoff,
-              ),
-              allTimeMax: aggregate.allTimeMax,
-              allTimeMaxTimestamp: aggregate.allTimeMaxTimestamp,
-              platforms: getPlatformViewerMetrics(streamerId).map((item) => ({
-                platform: item.platform,
-                username: item.username,
-                dailyBuckets: item.dailyBuckets.filter(
+      }) =>
+        Effect.gen(function* () {
+          const requested = new Set(include);
+          const cutoff = (yield* Clock.currentTimeMillis) - metricsDays * 86_400_000;
+          const aggregate = requested.has("metrics")
+            ? yield* getViewerMetricsEffect(streamerId)
+            : undefined;
+          const platformMetrics = aggregate
+            ? yield* fromSync("read platform viewer metrics", () =>
+                getPlatformViewerMetrics(streamerId),
+              )
+            : [];
+          const metrics = aggregate
+            ? {
+                dailyBuckets: aggregate.dailyBuckets.filter(
                   ({ timestamp }) => timestamp >= cutoff,
                 ),
-                allTimeMax: item.allTimeMax,
-                allTimeMaxTimestamp: item.allTimeMaxTimestamp,
-              })),
-            }
-          : null;
-        const sessions = requested.has("sessions")
-          ? [...getStreamSessions(streamerId).sessions]
-              .sort((a, b) => b.endedAt - a.endedAt)
-              .slice(0, sessionLimit)
-          : null;
-        return {
-          livestream: serializeStreamer(runtime, streamerId),
-          metrics,
-          sessions,
-          intelligence: requested.has("intelligence")
-            ? {
-                current: getLivestreamIntelligence(streamerId) ?? null,
-                diagnostics: getLivestreamDiagnostics(streamerId) ?? null,
-                events: getLivestreamEvents(streamerId, intelligenceEventLimit),
-                runtime: runtime.livestreamDiagnostics?.getRuntimeDiagnostics() ?? null,
+                allTimeMax: aggregate.allTimeMax,
+                allTimeMaxTimestamp: aggregate.allTimeMaxTimestamp,
+                platforms: platformMetrics.map((item) => ({
+                  platform: item.platform,
+                  username: item.username,
+                  dailyBuckets: item.dailyBuckets.filter(
+                    ({ timestamp }) => timestamp >= cutoff,
+                  ),
+                  allTimeMax: item.allTimeMax,
+                  allTimeMaxTimestamp: item.allTimeMaxTimestamp,
+                })),
               }
-            : null,
-        };
-      },
+            : null;
+          const sessions = requested.has("sessions")
+            ? [
+                ...(yield* fromSync("read stream sessions", () =>
+                  getStreamSessions(streamerId),
+                )).sessions,
+              ]
+                .sort((a, b) => b.endedAt - a.endedAt)
+                .slice(0, sessionLimit)
+            : null;
+          return {
+            livestream: yield* serializeStreamer(runtime, streamerId),
+            metrics,
+            sessions,
+            intelligence: requested.has("intelligence")
+              ? {
+                  current: getLivestreamIntelligence(streamerId) ?? null,
+                  diagnostics: getLivestreamDiagnostics(streamerId) ?? null,
+                  events: getLivestreamEvents(streamerId, intelligenceEventLimit),
+                  runtime:
+                    runtime.livestreamDiagnostics?.getRuntimeDiagnostics() ?? null,
+                }
+              : null,
+          };
+        }),
     }),
     defineTool({
       name: "briefings_list",
@@ -1003,38 +1047,39 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ briefingName, cursor, limit, maxMessageChars }) => {
-        const histories = getAllBriefingHistories();
-        const names = histories.map(({ briefingName: name }) => name).sort();
-        const notifications = histories
-          .filter((history) => !briefingName || history.briefingName === briefingName)
-          .flatMap((history) =>
-            history.notifications.map((item) => ({
-              history: history.briefingName,
-              item,
-            })),
-          )
-          .sort((a, b) => b.item.timestamp - a.item.timestamp);
-        const page = paginate(notifications, cursor, limit);
-        return {
-          briefingNames: names,
-          notifications: page.items.map(({ history, item }) => {
-            const message = truncate(item.message, maxMessageChars);
-            return {
-              briefingName: history,
-              title: item.title,
-              message: message.text,
-              messageTruncated: message.truncated,
-              url: item.url,
-              timestamp: item.timestamp,
-              runId: item.runId ?? null,
-              costCents: item.costCents ?? null,
-            };
-          }),
-          nextCursor: page.nextCursor,
-          total: page.total,
-        };
-      },
+      execute: ({ briefingName, cursor, limit, maxMessageChars }) =>
+        Effect.sync(() => {
+          const histories = getAllBriefingHistories();
+          const names = histories.map(({ briefingName: name }) => name).sort();
+          const notifications = histories
+            .filter((history) => !briefingName || history.briefingName === briefingName)
+            .flatMap((history) =>
+              history.notifications.map((item) => ({
+                history: history.briefingName,
+                item,
+              })),
+            )
+            .sort((a, b) => b.item.timestamp - a.item.timestamp);
+          const page = paginate(notifications, cursor, limit);
+          return {
+            briefingNames: names,
+            notifications: page.items.map(({ history, item }) => {
+              const message = truncate(item.message, maxMessageChars);
+              return {
+                briefingName: history,
+                title: item.title,
+                message: message.text,
+                messageTruncated: message.truncated,
+                url: item.url,
+                timestamp: item.timestamp,
+                runId: item.runId ?? null,
+                costCents: item.costCents ?? null,
+              };
+            }),
+            nextCursor: page.nextCursor,
+            total: page.total,
+          };
+        }),
     }),
     defineTool({
       name: "workspaces_list",
@@ -1045,9 +1090,10 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       outputSchema: z.object({ workspaces: z.array(workspaceSummarySchema) }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async () => ({
-        workspaces: workspaceDefinitions.map(serializeWorkspaceDefinition),
-      }),
+      execute: () =>
+        Effect.sync(() => ({
+          workspaces: workspaceDefinitions.map(serializeWorkspaceDefinition),
+        })),
     }),
     defineTool({
       name: "workspace_get",
@@ -1089,7 +1135,7 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({
+      execute: ({
         workspaceId,
         subjectId,
         messageLimit,
@@ -1097,83 +1143,90 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         revisionLimit,
         actionLimit,
         maxContentChars,
-      }) => {
-        const definition = requireWorkspace(workspaceId);
-        const subject = subjectId ? requireSubject(workspaceId, subjectId) : undefined;
-        const serializeArtifact = (
-          item: ReturnType<typeof getLatestWorkspaceArtifacts>[number],
-        ) => {
-          const content = truncate(item.content, maxContentChars);
-          return {
-            ...item,
-            content: content.text,
-            contentTruncated: content.truncated,
-            runId: item.runId ?? null,
+      }) =>
+        Effect.sync(() => {
+          const definition = requireWorkspace(workspaceId);
+          const subject = subjectId
+            ? requireSubject(workspaceId, subjectId)
+            : undefined;
+          const serializeArtifact = (
+            item: ReturnType<typeof getLatestWorkspaceArtifacts>[number],
+          ) => {
+            const content = truncate(item.content, maxContentChars);
+            return {
+              ...item,
+              content: content.text,
+              contentTruncated: content.truncated,
+              runId: item.runId ?? null,
+            };
           };
-        };
-        const messages = subjectId
-          ? listWorkspaceMessages(workspaceId, subjectId, messageLimit).map((item) => {
-              const text = truncate(item.text, maxContentChars);
-              return {
-                ...item,
-                subjectId: item.subjectId ?? null,
-                text: text.text,
-                textTruncated: text.truncated,
-                runId: item.runId ?? null,
-              };
-            })
-          : [];
-        const sources = subjectId
-          ? listWorkspaceSources(workspaceId, subjectId, sourceLimit).map((item) => {
-              const excerpt = truncate(item.excerpt, maxContentChars);
-              return {
-                ...item,
-                url: item.url ?? null,
-                excerpt: excerpt.text,
-                excerptTruncated: excerpt.truncated,
-                emailId: item.emailId ?? null,
-                runId: item.runId ?? null,
-              };
-            })
-          : [];
-        const scope = subjectId
-          ? getWorkspaceEmailScope(workspaceId, subjectId)
-          : undefined;
-        const subjects = listWorkspaceSubjects(workspaceId);
-        const papercuts = listWorkspacePapercuts(workspaceId, "open").filter(
-          (item) => !subjectId || !item.subjectId || item.subjectId === subjectId,
-        );
-        return {
-          workspace: serializeWorkspaceDefinition(definition),
-          subjects: subjects.slice(0, 100),
-          subjectsTruncated: subjects.length > 100,
-          subject: subject ?? null,
-          artifacts: subjectId
-            ? getLatestWorkspaceArtifacts(workspaceId, subjectId).map(serializeArtifact)
-            : [],
-          artifactRevisions: subjectId
-            ? listWorkspaceArtifactRevisions(workspaceId, subjectId)
-                .slice(0, revisionLimit)
-                .map(serializeArtifact)
-            : [],
-          messages,
-          sources,
-          actions: listWorkspaceActions(workspaceId, subjectId)
-            .slice(0, actionLimit)
-            .map(serializeAction),
-          emailScope: scope
-            ? {
-                senders: scope.senders,
-                domains: scope.domains,
-                subjectKeywords: scope.subjectKeywords,
-                bodyKeywords: scope.bodyKeywords,
-                updatedAt: scope.updatedAt,
-              }
-            : null,
-          papercuts: papercuts.slice(0, 100).map(serializePapercut),
-          papercutsTruncated: papercuts.length > 100,
-        };
-      },
+          const messages = subjectId
+            ? listWorkspaceMessages(workspaceId, subjectId, messageLimit).map(
+                (item) => {
+                  const text = truncate(item.text, maxContentChars);
+                  return {
+                    ...item,
+                    subjectId: item.subjectId ?? null,
+                    text: text.text,
+                    textTruncated: text.truncated,
+                    runId: item.runId ?? null,
+                  };
+                },
+              )
+            : [];
+          const sources = subjectId
+            ? listWorkspaceSources(workspaceId, subjectId, sourceLimit).map((item) => {
+                const excerpt = truncate(item.excerpt, maxContentChars);
+                return {
+                  ...item,
+                  url: item.url ?? null,
+                  excerpt: excerpt.text,
+                  excerptTruncated: excerpt.truncated,
+                  emailId: item.emailId ?? null,
+                  runId: item.runId ?? null,
+                };
+              })
+            : [];
+          const scope = subjectId
+            ? getWorkspaceEmailScope(workspaceId, subjectId)
+            : undefined;
+          const subjects = listWorkspaceSubjects(workspaceId);
+          const papercuts = listWorkspacePapercuts(workspaceId, "open").filter(
+            (item) => !subjectId || !item.subjectId || item.subjectId === subjectId,
+          );
+          return {
+            workspace: serializeWorkspaceDefinition(definition),
+            subjects: subjects.slice(0, 100),
+            subjectsTruncated: subjects.length > 100,
+            subject: subject ?? null,
+            artifacts: subjectId
+              ? getLatestWorkspaceArtifacts(workspaceId, subjectId).map(
+                  serializeArtifact,
+                )
+              : [],
+            artifactRevisions: subjectId
+              ? listWorkspaceArtifactRevisions(workspaceId, subjectId)
+                  .slice(0, revisionLimit)
+                  .map(serializeArtifact)
+              : [],
+            messages,
+            sources,
+            actions: listWorkspaceActions(workspaceId, subjectId)
+              .slice(0, actionLimit)
+              .map(serializeAction),
+            emailScope: scope
+              ? {
+                  senders: scope.senders,
+                  domains: scope.domains,
+                  subjectKeywords: scope.subjectKeywords,
+                  bodyKeywords: scope.bodyKeywords,
+                  updatedAt: scope.updatedAt,
+                }
+              : null,
+            papercuts: papercuts.slice(0, 100).map(serializePapercut),
+            papercutsTruncated: papercuts.length > 100,
+          };
+        }),
     }),
     defineTool({
       name: "workspace_search",
@@ -1205,14 +1258,19 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ query, workspaceId, cursor, limit, maxSnippetChars }) => {
-        const page = paginate(
-          workspaceSearchMatches({ workspaceId, query, maxSnippetChars }),
-          cursor,
-          limit,
-        );
-        return { matches: page.items, nextCursor: page.nextCursor, total: page.total };
-      },
+      execute: ({ query, workspaceId, cursor, limit, maxSnippetChars }) =>
+        Effect.sync(() => {
+          const page = paginate(
+            workspaceSearchMatches({ workspaceId, query, maxSnippetChars }),
+            cursor,
+            limit,
+          );
+          return {
+            matches: page.items,
+            nextCursor: page.nextCursor,
+            total: page.total,
+          };
+        }),
     }),
     defineTool({
       name: "workspace_message",
@@ -1241,20 +1299,21 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         cost: "variable paid model and web-search cost",
         recommendedPolicy: "require_approval",
       },
-      execute: async ({ workspaceId, subjectId, message }) => {
-        const definition = requireWorkspace(workspaceId);
-        if (subjectId) requireSubject(workspaceId, subjectId);
-        const run = runtime.registry.runNow(definition.taskName, {
-          message,
-          subjectId,
-        });
-        return {
-          workspaceId,
-          subjectId: subjectId ?? null,
-          runId: run.runId,
-          queued: true as const,
-        };
-      },
+      execute: ({ workspaceId, subjectId, message }) =>
+        Effect.sync(() => {
+          const definition = requireWorkspace(workspaceId);
+          if (subjectId) requireSubject(workspaceId, subjectId);
+          const run = runtime.registry.runNow(definition.taskName, {
+            message,
+            subjectId,
+          });
+          return {
+            workspaceId,
+            subjectId: subjectId ?? null,
+            runId: run.runId,
+            queued: true as const,
+          };
+        }),
     }),
     defineTool({
       name: "workspace_subject_set_status",
@@ -1275,15 +1334,16 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         cost: "none",
         recommendedPolicy: "allow",
       },
-      execute: async ({ workspaceId, subjectId, status }) => {
-        const subject = requireSubject(workspaceId, subjectId);
-        return {
-          subject: upsertWorkspaceSubject({
-            ...subject,
-            status,
-          }),
-        };
-      },
+      execute: ({ workspaceId, subjectId, status }) =>
+        Effect.sync(() => {
+          const subject = requireSubject(workspaceId, subjectId);
+          return {
+            subject: upsertWorkspaceSubject({
+              ...subject,
+              status,
+            }),
+          };
+        }),
     }),
     defineTool({
       name: "workspace_actions_list",
@@ -1305,24 +1365,25 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ workspaceId, subjectId, status, cursor, limit }) => {
-        if (subjectId && !workspaceId) {
-          throw new Error("workspaceId is required when subjectId is provided");
-        }
-        const definitions = workspaceId
-          ? [requireWorkspace(workspaceId)]
-          : workspaceDefinitions;
-        const values = definitions
-          .flatMap((definition) => listWorkspaceActions(definition.id, subjectId))
-          .filter((action) => !status || action.status === status)
-          .sort((a, b) => b.createdAt - a.createdAt);
-        const page = paginate(values, cursor, limit);
-        return {
-          actions: page.items.map(serializeAction),
-          nextCursor: page.nextCursor,
-          total: page.total,
-        };
-      },
+      execute: ({ workspaceId, subjectId, status, cursor, limit }) =>
+        Effect.sync(() => {
+          if (subjectId && !workspaceId) {
+            throw new Error("workspaceId is required when subjectId is provided");
+          }
+          const definitions = workspaceId
+            ? [requireWorkspace(workspaceId)]
+            : workspaceDefinitions;
+          const values = definitions
+            .flatMap((definition) => listWorkspaceActions(definition.id, subjectId))
+            .filter((action) => !status || action.status === status)
+            .sort((a, b) => b.createdAt - a.createdAt);
+          const page = paginate(values, cursor, limit);
+          return {
+            actions: page.items.map(serializeAction),
+            nextCursor: page.nextCursor,
+            total: page.total,
+          };
+        }),
     }),
     defineTool({
       name: "workspace_action_approve",
@@ -1340,9 +1401,10 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         cost: "no direct monetary cost; may perform a CalDAV network request",
         recommendedPolicy: "require_approval",
       },
-      execute: async ({ actionId }) => ({
-        action: serializeAction(await approveWorkspaceAction(actionId, runtime.logger)),
-      }),
+      execute: ({ actionId }) =>
+        approveWorkspaceActionEffect(actionId, runtime.logger).pipe(
+          Effect.map((action) => ({ action: serializeAction(action) })),
+        ),
     }),
     defineTool({
       name: "workspace_action_reject",
@@ -1357,9 +1419,10 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         cost: "none",
         recommendedPolicy: "allow",
       },
-      execute: async ({ actionId }) => ({
-        action: serializeAction(rejectWorkspaceAction(actionId)),
-      }),
+      execute: ({ actionId }) =>
+        rejectWorkspaceActionEffect(actionId).pipe(
+          Effect.map((action) => ({ action: serializeAction(action) })),
+        ),
     }),
     defineTool({
       name: "workspace_papercuts_list",
@@ -1380,19 +1443,20 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
-      execute: async ({ workspaceId, status, cursor, limit }) => {
-        if (workspaceId) requireWorkspace(workspaceId);
-        const page = paginate(
-          listWorkspacePapercuts(workspaceId, status),
-          cursor,
-          limit,
-        );
-        return {
-          papercuts: page.items.map(serializePapercut),
-          nextCursor: page.nextCursor,
-          total: page.total,
-        };
-      },
+      execute: ({ workspaceId, status, cursor, limit }) =>
+        Effect.sync(() => {
+          if (workspaceId) requireWorkspace(workspaceId);
+          const page = paginate(
+            listWorkspacePapercuts(workspaceId, status),
+            cursor,
+            limit,
+          );
+          return {
+            papercuts: page.items.map(serializePapercut),
+            nextCursor: page.nextCursor,
+            total: page.total,
+          };
+        }),
     }),
     defineTool({
       name: "workspace_papercut_resolve",
@@ -1413,11 +1477,12 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         cost: "none",
         recommendedPolicy: "allow",
       },
-      execute: async ({ papercutId, status, resolution }) => {
-        const papercut = resolveWorkspacePapercut(papercutId, status, resolution);
-        if (!papercut) throw new Error(`Unknown workspace papercut "${papercutId}"`);
-        return { papercut: serializePapercut(papercut) };
-      },
+      execute: ({ papercutId, status, resolution }) =>
+        Effect.sync(() => {
+          const papercut = resolveWorkspacePapercut(papercutId, status, resolution);
+          if (!papercut) throw new Error(`Unknown workspace papercut "${papercutId}"`);
+          return { papercut: serializePapercut(papercut) };
+        }),
     }),
   ];
 }

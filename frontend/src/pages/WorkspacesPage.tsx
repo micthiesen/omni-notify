@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Effect } from "effect";
 import {
   ApiError,
   fetchWorkspace,
@@ -11,8 +12,8 @@ import {
   type WorkspaceDetailResponse,
   type WorkspaceSubjectStatus,
   type WorkspaceSummary,
-  type TaskRun,
 } from "../api";
+import { forkUiRequest, runUiEffect } from "../effect";
 import { Link } from "../router";
 import { formatAbsolute, formatRelative } from "../utils/format";
 
@@ -33,27 +34,43 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [busyWorkspaceId, setBusyWorkspaceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    if (workspaceId) {
-      const response = await fetchWorkspace(workspaceId);
-      setWorkspaces([
-        {
-          ...response.workspace,
-          subjects: response.subjects,
-          activeSubjectCount: response.subjects.filter((s) => s.status === "active")
-            .length,
-          pendingActionCount: response.actions.filter((a) => a.status === "pending")
-            .length,
-          openPapercutCount: response.papercuts.length,
-        },
-      ]);
-    } else {
-      setWorkspaces((await fetchWorkspaces()).workspaces);
-    }
-  }, [workspaceId]);
+  const load = useCallback(
+    () =>
+      workspaceId
+        ? fetchWorkspace(workspaceId).pipe(
+            Effect.tap((response) =>
+              Effect.sync(() =>
+                setWorkspaces([
+                  {
+                    ...response.workspace,
+                    subjects: response.subjects,
+                    activeSubjectCount: response.subjects.filter(
+                      (subject) => subject.status === "active",
+                    ).length,
+                    pendingActionCount: response.actions.filter(
+                      (action) => action.status === "pending",
+                    ).length,
+                    openPapercutCount: response.papercuts.length,
+                  },
+                ]),
+              ),
+            ),
+            Effect.asVoid,
+          )
+        : fetchWorkspaces().pipe(
+            Effect.tap((response) =>
+              Effect.sync(() => setWorkspaces(response.workspaces)),
+            ),
+            Effect.asVoid,
+          ),
+    [workspaceId],
+  );
 
   useEffect(() => {
-    void load().catch((err) => setError(messageFor(err)));
+    return forkUiRequest(load(), {
+      onSuccess: () => {},
+      onFailure: (err) => setError(messageFor(err)),
+    });
   }, [load]);
 
   const send = async (id: string) => {
@@ -62,10 +79,10 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
     setBusyWorkspaceId(id);
     setError(null);
     try {
-      const { runId } = await sendWorkspaceMessage(id, message);
-      await waitForRun(runId);
+      const { runId } = await runUiEffect(sendWorkspaceMessage(id, message));
+      await runUiEffect(waitForRun(runId));
       setMessages((current) => ({ ...current, [id]: "" }));
-      await load();
+      await runUiEffect(load());
       window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
@@ -178,12 +195,20 @@ function SubjectPage({
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    setDetail(await fetchWorkspaceSubject(workspaceId, subjectId));
-  }, [workspaceId, subjectId]);
+  const load = useCallback(
+    () =>
+      fetchWorkspaceSubject(workspaceId, subjectId).pipe(
+        Effect.tap((response) => Effect.sync(() => setDetail(response))),
+        Effect.asVoid,
+      ),
+    [workspaceId, subjectId],
+  );
 
   useEffect(() => {
-    void load().catch((err) => setError(messageFor(err)));
+    return forkUiRequest(load(), {
+      onSuccess: () => {},
+      onFailure: (err) => setError(messageFor(err)),
+    });
   }, [load]);
 
   useEffect(() => {
@@ -209,14 +234,12 @@ function SubjectPage({
     setBusy(true);
     setError(null);
     try {
-      const { runId } = await sendWorkspaceMessage(
-        workspaceId,
-        message.trim(),
-        subjectId,
+      const { runId } = await runUiEffect(
+        sendWorkspaceMessage(workspaceId, message.trim(), subjectId),
       );
-      await waitForRun(runId);
+      await runUiEffect(waitForRun(runId));
       setMessage("");
-      await load();
+      await runUiEffect(load());
       window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
@@ -228,8 +251,8 @@ function SubjectPage({
   const resolveAction = async (actionId: string, resolution: "approve" | "reject") => {
     setBusy(true);
     try {
-      await resolveWorkspaceAction(actionId, resolution);
-      await load();
+      await runUiEffect(resolveWorkspaceAction(actionId, resolution));
+      await runUiEffect(load());
       window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
@@ -242,8 +265,8 @@ function SubjectPage({
     setBusy(true);
     setError(null);
     try {
-      await setWorkspaceSubjectStatus(workspaceId, subjectId, status);
-      await load();
+      await runUiEffect(setWorkspaceSubjectStatus(workspaceId, subjectId, status));
+      await runUiEffect(load());
       window.dispatchEvent(new Event("workspace-updated"));
     } catch (err) {
       setError(messageFor(err));
@@ -477,22 +500,33 @@ function safeSourceHref(value: string | undefined): string | undefined {
   }
 }
 
-async function waitForRun(runId: string): Promise<void> {
-  const deadline = Date.now() + 5 * 60_000;
-  while (Date.now() < deadline) {
-    let run: TaskRun;
-    try {
-      ({ run } = await fetchRunLogs(runId));
-    } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 404) throw error;
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
-      continue;
-    }
-    if (run.status === "success") return;
-    if (run.status === "error") throw new Error(run.error ?? "Workspace run failed");
-    await new Promise((resolve) => window.setTimeout(resolve, 1_000));
-  }
-  throw new Error(
-    "Workspace research is still running. Refresh shortly to see the result.",
+function waitForRun(runId: string): Effect.Effect<void, ApiError | Error> {
+  const poll: Effect.Effect<void, ApiError | Error> = Effect.suspend(() =>
+    fetchRunLogs(runId).pipe(
+      Effect.flatMap(({ run }) => {
+        if (run.status === "success") return Effect.void;
+        if (run.status === "error") {
+          return Effect.fail(new Error(run.error ?? "Workspace run failed"));
+        }
+        return Effect.sleep("1 second").pipe(Effect.zipRight(poll));
+      }),
+      Effect.catchTags({
+        ApiError: (error) =>
+          error.status === 404
+            ? Effect.sleep("250 millis").pipe(Effect.zipRight(poll))
+            : Effect.fail(error),
+        ApiNetworkError: (error) => Effect.fail(new Error(error.message)),
+        ApiDecodeError: (error) => Effect.fail(new Error(error.message)),
+      }),
+    ),
+  );
+  return poll.pipe(
+    Effect.timeoutFail({
+      duration: "5 minutes",
+      onTimeout: () =>
+        new Error(
+          "Workspace research is still running. Refresh shortly to see the result.",
+        ),
+    }),
   );
 }

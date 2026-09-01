@@ -1,4 +1,5 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import { Effect } from "effect";
 import { hasValidBearerToken, unauthorizedMcpResponse } from "./auth.js";
 import type { McpRuntime } from "./runtime.js";
 import {
@@ -50,13 +51,15 @@ export function createOmniMcpHandler(
             outputSchema: tool.outputSchema,
             annotations: tool.annotations,
           },
-          async (input) => {
-            try {
-              return successfulToolResult(await tool.execute(input));
-            } catch (error) {
-              return failedToolResult(error);
-            }
-          },
+          (input) =>
+            Effect.runPromise(
+              tool.execute(input).pipe(
+                Effect.match({
+                  onFailure: failedToolResult,
+                  onSuccess: successfulToolResult,
+                }),
+              ),
+            ),
         );
       }
       return server;

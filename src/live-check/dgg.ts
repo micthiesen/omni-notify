@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { Data, Effect } from "effect";
 import { z } from "zod";
 import { canonicalBindingKey } from "./identityLinks.js";
 import {
@@ -124,6 +125,10 @@ function messageText(data: unknown): string | undefined {
  * including a null hosting message, so a partial snapshot can never erase the
  * last successful dynamic channel list.
  */
+export class DggFeedError extends Data.TaggedError("DggFeedError")<{
+  readonly message: string;
+}> {}
+
 export function fetchDggFeed({
   timeoutMs = 5_000,
   createSocket = (url) =>
@@ -135,8 +140,8 @@ export function fetchDggFeed({
 }: {
   timeoutMs?: number;
   createSocket?: DggWebSocketFactory;
-} = {}): Promise<DggFeed> {
-  return new Promise((resolve, reject) => {
+} = {}): Effect.Effect<DggFeed, DggFeedError> {
+  const socketEffect = Effect.async<DggFeed, DggFeedError>((resume) => {
     let embeds: DggEmbed[] | undefined;
     let hosting: DggHosting | null | undefined;
     let destinyLive: boolean | undefined;
@@ -146,21 +151,17 @@ export function fetchDggFeed({
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
       socket.close();
-      if (error) reject(error);
+      if (error) resume(Effect.fail(new DggFeedError({ message: error.message })));
       else
-        resolve({
-          embeds: embeds ?? [],
-          hosting: destinyLive ? null : (hosting ?? null),
-          destinyLive: destinyLive ?? false,
-        });
+        resume(
+          Effect.succeed({
+            embeds: embeds ?? [],
+            hosting: destinyLive ? null : (hosting ?? null),
+            destinyLive: destinyLive ?? false,
+          }),
+        );
     };
-
-    const timer = setTimeout(
-      () => finish(new Error("Timed out waiting for DGG live snapshot")),
-      timeoutMs,
-    );
 
     socket.addEventListener("message", (event) => {
       const text = messageText(event.data);
@@ -204,7 +205,18 @@ export function fetchDggFeed({
       if (!settled)
         finish(new Error("DGG websocket closed before its snapshot arrived"));
     });
+    return Effect.sync(() => {
+      settled = true;
+      socket.close();
+    });
   });
+  return socketEffect.pipe(
+    Effect.timeoutFail({
+      duration: `${timeoutMs} millis`,
+      onTimeout: () =>
+        new DggFeedError({ message: "Timed out waiting for DGG live snapshot" }),
+    }),
+  );
 }
 
 function supportedPlatform(value: string): Platform | undefined {

@@ -16,11 +16,13 @@
  */
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
+import { Data, Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
 import {
   PodcastQueuePosition,
   resolvePodcastAccount,
 } from "../podcast-recs/account.js";
-import { fetchFeedEpisodes } from "../podcast-recs/rss.js";
+import { fetchFeedEpisodesEffect } from "../podcast-recs/rss.js";
 import config from "../utils/config.js";
 
 Injector.configure({ config });
@@ -31,55 +33,88 @@ const logger = new Logger("CastroSmoke");
 const SHOW_TITLE = "Radiolab";
 const FEED_URL = "https://feeds.simplecast.com/EmVW7VGp";
 
-function fail(message: string): never {
-  logger.error(`SMOKE FAILED: ${message}`);
-  process.exit(1);
-}
+class SmokeError extends Data.TaggedError("SmokeError")<{
+  message: string;
+  cause?: unknown;
+}> {}
+const fail = (message: string, cause?: unknown) =>
+  Effect.fail(new SmokeError({ message: `SMOKE FAILED: ${message}`, cause }));
+const program = Effect.gen(function* () {
+  const account = resolvePodcastAccount(logger);
+  if (!account)
+    return yield* fail(
+      "no Castro account configured (CASTRO_ACCESS_ID/CASTRO_SECRET_KEY)",
+    );
 
-const account = resolvePodcastAccount(logger);
-if (!account) fail("no Castro account configured (CASTRO_ACCESS_ID/CASTRO_SECRET_KEY)");
+  const episode = (yield* fetchFeedEpisodesEffect(FEED_URL, { maxEpisodes: 1 }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new SmokeError({
+          message: "SMOKE FAILED: could not read the test feed",
+          cause,
+        }),
+    ),
+  ))[0];
+  if (!episode) return yield* fail("could not read the test feed");
+  yield* Effect.sync(() =>
+    logger.info(`Test episode: ${SHOW_TITLE} — ${episode.title}`),
+  );
 
-const episode = (await fetchFeedEpisodes(FEED_URL, { maxEpisodes: 1 }))[0];
-if (!episode) fail("could not read the test feed");
-logger.info(`Test episode: ${SHOW_TITLE} — ${episode.title}`);
+  const enqueue = yield* account.enqueueEpisode({
+    feedUrl: FEED_URL,
+    episodeGuid: episode.guid,
+    mediaUrl: episode.enclosureUrl,
+    showTitle: SHOW_TITLE,
+    episodeTitle: episode.title,
+    position: PodcastQueuePosition.Next,
+  });
+  if (enqueue !== "added" && enqueue !== "already_exists") {
+    return yield* fail(`enqueueEpisode returned "${enqueue}"`);
+  }
+  yield* Effect.sync(() => logger.info(`enqueueEpisode → ${enqueue}`));
 
-// 1. Enqueue via the real path.
-const enqueue = await account.enqueueEpisode({
-  feedUrl: FEED_URL,
-  episodeGuid: episode.guid,
-  mediaUrl: episode.enclosureUrl,
-  showTitle: SHOW_TITLE,
-  episodeTitle: episode.title,
-  position: PodcastQueuePosition.Next,
+  // 2. Verify it actually landed in the server queue (not just a 200).
+  const afterEnqueue = yield* account.fetchQueue();
+  if (afterEnqueue.status !== "ok")
+    return yield* fail(`fetchQueue unavailable: ${afterEnqueue.reason}`);
+  const ours = afterEnqueue.value.find(
+    (item) => item.showTitle === SHOW_TITLE && item.episodeTitle === episode.title,
+  );
+  if (!ours)
+    return yield* fail(
+      "episode was NOT in the queue after enqueue (write did not land)",
+    );
+  const index = afterEnqueue.value.indexOf(ours);
+  yield* Effect.sync(() =>
+    logger.info(
+      `Verified in queue at position ${index + 1}/${afterEnqueue.value.length}`,
+    ),
+  );
+
+  // 3. Dequeue (clean up) using the guid the queue itself reports.
+  const dequeue = yield* account.dequeueEpisode(ours.episodeGuid as string);
+  if (dequeue !== "removed") return yield* fail(`dequeueEpisode returned "${dequeue}"`);
+
+  // 4. Verify it is gone.
+  const afterDequeue = yield* account.fetchQueue();
+  if (afterDequeue.status !== "ok")
+    return yield* fail(`fetchQueue unavailable: ${afterDequeue.reason}`);
+  const stillThere = afterDequeue.value.some(
+    (item) => item.showTitle === SHOW_TITLE && item.episodeTitle === episode.title,
+  );
+  if (stillThere) return yield* fail("episode still in the queue after dequeue");
+
+  yield* Effect.sync(() =>
+    logger.info(
+      "SMOKE PASSED: enqueue landed, verified, and cleaned up. Queue untouched.",
+    ),
+  );
 });
-if (enqueue !== "added" && enqueue !== "already_exists") {
-  fail(`enqueueEpisode returned "${enqueue}"`);
-}
-logger.info(`enqueueEpisode → ${enqueue}`);
 
-// 2. Verify it actually landed in the server queue (not just a 200).
-const afterEnqueue = await account.fetchQueue();
-if (afterEnqueue.status !== "ok")
-  fail(`fetchQueue unavailable: ${afterEnqueue.reason}`);
-const ours = afterEnqueue.value.find(
-  (item) => item.showTitle === SHOW_TITLE && item.episodeTitle === episode.title,
+await runPromise(
+  program.pipe(
+    Effect.tapError((error) =>
+      Effect.sync(() => logger.error(error.message, error.cause)),
+    ),
+  ),
 );
-if (!ours) fail("episode was NOT in the queue after enqueue (write did not land)");
-const index = afterEnqueue.value.indexOf(ours);
-logger.info(`Verified in queue at position ${index + 1}/${afterEnqueue.value.length}`);
-
-// 3. Dequeue (clean up) using the guid the queue itself reports.
-const dequeue = await account.dequeueEpisode(ours.episodeGuid as string);
-if (dequeue !== "removed") fail(`dequeueEpisode returned "${dequeue}"`);
-
-// 4. Verify it is gone.
-const afterDequeue = await account.fetchQueue();
-if (afterDequeue.status !== "ok")
-  fail(`fetchQueue unavailable: ${afterDequeue.reason}`);
-const stillThere = afterDequeue.value.some(
-  (item) => item.showTitle === SHOW_TITLE && item.episodeTitle === episode.title,
-);
-if (stillThere) fail("episode still in the queue after dequeue");
-
-logger.info("SMOKE PASSED: enqueue landed, verified, and cleaned up. Queue untouched.");
-process.exit(0);

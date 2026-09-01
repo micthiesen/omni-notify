@@ -1,17 +1,25 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { formatDistance, formatDistanceToNow } from "date-fns";
+import { formatDistance } from "date-fns";
+import { Cause, Clock, Effect, Option } from "effect";
+import { IntegrationError, PersistenceError } from "../effect/errors.js";
+import { fromPromise, runPromise } from "../effect/interop.js";
 import appConfig from "../utils/config.js";
-import { canonicalBinding, fetchDggFeed, resolveDggStreams } from "./dgg.js";
 import {
-  forgetProfileIdentityLink,
-  getProfileIdentityLink,
-  ProfileIdentityLinkEntity,
+  canonicalBinding,
+  fetchDggFeed,
+  resolveDggStreams,
+  type DggFeed,
+} from "./dgg.js";
+import {
+  forgetProfileIdentityLinkEffect,
+  getAllProfileIdentityLinksEffect,
+  type ProfileIdentityLink,
 } from "./identityLinks.js";
 import type { LivestreamIntelligenceObserver } from "./intelligence/service.js";
 import { ViewerMetricsService } from "./metrics/index.js";
-import { recordPlatformViewerCount } from "./metrics/persistence.js";
+import { recordPlatformViewerCountEffect } from "./metrics/persistence.js";
 import {
   getNotificationPermissions,
   liveNotificationsEnabled,
@@ -24,11 +32,11 @@ import {
   type UnknownStreak,
 } from "./outage.js";
 import {
-  getStreamerStatus,
+  getStreamerStatusEffect,
   type StreamerStatus,
   type StreamerStatusLive,
   type StreamerStatusOffline,
-  upsertStreamerStatus,
+  upsertStreamerStatusEffect,
 } from "./persistence.js";
 import {
   type FetchedStatus,
@@ -37,8 +45,8 @@ import {
   type Platform,
   platformConfigs,
 } from "./platforms/index.js";
-import { learnProfileIdentity } from "./profileLinks.js";
-import { recordCompletedSession } from "./sessions.js";
+import { learnProfileIdentityEffect } from "./profileLinks.js";
+import { recordCompletedSessionEffect } from "./sessions.js";
 import { isStreamerDue, type Streamer } from "./streamers.js";
 import { TitleChangeDebouncer } from "./titleDebounce.js";
 import {
@@ -49,6 +57,22 @@ import {
 
 const PROFILE_IDENTITY_RETRY_MS = 24 * 60 * 60 * 1000;
 const PROFILE_IDENTITY_VERIFICATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function externalEffect<A>(
+  operation: string,
+  evaluate: () => A | PromiseLike<A>,
+): Effect.Effect<A, unknown> {
+  return Effect.suspend(() => {
+    try {
+      const value = evaluate();
+      return value && typeof (value as PromiseLike<A>).then === "function"
+        ? fromPromise(operation, () => value as PromiseLike<A>)
+        : Effect.succeed(value as A);
+    } catch (cause) {
+      return Effect.fail(cause);
+    }
+  });
+}
 
 export default class LiveCheckTask extends ScheduledTask {
   public readonly name = "LiveCheckTask";
@@ -75,8 +99,12 @@ export default class LiveCheckTask extends ScheduledTask {
     private readonly dggDiscovery?: {
       topEmbeds: number;
       availablePlatforms: ReadonlySet<Platform>;
-      fetchFeed?: typeof fetchDggFeed;
-      learnIdentity?: typeof learnProfileIdentity;
+      fetchFeed?: () => Effect.Effect<DggFeed, unknown> | Promise<DggFeed>;
+      learnIdentity?: (
+        input: Parameters<typeof learnProfileIdentityEffect>[0],
+      ) =>
+        | ReturnType<typeof learnProfileIdentityEffect>
+        | Promise<ProfileIdentityLink | undefined>;
     },
     private readonly intelligence?: LivestreamIntelligenceObserver,
   ) {
@@ -106,36 +134,68 @@ export default class LiveCheckTask extends ScheduledTask {
     }
   }
 
-  public async run(): Promise<void> {
-    // Background streamers skip ticks entirely (not just their notification
-    // paths) — a skipped tick means no fetch, no transition, and no
-    // unknown-streak change for that streamer this round. The startup run
-    // (tick 0) always includes them.
-    const tick = this.tickCount++;
-    if (this.dggDiscovery && isStreamerDue("background", tick)) {
-      await this.refreshDggStreamers();
-    }
-    const due = this.streamers.filter((s) => isStreamerDue(s.tier, tick));
-    await Promise.all(due.map((s) => this.tickStreamer(s)));
-    this.intelligence?.afterTick();
-    // Background streamers' unknown streaks (and thus outage detection) only
-    // advance on their slower cadence, since they're skipped above otherwise.
-    await this.reportOutage();
-    try {
-      await this.reconcileIOSControls?.();
-    } catch (error) {
-      // Controls are a convenience surface. APNs or control-state failures
-      // must never turn a successful live-status tick into a failed task run.
-      this.logger.warn(`Failed to reconcile iOS controls: ${(error as Error).message}`);
-    }
+  public run(): Promise<void> {
+    return runPromise(this.runEffect());
   }
 
-  private async refreshDggStreamers(): Promise<void> {
-    if (!this.dggDiscovery) return;
+  public runEffect(): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      // Background streamers skip ticks entirely (not just their notification
+      // paths) — a skipped tick means no fetch, no transition, and no
+      // unknown-streak change for that streamer this round. The startup run
+      // (tick 0) always includes them.
+      const tick = this.tickCount++;
+      if (this.dggDiscovery && isStreamerDue("background", tick)) {
+        yield* this.refreshDggStreamers();
+      }
+      const due = this.streamers.filter((s) => isStreamerDue(s.tier, tick));
+      yield* Effect.forEach(due, (streamer) => this.tickStreamer(streamer), {
+        concurrency: "unbounded",
+        discard: true,
+      });
+      if (this.intelligence) yield* this.intelligence.afterTick();
+      // Background streamers' unknown streaks (and thus outage detection) only
+      // advance on their slower cadence, since they're skipped above otherwise.
+      yield* this.reportOutage();
+      if (this.reconcileIOSControls) {
+        yield* fromPromise("reconcile iOS controls", () =>
+          this.reconcileIOSControls!(),
+        ).pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() => {
+              // Controls are a convenience surface. APNs or control-state failures
+              // must never turn a successful live-status tick into a failed task run.
+              this.logger.warn(
+                `Failed to reconcile iOS controls: ${(error as Error).message}`,
+              );
+            }),
+          ),
+        );
+      }
+    });
+  }
 
-    let resolution: ReturnType<typeof resolveDggStreams>;
-    try {
-      const feed = await (this.dggDiscovery.fetchFeed ?? fetchDggFeed)();
+  private refreshDggStreamers(): Effect.Effect<void, PersistenceError> {
+    if (!this.dggDiscovery) return Effect.void;
+    const discovery = this.dggDiscovery;
+
+    return Effect.gen(this, function* () {
+      let resolution: ReturnType<typeof resolveDggStreams>;
+      const feed = yield* Effect.suspend(() => {
+        const feedValue = (discovery.fetchFeed ?? fetchDggFeed)();
+        return Effect.isEffect(feedValue)
+          ? (feedValue as Effect.Effect<DggFeed, unknown>)
+          : fromPromise("fetch DGG feed", () => feedValue);
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new IntegrationError({
+              operation: "fetch DGG feed",
+              cause,
+            }),
+        ),
+      );
+      let identityLinks = yield* getAllProfileIdentityLinksEffect();
       const resolve = () =>
         resolveDggStreams({
           feed,
@@ -144,17 +204,17 @@ export default class LiveCheckTask extends ScheduledTask {
           availablePlatforms:
             this.dggDiscovery?.availablePlatforms ?? new Set<Platform>(),
           identityAliases: new Map(
-            ProfileIdentityLinkEntity.getAll().map((link) => [
-              link.sourceBinding,
-              link.targetBinding,
-            ]),
+            identityLinks.map((link) => [link.sourceBinding, link.targetBinding]),
           ),
         });
       resolution = resolve();
       const configuredBindings = this.configuredStreamers.flatMap(
         (streamer) => streamer.bindings,
       );
-      const now = Date.now();
+      const now = yield* Clock.currentTimeMillis;
+      const linksBySource = new Map(
+        identityLinks.map((link) => [link.sourceBinding, link]),
+      );
       const identityCandidates = [
         ...resolution.discovered.map((entry) => ({ entry, verify: false })),
         ...[...resolution.configuredSources.values()]
@@ -162,7 +222,9 @@ export default class LiveCheckTask extends ScheduledTask {
           .filter((entry) => {
             const source = entry.streamer.bindings[0];
             if (!source) return false;
-            const link = getProfileIdentityLink(source);
+            const link = linksBySource.get(
+              canonicalBinding(source.platform, source.username),
+            );
             return (
               link !== undefined &&
               now - link.verifiedAt >= PROFILE_IDENTITY_VERIFICATION_MS
@@ -170,96 +232,92 @@ export default class LiveCheckTask extends ScheduledTask {
           })
           .map((entry) => ({ entry, verify: true })),
       ];
-      const identityChanged = await Promise.all(
-        identityCandidates.map(async ({ entry, verify }) => {
-          const source = entry.streamer.bindings[0];
-          if (!source) return false;
-          const sourceKey = canonicalBinding(source.platform, source.username);
-          const lastAttempt = this.profileIdentityAttempts.get(sourceKey);
-          if (
-            lastAttempt !== undefined &&
-            now - lastAttempt < PROFILE_IDENTITY_RETRY_MS
-          ) {
-            return false;
-          }
-          this.profileIdentityAttempts.set(sourceKey, now);
-          try {
-            const link = await (
-              this.dggDiscovery?.learnIdentity ?? learnProfileIdentity
+      const identityChanged = yield* Effect.forEach(
+        identityCandidates,
+        ({ entry, verify }) =>
+          Effect.gen(this, function* () {
+            const source = entry.streamer.bindings[0];
+            if (!source) return false;
+            const sourceKey = canonicalBinding(source.platform, source.username);
+            const lastAttempt = this.profileIdentityAttempts.get(sourceKey);
+            if (
+              lastAttempt !== undefined &&
+              now - lastAttempt < PROFILE_IDENTITY_RETRY_MS
+            ) {
+              return false;
+            }
+            this.profileIdentityAttempts.set(sourceKey, now);
+            const identityValue = (
+              this.dggDiscovery?.learnIdentity ?? learnProfileIdentityEffect
             )({
               source,
               configuredBindings,
               forceRefresh: verify,
             });
+            const identityEffect: Effect.Effect<
+              ProfileIdentityLink | undefined,
+              unknown
+            > = Effect.isEffect(identityValue)
+              ? (identityValue as Effect.Effect<
+                  ProfileIdentityLink | undefined,
+                  unknown
+                >)
+              : fromPromise("learn profile identity", () => identityValue);
+            const link = yield* identityEffect.pipe(
+              Effect.catchAll((error) => {
+                this.logger.debug(
+                  `Could not resolve profile identity for ${source.platform}:${source.username}: ${String(error)}`,
+                );
+                return Effect.succeed(undefined);
+              }),
+            );
             if (verify && link === undefined) {
-              forgetProfileIdentityLink(source);
+              yield* forgetProfileIdentityLinkEffect(source);
               this.logger.info(
                 `Removed stale profile identity for ${source.platform}:${source.username}`,
               );
               return true;
             }
             return link !== undefined;
-          } catch (error) {
-            this.logger.debug(
-              `Could not resolve profile identity for ${source.platform}:${source.username}: ${(error as Error).message}`,
-            );
-            return false;
-          }
-        }),
+          }),
+        { concurrency: "unbounded" },
       );
-      if (identityChanged.some(Boolean)) resolution = resolve();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Failed to refresh Destiny.gg embeds: ${message}`);
-      for (const binding of this.dggStatuses.keys()) {
-        this.dggStatuses.set(binding, {
-          status: LiveStatus.Unknown,
-          error: message,
-        });
+      if (identityChanged.some(Boolean)) {
+        identityLinks = yield* getAllProfileIdentityLinksEffect();
+        resolution = resolve();
       }
-      return;
-    }
 
-    const selected = resolution.discovered;
-    const nextIds = new Set(selected.map(({ streamer }) => streamer.id));
-    const removed = this.streamers.filter(
-      (streamer) => streamer.discoverySource === "dgg" && !nextIds.has(streamer.id),
-    );
-    for (const streamer of removed) {
-      const previous = getStreamerStatus(streamer.id);
-      if (previous.isLive) {
-        // Leaving DGG's top set is not proof that the underlying stream ended,
-        // so retire its current status without recording a false completed
-        // session or confirming a pending viewer record.
-        upsertStreamerStatus({
-          streamerId: streamer.id,
-          isLive: false,
-          lastEndedAt: new Date(),
-          lastStartedAt: previous.startedAt,
-          lastMaxViewerCount: previous.maxViewerCount,
-        });
+      const selected = resolution.discovered;
+      const nextIds = new Set(selected.map(({ streamer }) => streamer.id));
+      const removed = this.streamers.filter(
+        (streamer) => streamer.discoverySource === "dgg" && !nextIds.has(streamer.id),
+      );
+      for (const streamer of removed) {
+        const previous = yield* getStreamerStatusEffect(streamer.id);
+        if (previous.isLive) {
+          // Leaving DGG's top set is not proof that the underlying stream ended,
+          // so retire its current status without recording a false completed
+          // session or confirming a pending viewer record.
+          const now = yield* Clock.currentTimeMillis;
+          yield* upsertStreamerStatusEffect({
+            streamerId: streamer.id,
+            isLive: false,
+            lastEndedAt: new Date(now),
+            lastStartedAt: previous.startedAt,
+            lastMaxViewerCount: previous.maxViewerCount,
+          });
+        }
+        this.unknownStreaks.delete(streamer.id);
+        this.titleDebouncer.clear(streamer.id);
+        this.metricsService.discardPendingPeaks(streamer.id);
+        for (const binding of streamer.bindings) {
+          this.dggStatuses.delete(canonicalBinding(binding.platform, binding.username));
+        }
+        if (this.intelligence) yield* this.intelligence.observeOffline(streamer.id);
       }
-      this.unknownStreaks.delete(streamer.id);
-      this.titleDebouncer.clear(streamer.id);
-      this.metricsService.discardPendingPeaks(streamer.id);
-      for (const binding of streamer.bindings) {
-        this.dggStatuses.delete(canonicalBinding(binding.platform, binding.username));
-      }
-      this.intelligence?.observeOffline(streamer.id);
-    }
 
-    this.dggStatuses.clear();
-    for (const entry of selected) {
-      const binding = entry.streamer.bindings[0];
-      if (binding) {
-        this.dggStatuses.set(
-          canonicalBinding(binding.platform, binding.username),
-          entry.status,
-        );
-      }
-    }
-    for (const entries of resolution.configuredSources.values()) {
-      for (const entry of entries) {
+      this.dggStatuses.clear();
+      for (const entry of selected) {
         const binding = entry.streamer.bindings[0];
         if (binding) {
           this.dggStatuses.set(
@@ -268,43 +326,72 @@ export default class LiveCheckTask extends ScheduledTask {
           );
         }
       }
-    }
-    const enrichedConfigured = this.configuredStreamers.map((streamer) => {
-      const dgg = resolution.configuredPresence.get(streamer.id);
-      const linkedBindings = (resolution.configuredSources.get(streamer.id) ?? [])
-        .flatMap((entry) => entry.streamer.bindings)
-        .filter(
-          (binding) =>
-            !streamer.bindings.some(
-              (existing) =>
-                canonicalBinding(existing.platform, existing.username) ===
-                canonicalBinding(binding.platform, binding.username),
-            ),
-        );
-      return dgg || linkedBindings.length > 0
-        ? { ...streamer, dgg, bindings: [...streamer.bindings, ...linkedBindings] }
-        : streamer;
-    });
-    this.streamers.splice(
-      0,
-      this.streamers.length,
-      ...enrichedConfigured,
-      ...selected.map(({ streamer }) => streamer),
-    );
-    this.streamersById = new Map(
-      this.streamers.map((streamer) => [streamer.id, streamer]),
-    );
+      for (const entries of resolution.configuredSources.values()) {
+        for (const entry of entries) {
+          const binding = entry.streamer.bindings[0];
+          if (binding) {
+            this.dggStatuses.set(
+              canonicalBinding(binding.platform, binding.username),
+              entry.status,
+            );
+          }
+        }
+      }
+      const enrichedConfigured = this.configuredStreamers.map((streamer) => {
+        const dgg = resolution.configuredPresence.get(streamer.id);
+        const linkedBindings = (resolution.configuredSources.get(streamer.id) ?? [])
+          .flatMap((entry) => entry.streamer.bindings)
+          .filter(
+            (binding) =>
+              !streamer.bindings.some(
+                (existing) =>
+                  canonicalBinding(existing.platform, existing.username) ===
+                  canonicalBinding(binding.platform, binding.username),
+              ),
+          );
+        return dgg || linkedBindings.length > 0
+          ? { ...streamer, dgg, bindings: [...streamer.bindings, ...linkedBindings] }
+          : streamer;
+      });
+      this.streamers.splice(
+        0,
+        this.streamers.length,
+        ...enrichedConfigured,
+        ...selected.map(({ streamer }) => streamer),
+      );
+      this.streamersById = new Map(
+        this.streamers.map((streamer) => [streamer.id, streamer]),
+      );
 
-    const summary = selected
-      .map(
-        ({ streamer }) =>
-          `${streamer.bindings[0]?.platform}:${streamer.bindings[0]?.username}${
-            streamer.dgg?.hosted ? " (hosted)" : ""
-          }`,
-      )
-      .join(", ");
-    this.logger.debug(
-      `Destiny.gg discovery selected ${selected.length}/${this.dggDiscovery.topEmbeds}${summary ? `: ${summary}` : ""}`,
+      const summary = selected
+        .map(
+          ({ streamer }) =>
+            `${streamer.bindings[0]?.platform}:${streamer.bindings[0]?.username}${
+              streamer.dgg?.hosted ? " (hosted)" : ""
+            }`,
+        )
+        .join(", ");
+      this.logger.debug(
+        `Destiny.gg discovery selected ${selected.length}/${discovery.topEmbeds}${summary ? `: ${summary}` : ""}`,
+      );
+    }).pipe(
+      Effect.catchAllCause((cause) => {
+        if (Cause.isInterrupted(cause)) return Effect.interrupt;
+        const failure = Cause.failureOption(cause);
+        if (Option.isSome(failure) && failure.value instanceof PersistenceError) {
+          return Effect.fail(failure.value);
+        }
+        return Effect.sync(() => {
+          const message = String(cause);
+          this.logger.warn(`Failed to refresh Destiny.gg embeds: ${message}`);
+          for (const binding of this.dggStatuses.keys()) {
+            this.dggStatuses.set(binding, {
+              status: LiveStatus.Unknown,
+              error: message,
+            });
+          }
+        });
+      }),
     );
   }
 
@@ -319,65 +406,86 @@ export default class LiveCheckTask extends ScheduledTask {
    * stays at warn/info for the same reason: those levels don't notify, so the
    * alert can't be delivered twice.
    */
-  private async reportOutage(): Promise<void> {
-    const alert = this.outageAlerter.evaluate(
-      [...this.unknownStreaks.values()],
-      this.streamers.length,
-      Date.now(),
-    );
-    if (!alert) return;
-
-    const line = `${alert.title}\n${alert.message}`;
-    if (alert.kind === "degraded") this.logger.warn(line);
-    else this.logger.info(line);
-
-    try {
-      await notify({ title: alert.title, message: alert.message });
-    } catch (error) {
-      // A failed send must not fail the run — the outage state has already
-      // advanced, so retrying this exact alert isn't possible anyway.
-      this.logger.error(
-        "Failed to send live-check outage notification",
-        (error as Error).message,
+  private reportOutage(): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      const alert = this.outageAlerter.evaluate(
+        [...this.unknownStreaks.values()],
+        this.streamers.length,
+        yield* Clock.currentTimeMillis,
       );
-    }
+      if (!alert) return;
+
+      const line = `${alert.title}\n${alert.message}`;
+      if (alert.kind === "degraded") this.logger.warn(line);
+      else this.logger.info(line);
+
+      yield* externalEffect("send live-check outage notification", () =>
+        notify({ title: alert.title, message: alert.message }),
+      ).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            // A failed send must not fail the run — the outage state has already
+            // advanced, so retrying this exact alert isn't possible anyway.
+            this.logger.error(
+              "Failed to send live-check outage notification",
+              error instanceof Error ? error.message : String(error),
+            );
+          }),
+        ),
+      );
+    });
   }
 
-  private async tickStreamer(streamer: Streamer): Promise<void> {
-    const results = await Promise.all(
-      streamer.bindings.map<Promise<BindingFetchResult>>(async (binding) => ({
-        binding,
-        status:
-          this.dggStatuses.get(canonicalBinding(binding.platform, binding.username)) ??
-          (await platformConfigs[binding.platform].fetchLiveStatus({
-            username: binding.username,
-          })),
-      })),
-    );
+  private tickStreamer(streamer: Streamer): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      const results = yield* Effect.forEach(
+        streamer.bindings,
+        (binding) => {
+          const discovered = this.dggStatuses.get(
+            canonicalBinding(binding.platform, binding.username),
+          );
+          const fetched =
+            discovered ??
+            platformConfigs[binding.platform].fetchLiveStatus({
+              username: binding.username,
+            });
+          const statusEffect = Effect.isEffect(fetched)
+            ? fetched
+            : fetched instanceof Promise
+              ? Effect.promise(() => fetched)
+              : Effect.succeed(fetched);
+          return statusEffect.pipe(
+            Effect.map((status): BindingFetchResult => ({ binding, status })),
+          );
+        },
+        { concurrency: "unbounded" },
+      );
 
-    for (const r of results) this.logBindingStatus(streamer.displayName, r);
+      for (const r of results) this.logBindingStatus(streamer.displayName, r);
 
-    const previous = getStreamerStatus(streamer.id);
-    const decision = decideTransition(streamer.id, previous, results);
+      const previous = yield* getStreamerStatusEffect(streamer.id);
+      const now = yield* Clock.currentTimeMillis;
+      const decision = decideTransition(streamer.id, previous, results, new Date(now));
 
-    if (decision.kind === "all-unknown") {
-      this.handleAllUnknown(streamer, decision.errors);
-      return;
-    }
-    this.clearUnknownStreak(streamer);
-    switch (decision.kind) {
-      case "no-change":
+      if (decision.kind === "all-unknown") {
+        this.handleAllUnknown(streamer, decision.errors);
         return;
-      case "went-live":
-        await this.handleWentLive(streamer, previous, decision);
-        return;
-      case "went-offline":
-        await this.handleWentOffline(streamer, decision.previousLive, decision.next);
-        return;
-      case "still-live":
-        await this.handleStillLive(streamer, decision);
-        return;
-    }
+      }
+      this.clearUnknownStreak(streamer);
+      switch (decision.kind) {
+        case "no-change":
+          return;
+        case "went-live":
+          yield* this.handleWentLive(streamer, previous, decision);
+          return;
+        case "went-offline":
+          yield* this.handleWentOffline(streamer, decision.previousLive, decision.next);
+          return;
+        case "still-live":
+          yield* this.handleStillLive(streamer, decision);
+          return;
+      }
+    });
   }
 
   private logBindingStatus(displayName: string, r: BindingFetchResult): void {
@@ -424,164 +532,199 @@ export default class LiveCheckTask extends ScheduledTask {
     }
   }
 
-  private async handleWentLive(
+  private handleWentLive(
     streamer: Streamer,
     previous: StreamerStatus,
     decision: Extract<TickDecision, { kind: "went-live" }>,
-  ): Promise<void> {
-    const { next, summedViewerCount } = decision;
-    this.logger.info(
-      `${streamer.displayName} is now LIVE (primary ${next.primary.platform}:${next.primary.username})`,
-    );
-
-    // The go-live notification below already carries the title, so it counts
-    // as the debouncer's baseline — a quick post-live title fix is held for
-    // the cooldown rather than notified separately.
-    this.titleDebouncer.seed(streamer.id, next.primaryTitle, Date.now());
-
-    if (this.notificationPermissions(streamer).wentLive) {
-      const message = buildLiveMessage(next.primaryTitle, previous);
-
-      await notify({
-        title: `${streamer.displayName} is LIVE!`,
-        message,
-        token: this.getPushoverToken(streamer.id),
-        ...getNotificationUrlFields(
-          next.primary.platform,
-          next.primary.username,
-          next.primary.urlOverride,
-        ),
-      });
-    }
-
-    upsertStreamerStatus(next);
-    await this.recordViewersIfAny(streamer, next, summedViewerCount);
-    this.intelligence?.observeLive({
-      streamer,
-      status: next,
-      wentLive: true,
-      titleChanged: false,
-    });
-  }
-
-  private async handleStillLive(
-    streamer: Streamer,
-    decision: Extract<TickDecision, { kind: "still-live" }>,
-  ): Promise<void> {
-    const { next, summedViewerCount, titleChanged, primarySwitched } = decision;
-
-    if (primarySwitched) {
+  ): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      const { next, summedViewerCount } = decision;
+      const now = yield* Clock.currentTimeMillis;
       this.logger.info(
-        `${streamer.displayName} primary switched to ${next.primary.platform}:${next.primary.username}`,
+        `${streamer.displayName} is now LIVE (primary ${next.primary.platform}:${next.primary.username})`,
       );
-      // A title held from the old primary must not survive to be notified
-      // under the new one — decideTransition never sets titleChanged on a
-      // switch, so nothing else would otherwise clear it.
-      this.titleDebouncer.clear(streamer.id);
-    }
 
-    if (titleChanged) {
-      this.logger.info(`${streamer.displayName} changed title`);
-    }
+      // The go-live notification below already carries the title, so it counts
+      // as the debouncer's baseline — a quick post-live title fix is held for
+      // the cooldown rather than notified separately.
+      this.titleDebouncer.seed(streamer.id, next.primaryTitle, now);
 
-    // Observed on every still-live tick, not just when the title changed —
-    // a title held from an earlier tick needs the chance to fire once its
-    // cooldown expires even on a tick with no change of its own.
-    if (this.notificationPermissions(streamer).titleChange) {
-      const debounced = this.titleDebouncer.observe(streamer.id, {
-        currentTitle: next.primaryTitle,
-        titleChanged,
-        now: Date.now(),
-      });
-      if (debounced.action === "notify") {
-        await notify({
-          title: `${streamer.displayName} changed title`,
-          message: debounced.title,
-          token: this.getPushoverToken(streamer.id),
-          ...getNotificationUrlFields(
-            next.primary.platform,
-            next.primary.username,
-            next.primary.urlOverride,
-          ),
+      // Persist the observed edge before any notification. A delivery failure
+      // must not make the next tick rediscover the same edge and send it twice.
+      yield* upsertStreamerStatusEffect(next);
+
+      if (this.notificationPermissions(streamer).wentLive) {
+        const message = buildLiveMessage(next.primaryTitle, previous, now);
+
+        yield* externalEffect("send went-live notification", () =>
+          notify({
+            title: `${streamer.displayName} is LIVE!`,
+            message,
+            token: this.getPushoverToken(streamer.id),
+            ...getNotificationUrlFields(
+              next.primary.platform,
+              next.primary.username,
+              next.primary.urlOverride,
+            ),
+          }),
+        );
+      }
+
+      yield* this.recordViewersIfAny(streamer, next, summedViewerCount);
+      if (this.intelligence) {
+        yield* this.intelligence.observeLive({
+          streamer,
+          status: next,
+          wentLive: true,
+          titleChanged: false,
         });
       }
-    }
-
-    upsertStreamerStatus(next);
-    await this.recordViewersIfAny(streamer, next, summedViewerCount);
-    this.intelligence?.observeLive({
-      streamer,
-      status: next,
-      wentLive: false,
-      titleChanged,
     });
   }
 
-  private async handleWentOffline(
+  private handleStillLive(
+    streamer: Streamer,
+    decision: Extract<TickDecision, { kind: "still-live" }>,
+  ): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      const { next, summedViewerCount, titleChanged, primarySwitched } = decision;
+      const now = yield* Clock.currentTimeMillis;
+
+      if (primarySwitched) {
+        this.logger.info(
+          `${streamer.displayName} primary switched to ${next.primary.platform}:${next.primary.username}`,
+        );
+        // A title held from the old primary must not survive to be notified
+        // under the new one — decideTransition never sets titleChanged on a
+        // switch, so nothing else would otherwise clear it.
+        this.titleDebouncer.clear(streamer.id);
+      }
+
+      if (titleChanged) {
+        this.logger.info(`${streamer.displayName} changed title`);
+      }
+
+      // The observation is authoritative even when a later notification fails.
+      yield* upsertStreamerStatusEffect(next);
+
+      // Observed on every still-live tick, not just when the title changed —
+      // a title held from an earlier tick needs the chance to fire once its
+      // cooldown expires even on a tick with no change of its own.
+      if (this.notificationPermissions(streamer).titleChange) {
+        const debounced = this.titleDebouncer.observe(streamer.id, {
+          currentTitle: next.primaryTitle,
+          titleChanged,
+          now,
+        });
+        if (debounced.action === "notify") {
+          yield* externalEffect("send title-change notification", () =>
+            notify({
+              title: `${streamer.displayName} changed title`,
+              message: debounced.title,
+              token: this.getPushoverToken(streamer.id),
+              ...getNotificationUrlFields(
+                next.primary.platform,
+                next.primary.username,
+                next.primary.urlOverride,
+              ),
+            }),
+          );
+        }
+      }
+
+      yield* this.recordViewersIfAny(streamer, next, summedViewerCount);
+      if (this.intelligence) {
+        yield* this.intelligence.observeLive({
+          streamer,
+          status: next,
+          wentLive: false,
+          titleChanged,
+        });
+      }
+    });
+  }
+
+  private handleWentOffline(
     streamer: Streamer,
     previousLive: StreamerStatusLive,
     next: StreamerStatusOffline,
-  ): Promise<void> {
-    this.logger.info(`${streamer.displayName} is now offline`);
-    this.titleDebouncer.clear(streamer.id);
+  ): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      const now = yield* Clock.currentTimeMillis;
+      this.logger.info(`${streamer.displayName} is now offline`);
+      this.titleDebouncer.clear(streamer.id);
 
-    recordCompletedSession(previousLive, new Date(next.lastEndedAt ?? Date.now()));
-
-    await this.metricsService.flushPendingPeaks({
-      streamerId: streamer.id,
-      displayName: streamer.displayName,
-      urlFields: getNotificationUrlFields(
-        previousLive.primary.platform,
-        previousLive.primary.username,
-        previousLive.primary.urlOverride,
-      ),
-    });
-
-    if (this.notificationPermissions(streamer).wentOffline) {
-      const duration = formatDistance(new Date(), previousLive.startedAt);
-      const baseText = `Streamed for ${duration}`;
-      const message =
-        previousLive.maxViewerCount > 0
-          ? `${baseText} with ${formatCount(previousLive.maxViewerCount)}.`
-          : `${baseText}.`;
-
-      await notify({
-        title: `${streamer.displayName} is now offline`,
-        message,
-        token: this.getPushoverToken(streamer.id),
+      yield* this.metricsService.flushPendingPeaksEffect({
+        streamerId: streamer.id,
+        displayName: streamer.displayName,
+        urlFields: getNotificationUrlFields(
+          previousLive.primary.platform,
+          previousLive.primary.username,
+          previousLive.primary.urlOverride,
+        ),
       });
-    }
 
-    upsertStreamerStatus(next);
-    this.intelligence?.observeOffline(streamer.id);
+      if (this.notificationPermissions(streamer).wentOffline) {
+        const duration = formatDistance(new Date(now), previousLive.startedAt);
+        const baseText = `Streamed for ${duration}`;
+        const message =
+          previousLive.maxViewerCount > 0
+            ? `${baseText} with ${formatCount(previousLive.maxViewerCount)}.`
+            : `${baseText}.`;
+
+        yield* externalEffect("send went-offline notification", () =>
+          notify({
+            title: `${streamer.displayName} is now offline`,
+            message,
+            token: this.getPushoverToken(streamer.id),
+          }),
+        );
+      }
+
+      // Keep the durable live state as the retry marker until the offline alert
+      // has been delivered. If Pushover fails, the next confirmed-offline tick
+      // retries the alert instead of losing it. The session is closed only after
+      // delivery, so retries cannot append duplicate completed sessions.
+      yield* recordCompletedSessionEffect(
+        previousLive,
+        new Date(next.lastEndedAt ?? now),
+      );
+      yield* upsertStreamerStatusEffect(next);
+
+      if (this.intelligence) yield* this.intelligence.observeOffline(streamer.id);
+    });
   }
 
-  private async recordViewersIfAny(
+  private recordViewersIfAny(
     streamer: Streamer,
     status: StreamerStatusLive,
     summedViewerCount: number,
-  ): Promise<void> {
-    if (summedViewerCount > 0) {
-      await this.metricsService.recordViewerCount({
-        streamerId: streamer.id,
-        displayName: streamer.displayName,
-        viewerCount: summedViewerCount,
-        urlFields: getNotificationUrlFields(
-          status.primary.platform,
-          status.primary.username,
-          status.primary.urlOverride,
-        ),
-      });
-    }
-    for (const source of status.sources ?? []) {
-      if (!source.viewerCount || source.viewerCount <= 0) continue;
-      recordPlatformViewerCount({
-        streamerId: streamer.id,
-        platform: source.platform,
-        username: source.username,
-        viewerCount: source.viewerCount,
-      });
-    }
+  ): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      const now = yield* Clock.currentTimeMillis;
+      if (summedViewerCount > 0) {
+        yield* this.metricsService.recordViewerCountEffect({
+          streamerId: streamer.id,
+          displayName: streamer.displayName,
+          viewerCount: summedViewerCount,
+          urlFields: getNotificationUrlFields(
+            status.primary.platform,
+            status.primary.username,
+            status.primary.urlOverride,
+          ),
+        });
+      }
+      for (const source of status.sources ?? []) {
+        if (!source.viewerCount || source.viewerCount <= 0) continue;
+        yield* recordPlatformViewerCountEffect({
+          streamerId: streamer.id,
+          platform: source.platform,
+          username: source.username,
+          viewerCount: source.viewerCount,
+          now: new Date(now),
+        });
+      }
+    });
   }
 
   private notificationPermissions(streamer: Streamer): NotificationPermissions {
@@ -607,11 +750,15 @@ function formatCount(count: number): string {
   return `${count.toLocaleString()} viewers`;
 }
 
-function buildLiveMessage(primaryTitle: string, previous: StreamerStatus): string {
+function buildLiveMessage(
+  primaryTitle: string,
+  previous: StreamerStatus,
+  now: number,
+): string {
   if (previous.isLive || !previous.lastEndedAt || !previous.lastStartedAt) {
     return primaryTitle;
   }
-  const ago = formatDistanceToNow(previous.lastEndedAt);
+  const ago = formatDistance(previous.lastEndedAt, new Date(now));
   const duration = formatDistance(previous.lastEndedAt, previous.lastStartedAt);
   const suffix = previous.lastMaxViewerCount
     ? `Last live ${ago} ago for ${duration} with ${formatCount(previous.lastMaxViewerCount)}.`

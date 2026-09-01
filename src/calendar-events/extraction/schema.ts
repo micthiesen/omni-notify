@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Schema } from "effect";
 
 // OpenAI strict structured outputs require every object property to appear in
 // `required`. Represent optional values as nullable in JSON, then normalize
@@ -94,3 +95,30 @@ export type ExtractedCalendarEvent = Omit<
 export interface CalendarEventExtraction {
   events: ExtractedCalendarEvent[];
 }
+
+const OptionalString = Schema.optional(Schema.String);
+export const CalendarEventExtractionEffectSchema = Schema.Struct({
+  events: Schema.Array(
+    Schema.Struct({
+      action: Schema.Literal("create", "cancel", "update"),
+      eventId: OptionalString,
+      title: Schema.String,
+      startDate: Schema.String,
+      endDate: OptionalString,
+      startTime: OptionalString,
+      endTime: OptionalString,
+      duration: OptionalString,
+      location: OptionalString,
+      description: OptionalString,
+      timeZone: OptionalString,
+      recurrence: Schema.optional(
+        Schema.Struct({
+          frequency: Schema.Literal("daily", "weekly", "monthly"),
+          until: Schema.String,
+        }),
+      ),
+      allDay: Schema.Boolean,
+      reminderMinutes: Schema.optional(Schema.Number),
+    }),
+  ),
+});

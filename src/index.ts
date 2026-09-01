@@ -2,6 +2,7 @@ import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Scheduler } from "@micthiesen/mitools/scheduling";
+import { Effect, Fiber, Schedule } from "effect";
 import { installAlertThrottle } from "./alerts/throttle.js";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
@@ -37,21 +38,25 @@ import PressPodsTask from "./press-pods/task.js";
 import { MediaRecommendationTask } from "./recommendations/task.js";
 import { MediaTasteReflectionTask } from "./recommendations/taste/task.js";
 import { type EmailControls, startServer } from "./server.js";
-import { taskRunBus } from "./task-runs/events.js";
 import { installLogCapture } from "./task-runs/logCapture.js";
-import { TaskAlreadyRunningError, TaskRegistry } from "./task-runs/registry.js";
+import { TaskRegistry } from "./task-runs/registry.js";
 import config from "./utils/config.js";
 import { workspaceDefinitions } from "./workspaces/definitions.js";
 import { WorkspaceEmailHandler } from "./workspaces/email.js";
+import { WorkspaceOperationError } from "./workspaces/errors.js";
 import { WorkspaceNotificationTask } from "./workspaces/notifications.js";
 import { WorkspaceTask } from "./workspaces/task.js";
+import { fromPromise, runPromise } from "./effect/interop.js";
+import { IntegrationError } from "./effect/errors.js";
 
 Injector.configure({ config });
 installLogCapture();
 installAlertThrottle();
 
 const logger = new Logger("Main");
-const livestreamIntelligence = createLivestreamIntelligenceService(logger);
+const livestreamIntelligence = await runPromise(
+  createLivestreamIntelligenceService(logger),
+);
 const importedCostEvents = importHistoricalCosts();
 if (importedCostEvents > 0) {
   logger.info(`Imported ${importedCostEvents} historical cost event(s)`);
@@ -169,7 +174,9 @@ function buildTasks(
   return tasks;
 }
 
-function createIOSControlService(streamers: Streamer[]): IOSControlService {
+function createIOSControlServiceEffect(
+  streamers: Streamer[],
+): Effect.Effect<IOSControlService> {
   const apnsValues = [
     config.IOS_CONTROL_APNS_TEAM_ID,
     config.IOS_CONTROL_APNS_KEY_ID,
@@ -177,30 +184,37 @@ function createIOSControlService(streamers: Streamer[]): IOSControlService {
   ];
   const hasAnyApnsConfig = apnsValues.some(Boolean);
   const hasCompleteApnsConfig = apnsValues.every(Boolean);
-  if (hasAnyApnsConfig && !hasCompleteApnsConfig) {
-    logger.warn(
-      "iOS control APNs pushes disabled: team ID, key ID, and key path must all be set",
-    );
-  }
-  let apns: ApnsControlClient | undefined;
-  if (hasCompleteApnsConfig && config.IOS_CONTROL_AUTH_TOKEN) {
-    try {
-      apns = new ApnsControlClient({
+  return Effect.gen(function* () {
+    if (hasAnyApnsConfig && !hasCompleteApnsConfig) {
+      logger.warn(
+        "iOS control APNs pushes disabled: team ID, key ID, and key path must all be set",
+      );
+    }
+    let apns: ApnsControlClient | undefined;
+    if (hasCompleteApnsConfig && config.IOS_CONTROL_AUTH_TOKEN) {
+      apns = yield* ApnsControlClient.createEffect({
         teamId: config.IOS_CONTROL_APNS_TEAM_ID as string,
         keyId: config.IOS_CONTROL_APNS_KEY_ID as string,
         privateKeyPath: config.IOS_CONTROL_APNS_KEY_PATH as string,
         bundleId: config.IOS_CONTROL_BUNDLE_ID,
-      });
-    } catch (error) {
-      logger.warn(
-        `iOS control APNs pushes disabled: failed to load signing key (${error instanceof Error ? error.message : "unknown error"})`,
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            logger.warn(
+              `iOS control APNs pushes disabled: failed to load signing key (${error.message})`,
+            );
+            return undefined;
+          }),
+        ),
       );
     }
-  }
-  if (hasCompleteApnsConfig && !config.IOS_CONTROL_AUTH_TOKEN) {
-    logger.warn("iOS control APNs pushes disabled: IOS_CONTROL_AUTH_TOKEN is not set");
-  }
-  return new IOSControlService(streamers, config.IOS_CONTROL_HOME_URL, logger, apns);
+    if (hasCompleteApnsConfig && !config.IOS_CONTROL_AUTH_TOKEN) {
+      logger.warn(
+        "iOS control APNs pushes disabled: IOS_CONTROL_AUTH_TOKEN is not set",
+      );
+    }
+    return new IOSControlService(streamers, config.IOS_CONTROL_HOME_URL, logger, apns);
+  });
 }
 
 // --run-task <name>: run a single task once and exit
@@ -214,7 +228,9 @@ if (runTaskIndex !== -1) {
 
   const loadedLiveCheck = loadStreamers();
   const oneOffStreamers = loadedLiveCheck.streamers;
-  const oneOffControls = createIOSControlService(oneOffStreamers);
+  const oneOffControls = await runPromise(
+    createIOSControlServiceEffect(oneOffStreamers),
+  );
   const tasks = buildTasks(
     oneOffStreamers,
     oneOffControls,
@@ -232,7 +248,9 @@ if (runTaskIndex !== -1) {
   try {
     await task.run();
   } finally {
-    await livestreamIntelligence?.close();
+    if (livestreamIntelligence) {
+      await runPromise(livestreamIntelligence.close());
+    }
     oneOffControls.close();
   }
   logger.info(`Task "${task.name}" complete`);
@@ -245,50 +263,44 @@ const serverOnly = process.argv.includes("--server-only");
 const registry = new TaskRegistry(logger);
 const loadedLiveCheck = loadStreamers();
 const streamers = loadedLiveCheck.streamers;
-const iosControls = createIOSControlService(streamers);
-const pendingWorkspaceEmailRuns = new Map<
-  string,
-  { workspaceId: string; subjectId: string; message: string }
->();
-
+const iosControls = await runPromise(createIOSControlServiceEffect(streamers));
 function requestWorkspaceEmailRun(
   workspaceId: string,
   subjectId: string,
   message: string,
   trigger: "email" = "email",
-): void {
+): Effect.Effect<void, WorkspaceOperationError> {
   const definition = workspaceDefinitions.find((item) => item.id === workspaceId);
-  if (!definition) return;
-  const key = `${workspaceId}:${subjectId}`;
-  try {
-    registry.runNow(definition.taskName, {
+  if (!definition) {
+    return Effect.fail(
+      new WorkspaceOperationError({
+        operation: "resolve email-triggered workspace",
+        cause: new Error(`Unknown workspace ${workspaceId}`),
+      }),
+    );
+  }
+  return registry
+    .runNowAndWaitEffect(definition.taskName, {
       message,
       subjectId,
       trigger,
-    });
-    pendingWorkspaceEmailRuns.delete(key);
-  } catch (error) {
-    if (!(error instanceof TaskAlreadyRunningError)) throw error;
-    pendingWorkspaceEmailRuns.set(key, { workspaceId, subjectId, message });
-    logger.info(
-      `Queued a follow-up workspace email run for ${workspaceId}/${subjectId}`,
+    })
+    .pipe(
+      Effect.mapError(
+        (cause) =>
+          new WorkspaceOperationError({
+            operation: "run email-triggered workspace",
+            cause,
+          }),
+      ),
+      Effect.tap(() =>
+        Effect.sync(() =>
+          logger.info(`Completed workspace email run for ${workspaceId}/${subjectId}`),
+        ),
+      ),
+      Effect.asVoid,
     );
-  }
 }
-
-const unsubscribeWorkspaceEmailRuns = taskRunBus.subscribe((event) => {
-  if (event.type !== "run-finished") return;
-  const definition = workspaceDefinitions.find(
-    (item) => item.taskName === event.taskName,
-  );
-  if (!definition) return;
-  setTimeout(() => {
-    for (const pending of Array.from(pendingWorkspaceEmailRuns.values())) {
-      if (pending.workspaceId !== definition.id) continue;
-      requestWorkspaceEmailRun(pending.workspaceId, pending.subjectId, pending.message);
-    }
-  }, 50);
-});
 
 // Filled in once the email features start; powers the reprocess endpoint.
 const emailControls: EmailControls = {};
@@ -304,7 +316,8 @@ const closeServer = startServer(
   livestreamIntelligence,
 );
 
-let cleanupEmailTransport: (() => void) | undefined;
+let cleanupEmailTransportEffect: Effect.Effect<void, never> | undefined;
+let emailStartupFiber: Fiber.RuntimeFiber<void, unknown> | undefined;
 
 if (!serverOnly) {
   const scheduler = new Scheduler(logger);
@@ -324,7 +337,7 @@ if (!serverOnly) {
   if (config.EMAIL_TRANSPORT) {
     scheduler.register(registry.track(new EmailWatchdogTask(logger)));
     scheduler.register(registry.track(new EmailRetryTask(() => emailControls, logger)));
-    void startEmailWithRetry(logger);
+    emailStartupFiber = Effect.runFork(startEmailWithRetryEffect(logger));
   } else {
     logger.info(
       "Email features disabled: no transport configured " +
@@ -334,37 +347,67 @@ if (!serverOnly) {
 
   // Start scheduler (runs opted-in tasks immediately, then all tasks on schedule)
   scheduler.start();
-  const recoveryPromise = registry.recoverMissedTasks().catch((error) => {
-    logger.error("Failed to recover missed task runs", error);
-  });
+  const recoveryFiber = Effect.runFork(
+    registry
+      .recoverMissedTasksEffect()
+      .pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.sync(() => logger.error("Failed to recover missed task runs", cause)),
+        ),
+      ),
+  );
 
   // Graceful shutdown handling
   let isShuttingDown = false;
 
-  async function shutdown(signal: string): Promise<void> {
-    if (isShuttingDown) return;
-    isShuttingDown = true;
-
-    logger.info(`Received ${signal}, shutting down gracefully...`);
-    await closeServer();
-    cleanupEmailTransport?.();
-    iosControls.close();
-    unsubscribeWorkspaceEmailRuns();
-    await scheduler.shutdown();
-    await livestreamIntelligence?.close();
-    await recoveryPromise;
-    logger.info("Shutdown complete");
-    process.exit(0);
+  function shutdownEffect(signal: string): Effect.Effect<void> {
+    return Effect.suspend(() => {
+      if (isShuttingDown) return Effect.void;
+      isShuttingDown = true;
+      logger.info(`Received ${signal}, shutting down gracefully...`);
+      const safely = (name: string, effect: Effect.Effect<unknown, unknown>) =>
+        effect.pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.sync(() => logger.error(`${name} shutdown failed`, cause)),
+          ),
+        );
+      return Effect.all(
+        [
+          safely("HTTP server", fromPromise("close HTTP server", closeServer)),
+          emailStartupFiber
+            ? safely("email startup", Fiber.interrupt(emailStartupFiber))
+            : Effect.void,
+          safely("email transport", cleanupEmailTransportEffect ?? Effect.void),
+          safely(
+            "iOS controls",
+            Effect.sync(() => iosControls.close()),
+          ),
+          safely(
+            "scheduler",
+            fromPromise("stop scheduler", () => scheduler.shutdown()),
+          ),
+          safely("manual task runs", registry.shutdownEffect()),
+          livestreamIntelligence
+            ? safely("livestream intelligence", livestreamIntelligence.close())
+            : Effect.void,
+          safely("task recovery", Fiber.interrupt(recoveryFiber)),
+        ],
+        { concurrency: "unbounded", discard: true },
+      ).pipe(
+        Effect.tap(() => Effect.sync(() => logger.info("Shutdown complete"))),
+        Effect.tap(() => Effect.sync(() => process.exit(0))),
+      );
+    });
   }
 
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
-  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => void runPromise(shutdownEffect("SIGTERM")));
+  process.on("SIGINT", () => void runPromise(shutdownEffect("SIGINT")));
 } else {
   logger.info("Running in server-only mode (tasks disabled)");
 }
 
 interface EmailFeatures {
-  cleanup: () => void;
+  cleanupEffect: Effect.Effect<void, never>;
   transport: EmailTransport;
   handlers: Map<string, EmailHandler>;
 }
@@ -376,86 +419,127 @@ interface EmailFeatures {
  * only the first failure alerts (errors reach Pushover), and the watchdog
  * covers the prolonged-outage case.
  */
-async function startEmailWithRetry(parentLogger: Logger): Promise<void> {
-  const maxDelayMs = 5 * 60_000;
-  for (let attempt = 1; ; attempt++) {
-    try {
-      const email = await startEmailFeatures(parentLogger);
-      if (email) {
-        cleanupEmailTransport = email.cleanup;
-        emailControls.transport = email.transport;
-        emailControls.handlers = email.handlers;
-      }
-      return;
-    } catch (error) {
-      const delayMs = Math.min(30_000 * 2 ** (attempt - 1), maxDelayMs);
-      const message = `Failed to start email features (attempt ${attempt}), retrying in ${Math.round(delayMs / 1000)}s`;
-      if (attempt === 1) {
-        parentLogger.error(message, (error as Error).message);
-      } else {
-        parentLogger.info(`${message}: ${(error as Error).message}`);
-      }
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-    }
-  }
+function startEmailWithRetryEffect(parentLogger: Logger): Effect.Effect<void, never> {
+  let attempt = 0;
+  return startEmailFeaturesEffect(parentLogger).pipe(
+    Effect.tap((email) =>
+      Effect.sync(() => {
+        if (email) {
+          cleanupEmailTransportEffect = email.cleanupEffect;
+          emailControls.transport = email.transport;
+          emailControls.handlers = email.handlers;
+        }
+      }),
+    ),
+    Effect.tapError((error) =>
+      Effect.sync(() => {
+        attempt += 1;
+        const delaySeconds = Math.min(30 * 2 ** (attempt - 1), 300);
+        const message = `Failed to start email features (attempt ${attempt}), retrying in ${delaySeconds}s`;
+        if (attempt === 1) {
+          parentLogger.error(message, error.message);
+        } else {
+          parentLogger.info(`${message}: ${error.message}`);
+        }
+      }),
+    ),
+    Effect.retry(
+      Schedule.union(Schedule.exponential("30 seconds"), Schedule.spaced("5 minutes")),
+    ),
+    Effect.asVoid,
+    Effect.catchAll((error) =>
+      Effect.sync(() => parentLogger.error("Email startup stopped", error)),
+    ),
+  );
 }
 
-async function createEmailTransport(
+function createEmailTransportEffect(
   logger: Logger,
-): Promise<EmailTransport | undefined> {
+): Effect.Effect<
+  EmailTransport | undefined,
+  import("./effect/errors.js").IntegrationError
+> {
   switch (config.EMAIL_TRANSPORT) {
     case "fastmail":
-      if (!config.FASTMAIL_API_TOKEN) return undefined;
-      return JmapTransport.create(config.FASTMAIL_API_TOKEN, logger.extend("JMAP"));
+      if (!config.FASTMAIL_API_TOKEN) return Effect.succeed(undefined);
+      return JmapTransport.createEffect(
+        config.FASTMAIL_API_TOKEN,
+        logger.extend("JMAP"),
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new IntegrationError({
+              operation: "create JMAP transport",
+              cause,
+            }),
+        ),
+      );
     case "icloud":
-      if (!config.ICLOUD_USERNAME || !config.ICLOUD_APP_PASSWORD) return undefined;
-      return new ImapTransport(
-        { user: config.ICLOUD_USERNAME, pass: config.ICLOUD_APP_PASSWORD },
-        logger.extend("IMAP"),
+      if (!config.ICLOUD_USERNAME || !config.ICLOUD_APP_PASSWORD) {
+        return Effect.succeed(undefined);
+      }
+      return Effect.succeed(
+        new ImapTransport(
+          { user: config.ICLOUD_USERNAME, pass: config.ICLOUD_APP_PASSWORD },
+          logger.extend("IMAP"),
+        ),
       );
     default:
-      return undefined;
+      return Effect.succeed(undefined);
   }
 }
 
-async function startEmailFeatures(
+function startEmailFeaturesEffect(
   parentLogger: Logger,
-): Promise<EmailFeatures | undefined> {
-  const emailLogger = parentLogger.extend("Email");
-  const transport = await createEmailTransport(parentLogger);
-  if (!transport) return undefined;
+): Effect.Effect<
+  EmailFeatures | undefined,
+  import("./effect/errors.js").IntegrationError
+> {
+  return Effect.gen(function* () {
+    const emailLogger = parentLogger.extend("Email");
+    const transport = yield* createEmailTransportEffect(parentLogger);
+    if (!transport) return undefined;
 
-  // Create dispatcher and register handlers; one shared triage service so
-  // concurrent pipelines classify each email with a single model call.
-  const dispatcher = new EmailDispatcher(transport, emailLogger);
-  const triage = new EmailTriageService(emailLogger.extend("Triage"));
+    // Create dispatcher and register handlers; one shared triage service so
+    // concurrent pipelines classify each email with a single model call.
+    const dispatcher = new EmailDispatcher(transport, emailLogger);
+    const triage = new EmailTriageService(emailLogger.extend("Triage"));
 
-  const parcel = createParcelHandler(parentLogger, triage);
-  if (parcel) dispatcher.register(parcel);
+    const parcel = createParcelHandler(parentLogger, triage);
+    if (parcel) dispatcher.register(parcel);
 
-  const calendar = createCalendarHandler(transport, parentLogger, triage);
-  if (calendar) dispatcher.register(calendar);
+    const calendar = createCalendarHandler(transport, parentLogger, triage);
+    if (calendar) dispatcher.register(calendar);
 
-  const workspaces = new WorkspaceEmailHandler(
-    (workspaceId, subjectId, message, trigger) =>
-      requestWorkspaceEmailRun(workspaceId, subjectId, message, trigger),
-    emailLogger.extend("Workspaces"),
-  );
-  dispatcher.register(workspaces);
+    const workspaces = new WorkspaceEmailHandler(
+      (workspaceId, subjectId, message, trigger) =>
+        requestWorkspaceEmailRun(workspaceId, subjectId, message, trigger),
+      emailLogger.extend("Workspaces"),
+    );
+    dispatcher.register(workspaces);
 
-  if (dispatcher.handlerCount === 0) {
-    emailLogger.info("No email pipelines active");
-    return undefined;
-  }
+    if (dispatcher.handlerCount === 0) {
+      emailLogger.info("No email pipelines active");
+      return undefined;
+    }
 
-  const handlers = new Map<string, EmailHandler>();
-  if (parcel) handlers.set(parcel.name, parcel);
-  if (calendar) handlers.set(calendar.name, calendar);
-  handlers.set(workspaces.name, workspaces);
+    const handlers = new Map<string, EmailHandler>();
+    if (parcel) handlers.set(parcel.name, parcel);
+    if (calendar) handlers.set(calendar.name, calendar);
+    handlers.set(workspaces.name, workspaces);
 
-  await transport.start(() => dispatcher.onMailEvent());
-  emailLogger.info(
-    `Started ${transport.name} transport with ${dispatcher.handlerCount} pipeline(s)`,
-  );
-  return { cleanup: () => transport.stop(), transport, handlers };
+    yield* dispatcher.startEffect.pipe(
+      Effect.mapError(
+        (cause) =>
+          new IntegrationError({
+            operation: "start email transport",
+            cause,
+          }),
+      ),
+    );
+    emailLogger.info(
+      `Started ${transport.name} transport with ${dispatcher.handlerCount} pipeline(s)`,
+    );
+    return { cleanupEffect: dispatcher.stopEffect, transport, handlers };
+  });
 }

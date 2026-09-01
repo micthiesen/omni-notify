@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
+import { transaction } from "@micthiesen/mitools/docstore";
 import type {
   WorkspaceActionStatus,
   WorkspaceActionType,
@@ -52,6 +53,7 @@ export interface WorkspaceSourceData {
   emailId?: string;
   createdAt: number;
   runId?: string;
+  triggeredAt?: number;
 }
 
 export interface WorkspaceActionData {
@@ -108,7 +110,7 @@ export interface WorkspaceNotificationData {
   message: string;
   url: string;
   urlTitle: string;
-  status: "pending" | "sent";
+  status: "pending" | "sending" | "sent" | "unknown";
   attempts: number;
   createdAt: number;
   nextAttemptAt: number;
@@ -155,6 +157,11 @@ export const WorkspaceNotificationEntity = new Entity<
   WorkspaceNotificationData,
   ["notificationId"]
 >("workspace-notification", ["notificationId"]);
+
+/** Keep a complete workspace output commit in one SQLite transaction. */
+export function applyWorkspaceTransaction<A>(apply: () => A): A {
+  return transaction(apply);
+}
 
 export function listWorkspaceSubjects(workspaceId: string): WorkspaceSubjectData[] {
   return WorkspaceSubjectEntity.getAll()
@@ -289,6 +296,19 @@ export function addWorkspaceSource(
 
 export function getWorkspaceSource(sourceId: string): WorkspaceSourceData | undefined {
   return WorkspaceSourceEntity.get({ sourceId });
+}
+
+export function markWorkspaceSourceTriggered(sourceId: string): void {
+  WorkspaceSourceEntity.patch({ sourceId }, { triggeredAt: Date.now() });
+}
+
+export function markWorkspaceSourcesTriggered(sourceIds: string[]): void {
+  const triggeredAt = Date.now();
+  transaction(() => {
+    for (const sourceId of sourceIds) {
+      WorkspaceSourceEntity.patch({ sourceId }, { triggeredAt });
+    }
+  });
 }
 
 export function listWorkspaceSources(
@@ -486,7 +506,8 @@ export function listDueWorkspaceNotifications(
   return WorkspaceNotificationEntity.getAll()
     .filter(
       (notification) =>
-        notification.status === "pending" && notification.nextAttemptAt <= now,
+        notification.status === "sending" ||
+        (notification.status === "pending" && notification.nextAttemptAt <= now),
     )
     .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)
     .slice(0, limit);
@@ -496,6 +517,27 @@ export function markWorkspaceNotificationSent(notificationId: string): void {
   WorkspaceNotificationEntity.patch(
     { notificationId },
     { status: "sent", sentAt: Date.now(), lastError: undefined },
+  );
+}
+
+/** Reserve one at-most-once provider attempt before leaving SQLite. */
+export function markWorkspaceNotificationSending(
+  notificationId: string,
+  attempts: number,
+): void {
+  WorkspaceNotificationEntity.patch(
+    { notificationId },
+    { status: "sending", attempts, lastError: undefined },
+  );
+}
+
+export function markWorkspaceNotificationUnknown(notificationId: string): void {
+  WorkspaceNotificationEntity.patch(
+    { notificationId },
+    {
+      status: "unknown",
+      lastError: "Provider attempt outcome is unknown; suppressed automatic resend",
+    },
   );
 }
 
@@ -511,6 +553,7 @@ export function markWorkspaceNotificationFailed(
   WorkspaceNotificationEntity.patch(
     { notificationId },
     {
+      status: "pending",
       attempts,
       lastError: error,
       nextAttemptAt: Date.now() + delayMs,

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { z } from "zod";
 import { CostEventEntity, getCostEvents } from "../../costs/persistence.js";
 import { summarizeCosts } from "../../costs/summary.js";
@@ -34,17 +35,20 @@ import {
   PressPodsJobEntity,
   requeueJobNow,
 } from "../../press-pods/persistence.js";
-import { assertPublicHttpUrl } from "../../press-pods/publicHttp.js";
+import { assertPublicHttpUrlEffect } from "../../press-pods/publicHttp.js";
 import {
   checkpointWorkId,
   clearChunkCheckpoints,
   deleteEpisodeAudio,
 } from "../../press-pods/storage.js";
-import { submitEpisodeSchema, submitEpisodeUrl } from "../../press-pods/submit.js";
 import {
-  fetchInProgress,
-  fetchLibraryIndex,
-  fetchWatchHistory,
+  submitEpisodeSchema,
+  submitEpisodeUrlEffect,
+} from "../../press-pods/submit.js";
+import {
+  fetchInProgressEffect,
+  fetchLibraryIndexEffect,
+  fetchWatchHistoryEffect,
 } from "../../recommendations/mediaLibrary.js";
 import {
   getAllRecommendations,
@@ -56,11 +60,11 @@ import {
   getLatestTasteProfile,
 } from "../../recommendations/taste/persistence.js";
 import {
-  discoverTitles,
-  fetchTitleDetails,
-  fetchTrending,
+  discoverTitlesEffect,
+  fetchTitleDetailsEffect,
+  fetchTrendingEffect,
   getTmdbUrl,
-  searchTitles,
+  searchTitlesEffect,
 } from "../../recommendations/tmdb/client.js";
 import {
   type InProgressItem,
@@ -68,7 +72,10 @@ import {
   MediaType,
   type WatchedItem,
 } from "../../recommendations/types.js";
-import { addToWatchlist, fetchWatchlist } from "../../recommendations/watchlist.js";
+import {
+  addToWatchlistEffect,
+  fetchWatchlistEffect,
+} from "../../recommendations/watchlist.js";
 import {
   TaskAlreadyRunningError,
   TaskNotFoundError,
@@ -368,7 +375,9 @@ const pressPodsJobSchema = z.object({
   lastRunId: nullableString,
 });
 
-function serializeTmdbTitle(title: Awaited<ReturnType<typeof searchTitles>>[number]) {
+function serializeTmdbTitle(
+  title: Effect.Effect.Success<ReturnType<typeof searchTitlesEffect>>[number],
+) {
   return {
     ...title,
     year: title.year ?? null,
@@ -557,12 +566,13 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
         recommendedPolicy: "allow",
       },
-      execute: async ({ query, mediaType, year, cursor, limit }) => {
-        const values = (await searchTitles(query, mediaType, year)).map(
-          serializeTmdbTitle,
-        );
-        return paginate(values, cursor, limit);
-      },
+      execute: ({ query, mediaType, year, cursor, limit }) =>
+        Effect.gen(function* () {
+          const values = (yield* searchTitlesEffect(query, mediaType, year)).map(
+            serializeTmdbTitle,
+          );
+          return paginate(values, cursor, limit);
+        }),
     }),
     defineTool({
       name: "media_catalog_get",
@@ -596,23 +606,24 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
         recommendedPolicy: "allow",
       },
-      execute: async ({ mediaType, tmdbId }) => {
-        const details = await fetchTitleDetails(mediaType, tmdbId);
-        return {
-          mediaType,
-          tmdbId,
-          tmdbUrl: getTmdbUrl(mediaType, tmdbId),
-          details: {
-            ...details,
-            runtimeMinutes: details.runtimeMinutes ?? null,
-            seasonCount: details.seasonCount ?? null,
-            episodeCount: details.episodeCount ?? null,
-            seriesStatus: details.seriesStatus ?? null,
-            originalLanguage: details.originalLanguage ?? null,
-            certification: details.certification ?? null,
-          },
-        };
-      },
+      execute: ({ mediaType, tmdbId }) =>
+        Effect.gen(function* () {
+          const details = yield* fetchTitleDetailsEffect(mediaType, tmdbId);
+          return {
+            mediaType,
+            tmdbId,
+            tmdbUrl: getTmdbUrl(mediaType, tmdbId),
+            details: {
+              ...details,
+              runtimeMinutes: details.runtimeMinutes ?? null,
+              seasonCount: details.seasonCount ?? null,
+              episodeCount: details.episodeCount ?? null,
+              seriesStatus: details.seriesStatus ?? null,
+              originalLanguage: details.originalLanguage ?? null,
+              certification: details.certification ?? null,
+            },
+          };
+        }),
     }),
     defineTool({
       name: "media_catalog_browse",
@@ -647,20 +658,21 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "Consumes a small amount of the configured TMDB API quota; no per-call purchase",
         recommendedPolicy: "allow",
       },
-      execute: async (input) => {
-        const values = (
-          input.mode === "trending"
-            ? await fetchTrending()
-            : await discoverTitles(input.mediaType, {
-                withGenres: input.withGenres,
-                withoutGenres: input.withoutGenres,
-                withOriginalLanguage: input.originalLanguage,
-                minVoteCount: input.minVoteCount,
-                page: input.page,
-              })
-        ).map(serializeTmdbTitle);
-        return paginate(values, input.cursor, input.limit);
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          const values = (
+            input.mode === "trending"
+              ? yield* fetchTrendingEffect()
+              : yield* discoverTitlesEffect(input.mediaType, {
+                  withGenres: input.withGenres,
+                  withoutGenres: input.withoutGenres,
+                  withOriginalLanguage: input.originalLanguage,
+                  minVoteCount: input.minVoteCount,
+                  page: input.page,
+                })
+          ).map(serializeTmdbTitle);
+          return paginate(values, input.cursor, input.limit);
+        }),
     }),
   );
 
@@ -686,23 +698,24 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No expected monetary cost; bounded account API traffic",
         recommendedPolicy: "allow",
       },
-      execute: async ({ view, mediaType, query, cursor, limit }) => {
-        const result =
-          view === "history"
-            ? await fetchWatchHistory()
-            : view === "in_progress"
-              ? await fetchInProgress()
-              : await fetchLibraryIndex();
-        let values = requireAvailable(result).map((item) => serializeMediaItem(item));
-        if (mediaType) values = values.filter((item) => item.mediaType === mediaType);
-        if (query) {
-          const needle = query.toLocaleLowerCase();
-          values = values.filter((item) =>
-            String(item.title).toLocaleLowerCase().includes(needle),
-          );
-        }
-        return paginate(values, cursor, limit);
-      },
+      execute: ({ view, mediaType, query, cursor, limit }) =>
+        Effect.gen(function* () {
+          const result =
+            view === "history"
+              ? yield* fetchWatchHistoryEffect()
+              : view === "in_progress"
+                ? yield* fetchInProgressEffect()
+                : yield* fetchLibraryIndexEffect();
+          let values = requireAvailable(result).map((item) => serializeMediaItem(item));
+          if (mediaType) values = values.filter((item) => item.mediaType === mediaType);
+          if (query) {
+            const needle = query.toLocaleLowerCase();
+            values = values.filter((item) =>
+              String(item.title).toLocaleLowerCase().includes(needle),
+            );
+          }
+          return paginate(values, cursor, limit);
+        }),
     }),
     defineTool({
       name: "media_watchlist_list",
@@ -724,19 +737,20 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No expected monetary cost; bounded account API traffic",
         recommendedPolicy: "allow",
       },
-      execute: async ({ mediaType, query, cursor, limit }) => {
-        let values = requireAvailable(await fetchWatchlist()).map((item) =>
-          serializeMediaItem(item),
-        );
-        if (mediaType) values = values.filter((item) => item.mediaType === mediaType);
-        if (query) {
-          const needle = query.toLocaleLowerCase();
-          values = values.filter((item) =>
-            String(item.title).toLocaleLowerCase().includes(needle),
+      execute: ({ mediaType, query, cursor, limit }) =>
+        Effect.gen(function* () {
+          let values = requireAvailable(yield* fetchWatchlistEffect()).map((item) =>
+            serializeMediaItem(item),
           );
-        }
-        return paginate(values, cursor, limit);
-      },
+          if (mediaType) values = values.filter((item) => item.mediaType === mediaType);
+          if (query) {
+            const needle = query.toLocaleLowerCase();
+            values = values.filter((item) =>
+              String(item.title).toLocaleLowerCase().includes(needle),
+            );
+          }
+          return paginate(values, cursor, limit);
+        }),
     }),
     defineTool({
       name: "media_watchlist_add",
@@ -770,10 +784,11 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No direct API charge; may consume storage, bandwidth, and provider resources",
         recommendedPolicy: "require_approval",
       },
-      execute: async (input) => {
-        const outcome = await addToWatchlist(input);
-        return { result: outcome.result, titleSlug: outcome.titleSlug ?? null };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          const outcome = yield* addToWatchlistEffect(input);
+          return { result: outcome.result, titleSlug: outcome.titleSlug ?? null };
+        }),
     }),
   );
 
@@ -802,16 +817,17 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ status, feedback, cursor, limit }) => {
-        let values = getAllRecommendations();
-        if (status) values = values.filter((item) => item.status === status);
-        if (feedback) {
-          values = values.filter((item) =>
-            feedback === "none" ? !item.feedback : item.feedback === feedback,
-          );
-        }
-        return paginate(values.map(serializeRecommendation), cursor, limit);
-      },
+      execute: ({ status, feedback, cursor, limit }) =>
+        Effect.sync(() => {
+          let values = getAllRecommendations();
+          if (status) values = values.filter((item) => item.status === status);
+          if (feedback) {
+            values = values.filter((item) =>
+              feedback === "none" ? !item.feedback : item.feedback === feedback,
+            );
+          }
+          return paginate(values.map(serializeRecommendation), cursor, limit);
+        }),
     }),
     defineTool({
       name: "media_recommendation_get",
@@ -825,11 +841,12 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ recommendationId }) => {
-        const value = getRecommendation(recommendationId);
-        if (!value) throw new Error("Media recommendation not found");
-        return { recommendation: serializeRecommendation(value) };
-      },
+      execute: ({ recommendationId }) =>
+        Effect.sync(() => {
+          const value = getRecommendation(recommendationId);
+          if (!value) throw new Error("Media recommendation not found");
+          return { recommendation: serializeRecommendation(value) };
+        }),
     }),
     defineTool({
       name: "media_recommendation_feedback",
@@ -855,11 +872,12 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ recommendationId, feedback, note }) => {
-        const value = setRecommendationFeedback(recommendationId, { feedback, note });
-        if (!value) throw new Error("Media recommendation not found");
-        return { recommendation: serializeRecommendation(value) };
-      },
+      execute: ({ recommendationId, feedback, note }) =>
+        Effect.sync(() => {
+          const value = setRecommendationFeedback(recommendationId, { feedback, note });
+          if (!value) throw new Error("Media recommendation not found");
+          return { recommendation: serializeRecommendation(value) };
+        }),
     }),
     defineTool({
       name: "media_taste_read",
@@ -906,24 +924,28 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async (input) => {
-        if (input.resource === "profile") {
-          return { resource: "profile", profile: getLatestTasteProfile() ?? null };
-        }
-        const values = getAllTasteEvidence().map((item) => ({
-          evidenceId: item.evidenceId,
-          kind: item.kind,
-          canonicalId: item.canonicalId,
-          title: item.title,
-          mediaType: item.mediaType,
-          observedAt: item.observedAt,
-          completion: item.completion ?? null,
-          recommendationId: item.recommendationId ?? null,
-          feedback: item.feedback ?? null,
-          note: item.note ?? null,
-        }));
-        return { resource: "evidence", ...paginate(values, input.cursor, input.limit) };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          if (input.resource === "profile") {
+            return { resource: "profile", profile: getLatestTasteProfile() ?? null };
+          }
+          const values = getAllTasteEvidence().map((item) => ({
+            evidenceId: item.evidenceId,
+            kind: item.kind,
+            canonicalId: item.canonicalId,
+            title: item.title,
+            mediaType: item.mediaType,
+            observedAt: item.observedAt,
+            completion: item.completion ?? null,
+            recommendationId: item.recommendationId ?? null,
+            feedback: item.feedback ?? null,
+            note: item.note ?? null,
+          }));
+          return {
+            resource: "evidence",
+            ...paginate(values, input.cursor, input.limit),
+          };
+        }),
     }),
   );
 
@@ -972,11 +994,46 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No expected monetary cost; consumes bounded private account API traffic",
         recommendedPolicy: "allow",
       },
-      execute: async ({ resource, sinceDays, query, cursor, limit }) => {
-        const account = requirePodcastAccount(runtime);
-        if (resource === "subscriptions") {
+      execute: ({ resource, sinceDays, query, cursor, limit }) =>
+        Effect.gen(function* () {
+          const account = requirePodcastAccount(runtime);
+          if (resource === "subscriptions") {
+            const values = matchesQuery(
+              requireAvailable(yield* account.fetchSubscriptions()),
+              query,
+            );
+            return {
+              account: account.name,
+              resource,
+              ...paginate(values, cursor, limit),
+            };
+          }
+          if (resource === "queue") {
+            const values = matchesQuery(
+              requireAvailable(yield* account.fetchQueue()),
+              query,
+            );
+            return {
+              account: account.name,
+              resource,
+              ...paginate(values, cursor, limit),
+            };
+          }
+          if (resource === "inbox") {
+            const values = matchesQuery(
+              requireAvailable(yield* account.fetchInbox()),
+              query,
+            );
+            return {
+              account: account.name,
+              resource,
+              ...paginate(values, cursor, limit),
+            };
+          }
           const values = matchesQuery(
-            requireAvailable(await account.fetchSubscriptions()),
+            requireAvailable(
+              yield* account.fetchListenHistory(Date.now() - sinceDays * 86_400_000),
+            ),
             query,
           );
           return {
@@ -984,37 +1041,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
             resource,
             ...paginate(values, cursor, limit),
           };
-        }
-        if (resource === "queue") {
-          const values = matchesQuery(
-            requireAvailable(await account.fetchQueue()),
-            query,
-          );
-          return {
-            account: account.name,
-            resource,
-            ...paginate(values, cursor, limit),
-          };
-        }
-        if (resource === "inbox") {
-          const values = matchesQuery(
-            requireAvailable(await account.fetchInbox()),
-            query,
-          );
-          return {
-            account: account.name,
-            resource,
-            ...paginate(values, cursor, limit),
-          };
-        }
-        const values = matchesQuery(
-          requireAvailable(
-            await account.fetchListenHistory(Date.now() - sinceDays * 86_400_000),
-          ),
-          query,
-        );
-        return { account: account.name, resource, ...paginate(values, cursor, limit) };
-      },
+        }),
     }),
     defineTool({
       name: "podcast_account_search",
@@ -1049,29 +1076,30 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No expected monetary cost; consumes bounded private account API traffic",
         recommendedPolicy: "allow",
       },
-      execute: async ({ resource, query, cursor, limit }) => {
-        const account = requirePodcastAccount(runtime);
-        if (resource === "shows") {
+      execute: ({ resource, query, cursor, limit }) =>
+        Effect.gen(function* () {
+          const account = requirePodcastAccount(runtime);
+          if (resource === "shows") {
+            return {
+              account: account.name,
+              resource,
+              ...paginate(
+                requireAvailable(yield* account.searchPodcasts(query)),
+                cursor,
+                limit,
+              ),
+            };
+          }
           return {
             account: account.name,
             resource,
             ...paginate(
-              requireAvailable(await account.searchPodcasts(query)),
+              requireAvailable(yield* account.searchEpisodes(query)),
               cursor,
               limit,
             ),
           };
-        }
-        return {
-          account: account.name,
-          resource,
-          ...paginate(
-            requireAvailable(await account.searchEpisodes(query)),
-            cursor,
-            limit,
-          ),
-        };
-      },
+        }),
     }),
     defineTool({
       name: "podcast_account_update",
@@ -1126,29 +1154,30 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No expected monetary cost; consumes private account API traffic",
         recommendedPolicy: "require_approval",
       },
-      execute: async (input) => {
-        const account = requirePodcastAccount(runtime);
-        let result: PodcastWriteResult;
-        if (input.action === "enqueue") {
-          const request: EnqueueEpisodeRequest = {
-            feedUrl: input.feedUrl,
-            itunesId: input.itunesId,
-            episodeGuid: input.episodeGuid,
-            mediaUrl: input.mediaUrl,
-            showTitle: input.showTitle,
-            episodeTitle: input.episodeTitle,
-            position: input.position,
-          };
-          result = await account.enqueueEpisode(request);
-        } else if (input.action === "dequeue") {
-          result = await account.dequeueEpisode(input.episodeGuid);
-        } else if (input.action === "clear_inbox") {
-          result = await account.clearInboxEpisode(input.clientEpisodeId);
-        } else {
-          result = await account.subscribeToShow(input);
-        }
-        return { account: account.name, action: input.action, result };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          const account = requirePodcastAccount(runtime);
+          let result: PodcastWriteResult;
+          if (input.action === "enqueue") {
+            const request: EnqueueEpisodeRequest = {
+              feedUrl: input.feedUrl,
+              itunesId: input.itunesId,
+              episodeGuid: input.episodeGuid,
+              mediaUrl: input.mediaUrl,
+              showTitle: input.showTitle,
+              episodeTitle: input.episodeTitle,
+              position: input.position,
+            };
+            result = yield* account.enqueueEpisode(request);
+          } else if (input.action === "dequeue") {
+            result = yield* account.dequeueEpisode(input.episodeGuid);
+          } else if (input.action === "clear_inbox") {
+            result = yield* account.clearInboxEpisode(input.clientEpisodeId);
+          } else {
+            result = yield* account.subscribeToShow(input);
+          }
+          return { account: account.name, action: input.action, result };
+        }),
     }),
   );
 
@@ -1174,16 +1203,17 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ status, feedback, cursor, limit }) => {
-        let values = getAllPodcastRecommendations();
-        if (status) values = values.filter((item) => item.status === status);
-        if (feedback) {
-          values = values.filter((item) =>
-            feedback === "none" ? !item.feedback : item.feedback === feedback,
-          );
-        }
-        return paginate(values.map(serializePodcastRecommendation), cursor, limit);
-      },
+      execute: ({ status, feedback, cursor, limit }) =>
+        Effect.sync(() => {
+          let values = getAllPodcastRecommendations();
+          if (status) values = values.filter((item) => item.status === status);
+          if (feedback) {
+            values = values.filter((item) =>
+              feedback === "none" ? !item.feedback : item.feedback === feedback,
+            );
+          }
+          return paginate(values.map(serializePodcastRecommendation), cursor, limit);
+        }),
     }),
     defineTool({
       name: "podcast_recommendation_get",
@@ -1197,11 +1227,12 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ recommendationId }) => {
-        const value = getPodcastRecommendation(recommendationId);
-        if (!value) throw new Error("Podcast recommendation not found");
-        return { recommendation: serializePodcastRecommendation(value) };
-      },
+      execute: ({ recommendationId }) =>
+        Effect.sync(() => {
+          const value = getPodcastRecommendation(recommendationId);
+          if (!value) throw new Error("Podcast recommendation not found");
+          return { recommendation: serializePodcastRecommendation(value) };
+        }),
     }),
     defineTool({
       name: "podcast_recommendation_feedback",
@@ -1225,14 +1256,15 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ recommendationId, feedback, note }) => {
-        const value = setPodcastRecommendationFeedback(recommendationId, {
-          feedback,
-          note,
-        });
-        if (!value) throw new Error("Podcast recommendation not found");
-        return { recommendation: serializePodcastRecommendation(value) };
-      },
+      execute: ({ recommendationId, feedback, note }) =>
+        Effect.sync(() => {
+          const value = setPodcastRecommendationFeedback(recommendationId, {
+            feedback,
+            note,
+          });
+          if (!value) throw new Error("Podcast recommendation not found");
+          return { recommendation: serializePodcastRecommendation(value) };
+        }),
     }),
     defineTool({
       name: "podcast_taste_read",
@@ -1273,27 +1305,31 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async (input) => {
-        if (input.resource === "profile") {
+      execute: (input) =>
+        Effect.sync(() => {
+          if (input.resource === "profile") {
+            return {
+              resource: "profile",
+              profile: getLatestPodcastTasteProfile() ?? null,
+            };
+          }
+          const values = getAllPodcastTasteEvidence().map((item) => ({
+            evidenceId: item.evidenceId,
+            kind: item.kind,
+            showKey: item.showKey,
+            showTitle: item.showTitle,
+            episodeTitle: item.episodeTitle ?? null,
+            observedAt: item.observedAt,
+            completion: item.completion ?? null,
+            recommendationId: item.recommendationId ?? null,
+            feedback: item.feedback ?? null,
+            note: item.note ?? null,
+          }));
           return {
-            resource: "profile",
-            profile: getLatestPodcastTasteProfile() ?? null,
+            resource: "evidence",
+            ...paginate(values, input.cursor, input.limit),
           };
-        }
-        const values = getAllPodcastTasteEvidence().map((item) => ({
-          evidenceId: item.evidenceId,
-          kind: item.kind,
-          showKey: item.showKey,
-          showTitle: item.showTitle,
-          episodeTitle: item.episodeTitle ?? null,
-          observedAt: item.observedAt,
-          completion: item.completion ?? null,
-          recommendationId: item.recommendationId ?? null,
-          feedback: item.feedback ?? null,
-          note: item.note ?? null,
-        }));
-        return { resource: "evidence", ...paginate(values, input.cursor, input.limit) };
-      },
+        }),
     }),
   );
 
@@ -1328,29 +1364,33 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ resource, status, query, cursor, limit }) => {
-        if (resource === "episodes") {
-          let values = getAllEpisodes();
+      execute: ({ resource, status, query, cursor, limit }) =>
+        Effect.sync(() => {
+          if (resource === "episodes") {
+            let values = getAllEpisodes();
+            if (query) {
+              const needle = query.toLocaleLowerCase();
+              values = values.filter((item) =>
+                [item.title, item.author, item.publication, item.domain].some((value) =>
+                  value?.toLocaleLowerCase().includes(needle),
+                ),
+              );
+            }
+            return {
+              resource,
+              ...paginate(values.map(serializeEpisode), cursor, limit),
+            };
+          }
+          let values = getAllJobs();
+          if (status) values = values.filter((item) => item.status === status);
           if (query) {
             const needle = query.toLocaleLowerCase();
             values = values.filter((item) =>
-              [item.title, item.author, item.publication, item.domain].some((value) =>
-                value?.toLocaleLowerCase().includes(needle),
-              ),
+              item.url.toLocaleLowerCase().includes(needle),
             );
           }
-          return { resource, ...paginate(values.map(serializeEpisode), cursor, limit) };
-        }
-        let values = getAllJobs();
-        if (status) values = values.filter((item) => item.status === status);
-        if (query) {
-          const needle = query.toLocaleLowerCase();
-          values = values.filter((item) =>
-            item.url.toLocaleLowerCase().includes(needle),
-          );
-        }
-        return { resource, ...paginate(values.map(serializeJob), cursor, limit) };
-      },
+          return { resource, ...paginate(values.map(serializeJob), cursor, limit) };
+        }),
     }),
     defineTool({
       name: "presspods_episode_get",
@@ -1365,11 +1405,12 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ episodeId }) => {
-        const episode = getEpisode(episodeId);
-        if (!episode) throw new Error("PressPods episode not found");
-        return { episode: serializeEpisode(episode) };
-      },
+      execute: ({ episodeId }) =>
+        Effect.sync(() => {
+          const episode = getEpisode(episodeId);
+          if (!episode) throw new Error("PressPods episode not found");
+          return { episode: serializeEpisode(episode) };
+        }),
     }),
     defineTool({
       name: "presspods_transcript_read",
@@ -1398,22 +1439,23 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ episodeId, offset, maxChars }) => {
-        const episode = getEpisode(episodeId);
-        if (!episode) throw new Error("PressPods episode not found");
-        if (offset > episode.content.length)
-          throw new Error("Transcript offset is beyond the end of the episode");
-        const page = truncate(episode.content.slice(offset), maxChars);
-        return {
-          episodeId,
-          title: episode.title,
-          offset,
-          text: page.text,
-          nextOffset: page.truncated ? offset + page.text.length : null,
-          totalChars: episode.content.length,
-          truncated: page.truncated,
-        };
-      },
+      execute: ({ episodeId, offset, maxChars }) =>
+        Effect.sync(() => {
+          const episode = getEpisode(episodeId);
+          if (!episode) throw new Error("PressPods episode not found");
+          if (offset > episode.content.length)
+            throw new Error("Transcript offset is beyond the end of the episode");
+          const page = truncate(episode.content.slice(offset), maxChars);
+          return {
+            episodeId,
+            title: episode.title,
+            offset,
+            text: page.text,
+            nextOffset: page.truncated ? offset + page.text.length : null,
+            totalChars: episode.content.length,
+            truncated: page.truncated,
+          };
+        }),
     }),
   );
 
@@ -1435,15 +1477,16 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "May incur metadata/cleaning model and TTS charges; ElevenLabs is approximately $0.10 per 1,000 characters when configured",
         recommendedPolicy: "require_approval",
       },
-      execute: async ({ url }) => {
-        await assertPublicHttpUrl(url);
-        const job = submitEpisodeUrl(
-          url,
-          () => kickPressPods(runtime),
-          runtime.logger.extend("MCP:PressPods"),
-        );
-        return { job: serializeJob(job) };
-      },
+      execute: ({ url }) =>
+        Effect.gen(function* () {
+          yield* assertPublicHttpUrlEffect(url);
+          const job = yield* submitEpisodeUrlEffect(
+            url,
+            () => kickPressPods(runtime),
+            runtime.logger.extend("MCP:PressPods"),
+          );
+          return { job: serializeJob(job) };
+        }),
     }),
     defineTool({
       name: "presspods_retry",
@@ -1467,28 +1510,29 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "May incur metadata/cleaning model and TTS charges",
         recommendedPolicy: "require_approval",
       },
-      execute: async (input) => {
-        let job: PressPodsJobData;
-        if (input.resource === "episode") {
-          const episode = getEpisode(input.episodeId);
-          if (!episode) throw new Error("PressPods episode not found");
-          job = submitEpisodeUrl(
-            episode.articleUrl,
-            () => kickPressPods(runtime),
-            runtime.logger.extend("MCP:PressPods"),
-          );
-        } else {
-          const existing = getJob(input.jobId);
-          if (!existing) throw new Error("PressPods job not found");
-          if (existing.status !== "failed")
-            throw new Error("Only failed PressPods jobs can be retried");
-          const requeued = requeueJobNow(input.jobId);
-          if (!requeued) throw new Error("PressPods job could not be retried");
-          job = requeued;
-          kickPressPods(runtime);
-        }
-        return { job: serializeJob(job) };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          let job: PressPodsJobData;
+          if (input.resource === "episode") {
+            const episode = getEpisode(input.episodeId);
+            if (!episode) throw new Error("PressPods episode not found");
+            job = yield* submitEpisodeUrlEffect(
+              episode.articleUrl,
+              () => kickPressPods(runtime),
+              runtime.logger.extend("MCP:PressPods"),
+            );
+          } else {
+            const existing = getJob(input.jobId);
+            if (!existing) throw new Error("PressPods job not found");
+            if (existing.status !== "failed")
+              throw new Error("Only failed PressPods jobs can be retried");
+            const requeued = requeueJobNow(input.jobId);
+            if (!requeued) throw new Error("PressPods job could not be retried");
+            job = requeued;
+            kickPressPods(runtime);
+          }
+          return { job: serializeJob(job) };
+        }),
     }),
     defineTool({
       name: "presspods_delete",
@@ -1514,21 +1558,22 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No monetary cost",
         recommendedPolicy: "require_approval",
       },
-      execute: async (input) => {
-        if (input.resource === "episode") {
-          const episode = deleteEpisode(input.episodeId);
-          if (!episode) throw new Error("PressPods episode not found");
-          await deleteEpisodeAudio(episode.audioFile);
-        } else {
-          const job = getJob(input.jobId);
-          if (!job) throw new Error("PressPods job not found");
-          if (job.status === "processing")
-            throw new Error("A processing PressPods job cannot be dismissed");
-          PressPodsJobEntity.delete({ jobId: job.jobId });
-          await clearChunkCheckpoints(checkpointWorkId(jobNormalizedUrl(job)));
-        }
-        return { resource: input.resource, deleted: true };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          if (input.resource === "episode") {
+            const episode = deleteEpisode(input.episodeId);
+            if (!episode) throw new Error("PressPods episode not found");
+            yield* deleteEpisodeAudio(episode.audioFile);
+          } else {
+            const job = getJob(input.jobId);
+            if (!job) throw new Error("PressPods job not found");
+            if (job.status === "processing")
+              throw new Error("A processing PressPods job cannot be dismissed");
+            PressPodsJobEntity.delete({ jobId: job.jobId });
+            yield* clearChunkCheckpoints(checkpointWorkId(jobNormalizedUrl(job)));
+          }
+          return { resource: input.resource, deleted: true };
+        }),
     }),
   );
 
@@ -1585,42 +1630,45 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async (input) => {
-        if (input.resource === "list") {
+      execute: (input) =>
+        Effect.sync(() => {
+          if (input.resource === "list") {
+            return {
+              resource: "list",
+              pets: getAllPetsWithHistory().map((pet) => ({
+                petId: pet.pet_id,
+                name: pet.name,
+                currentWeight: pet.current_weight,
+                updatedAt: pet.updated_at,
+                recentWeights: pet.weightHistory
+                  .slice(-input.historyLimit)
+                  .map((row) => ({ timestamp: row.timestamp, weight: row.weight })),
+                recentVisits: getDailyVisitCounts(pet.pet_id).slice(
+                  -input.historyLimit,
+                ),
+              })),
+            };
+          }
+          const pet = getPet(input.petId);
+          if (!pet) throw new Error("Pet not found");
           return {
-            resource: "list",
-            pets: getAllPetsWithHistory().map((pet) => ({
+            resource: "history",
+            pet: {
               petId: pet.pet_id,
               name: pet.name,
               currentWeight: pet.current_weight,
               updatedAt: pet.updated_at,
-              recentWeights: pet.weightHistory
-                .slice(-input.historyLimit)
-                .map((row) => ({ timestamp: row.timestamp, weight: row.weight })),
-              recentVisits: getDailyVisitCounts(pet.pet_id).slice(-input.historyLimit),
-            })),
+            },
+            ...paginate(
+              getWeightHistory(input.petId).map((row) => ({
+                timestamp: row.timestamp,
+                weight: row.weight,
+              })),
+              input.cursor,
+              input.limit,
+            ),
           };
-        }
-        const pet = getPet(input.petId);
-        if (!pet) throw new Error("Pet not found");
-        return {
-          resource: "history",
-          pet: {
-            petId: pet.pet_id,
-            name: pet.name,
-            currentWeight: pet.current_weight,
-            updatedAt: pet.updated_at,
-          },
-          ...paginate(
-            getWeightHistory(input.petId).map((row) => ({
-              timestamp: row.timestamp,
-              weight: row.weight,
-            })),
-            input.cursor,
-            input.limit,
-          ),
-        };
-      },
+        }),
     }),
     defineTool({
       name: "costs_read",
@@ -1710,15 +1758,16 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         cost: "No external traffic or monetary cost",
         recommendedPolicy: "allow",
       },
-      execute: async ({ days }) => {
-        const count = CostEventEntity.count();
-        if (count > MAX_MCP_COST_EVENTS) {
-          throw new Error(
-            `Cost telemetry exceeds the MCP scan limit (${count} events; maximum ${MAX_MCP_COST_EVENTS})`,
-          );
-        }
-        return summarizeCosts(getCostEvents(), { days, timeZone: config.TZ });
-      },
+      execute: ({ days }) =>
+        Effect.sync(() => {
+          const count = CostEventEntity.count();
+          if (count > MAX_MCP_COST_EVENTS) {
+            throw new Error(
+              `Cost telemetry exceeds the MCP scan limit (${count} events; maximum ${MAX_MCP_COST_EVENTS})`,
+            );
+          }
+          return summarizeCosts(getCostEvents(), { days, timeZone: config.TZ });
+        }),
     }),
   );
 

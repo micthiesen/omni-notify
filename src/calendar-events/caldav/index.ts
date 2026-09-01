@@ -1,14 +1,20 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
+import { runPromise } from "../../effect/interop.js";
 import config from "../../utils/config.js";
+import { CaldavError } from "../effect.js";
 import type { CaldavSession } from "./api.js";
-import { discoverFastmailCalendar } from "./fastmail.js";
-import { discoverIcloudCalendar } from "./icloud.js";
+import { discoverFastmailCalendarEffect } from "./fastmail.js";
+import { discoverIcloudCalendarEffect } from "./icloud.js";
 
 export {
   type CaldavSession,
   createCalendarEvent,
+  createCalendarEventEffect,
   deleteCalendarEvent,
+  deleteCalendarEventEffect,
   updateCalendarEvent,
+  updateCalendarEventEffect,
 } from "./api.js";
 
 export type CaldavProviderName = "fastmail" | "icloud";
@@ -33,14 +39,26 @@ export function getCaldavProvider(): CaldavProviderName | undefined {
 }
 
 /** Resolve the active provider's calendar collection + auth. */
-export async function discoverCaldavSession(logger: Logger): Promise<CaldavSession> {
+export function discoverCaldavSession(logger: Logger): Promise<CaldavSession> {
+  return runPromise(discoverCaldavSessionEffect(logger));
+}
+
+export function discoverCaldavSessionEffect(
+  logger: Logger,
+): Effect.Effect<CaldavSession, CaldavError> {
   const provider = getCaldavProvider();
   switch (provider) {
     case "fastmail":
-      return discoverFastmailCalendar(logger);
+      return discoverFastmailCalendarEffect(logger);
     case "icloud":
-      return discoverIcloudCalendar(logger);
+      return discoverIcloudCalendarEffect(logger);
     default:
-      throw new Error("No CalDAV provider configured");
+      return Effect.fail(
+        new CaldavError({
+          operation: "discover calendar",
+          cause: "No CalDAV provider configured",
+          transient: false,
+        }),
+      );
   }
 }

@@ -1,45 +1,112 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
 import config from "../utils/config.js";
+import { WorkspaceOperationError } from "./errors.js";
 import {
   listDueWorkspaceNotifications,
   markWorkspaceNotificationFailed,
+  markWorkspaceNotificationSending,
   markWorkspaceNotificationSent,
+  markWorkspaceNotificationUnknown,
   type WorkspaceNotificationData,
 } from "./persistence.js";
+import { workspaceRepositoryEffect } from "./repository.js";
 
 const deliveringNotifications = new Set<string>();
 
-export async function deliverWorkspaceNotification(
+export function deliverWorkspaceNotificationEffect(
+  notification: WorkspaceNotificationData,
+  logger: Logger,
+): Effect.Effect<boolean, WorkspaceOperationError> {
+  if (notification.status === "sent" || notification.status === "unknown") {
+    return Effect.succeed(true);
+  }
+  const acquire = Effect.sync(() => {
+    if (deliveringNotifications.has(notification.notificationId)) return false;
+    deliveringNotifications.add(notification.notificationId);
+    return true;
+  });
+  return Effect.acquireUseRelease(
+    acquire,
+    (acquired) => {
+      if (!acquired) return Effect.succeed(false);
+      if (notification.status === "sending") {
+        logger.warn(
+          `Workspace notification ${notification.notificationId} had an unacknowledged provider attempt; acknowledging without resending`,
+        );
+        return workspaceRepositoryEffect(
+          "acknowledge reserved workspace notification",
+          () => markWorkspaceNotificationUnknown(notification.notificationId),
+        ).pipe(Effect.as(true));
+      }
+      const attempts = notification.attempts + 1;
+      return workspaceRepositoryEffect("reserve workspace notification delivery", () =>
+        markWorkspaceNotificationSending(notification.notificationId, attempts),
+      ).pipe(
+        Effect.andThen(
+          Effect.either(
+            Effect.tryPromise({
+              try: () =>
+                notify({
+                  title: notification.title,
+                  message: notification.message,
+                  url: notification.url,
+                  url_title: notification.urlTitle,
+                  token: config.PUSHOVER_WORKSPACE_TOKEN,
+                }),
+              catch: (cause) =>
+                new WorkspaceOperationError({
+                  operation: "send workspace notification",
+                  cause,
+                }),
+            }),
+          ),
+        ),
+        Effect.flatMap((delivery) => {
+          if (delivery._tag === "Right") {
+            return workspaceRepositoryEffect("mark workspace notification sent", () =>
+              markWorkspaceNotificationSent(notification.notificationId),
+            ).pipe(Effect.as(true));
+          }
+          const message = delivery.left.message;
+          return workspaceRepositoryEffect(
+            "record workspace notification provider failure",
+            () =>
+              markWorkspaceNotificationFailed(
+                notification.notificationId,
+                attempts,
+                message,
+              ),
+          ).pipe(
+            Effect.tap(() =>
+              Effect.sync(() =>
+                logger.warn(
+                  `Workspace notification ${notification.notificationId} failed (attempt ${attempts}); queued for retry`,
+                  message,
+                ),
+              ),
+            ),
+            Effect.as(false),
+          );
+        }),
+      );
+    },
+    (acquired) =>
+      Effect.sync(() => {
+        if (acquired) deliveringNotifications.delete(notification.notificationId);
+      }),
+  );
+}
+
+/** Promise adapter for AI/workspace and test boundaries. */
+export function deliverWorkspaceNotification(
   notification: WorkspaceNotificationData,
   logger: Logger,
 ): Promise<boolean> {
-  if (notification.status === "sent") return true;
-  if (deliveringNotifications.has(notification.notificationId)) return false;
-  deliveringNotifications.add(notification.notificationId);
-  try {
-    await notify({
-      title: notification.title,
-      message: notification.message,
-      url: notification.url,
-      url_title: notification.urlTitle,
-      token: config.PUSHOVER_WORKSPACE_TOKEN,
-    });
-    markWorkspaceNotificationSent(notification.notificationId);
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const attempts = notification.attempts + 1;
-    markWorkspaceNotificationFailed(notification.notificationId, attempts, message);
-    logger.warn(
-      `Workspace notification ${notification.notificationId} failed (attempt ${attempts}); queued for retry`,
-      message,
-    );
-    return false;
-  } finally {
-    deliveringNotifications.delete(notification.notificationId);
-  }
+  return runPromise(deliverWorkspaceNotificationEffect(notification, logger));
 }
 
 export class WorkspaceNotificationTask extends ScheduledTask {
@@ -54,13 +121,24 @@ export class WorkspaceNotificationTask extends ScheduledTask {
     this.logger = parentLogger.extend("WorkspaceNotificationTask");
   }
 
-  public async run(): Promise<void> {
-    const due = listDueWorkspaceNotifications();
-    let sent = 0;
-    for (const notification of due) {
-      if (await deliverWorkspaceNotification(notification, this.logger)) sent += 1;
-    }
-    this.lastSummary = `Sent ${sent} notification(s); ${due.length - sent} queued for retry`;
+  private runEffect() {
+    return Effect.gen(this, function* () {
+      const due = yield* workspaceRepositoryEffect(
+        "list due workspace notifications",
+        () => listDueWorkspaceNotifications(),
+      );
+      const delivered = yield* Effect.forEach(
+        due,
+        (notification) => deliverWorkspaceNotificationEffect(notification, this.logger),
+        { concurrency: 4 },
+      );
+      const sent = delivered.filter(Boolean).length;
+      this.lastSummary = `Sent ${sent} notification(s); ${due.length - sent} queued for retry`;
+    });
+  }
+
+  public run(): Promise<void> {
+    return runPromise(this.runEffect());
   }
 
   public getLastRunSummary(): string | undefined {

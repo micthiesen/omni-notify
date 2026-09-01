@@ -1,146 +1,251 @@
-import got from "got";
-import { z } from "zod";
+import { Data, Effect, Schema, SynchronizedRef } from "effect";
+import type { OptionsInit } from "got";
+import {
+  type LimitedTextResponse,
+  publicGotStream,
+  readTextResponseWithLimit,
+} from "../../effect/publicHttp.js";
 import { type FetchedStatus, LiveStatus } from "./index.js";
 
 const TIMEOUT_MS = 10_000;
 const TOKEN_URL = "https://id.kick.com/oauth/token";
 const CHANNELS_URL = "https://api.kick.com/public/v1/channels";
-
-// Refresh proactively this many ms before the token's stated expiry.
 const TOKEN_REFRESH_LEEWAY_MS = 60_000;
+export const KICK_TOKEN_MAX_BYTES = 128 * 1024;
+export const KICK_CHANNELS_MAX_BYTES = 2 * 1024 * 1024;
 
-const tokenResponseSchema = z.object({
-  access_token: z.string(),
-  token_type: z.string(),
-  expires_in: z.number(),
+export class KickApiError extends Data.TaggedError("KickApiError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `${this.operation}: ${detail}`;
+  }
+}
+
+const tokenResponseSchema = Schema.Struct({
+  access_token: Schema.String,
+  token_type: Schema.String,
+  expires_in: Schema.Number,
 });
 
-type CachedToken = { accessToken: string; expiresAt: number };
-let cachedToken: CachedToken | null = null;
+type CachedToken = { readonly accessToken: string; readonly expiresAt: number };
+// Serializing refreshes guarantees one client-credentials exchange for a burst
+// of callers observing an expired token.
+const tokenState = Effect.runSync(SynchronizedRef.make<CachedToken | null>(null));
 
-async function fetchAccessToken(): Promise<string> {
+interface KickStreamResponse extends LimitedTextResponse {
+  readonly response?: {
+    readonly headers?: Record<string, string | string[] | undefined>;
+    readonly statusCode?: number;
+  };
+}
+
+export type KickHttpRequest = (
+  url: string | URL,
+  options: OptionsInit,
+) => KickStreamResponse;
+
+interface KickDependencies {
+  readonly request?: KickHttpRequest;
+  readonly tokenMaxResponseBytes?: number;
+  readonly channelsMaxResponseBytes?: number;
+}
+
+function requestKickJson<A, I>(
+  url: string,
+  options: OptionsInit,
+  schema: Schema.Schema<A, I>,
+  operation: string,
+  maxBytes: number,
+  request: KickHttpRequest = publicGotStream,
+): Effect.Effect<
+  { readonly statusCode: number; readonly body: string; readonly data?: A },
+  KickApiError
+> {
+  return Effect.tryPromise({
+    try: async (signal) => {
+      const response = request(url, {
+        ...options,
+        signal,
+        throwHttpErrors: false,
+      });
+      const body = await readTextResponseWithLimit(response, maxBytes);
+      return { statusCode: response.response?.statusCode ?? 200, body };
+    },
+    catch: (cause) => new KickApiError({ operation, cause }),
+  }).pipe(
+    Effect.flatMap((response) => {
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return Effect.succeed(response);
+      }
+      return Schema.decodeUnknown(Schema.parseJson(schema))(response.body).pipe(
+        Effect.map((data) => ({ ...response, data })),
+        Effect.mapError(
+          (cause) =>
+            new KickApiError({ operation: `Decode ${operation.toLowerCase()}`, cause }),
+        ),
+      );
+    }),
+  );
+}
+
+function fetchAccessToken(
+  dependencies: KickDependencies,
+): Effect.Effect<CachedToken, KickApiError> {
   const clientId = process.env.KICK_CLIENT_ID;
   const clientSecret = process.env.KICK_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
-    throw new Error(
-      "KICK_CLIENT_ID and KICK_CLIENT_SECRET env vars are required for Kick",
+    return Effect.fail(
+      new KickApiError({
+        operation: "Kick token configuration",
+        cause: new Error(
+          "KICK_CLIENT_ID and KICK_CLIENT_SECRET env vars are required for Kick",
+        ),
+      }),
     );
   }
-
-  const raw = await got
-    .post(TOKEN_URL, {
+  return requestKickJson(
+    TOKEN_URL,
+    {
+      method: "POST",
       form: {
         grant_type: "client_credentials",
         client_id: clientId,
         client_secret: clientSecret,
       },
       timeout: { request: TIMEOUT_MS },
-    })
-    .json<unknown>();
-
-  const parsed = tokenResponseSchema.parse(raw);
-  cachedToken = {
-    accessToken: parsed.access_token,
-    expiresAt: Date.now() + parsed.expires_in * 1000 - TOKEN_REFRESH_LEEWAY_MS,
-  };
-  return parsed.access_token;
+    },
+    tokenResponseSchema,
+    "Kick token request",
+    dependencies.tokenMaxResponseBytes ?? KICK_TOKEN_MAX_BYTES,
+    dependencies.request,
+  ).pipe(
+    Effect.flatMap((response) =>
+      response.data
+        ? Effect.succeed(response.data)
+        : Effect.fail(
+            new KickApiError({
+              operation: "Kick token request",
+              cause: new Error(
+                `Kick token API returned ${response.statusCode}: ${response.body.slice(0, 200)}`,
+              ),
+            }),
+          ),
+    ),
+    Effect.map((parsed) => ({
+      accessToken: parsed.access_token,
+      expiresAt: Date.now() + parsed.expires_in * 1_000 - TOKEN_REFRESH_LEEWAY_MS,
+    })),
+  );
 }
 
-async function getAccessToken(): Promise<string> {
-  if (cachedToken && cachedToken.expiresAt > Date.now()) {
-    return cachedToken.accessToken;
-  }
-  return fetchAccessToken();
+function getAccessToken(
+  staleToken: string | undefined,
+  dependencies: KickDependencies,
+): Effect.Effect<string, KickApiError> {
+  return SynchronizedRef.modifyEffect(tokenState, (cached) => {
+    // On a 401, reuse a token that another caller already refreshed while this
+    // caller was in flight. Only the caller still holding the stale generation
+    // performs the exchange.
+    if (cached && cached.expiresAt > Date.now() && cached.accessToken !== staleToken) {
+      return Effect.succeed([cached.accessToken, cached] as const);
+    }
+    return fetchAccessToken(dependencies).pipe(
+      Effect.map((fresh) => [fresh.accessToken, fresh] as const),
+    );
+  });
 }
 
-const categorySchema = z
-  .object({ id: z.number(), name: z.string() })
-  .partial()
-  .nullable();
-
-const streamSchema = z
-  .object({
-    is_live: z.boolean(),
-    viewer_count: z.number().optional(),
-    start_time: z.string().optional(),
-  })
-  .nullable();
-
-const kickChannelSchema = z.object({
-  slug: z.string(),
-  stream_title: z.string().optional().default(""),
-  category: categorySchema.optional(),
-  stream: streamSchema.optional(),
+const categorySchema = Schema.NullOr(
+  Schema.Struct({
+    id: Schema.optional(Schema.Number),
+    name: Schema.optional(Schema.String),
+  }),
+);
+const streamSchema = Schema.NullOr(
+  Schema.Struct({
+    is_live: Schema.Boolean,
+    viewer_count: Schema.optional(Schema.Number),
+    start_time: Schema.optional(Schema.String),
+  }),
+);
+const kickChannelSchema = Schema.Struct({
+  slug: Schema.String,
+  stream_title: Schema.optionalWith(Schema.String, { default: () => "" }),
+  category: Schema.optional(categorySchema),
+  stream: Schema.optional(streamSchema),
 });
-
-const kickChannelsResponseSchema = z.object({
-  data: z.array(kickChannelSchema),
-  message: z.string().optional(),
+const kickChannelsResponseSchema = Schema.Struct({
+  data: Schema.Array(kickChannelSchema),
+  message: Schema.optional(Schema.String),
 });
+export type KickChannelsResponse = Schema.Schema.Type<
+  typeof kickChannelsResponseSchema
+>;
 
-export type KickChannelsResponse = z.infer<typeof kickChannelsResponseSchema>;
-
-export async function fetchKickLiveStatus({
-  username,
-}: {
-  username: string;
-}): Promise<FetchedStatus> {
-  const request = async (bearer: string) =>
-    got(CHANNELS_URL, {
+function requestChannels(
+  username: string,
+  bearer: string,
+  dependencies: KickDependencies,
+) {
+  return requestKickJson(
+    CHANNELS_URL,
+    {
       searchParams: { slug: username },
       headers: { Authorization: `Bearer ${bearer}` },
       timeout: { request: TIMEOUT_MS },
-      throwHttpErrors: false,
-      responseType: "json",
-    });
+    },
+    kickChannelsResponseSchema,
+    "Kick channels request",
+    dependencies.channelsMaxResponseBytes ?? KICK_CHANNELS_MAX_BYTES,
+    dependencies.request,
+  );
+}
 
-  let raw: unknown;
-  try {
-    let token = await getAccessToken();
-    let response = await request(token);
-
-    // Token may have been revoked or rotated — force one refresh and retry.
+export function fetchKickLiveStatus(
+  {
+    username,
+  }: {
+    username: string;
+  },
+  dependencies: KickDependencies = {},
+): Effect.Effect<FetchedStatus> {
+  return Effect.gen(function* () {
+    let token = yield* getAccessToken(undefined, dependencies);
+    let response = yield* requestChannels(username, token, dependencies);
     if (response.statusCode === 401) {
-      cachedToken = null;
-      token = await getAccessToken();
-      response = await request(token);
+      token = yield* getAccessToken(token, dependencies);
+      response = yield* requestChannels(username, token, dependencies);
     }
-
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      const snippet = JSON.stringify(response.body).slice(0, 200);
       return {
         status: LiveStatus.Unknown,
-        error: `Kick API returned ${response.statusCode}: ${snippet}`,
-      };
+        error: `Kick API returned ${response.statusCode}: ${response.body.slice(0, 200)}`,
+      } as FetchedStatus;
     }
-
-    raw = response.body;
-  } catch (error) {
-    return {
-      status: LiveStatus.Unknown,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-
-  const result = kickChannelsResponseSchema.safeParse(raw);
-  if (!result.success) {
-    return {
-      status: LiveStatus.Unknown,
-      error: `Invalid Kick API response: ${result.error.message}`,
-    };
-  }
-
-  return extractLiveStatus(result.data);
+    if (!response.data) {
+      return yield* new KickApiError({
+        operation: "Kick channels request",
+        cause: new Error("Successful Kick response had no decoded body"),
+      });
+    }
+    return extractLiveStatus(response.data);
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.succeed({
+        status: LiveStatus.Unknown,
+        error: error instanceof Error ? error.message : String(error),
+      } as FetchedStatus),
+    ),
+  );
 }
 
 export function extractLiveStatus(data: KickChannelsResponse): FetchedStatus {
   const channel = data.data[0];
-  if (!channel) {
-    return { status: LiveStatus.Offline };
-  }
-  if (!channel.stream?.is_live) {
-    return { status: LiveStatus.Offline };
-  }
+  if (!channel || !channel.stream?.is_live) return { status: LiveStatus.Offline };
   return {
     status: LiveStatus.Live,
     title: channel.stream_title || channel.slug,

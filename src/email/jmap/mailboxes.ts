@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Clock, Effect, Schema } from "effect";
 import type { JmapContext } from "./client.js";
 
 /** Mailbox id -> RFC 8621 role ("inbox", "sent", "junk", ...) or null. */
@@ -21,43 +22,59 @@ const rolesCache = new WeakMap<
   { roles: MailboxRoles; fetchedAt: number }
 >();
 
+const MailboxGetSchema = Schema.Struct({
+  list: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      role: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+});
+
 /**
  * Resolve the account's mailbox id -> role map via Mailbox/get, cached in
  * memory per JmapContext (fetched lazily, refreshed every few hours). Returns
  * undefined when resolution fails so callers can fail open — losing parcels
  * is worse than processing extra mail.
  */
-export async function getMailboxRoles(
+export function getMailboxRolesEffect(
   ctx: JmapContext,
   logger: Logger,
-): Promise<MailboxRoles | undefined> {
-  const cached = rolesCache.get(ctx);
-  if (cached && Date.now() - cached.fetchedAt < ROLES_TTL_MS) return cached.roles;
+): Effect.Effect<MailboxRoles | undefined> {
+  return Effect.gen(function* () {
+    const cached = rolesCache.get(ctx);
+    const now = yield* Clock.currentTimeMillis;
+    if (cached && now - cached.fetchedAt < ROLES_TTL_MS) return cached.roles;
 
-  try {
-    const [result] = await ctx.jam.request([
-      "Mailbox/get",
-      // Omitting `ids` fetches all mailboxes (JMAP defaults ids to null).
-      { accountId: ctx.accountId, properties: ["id", "role"] },
-    ]);
-    const list = (result as Record<string, unknown>).list as
-      | { id: string; role?: string | null }[]
-      | undefined;
-    if (!list) throw new Error("Mailbox/get returned no list");
-
-    const roles = new Map<string, string | null>(
-      list.map((m) => [m.id, m.role ?? null]),
+    return yield* Effect.tryPromise(() =>
+      ctx.jam.request([
+        "Mailbox/get",
+        // Omitting `ids` fetches all mailboxes (JMAP defaults ids to null).
+        { accountId: ctx.accountId, properties: ["id", "role"] },
+      ]),
+    ).pipe(
+      Effect.flatMap(([result]) =>
+        Effect.try(() => Schema.decodeUnknownSync(MailboxGetSchema)(result)),
+      ),
+      Effect.map(({ list }) => {
+        const roles = new Map<string, string | null>(
+          list.map((m) => [m.id, m.role ?? null]),
+        );
+        rolesCache.set(ctx, { roles, fetchedAt: now });
+        logger.debug(`Resolved ${roles.size} mailbox role(s)`);
+        return roles;
+      }),
+      Effect.catchAll((error) =>
+        Effect.sync(() => {
+          logger.warn(
+            `Failed to resolve mailbox roles, processing all emails: ${(error as Error).message}`,
+          );
+          // A stale snapshot beats no snapshot when the refresh fails.
+          return cached?.roles;
+        }),
+      ),
     );
-    rolesCache.set(ctx, { roles, fetchedAt: Date.now() });
-    logger.debug(`Resolved ${roles.size} mailbox role(s)`);
-    return roles;
-  } catch (error) {
-    logger.warn(
-      `Failed to resolve mailbox roles, processing all emails: ${(error as Error).message}`,
-    );
-    // A stale snapshot beats no snapshot when the refresh fails.
-    return cached?.roles;
-  }
+  });
 }
 
 /**

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchEmailActivity, fetchWorkspaces, type WorkspaceSummary } from "../api";
+import { forkUiRequest } from "../effect";
 import { LiveNow } from "../components/LiveNow";
 import { OnDeck } from "../components/OnDeck";
 import { StatStrip } from "../components/StatStrip";
@@ -25,26 +26,21 @@ export default function HomePage() {
   const latestRunAt = snapshot?.runs[0]?.finishedAt ?? 0;
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelRequests = () => {};
     const refresh = () => {
-      fetchWorkspaces()
-        .then((response) => {
-          if (!cancelled) {
-            setResearch((current) => ({
-              ...current,
-              workspaces: response.workspaces,
-              workspaceError: false,
-            }));
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setResearch((current) => ({ ...current, workspaceError: true }));
-          }
-        });
-      fetchEmailActivity(undefined, 500)
-        .then((response) => {
-          if (cancelled) return;
+      cancelRequests();
+      const cancelWorkspaces = forkUiRequest(fetchWorkspaces(), {
+        onSuccess: (response) =>
+          setResearch((current) => ({
+            ...current,
+            workspaces: response.workspaces,
+            workspaceError: false,
+          })),
+        onFailure: () =>
+          setResearch((current) => ({ ...current, workspaceError: true })),
+      });
+      const cancelEmail = forkUiRequest(fetchEmailActivity(undefined, 500), {
+        onSuccess: (response) => {
           const since = Date.now() - 24 * 60 * 60 * 1000;
           setResearch((current) => ({
             ...current,
@@ -55,17 +51,18 @@ export default function HomePage() {
             ).length,
             emailError: false,
           }));
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setResearch((current) => ({ ...current, emailError: true }));
-          }
-        });
+        },
+        onFailure: () => setResearch((current) => ({ ...current, emailError: true })),
+      });
+      cancelRequests = () => {
+        cancelWorkspaces();
+        cancelEmail();
+      };
     };
     refresh();
     window.addEventListener("workspace-updated", refresh);
     return () => {
-      cancelled = true;
+      cancelRequests();
       window.removeEventListener("workspace-updated", refresh);
     };
   }, [latestRunAt]);

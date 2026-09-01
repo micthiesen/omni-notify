@@ -273,15 +273,20 @@ export function computeVoiceBatch(
 }
 
 /**
- * Returns the next batch of up to `max` voices to person-search this run and
- * advances the persisted cursor (wrapping). Order-stable input → full coverage
- * across runs.
+ * Returns the next batch of up to `max` voices to person-search this run.
+ * The caller must explicitly commit the cursor after discovery succeeds. This
+ * prevents a transient discovery outage from silently skipping a whole batch.
  */
 export function nextVoiceBatch(voices: string[], max: number): string[] {
   const cursor = PodcastRunStateEntity.get({ id: "singleton" })?.voiceCursor ?? 0;
-  const { batch, nextCursor } = computeVoiceBatch(voices, max, cursor);
+  return computeVoiceBatch(voices, max, cursor).batch;
+}
+
+/** Advance the voice rotation only after the selected batch was searched. */
+export function advanceVoiceCursor(voices: string[], max: number): void {
+  const cursor = PodcastRunStateEntity.get({ id: "singleton" })?.voiceCursor ?? 0;
+  const { nextCursor } = computeVoiceBatch(voices, max, cursor);
   if (voices.length > max) {
     PodcastRunStateEntity.upsert({ id: "singleton", voiceCursor: nextCursor });
   }
-  return batch;
 }

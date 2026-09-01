@@ -1,11 +1,19 @@
 import type { EmailHandler, FetchedEmail } from "../../email/types.js";
+import { Data, Effect } from "effect";
+
+export class EmailReprocessError extends Data.TaggedError("EmailReprocessError")<{
+  readonly emailId: string;
+  readonly cause: unknown;
+}> {}
 
 /** Preserve an existing scheduled retry unless the manual reprocess succeeds. */
-export async function handleEmailThenClearRetry(
-  handler: Pick<EmailHandler, "handleEmails">,
+export function handleEmailThenClearRetryEffect(
+  handler: Pick<EmailHandler, "handleEmailsEffect">,
   email: FetchedEmail,
   clearRetry: () => void,
-): Promise<void> {
-  await handler.handleEmails([email]);
-  clearRetry();
+): Effect.Effect<void, EmailReprocessError> {
+  return handler.handleEmailsEffect([email]).pipe(
+    Effect.mapError((cause) => new EmailReprocessError({ emailId: email.id, cause })),
+    Effect.andThen(Effect.sync(clearRetry)),
+  );
 }

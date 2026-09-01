@@ -1,96 +1,110 @@
 import type { AddToWatchlistResult, MediaItem } from "../types.js";
+import { Effect, Schema } from "effect";
 import { MediaType } from "../types.js";
 import {
   type ArrConfig,
   type FetchImplementation,
   hasArrConnection,
   isConfigured,
-  optionalNumber,
-  optionalString,
   postJson,
   requestJson,
 } from "./client.js";
 
-interface RadarrMovie extends Record<string, unknown> {
-  id?: number;
-  title?: string;
-  year?: number;
-  tmdbId?: number;
-  imdbId?: string;
-}
+const RadarrMovieSchema = Schema.Struct({
+  id: Schema.optional(Schema.Number),
+  title: Schema.optional(Schema.String),
+  year: Schema.optional(Schema.Number),
+  tmdbId: Schema.optional(Schema.Number),
+  imdbId: Schema.optional(Schema.String),
+});
+const RadarrMoviesSchema = Schema.Array(RadarrMovieSchema);
 
-export async function fetchRadarrMovies(
+export function fetchRadarrMovies(
   config: ArrConfig,
   fetchImpl?: FetchImplementation,
-): Promise<{ status: "ok"; value: MediaItem[] } | { status: "unavailable" }> {
-  if (!hasArrConnection(config)) return { status: "unavailable" };
-  const response = await requestJson<unknown>(config, "movie", {}, fetchImpl);
-  if (response.status !== "ok" || !Array.isArray(response.value)) {
-    return { status: "unavailable" };
-  }
-  return {
-    status: "ok",
-    value: response.value.flatMap((raw) => {
-      const movie = raw as RadarrMovie;
-      const id = optionalNumber(movie.id);
-      const title = optionalString(movie.title);
-      const tmdb = optionalNumber(movie.tmdbId);
-      if (id === undefined || title === undefined || tmdb === undefined) return [];
-      return [
-        {
-          guid: `radarr:${id}`,
-          title,
-          year: optionalNumber(movie.year),
-          mediaType: MediaType.Movie,
-          externalIds: { tmdb, imdb: optionalString(movie.imdbId) },
-        },
-      ];
-    }),
-  };
+): Effect.Effect<{ status: "ok"; value: MediaItem[] } | { status: "unavailable" }> {
+  if (!hasArrConnection(config)) return Effect.succeed({ status: "unavailable" });
+  return Effect.gen(function* () {
+    const response = yield* requestJson(
+      config,
+      "movie",
+      RadarrMoviesSchema,
+      {},
+      fetchImpl,
+    );
+    if (response.status !== "ok") {
+      return { status: "unavailable" };
+    }
+    return {
+      status: "ok",
+      value: response.value.flatMap((movie) => {
+        const id = movie.id;
+        const title = movie.title;
+        const tmdb = movie.tmdbId;
+        if (id === undefined || title === undefined || tmdb === undefined) return [];
+        return [
+          {
+            guid: `radarr:${id}`,
+            title,
+            year: movie.year,
+            mediaType: MediaType.Movie,
+            externalIds: { tmdb, imdb: movie.imdbId },
+          },
+        ];
+      }),
+    };
+  });
 }
 
-export async function addRadarrMovie(
+export function addRadarrMovie(
   config: ArrConfig,
   tmdbId: number,
   fetchImpl?: FetchImplementation,
-): Promise<AddToWatchlistResult> {
-  if (!isConfigured(config)) return "unavailable";
-  const existing = await fetchRadarrMovies(config, fetchImpl);
-  if (existing.status !== "ok") return "unavailable";
-  if (existing.value.some((movie) => movie.externalIds?.tmdb === tmdbId)) {
-    return "already_exists";
-  }
+): Effect.Effect<AddToWatchlistResult> {
+  if (!isConfigured(config)) return Effect.succeed("unavailable");
+  return Effect.gen(function* () {
+    const existing = yield* fetchRadarrMovies(config, fetchImpl);
+    if (existing.status !== "ok") return "unavailable";
+    if (existing.value.some((movie) => movie.externalIds?.tmdb === tmdbId)) {
+      return "already_exists";
+    }
 
-  const lookup = await requestJson<RadarrMovie>(
-    config,
-    `movie/lookup/tmdb?tmdbId=${encodeURIComponent(tmdbId)}`,
-    {},
-    fetchImpl,
-  );
-  if (lookup.status === "unavailable") return "unavailable";
-  if (lookup.status !== "ok") return "error";
-  if (!optionalString(lookup.value.title) || !optionalNumber(lookup.value.tmdbId)) {
-    return "not_found";
-  }
+    const lookup = yield* requestJson(
+      config,
+      `movie/lookup/tmdb?tmdbId=${encodeURIComponent(tmdbId)}`,
+      RadarrMovieSchema,
+      {},
+      fetchImpl,
+    );
+    if (lookup.status === "unavailable") return "unavailable";
+    if (lookup.status !== "ok") return "error";
+    if (!lookup.value.title || lookup.value.tmdbId === undefined) {
+      return "not_found";
+    }
 
-  const added = await requestJson<unknown>(
-    config,
-    "movie",
-    postJson({
-      ...lookup.value,
-      qualityProfileId: config.qualityProfileId,
-      rootFolderPath: config.rootFolderPath,
-      monitored: true,
-      addOptions: { searchForMovie: true },
-    }),
-    fetchImpl,
-  );
-  if (added.status === "unavailable") return "unavailable";
-  if (added.status !== "ok") return "error";
+    const added = yield* requestJson(
+      config,
+      "movie",
+      RadarrMovieSchema,
+      postJson({
+        title: lookup.value.title,
+        year: lookup.value.year,
+        tmdbId: lookup.value.tmdbId,
+        imdbId: lookup.value.imdbId,
+        qualityProfileId: config.qualityProfileId,
+        rootFolderPath: config.rootFolderPath,
+        monitored: true,
+        addOptions: { searchForMovie: true },
+      }),
+      fetchImpl,
+    );
+    if (added.status === "unavailable") return "unavailable";
+    if (added.status !== "ok") return "error";
 
-  const verified = await fetchRadarrMovies(config, fetchImpl);
-  if (verified.status !== "ok") return "unavailable";
-  return verified.value.some((movie) => movie.externalIds?.tmdb === tmdbId)
-    ? "added"
-    : "error";
+    const verified = yield* fetchRadarrMovies(config, fetchImpl);
+    if (verified.status !== "ok") return "unavailable";
+    return verified.value.some((movie) => movie.externalIds?.tmdb === tmdbId)
+      ? "added"
+      : "error";
+  });
 }

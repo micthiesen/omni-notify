@@ -1,6 +1,7 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getLastRun,
@@ -45,6 +46,13 @@ class ManualInputTask extends FakeTask {
 
   public async runManual(input: unknown): Promise<void> {
     this.inputs.push(input);
+  }
+}
+
+class FailingManualTask extends ManualInputTask {
+  public override async runManual(input: unknown): Promise<void> {
+    this.inputs.push(input);
+    throw new Error("workspace run failed");
   }
 }
 
@@ -148,5 +156,32 @@ describe("TaskRegistry missed-run recovery", () => {
     expect(() => registry.runNow(task.name, { count: 5 })).toThrow(
       TaskManualInputUnsupportedError,
     );
+  });
+
+  it("waits for the exact manual run to finish successfully", async () => {
+    const task = new ManualInputTask("Awaited", "0 0 5 * * *");
+    const registry = new TaskRegistry(logger);
+    registry.track(task);
+
+    const result = await Effect.runPromise(
+      registry.runNowAndWaitEffect(task.name, { source: "email" }),
+    );
+
+    expect(task.inputs).toEqual([{ source: "email" }]);
+    expect(getLastRun(task.name)).toMatchObject({
+      runId: result.runId,
+      status: "success",
+    });
+  });
+
+  it("fails only after the awaited run is durably recorded as failed", async () => {
+    const task = new FailingManualTask("AwaitedFailure", "0 0 5 * * *");
+    const registry = new TaskRegistry(logger);
+    registry.track(task);
+
+    await expect(
+      Effect.runPromise(registry.runNowAndWaitEffect(task.name, { source: "email" })),
+    ).rejects.toThrow();
+    expect(getLastRun(task.name)).toMatchObject({ status: "error" });
   });
 });

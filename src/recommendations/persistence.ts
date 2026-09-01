@@ -56,6 +56,13 @@ export type RecommendationData = {
   runDate: string;
   recommendedAt: number;
   notifiedAt?: number;
+  /**
+   * Durable notification attempt state. `reserved` means delivery was attempted
+   * but its final local acknowledgement is unknown, so reconciliation must not
+   * send it again.
+   */
+  notificationState?: "reserved" | "sent" | "failed" | "unknown";
+  notificationReservedAt?: number;
   /** First time Plex showed playback or partial progress after delivery. */
   startedAt?: number;
   /** When a terminal outcome (watched/abandoned/ignored) was assigned. */

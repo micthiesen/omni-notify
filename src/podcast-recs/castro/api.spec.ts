@@ -1,13 +1,101 @@
-import { describe, expect, it } from "vitest";
-import { encodeCastroQueryValue } from "./api.js";
+import { Effect, Fiber } from "effect";
+import type { OptionsInit } from "got";
+import { describe, expect, it, vi } from "vitest";
+import { CastroApi, type CastroHttpRequest } from "./api.js";
 
-describe("Castro API query encoding", () => {
-  it("uses the RFC 3986 encoding that is signed and sent on the wire", () => {
-    expect(encodeCastroQueryValue("Beth's (History)!")).toBe(
-      "Beth%27s%20%28History%29%21",
+function api(request: CastroHttpRequest, maxResponseBytes = 1024): CastroApi {
+  return new CastroApi(
+    {
+      accessId: "device",
+      secret: new TextEncoder().encode("secret"),
+    },
+    { request, maxResponseBytes },
+  );
+}
+
+function response(chunks: string[], contentLength?: number, destroy = vi.fn()) {
+  return {
+    response: {
+      statusCode: 200,
+      headers:
+        contentLength === undefined ? {} : { "content-length": String(contentLength) },
+    },
+    destroy,
+    async *[Symbol.asyncIterator]() {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
+
+describe("CastroApi bounded requests", () => {
+  it("streams and decodes a concrete response", async () => {
+    const request = vi.fn(() =>
+      response([
+        JSON.stringify({
+          device_status: 1,
+          account_status: 1,
+          latest_event_id: 42,
+        }),
+      ]),
+    ) as CastroHttpRequest;
+
+    await expect(Effect.runPromise(api(request).getSyncStatus())).resolves.toEqual({
+      device_status: 1,
+      account_status: 1,
+      latest_event_id: 42,
+    });
+    expect(request).toHaveBeenCalledWith(
+      "https://tentacles.castro.fm/profile/sync/status",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(encodeCastroQueryValue("https://example.com/feed?a=1&b=2")).toBe(
-      "https%3A%2F%2Fexample.com%2Ffeed%3Fa%3D1%26b%3D2",
+  });
+
+  it("rejects a fixed-length oversized response before buffering it", async () => {
+    const destroy = vi.fn();
+    const request = vi.fn(() => response([], 9, destroy)) as CastroHttpRequest;
+
+    await expect(Effect.runPromise(api(request, 8).getSyncStatus())).rejects.toThrow(
+      "Response exceeds the 8-byte limit",
     );
+    expect(destroy).toHaveBeenCalledTimes(3);
+  });
+
+  it("cancels a chunked oversized response", async () => {
+    const destroy = vi.fn();
+    const request = vi.fn(() =>
+      response(["12345", "67890"], undefined, destroy),
+    ) as CastroHttpRequest;
+
+    await expect(Effect.runPromise(api(request, 8).getSyncStatus())).rejects.toThrow(
+      "Response exceeds the 8-byte limit",
+    );
+    expect(destroy).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("CastroApi interruption", () => {
+  it("aborts an in-flight request when its Effect is interrupted", async () => {
+    const signals: AbortSignal[] = [];
+    const request = vi.fn((_url: string | URL, options: OptionsInit) => ({
+      async *[Symbol.asyncIterator]() {
+        yield* [];
+        const signal = options.signal as AbortSignal;
+        signals.push(signal);
+        await Effect.runPromise(
+          Effect.async<never, DOMException>((resume) => {
+            const onAbort = () =>
+              resume(Effect.fail(new DOMException("Aborted", "AbortError")));
+            signal.addEventListener("abort", onAbort, { once: true });
+            return Effect.sync(() => signal.removeEventListener("abort", onAbort));
+          }),
+        );
+      },
+    })) as CastroHttpRequest;
+    const fiber = Effect.runFork(api(request).getSyncStatus());
+
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+
+    expect(signals[0]?.aborted).toBe(true);
   });
 });

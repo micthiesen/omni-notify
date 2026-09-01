@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
 
 const plex = vi.hoisted(() => ({
   fetchWatchHistory: vi.fn(),
@@ -21,9 +22,11 @@ describe("Plex media library bridge", () => {
   beforeEach(() => vi.resetAllMocks());
 
   it("wraps successful Plex responses", async () => {
-    plex.fetchWatchHistory.mockResolvedValue([{ guid: "plex://movie/1" }]);
-    plex.fetchInProgress.mockResolvedValue([]);
-    plex.fetchLibraryIndex.mockResolvedValue([]);
+    plex.fetchWatchHistory.mockReturnValue(
+      Effect.succeed([{ guid: "plex://movie/1" }]),
+    );
+    plex.fetchInProgress.mockReturnValue(Effect.succeed([]));
+    plex.fetchLibraryIndex.mockReturnValue(Effect.succeed([]));
 
     await expect(fetchWatchHistory()).resolves.toEqual({
       status: "ok",
@@ -34,7 +37,7 @@ describe("Plex media library bridge", () => {
   });
 
   it("reports Plex failures as unavailable instead of empty state", async () => {
-    plex.fetchWatchHistory.mockRejectedValue(new Error("Plex timed out"));
+    plex.fetchWatchHistory.mockReturnValue(Effect.fail(new Error("Plex timed out")));
 
     await expect(fetchWatchHistory()).resolves.toEqual({
       status: "unavailable",

@@ -1,10 +1,10 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
-import PQueue from "p-queue";
+import { Data, Effect } from "effect";
 import type { PodcastAccountClient } from "./account.js";
-import { pickBestShowMatch, searchItunesPodcasts } from "./itunes.js";
+import { pickBestShowMatch, searchItunesPodcastsEffect } from "./itunes.js";
 import type { PodcastIndexEpisode } from "./podcastindex/types.js";
-import { fetchFeedEpisodes, findEpisodeByTitle } from "./rss.js";
+import { fetchFeedEpisodesEffect, findEpisodeByTitle } from "./rss.js";
 import { normalizeTitle } from "./titles.js";
 import type { DiscoveredEpisode, EpisodeCandidate } from "./types.js";
 import { makeEpisodeId, makeShowId } from "./types.js";
@@ -29,78 +29,90 @@ interface ResolvedShow {
  * recommendable, which is the deterministic version of the old briefing's
  * "open the episode page before recommending" rule.
  */
-export async function resolveCandidates(
+class CandidateResolutionError extends Data.TaggedError("CandidateResolutionError")<{
+  readonly item: DiscoveredEpisode;
+  readonly cause: unknown;
+}> {}
+
+export function resolveCandidatesEffect(
   discovered: DiscoveredEpisode[],
   account: PodcastAccountClient | undefined,
   logger: Logger,
   logFile?: LogFile,
-): Promise<EpisodeCandidate[]> {
-  const queue = new PQueue({ concurrency: RESOLVE_CONCURRENCY });
-  const dropped: string[] = [];
+): Effect.Effect<EpisodeCandidate[]> {
+  return Effect.gen(function* () {
+    const resolved = yield* Effect.forEach(
+      discovered,
+      (item) =>
+        resolveOneEffect(item, account).pipe(
+          Effect.mapError((cause) => new CandidateResolutionError({ item, cause })),
+          Effect.either,
+        ),
+      { concurrency: RESOLVE_CONCURRENCY },
+    );
 
-  const resolved = await Promise.all(
-    discovered.map((item) =>
-      queue.add(async () => {
-        try {
-          return await resolveOne(item, account);
-        } catch (error) {
-          dropped.push(
-            `- ${item.showTitle} — ${item.episodeTitle}: ${(error as Error).message}`,
-          );
-          return undefined;
-        }
-      }),
-    ),
-  );
+    const dropped = resolved
+      .filter((result) => result._tag === "Left")
+      .map(
+        ({ left }) =>
+          `- ${left.item.showTitle} — ${left.item.episodeTitle}: ${left.cause instanceof Error ? left.cause.message : String(left.cause)}`,
+      );
 
-  const seen = new Set<string>();
-  const candidates: EpisodeCandidate[] = [];
-  for (const candidate of resolved) {
-    if (!candidate || seen.has(candidate.episodeId)) continue;
-    seen.add(candidate.episodeId);
-    candidates.push(candidate);
-  }
+    const seen = new Set<string>();
+    const candidates: EpisodeCandidate[] = [];
+    for (const result of resolved) {
+      if (result._tag === "Left") continue;
+      const candidate = result.right;
+      if (seen.has(candidate.episodeId)) continue;
+      seen.add(candidate.episodeId);
+      candidates.push(candidate);
+    }
 
-  logger.info(`Resolved ${candidates.length}/${discovered.length} discovered episodes`);
-  if (dropped.length > 0) {
-    logFile?.section("Resolution Failures", dropped.join("\n"));
-  }
-  return candidates;
+    logger.info(
+      `Resolved ${candidates.length}/${discovered.length} discovered episodes`,
+    );
+    if (dropped.length > 0) {
+      logFile?.section("Resolution Failures", dropped.join("\n"));
+    }
+    return candidates;
+  });
 }
 
-async function resolveOne(
+function resolveOneEffect(
   item: DiscoveredEpisode,
   account: PodcastAccountClient | undefined,
-): Promise<EpisodeCandidate> {
-  const show = await resolveShow(item.showTitle, account);
-  if (!show) throw new Error("show not found on iTunes or Castro");
+): Effect.Effect<EpisodeCandidate, unknown> {
+  return Effect.gen(function* () {
+    const show = yield* resolveShowEffect(item.showTitle, account);
+    if (!show) return yield* Effect.fail("show not found on iTunes or Castro");
 
-  const episodes = await fetchFeedEpisodes(show.feedUrl, { maxEpisodes: 30 });
-  const episode = findEpisodeByTitle(episodes, item.episodeTitle);
-  if (!episode) throw new Error("episode not found in RSS feed");
+    const episodes = yield* fetchFeedEpisodesEffect(show.feedUrl, { maxEpisodes: 30 });
+    const episode = findEpisodeByTitle(episodes, item.episodeTitle);
+    if (!episode) return yield* Effect.fail("episode not found in RSS feed");
 
-  const showId = makeShowId({ itunesId: show.itunesId, feedUrl: show.feedUrl });
-  if (!showId) throw new Error("could not build canonical show id");
+    const showId = makeShowId({ itunesId: show.itunesId, feedUrl: show.feedUrl });
+    if (!showId) return yield* Effect.fail("could not build canonical show id");
 
-  return {
-    episodeId: makeEpisodeId(showId, episode.guid),
-    showId,
-    showTitle: show.title,
-    episodeTitle: episode.title,
-    feedUrl: show.feedUrl,
-    itunesId: show.itunesId,
-    artworkUrl: show.artworkUrl,
-    episodeGuid: episode.guid,
-    mediaUrl: episode.enclosureUrl,
-    episodeUrl: episode.link,
-    publishedAt: episode.publishedAt,
-    durationMinutes: episode.durationMinutes,
-    description: episode.description,
-    showGenres: show.genres,
-    discoveredVia: item.context,
-    sourceUrl: item.sourceUrl,
-    matchedVoices: item.matchedVoices,
-  };
+    return {
+      episodeId: makeEpisodeId(showId, episode.guid),
+      showId,
+      showTitle: show.title,
+      episodeTitle: episode.title,
+      feedUrl: show.feedUrl,
+      itunesId: show.itunesId,
+      artworkUrl: show.artworkUrl,
+      episodeGuid: episode.guid,
+      mediaUrl: episode.enclosureUrl,
+      episodeUrl: episode.link,
+      publishedAt: episode.publishedAt,
+      durationMinutes: episode.durationMinutes,
+      description: episode.description,
+      showGenres: show.genres,
+      discoveredVia: item.context,
+      sourceUrl: item.sourceUrl,
+      matchedVoices: item.matchedVoices,
+    };
+  });
 }
 
 /**
@@ -108,33 +120,38 @@ async function resolveOne(
  * podcast search is a fallback that catches private feeds and niche shows
  * iTunes misses (Castro-resolved shows carry no genre metadata).
  */
-async function resolveShow(
+function resolveShowEffect(
   showTitle: string,
   account: PodcastAccountClient | undefined,
-): Promise<ResolvedShow | undefined> {
-  const itunes = pickBestShowMatch(await searchItunesPodcasts(showTitle), showTitle);
-  if (itunes?.feedUrl) {
-    return {
-      title: itunes.title,
-      feedUrl: itunes.feedUrl,
-      itunesId: itunes.itunesId,
-      artworkUrl: itunes.artworkUrl,
-      genres: itunes.genres,
-    };
-  }
+): Effect.Effect<ResolvedShow | undefined, unknown> {
+  return Effect.gen(function* () {
+    const itunes = pickBestShowMatch(
+      yield* searchItunesPodcastsEffect(showTitle),
+      showTitle,
+    );
+    if (itunes?.feedUrl) {
+      return {
+        title: itunes.title,
+        feedUrl: itunes.feedUrl,
+        itunesId: itunes.itunesId,
+        artworkUrl: itunes.artworkUrl,
+        genres: itunes.genres,
+      };
+    }
 
-  if (!account) return undefined;
-  const result = await account.searchPodcasts(showTitle);
-  if (result.status !== "ok") return undefined;
-  const match = pickBestByTitle(result.value, showTitle);
-  if (!match?.feedUrl) return undefined;
-  return {
-    title: match.title,
-    feedUrl: match.feedUrl,
-    itunesId: match.itunesId,
-    artworkUrl: match.artworkUrl,
-    genres: [],
-  };
+    if (!account) return undefined;
+    const result = yield* account.searchPodcasts(showTitle);
+    if (result.status !== "ok") return undefined;
+    const match = pickBestByTitle(result.value, showTitle);
+    if (!match?.feedUrl) return undefined;
+    return {
+      title: match.title,
+      feedUrl: match.feedUrl,
+      itunesId: match.itunesId,
+      artworkUrl: match.artworkUrl,
+      genres: [],
+    };
+  });
 }
 
 /**

@@ -1,15 +1,11 @@
 import { addBookmark } from "@micthiesen/mitools/karakeep";
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { z } from "zod";
-import {
-  enqueueEpisodeJob,
-  findActiveJobByNormalizedUrl,
-  findFailedJobByNormalizedUrl,
-  type PressPodsJobData,
-  requeueJobNow,
-} from "./persistence.js";
-import { assertPublicHttpUrlSyntax } from "./publicHttp.js";
+import { type PressPodsJobData, PressPodsPersistence } from "./persistence.js";
+import { assertPublicHttpUrl, assertPublicHttpUrlSyntax } from "./publicHttp.js";
 import { normalizeUrl } from "./url.js";
+import { PressPodsError, tryPromise, trySync } from "./effect.js";
 
 export const submitEpisodeSchema = z.object({
   // iOS Shortcuts sometimes duplicates the URL with a newline separator
@@ -39,36 +35,47 @@ export const submitEpisodeSchema = z.object({
  * bookmark the article in Karakeep (best-effort), and kick the worker so
  * processing starts immediately instead of at the next sweep.
  */
-export function submitEpisodeUrl(
+export function submitEpisodeUrlEffect(
   url: string,
   kickWorker: () => void,
   logger: Logger,
-): PressPodsJobData {
-  const normalizedUrl = normalizeUrl(url);
+): Effect.Effect<PressPodsJobData, PressPodsError> {
+  return Effect.gen(function* () {
+    const publicUrl = yield* assertPublicHttpUrl(url);
+    const validatedUrl = publicUrl.toString();
+    const normalizedUrl = normalizeUrl(validatedUrl);
 
-  const active = findActiveJobByNormalizedUrl(normalizedUrl);
-  if (active) {
-    logger.info(`Episode job already ${active.status} for ${url}; joining it`);
-    kickWorker();
-    return active;
-  }
-
-  const failed = findFailedJobByNormalizedUrl(normalizedUrl);
-  if (failed) {
-    const requeued = requeueJobNow(failed.jobId);
-    if (requeued) {
-      logger.info(`Retrying previously-failed episode job for ${url}`);
-      kickWorker();
-      return requeued;
+    const active =
+      yield* PressPodsPersistence.findActiveJobByNormalizedUrl(normalizedUrl);
+    if (active) {
+      logger.info(
+        `Episode job already ${active.status} for ${validatedUrl}; joining it`,
+      );
+      yield* trySync("kick PressPods worker", kickWorker);
+      return active;
     }
-  }
 
-  const job = enqueueEpisodeJob(url);
-  logger.info(`Episode job enqueued for ${url}`);
+    const failed =
+      yield* PressPodsPersistence.findFailedJobByNormalizedUrl(normalizedUrl);
+    if (failed) {
+      const requeued = yield* PressPodsPersistence.requeueJobNow(failed.jobId);
+      if (requeued) {
+        logger.info(`Retrying previously-failed episode job for ${validatedUrl}`);
+        yield* trySync("kick PressPods worker", kickWorker);
+        return requeued;
+      }
+    }
 
-  // Fire-and-forget: mitools no-ops without KARAKEEP_URL/KARAKEEP_API_KEY.
-  void addBookmark({ url, archived: true, tags: ["PressPods"] }, logger);
+    const job = yield* PressPodsPersistence.enqueueEpisodeJob(validatedUrl);
+    logger.info(`Episode job enqueued for ${validatedUrl}`);
 
-  kickWorker();
-  return job;
+    // Bookmarking remains best-effort, but is kept inside the structured workflow
+    // so interruption and failures cannot leave an unobserved Promise behind.
+    yield* tryPromise("bookmark PressPods article", () =>
+      addBookmark({ url: validatedUrl, archived: true, tags: ["PressPods"] }, logger),
+    ).pipe(Effect.catchAll(() => Effect.void));
+
+    yield* trySync("kick PressPods worker", kickWorker);
+    return job;
+  });
 }

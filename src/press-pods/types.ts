@@ -1,4 +1,6 @@
 import type { Metadata } from "./agents/metadata.js";
+import type { Effect } from "effect";
+import type { PressPodsError } from "./effect.js";
 
 export interface Article {
   title: string | undefined;
@@ -12,7 +14,7 @@ export interface Article {
 
 export interface ArticleRetriever {
   name: string;
-  retrieve: (url: string, userAgent: string) => Promise<Article>;
+  retrieve: (url: string, userAgent: string) => Effect.Effect<Article, PressPodsError>;
 }
 
 /** A chapter marker: title + its start offset (seconds) into the final audio. */

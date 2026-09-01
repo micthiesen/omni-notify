@@ -1,132 +1,269 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { z } from "zod";
+import { Effect, Schema } from "effect";
 import {
   createCalendarEvent,
   discoverCaldavSession,
 } from "../calendar-events/caldav/index.js";
+import { runPromise } from "../effect/interop.js";
+import {
+  WorkspaceActionError,
+  WorkspaceOperationError,
+  WorkspaceValidationError,
+} from "./errors.js";
 import type { WorkspaceActionData } from "./persistence.js";
 import {
   getWorkspaceAction,
   setWorkspaceActionResult,
   upsertWorkspaceEmailScope,
 } from "./persistence.js";
+import { workspaceRepositoryEffect } from "./repository.js";
 import type {
   WorkspaceCalendarEventPayload,
   WorkspaceEmailScopePayload,
 } from "./types.js";
 
-const emailScopeSchema: z.ZodType<WorkspaceEmailScopePayload> = z
-  .object({
-    senders: z.array(z.string().trim().min(2).max(200)).max(20),
-    domains: z.array(z.string().trim().min(2).max(200)).max(20),
-    subjectKeywords: z.array(z.string().trim().min(2).max(200)).max(20),
-    bodyKeywords: z.array(z.string().trim().min(2).max(200)).max(20),
-  })
-  .refine(
-    (value) =>
-      value.senders.length +
-        value.domains.length +
-        value.subjectKeywords.length +
-        value.bodyKeywords.length >
-      0,
-    "An email scope must contain at least one matcher",
-  );
-
-const calendarEventSchema: z.ZodType<WorkspaceCalendarEventPayload> = z.object({
-  title: z.string().min(1),
-  startDate: z.string().min(1),
-  endDate: z.string().optional(),
-  startTime: z.string().optional(),
-  endTime: z.string().optional(),
-  location: z.string().optional(),
-  description: z.string().optional(),
-  timeZone: z.string().optional(),
-  allDay: z.boolean(),
-  reminderMinutes: z.number().optional(),
+const EmailScopePayloadSchema = Schema.Struct({
+  senders: Schema.Array(Schema.String),
+  domains: Schema.Array(Schema.String),
+  subjectKeywords: Schema.Array(Schema.String),
+  bodyKeywords: Schema.Array(Schema.String),
+});
+const CalendarEventPayloadSchema = Schema.Struct({
+  title: Schema.String,
+  startDate: Schema.String,
+  endDate: Schema.optional(Schema.String),
+  startTime: Schema.optional(Schema.String),
+  endTime: Schema.optional(Schema.String),
+  location: Schema.optional(Schema.String),
+  description: Schema.optional(Schema.String),
+  timeZone: Schema.optional(Schema.String),
+  allDay: Schema.Boolean,
+  reminderMinutes: Schema.optional(Schema.Number),
 });
 
 const resolvingActions = new Set<string>();
+type ActionFailure =
+  | WorkspaceActionError
+  | WorkspaceValidationError
+  | WorkspaceOperationError;
 
-export async function approveWorkspaceAction(
+function decodePayload<A, I>(
   actionId: string,
-  logger: Logger,
-): Promise<WorkspaceActionData> {
-  if (resolvingActions.has(actionId))
-    throw new Error("Workspace action is already being resolved");
-  const action = getApprovableAction(actionId);
-  resolvingActions.add(actionId);
-  try {
-    if (action.type === "email_scope") {
-      const scope = emailScopeSchema.parse(JSON.parse(action.payload));
-      upsertWorkspaceEmailScope(action.workspaceId, action.subjectId, scope);
-      return finish(actionId, "approved", "Email scope enabled");
-    }
-
-    const event = calendarEventSchema.parse(JSON.parse(action.payload));
-    const session = await discoverCaldavSession(logger);
-    const result = await createCalendarEvent(
-      session,
-      {
-        action: "create",
-        eventId: undefined,
-        duration: undefined,
-        recurrence: undefined,
-        ...event,
-      },
-      logger,
-      `workspace-${action.actionId}@omni-notify`,
-    );
-    if (result.status === "error" && result.code !== 412) {
-      throw new Error(result.message);
-    }
-    return finish(
-      actionId,
-      "approved",
-      result.status === "success"
-        ? `Calendar event created (${result.eventUid})`
-        : "Calendar event was already created",
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setWorkspaceActionResult(actionId, "failed", message);
-    throw error;
-  } finally {
-    resolvingActions.delete(actionId);
-  }
+  payload: string,
+  schema: Schema.Schema<A, I>,
+) {
+  return Effect.try({
+    try: () => JSON.parse(payload) as unknown,
+    catch: (cause) =>
+      new WorkspaceValidationError({
+        message: `Workspace action ${actionId} has invalid JSON`,
+        cause,
+      }),
+  }).pipe(
+    Effect.flatMap((value) =>
+      Schema.decodeUnknown(schema)(value).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceValidationError({
+              message: `Workspace action ${actionId} has an invalid payload`,
+              cause,
+            }),
+        ),
+      ),
+    ),
+  );
 }
 
-export function rejectWorkspaceAction(actionId: string): WorkspaceActionData {
-  if (resolvingActions.has(actionId)) {
-    throw new Error("Workspace action is already being resolved");
-  }
-  getPendingAction(actionId);
-  return finish(actionId, "rejected", "Rejected by user");
+function getApprovableActionEffect(
+  actionId: string,
+): Effect.Effect<WorkspaceActionData, ActionFailure> {
+  return workspaceRepositoryEffect("read workspace action", () =>
+    getWorkspaceAction(actionId),
+  ).pipe(
+    Effect.flatMap((action) => {
+      if (!action)
+        return Effect.fail(
+          new WorkspaceActionError({ actionId, message: "Workspace action not found" }),
+        );
+      if (action.status !== "pending" && action.status !== "failed") {
+        return Effect.fail(
+          new WorkspaceActionError({
+            actionId,
+            message: `Workspace action is already ${action.status}`,
+          }),
+        );
+      }
+      return Effect.succeed(action);
+    }),
+  );
 }
 
-function getApprovableAction(actionId: string): WorkspaceActionData {
-  const action = getWorkspaceAction(actionId);
-  if (!action) throw new Error("Workspace action not found");
-  if (action.status !== "pending" && action.status !== "failed") {
-    throw new Error(`Workspace action is already ${action.status}`);
-  }
-  return action;
-}
-
-function getPendingAction(actionId: string): WorkspaceActionData {
-  const action = getWorkspaceAction(actionId);
-  if (!action) throw new Error("Workspace action not found");
-  if (action.status !== "pending") {
-    throw new Error(`Workspace action is already ${action.status}`);
-  }
-  return action;
-}
-
-function finish(
+function finishEffect(
   actionId: string,
   status: "approved" | "rejected",
   result: string,
-): WorkspaceActionData {
-  const action = setWorkspaceActionResult(actionId, status, result);
-  if (!action) throw new Error("Workspace action disappeared while resolving it");
-  return action;
+) {
+  return workspaceRepositoryEffect("resolve workspace action", () =>
+    setWorkspaceActionResult(actionId, status, result),
+  ).pipe(
+    Effect.flatMap((action) =>
+      action
+        ? Effect.succeed(action)
+        : Effect.fail(
+            new WorkspaceActionError({
+              actionId,
+              message: "Workspace action disappeared while resolving it",
+            }),
+          ),
+    ),
+  );
+}
+
+export function approveWorkspaceActionEffect(
+  actionId: string,
+  logger: Logger,
+): Effect.Effect<WorkspaceActionData, ActionFailure> {
+  const acquire = Effect.gen(function* () {
+    if (resolvingActions.has(actionId))
+      return yield* new WorkspaceActionError({
+        actionId,
+        message: "Workspace action is already being resolved",
+      });
+    const action = yield* getApprovableActionEffect(actionId);
+    resolvingActions.add(actionId);
+    return action;
+  });
+  return Effect.acquireUseRelease(
+    acquire,
+    (action) =>
+      Effect.gen(function* () {
+        if (action.type === "email_scope") {
+          const scope = yield* decodePayload(
+            actionId,
+            action.payload,
+            EmailScopePayloadSchema,
+          );
+          const matchers = [
+            ...scope.senders,
+            ...scope.domains,
+            ...scope.subjectKeywords,
+            ...scope.bodyKeywords,
+          ];
+          if (
+            [
+              scope.senders,
+              scope.domains,
+              scope.subjectKeywords,
+              scope.bodyKeywords,
+            ].some((values) => values.length > 20) ||
+            matchers.length === 0 ||
+            matchers.some((v) => v.trim().length < 2 || v.length > 200)
+          ) {
+            return yield* new WorkspaceValidationError({
+              message: "An email scope must contain bounded, non-empty matchers",
+            });
+          }
+          yield* workspaceRepositoryEffect("enable workspace email scope", () =>
+            upsertWorkspaceEmailScope(
+              action.workspaceId,
+              action.subjectId,
+              scope as WorkspaceEmailScopePayload,
+            ),
+          );
+          return yield* finishEffect(actionId, "approved", "Email scope enabled");
+        }
+        const event = yield* decodePayload(
+          actionId,
+          action.payload,
+          CalendarEventPayloadSchema,
+        );
+        if (!event.title.trim() || !event.startDate.trim())
+          return yield* new WorkspaceValidationError({
+            message: "A calendar event requires a title and start date",
+          });
+        const session = yield* Effect.tryPromise({
+          try: () => discoverCaldavSession(logger),
+          catch: (cause) =>
+            new WorkspaceActionError({
+              actionId,
+              message: cause instanceof Error ? cause.message : String(cause),
+              cause,
+            }),
+        });
+        const result = yield* Effect.tryPromise({
+          try: () =>
+            createCalendarEvent(
+              session,
+              {
+                action: "create",
+                eventId: undefined,
+                duration: undefined,
+                recurrence: undefined,
+                ...(event as WorkspaceCalendarEventPayload),
+              },
+              logger,
+              `workspace-${action.actionId}@omni-notify`,
+            ),
+          catch: (cause) =>
+            new WorkspaceActionError({
+              actionId,
+              message: cause instanceof Error ? cause.message : String(cause),
+              cause,
+            }),
+        });
+        if (result.status === "error" && result.code !== 412)
+          return yield* new WorkspaceActionError({ actionId, message: result.message });
+        return yield* finishEffect(
+          actionId,
+          "approved",
+          result.status === "success"
+            ? `Calendar event created (${result.eventUid})`
+            : "Calendar event was already created",
+        );
+      }).pipe(
+        Effect.tapError((error) =>
+          workspaceRepositoryEffect("record workspace action failure", () =>
+            setWorkspaceActionResult(actionId, "failed", error.message),
+          ).pipe(Effect.ignore),
+        ),
+      ),
+    () => Effect.sync(() => resolvingActions.delete(actionId)),
+  );
+}
+
+/** Promise adapter for Hono and MCP callers. */
+export function approveWorkspaceAction(
+  actionId: string,
+  logger: Logger,
+): Promise<WorkspaceActionData> {
+  return runPromise(approveWorkspaceActionEffect(actionId, logger));
+}
+
+export function rejectWorkspaceActionEffect(actionId: string) {
+  return Effect.gen(function* () {
+    if (resolvingActions.has(actionId))
+      return yield* new WorkspaceActionError({
+        actionId,
+        message: "Workspace action is already being resolved",
+      });
+    const action = yield* workspaceRepositoryEffect("read workspace action", () =>
+      getWorkspaceAction(actionId),
+    );
+    if (!action)
+      return yield* new WorkspaceActionError({
+        actionId,
+        message: "Workspace action not found",
+      });
+    if (action.status !== "pending")
+      return yield* new WorkspaceActionError({
+        actionId,
+        message: `Workspace action is already ${action.status}`,
+      });
+    return yield* finishEffect(actionId, "rejected", "Rejected by user");
+  });
+}
+
+/** Synchronous adapter retained for existing request handlers. */
+export function rejectWorkspaceAction(actionId: string): WorkspaceActionData {
+  return Effect.runSync(rejectWorkspaceActionEffect(actionId));
 }

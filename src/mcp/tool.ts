@@ -1,4 +1,5 @@
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/server";
+import { Cause, Data, Effect } from "effect";
 import { z } from "zod";
 
 export type ExecutorPolicy = "allow" | "require_approval" | "block";
@@ -25,22 +26,71 @@ export interface McpToolDefinition {
     >
   >;
   policy: ToolPolicy;
-  execute: (input: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  execute: (
+    input: Record<string, unknown>,
+  ) => Effect.Effect<Record<string, unknown>, McpToolError>;
 }
 
-type ToolDefinitionInput<TInput extends z.ZodType<Record<string, unknown>>> = Omit<
-  McpToolDefinition,
-  "inputSchema" | "outputSchema" | "execute"
-> & {
+export class McpToolError extends Data.TaggedError("McpToolError")<{
+  readonly tool: string;
+  readonly phase: "input" | "execute" | "output";
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    return toolErrorMessage(this.cause);
+  }
+}
+
+function toolErrorMessage(cause: unknown): string {
+  if (
+    typeof cause === "object" &&
+    cause !== null &&
+    "cause" in cause &&
+    cause.cause !== cause
+  ) {
+    return toolErrorMessage(cause.cause);
+  }
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+type ToolDefinitionInput<
+  TInput extends z.ZodType<Record<string, unknown>>,
+  TError,
+> = Omit<McpToolDefinition, "inputSchema" | "outputSchema" | "execute"> & {
   inputSchema: TInput;
   outputSchema: z.ZodType<Record<string, unknown>>;
-  execute: (input: z.output<TInput>) => Promise<Record<string, unknown>>;
+  execute: (input: z.output<TInput>) => Effect.Effect<Record<string, unknown>, TError>;
 };
 
-export function defineTool<TInput extends z.ZodType<Record<string, unknown>>>(
-  definition: ToolDefinitionInput<TInput>,
+export function defineTool<TInput extends z.ZodType<Record<string, unknown>>, TError>(
+  definition: ToolDefinitionInput<TInput, TError>,
 ): McpToolDefinition {
-  return definition as unknown as McpToolDefinition;
+  const execute = (input: Record<string, unknown>) =>
+    Effect.gen(function* () {
+      const decodedInput = yield* Effect.try({
+        try: () => definition.inputSchema.parse(input),
+        catch: (cause) =>
+          new McpToolError({ tool: definition.name, phase: "input", cause }),
+      });
+      const value = yield* definition.execute(decodedInput).pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.fail(
+            new McpToolError({
+              tool: definition.name,
+              phase: "execute",
+              cause: Cause.squash(cause),
+            }),
+          ),
+        ),
+      );
+      return yield* Effect.try({
+        try: () => definition.outputSchema.parse(value),
+        catch: (cause) =>
+          new McpToolError({ tool: definition.name, phase: "output", cause }),
+      });
+    });
+
+  return { ...definition, execute } as McpToolDefinition;
 }
 
 export const annotations = (

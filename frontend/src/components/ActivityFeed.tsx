@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Effect } from "effect";
 import { fetchTaskRuns } from "../api";
 import type { Snapshot, TaskInfo, TaskRun } from "../api";
+import { forkUiEffect } from "../effect";
 import {
   formatAbsolute,
   formatRelative,
@@ -108,20 +110,23 @@ export function ActivityFeed({
       setFetchError(null);
       return;
     }
-    let cancelled = false;
-    fetchTaskRuns({ task: filterTask || undefined, limit: FILTERED_LIMIT })
-      .then((data) => {
-        if (cancelled) return;
-        setFetched(data.runs);
-        setFetchError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setFetchError(err instanceof Error ? err.message : "Failed to fetch task runs");
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      fetchTaskRuns({ task: filterTask || undefined, limit: FILTERED_LIMIT }).pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setFetched(data.runs);
+            setFetchError(null);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() =>
+            setFetchError(
+              err instanceof Error ? err.message : "Failed to fetch task runs",
+            ),
+          ),
+        ),
+      ),
+    );
   }, [filtered, filterTask, newestRunId]);
 
   const runs = filtered ? fetched : snapshot.runs;

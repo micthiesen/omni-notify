@@ -1,4 +1,6 @@
 import got from "got";
+import { Duration, Effect, Schedule, Schema } from "effect";
+import { runPromise } from "../../effect/interop.js";
 import type { z } from "zod";
 import config from "../../utils/config.js";
 import { MediaType } from "../types.js";
@@ -18,80 +20,111 @@ import {
   tvDetailsSchema,
   tvListSchema,
 } from "./types.js";
+import { integrationEffect, RecommendationIntegrationError } from "../effect.js";
 
 const BASE_URL = "https://api.themoviedb.org/3";
 
-function apiKey(): string {
+function apiKeyEffect(): Effect.Effect<string, RecommendationIntegrationError> {
   const key = config.TMDB_API_KEY;
-  if (!key) throw new Error("TMDB_API_KEY is not configured");
-  return key;
+  return key
+    ? Effect.succeed(key)
+    : Effect.fail(
+        new RecommendationIntegrationError({
+          operation: "read TMDB API key",
+          cause: new Error("TMDB_API_KEY is not configured"),
+        }),
+      );
 }
 
-async function tmdbGet<T>(
+function tmdbGet<T>(
   path: string,
   schema: z.ZodType<T>,
   searchParams: Record<string, string | number | boolean> = {},
-): Promise<T> {
-  const key = apiKey();
-  // v4 read access tokens are JWTs; v3 keys go in the query string.
-  const isBearer = key.startsWith("eyJ");
-  const raw = await got
-    .get(`${BASE_URL}${path}`, {
-      searchParams: isBearer ? searchParams : { ...searchParams, api_key: key },
-      headers: isBearer ? { Authorization: `Bearer ${key}` } : {},
-      timeout: { request: 15_000 },
-      retry: { limit: 2 },
-    })
-    .json<unknown>();
-  return schema.parse(raw);
+): Effect.Effect<T, RecommendationIntegrationError> {
+  return Effect.gen(function* () {
+    const key = yield* apiKeyEffect();
+    // v4 read access tokens are JWTs; v3 keys go in the query string.
+    const isBearer = key.startsWith("eyJ");
+    const raw = yield* integrationEffect(`TMDB GET ${path}`, (signal) =>
+      got
+        .get(`${BASE_URL}${path}`, {
+          searchParams: isBearer ? searchParams : { ...searchParams, api_key: key },
+          headers: isBearer ? { Authorization: `Bearer ${key}` } : {},
+          timeout: { request: 15_000 },
+          retry: { limit: 0 },
+          signal,
+        })
+        .json<unknown>(),
+    ).pipe(
+      Effect.retry(
+        Schedule.exponential(Duration.millis(200)).pipe(
+          Schedule.compose(Schedule.recurs(2)),
+        ),
+      ),
+    );
+    const decoded = yield* Effect.try({
+      try: () => schema.parse(Schema.decodeUnknownSync(Schema.Unknown)(raw)),
+      catch: (cause) =>
+        new RecommendationIntegrationError({
+          operation: `decode TMDB ${path}`,
+          cause,
+        }),
+    });
+    return decoded;
+  });
 }
 
-export async function searchTitles(
+export function searchTitlesEffect(
   query: string,
   mediaType: MediaType,
   year?: number,
-): Promise<TmdbTitle[]> {
+): Effect.Effect<TmdbTitle[], RecommendationIntegrationError> {
   if (mediaType === MediaType.Movie) {
     const params: Record<string, string | number | boolean> = {
       query,
       include_adult: false,
     };
     if (year) params.year = year;
-    const data = await tmdbGet("/search/movie", movieListSchema, params);
-    return data.results.filter((r) => !r.adult).map(normalizeMovie);
+    return tmdbGet("/search/movie", movieListSchema, params).pipe(
+      Effect.map((data) => data.results.filter((r) => !r.adult).map(normalizeMovie)),
+    );
   }
   const params: Record<string, string | number | boolean> = {
     query,
     include_adult: false,
   };
   if (year) params.first_air_date_year = year;
-  const data = await tmdbGet("/search/tv", tvListSchema, params);
-  return data.results.filter((r) => !r.adult).map(normalizeTv);
+  return tmdbGet("/search/tv", tvListSchema, params).pipe(
+    Effect.map((data) => data.results.filter((r) => !r.adult).map(normalizeTv)),
+  );
 }
 
-export async function findByExternalId(
+export function findByExternalIdEffect(
   externalId: string,
   source: "imdb_id" | "tvdb_id",
-): Promise<TmdbTitle[]> {
-  const data = await tmdbGet(`/find/${externalId}`, findResponseSchema, {
+): Effect.Effect<TmdbTitle[], RecommendationIntegrationError> {
+  return tmdbGet(`/find/${externalId}`, findResponseSchema, {
     external_source: source,
-  });
-  return [
-    ...data.movie_results.map(normalizeMovie),
-    ...data.tv_results.map(normalizeTv),
-  ];
+  }).pipe(
+    Effect.map((data) => [
+      ...data.movie_results.map(normalizeMovie),
+      ...data.tv_results.map(normalizeTv),
+    ]),
+  );
 }
 
-export async function fetchRecommendationsFor(
+export function fetchRecommendationsForEffect(
   mediaType: MediaType,
   tmdbId: number,
-): Promise<TmdbTitle[]> {
+): Effect.Effect<TmdbTitle[], RecommendationIntegrationError> {
   if (mediaType === MediaType.Movie) {
-    const data = await tmdbGet(`/movie/${tmdbId}/recommendations`, movieListSchema);
-    return data.results.filter((r) => !r.adult).map(normalizeMovie);
+    return tmdbGet(`/movie/${tmdbId}/recommendations`, movieListSchema).pipe(
+      Effect.map((data) => data.results.filter((r) => !r.adult).map(normalizeMovie)),
+    );
   }
-  const data = await tmdbGet(`/tv/${tmdbId}/recommendations`, tvListSchema);
-  return data.results.filter((r) => !r.adult).map(normalizeTv);
+  return tmdbGet(`/tv/${tmdbId}/recommendations`, tvListSchema).pipe(
+    Effect.map((data) => data.results.filter((r) => !r.adult).map(normalizeTv)),
+  );
 }
 
 export interface DiscoverOptions {
@@ -102,10 +135,10 @@ export interface DiscoverOptions {
   page?: number;
 }
 
-export async function discoverTitles(
+export function discoverTitlesEffect(
   mediaType: MediaType,
   options: DiscoverOptions = {},
-): Promise<TmdbTitle[]> {
+): Effect.Effect<TmdbTitle[], RecommendationIntegrationError> {
   const params: Record<string, string | number | boolean> = {
     include_adult: false,
     sort_by: "vote_average.desc",
@@ -120,65 +153,101 @@ export async function discoverTitles(
     params.with_original_language = options.withOriginalLanguage;
   }
   if (mediaType === MediaType.Movie) {
-    const data = await tmdbGet("/discover/movie", movieListSchema, params);
-    return data.results.filter((r) => !r.adult).map(normalizeMovie);
+    return tmdbGet("/discover/movie", movieListSchema, params).pipe(
+      Effect.map((data) => data.results.filter((r) => !r.adult).map(normalizeMovie)),
+    );
   }
-  const data = await tmdbGet("/discover/tv", tvListSchema, params);
-  return data.results.filter((r) => !r.adult).map(normalizeTv);
+  return tmdbGet("/discover/tv", tvListSchema, params).pipe(
+    Effect.map((data) => data.results.filter((r) => !r.adult).map(normalizeTv)),
+  );
 }
 
-export async function fetchTrending(): Promise<TmdbTitle[]> {
-  const data = await tmdbGet("/trending/all/week", trendingListSchema);
-  const titles: TmdbTitle[] = [];
-  for (const result of data.results) {
-    if ("media_type" in result && result.media_type === "movie" && "title" in result) {
-      if (!result.adult) titles.push(normalizeMovie(result));
-    } else if (
-      "media_type" in result &&
-      result.media_type === "tv" &&
-      "name" in result
-    ) {
-      if (!result.adult) titles.push(normalizeTv(result));
-    }
-  }
-  return titles;
+export function fetchTrendingEffect(): Effect.Effect<
+  TmdbTitle[],
+  RecommendationIntegrationError
+> {
+  return tmdbGet("/trending/all/week", trendingListSchema).pipe(
+    Effect.map((data) => {
+      const titles: TmdbTitle[] = [];
+      for (const result of data.results) {
+        if (
+          "media_type" in result &&
+          result.media_type === "movie" &&
+          "title" in result
+        ) {
+          if (!result.adult) titles.push(normalizeMovie(result));
+        } else if (
+          "media_type" in result &&
+          result.media_type === "tv" &&
+          "name" in result
+        ) {
+          if (!result.adult) titles.push(normalizeTv(result));
+        }
+      }
+      return titles;
+    }),
+  );
 }
 
-export async function fetchTitleGenreIds(
+export function fetchTitleGenreIdsEffect(
   mediaType: MediaType,
   tmdbId: number,
-): Promise<number[]> {
-  const data = await tmdbGet(`/${mediaType}/${tmdbId}`, detailsSchema);
-  return data.genres.map((g) => g.id);
+): Effect.Effect<number[], RecommendationIntegrationError> {
+  return tmdbGet(`/${mediaType}/${tmdbId}`, detailsSchema).pipe(
+    Effect.map((data) => data.genres.map((g) => g.id)),
+  );
 }
 
-export async function fetchTitleDetails(
+export function fetchTitleDetailsEffect(
   mediaType: MediaType,
   tmdbId: number,
-): Promise<TmdbTitleDetails> {
+): Effect.Effect<TmdbTitleDetails, RecommendationIntegrationError> {
   if (mediaType === MediaType.Movie) {
-    const data = await tmdbGet(`/movie/${tmdbId}`, movieDetailsSchema, {
+    return tmdbGet(`/movie/${tmdbId}`, movieDetailsSchema, {
       append_to_response: "credits,keywords,release_dates",
-    });
-    return normalizeMovieDetails(data);
+    }).pipe(Effect.map(normalizeMovieDetails));
   }
-  const data = await tmdbGet(`/tv/${tmdbId}`, tvDetailsSchema, {
+  return tmdbGet(`/tv/${tmdbId}`, tvDetailsSchema, {
     append_to_response: "credits,keywords,content_ratings",
-  });
-  return normalizeTvDetails(data);
+  }).pipe(Effect.map(normalizeTvDetails));
 }
 
 const genreCache = new Map<MediaType, Map<number, string>>();
 
-export async function getGenreMap(mediaType: MediaType): Promise<Map<number, string>> {
+export function getGenreMapEffect(
+  mediaType: MediaType,
+): Effect.Effect<Map<number, string>, RecommendationIntegrationError> {
   const cached = genreCache.get(mediaType);
-  if (cached) return cached;
+  if (cached) return Effect.succeed(cached);
   const path = mediaType === MediaType.Movie ? "/genre/movie/list" : "/genre/tv/list";
-  const data = await tmdbGet(path, genreListSchema);
-  const map = new Map(data.genres.map((g) => [g.id, g.name]));
-  genreCache.set(mediaType, map);
-  return map;
+  return tmdbGet(path, genreListSchema).pipe(
+    Effect.map((data) => {
+      const map = new Map(data.genres.map((g) => [g.id, g.name]));
+      genreCache.set(mediaType, map);
+      return map;
+    }),
+  );
 }
+
+// Promise facades preserve the MCP contract while recommendation internals compose Effects.
+export const searchTitles = (...args: Parameters<typeof searchTitlesEffect>) =>
+  runPromise(searchTitlesEffect(...args));
+export const findByExternalId = (...args: Parameters<typeof findByExternalIdEffect>) =>
+  runPromise(findByExternalIdEffect(...args));
+export const fetchRecommendationsFor = (
+  ...args: Parameters<typeof fetchRecommendationsForEffect>
+) => runPromise(fetchRecommendationsForEffect(...args));
+export const discoverTitles = (...args: Parameters<typeof discoverTitlesEffect>) =>
+  runPromise(discoverTitlesEffect(...args));
+export const fetchTrending = () => runPromise(fetchTrendingEffect());
+export const fetchTitleGenreIds = (
+  ...args: Parameters<typeof fetchTitleGenreIdsEffect>
+) => runPromise(fetchTitleGenreIdsEffect(...args));
+export const fetchTitleDetails = (
+  ...args: Parameters<typeof fetchTitleDetailsEffect>
+) => runPromise(fetchTitleDetailsEffect(...args));
+export const getGenreMap = (...args: Parameters<typeof getGenreMapEffect>) =>
+  runPromise(getGenreMapEffect(...args));
 
 export function getTmdbUrl(mediaType: MediaType, tmdbId: number): string {
   return `https://www.themoviedb.org/${mediaType}/${tmdbId}`;

@@ -1,19 +1,23 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import type { EmailHandler, FetchedEmail } from "../email/types.js";
+import { Effect } from "effect";
+import { WorkspaceOperationError } from "./errors.js";
 import type { WorkspaceEmailScopeData } from "./persistence.js";
 import {
   addWorkspaceSource,
   getWorkspaceSource,
   getWorkspaceSubject,
   listAllWorkspaceEmailScopes,
+  markWorkspaceSourcesTriggered,
 } from "./persistence.js";
+import { workspaceRepositoryEffect } from "./repository.js";
 
 export type WorkspaceEmailTrigger = (
   workspaceId: string,
   subjectId: string,
   message: string,
   trigger: "email",
-) => void;
+) => Effect.Effect<void, WorkspaceOperationError>;
 
 export class WorkspaceEmailHandler implements EmailHandler {
   public readonly name = "Workspaces";
@@ -23,45 +27,66 @@ export class WorkspaceEmailHandler implements EmailHandler {
     private readonly logger: Logger,
   ) {}
 
-  public async handleEmails(emails: FetchedEmail[]): Promise<void> {
-    const scopes = listAllWorkspaceEmailScopes();
-    const matches = new Map<string, FetchedEmail[]>();
-    for (const email of emails) {
-      for (const scope of scopes) {
-        if (!matchesWorkspaceEmail(email, scope)) continue;
-        const subject = getWorkspaceSubject(scope.workspaceId, scope.subjectId);
-        if (subject?.status !== "active") continue;
-        const key = `${scope.workspaceId}:${scope.subjectId}`;
-        const sourceId = `email:${scope.workspaceId}:${scope.subjectId}:${email.id}`;
-        if (getWorkspaceSource(sourceId)) continue;
-        const prior = matches.get(key) ?? [];
-        prior.push(email);
-        matches.set(key, prior);
-        addWorkspaceSource({
-          sourceId,
-          workspaceId: scope.workspaceId,
-          subjectId: scope.subjectId,
-          kind: "email",
-          title: email.subject || `(Email from ${email.from})`,
-          excerpt: email.textBody.slice(0, 4_000),
-          emailId: email.id,
-        });
+  public handleEmailsEffect(emails: FetchedEmail[]) {
+    return Effect.gen(this, function* () {
+      const scopes = yield* workspaceRepositoryEffect(
+        "list workspace email scopes",
+        () => listAllWorkspaceEmailScopes(),
+      );
+      const matches = new Map<
+        string,
+        Array<{ email: FetchedEmail; sourceId: string }>
+      >();
+      for (const email of emails) {
+        for (const scope of scopes) {
+          if (!matchesWorkspaceEmail(email, scope)) continue;
+          const subject = yield* workspaceRepositoryEffect(
+            "read workspace email subject",
+            () => getWorkspaceSubject(scope.workspaceId, scope.subjectId),
+          );
+          if (subject?.status !== "active") continue;
+          const key = `${scope.workspaceId}:${scope.subjectId}`;
+          const sourceId = `email:${scope.workspaceId}:${scope.subjectId}:${email.id}`;
+          const existing = yield* workspaceRepositoryEffect(
+            "read workspace email source",
+            () => getWorkspaceSource(sourceId),
+          );
+          if (existing?.triggeredAt) continue;
+          const prior = matches.get(key) ?? [];
+          prior.push({ email, sourceId });
+          matches.set(key, prior);
+          if (!existing)
+            yield* workspaceRepositoryEffect("persist workspace email source", () =>
+              addWorkspaceSource({
+                sourceId,
+                workspaceId: scope.workspaceId,
+                subjectId: scope.subjectId,
+                kind: "email",
+                title: email.subject || `(Email from ${email.from})`,
+                excerpt: email.textBody.slice(0, 4_000),
+                emailId: email.id,
+              }),
+            );
+        }
       }
-    }
-    for (const [key, matched] of matches) {
-      const separator = key.indexOf(":");
-      const workspaceId = key.slice(0, separator);
-      const subjectId = key.slice(separator + 1);
-      this.logger.info(
-        `Ingested ${matched.length} scoped email(s) for ${workspaceId}/${subjectId}`,
-      );
-      this.trigger(
-        workspaceId,
-        subjectId,
-        `Review ${matched.length} newly ingested scoped email(s): ${matched.map((email) => email.subject).join("; ")}`,
-        "email",
-      );
-    }
+      for (const [key, matched] of matches) {
+        const separator = key.indexOf(":");
+        const workspaceId = key.slice(0, separator);
+        const subjectId = key.slice(separator + 1);
+        this.logger.info(
+          `Ingested ${matched.length} scoped email(s) for ${workspaceId}/${subjectId}`,
+        );
+        yield* this.trigger(
+          workspaceId,
+          subjectId,
+          `Review ${matched.length} newly ingested scoped email(s): ${matched.map(({ email }) => email.subject).join("; ")}`,
+          "email",
+        );
+        yield* workspaceRepositoryEffect("mark workspace email sources triggered", () =>
+          markWorkspaceSourcesTriggered(matched.map(({ sourceId }) => sourceId)),
+        );
+      }
+    });
   }
 }
 

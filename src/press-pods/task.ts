@@ -1,21 +1,19 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
 import { getCurrentRunId } from "../task-runs/logCapture.js";
 import config from "../utils/config.js";
 import { isRetryableError, summarizeError } from "./errors.js";
 import {
-  claimJob,
-  completeJob,
-  findEpisodeForJob,
-  getAllJobs,
   jobNormalizedUrl,
   MAX_JOB_ATTEMPTS,
   type PressPodsJobData,
-  reclaimProcessingJobsAtBoot,
-  recordJobFailure,
+  PressPodsPersistence,
   selectDueJobs,
 } from "./persistence.js";
 import { createEpisodeFromUrl, replaceOlderEpisodes } from "./pipeline.js";
+import { errorCause, PressPodsError } from "./effect.js";
 import {
   checkpointWorkId,
   clearChunkCheckpoints,
@@ -58,7 +56,7 @@ export default class PressPodsTask extends ScheduledTask {
     // A bad audio dir must disable the feature, not crash-loop the whole app
     // at boot; the warn reaches Pushover so the misconfiguration is loud.
     try {
-      ensureAudioDir();
+      Effect.runSync(ensureAudioDir());
     } catch (error) {
       parentLogger.warn(
         `PressPods disabled: cannot create audio dir "${getAudioDir()}": ${(error as Error).message}`,
@@ -77,114 +75,134 @@ export default class PressPodsTask extends ScheduledTask {
     return this.lastRunSummary;
   }
 
-  public async run(): Promise<void> {
-    // First run of a fresh process: any `processing` job was orphaned by the
-    // restart (single-process deployment), so make its claim immediately
-    // reclaimable instead of waiting out the 30-minute stale window. The drain
-    // below then either completes it (episode already landed) or counts a
-    // crashed attempt and requeues.
-    if (!this.reclaimedOnBoot) {
-      this.reclaimedOnBoot = true;
-      const reclaimed = reclaimProcessingJobsAtBoot();
-      if (reclaimed > 0) {
-        this.logger.warn(`Reclaiming ${reclaimed} job(s) orphaned by a restart`);
-      }
-    }
-
-    let processed = 0;
-    let requeued = 0;
-    let failed = 0;
-
-    // Drain until nothing is due: jobs submitted while a run is in flight are
-    // picked up by the same run instead of waiting for the next sweep.
-    for (;;) {
-      const due = selectDueJobs(getAllJobs());
-      const job = due[0];
-      if (!job) break;
-
-      const outcome = await this.processJob(job);
-      if (outcome === "processed") processed++;
-      else if (outcome === "requeued") requeued++;
-      else failed++;
-    }
-
-    this.lastRunSummary =
-      processed + requeued + failed === 0
-        ? "No episode jobs due"
-        : `${processed} episode(s) created, ${requeued} requeued, ${failed} failed`;
-    if (processed + requeued + failed > 0) {
-      this.logger.info(`PressPods pass: ${this.lastRunSummary}`);
-    }
+  public run(): Promise<void> {
+    return runPromise(this.runEffect());
   }
 
-  private async processJob(
+  private runEffect(): Effect.Effect<void, PressPodsError> {
+    return Effect.gen(this, function* () {
+      // First run of a fresh process: any `processing` job was orphaned by the
+      // restart (single-process deployment), so make its claim immediately
+      // reclaimable instead of waiting out the 30-minute stale window. The drain
+      // below then either completes it (episode already landed) or counts a
+      // crashed attempt and requeues.
+      if (!this.reclaimedOnBoot) {
+        this.reclaimedOnBoot = true;
+        const reclaimed = yield* PressPodsPersistence.reclaimProcessingJobsAtBoot();
+        if (reclaimed > 0) {
+          this.logger.warn(`Reclaiming ${reclaimed} job(s) orphaned by a restart`);
+        }
+      }
+
+      let processed = 0;
+      let requeued = 0;
+      let failed = 0;
+
+      // Drain until nothing is due: jobs submitted while a run is in flight are
+      // picked up by the same run instead of waiting for the next sweep.
+      for (;;) {
+        const due = selectDueJobs(yield* PressPodsPersistence.getAllJobs());
+        const job = due[0];
+        if (!job) break;
+
+        const outcome = yield* this.processJob(job);
+        if (outcome === "processed") processed++;
+        else if (outcome === "requeued") requeued++;
+        else failed++;
+      }
+
+      this.lastRunSummary =
+        processed + requeued + failed === 0
+          ? "No episode jobs due"
+          : `${processed} episode(s) created, ${requeued} requeued, ${failed} failed`;
+      if (processed + requeued + failed > 0) {
+        this.logger.info(`PressPods pass: ${this.lastRunSummary}`);
+      }
+    });
+  }
+
+  private processJob(
     job: PressPodsJobData,
-  ): Promise<"processed" | "requeued" | "failed"> {
-    // A stale `processing` claim means a previous run died mid-job. Two cases:
-    // the crash happened after the episode was durably written (job cleanup
-    // never ran — finish the bookkeeping, never reprocess), or before (count
-    // it as an attempt so a job that crashes the process every time still
-    // converges to `failed` instead of reclaim-looping forever).
-    if (job.status === "processing") {
-      const existing = findEpisodeForJob(job);
-      if (existing) {
+  ): Effect.Effect<"processed" | "requeued" | "failed", PressPodsError> {
+    return Effect.gen(this, function* () {
+      // A stale `processing` claim means a previous run died mid-job. Two cases:
+      // the crash happened after the episode was durably written (job cleanup
+      // never ran — finish the bookkeeping, never reprocess), or before (count
+      // it as an attempt so a job that crashes the process every time still
+      // converges to `failed` instead of reclaim-looping forever).
+      if (job.status === "processing") {
+        const existing = yield* PressPodsPersistence.findEpisodeForJob(job);
+        if (existing) {
+          this.logger.info(
+            `Job for ${job.url} already produced episode ${existing.episodeId}; completing`,
+          );
+          // Finish the replace + checkpoint cleanup the crashed run never reached,
+          // so a crash in the gap between the episode write and cleanup can't
+          // leave the article with a permanent duplicate or orphaned checkpoints.
+          const normalizedUrl = jobNormalizedUrl(job);
+          yield* replaceOlderEpisodes(normalizedUrl, existing.episodeId, this.logger);
+          yield* clearChunkCheckpoints(checkpointWorkId(normalizedUrl));
+          yield* PressPodsPersistence.completeJob(job.jobId);
+          return "processed";
+        }
+        const updated = yield* PressPodsPersistence.recordJobFailure(
+          job,
+          "Process crashed or restarted mid-run",
+          true,
+        );
+        if (updated.status === "queued") {
+          this.logger.warn(
+            `Reclaimed crashed job for ${job.url}; will retry (attempt ${updated.attempts}/${MAX_JOB_ATTEMPTS})`,
+          );
+          return "requeued";
+        }
+        this.logger.error(
+          `Giving up on ${job.url}: crashed ${updated.attempts} times mid-run`,
+        );
+        return "failed";
+      }
+
+      yield* PressPodsPersistence.claimJob(job.jobId, getCurrentRunId());
+      if (job.attempts > 0) {
         this.logger.info(
-          `Job for ${job.url} already produced episode ${existing.episodeId}; completing`,
+          `Retrying episode creation (attempt ${job.attempts + 1}/${MAX_JOB_ATTEMPTS})`,
+          { url: job.url, lastError: job.lastError },
         );
-        // Finish the replace + checkpoint cleanup the crashed run never reached,
-        // so a crash in the gap between the episode write and cleanup can't
-        // leave the article with a permanent duplicate or orphaned checkpoints.
-        const normalizedUrl = jobNormalizedUrl(job);
-        await replaceOlderEpisodes(normalizedUrl, existing.episodeId, this.logger);
-        await clearChunkCheckpoints(checkpointWorkId(normalizedUrl));
-        completeJob(job.jobId);
+      } else {
+        this.logger.info(`Creating episode for ${job.url}`);
+      }
+
+      const result = yield* createEpisodeFromUrl(
+        job.url,
+        getCurrentRunId(),
+        this.logger,
+      ).pipe(Effect.either);
+      if (result._tag === "Right") {
+        yield* PressPodsPersistence.completeJob(job.jobId);
         return "processed";
-      }
-      const updated = recordJobFailure(
-        job,
-        "Process crashed or restarted mid-run",
-        true,
-      );
-      if (updated.status === "queued") {
-        this.logger.warn(
-          `Reclaimed crashed job for ${job.url}; will retry (attempt ${updated.attempts}/${MAX_JOB_ATTEMPTS})`,
+      } else {
+        const cause = errorCause(result.left);
+        const retryable = isRetryableError(cause);
+        const summary = summarizeError(cause);
+        const updated = yield* PressPodsPersistence.recordJobFailure(
+          job,
+          summary,
+          retryable,
         );
-        return "requeued";
-      }
-      this.logger.error(
-        `Giving up on ${job.url}: crashed ${updated.attempts} times mid-run`,
-      );
-      return "failed";
-    }
-
-    claimJob(job.jobId, getCurrentRunId());
-    if (job.attempts > 0) {
-      this.logger.info(
-        `Retrying episode creation (attempt ${job.attempts + 1}/${MAX_JOB_ATTEMPTS})`,
-        { url: job.url, lastError: job.lastError },
-      );
-    } else {
-      this.logger.info(`Creating episode for ${job.url}`);
-    }
-
-    try {
-      await createEpisodeFromUrl(job.url, getCurrentRunId(), this.logger);
-      completeJob(job.jobId);
-      return "processed";
-    } catch (error) {
-      const retryable = isRetryableError(error);
-      const summary = summarizeError(error);
-      const updated = recordJobFailure(job, summary, retryable);
-      if (updated.status === "queued") {
-        this.logger.warn(
-          `Episode creation failed, will retry (attempt ${updated.attempts}/${MAX_JOB_ATTEMPTS})`,
-          { url: job.url, error: summary },
+        if (updated.status === "queued") {
+          this.logger.warn(
+            `Episode creation failed, will retry (attempt ${updated.attempts}/${MAX_JOB_ATTEMPTS})`,
+            { url: job.url, error: summary },
+          );
+          return "requeued";
+        }
+        this.logger.error(
+          `Episode creation failed permanently for ${job.url}`,
+          summary,
         );
-        return "requeued";
+        return "failed";
       }
-      this.logger.error(`Episode creation failed permanently for ${job.url}`, summary);
-      return "failed";
-    }
+    });
   }
 }
 

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Effect } from "effect";
+import { forkUiEffect } from "../effect";
 
 export interface ToastState {
   message: string;
@@ -10,18 +12,22 @@ export function useToast(): {
   showToast: (message: string, kind?: ToastState["kind"]) => void;
 } {
   const [toast, setToast] = useState<ToastState | null>(null);
-  const timerRef = useRef<number | undefined>(undefined);
+  const cancelTimerRef = useRef<(() => void) | undefined>(undefined);
 
   const showToast = useCallback(
     (message: string, kind: ToastState["kind"] = "info") => {
-      window.clearTimeout(timerRef.current);
+      cancelTimerRef.current?.();
       setToast({ message, kind });
-      timerRef.current = window.setTimeout(() => setToast(null), 4000);
+      cancelTimerRef.current = forkUiEffect(
+        Effect.sleep("4 seconds").pipe(
+          Effect.tap(() => Effect.sync(() => setToast(null))),
+        ),
+      );
     },
     [],
   );
 
-  useEffect(() => () => window.clearTimeout(timerRef.current), []);
+  useEffect(() => () => cancelTimerRef.current?.(), []);
 
   return { toast, showToast };
 }

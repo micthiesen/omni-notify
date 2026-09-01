@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { Effect } from "effect";
 import {
   fetchPodcastRecommendations,
   fetchPodcastTasteProfile,
   sendPodcastRecommendationFeedback,
 } from "../api";
+import { forkUiEffect, runUiEffect } from "../effect";
 import type {
   PodcastFeedback,
   PodcastRecommendation,
@@ -226,47 +228,48 @@ export default function PodcastsPage() {
   // Load once, then reload whenever a reflection run lands so a fresh profile
   // version appears without a manual refresh.
   useEffect(() => {
-    let cancelled = false;
-    fetchPodcastTasteProfile()
-      .then((data) => {
-        if (cancelled) return;
-        setTasteProfile(data.profile);
-        setTasteError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setTasteError(
-          err instanceof Error ? err.message : "Failed to fetch taste profile",
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setTasteLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      fetchPodcastTasteProfile().pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setTasteProfile(data.profile);
+            setTasteError(null);
+            setTasteLoading(false);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            setTasteError(
+              err instanceof Error ? err.message : "Failed to fetch taste profile",
+            );
+            setTasteLoading(false);
+          }),
+        ),
+      ),
+    );
   }, [latestTasteRunId]);
 
   useEffect(() => {
     if (running) return;
-    let cancelled = false;
-    fetchPodcastRecommendations()
-      .then((data) => {
-        if (cancelled) return;
-        setRecs(data.recommendations);
-        setRecsError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setRecsError(
-          err instanceof Error
-            ? err.message
-            : "Failed to fetch podcast recommendations",
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      fetchPodcastRecommendations().pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setRecs(data.recommendations);
+            setRecsError(null);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() =>
+            setRecsError(
+              err instanceof Error
+                ? err.message
+                : "Failed to fetch podcast recommendations",
+            ),
+          ),
+        ),
+      ),
+    );
   }, [running]);
 
   const handleRun = async () => {
@@ -280,9 +283,8 @@ export default function PodcastsPage() {
   ) => {
     setSavingId(recommendationId);
     try {
-      const result = await sendPodcastRecommendationFeedback(
-        recommendationId,
-        feedback,
+      const result = await runUiEffect(
+        sendPodcastRecommendationFeedback(recommendationId, feedback),
       );
       setRecs(
         (current) =>

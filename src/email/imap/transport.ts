@@ -1,6 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
+import { Clock, Data, Duration, Effect, Fiber, Random, Schedule } from "effect";
 import { getLastDispatchedAt } from "../persistence.js";
 import type {
   DownloadedAttachment,
@@ -12,8 +13,8 @@ import type {
 } from "../types.js";
 import {
   type AutoReadClient,
-  discoverAutoReadFolders,
-  markRecentUnreadRead,
+  discoverAutoReadFoldersEffect,
+  markRecentUnreadReadEffect,
 } from "./autoRead.js";
 import {
   decodeAttachmentBlobId,
@@ -61,6 +62,17 @@ interface ImapAuth {
   pass: string;
 }
 
+export class ImapOperationError extends Data.TaggedError("ImapOperationError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `${this.operation} failed: ${detail}`;
+  }
+}
+
 /**
  * iCloud transport: IMAP IDLE push + per-folder UID-cursor delta fetch.
  *
@@ -71,520 +83,715 @@ interface ImapAuth {
  * sync is plain-UID based; there is no MOVE, and the only mailbox mutation is
  * adding the \Seen flag for the small auto-read cleanup pass.
  */
-export class ImapTransport implements EmailTransport {
+export class ImapTransport implements EmailTransport<ImapOperationError> {
   public readonly name = "IMAP";
 
   private auth: ImapAuth;
   private logger: Logger;
   private client: ImapFlow | null = null;
   private onMailEvent: (() => void) | undefined;
-  private sweepTimer: ReturnType<typeof setInterval> | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private backoffMs = 0;
+  private sweepFiber: Fiber.RuntimeFiber<void, never> | null = null;
+  private reconnectFiber: Fiber.RuntimeFiber<void, never> | null = null;
   private stopped = false;
   /** Special-use mailboxes are rediscovered after every new connection. */
   private autoReadFolders: string[] | undefined;
   /** Last bulk-import-guard skip count per folder, to de-noise repeat logs. */
   private lastSkipCounts = new Map<string, number>();
+  /** imapflow mailbox selection is connection-global, so every complete
+   * select/use/restore sequence and lifecycle transition shares one permit. */
+  private readonly operationSemaphore = Effect.unsafeMakeSemaphore(1);
+  private connectFiber: Fiber.RuntimeFiber<void, ImapOperationError> | null = null;
 
   constructor(auth: ImapAuth, logger: Logger) {
     this.auth = auth;
     this.logger = logger;
   }
 
-  async start(onMailEvent: () => void): Promise<void> {
-    this.onMailEvent = onMailEvent;
-    // First connect throws so the boot retry loop can alert and re-attempt;
-    // later disconnects self-heal via scheduleReconnect.
-    await this.connect();
-    this.sweepTimer = setInterval(() => this.onMailEvent?.(), SWEEP_INTERVAL_MS);
-    onMailEvent();
+  startEffect(onMailEvent: () => void): Effect.Effect<void, ImapOperationError> {
+    return Effect.gen(this, function* () {
+      this.stopped = false;
+      this.onMailEvent = onMailEvent;
+      // First connect fails to the boot retry boundary; later disconnects are
+      // supervised by the interruptible reconnect fiber.
+      yield* this.connectSingleFlightEffect;
+      if (this.sweepFiber) yield* Fiber.interrupt(this.sweepFiber);
+      this.sweepFiber = yield* Effect.sleep(SWEEP_INTERVAL_MS).pipe(
+        Effect.tap(() => Effect.sync(() => this.onMailEvent?.())),
+        Effect.forever,
+        Effect.forkDaemon,
+      );
+      onMailEvent();
+    });
   }
 
-  stop(): void {
+  readonly stopEffect: Effect.Effect<void, never> = Effect.gen(this, function* () {
     this.stopped = true;
-    if (this.sweepTimer) clearInterval(this.sweepTimer);
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.sweepFiber) yield* Fiber.interrupt(this.sweepFiber);
+    this.sweepFiber = null;
+    if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
+    this.reconnectFiber = null;
+    if (this.connectFiber) yield* Fiber.interrupt(this.connectFiber);
+    this.connectFiber = null;
     this.logger.info("Closing IMAP connection");
-    void this.client?.logout().catch(() => this.client?.close());
-  }
+    yield* this.runSerializedEffect(
+      "IMAP stop",
+      Effect.gen(this, function* () {
+        const client = this.client;
+        this.client = null;
+        if (!client) return;
+        yield* Effect.tryPromise({
+          try: () => client.logout(),
+          catch: (cause) => new ImapOperationError({ operation: "IMAP logout", cause }),
+        }).pipe(Effect.catchAll(() => Effect.sync(() => client.close())));
+      }),
+    ).pipe(Effect.catchAll(() => Effect.void));
+  });
 
-  private async connect(): Promise<void> {
-    const client = new ImapFlow({
-      host: IMAP_HOST,
-      port: IMAP_PORT,
-      secure: true,
-      auth: this.auth,
-      logger: false,
-      maxIdleTime: MAX_IDLE_TIME_MS,
-      // qresync deliberately off: iCloud rejects `SELECT ... (CONDSTORE)`.
+  private readonly connectSingleFlightEffect: Effect.Effect<void, ImapOperationError> =
+    Effect.suspend(() => {
+      if (this.connectFiber) return Fiber.join(this.connectFiber);
+      return Effect.gen(this, function* () {
+        let fiber!: Fiber.RuntimeFiber<void, ImapOperationError>;
+        fiber = yield* this.runSerializedEffect(
+          "IMAP connect",
+          this.connectEffect,
+        ).pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (this.connectFiber === fiber) this.connectFiber = null;
+            }),
+          ),
+          // The first caller owns the connection attempt. If startup is
+          // interrupted, its child is interrupted too; a non-signal-aware
+          // ImapFlow connect Promise cannot outlive transport ownership.
+          Effect.fork,
+        );
+        this.connectFiber = fiber;
+        return yield* Fiber.join(fiber);
+      });
     });
 
-    client.on("error", (error: Error) => {
-      this.logger.warn(`IMAP connection error: ${error.message}`);
-    });
-    client.on("close", () => {
-      if (this.client === client) this.client = null;
-      if (!this.stopped) this.scheduleReconnect();
-    });
-    // New message in the selected mailbox (INBOX) while idling.
-    client.on("exists", () => this.onMailEvent?.());
+  private readonly connectEffect: Effect.Effect<void, ImapOperationError> =
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const client = new ImapFlow({
+          host: IMAP_HOST,
+          port: IMAP_PORT,
+          secure: true,
+          auth: this.auth,
+          logger: false,
+          maxIdleTime: MAX_IDLE_TIME_MS,
+          // qresync deliberately off: iCloud rejects `SELECT ... (CONDSTORE)`.
+        });
 
-    await client.connect();
-    this.autoReadFolders = undefined;
-    const caps = ["IDLE", "CONDSTORE", "QRESYNC", "UIDPLUS"]
-      .map((c) => `${c}=${client.capabilities.has(c) ? "y" : "n"}`)
-      .join(" ");
-    this.logger.info(`IMAP connected to ${IMAP_HOST} (${caps})`);
+        client.on("error", (error: Error) => {
+          this.logger.warn(`IMAP connection error: ${error.message}`);
+        });
+        client.on("close", () => {
+          const wasCurrent = this.client === client;
+          if (wasCurrent) this.client = null;
+          if (wasCurrent && !this.stopped) this.scheduleReconnect();
+        });
+        // New message in the selected mailbox (INBOX) while idling.
+        client.on("exists", () => this.onMailEvent?.());
+        return client;
+      }),
+      (client) =>
+        Effect.gen(this, function* () {
+          yield* this.promiseEffect("connect", () => client.connect());
+          if (this.stopped) {
+            return yield* new ImapOperationError({
+              operation: "connect",
+              cause: new Error("IMAP transport stopped while connecting"),
+            });
+          }
 
-    // imapflow auto-idles on the selected mailbox whenever no command runs.
-    await client.mailboxOpen("INBOX", { readOnly: true });
-    this.client = client;
-    this.backoffMs = INITIAL_BACKOFF_MS;
-  }
+          // imapflow auto-idles on the selected mailbox whenever no command runs.
+          yield* this.promiseEffect("select INBOX", () =>
+            client.mailboxOpen("INBOX", { readOnly: true }),
+          );
+
+          this.autoReadFolders = undefined;
+          const caps = ["IDLE", "CONDSTORE", "QRESYNC", "UIDPLUS"]
+            .map((c) => `${c}=${client.capabilities.has(c) ? "y" : "n"}`)
+            .join(" ");
+          this.logger.info(`IMAP connected to ${IMAP_HOST} (${caps})`);
+          // Ownership transfers to the transport only after connect and select
+          // both succeed. The release below closes every local, untransferred
+          // client on failure or interruption.
+          this.client = client;
+        }),
+      (client) =>
+        Effect.suspend(() =>
+          this.client === client
+            ? Effect.void
+            : Effect.sync(() => {
+                try {
+                  client.close();
+                } catch {
+                  // A failed setup has no usable connection left to preserve.
+                }
+              }),
+        ),
+    );
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer || this.stopped) return;
+    if (this.reconnectFiber || this.stopped) return;
 
-    if (this.backoffMs === 0) {
-      this.backoffMs = Math.round(Math.random() * 3_000);
-    } else {
-      this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
-    }
-
-    this.logger.warn(`IMAP connection closed, reconnecting in ${this.backoffMs}ms`);
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      void this.connect()
-        .then(() => {
-          // Pushes during the gap are gone; treat reconnect as a mail event.
-          this.onMailEvent?.();
-        })
-        .catch((error: Error) => {
-          this.logger.warn(`IMAP reconnect failed: ${error.message}`);
-          this.scheduleReconnect();
-        });
-    }, this.backoffMs);
-  }
-
-  private requireClient(): ImapFlow {
-    if (!this.client?.usable) {
-      throw new Error("IMAP connection is not available");
-    }
-    return this.client;
-  }
-
-  async pollNewEmails(): Promise<EmailPoll> {
-    const client = this.requireClient();
-    const emails: FetchedEmail[] = [];
-    const commits: (() => void)[] = [];
-
-    try {
-      for (const folder of FOLDERS) {
-        try {
-          const result = await this.pollFolder(client, folder);
-          emails.push(...result.emails);
-          if (result.commit) commits.push(result.commit);
-        } catch (error) {
-          this.logger.warn(
-            `IMAP poll failed for folder "${folder}": ${(error as Error).message}`,
-          );
-        }
-      }
-      await this.autoRead(client);
-    } finally {
-      await this.restoreInbox(client);
-    }
-
-    return {
-      emails,
-      commit: () => {
-        for (const commit of commits) commit();
-      },
-    };
-  }
-
-  private async autoRead(client: ImapFlow): Promise<void> {
-    if (this.autoReadFolders === undefined) {
-      try {
-        this.autoReadFolders = await discoverAutoReadFolders(client as AutoReadClient);
-      } catch (error) {
-        this.logger.warn(
-          `IMAP auto-read mailbox discovery failed: ${(error as Error).message}`,
-        );
-        return;
-      }
-    }
-
-    await markRecentUnreadRead(
-      client as AutoReadClient,
-      this.autoReadFolders,
-      this.logger,
+    const retrySchedule = Schedule.exponential(
+      Duration.millis(INITIAL_BACKOFF_MS),
+    ).pipe(
+      Schedule.jittered,
+      Schedule.modifyDelay((_, delay) =>
+        Duration.min(delay, Duration.millis(MAX_BACKOFF_MS)),
+      ),
     );
+    let fiber: Fiber.RuntimeFiber<void, never>;
+    const reconnect = Effect.gen(this, function* () {
+      const initialJitter = yield* Random.nextIntBetween(0, 3_001);
+      this.logger.warn(`IMAP connection closed, reconnecting in ${initialJitter}ms`);
+      yield* Effect.sleep(Duration.millis(initialJitter));
+      yield* this.connectSingleFlightEffect.pipe(
+        Effect.tapError((error) =>
+          Effect.sync(() =>
+            this.logger.warn(`IMAP reconnect failed: ${error.message}`),
+          ),
+        ),
+        Effect.retry(retrySchedule),
+      );
+      // Pushes during the gap are gone; treat reconnect as a mail event.
+      this.onMailEvent?.();
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (this.reconnectFiber === fiber) this.reconnectFiber = null;
+        }),
+      ),
+      Effect.catchAll(() => Effect.void),
+    );
+    fiber = Effect.runFork(reconnect);
+    this.reconnectFiber = fiber;
   }
 
-  private async pollFolder(
+  readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, ImapOperationError> =
+    this.runSerializedEffect(
+      "IMAP poll",
+      Effect.gen(this, function* () {
+        const client = yield* this.requireClientEffect;
+        const results = yield* Effect.forEach(
+          FOLDERS,
+          (folder) =>
+            this.pollFolderEffect(client, folder).pipe(
+              Effect.catchAll((error) =>
+                Effect.sync(() => {
+                  this.logger.warn(
+                    `IMAP poll failed for folder "${folder}": ${error.message}`,
+                  );
+                  return { emails: [] as FetchedEmail[], commit: undefined };
+                }),
+              ),
+            ),
+          { concurrency: 1 },
+        );
+        yield* this.autoReadEffect(client);
+        const emails = results.flatMap((result) => result.emails);
+        const commits = results.flatMap((result) =>
+          result.commit ? [result.commit] : [],
+        );
+        return { emails, commit: () => commits.forEach((commit) => commit()) };
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+
+  private autoReadEffect(client: ImapFlow): Effect.Effect<void, never> {
+    return Effect.gen(this, function* () {
+      if (this.autoReadFolders === undefined) {
+        const discovered = yield* Effect.either(
+          discoverAutoReadFoldersEffect(client as AutoReadClient),
+        );
+        if (discovered._tag === "Left") {
+          this.logger.warn(
+            `IMAP auto-read mailbox discovery failed: ${discovered.left.message}`,
+          );
+          return;
+        }
+        this.autoReadFolders = discovered.right;
+      }
+      yield* markRecentUnreadReadEffect(
+        client as AutoReadClient,
+        this.autoReadFolders,
+        this.logger,
+      );
+    });
+  }
+
+  private pollFolderEffect(
     client: ImapFlow,
     folder: string,
-  ): Promise<{ emails: FetchedEmail[]; commit?: () => void }> {
-    const status = await client.status(folder, { uidNext: true, uidValidity: true });
-    if (status.uidNext === undefined || status.uidValidity === undefined) {
-      throw new Error("STATUS returned no uidNext/uidValidity");
-    }
-    const uidValidity = String(status.uidValidity);
-    const uidNext = status.uidNext;
-
-    const cursor = getFolderCursor(folder);
-    const plan = planFolderSync(cursor, { uidValidity, uidNext });
-
-    switch (plan.action) {
-      case "init":
-        this.logger.info(
-          `First run for ${folder}: cursor initialized at uid ${uidNext} (skipping history)`,
-        );
-        return {
-          emails: [],
-          commit: () => saveFolderCursor(folder, uidValidity, uidNext),
-        };
-
-      case "none":
-        return { emails: [] };
-
-      case "reset":
-        return this.recoverFromUidValidityChange(client, folder, uidValidity, uidNext);
-
-      case "fetch": {
-        const { emails, nextUid } = await this.fetchNewInFolder(
-          client,
-          folder,
-          uidValidity,
-          plan.fromUid,
-          uidNext,
-        );
-        return {
-          emails,
-          commit: () => saveFolderCursor(folder, uidValidity, nextUid),
-        };
+  ): Effect.Effect<
+    { emails: FetchedEmail[]; commit?: () => void },
+    ImapOperationError
+  > {
+    return Effect.gen(this, function* () {
+      const status = yield* this.promiseEffect(`STATUS ${folder}`, () =>
+        client.status(folder, { uidNext: true, uidValidity: true }),
+      );
+      if (status.uidNext === undefined || status.uidValidity === undefined) {
+        return yield* new ImapOperationError({
+          operation: `STATUS ${folder}`,
+          cause: new Error("STATUS returned no uidNext/uidValidity"),
+        });
       }
-    }
+      const uidValidity = String(status.uidValidity);
+      const uidNext = status.uidNext;
+      const plan = planFolderSync(getFolderCursor(folder), { uidValidity, uidNext });
+      switch (plan.action) {
+        case "init":
+          this.logger.info(
+            `First run for ${folder}: cursor initialized at uid ${uidNext} (skipping history)`,
+          );
+          return {
+            emails: [],
+            commit: () => saveFolderCursor(folder, uidValidity, uidNext),
+          };
+        case "none":
+          return { emails: [] };
+        case "reset":
+          return yield* this.recoverFromUidValidityChangeEffect(
+            client,
+            folder,
+            uidValidity,
+            uidNext,
+          );
+        case "fetch": {
+          const { emails, nextUid } = yield* this.fetchNewInFolderEffect(
+            client,
+            folder,
+            uidValidity,
+            plan.fromUid,
+            uidNext,
+          );
+          return {
+            emails,
+            commit: () => saveFolderCursor(folder, uidValidity, nextUid),
+          };
+        }
+      }
+    });
   }
 
-  private async fetchNewInFolder(
+  private fetchNewInFolderEffect(
     client: ImapFlow,
     folder: string,
     uidValidity: string,
     fromUid: number,
     statusUidNext: number,
-  ): Promise<{ emails: FetchedEmail[]; nextUid: number }> {
-    const lock = await client.getMailboxLock(folder, { readOnly: true });
-    try {
-      // Phase 1: cheap metadata scan of the new-UID range, so bulk imports of
-      // old mail can be cursor-skipped without downloading full bodies.
-      const metas: { uid: number; internalDate?: Date }[] = [];
-      for await (const msg of client.fetch(
-        `${fromUid}:*`,
-        { internalDate: true },
-        { uid: true },
-      )) {
-        // `${fromUid}:*` returns the highest-UID message even when nothing is
-        // new (IMAP range quirk); drop anything below the cursor.
-        if (msg.uid >= fromUid) {
-          metas.push({ uid: msg.uid, internalDate: toDate(msg.internalDate) });
-        }
-      }
-      metas.sort((a, b) => a.uid - b.uid);
-
-      const cutoff = Date.now() - MAX_EMAIL_AGE_MS;
-      const fresh = metas.filter(
-        (m) => m.internalDate === undefined || m.internalDate.getTime() >= cutoff,
-      );
-      if (fresh.length < metas.length) {
-        // During an imapsync backfill this fires on every sweep for weeks; only
-        // the first occurrence and count changes are worth surfacing at info.
-        const skipped = metas.length - fresh.length;
-        const level = this.lastSkipCounts.get(folder) === skipped ? "debug" : "info";
-        this.lastSkipCounts.set(folder, skipped);
-        this.logger[level](
-          `${folder}: skipping ${skipped} message(s) older ` +
-            `than ${MAX_EMAIL_AGE_MS / 86_400_000}d (bulk import guard)`,
-        );
-      } else {
-        this.lastSkipCounts.delete(folder);
-      }
-
-      const selected = fresh.slice(0, MAX_EMAILS_PER_PASS);
-      if (fresh.length > selected.length) {
-        this.logger.warn(
-          `${folder}: fetch pass hit the ${MAX_EMAILS_PER_PASS}-email cap; ` +
-            "the rest follows on the next pass",
-        );
-      }
-
-      const emails: FetchedEmail[] = [];
-      for (const meta of selected) {
-        const full = orUndefined(
-          await client.fetchOne(
-            String(meta.uid),
-            { source: true, internalDate: true },
-            { uid: true },
-          ),
-        );
-        if (!full?.source) continue;
-        const parsed = await simpleParser(full.source);
-        const email = mapParsedMessage(
-          parsed,
-          { folder, uidValidity, uid: meta.uid },
-          toDate(full.internalDate) ?? meta.internalDate,
-        );
-        this.logger.debug(
-          `Email: "${email.subject}" from=${email.from} uid=${meta.uid} ` +
-            `folder=${folder} attachments=${email.attachments.length}`,
-        );
-        emails.push(email);
-      }
-
-      // Advance past everything we consumed or age-skipped; when capped, only
-      // up to the last selected message so the remainder isn't lost.
-      const nextUid =
-        fresh.length > selected.length && selected.length > 0
-          ? selected[selected.length - 1].uid + 1
-          : Math.max(statusUidNext, (metas.at(-1)?.uid ?? 0) + 1);
-
-      this.logger.debug(`Fetched ${emails.length} new email(s) from ${folder}`);
-      return { emails, nextUid };
-    } finally {
-      lock.release();
-    }
+  ): Effect.Effect<{ emails: FetchedEmail[]; nextUid: number }, ImapOperationError> {
+    return Effect.acquireUseRelease(
+      this.promiseEffect(`lock ${folder}`, () =>
+        client.getMailboxLock(folder, { readOnly: true }),
+      ),
+      () =>
+        Effect.gen(this, function* () {
+          const metas = yield* collectFetchMetadataEffect(client, fromUid, folder);
+          const now = yield* Clock.currentTimeMillis;
+          const cutoff = now - MAX_EMAIL_AGE_MS;
+          const fresh = metas.filter(
+            (meta) =>
+              meta.internalDate === undefined || meta.internalDate.getTime() >= cutoff,
+          );
+          if (fresh.length < metas.length) {
+            const skipped = metas.length - fresh.length;
+            const level =
+              this.lastSkipCounts.get(folder) === skipped ? "debug" : "info";
+            this.lastSkipCounts.set(folder, skipped);
+            this.logger[level](
+              `${folder}: skipping ${skipped} message(s) older than ${MAX_EMAIL_AGE_MS / 86_400_000}d (bulk import guard)`,
+            );
+          } else {
+            this.lastSkipCounts.delete(folder);
+          }
+          const selected = fresh.slice(0, MAX_EMAILS_PER_PASS);
+          if (fresh.length > selected.length) {
+            this.logger.warn(
+              `${folder}: fetch pass hit the ${MAX_EMAILS_PER_PASS}-email cap; the rest follows on the next pass`,
+            );
+          }
+          const emails = yield* Effect.forEach(
+            selected,
+            (meta) =>
+              this.fetchMappedMessageEffect(
+                client,
+                folder,
+                uidValidity,
+                meta.uid,
+                meta.internalDate,
+              ),
+            { concurrency: 1 },
+          ).pipe(
+            Effect.map((values) =>
+              values.filter((email): email is FetchedEmail => email !== undefined),
+            ),
+          );
+          const nextUid =
+            fresh.length > selected.length && selected.length > 0
+              ? selected[selected.length - 1].uid + 1
+              : Math.max(statusUidNext, (metas.at(-1)?.uid ?? 0) + 1);
+          this.logger.debug(`Fetched ${emails.length} new email(s) from ${folder}`);
+          return { emails, nextUid };
+        }),
+      (lock) => Effect.sync(() => lock.release()),
+    );
   }
 
-  /**
-   * UIDVALIDITY changed: every stored UID is meaningless. Mirror the JMAP
-   * cannotCalculateChanges recovery — re-dispatch mail received since the
-   * last dispatch (pipelines dedup) and re-seat the cursor.
-   */
-  private async recoverFromUidValidityChange(
+  private recoverFromUidValidityChangeEffect(
     client: ImapFlow,
     folder: string,
     uidValidity: string,
     uidNext: number,
-  ): Promise<{ emails: FetchedEmail[]; commit?: () => void }> {
-    const lastDispatchedAt = getLastDispatchedAt();
-    const commit = () => saveFolderCursor(folder, uidValidity, uidNext);
-
-    if (lastDispatchedAt === undefined) {
-      this.logger.warn(
-        `${folder}: UIDVALIDITY changed with no last-dispatch timestamp; resetting cursor only`,
+  ): Effect.Effect<
+    { emails: FetchedEmail[]; commit?: () => void },
+    ImapOperationError
+  > {
+    return Effect.gen(this, function* () {
+      const lastDispatchedAt = getLastDispatchedAt();
+      const commit = () => saveFolderCursor(folder, uidValidity, uidNext);
+      if (lastDispatchedAt === undefined) {
+        this.logger.warn(
+          `${folder}: UIDVALIDITY changed with no last-dispatch timestamp; resetting cursor only`,
+        );
+        return { emails: [], commit };
+      }
+      const since = new Date(lastDispatchedAt - 60 * 60_000);
+      const found = yield* Effect.acquireUseRelease(
+        this.promiseEffect(`lock ${folder}`, () =>
+          client.getMailboxLock(folder, { readOnly: true }),
+        ),
+        () =>
+          this.promiseEffect(`search ${folder}`, () =>
+            client.search({ since }, { uid: true }),
+          ),
+        (lock) => Effect.sync(() => lock.release()),
       );
-      return { emails: [], commit };
-    }
-
-    const since = new Date(lastDispatchedAt - 60 * 60_000);
-    const lock = await client.getMailboxLock(folder, { readOnly: true });
-    let uids: number[] = [];
-    try {
-      const found = await client.search({ since }, { uid: true });
-      if (Array.isArray(found)) uids = found;
-    } finally {
-      lock.release();
-    }
-
-    const cursorForFetch = uids.length > 0 ? Math.min(...uids) : uidNext;
-    const { emails } = await this.fetchNewInFolder(
-      client,
-      folder,
-      uidValidity,
-      cursorForFetch,
-      uidNext,
-    );
-    this.logger.warn(
-      `${folder}: UIDVALIDITY changed; recovered ${emails.length} email(s) ` +
-        `received since ${since.toISOString()}`,
-    );
-    return { emails, commit };
+      const uids = Array.isArray(found) ? found : [];
+      const cursorForFetch = uids.length > 0 ? Math.min(...uids) : uidNext;
+      const { emails } = yield* this.fetchNewInFolderEffect(
+        client,
+        folder,
+        uidValidity,
+        cursorForFetch,
+        uidNext,
+      );
+      this.logger.warn(
+        `${folder}: UIDVALIDITY changed; recovered ${emails.length} email(s) received since ${since.toISOString()}`,
+      );
+      return { emails, commit };
+    });
   }
 
-  async fetchEmailById(id: string): Promise<FetchedEmail | undefined> {
-    const client = this.requireClient();
-    const coords = decodeMessageId(id);
-
-    try {
-      for (const folder of FOLDERS) {
-        if (coords && coords.folder !== folder) continue;
-        const email = await this.findInFolder(client, folder, id, coords);
-        if (email) return email;
-      }
-      return undefined;
-    } finally {
-      await this.restoreInbox(client);
-    }
-  }
-
-  async searchEmails(options: EmailSearchOptions): Promise<FetchedEmail[]> {
-    const client = this.requireClient();
-    const folderNames =
-      options.folder === "inbox"
-        ? ["INBOX"]
-        : options.folder === "archive"
-          ? ["Archive"]
-          : FOLDERS;
-    const perFolderLimit = Math.min(Math.max(1, options.limit), 50);
-    const emails: FetchedEmail[] = [];
-
-    try {
-      for (const folder of folderNames) {
-        const lock = await client.getMailboxLock(folder, { readOnly: true });
-        try {
-          const criteria = {
-            ...(options.query ? { text: options.query } : {}),
-            ...(options.from ? { from: options.from } : {}),
-            ...(options.to ? { to: options.to } : {}),
-            ...(options.subject ? { subject: options.subject } : {}),
-            ...(options.unread === undefined ? {} : { seen: !options.unread }),
-            ...(options.since ? { since: options.since } : {}),
-            ...(options.before ? { before: options.before } : {}),
-          };
-          const found = await client.search(criteria, { uid: true });
-          if (!Array.isArray(found)) continue;
-
-          // IMAP SEARCH returns ascending sequence order. Read only the newest
-          // bounded slice, then merge the folders by parsed received time.
-          const uids = found.slice(-perFolderLimit).reverse();
-          const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
-          for (const uid of uids) {
-            const full = orUndefined(
-              await client.fetchOne(
-                String(uid),
-                { source: true, internalDate: true },
-                { uid: true },
-              ),
-            );
-            if (!full?.source) continue;
-            const parsed = await simpleParser(full.source);
-            emails.push(
-              mapParsedMessage(
-                parsed,
-                { folder, uidValidity: mailboxValidity, uid },
-                toDate(full.internalDate),
-              ),
-            );
-          }
-        } finally {
-          lock.release();
+  fetchEmailByIdEffect(
+    id: string,
+  ): Effect.Effect<FetchedEmail | undefined, ImapOperationError> {
+    return this.runSerializedEffect(
+      "IMAP fetch by id",
+      Effect.gen(this, function* () {
+        const client = yield* this.requireClientEffect;
+        const coords = decodeMessageId(id);
+        for (const folder of FOLDERS) {
+          if (coords && coords.folder !== folder) continue;
+          const email = yield* this.findInFolderEffect(client, folder, id, coords);
+          if (email) return email;
         }
-      }
-    } finally {
-      await this.restoreInbox(client);
-    }
-
-    return emails
-      .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))
-      .slice(0, options.limit);
+        return undefined;
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
   }
 
-  private async findInFolder(
+  searchEmailsEffect(
+    options: EmailSearchOptions,
+  ): Effect.Effect<FetchedEmail[], ImapOperationError> {
+    return this.runSerializedEffect(
+      "IMAP search",
+      Effect.gen(this, function* () {
+        const client = yield* this.requireClientEffect;
+        const folderNames =
+          options.folder === "inbox"
+            ? ["INBOX"]
+            : options.folder === "archive"
+              ? ["Archive"]
+              : FOLDERS;
+        const perFolderLimit = Math.min(Math.max(1, options.limit), 50);
+        const byFolder = yield* Effect.forEach(
+          folderNames,
+          (folder) =>
+            Effect.acquireUseRelease(
+              this.promiseEffect(`lock ${folder}`, () =>
+                client.getMailboxLock(folder, { readOnly: true }),
+              ),
+              () =>
+                Effect.gen(this, function* () {
+                  const criteria = {
+                    ...(options.query ? { text: options.query } : {}),
+                    ...(options.from ? { from: options.from } : {}),
+                    ...(options.to ? { to: options.to } : {}),
+                    ...(options.subject ? { subject: options.subject } : {}),
+                    ...(options.unread === undefined ? {} : { seen: !options.unread }),
+                    ...(options.since ? { since: options.since } : {}),
+                    ...(options.before ? { before: options.before } : {}),
+                  };
+                  const found = yield* this.promiseEffect(`search ${folder}`, () =>
+                    client.search(criteria, { uid: true }),
+                  );
+                  if (!Array.isArray(found)) return [];
+
+                  // IMAP SEARCH returns ascending sequence order. Read only the newest
+                  // bounded slice, then merge the folders by parsed received time.
+                  const uids = found.slice(-perFolderLimit).reverse();
+                  const mailboxValidity = String(
+                    orUndefined(client.mailbox)?.uidValidity,
+                  );
+                  return yield* Effect.forEach(
+                    uids,
+                    (uid) =>
+                      this.fetchMappedMessageEffect(
+                        client,
+                        folder,
+                        mailboxValidity,
+                        uid,
+                      ),
+                    { concurrency: 1 },
+                  ).pipe(
+                    Effect.map((values) =>
+                      values.filter(
+                        (email): email is FetchedEmail => email !== undefined,
+                      ),
+                    ),
+                  );
+                }),
+              (lock) => Effect.sync(() => lock.release()),
+            ),
+          { concurrency: 1 },
+        );
+
+        return byFolder
+          .flat()
+          .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))
+          .slice(0, options.limit);
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  private findInFolderEffect(
     client: ImapFlow,
     folder: string,
     id: string,
     coords: (MessageCoords & { index?: number }) | undefined,
-  ): Promise<FetchedEmail | undefined> {
-    const lock = await client.getMailboxLock(folder, { readOnly: true });
-    try {
-      const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
+  ): Effect.Effect<FetchedEmail | undefined, ImapOperationError> {
+    return Effect.acquireUseRelease(
+      this.promiseEffect(`lock ${folder}`, () =>
+        client.getMailboxLock(folder, { readOnly: true }),
+      ),
+      () =>
+        Effect.gen(this, function* () {
+          const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
 
-      let uid: number | undefined;
-      if (coords) {
-        if (coords.uidValidity !== mailboxValidity) return undefined;
-        uid = coords.uid;
-      } else {
-        const found = await client.search(
-          { header: { "message-id": id } },
-          { uid: true },
-        );
-        if (Array.isArray(found) && found.length > 0) uid = found[found.length - 1];
-      }
-      if (uid === undefined) return undefined;
+          let uid: number | undefined;
+          if (coords) {
+            if (coords.uidValidity !== mailboxValidity) return undefined;
+            uid = coords.uid;
+          } else {
+            const found = yield* this.promiseEffect(`find message ${id}`, () =>
+              client.search({ header: { "message-id": id } }, { uid: true }),
+            );
+            if (Array.isArray(found) && found.length > 0) uid = found[found.length - 1];
+          }
+          if (uid === undefined) return undefined;
 
-      const full = orUndefined(
-        await client.fetchOne(
-          String(uid),
-          { source: true, internalDate: true },
-          { uid: true },
-        ),
-      );
-      if (!full?.source) return undefined;
-      const parsed = await simpleParser(full.source);
-      return mapParsedMessage(
-        parsed,
-        { folder, uidValidity: mailboxValidity, uid },
-        toDate(full.internalDate),
-      );
-    } finally {
-      lock.release();
-    }
+          return yield* this.fetchMappedMessageEffect(
+            client,
+            folder,
+            mailboxValidity,
+            uid,
+          );
+        }),
+      (lock) => Effect.sync(() => lock.release()),
+    );
   }
 
-  async downloadAttachment(
+  downloadAttachmentEffect(
     attachment: EmailAttachment,
-  ): Promise<DownloadedAttachment | undefined> {
-    const target = decodeAttachmentBlobId(attachment.blobId);
-    if (!target) {
-      this.logger.warn(`Unrecognized attachment handle: ${attachment.blobId}`);
-      return undefined;
-    }
-
-    const client = this.requireClient();
-    try {
-      const lock = await client.getMailboxLock(target.folder, { readOnly: true });
-      try {
-        const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
-        if (mailboxValidity !== target.uidValidity) {
-          this.logger.warn(
-            `Attachment "${attachment.name}" unavailable: ${target.folder} UIDVALIDITY changed`,
-          );
+  ): Effect.Effect<DownloadedAttachment | undefined, ImapOperationError> {
+    return this.runSerializedEffect(
+      "IMAP attachment download",
+      Effect.gen(this, function* () {
+        const target = decodeAttachmentBlobId(attachment.blobId);
+        if (!target) {
+          this.logger.warn(`Unrecognized attachment handle: ${attachment.blobId}`);
           return undefined;
         }
 
-        const full = orUndefined(
-          await client.fetchOne(String(target.uid), { source: true }, { uid: true }),
+        const client = yield* this.requireClientEffect;
+        return yield* Effect.acquireUseRelease(
+          this.promiseEffect(`lock ${target.folder}`, () =>
+            client.getMailboxLock(target.folder, { readOnly: true }),
+          ),
+          () =>
+            Effect.gen(this, function* () {
+              const mailboxValidity = String(orUndefined(client.mailbox)?.uidValidity);
+              if (mailboxValidity !== target.uidValidity) {
+                this.logger.warn(
+                  `Attachment "${attachment.name}" unavailable: ${target.folder} UIDVALIDITY changed`,
+                );
+                return undefined;
+              }
+
+              const full = orUndefined(
+                yield* this.promiseEffect("fetch attachment message", () =>
+                  client.fetchOne(String(target.uid), { source: true }, { uid: true }),
+                ),
+              );
+              if (!full?.source) {
+                this.logger.warn(
+                  `Attachment "${attachment.name}" unavailable: message uid=${target.uid} is gone`,
+                );
+                return undefined;
+              }
+
+              const source = full.source;
+              const parsed = yield* this.promiseEffect("parse attachment message", () =>
+                simpleParser(source),
+              );
+              const part = parsed.attachments[target.index];
+              if (!part) {
+                this.logger.warn(
+                  `Attachment "${attachment.name}" unavailable: part ${target.index} missing`,
+                );
+                return undefined;
+              }
+              return {
+                name: part.filename ?? attachment.name,
+                mimeType: part.contentType,
+                data: part.content,
+              };
+            }),
+          (lock) => Effect.sync(() => lock.release()),
         );
-        if (!full?.source) {
-          this.logger.warn(
-            `Attachment "${attachment.name}" unavailable: message uid=${target.uid} is gone`,
-          );
-          return undefined;
-        }
-
-        const parsed = await simpleParser(full.source);
-        const part = parsed.attachments[target.index];
-        if (!part) {
-          this.logger.warn(
-            `Attachment "${attachment.name}" unavailable: part ${target.index} missing`,
-          );
-          return undefined;
-        }
-        return {
-          name: part.filename ?? attachment.name,
-          mimeType: part.contentType,
-          data: part.content,
-        };
-      } finally {
-        lock.release();
-      }
-    } finally {
-      await this.restoreInbox(client);
-    }
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
   }
 
   /** Leave INBOX selected so auto-IDLE watches the right folder at rest. */
-  private async restoreInbox(client: ImapFlow): Promise<void> {
-    try {
-      if (client.usable && orUndefined(client.mailbox)?.path !== "INBOX") {
-        await client.mailboxOpen("INBOX", { readOnly: true });
-      }
-    } catch (error) {
-      this.logger.debug(`Failed to reselect INBOX: ${(error as Error).message}`);
-    }
+  private restoreInboxEffect(): Effect.Effect<void, never> {
+    return Effect.suspend(() => {
+      const client = this.client;
+      if (!client?.usable || orUndefined(client.mailbox)?.path === "INBOX")
+        return Effect.void;
+      return this.promiseEffect("reselect INBOX", () =>
+        client.mailboxOpen("INBOX", { readOnly: true }),
+      ).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            this.logger.debug(`Failed to reselect INBOX: ${error.message}`);
+          }),
+        ),
+      );
+    });
   }
+
+  private readonly requireClientEffect: Effect.Effect<ImapFlow, ImapOperationError> =
+    Effect.suspend(() =>
+      this.client?.usable
+        ? Effect.succeed(this.client)
+        : Effect.fail(
+            new ImapOperationError({
+              operation: "access connection",
+              cause: new Error("IMAP connection is not available"),
+            }),
+          ),
+    );
+
+  private fetchMappedMessageEffect(
+    client: ImapFlow,
+    folder: string,
+    uidValidity: string,
+    uid: number,
+    fallbackDate?: Date,
+  ): Effect.Effect<FetchedEmail | undefined, ImapOperationError> {
+    return Effect.gen(this, function* () {
+      const full = orUndefined(
+        yield* this.promiseEffect(`fetch uid ${uid}`, () =>
+          client.fetchOne(
+            String(uid),
+            { source: true, internalDate: true },
+            { uid: true },
+          ),
+        ),
+      );
+      if (!full?.source) return undefined;
+      const source = full.source;
+      const parsed = yield* this.promiseEffect(`parse uid ${uid}`, () =>
+        simpleParser(source),
+      );
+      const email = mapParsedMessage(
+        parsed,
+        { folder, uidValidity, uid },
+        toDate(full.internalDate) ?? fallbackDate,
+      );
+      this.logger.debug(
+        `Email: "${email.subject}" from=${email.from} uid=${uid} folder=${folder} attachments=${email.attachments.length}`,
+      );
+      return email;
+    });
+  }
+
+  private promiseEffect<A>(
+    operation: string,
+    evaluate: () => PromiseLike<A>,
+  ): Effect.Effect<A, ImapOperationError> {
+    return Effect.tryPromise({
+      try: () => Promise.resolve(evaluate()),
+      catch: (cause) => new ImapOperationError({ operation, cause }),
+    });
+  }
+
+  private runSerializedEffect<A, E>(
+    operation: string,
+    effect: Effect.Effect<A, E>,
+  ): Effect.Effect<A, E | ImapOperationError> {
+    return this.operationSemaphore
+      .withPermits(1)(effect)
+      .pipe(
+        Effect.mapError((cause) =>
+          cause instanceof ImapOperationError
+            ? cause
+            : new ImapOperationError({ operation, cause }),
+        ),
+      );
+  }
+}
+
+function collectFetchMetadataEffect(
+  client: ImapFlow,
+  fromUid: number,
+  folder: string,
+): Effect.Effect<Array<{ uid: number; internalDate?: Date }>, ImapOperationError> {
+  // ImapFlow exposes message ranges only as an async iterable. This adapter is
+  // the single Promise boundary for consuming that library protocol.
+  return Effect.tryPromise({
+    try: async () => {
+      const metas: Array<{ uid: number; internalDate?: Date }> = [];
+      for await (const message of client.fetch(
+        `${fromUid}:*`,
+        { internalDate: true },
+        { uid: true },
+      )) {
+        if (message.uid >= fromUid) {
+          metas.push({ uid: message.uid, internalDate: toDate(message.internalDate) });
+        }
+      }
+      return metas.sort((a, b) => a.uid - b.uid);
+    },
+    catch: (cause) => new ImapOperationError({ operation: `scan ${folder}`, cause }),
+  });
 }
 
 /** imapflow types several results as `T | false`; normalize to undefined. */

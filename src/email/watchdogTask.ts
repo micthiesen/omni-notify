@@ -1,6 +1,8 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { getLastDispatchedAt } from "./persistence.js";
+import { Clock, Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
+import { getLastDispatchedAtEffect } from "./persistence.js";
 
 export const WATCHDOG_THRESHOLD_MS = 72 * 60 * 60_000;
 
@@ -43,9 +45,13 @@ export default class EmailWatchdogTask extends ScheduledTask {
     return this.lastRunSummary;
   }
 
-  public async run(): Promise<void> {
-    const lastDispatchedAt = getLastDispatchedAt();
-    const now = Date.now();
+  public run(): Promise<void> {
+    return runPromise(this.runEffect);
+  }
+
+  private readonly runEffect = Effect.gen(this, function* () {
+    const lastDispatchedAt = yield* getLastDispatchedAtEffect;
+    const now = yield* Clock.currentTimeMillis;
 
     if (shouldWarn(lastDispatchedAt, this.bootedAt, now)) {
       const since =
@@ -70,5 +76,5 @@ export default class EmailWatchdogTask extends ScheduledTask {
     this.logger.info(
       `Email pipeline healthy: last dispatch at ${new Date(lastDispatchedAt).toISOString()}`,
     );
-  }
+  });
 }

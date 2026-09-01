@@ -38,12 +38,20 @@ export function decideEpisodeOutcomes(
   now: number,
 ): PodcastOutcomeChange[] {
   const byGuid = new Map<string, ListenedEpisode>();
+  const byMediaUrl = new Map<string, ListenedEpisode>();
   const byTitles = new Map<string, ListenedEpisode>();
   for (const item of history) {
     if (item.episodeGuid) {
       const prior = byGuid.get(item.episodeGuid);
       if (!prior || item.listenedAt > prior.listenedAt) {
         byGuid.set(item.episodeGuid, item);
+      }
+    }
+    const mediaKey = normalizeMediaUrl(item.mediaUrl);
+    if (mediaKey) {
+      const prior = byMediaUrl.get(mediaKey);
+      if (!prior || item.listenedAt > prior.listenedAt) {
+        byMediaUrl.set(mediaKey, item);
       }
     }
     const titleKey = titlesKey(item.showTitle, item.episodeTitle);
@@ -57,6 +65,7 @@ export function decideEpisodeOutcomes(
     const deliveredAt = rec.notifiedAt ?? rec.recommendedAt;
     const listened =
       byGuid.get(rec.episodeGuid) ??
+      byMediaUrl.get(normalizeMediaUrl(rec.mediaUrl) ?? "") ??
       byTitles.get(titlesKey(rec.showTitle, rec.episodeTitle));
     const engagedAfterDelivery =
       listened !== undefined && listened.listenedAt >= deliveredAt;
@@ -107,6 +116,16 @@ export function decideEpisodeOutcomes(
   }
 
   return changes;
+}
+
+/** Compare enclosure URLs by host and path, ignoring protocol and query params. */
+function normalizeMediaUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim().toLowerCase();
+  if (!trimmed) return undefined;
+  const noProtocol = trimmed.replace(/^https?:\/\//, "");
+  const queryIndex = noProtocol.indexOf("?");
+  return queryIndex === -1 ? noProtocol : noProtocol.slice(0, queryIndex);
 }
 
 function titlesKey(showTitle: string, episodeTitle: string): string {

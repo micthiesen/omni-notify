@@ -14,6 +14,7 @@ import {
   fetchEmailFeedback,
   fetchEmailRules,
 } from "../api";
+import { forkUiRequest, runUiEffect } from "../effect";
 import { EmailLogModal } from "../components/EmailLogModal";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
@@ -63,21 +64,14 @@ function SenderRulesSection() {
   const { toast, showToast } = useToast();
 
   useEffect(() => {
-    let cancelled = false;
-    fetchEmailRules()
-      .then((res) => {
-        if (cancelled) return;
+    return forkUiRequest(fetchEmailRules(), {
+      onSuccess: (res) => {
         setRules(res.rules);
         setBuiltin(res.builtin);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load rules");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+      },
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load rules"),
+    });
   }, []);
 
   const addRule = async () => {
@@ -86,7 +80,9 @@ function SenderRulesSection() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await createEmailRule({ pattern: trimmed, scope, verdict });
+      const res = await runUiEffect(
+        createEmailRule({ pattern: trimmed, scope, verdict }),
+      );
       switch (res.status) {
         case "created":
           showToast("Rule added", "info");
@@ -124,7 +120,7 @@ function SenderRulesSection() {
     if (!confirmed) return;
     setError(null);
     try {
-      await deleteEmailRule(rule.ruleId);
+      await runUiEffect(deleteEmailRule(rule.ruleId));
       setRules((prev) => prev?.filter((r) => r.ruleId !== rule.ruleId) ?? prev);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete rule");
@@ -312,36 +308,22 @@ export default function EmailActivityPage() {
   const [logsFor, setLogsFor] = useState<EmailActivity | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     setActivities(null);
     setError(null);
-    fetchEmailActivity(pipeline ?? undefined, 500)
-      .then((res) => {
-        if (!cancelled) setActivities(res.activities);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load activity");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchEmailActivity(pipeline ?? undefined, 500), {
+      onSuccess: (res) => setActivities(res.activities),
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load activity"),
+    });
   }, [pipeline]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchEmailFeedback()
-      .then((res) => {
-        if (cancelled) return;
-        setFeedback(new Map(res.feedback.map((f) => [f.activityId, f])));
-      })
-      .catch(() => {
-        // Feedback indicators are decorative; the page works without them.
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchEmailFeedback(), {
+      onSuccess: (res) =>
+        setFeedback(new Map(res.feedback.map((f) => [f.activityId, f]))),
+      // Feedback indicators are decorative; the page works without them.
+      onFailure: () => {},
+    });
   }, []);
 
   const outcomeCounts = useMemo(() => {

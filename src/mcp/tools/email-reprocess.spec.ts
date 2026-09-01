@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { Effect, Exit } from "effect";
 import type { FetchedEmail } from "../../email/types.js";
-import { handleEmailThenClearRetry } from "./email-reprocess.js";
+import { handleEmailThenClearRetryEffect } from "./email-reprocess.js";
 
 const email: FetchedEmail = {
   id: "message-1",
@@ -15,26 +16,27 @@ const email: FetchedEmail = {
 describe("manual email reprocessing", () => {
   it("clears the scheduled retry only after successful processing", async () => {
     const clearRetry = vi.fn();
-    const handleEmails = vi.fn(async () => undefined);
+    const handleEmailsEffect = vi.fn(() => Effect.void);
 
-    await handleEmailThenClearRetry({ handleEmails }, email, clearRetry);
+    await Effect.runPromise(
+      handleEmailThenClearRetryEffect({ handleEmailsEffect }, email, clearRetry),
+    );
 
-    expect(handleEmails).toHaveBeenCalledWith([email]);
+    expect(handleEmailsEffect).toHaveBeenCalledWith([email]);
     expect(clearRetry).toHaveBeenCalledOnce();
-    expect(handleEmails.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(handleEmailsEffect.mock.invocationCallOrder[0]).toBeLessThan(
       clearRetry.mock.invocationCallOrder[0] ?? 0,
     );
   });
 
   it("retains the scheduled retry when processing fails", async () => {
     const clearRetry = vi.fn();
-    const handleEmails = vi.fn(async () => {
-      throw new Error("pipeline failed");
-    });
+    const handleEmailsEffect = vi.fn(() => Effect.fail(new Error("pipeline failed")));
 
-    await expect(
-      handleEmailThenClearRetry({ handleEmails }, email, clearRetry),
-    ).rejects.toThrow("pipeline failed");
+    const exit = await Effect.runPromiseExit(
+      handleEmailThenClearRetryEffect({ handleEmailsEffect }, email, clearRetry),
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
     expect(clearRetry).not.toHaveBeenCalled();
   });
 });

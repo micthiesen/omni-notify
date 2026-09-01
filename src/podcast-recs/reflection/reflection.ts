@@ -1,4 +1,5 @@
 import { generateText, Output } from "ai";
+import { Clock, Data, Effect } from "effect";
 import { z } from "zod";
 import { toDateStamp } from "../../utils/dates.js";
 import { PodcastRecommendationStatus } from "../persistence.js";
@@ -49,73 +50,131 @@ type RawProfile = z.infer<typeof profileSchema>;
  * draft and a skeptical revision. Model output is constrained and claims that
  * cite missing or inadequate evidence are removed before persistence.
  */
-export async function runPodcastTasteReflection(
+class PodcastReflectionError extends Data.TaggedError("PodcastReflectionError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `${this.operation}: ${detail}`;
+  }
+}
+
+export function runPodcastTasteReflectionEffect(
   input: PodcastTasteReflectionInput,
-): Promise<PodcastTasteReflectionResult> {
-  const incoming = [
-    ...deriveListenEvidence(input.listened),
-    ...deriveRecommendationEvidence(input.recommendations),
-  ];
-  const insertedEvidence = insertPodcastTasteEvidence(incoming);
-  const allEvidence = getAllPodcastTasteEvidence();
-  if (allEvidence.length === 0) {
-    return { status: "insufficient_evidence", insertedEvidence };
-  }
+): Effect.Effect<PodcastTasteReflectionResult, PodcastReflectionError> {
+  return Effect.gen(function* () {
+    const incoming = [
+      ...deriveListenEvidence(input.listened),
+      ...deriveRecommendationEvidence(input.recommendations),
+    ];
+    const insertedEvidence = yield* Effect.try({
+      try: () => insertPodcastTasteEvidence(incoming),
+      catch: (cause) =>
+        new PodcastReflectionError({
+          operation: "insert podcast taste evidence",
+          cause,
+        }),
+    });
+    const allEvidence = yield* Effect.try({
+      try: getAllPodcastTasteEvidence,
+      catch: (cause) =>
+        new PodcastReflectionError({ operation: "read podcast taste evidence", cause }),
+    });
+    if (allEvidence.length === 0) {
+      return { status: "insufficient_evidence", insertedEvidence };
+    }
 
-  const evidenceFingerprint = fingerprintEvidence(allEvidence);
-  const latest = getLatestPodcastTasteProfile();
-  if (latest?.evidenceFingerprint === evidenceFingerprint) {
-    return { status: "unchanged", profile: latest, insertedEvidence };
-  }
+    const evidenceFingerprint = fingerprintEvidence(allEvidence);
+    const latest = yield* Effect.try({
+      try: getLatestPodcastTasteProfile,
+      catch: (cause) =>
+        new PodcastReflectionError({ operation: "read podcast taste profile", cause }),
+    });
+    if (latest?.evidenceFingerprint === evidenceFingerprint) {
+      return { status: "unchanged", profile: latest, insertedEvidence };
+    }
 
-  const boundedEvidence = selectPodcastReflectionEvidence(
-    allEvidence,
-    input.maxEvidence ?? DEFAULT_MAX_EVIDENCE,
-  );
-  const stats = computePodcastBehavioralStats(allEvidence);
-  const evidenceJson = JSON.stringify(boundedEvidence.map(compactEvidence), null, 2);
-  const draftResult = await generateText({
-    model: input.model,
-    output: Output.object({ schema: profileSchema }),
-    prompt: buildDraftPrompt(evidenceJson, stats),
-  });
-  if (!draftResult.output)
-    throw new Error("Podcast taste reflection returned no draft");
+    const boundedEvidence = selectPodcastReflectionEvidence(
+      allEvidence,
+      input.maxEvidence ?? DEFAULT_MAX_EVIDENCE,
+    );
+    const stats = computePodcastBehavioralStats(allEvidence);
+    const evidenceJson = JSON.stringify(boundedEvidence.map(compactEvidence), null, 2);
+    const draftResult = yield* Effect.tryPromise({
+      try: () =>
+        generateText({
+          model: input.model,
+          output: Output.object({ schema: profileSchema }),
+          prompt: buildDraftPrompt(evidenceJson, stats),
+        }),
+      catch: (cause) =>
+        new PodcastReflectionError({ operation: "draft podcast taste profile", cause }),
+    });
+    if (!draftResult.output)
+      return yield* Effect.fail(
+        new PodcastReflectionError({
+          operation: "draft podcast taste profile",
+          cause: new Error("Podcast taste reflection returned no draft"),
+        }),
+      );
 
-  const finalResult = await generateText({
-    model: input.model,
-    output: Output.object({ schema: profileSchema }),
-    prompt: buildCriticPrompt(
-      evidenceJson,
+    const finalResult = yield* Effect.tryPromise({
+      try: () =>
+        generateText({
+          model: input.model,
+          output: Output.object({ schema: profileSchema }),
+          prompt: buildCriticPrompt(
+            evidenceJson,
+            stats,
+            JSON.stringify(draftResult.output, null, 2),
+          ),
+        }),
+      catch: (cause) =>
+        new PodcastReflectionError({
+          operation: "revise podcast taste profile",
+          cause,
+        }),
+    });
+    if (!finalResult.output) {
+      return yield* Effect.fail(
+        new PodcastReflectionError({
+          operation: "revise podcast taste profile",
+          cause: new Error("Podcast taste reflection returned no revision"),
+        }),
+      );
+    }
+
+    const validated = validatePodcastProfile(finalResult.output, allEvidence);
+    const generatedAt = input.now ?? (yield* Clock.currentTimeMillis);
+    const version = (latest?.version ?? 0) + 1;
+    const profile: PodcastTasteProfileData = {
+      ...validated.profile,
+      profileId: `v${version}:${evidenceFingerprint}`,
+      version,
+      generatedAt,
+      evidenceFingerprint,
+      evidenceCount: allEvidence.length,
+      modelId: input.modelId,
+      promptVersion: PODCAST_TASTE_PROMPT_VERSION,
       stats,
-      JSON.stringify(draftResult.output, null, 2),
-    ),
+    };
+    yield* Effect.try({
+      try: () => insertPodcastTasteProfile(profile),
+      catch: (cause) =>
+        new PodcastReflectionError({
+          operation: "insert podcast taste profile",
+          cause,
+        }),
+    });
+    return {
+      status: "created",
+      profile,
+      insertedEvidence,
+      rejectedClaims: validated.rejectedClaims,
+    };
   });
-  if (!finalResult.output) {
-    throw new Error("Podcast taste reflection returned no revision");
-  }
-
-  const validated = validatePodcastProfile(finalResult.output, allEvidence);
-  const generatedAt = input.now ?? Date.now();
-  const version = (latest?.version ?? 0) + 1;
-  const profile: PodcastTasteProfileData = {
-    ...validated.profile,
-    profileId: `v${version}:${evidenceFingerprint}`,
-    version,
-    generatedAt,
-    evidenceFingerprint,
-    evidenceCount: allEvidence.length,
-    modelId: input.modelId,
-    promptVersion: PODCAST_TASTE_PROMPT_VERSION,
-    stats,
-  };
-  insertPodcastTasteProfile(profile);
-  return {
-    status: "created",
-    profile,
-    insertedEvidence,
-    rejectedClaims: validated.rejectedClaims,
-  };
 }
 
 /** Prefer direct feedback, then recommendation outcomes, then recent listens. */

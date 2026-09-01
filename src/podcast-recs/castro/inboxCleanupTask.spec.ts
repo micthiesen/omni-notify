@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import type { InboxEpisode, PodcastAccountClient } from "../account.js";
 import {
@@ -20,16 +21,20 @@ function inboxEpisode(description?: string): InboxEpisode {
 function accountWithInbox(inbox: InboxEpisode[]): PodcastAccountClient {
   return {
     name: "Castro",
-    fetchSubscriptions: vi.fn(async () => ({ status: "ok" as const, value: [] })),
-    fetchListenHistory: vi.fn(async () => ({ status: "ok" as const, value: [] })),
-    fetchQueue: vi.fn(async () => ({ status: "ok" as const, value: [] })),
-    fetchInbox: vi.fn(async () => ({ status: "ok" as const, value: inbox })),
-    searchPodcasts: vi.fn(async () => ({ status: "ok" as const, value: [] })),
-    searchEpisodes: vi.fn(async () => ({ status: "ok" as const, value: [] })),
-    enqueueEpisode: vi.fn(async () => "added" as const),
-    dequeueEpisode: vi.fn(async () => "removed" as const),
-    clearInboxEpisode: vi.fn(async () => "removed" as const),
-    subscribeToShow: vi.fn(async () => "added" as const),
+    fetchSubscriptions: vi.fn(() =>
+      Effect.succeed({ status: "ok" as const, value: [] }),
+    ),
+    fetchListenHistory: vi.fn(() =>
+      Effect.succeed({ status: "ok" as const, value: [] }),
+    ),
+    fetchQueue: vi.fn(() => Effect.succeed({ status: "ok" as const, value: [] })),
+    fetchInbox: vi.fn(() => Effect.succeed({ status: "ok" as const, value: inbox })),
+    searchPodcasts: vi.fn(() => Effect.succeed({ status: "ok" as const, value: [] })),
+    searchEpisodes: vi.fn(() => Effect.succeed({ status: "ok" as const, value: [] })),
+    enqueueEpisode: vi.fn(() => Effect.succeed("added" as const)),
+    dequeueEpisode: vi.fn(() => Effect.succeed("removed" as const)),
+    clearInboxEpisode: vi.fn(() => Effect.succeed("removed" as const)),
+    subscribeToShow: vi.fn(() => Effect.succeed("added" as const)),
   };
 }
 
@@ -75,10 +80,12 @@ describe("CastroInboxCleanupTask", () => {
 
   it("fails rather than treating an unavailable Inbox as empty", async () => {
     const account = accountWithInbox([]);
-    vi.mocked(account.fetchInbox).mockResolvedValue({
-      status: "unavailable",
-      reason: "Castro timed out",
-    });
+    vi.mocked(account.fetchInbox).mockReturnValue(
+      Effect.succeed({
+        status: "unavailable",
+        reason: "Castro timed out",
+      }),
+    );
     const task = new CastroInboxCleanupTask(account, logger);
 
     await expect(task.run()).rejects.toThrow(

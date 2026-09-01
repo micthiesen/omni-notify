@@ -1,4 +1,6 @@
 import config from "../utils/config.js";
+import { Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
 import { createPlexClient } from "./plex/client.js";
 import type { FetchResult, InProgressItem, MediaItem, WatchedItem } from "./types.js";
 
@@ -19,26 +21,27 @@ function unavailable(error: unknown): FetchResult<never> {
   };
 }
 
-export async function fetchWatchHistory(): Promise<FetchResult<WatchedItem[]>> {
-  try {
-    return { status: "ok", value: await client().fetchWatchHistory() };
-  } catch (error) {
-    return unavailable(error);
-  }
+export function fetchWatchHistoryEffect(): Effect.Effect<FetchResult<WatchedItem[]>> {
+  return Effect.suspend(() => client().fetchWatchHistory()).pipe(
+    Effect.map((value) => ({ status: "ok" as const, value })),
+    Effect.catchAll((error) => Effect.succeed(unavailable(error))),
+  );
 }
 
-export async function fetchInProgress(): Promise<FetchResult<InProgressItem[]>> {
-  try {
-    return { status: "ok", value: await client().fetchInProgress() };
-  } catch (error) {
-    return unavailable(error);
-  }
+export function fetchInProgressEffect(): Effect.Effect<FetchResult<InProgressItem[]>> {
+  return Effect.suspend(() => client().fetchInProgress()).pipe(
+    Effect.map((value) => ({ status: "ok" as const, value })),
+    Effect.catchAll((error) => Effect.succeed(unavailable(error))),
+  );
 }
 
-export async function fetchLibraryIndex(): Promise<FetchResult<MediaItem[]>> {
-  try {
-    return { status: "ok", value: await client().fetchLibraryIndex() };
-  } catch (error) {
-    return unavailable(error);
-  }
+export function fetchLibraryIndexEffect(): Effect.Effect<FetchResult<MediaItem[]>> {
+  return Effect.suspend(() => client().fetchLibraryIndex()).pipe(
+    Effect.map((value) => ({ status: "ok" as const, value })),
+    Effect.catchAll((error) => Effect.succeed(unavailable(error))),
+  );
 }
+
+export const fetchWatchHistory = () => runPromise(fetchWatchHistoryEffect());
+export const fetchInProgress = () => runPromise(fetchInProgressEffect());
+export const fetchLibraryIndex = () => runPromise(fetchLibraryIndexEffect());

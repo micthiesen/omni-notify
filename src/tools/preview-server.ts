@@ -9,6 +9,8 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
 import { BriefingHistoryEntity } from "../briefing-agent/persistence.js";
 import { EmailActivityEntity } from "../email/activity.js";
 import { recordEmailFeedback } from "../email/feedback.js";
@@ -71,27 +73,33 @@ class FakeTask extends ScheduledTask {
 
   // Emits a spread of levels over the fake duration so the log viewer has
   // something realistic to tail.
-  public async run(): Promise<void> {
-    const steps = Math.max(3, Math.round(this.durationMs / 400));
-    this.taskLogger.info(`Starting ${this.name} (${steps} steps)`);
-    for (let i = 1; i <= steps; i++) {
-      await new Promise((resolve) => setTimeout(resolve, this.durationMs / steps));
-      if (i % 4 === 0) {
-        this.taskLogger.info(`Step ${i}/${steps}: fetched upstream page ${i}`);
-      } else if (i % 7 === 0) {
-        this.taskLogger.warn(`Step ${i}/${steps}: upstream slow, retrying`);
-      } else {
-        this.taskLogger.debug(`Step ${i}/${steps}: processed batch`, {
-          items: i * 3,
-        });
+  protected runEffect(): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      const steps = Math.max(3, Math.round(this.durationMs / 400));
+      this.taskLogger.info(`Starting ${this.name} (${steps} steps)`);
+      for (let i = 1; i <= steps; i++) {
+        yield* Effect.sleep(this.durationMs / steps);
+        if (i % 4 === 0) {
+          this.taskLogger.info(`Step ${i}/${steps}: fetched upstream page ${i}`);
+        } else if (i % 7 === 0) {
+          this.taskLogger.warn(`Step ${i}/${steps}: upstream slow, retrying`);
+        } else {
+          this.taskLogger.debug(`Step ${i}/${steps}: processed batch`, {
+            items: i * 3,
+          });
+        }
       }
-    }
-    if (this.fail) {
-      // .warn, not .error: the error hook would send a real Pushover.
-      this.taskLogger.warn("Upstream returned 503 after retries, giving up");
-      throw new Error("Simulated failure: upstream returned 503");
-    }
-    this.taskLogger.info(`Finished ${this.name}`);
+      if (this.fail) {
+        // .warn, not .error: the error hook would send a real Pushover.
+        this.taskLogger.warn("Upstream returned 503 after retries, giving up");
+        throw new Error("Simulated failure: upstream returned 503");
+      }
+      this.taskLogger.info(`Finished ${this.name}`);
+    });
+  }
+
+  public run(): Promise<void> {
+    return runPromise(this.runEffect());
   }
 
   public getLastRunSummary(): string | undefined {
@@ -108,25 +116,29 @@ class FakeRecommendationsTask extends FakeTask {
 }
 
 class FakeWorkspaceTask extends FakeTask {
-  public async runManual(input: unknown): Promise<void> {
-    const request = input as { message?: string; subjectId?: string };
-    if (request.message) {
-      addWorkspaceMessage({
-        workspaceId: "purchase-research",
-        subjectId: request.subjectId,
-        role: "user",
-        text: request.message,
-      });
-    }
-    await this.run();
-    if (request.message) {
-      addWorkspaceMessage({
-        workspaceId: "purchase-research",
-        subjectId: request.subjectId,
-        role: "assistant",
-        text: "Preview response: I recorded that update and would refresh the relevant research next.",
-      });
-    }
+  public runManual(input: unknown): Promise<void> {
+    return runPromise(
+      Effect.gen(this, function* () {
+        const request = input as { message?: string; subjectId?: string };
+        if (request.message) {
+          addWorkspaceMessage({
+            workspaceId: "purchase-research",
+            subjectId: request.subjectId,
+            role: "user",
+            text: request.message,
+          });
+        }
+        yield* this.runEffect();
+        if (request.message) {
+          addWorkspaceMessage({
+            workspaceId: "purchase-research",
+            subjectId: request.subjectId,
+            role: "assistant",
+            text: "Preview response: I recorded that update and would refresh the relevant research next.",
+          });
+        }
+      }),
+    );
   }
 }
 

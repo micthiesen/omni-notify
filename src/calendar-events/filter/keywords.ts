@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import type { AdmitTier } from "../../email/activity.js";
 import { findSenderRule } from "../../email/senderRules.js";
 import type { EmailTriageService } from "../../email/triage.js";
@@ -168,29 +169,29 @@ function senderDomain(fromLower: string): string {
   return at >= 0 ? addr.slice(at + 1).trim() : addr;
 }
 
-export async function filterCalendarCandidate(
+export function filterCalendarCandidateEffect(
   email: EmailCandidate,
   triage: EmailTriageService,
-): Promise<FilterResult> {
+): Effect.Effect<FilterResult, never> {
   const fromLower = email.from.toLowerCase();
 
   // User rules beat the built-in lists in both directions: an explicit allow
   // overrides a shipped blacklist entry (block still beats allow among rules).
   const rule = findSenderRule(email.from, "calendar");
   if (rule?.verdict === "block") {
-    return { pass: false, reason: `blocked by rule ${rule.pattern}` };
+    return Effect.succeed({ pass: false, reason: `blocked by rule ${rule.pattern}` });
   }
   if (rule?.verdict === "allow") {
-    return {
+    return Effect.succeed({
       pass: true,
       reason: `allowed by rule ${rule.pattern}`,
       admitTier: "rule",
-    };
+    });
   }
 
   // Blacklisted senders are always rejected
   if (isBlacklistedSender(fromLower)) {
-    return { pass: false, reason: "blacklisted sender" };
+    return Effect.succeed({ pass: false, reason: "blacklisted sender" });
   }
 
   // Known booking/travel/event domains auto-pass. Match on the sender's
@@ -203,18 +204,18 @@ export async function filterCalendarCandidate(
       return domain === bare || domain.endsWith(`.${bare}`);
     })
   ) {
-    return { pass: true, reason: "known sender", admitTier: "builtin" };
+    return Effect.succeed({ pass: true, reason: "known sender", admitTier: "builtin" });
   }
 
   // Cheap-LLM triage decides everything else; keywords are only the fallback
-  try {
-    const verdict = await triage.classify(email);
-    return verdict.calendar
-      ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
-      : { pass: false, reason: `triage: ${verdict.reason}` };
-  } catch {
-    return keywordFallback(email);
-  }
+  return triage.classifyEffect(email).pipe(
+    Effect.map((verdict): FilterResult =>
+      verdict.calendar
+        ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
+        : { pass: false, reason: `triage: ${verdict.reason}` },
+    ),
+    Effect.catchAll(() => Effect.succeed(keywordFallback(email))),
+  );
 }
 
 function isBlacklistedSender(fromLower: string): boolean {

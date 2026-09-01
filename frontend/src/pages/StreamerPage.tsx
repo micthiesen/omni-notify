@@ -5,6 +5,7 @@ import {
   fetchStreamerSessions,
   submitLivestreamFeedback,
 } from "../api";
+import { forkUiRequest } from "../effect";
 import type { StreamerMetrics, StreamerView, StreamSession } from "../api";
 import { DggPresenceTag } from "../components/LiveNow";
 import { PlatformIcon } from "../components/PlatformIcon";
@@ -391,9 +392,10 @@ function LivestreamIntelligencePanel({ streamer }: { streamer: StreamerView }) {
     const alert = intelligence.latestAlert;
     if (!alert) return;
     setSubmitted(verdict);
-    void submitLivestreamFeedback(streamer.id, alert.alertId, verdict).catch(() =>
-      setSubmitted(null),
-    );
+    forkUiRequest(submitLivestreamFeedback(streamer.id, alert.alertId, verdict), {
+      onSuccess: () => {},
+      onFailure: () => setSubmitted(null),
+    });
   };
 
   return (
@@ -493,34 +495,19 @@ export default function StreamerPage({ streamerId }: { streamerId: string }) {
   }, [streamer]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchStreamerMetrics(streamerId)
-      .then((data) => {
-        if (!cancelled) setMetrics(data);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load metrics");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchStreamerMetrics(streamerId), {
+      onSuccess: setMetrics,
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load metrics"),
+    });
   }, [streamerId]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchStreamerSessions(streamerId)
-      .then((data) => {
-        if (!cancelled) setSessions(data.sessions);
-      })
-      .catch(() => {
-        // Session history is supplementary; the page stays useful without it.
-        if (!cancelled) setSessions(null);
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchStreamerSessions(streamerId), {
+      onSuccess: (data) => setSessions(data.sessions),
+      // Session history is supplementary; the page stays useful without it.
+      onFailure: () => setSessions(null),
+    });
   }, [streamerId]);
 
   if (snapshot === null) {

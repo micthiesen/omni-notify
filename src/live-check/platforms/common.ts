@@ -1,6 +1,13 @@
-import got from "got";
+import { Data, Effect, Schema } from "effect";
+import {
+  fetchPublicText,
+  PUBLIC_HTTP_USER_AGENT,
+  type PublicTextRequest,
+} from "../../effect/publicHttp.js";
 
 const TIMEOUT_MS = 10_000;
+export const PLATFORM_GQL_MAX_BYTES = 2 * 1024 * 1024;
+export const PLATFORM_HTML_MAX_BYTES = 10 * 1024 * 1024;
 
 export interface GQLRequestOptions {
   url: string;
@@ -8,27 +15,63 @@ export interface GQLRequestOptions {
   query: string;
 }
 
-export async function fetchGQL<T>(options: GQLRequestOptions): Promise<T> {
-  const { url, clientId, query } = options;
-  try {
-    return await got
-      .post(url, {
-        json: { query },
-        headers: { "Client-Id": clientId },
-        timeout: { request: TIMEOUT_MS },
-      })
-      .json<T>();
-  } catch (error) {
-    throw new Error(`Failed to fetch GQL from ${url}: ${(error as Error)?.message}`);
+export class PlatformRequestError extends Data.TaggedError("PlatformRequestError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `${this.operation}: ${detail}`;
   }
 }
 
-export async function fetchPageHtml(url: string): Promise<string> {
-  try {
-    return await got(url, { timeout: { request: TIMEOUT_MS } }).text();
-  } catch (error) {
-    throw new Error(
-      `Failed to check live status for ${url}: ${(error as Error)?.message}`,
-    );
-  }
+export function fetchGQL<A, I>(
+  options: GQLRequestOptions,
+  schema: Schema.Schema<A, I>,
+  dependencies: {
+    readonly request?: PublicTextRequest;
+    readonly maxResponseBytes?: number;
+  } = {},
+): Effect.Effect<A, PlatformRequestError> {
+  const { url, clientId, query } = options;
+  const operation = `Failed to fetch GQL from ${url}`;
+  return fetchPublicText(
+    url,
+    {
+      method: "POST",
+      json: { query },
+      headers: {
+        "Client-Id": clientId,
+        "User-Agent": PUBLIC_HTTP_USER_AGENT,
+      },
+      timeout: { request: TIMEOUT_MS },
+    },
+    operation,
+    dependencies.request,
+    dependencies.maxResponseBytes ?? PLATFORM_GQL_MAX_BYTES,
+  ).pipe(
+    Effect.flatMap(Schema.decodeUnknown(Schema.parseJson(schema))),
+    Effect.mapError((cause) => new PlatformRequestError({ operation, cause })),
+  );
+}
+
+export function fetchPageHtml(
+  url: string,
+  dependencies: {
+    readonly request?: PublicTextRequest;
+    readonly maxResponseBytes?: number;
+  } = {},
+): Effect.Effect<string, PlatformRequestError> {
+  const operation = `Failed to check live status for ${url}`;
+  return fetchPublicText(
+    url,
+    {
+      headers: { "User-Agent": PUBLIC_HTTP_USER_AGENT },
+      timeout: { request: TIMEOUT_MS },
+    },
+    operation,
+    dependencies.request,
+    dependencies.maxResponseBytes ?? PLATFORM_HTML_MAX_BYTES,
+  ).pipe(Effect.mapError((cause) => new PlatformRequestError({ operation, cause })));
 }

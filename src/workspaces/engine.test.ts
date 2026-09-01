@@ -1,5 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { it as effectIt } from "@effect/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Effect, Exit } from "effect";
 import type {
   WorkspaceActionData,
   WorkspaceMessageData,
@@ -22,9 +24,12 @@ const state = vi.hoisted(() => ({
 
 vi.mock("./notifications.js", () => ({
   deliverWorkspaceNotification: state.deliver,
+  deliverWorkspaceNotificationEffect: (...args: unknown[]) =>
+    Effect.promise(() => state.deliver(...args)),
 }));
 
 vi.mock("./persistence.js", () => ({
+  applyWorkspaceTransaction: <A>(apply: () => A) => apply(),
   addWorkspaceAction: (
     input: Omit<WorkspaceActionData, "actionId" | "status" | "createdAt">,
   ) => {
@@ -88,7 +93,11 @@ vi.mock("./persistence.js", () => ({
   },
 }));
 
-import { applyWorkspaceOutput, normalizeWorkspaceWebUrl } from "./engine.js";
+import {
+  applyWorkspaceOutput,
+  applyWorkspaceOutputEffect,
+  normalizeWorkspaceWebUrl,
+} from "./engine.js";
 
 const definition: WorkspaceDefinition = {
   id: "purchase-research",
@@ -236,6 +245,45 @@ describe("workspace output application", () => {
       ),
     ).rejects.toThrow("Subject-scoped run attempted to update");
   });
+
+  effectIt.effect(
+    "validates late references before writing any part of the output",
+    () =>
+      Effect.gen(function* () {
+        const valid = output();
+        const invalid: Output = {
+          ...valid,
+          sources: [
+            ...valid.sources,
+            {
+              subject_id: "missing-subject",
+              title: "Late invalid source",
+              url: "https://example.com",
+              excerpt: "Must invalidate the complete plan",
+            },
+          ],
+        };
+
+        const exit = yield* Effect.exit(
+          applyWorkspaceOutputEffect(
+            definition,
+            invalid,
+            { trigger: "message", message: "Find me a camera" },
+            logger,
+          ),
+        );
+
+        expect(Exit.isFailure(exit)).toBe(true);
+        expect(JSON.stringify(exit)).toContain("missing-subject");
+
+        expect(state.subjects.size).toBe(0);
+        expect(state.artifacts).toHaveLength(0);
+        expect(state.sources).toHaveLength(0);
+        expect(state.actions).toHaveLength(0);
+        expect(state.messages).toHaveLength(0);
+        expect(state.notifications).toHaveLength(0);
+      }),
+  );
 
   it("does not renotify an existing pending action", async () => {
     state.actionCreated = false;

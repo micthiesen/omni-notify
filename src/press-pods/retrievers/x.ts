@@ -1,7 +1,11 @@
+import { Effect, Schema } from "effect";
+import { readFetchResponseTextWithLimit } from "../../effect/publicHttp.js";
+import { PressPodsError, tryPromise, trySync } from "../effect.js";
 import type { Article } from "../types.js";
 
 const FXTWITTER_THREAD_API = "https://api.fxtwitter.com/2/thread";
 const REQUEST_TIMEOUT_MS = 20_000;
+const X_RESPONSE_MAX_BYTES = 5 * 1024 * 1024;
 
 interface XAuthor {
   id?: string;
@@ -54,6 +58,15 @@ interface FxTwitterThreadResponse {
   message?: string;
   error?: string;
 }
+
+const FxTwitterThreadResponseSchema = Schema.Struct({
+  code: Schema.optional(Schema.Number),
+  status: Schema.optional(Schema.Unknown),
+  thread: Schema.optional(Schema.Array(Schema.Unknown)),
+  author: Schema.optional(Schema.Unknown),
+  message: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+});
 
 export interface XStatusUrl {
   id: string;
@@ -260,25 +273,42 @@ export function parseFxTwitterResponse(
   };
 }
 
-export async function retrieveArticleX(
+export function retrieveArticleX(
   url: string,
   userAgent: string,
-): Promise<Article> {
-  const requested = parseXStatusUrl(url);
-  const response = await fetch(`${FXTWITTER_THREAD_API}/${requested.id}`, {
-    headers: { "User-Agent": userAgent, Accept: "application/json" },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    redirect: "error",
+): Effect.Effect<Article, PressPodsError> {
+  return Effect.gen(function* () {
+    const requested = yield* trySync("parse X status URL", () => parseXStatusUrl(url));
+    const response = yield* tryPromise("retrieve X article", (signal) =>
+      fetch(`${FXTWITTER_THREAD_API}/${requested.id}`, {
+        headers: { "User-Agent": userAgent, Accept: "application/json" },
+        signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+        redirect: "error",
+      }),
+    );
+    if (!response.ok) {
+      return yield* new PressPodsError({
+        operation: "retrieve X article",
+        cause: new Error(`FxTwitter request failed with HTTP ${response.status}`),
+      });
+    }
+    const responseText = yield* tryPromise("read X article response", (signal) =>
+      readFetchResponseTextWithLimit(response, X_RESPONSE_MAX_BYTES, signal),
+    );
+    const raw = yield* trySync(
+      "parse X article JSON",
+      () => JSON.parse(responseText) as unknown,
+    );
+    const decoded = yield* Schema.decodeUnknown(FxTwitterThreadResponseSchema)(
+      raw,
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new PressPodsError({ operation: "decode X article response", cause }),
+      ),
+    );
+    return yield* trySync("parse X article response", () =>
+      parseFxTwitterResponse(decoded as FxTwitterThreadResponse, requested),
+    );
   });
-  if (!response.ok) {
-    throw new Error(`FxTwitter request failed with HTTP ${response.status}`);
-  }
-
-  let payload: FxTwitterThreadResponse;
-  try {
-    payload = (await response.json()) as FxTwitterThreadResponse;
-  } catch (error) {
-    throw new Error("FxTwitter returned invalid JSON", { cause: error });
-  }
-  return parseFxTwitterResponse(payload, requested);
 }

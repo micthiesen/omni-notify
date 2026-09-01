@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { it as effectIt } from "@effect/vitest";
+import { Duration, Effect, Fiber, TestClock } from "effect";
 import type { Metadata } from "../agents/metadata.js";
+import { PressPodsError } from "../effect.js";
 import type { Article } from "../types.js";
-import { getArticleRetrievers, rateRetrievedArticles } from "./index.js";
+import {
+  getArticleRetrievers,
+  rateRetrievedArticles,
+  runArticleRetrievers,
+} from "./index.js";
 
 function article(text: string, title: string): Article {
   return {
@@ -37,16 +44,18 @@ describe("rateRetrievedArticles", () => {
     const first = article("same\r\ntext\n", "first");
     const second = { ...first, text: " same\ntext" };
     const distinct = article("same text", "distinct");
-    const rateArticle = vi.fn(async () => metadata());
+    const rateArticle = vi.fn(() => Effect.succeed(metadata()));
 
-    const results = await rateRetrievedArticles(
-      [
-        { success: true, article: first, retrieverName: "first" },
-        { success: false, error: new Error("network"), retrieverName: "failed" },
-        { success: true, article: second, retrieverName: "second" },
-        { success: true, article: distinct, retrieverName: "distinct" },
-      ],
-      rateArticle,
+    const results = await Effect.runPromise(
+      rateRetrievedArticles(
+        [
+          { success: true, article: first, retrieverName: "first" },
+          { success: false, error: new Error("network"), retrieverName: "failed" },
+          { success: true, article: second, retrieverName: "second" },
+          { success: true, article: distinct, retrieverName: "distinct" },
+        ],
+        rateArticle,
+      ),
     );
 
     expect(rateArticle).toHaveBeenCalledTimes(2);
@@ -67,14 +76,16 @@ describe("rateRetrievedArticles", () => {
   it("rates matching body text separately when prompt metadata differs", async () => {
     const first = article("same text", "first");
     const second = article("same text", "second");
-    const rateArticle = vi.fn(async () => metadata());
+    const rateArticle = vi.fn(() => Effect.succeed(metadata()));
 
-    await rateRetrievedArticles(
-      [
-        { success: true, article: first, retrieverName: "first" },
-        { success: true, article: second, retrieverName: "second" },
-      ],
-      rateArticle,
+    await Effect.runPromise(
+      rateRetrievedArticles(
+        [
+          { success: true, article: first, retrieverName: "first" },
+          { success: true, article: second, retrieverName: "second" },
+        ],
+        rateArticle,
+      ),
     );
 
     expect(rateArticle).toHaveBeenCalledTimes(2);
@@ -85,19 +96,27 @@ describe("rateRetrievedArticles", () => {
     const invalidB = { ...invalidA };
     const brokenA = article("broken", "broken-a");
     const brokenB = { ...brokenA };
-    const rateArticle = vi.fn(async (candidate: Article) => {
-      if (candidate.text === "broken") throw new Error("model unavailable");
-      return metadata(false);
-    });
+    const rateArticle = vi.fn((candidate: Article) =>
+      candidate.text === "broken"
+        ? Effect.fail(
+            new PressPodsError({
+              operation: "rate article",
+              cause: new Error("model unavailable"),
+            }),
+          )
+        : Effect.succeed(metadata(false)),
+    );
 
-    const results = await rateRetrievedArticles(
-      [
-        { success: true, article: invalidA, retrieverName: "invalid-a" },
-        { success: true, article: brokenA, retrieverName: "broken-a" },
-        { success: true, article: invalidB, retrieverName: "invalid-b" },
-        { success: true, article: brokenB, retrieverName: "broken-b" },
-      ],
-      rateArticle,
+    const results = await Effect.runPromise(
+      rateRetrievedArticles(
+        [
+          { success: true, article: invalidA, retrieverName: "invalid-a" },
+          { success: true, article: brokenA, retrieverName: "broken-a" },
+          { success: true, article: invalidB, retrieverName: "invalid-b" },
+          { success: true, article: brokenB, retrieverName: "broken-b" },
+        ],
+        rateArticle,
+      ),
     );
 
     expect(rateArticle).toHaveBeenCalledTimes(2);
@@ -142,4 +161,46 @@ describe("getArticleRetrievers", () => {
       getArticleRetrievers("https://x.com.example/status/123").map(({ name }) => name),
     ).toContain("readability");
   });
+});
+
+describe("runArticleRetrievers", () => {
+  effectIt.effect(
+    "interrupts a timed-out child without discarding a successful sibling",
+    () =>
+      Effect.gen(function* () {
+        let interrupted = false;
+        const successful = article("complete", "successful");
+        const fiber = yield* Effect.fork(
+          runArticleRetrievers(
+            "https://example.com/article",
+            [
+              {
+                name: "hung",
+                retrieve: () =>
+                  Effect.async<never>((resume) => {
+                    return Effect.sync(() => {
+                      interrupted = true;
+                      resume(Effect.interrupt);
+                    });
+                  }),
+              },
+              { name: "successful", retrieve: () => Effect.succeed(successful) },
+            ],
+            5,
+          ),
+        );
+        yield* Effect.yieldNow();
+        yield* TestClock.adjust(Duration.millis(5));
+        const results = yield* Fiber.join(fiber);
+
+        expect(interrupted).toBe(true);
+        expect(results).toHaveLength(2);
+        expect(results[0]).toMatchObject({ success: false, retrieverName: "hung" });
+        expect(results[1]).toEqual({
+          success: true,
+          article: successful,
+          retrieverName: "successful",
+        });
+      }),
+  );
 });

@@ -11,6 +11,7 @@ import {
   sendPodcastRecommendationFeedback,
   sendRecommendationFeedback,
 } from "../api";
+import { forkUiRequest, runUiEffect } from "../effect";
 import { Link } from "../router";
 
 export type FeedbackKind = "recommendations" | "podcasts";
@@ -156,19 +157,11 @@ function MediaFeedback({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchRecommendation(id)
-      .then((res) => {
-        if (!cancelled) setRec(res.recommendation);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchRecommendation(id), {
+      onSuccess: (res) => setRec(res.recommendation),
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load"),
+    });
   }, [id]);
 
   if (error) return <FeedbackError error={error} />;
@@ -192,11 +185,11 @@ function MediaFeedback({ id }: { id: string }) {
       note={rec.feedbackNote}
       detailsTo={`/media/${encodeURIComponent(id)}`}
       onSelect={async (feedback) => {
-        const res = await sendRecommendationFeedback(id, feedback);
+        const res = await runUiEffect(sendRecommendationFeedback(id, feedback));
         setRec(res.recommendation);
       }}
       onSaveNote={async (note) => {
-        const res = await sendRecommendationFeedback(id, null, note);
+        const res = await runUiEffect(sendRecommendationFeedback(id, null, note));
         setRec(res.recommendation);
       }}
     />
@@ -208,19 +201,11 @@ function PodcastFeedbackCard({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchPodcastRecommendation(id)
-      .then((res) => {
-        if (!cancelled) setRec(res.recommendation);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchPodcastRecommendation(id), {
+      onSuccess: (res) => setRec(res.recommendation),
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load"),
+    });
   }, [id]);
 
   if (error) return <FeedbackError error={error} />;
@@ -237,11 +222,13 @@ function PodcastFeedbackCard({ id }: { id: string }) {
       note={rec.feedbackNote ?? null}
       detailsTo={`/podcasts/${encodeURIComponent(id)}`}
       onSelect={async (feedback) => {
-        const res = await sendPodcastRecommendationFeedback(id, feedback);
+        const res = await runUiEffect(sendPodcastRecommendationFeedback(id, feedback));
         setRec(res.recommendation);
       }}
       onSaveNote={async (note) => {
-        const res = await sendPodcastRecommendationFeedback(id, null, note);
+        const res = await runUiEffect(
+          sendPodcastRecommendationFeedback(id, null, note),
+        );
         setRec(res.recommendation);
       }}
     />

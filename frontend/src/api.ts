@@ -1,3 +1,5 @@
+import { Data, Effect, Schedule, Schema } from "effect";
+
 export type TaskTrigger = "schedule" | "manual" | "startup" | "catchup";
 export type TaskRunStatus = "running" | "success" | "error";
 
@@ -197,6 +199,16 @@ export interface LivestreamIntelligenceDetails {
   events: LivestreamIntelligenceEvent[];
   runtime: LivestreamRuntimeDiagnostics | null;
   generatedAt: number;
+}
+
+export interface LivestreamFeedback {
+  feedbackId: string;
+  streamerId: string;
+  alertId: string;
+  alertType: LivestreamAlertType;
+  verdict: "useful" | "not_useful" | "false_positive";
+  note?: string;
+  createdAt: number;
 }
 
 export type StreamerTier = "primary" | "background";
@@ -809,122 +821,1075 @@ export interface WorkspaceDetailResponse {
   papercuts: WorkspacePapercut[];
 }
 
-export class ApiError extends Error {
-  public readonly status: number;
+export class ApiError extends Data.TaggedError("ApiError")<{
+  readonly status: number;
+  readonly message: string;
+}> {}
 
-  constructor(status: number, message: string) {
-    super(message);
-    this.name = "ApiError";
-    this.status = status;
-  }
-}
+export class ApiNetworkError extends Data.TaggedError("ApiNetworkError")<{
+  readonly path: string;
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
 
-async function extractErrorMessage(res: Response): Promise<string> {
-  try {
-    const body: unknown = await res.json();
-    if (
-      typeof body === "object" &&
-      body !== null &&
-      "error" in body &&
-      typeof (body as { error: unknown }).error === "string"
-    ) {
-      return (body as { error: string }).error;
-    }
-  } catch {
-    // fall through to generic message
-  }
-  return `HTTP ${res.status}: ${res.statusText}`;
-}
+export class ApiDecodeError extends Data.TaggedError("ApiDecodeError")<{
+  readonly path: string;
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
+
+export type ApiClientError = ApiError | ApiNetworkError | ApiDecodeError;
+
+class RetryableGetError extends Data.TaggedError("RetryableGetError")<{
+  readonly response: Response;
+}> {}
+
+const ErrorBodySchema = Schema.Struct({ error: Schema.String });
+
+const extractErrorMessage = (res: Response): Effect.Effect<string> =>
+  Effect.tryPromise({
+    try: () => res.clone().json() as Promise<unknown>,
+    catch: () => undefined,
+  }).pipe(
+    Effect.flatMap((body) => Schema.decodeUnknown(ErrorBodySchema)(body)),
+    Effect.map((body) => body.error),
+    Effect.catchAll(() => Effect.succeed(`HTTP ${res.status}: ${res.statusText}`)),
+  );
 
 // Container restarts are routine and take up to ~30s; during one, fetches
 // either fail at the network layer or hit the proxy's 502/503/504. GETs are
 // idempotent, so ride out restarts with backoff instead of erroring pages
 // into blank states. Application errors (4xx, 500) still surface immediately.
 const RETRYABLE_STATUS = new Set([502, 503, 504]);
-const GET_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 8_000, 8_000];
+const getRetrySchedule = Schedule.exponential("500 millis").pipe(
+  Schedule.union(Schedule.spaced("8 seconds")),
+  Schedule.intersect(Schedule.recurs(7)),
+);
 
-async function fetchGetWithRetry(path: string): Promise<Response> {
-  for (let attempt = 0; ; attempt++) {
-    const lastAttempt = attempt >= GET_RETRY_DELAYS_MS.length;
-    try {
-      const res = await fetch(path);
-      if (!RETRYABLE_STATUS.has(res.status) || lastAttempt) return res;
-    } catch (err) {
-      // Network failure: server down mid-restart
-      if (lastAttempt) throw err;
+const fetchResponse = (
+  path: string,
+  init?: RequestInit,
+): Effect.Effect<Response, ApiNetworkError> =>
+  Effect.tryPromise({
+    try: (signal) => fetch(path, { ...init, signal }),
+    catch: (cause) =>
+      new ApiNetworkError({ path, message: `Request failed: ${path}`, cause }),
+  });
+
+const fetchGetWithRetry = (path: string): Effect.Effect<Response, ApiNetworkError> =>
+  fetchResponse(path).pipe(
+    Effect.flatMap((response) =>
+      RETRYABLE_STATUS.has(response.status)
+        ? Effect.fail(new RetryableGetError({ response }))
+        : Effect.succeed(response),
+    ),
+    Effect.retry({ schedule: getRetrySchedule }),
+    Effect.catchTag("RetryableGetError", ({ response }) => Effect.succeed(response)),
+  );
+
+const decodeResponse = <A, I>(
+  path: string,
+  response: Response,
+  schema: Schema.Schema<A, I, never>,
+): Effect.Effect<A, ApiError | ApiDecodeError> =>
+  Effect.gen(function* () {
+    if (!response.ok) {
+      return yield* new ApiError({
+        status: response.status,
+        message: yield* extractErrorMessage(response),
+      });
     }
-    await new Promise((resolve) => setTimeout(resolve, GET_RETRY_DELAYS_MS[attempt]));
-  }
-}
+    const body = yield* Effect.tryPromise({
+      try: () => response.json() as Promise<unknown>,
+      catch: (cause) =>
+        new ApiDecodeError({ path, message: `Invalid JSON response: ${path}`, cause }),
+    });
+    return yield* Schema.decodeUnknown(schema)(body).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ApiDecodeError({
+            path,
+            message: `Response did not match its schema: ${path}`,
+            cause,
+          }),
+      ),
+    );
+  });
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetchGetWithRetry(path);
-  if (!res.ok) {
-    throw new ApiError(res.status, await extractErrorMessage(res));
-  }
-  return (await res.json()) as T;
-}
+export const apiGet = <A, I>(
+  path: string,
+  schema: Schema.Schema<A, I, never>,
+): Effect.Effect<A, ApiClientError> =>
+  fetchGetWithRetry(path).pipe(
+    Effect.flatMap((response) => decodeResponse(path, response, schema)),
+  );
 
-export async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: "POST",
+const apiWrite = <A, I>(
+  method: "POST" | "DELETE",
+  path: string,
+  schema: Schema.Schema<A, I, never>,
+  body?: unknown,
+): Effect.Effect<A, ApiClientError> =>
+  fetchResponse(path, {
+    method,
     ...(body === undefined
       ? {}
       : {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         }),
-  });
-  if (!res.ok) {
-    throw new ApiError(res.status, await extractErrorMessage(res));
-  }
-  return (await res.json()) as T;
+  }).pipe(Effect.flatMap((response) => decodeResponse(path, response, schema)));
+
+export const apiPost = <A, I>(
+  path: string,
+  schema: Schema.Schema<A, I, never>,
+  body?: unknown,
+): Effect.Effect<A, ApiClientError> => apiWrite("POST", path, schema, body);
+
+export const apiDelete = <A, I>(
+  path: string,
+  schema: Schema.Schema<A, I, never>,
+  body?: unknown,
+): Effect.Effect<A, ApiClientError> => apiWrite("DELETE", path, schema, body);
+
+const RunIdResponse = Schema.Struct({ runId: Schema.String });
+const DeletedBooleanResponse = Schema.Struct({ deleted: Schema.Boolean });
+const DeletedTrueResponse = Schema.Struct({ deleted: Schema.Literal(true) });
+
+// Effect Schema models decoded collections as readonly. The browser state in this
+// existing React app uses mutable interfaces, while JSON decoding still returns
+// ordinary mutable arrays. This bridge changes only the static collection view;
+// every supplied schema below remains concrete and performs full runtime decoding.
+const browserSchema = <A>(schema: Schema.Schema.Any): Schema.Schema<A> =>
+  schema as Schema.Schema<A>;
+const listResponseSchema = <K extends string, A>(
+  key: K,
+  item: Schema.Schema<A>,
+): Schema.Schema<Record<K, A[]>> =>
+  browserSchema(Schema.Struct({ [key]: Schema.Array(item) }));
+const itemResponseSchema = <K extends string, A>(
+  key: K,
+  item: Schema.Schema<A>,
+): Schema.Schema<Record<K, A>> => browserSchema(Schema.Struct({ [key]: item }));
+
+export const TaskRunSchema = browserSchema<TaskRun>(
+  Schema.Struct({
+    runId: Schema.String,
+    taskName: Schema.String,
+    trigger: Schema.Literal("schedule", "manual", "startup", "catchup"),
+    scheduledFor: Schema.NullOr(Schema.Number),
+    startedAt: Schema.Number,
+    finishedAt: Schema.NullOr(Schema.Number),
+    status: Schema.Literal("running", "success", "error"),
+    error: Schema.NullOr(Schema.String),
+    summary: Schema.NullOr(Schema.String),
+  }),
+);
+
+export const TaskInfoSchema = browserSchema<TaskInfo>(
+  Schema.Struct({
+    name: Schema.String,
+    displayName: Schema.optional(Schema.NullOr(Schema.String)),
+    schedule: Schema.String,
+    running: Schema.Boolean,
+    nextRuns: Schema.Array(Schema.String),
+    lastRun: Schema.NullOr(TaskRunSchema),
+  }),
+);
+
+const StreamerBindingSchema = Schema.Struct({
+  platform: Schema.String,
+  username: Schema.String,
+  url: Schema.String,
+});
+const DggPresenceSchema = Schema.Struct({
+  hosted: Schema.Boolean,
+  viewers: Schema.NullOr(Schema.Number),
+});
+const LivestreamSemanticSchema = Schema.Struct({
+  headline: Schema.String,
+  topics: Schema.Array(Schema.String),
+  contentKind: Schema.String,
+  importance: Schema.Number,
+  reason: Schema.String,
+  updatedAt: Schema.Number,
+});
+const LivestreamTrendSchema = Schema.Struct({
+  percentChange: Schema.Number,
+  viewersPerMinute: Schema.Number,
+  dggPercentChange: Schema.NullOr(Schema.Number),
+  anomalous: Schema.Boolean,
+  reason: Schema.NullOr(Schema.String),
+  currentViewers: Schema.optional(Schema.NullOr(Schema.Number)),
+  baselineViewers: Schema.optional(Schema.NullOr(Schema.Number)),
+  currentDggViewers: Schema.optional(Schema.NullOr(Schema.Number)),
+  baselineDggViewers: Schema.optional(Schema.NullOr(Schema.Number)),
+  baselineSamples: Schema.optional(Schema.Number),
+  candidateObservations: Schema.optional(Schema.Number),
+  suppressionReason: Schema.optional(Schema.NullOr(Schema.String)),
+  updatedAt: Schema.Number,
+});
+const LivestreamSummarySchema = Schema.Struct({
+  text: Schema.String,
+  topic: Schema.String,
+  confidence: Schema.Number,
+  transcriptExcerpt: Schema.String,
+  updatedAt: Schema.Number,
+  windowSeconds: Schema.Number,
+});
+const LivestreamChapterSchema = Schema.Struct({
+  chapterId: Schema.String,
+  startedAt: Schema.Number,
+  title: Schema.String,
+  summary: Schema.String,
+});
+const LivestreamAlertSchema = Schema.Struct({
+  alertId: Schema.String,
+  type: Schema.Literal(
+    "destiny_guest",
+    "breaking_news",
+    "debate",
+    "guest_joined",
+    "major_announcement",
+    "viewer_surge",
+    "cross_stream_topic",
+  ),
+  title: Schema.String,
+  message: Schema.String,
+  reason: Schema.String,
+  confidence: Schema.Number,
+  createdAt: Schema.Number,
+});
+const LivestreamFeedbackSchema = Schema.Struct({
+  feedbackId: Schema.String,
+  streamerId: Schema.String,
+  alertId: Schema.String,
+  alertType: Schema.Literal(
+    "destiny_guest",
+    "breaking_news",
+    "debate",
+    "guest_joined",
+    "major_announcement",
+    "viewer_surge",
+    "cross_stream_topic",
+  ),
+  verdict: Schema.Literal("useful", "not_useful", "false_positive"),
+  note: Schema.optional(Schema.String),
+  createdAt: Schema.Number,
+});
+export const LivestreamIntelligenceSchema = browserSchema<LivestreamIntelligence>(
+  Schema.Struct({
+    streamerId: Schema.String,
+    sessionStartedAt: Schema.Number,
+    semantic: Schema.optional(LivestreamSemanticSchema),
+    trend: Schema.optional(LivestreamTrendSchema),
+    relevanceScore: Schema.Number,
+    relevanceReasons: Schema.Array(Schema.String),
+    summary: Schema.optional(LivestreamSummarySchema),
+    chapters: Schema.Array(LivestreamChapterSchema),
+    destinyPresence: Schema.optional(
+      Schema.Struct({
+        state: Schema.Literal("possible", "confirmed"),
+        confidence: Schema.Number,
+        detectedAt: Schema.Number,
+        reason: Schema.String,
+      }),
+    ),
+    latestAlert: Schema.optional(LivestreamAlertSchema),
+    updatedAt: Schema.Number,
+  }),
+);
+const StreamerBaseFields = {
+  id: Schema.String,
+  displayName: Schema.String,
+  bindings: Schema.Array(StreamerBindingSchema),
+  dgg: Schema.optional(DggPresenceSchema),
+} as const;
+export const LiveStreamerSchema = browserSchema<LiveStreamer>(
+  Schema.Struct({
+    ...StreamerBaseFields,
+    live: Schema.Literal(true),
+    title: Schema.String,
+    startedAt: Schema.Number,
+    maxViewerCount: Schema.Number,
+    viewerCount: Schema.NullOr(Schema.Number),
+    sources: Schema.Array(
+      Schema.Struct({
+        platform: Schema.String,
+        username: Schema.String,
+        title: Schema.String,
+        viewerCount: Schema.NullOr(Schema.Number),
+        category: Schema.optional(Schema.String),
+      }),
+    ),
+    category: Schema.NullOr(Schema.String),
+    tier: Schema.Literal("primary", "background"),
+    primary: StreamerBindingSchema,
+    intelligence: Schema.optional(LivestreamIntelligenceSchema),
+  }),
+);
+export const OfflineStreamerSchema = browserSchema<OfflineStreamer>(
+  Schema.Struct({
+    ...StreamerBaseFields,
+    live: Schema.Literal(false),
+    lastStartedAt: Schema.NullOr(Schema.Number),
+    lastEndedAt: Schema.NullOr(Schema.Number),
+    lastMaxViewerCount: Schema.NullOr(Schema.Number),
+    tier: Schema.Literal("primary", "background"),
+  }),
+);
+export const StreamerViewSchema = browserSchema<StreamerView>(
+  Schema.Union(LiveStreamerSchema, OfflineStreamerSchema),
+);
+
+const OnDeckItemSchema = Schema.Struct({
+  recommendationId: Schema.String,
+  title: Schema.String,
+  mediaType: Schema.Literal("movie", "tv"),
+  year: Schema.NullOr(Schema.Number),
+  posterPath: Schema.NullOr(Schema.String),
+  whyForUser: Schema.NullOr(Schema.String),
+  recommendedAt: Schema.Number,
+});
+export const SnapshotSchema = browserSchema<Snapshot>(
+  Schema.Struct({
+    tasks: Schema.Array(TaskInfoSchema),
+    streamers: Schema.Array(StreamerViewSchema),
+    runs: Schema.Array(TaskRunSchema),
+    onDeck: Schema.Array(OnDeckItemSchema),
+  }),
+);
+export const RunLogLineSchema = browserSchema<RunLogLine>(
+  Schema.Struct({
+    t: Schema.Number,
+    level: Schema.Literal("debug", "info", "warn", "error"),
+    logger: Schema.String,
+    msg: Schema.String,
+  }),
+);
+export const RunLogsSchema = browserSchema<RunLogs>(
+  Schema.Struct({
+    run: TaskRunSchema,
+    lines: Schema.Array(RunLogLineSchema),
+    dropped: Schema.Number,
+  }),
+);
+
+const DailyViewerBucketSchema = Schema.Struct({
+  date: Schema.String,
+  maxViewers: Schema.Number,
+  timestamp: Schema.Number,
+});
+export const StreamerMetricsSchema = browserSchema<StreamerMetrics>(
+  Schema.Struct({
+    dailyBuckets: Schema.Array(DailyViewerBucketSchema),
+    allTimeMax: Schema.Number,
+    allTimeMaxTimestamp: Schema.Number,
+    platforms: Schema.Array(
+      Schema.Struct({
+        platform: Schema.String,
+        username: Schema.String,
+        dailyBuckets: Schema.Array(DailyViewerBucketSchema),
+        allTimeMax: Schema.Number,
+        allTimeMaxTimestamp: Schema.Number,
+      }),
+    ),
+  }),
+);
+export const StreamSessionSchema = browserSchema<StreamSession>(
+  Schema.Struct({
+    startedAt: Schema.Number,
+    endedAt: Schema.Number,
+    durationMs: Schema.Number,
+    peakViewers: Schema.Number,
+    title: Schema.String,
+    platform: Schema.String,
+    username: Schema.String,
+  }),
+);
+
+const DiagnosticMetricValueSchema = Schema.Union(
+  Schema.Number,
+  Schema.String,
+  Schema.Boolean,
+  Schema.Null,
+);
+const DiagnosticMetricsSchema = Schema.Record({
+  key: Schema.String,
+  value: DiagnosticMetricValueSchema,
+});
+const StageDiagnosticSchema = Schema.Struct({
+  status: Schema.Literal("idle", "running", "success", "skipped", "error"),
+  eligible: Schema.optional(Schema.Boolean),
+  startedAt: Schema.optional(Schema.Number),
+  finishedAt: Schema.optional(Schema.Number),
+  nextAt: Schema.optional(Schema.Number),
+  durationMs: Schema.optional(Schema.Number),
+  detail: Schema.optional(Schema.String),
+  metrics: Schema.optional(DiagnosticMetricsSchema),
+});
+const LivestreamDiagnosticsSchema = Schema.Struct({
+  streamerId: Schema.String,
+  sessionStartedAt: Schema.optional(Schema.Number),
+  stages: Schema.Record({
+    key: Schema.Literal("metadata", "voice", "summary", "alert"),
+    value: StageDiagnosticSchema,
+  }),
+  updatedAt: Schema.Number,
+});
+const LivestreamEventSchema = Schema.Struct({
+  eventId: Schema.String,
+  streamerId: Schema.String,
+  sessionStartedAt: Schema.optional(Schema.Number),
+  createdAt: Schema.Number,
+  kind: Schema.Literal(
+    "session",
+    "metadata",
+    "voice",
+    "summary",
+    "alert",
+    "feedback",
+    "anomaly",
+  ),
+  status: Schema.Literal("info", "success", "warning", "error"),
+  title: Schema.String,
+  detail: Schema.optional(Schema.String),
+  durationMs: Schema.optional(Schema.Number),
+  costCents: Schema.optional(Schema.Number),
+  metrics: Schema.optional(DiagnosticMetricsSchema),
+});
+const LivestreamRuntimeSchema = Schema.Struct({
+  enabled: Schema.Literal(true),
+  voiceprintLoaded: Schema.Boolean,
+  model: Schema.String,
+  queues: Schema.Struct({
+    capture: Schema.Struct({ running: Schema.Number, queued: Schema.Number }),
+    speech: Schema.Struct({ running: Schema.Number, queued: Schema.Number }),
+    llm: Schema.Struct({ running: Schema.Number, queued: Schema.Number }),
+  }),
+  activeStreamCount: Schema.Number,
+  activeVoiceTargetCount: Schema.Number,
+  budget: Schema.Struct({
+    spentCents: Schema.Number,
+    limitCents: Schema.Number,
+    remainingCents: Schema.Number,
+  }),
+  intervals: Schema.Struct({
+    voiceSeconds: Schema.Number,
+    summarySeconds: Schema.Number,
+  }),
+});
+export const LivestreamIntelligenceDetailsSchema =
+  browserSchema<LivestreamIntelligenceDetails>(
+    Schema.Struct({
+      intelligence: Schema.NullOr(LivestreamIntelligenceSchema),
+      diagnostics: Schema.NullOr(LivestreamDiagnosticsSchema),
+      events: Schema.Array(LivestreamEventSchema),
+      runtime: Schema.NullOr(LivestreamRuntimeSchema),
+      generatedAt: Schema.Number,
+    }),
+  );
+
+const ShortlistScoresSchema = Schema.Struct({
+  tasteMatch: Schema.Number,
+  novelty: Schema.Number,
+  effortFit: Schema.Number,
+  composite: Schema.Number,
+  risks: Schema.Array(Schema.String),
+});
+export const RecommendationSchema = browserSchema<Recommendation>(
+  Schema.Struct({
+    recommendationId: Schema.String,
+    canonicalId: Schema.String,
+    tmdbId: Schema.Number,
+    mediaType: Schema.Literal("movie", "tv"),
+    title: Schema.String,
+    year: Schema.NullOr(Schema.Number),
+    posterPath: Schema.NullOr(Schema.String),
+    status: Schema.Literal(
+      "pending",
+      "notified",
+      "watched",
+      "abandoned",
+      "ignored",
+      "failed",
+    ),
+    whyForUser: Schema.NullOr(Schema.String),
+    caveats: Schema.Array(Schema.String),
+    runDate: Schema.String,
+    recommendedAt: Schema.Number,
+    notifiedAt: Schema.NullOr(Schema.Number),
+    startedAt: Schema.NullOr(Schema.Number),
+    resolvedAt: Schema.NullOr(Schema.Number),
+    watchlistResult: Schema.NullOr(
+      Schema.Literal("added", "already_exists", "available", "error"),
+    ),
+    confidence: Schema.NullOr(Schema.Number),
+    feedback: Schema.NullOr(
+      Schema.Literal("good_pick", "not_for_me", "already_watched"),
+    ),
+    feedbackAt: Schema.NullOr(Schema.Number),
+    feedbackNote: Schema.NullOr(Schema.String),
+    source: Schema.NullOr(Schema.String),
+    genres: Schema.Array(Schema.String),
+    runtimeMinutes: Schema.NullOr(Schema.Number),
+    seasonCount: Schema.NullOr(Schema.Number),
+    episodeCount: Schema.NullOr(Schema.Number),
+    seriesStatus: Schema.NullOr(Schema.String),
+    originalLanguage: Schema.NullOr(Schema.String),
+    originCountries: Schema.Array(Schema.String),
+    creators: Schema.Array(Schema.String),
+    cast: Schema.Array(Schema.String),
+    keywords: Schema.Array(Schema.String),
+    certification: Schema.NullOr(Schema.String),
+    shortlistScores: Schema.NullOr(ShortlistScoresSchema),
+    links: Schema.Struct({
+      tmdb: Schema.String,
+      plex: Schema.String,
+      manager: Schema.String,
+    }),
+  }),
+);
+
+const TasteClaimSchema = Schema.Struct({
+  claim: Schema.String,
+  confidence: Schema.Number,
+  evidenceIds: Schema.Array(Schema.String),
+});
+const RecommendationOutcomeStatsSchema = Schema.Struct({
+  total: Schema.Number,
+  watched: Schema.Number,
+  abandoned: Schema.Number,
+  ignored: Schema.Number,
+  failed: Schema.Number,
+  awaitingOutcome: Schema.Number,
+});
+const TasteBehaviorStatsSchema = Schema.Struct({
+  completedMovies: Schema.Number,
+  completedSeries: Schema.Number,
+  rewatchedTitles: Schema.Number,
+  recommendations: RecommendationOutcomeStatsSchema,
+  feedback: Schema.Struct({
+    goodPick: Schema.Number,
+    notForMe: Schema.Number,
+    alreadyWatched: Schema.Number,
+  }),
+  averageHoursToStart: Schema.optional(Schema.Number),
+  sourcePerformance: Schema.Record({
+    key: Schema.String,
+    value: Schema.Struct({
+      total: Schema.Number,
+      watched: Schema.Number,
+      goodPick: Schema.Number,
+      notForMe: Schema.Number,
+    }),
+  }),
+});
+const TasteCommitmentSchema = Schema.Struct({
+  preference: Schema.String,
+  confidence: Schema.Number,
+  evidenceIds: Schema.Array(Schema.String),
+});
+export const TasteProfileSchema = browserSchema<TasteProfile>(
+  Schema.Struct({
+    profileId: Schema.String,
+    version: Schema.Number,
+    generatedAt: Schema.Number,
+    summary: Schema.String,
+    stablePreferences: Schema.Array(TasteClaimSchema),
+    conditionalPreferences: Schema.Array(TasteClaimSchema),
+    aversions: Schema.Array(TasteClaimSchema),
+    currentSaturation: Schema.Array(TasteClaimSchema),
+    explorationTargets: Schema.Array(TasteClaimSchema),
+    uncertainties: Schema.Array(TasteClaimSchema),
+    commitmentPreferences: Schema.Struct({
+      movies: TasteCommitmentSchema,
+      limitedSeries: TasteCommitmentSchema,
+      longSeries: TasteCommitmentSchema,
+    }),
+    stats: TasteBehaviorStatsSchema,
+  }),
+);
+
+const PodcastShortlistScoresSchema = Schema.Struct({
+  tasteMatch: Schema.Number,
+  novelty: Schema.Number,
+  composite: Schema.Number,
+  risks: Schema.Array(Schema.String),
+});
+export const PodcastRecommendationSchema = browserSchema<PodcastRecommendation>(
+  Schema.Struct({
+    recommendationId: Schema.String,
+    showTitle: Schema.String,
+    episodeTitle: Schema.String,
+    feedUrl: Schema.String,
+    itunesId: Schema.optional(Schema.Number),
+    artworkUrl: Schema.optional(Schema.String),
+    episodeUrl: Schema.optional(Schema.String),
+    publishedAt: Schema.Number,
+    durationMinutes: Schema.optional(Schema.Number),
+    status: Schema.Literal(
+      "pending",
+      "notified",
+      "listened",
+      "abandoned",
+      "ignored",
+      "failed",
+    ),
+    whyForUser: Schema.optional(Schema.String),
+    caveats: Schema.optional(Schema.Array(Schema.String)),
+    confidence: Schema.optional(Schema.Number),
+    shortlistScores: Schema.optional(PodcastShortlistScoresSchema),
+    discoveredVia: Schema.optional(Schema.String),
+    sourceUrl: Schema.optional(Schema.String),
+    matchedVoices: Schema.optional(Schema.Array(Schema.String)),
+    recommendedAt: Schema.Number,
+    notifiedAt: Schema.optional(Schema.Number),
+    queueResult: Schema.optional(
+      Schema.NullOr(Schema.Literal("queued", "already_queued", "not_queued")),
+    ),
+    feedback: Schema.optional(Schema.Literal("good_pick", "not_for_me")),
+    feedbackAt: Schema.optional(Schema.Number),
+    feedbackNote: Schema.optional(Schema.NullOr(Schema.String)),
+  }),
+);
+export const PodcastTasteProfileSchema = browserSchema<PodcastTasteProfile>(
+  Schema.Struct({
+    profileId: Schema.String,
+    version: Schema.Number,
+    generatedAt: Schema.Number,
+    summary: Schema.String,
+    stablePreferences: Schema.Array(TasteClaimSchema),
+    conditionalPreferences: Schema.Array(TasteClaimSchema),
+    aversions: Schema.Array(TasteClaimSchema),
+    currentSaturation: Schema.Array(TasteClaimSchema),
+    explorationTargets: Schema.Array(TasteClaimSchema),
+    uncertainties: Schema.Array(TasteClaimSchema),
+    stats: Schema.Struct({
+      listenedEpisodes: Schema.Number,
+      startedEpisodes: Schema.Number,
+      starredEpisodes: Schema.Number,
+      distinctShows: Schema.Number,
+      recommendations: Schema.Struct({
+        total: Schema.Number,
+        listened: Schema.Number,
+        abandoned: Schema.Number,
+        ignored: Schema.Number,
+        failed: Schema.Number,
+        awaitingOutcome: Schema.Number,
+      }),
+      feedback: Schema.Struct({ goodPick: Schema.Number, notForMe: Schema.Number }),
+    }),
+  }),
+);
+
+export const EmailActivitySchema = browserSchema<EmailActivity>(
+  Schema.Struct({
+    activityId: Schema.String,
+    pipeline: Schema.Literal("ParcelTracker", "CalendarEvents"),
+    emailId: Schema.String,
+    subject: Schema.String,
+    from: Schema.String,
+    receivedAt: Schema.Number,
+    processedAt: Schema.Number,
+    outcome: Schema.Literal(
+      "filtered",
+      "skipped",
+      "no_matches",
+      "processed",
+      "partial",
+      "failed",
+      "error",
+    ),
+    admitReason: Schema.NullOr(Schema.String),
+    admitTier: Schema.NullOr(Schema.String),
+    costCents: Schema.NullOr(Schema.Number),
+    detail: Schema.NullOr(Schema.String),
+    items: Schema.Array(Schema.String),
+  }),
+);
+const EmailRuleSchema = Schema.Struct({
+  ruleId: Schema.String,
+  pattern: Schema.String,
+  scope: Schema.Literal("parcel", "calendar", "both"),
+  verdict: Schema.Literal("block", "allow"),
+  createdAt: Schema.Number,
+});
+const EmailFeedbackSchema = Schema.Struct({
+  activityId: Schema.String,
+  pipeline: Schema.Literal("ParcelTracker", "CalendarEvents"),
+  emailId: Schema.String,
+  subject: Schema.String,
+  from: Schema.String,
+  verdict: Schema.Literal("not_relevant", "missed"),
+  note: Schema.optional(Schema.String),
+  createdAt: Schema.Number,
+});
+const EmailBuiltinRulesSchema = Schema.Struct({
+  parcel: Schema.Struct({
+    blocked: Schema.Array(Schema.String),
+    autoPass: Schema.Array(Schema.String),
+  }),
+  calendar: Schema.Struct({
+    blocked: Schema.Array(Schema.String),
+    autoPass: Schema.Array(Schema.String),
+  }),
+});
+const CreateEmailRuleResultSchema = Schema.Struct({
+  rule: Schema.optional(EmailRuleSchema),
+  status: Schema.Literal("created", "exists", "merged", "builtin"),
+  message: Schema.optional(Schema.String),
+});
+
+const BriefingNotificationSchema = Schema.Struct({
+  title: Schema.String,
+  message: Schema.String,
+  url: Schema.String,
+  timestamp: Schema.Number,
+  runId: Schema.NullOr(Schema.String),
+  costCents: Schema.NullOr(Schema.Number),
+});
+const BriefingHistorySchema = browserSchema<BriefingHistory>(
+  Schema.Struct({
+    name: Schema.String,
+    notifications: Schema.Array(BriefingNotificationSchema),
+  }),
+);
+
+const PressPodsRetrieverAttemptSchema = Schema.Union(
+  Schema.Struct({
+    name: Schema.String,
+    success: Schema.Literal(true),
+    contentRating: Schema.Number,
+    textChars: Schema.Number,
+  }),
+  Schema.Struct({
+    name: Schema.String,
+    success: Schema.Literal(false),
+    error: Schema.String,
+  }),
+);
+const PressPodsChapterSchema = Schema.Struct({
+  startTimeSeconds: Schema.Number,
+  title: Schema.String,
+});
+const PressPodsChunkStatSchema = Schema.Struct({
+  index: Schema.Number,
+  sectionIndex: Schema.Number,
+  sectionTitle: Schema.optional(Schema.String),
+  text: Schema.String,
+  charCount: Schema.Number,
+  durationSeconds: Schema.Number,
+  startTimeSeconds: Schema.Number,
+  secPerChar: Schema.Number,
+  attempts: Schema.Number,
+  coverage: Schema.optional(Schema.Number),
+  wordRatio: Schema.optional(Schema.Number),
+  expectedWords: Schema.optional(Schema.Number),
+  resplit: Schema.optional(Schema.Boolean),
+  resplitDepth: Schema.optional(Schema.Number),
+});
+const PressPodsCostsSchema = Schema.Struct({
+  llmCents: Schema.Number,
+  ttsCents: Schema.Number,
+  detailCents: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  detailTokens: Schema.Record({
+    key: Schema.String,
+    value: Schema.Struct({ input: Schema.Number, output: Schema.Number }),
+  }),
+  detailChars: Schema.Record({ key: Schema.String, value: Schema.Number }),
+});
+const PressPodsEpisodeFields = {
+  episodeId: Schema.String,
+  title: Schema.String,
+  author: Schema.NullOr(Schema.String),
+  publication: Schema.NullOr(Schema.String),
+  domain: Schema.NullOr(Schema.String),
+  articleUrl: Schema.String,
+  leadImageUrl: Schema.NullOr(Schema.String),
+  excerpt: Schema.NullOr(Schema.String),
+  voiceName: Schema.NullOr(Schema.String),
+  synthesizedSeconds: Schema.NullOr(Schema.Number),
+  audioUrl: Schema.String,
+  durationSeconds: Schema.NullOr(Schema.Number),
+  fileBytes: Schema.Number,
+  retrieverName: Schema.NullOr(Schema.String),
+  retrieverSeconds: Schema.NullOr(Schema.Number),
+  retrieverAttempts: Schema.NullOr(Schema.Array(PressPodsRetrieverAttemptSchema)),
+  chapters: Schema.NullOr(Schema.Array(PressPodsChapterSchema)),
+  costCents: Schema.NullOr(Schema.Number),
+  createdAt: Schema.Number,
+  publishedAt: Schema.NullOr(Schema.Number),
+  runId: Schema.NullOr(Schema.String),
+} as const;
+export const PressPodsEpisodeSchema = browserSchema<PressPodsEpisode>(
+  Schema.Struct(PressPodsEpisodeFields),
+);
+export const PressPodsEpisodeDetailSchema = browserSchema<PressPodsEpisodeDetail>(
+  Schema.Struct({
+    ...PressPodsEpisodeFields,
+    content: Schema.String,
+    authorGender: Schema.NullOr(Schema.String),
+    voiceProvider: Schema.NullOr(Schema.String),
+    chunks: Schema.NullOr(Schema.Array(PressPodsChunkStatSchema)),
+    costs: Schema.NullOr(PressPodsCostsSchema),
+  }),
+);
+export const PressPodsJobSchema = browserSchema<PressPodsJob>(
+  Schema.Struct({
+    jobId: Schema.String,
+    url: Schema.String,
+    status: Schema.Literal("queued", "processing", "failed"),
+    attempts: Schema.Number,
+    nextAttemptAt: Schema.NullOr(Schema.Number),
+    lastError: Schema.NullOr(Schema.String),
+    createdAt: Schema.Number,
+    updatedAt: Schema.Number,
+    lastRunId: Schema.NullOr(Schema.String),
+  }),
+);
+
+const WorkspaceArtifactDefinitionSchema = Schema.Struct({
+  key: Schema.String,
+  title: Schema.String,
+  kind: Schema.String,
+  instructions: Schema.String,
+});
+const WorkspaceDefinitionFields = {
+  id: Schema.String,
+  title: Schema.String,
+  description: Schema.String,
+  subjectLabel: Schema.String,
+  subjectLabelPlural: Schema.String,
+  taskName: Schema.String,
+  schedule: Schema.String,
+  scheduledRuns: Schema.optional(Schema.Boolean),
+  inputPlaceholder: Schema.optional(Schema.String),
+  followUpPlaceholder: Schema.optional(Schema.String),
+  instructions: Schema.String,
+  artifacts: Schema.Array(WorkspaceArtifactDefinitionSchema),
+} as const;
+export const WorkspaceDefinitionSchema = browserSchema<WorkspaceDefinition>(
+  Schema.Struct(WorkspaceDefinitionFields),
+);
+export const WorkspaceSubjectSchema = browserSchema<WorkspaceSubject>(
+  Schema.Struct({
+    workspaceId: Schema.String,
+    subjectId: Schema.String,
+    title: Schema.String,
+    status: Schema.Literal("active", "paused", "completed", "archived"),
+    summary: Schema.String,
+    createdAt: Schema.Number,
+    updatedAt: Schema.Number,
+    lastResearchedAt: Schema.optional(Schema.Number),
+  }),
+);
+const WorkspaceActionSchema = Schema.Struct({
+  actionId: Schema.String,
+  type: Schema.Literal("email_scope", "calendar_event"),
+  status: Schema.Literal("pending", "approved", "rejected", "failed"),
+  title: Schema.String,
+  description: Schema.String,
+  payload: Schema.String,
+  createdAt: Schema.Number,
+  result: Schema.optional(Schema.String),
+});
+const WorkspacePapercutSchema = Schema.Struct({
+  papercutId: Schema.String,
+  category: Schema.String,
+  title: Schema.String,
+  detail: Schema.String,
+  occurrences: Schema.Number,
+  lastSeenAt: Schema.Number,
+  status: Schema.Literal("open", "addressed", "dismissed"),
+});
+const WorkspaceArtifactSchema = Schema.Struct({
+  revisionId: Schema.String,
+  workspaceId: Schema.String,
+  subjectId: Schema.String,
+  artifactKey: Schema.String,
+  kind: Schema.String,
+  content: Schema.String,
+  summary: Schema.String,
+  createdAt: Schema.Number,
+  runId: Schema.optional(Schema.String),
+});
+const WorkspaceMessageSchema = Schema.Struct({
+  messageId: Schema.String,
+  role: Schema.Literal("user", "assistant", "system"),
+  text: Schema.String,
+  createdAt: Schema.Number,
+  runId: Schema.optional(Schema.String),
+});
+const WorkspaceSourceSchema = Schema.Struct({
+  sourceId: Schema.String,
+  kind: Schema.Literal("web", "email"),
+  title: Schema.String,
+  url: Schema.optional(Schema.String),
+  excerpt: Schema.String,
+  createdAt: Schema.Number,
+});
+const WorkspaceSummarySchema = Schema.Struct({
+  ...WorkspaceDefinitionFields,
+  subjects: Schema.Array(WorkspaceSubjectSchema),
+  activeSubjectCount: Schema.Number,
+  pendingActionCount: Schema.Number,
+  openPapercutCount: Schema.Number,
+});
+export const WorkspaceDetailResponseSchema = browserSchema<WorkspaceDetailResponse>(
+  Schema.Struct({
+    workspace: WorkspaceDefinitionSchema,
+    subject: WorkspaceSubjectSchema,
+    artifacts: Schema.Array(WorkspaceArtifactSchema),
+    artifactRevisions: Schema.Array(WorkspaceArtifactSchema),
+    messages: Schema.Array(WorkspaceMessageSchema),
+    sources: Schema.Array(WorkspaceSourceSchema),
+    actions: Schema.Array(WorkspaceActionSchema),
+    emailScope: Schema.NullOr(
+      Schema.Struct({
+        senders: Schema.Array(Schema.String),
+        domains: Schema.Array(Schema.String),
+        subjectKeywords: Schema.Array(Schema.String),
+        bodyKeywords: Schema.Array(Schema.String),
+      }),
+    ),
+    papercuts: Schema.Array(WorkspacePapercutSchema),
+  }),
+);
+
+const DataEntitySchema = Schema.Struct({
+  slug: Schema.String,
+  label: Schema.String,
+  description: Schema.String,
+  warning: Schema.optional(Schema.String),
+  primaryKey: Schema.Array(Schema.String),
+  count: Schema.Number,
+  storageBytes: Schema.Number,
+});
+const DataStorageSummarySchema = Schema.Struct({
+  databaseSizeBytes: Schema.Number,
+  entityStorageBytes: Schema.Number,
+});
+// Entity row columns are selected dynamically at runtime. Values are intentionally
+// open here, while the response envelope and entity metadata remain strict.
+const DataRowSchema = Schema.Record({ key: Schema.String, value: Schema.Unknown });
+
+const HighestDaySchema = Schema.Struct({
+  date: Schema.String,
+  costCents: Schema.Number,
+});
+const CostSummarySchema = Schema.Struct({
+  selectedCostCents: Schema.Number,
+  allTimeCostCents: Schema.Number,
+  allTimeUnknownEventCount: Schema.Number,
+  averageDailyCostCents: Schema.Number,
+  highestDay: Schema.NullOr(HighestDaySchema),
+  eventCount: Schema.Number,
+  unknownEventCount: Schema.Number,
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  characters: Schema.Number,
+  requests: Schema.Number,
+  credits: Schema.Number,
+});
+const DailyCostSchema = Schema.Struct({
+  date: Schema.String,
+  costCents: Schema.Number,
+  byFeature: Schema.Record({ key: Schema.String, value: Schema.Number }),
+  pricedEventCount: Schema.Number,
+  unknownEventCount: Schema.Number,
+});
+const FeatureCostSchema = Schema.Struct({
+  feature: Schema.String,
+  costCents: Schema.Number,
+  eventCount: Schema.Number,
+  unknownEventCount: Schema.Number,
+});
+const ServiceCostSchema = Schema.Struct({
+  service: Schema.String,
+  model: Schema.NullOr(Schema.String),
+  category: Schema.String,
+  costCents: Schema.Number,
+  eventCount: Schema.Number,
+  unknownEventCount: Schema.Number,
+  inputTokens: Schema.Number,
+  outputTokens: Schema.Number,
+  characters: Schema.Number,
+  requests: Schema.Number,
+  credits: Schema.Number,
+});
+const CostEventSchema = Schema.Struct({
+  eventId: Schema.String,
+  incurredAt: Schema.Number,
+  feature: Schema.String,
+  operation: Schema.String,
+  service: Schema.String,
+  model: Schema.NullOr(Schema.String),
+  category: Schema.String,
+  costCents: Schema.NullOr(Schema.Number),
+  priceStatus: Schema.String,
+  runId: Schema.NullOr(Schema.String),
+});
+const CostsResponseSchema = Schema.Struct({
+  range: Schema.Struct({
+    days: Schema.NullOr(Schema.Number),
+    from: Schema.NullOr(Schema.Number),
+    to: Schema.Number,
+  }),
+  summary: CostSummarySchema,
+  daily: Schema.Array(DailyCostSchema),
+  byFeature: Schema.Array(FeatureCostSchema),
+  byService: Schema.Array(ServiceCostSchema),
+  recent: Schema.Array(CostEventSchema),
+});
+
+export function fetchTasks(): Effect.Effect<{ tasks: TaskInfo[] }, ApiClientError> {
+  return apiGet("/api/tasks", listResponseSchema("tasks", TaskInfoSchema));
 }
 
-export async function apiDelete<T>(path: string, body?: unknown): Promise<T> {
-  const res = await fetch(path, {
-    method: "DELETE",
-    ...(body === undefined
-      ? {}
-      : {
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }),
-  });
-  if (!res.ok) {
-    throw new ApiError(res.status, await extractErrorMessage(res));
-  }
-  return (await res.json()) as T;
+export function fetchSnapshot(): Effect.Effect<Snapshot, ApiClientError> {
+  return apiGet("/api/snapshot", SnapshotSchema);
 }
 
-export function fetchTasks(): Promise<{ tasks: TaskInfo[] }> {
-  return apiGet<{ tasks: TaskInfo[] }>("/api/tasks");
-}
-
-export function fetchSnapshot(): Promise<Snapshot> {
-  return apiGet<Snapshot>("/api/snapshot");
-}
-
-export function fetchDataEntities(): Promise<{
-  entities: DataEntity[];
-  storage: DataStorageSummary;
-}> {
-  return apiGet<{ entities: DataEntity[]; storage: DataStorageSummary }>(
+export function fetchDataEntities(): Effect.Effect<
+  {
+    entities: DataEntity[];
+    storage: DataStorageSummary;
+  },
+  ApiClientError
+> {
+  return apiGet(
     "/api/data/entities",
+    browserSchema<{
+      entities: DataEntity[];
+      storage: DataStorageSummary;
+    }>(
+      Schema.Struct({
+        entities: Schema.Array(DataEntitySchema),
+        storage: DataStorageSummarySchema,
+      }),
+    ),
   );
 }
 
 export function fetchDataRows(
   slug: string,
-): Promise<{ summary: DataEntity; rows: DataRow[] }> {
-  return apiGet<{ summary: DataEntity; rows: DataRow[] }>(
+): Effect.Effect<{ summary: DataEntity; rows: DataRow[] }, ApiClientError> {
+  return apiGet(
     `/api/data/entities/${encodeURIComponent(slug)}`,
+    browserSchema<{ summary: DataEntity; rows: DataRow[] }>(
+      Schema.Struct({ summary: DataEntitySchema, rows: Schema.Array(DataRowSchema) }),
+    ),
   );
 }
 
-export function deleteDataRow(slug: string, key: DataRow): Promise<{ deleted: true }> {
-  return apiDelete<{ deleted: true }>(
+export function deleteDataRow(
+  slug: string,
+  key: DataRow,
+): Effect.Effect<{ deleted: true }, ApiClientError> {
+  return apiDelete(
     `/api/data/entities/${encodeURIComponent(slug)}`,
+    DeletedTrueResponse,
     { key },
   );
 }
@@ -932,16 +1897,19 @@ export function deleteDataRow(slug: string, key: DataRow): Promise<{ deleted: tr
 export function fetchTaskRuns(options?: {
   task?: string;
   limit?: number;
-}): Promise<{ runs: TaskRun[] }> {
+}): Effect.Effect<{ runs: TaskRun[] }, ApiClientError> {
   const params = new URLSearchParams();
   if (options?.task) params.set("task", options.task);
   if (options?.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
-  return apiGet<{ runs: TaskRun[] }>(`/api/task-runs${query ? `?${query}` : ""}`);
+  return apiGet(
+    `/api/task-runs${query ? `?${query}` : ""}`,
+    listResponseSchema("runs", TaskRunSchema),
+  );
 }
 
-export function fetchRunLogs(runId: string): Promise<RunLogs> {
-  return apiGet<RunLogs>(`/api/task-runs/${encodeURIComponent(runId)}/logs`);
+export function fetchRunLogs(runId: string): Effect.Effect<RunLogs, ApiClientError> {
+  return apiGet(`/api/task-runs/${encodeURIComponent(runId)}/logs`, RunLogsSchema);
 }
 
 export function runLogStreamUrl(runId: string): string {
@@ -951,112 +1919,201 @@ export function runLogStreamUrl(runId: string): string {
 export function runTaskRequest(
   name: string,
   options?: ManualRunOptions,
-): Promise<{ runId: string }> {
+): Effect.Effect<{ runId: string }, ApiClientError> {
   if (options?.maxRecommendations !== undefined) {
     const path =
       name === "PodcastRecs"
         ? "/api/podcast-recommendations/run"
         : "/api/recommendations/run";
-    return apiPost<{ runId: string }>(path, {
+    return apiPost(path, RunIdResponse, {
       maxRecommendations: options.maxRecommendations,
     });
   }
-  return apiPost<{ runId: string }>(`/api/tasks/${encodeURIComponent(name)}/run`);
+  return apiPost(`/api/tasks/${encodeURIComponent(name)}/run`, RunIdResponse);
 }
 
-export function fetchStreamerMetrics(id: string): Promise<StreamerMetrics> {
-  return apiGet<StreamerMetrics>(`/api/streamers/${encodeURIComponent(id)}/metrics`);
+export function fetchStreamerMetrics(
+  id: string,
+): Effect.Effect<StreamerMetrics, ApiClientError> {
+  return apiGet(
+    `/api/streamers/${encodeURIComponent(id)}/metrics`,
+    StreamerMetricsSchema,
+  );
 }
 
 export function fetchStreamerSessions(
   id: string,
-): Promise<{ sessions: StreamSession[] }> {
-  return apiGet<{ sessions: StreamSession[] }>(
+): Effect.Effect<{ sessions: StreamSession[] }, ApiClientError> {
+  return apiGet(
     `/api/streamers/${encodeURIComponent(id)}/sessions`,
+    listResponseSchema("sessions", StreamSessionSchema),
   );
 }
 
 export function fetchLivestreamIntelligenceDetails(
   id: string,
   limit = 100,
-): Promise<LivestreamIntelligenceDetails> {
-  return apiGet<LivestreamIntelligenceDetails>(
+): Effect.Effect<LivestreamIntelligenceDetails, ApiClientError> {
+  return apiGet(
     `/api/streamers/${encodeURIComponent(id)}/intelligence-details?limit=${limit}`,
+    LivestreamIntelligenceDetailsSchema,
   );
 }
 
-export function fetchRecommendations(): Promise<{
-  recommendations: Recommendation[];
-}> {
-  return apiGet<{ recommendations: Recommendation[] }>("/api/recommendations");
+export function fetchRecommendations(): Effect.Effect<
+  {
+    recommendations: Recommendation[];
+  },
+  ApiClientError
+> {
+  return apiGet(
+    "/api/recommendations",
+    listResponseSchema("recommendations", RecommendationSchema),
+  );
 }
 
-export function fetchTasteProfile(): Promise<{ profile: TasteProfile | null }> {
-  return apiGet<{ profile: TasteProfile | null }>("/api/recommendations/taste-profile");
+export function fetchTasteProfile(): Effect.Effect<
+  { profile: TasteProfile | null },
+  ApiClientError
+> {
+  return apiGet(
+    "/api/recommendations/taste-profile",
+    Schema.Struct({ profile: Schema.NullOr(TasteProfileSchema) }),
+  );
 }
 
-export function fetchPressPods(): Promise<{
-  episodes: PressPodsEpisode[];
-  jobs: PressPodsJob[];
-}> {
-  return apiGet("/api/press-pods/episodes");
+export function fetchPressPods(): Effect.Effect<
+  {
+    episodes: PressPodsEpisode[];
+    jobs: PressPodsJob[];
+  },
+  ApiClientError
+> {
+  return apiGet(
+    "/api/press-pods/episodes",
+    browserSchema<{ episodes: PressPodsEpisode[]; jobs: PressPodsJob[] }>(
+      Schema.Struct({
+        episodes: Schema.Array(PressPodsEpisodeSchema),
+        jobs: Schema.Array(PressPodsJobSchema),
+      }),
+    ),
+  );
 }
 
 export function fetchPressPodsEpisode(
   episodeId: string,
-): Promise<{ episode: PressPodsEpisodeDetail }> {
-  return apiGet<{ episode: PressPodsEpisodeDetail }>(
+): Effect.Effect<{ episode: PressPodsEpisodeDetail }, ApiClientError> {
+  return apiGet(
     `/api/press-pods/episodes/${encodeURIComponent(episodeId)}`,
+    itemResponseSchema("episode", PressPodsEpisodeDetailSchema),
   );
 }
 
-export function submitPressPodsUrl(url: string): Promise<{ job: PressPodsJob }> {
-  return apiPost("/api/press-pods/submit", { url });
+export function submitPressPodsUrl(
+  url: string,
+): Effect.Effect<{ job: PressPodsJob }, ApiClientError> {
+  return apiPost(
+    "/api/press-pods/submit",
+    itemResponseSchema("job", PressPodsJobSchema),
+    {
+      url,
+    },
+  );
 }
 
-export function retryPressPodsJob(jobId: string): Promise<{ job: PressPodsJob }> {
-  return apiPost(`/api/press-pods/jobs/${encodeURIComponent(jobId)}/retry`);
+export function retryPressPodsJob(
+  jobId: string,
+): Effect.Effect<{ job: PressPodsJob }, ApiClientError> {
+  return apiPost(
+    `/api/press-pods/jobs/${encodeURIComponent(jobId)}/retry`,
+    itemResponseSchema("job", PressPodsJobSchema),
+  );
 }
 
-export function dismissPressPodsJob(jobId: string): Promise<{ deleted: boolean }> {
-  return apiDelete(`/api/press-pods/jobs/${encodeURIComponent(jobId)}`);
+export function dismissPressPodsJob(
+  jobId: string,
+): Effect.Effect<{ deleted: boolean }, ApiClientError> {
+  return apiDelete(
+    `/api/press-pods/jobs/${encodeURIComponent(jobId)}`,
+    DeletedBooleanResponse,
+  );
 }
 
 export function deletePressPodsEpisode(
   episodeId: string,
-): Promise<{ deleted: boolean }> {
-  return apiDelete(`/api/press-pods/episodes/${encodeURIComponent(episodeId)}`);
+): Effect.Effect<{ deleted: boolean }, ApiClientError> {
+  return apiDelete(
+    `/api/press-pods/episodes/${encodeURIComponent(episodeId)}`,
+    DeletedBooleanResponse,
+  );
 }
 
 export function retryPressPodsEpisode(
   episodeId: string,
-): Promise<{ job: PressPodsJob }> {
-  return apiPost(`/api/press-pods/episodes/${encodeURIComponent(episodeId)}/retry`);
+): Effect.Effect<{ job: PressPodsJob }, ApiClientError> {
+  return apiPost(
+    `/api/press-pods/episodes/${encodeURIComponent(episodeId)}/retry`,
+    itemResponseSchema("job", PressPodsJobSchema),
+  );
 }
 
-export function fetchBriefings(): Promise<{ briefings: BriefingHistory[] }> {
-  return apiGet<{ briefings: BriefingHistory[] }>("/api/briefings");
+export function fetchBriefings(): Effect.Effect<
+  { briefings: BriefingHistory[] },
+  ApiClientError
+> {
+  return apiGet(
+    "/api/briefings",
+    listResponseSchema("briefings", BriefingHistorySchema),
+  );
 }
 
-export function fetchWorkspaces(): Promise<{ workspaces: WorkspaceSummary[] }> {
-  return apiGet("/api/workspaces");
+export function fetchWorkspaces(): Effect.Effect<
+  { workspaces: WorkspaceSummary[] },
+  ApiClientError
+> {
+  return apiGet(
+    "/api/workspaces",
+    listResponseSchema(
+      "workspaces",
+      browserSchema<WorkspaceSummary>(WorkspaceSummarySchema),
+    ),
+  );
 }
 
-export function fetchWorkspace(workspaceId: string): Promise<{
-  workspace: WorkspaceDefinition;
-  subjects: WorkspaceSubject[];
-  actions: WorkspaceAction[];
-  papercuts: WorkspacePapercut[];
-}> {
-  return apiGet(`/api/workspaces/${encodeURIComponent(workspaceId)}`);
+export function fetchWorkspace(workspaceId: string): Effect.Effect<
+  {
+    workspace: WorkspaceDefinition;
+    subjects: WorkspaceSubject[];
+    actions: WorkspaceAction[];
+    papercuts: WorkspacePapercut[];
+  },
+  ApiClientError
+> {
+  return apiGet(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}`,
+    browserSchema<{
+      workspace: WorkspaceDefinition;
+      subjects: WorkspaceSubject[];
+      actions: WorkspaceAction[];
+      papercuts: WorkspacePapercut[];
+    }>(
+      Schema.Struct({
+        workspace: WorkspaceDefinitionSchema,
+        subjects: Schema.Array(WorkspaceSubjectSchema),
+        actions: Schema.Array(WorkspaceActionSchema),
+        papercuts: Schema.Array(WorkspacePapercutSchema),
+      }),
+    ),
+  );
 }
 
 export function fetchWorkspaceSubject(
   workspaceId: string,
   subjectId: string,
-): Promise<WorkspaceDetailResponse> {
+): Effect.Effect<WorkspaceDetailResponse, ApiClientError> {
   return apiGet(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/subjects/${encodeURIComponent(subjectId)}`,
+    WorkspaceDetailResponseSchema,
   );
 }
 
@@ -1064,20 +2121,25 @@ export function sendWorkspaceMessage(
   workspaceId: string,
   message: string,
   subjectId?: string,
-): Promise<{ runId: string }> {
-  return apiPost(`/api/workspaces/${encodeURIComponent(workspaceId)}/messages`, {
-    message,
-    subjectId,
-  });
+): Effect.Effect<{ runId: string }, ApiClientError> {
+  return apiPost(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/messages`,
+    RunIdResponse,
+    {
+      message,
+      subjectId,
+    },
+  );
 }
 
 export function setWorkspaceSubjectStatus(
   workspaceId: string,
   subjectId: string,
   status: WorkspaceSubjectStatus,
-): Promise<{ subject: WorkspaceSubject }> {
+): Effect.Effect<{ subject: WorkspaceSubject }, ApiClientError> {
   return apiPost(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/subjects/${encodeURIComponent(subjectId)}/status`,
+    itemResponseSchema("subject", WorkspaceSubjectSchema),
     { status },
   );
 }
@@ -1085,14 +2147,20 @@ export function setWorkspaceSubjectStatus(
 export function resolveWorkspaceAction(
   actionId: string,
   resolution: "approve" | "reject",
-): Promise<{ action: WorkspaceAction }> {
+): Effect.Effect<{ action: WorkspaceAction }, ApiClientError> {
   return apiPost(
     `/api/workspace-actions/${encodeURIComponent(actionId)}/${resolution}`,
+    itemResponseSchema("action", browserSchema<WorkspaceAction>(WorkspaceActionSchema)),
   );
 }
 
-export function fetchCosts(range: CostRange): Promise<CostsResponse> {
-  return apiGet<CostsResponse>(`/api/costs?days=${range}`);
+export function fetchCosts(
+  range: CostRange,
+): Effect.Effect<CostsResponse, ApiClientError> {
+  return apiGet(
+    `/api/costs?days=${range}`,
+    browserSchema<CostsResponse>(CostsResponseSchema),
+  );
 }
 
 export function submitLivestreamFeedback(
@@ -1100,9 +2168,13 @@ export function submitLivestreamFeedback(
   alertId: string,
   verdict: "useful" | "not_useful" | "false_positive",
   note?: string,
-): Promise<unknown> {
+): Effect.Effect<{ feedback: LivestreamFeedback }, ApiClientError> {
   return apiPost(
     `/api/streamers/${encodeURIComponent(streamerId)}/intelligence-feedback`,
+    itemResponseSchema(
+      "feedback",
+      browserSchema<LivestreamFeedback>(LivestreamFeedbackSchema),
+    ),
     { alertId, verdict, note },
   );
 }
@@ -1110,13 +2182,14 @@ export function submitLivestreamFeedback(
 export function fetchEmailActivity(
   pipeline?: EmailPipeline,
   limit?: number,
-): Promise<{ activities: EmailActivity[] }> {
+): Effect.Effect<{ activities: EmailActivity[] }, ApiClientError> {
   const params = new URLSearchParams();
   if (pipeline) params.set("pipeline", pipeline);
   if (limit !== undefined) params.set("limit", String(limit));
   const query = params.toString();
-  return apiGet<{ activities: EmailActivity[] }>(
+  return apiGet(
     `/api/email-activity${query ? `?${query}` : ""}`,
+    listResponseSchema("activities", EmailActivitySchema),
   );
 }
 
@@ -1126,9 +2199,18 @@ export interface EmailActivityLogs {
   dropped: number;
 }
 
-export function fetchEmailActivityLogs(activityId: string): Promise<EmailActivityLogs> {
-  return apiGet<EmailActivityLogs>(
+export function fetchEmailActivityLogs(
+  activityId: string,
+): Effect.Effect<EmailActivityLogs, ApiClientError> {
+  return apiGet(
     `/api/email-activity/${encodeURIComponent(activityId)}/logs`,
+    browserSchema<EmailActivityLogs>(
+      Schema.Struct({
+        activity: EmailActivitySchema,
+        lines: Schema.Array(RunLogLineSchema),
+        dropped: Schema.Number,
+      }),
+    ),
   );
 }
 
@@ -1137,11 +2219,22 @@ export interface EmailBuiltinRules {
   calendar: { blocked: string[]; autoPass: string[] };
 }
 
-export function fetchEmailRules(): Promise<{
-  rules: EmailRule[];
-  builtin: EmailBuiltinRules;
-}> {
-  return apiGet<{ rules: EmailRule[]; builtin: EmailBuiltinRules }>("/api/email-rules");
+export function fetchEmailRules(): Effect.Effect<
+  {
+    rules: EmailRule[];
+    builtin: EmailBuiltinRules;
+  },
+  ApiClientError
+> {
+  return apiGet(
+    "/api/email-rules",
+    browserSchema<{ rules: EmailRule[]; builtin: EmailBuiltinRules }>(
+      Schema.Struct({
+        rules: Schema.Array(EmailRuleSchema),
+        builtin: EmailBuiltinRulesSchema,
+      }),
+    ),
+  );
 }
 
 export type CreateEmailRuleStatus = "created" | "exists" | "merged" | "builtin";
@@ -1156,58 +2249,74 @@ export function createEmailRule(input: {
   pattern: string;
   scope: EmailRuleScope;
   verdict: EmailRuleVerdict;
-}): Promise<CreateEmailRuleResult> {
-  return apiPost<CreateEmailRuleResult>("/api/email-rules", input);
+}): Effect.Effect<CreateEmailRuleResult, ApiClientError> {
+  return apiPost("/api/email-rules", CreateEmailRuleResultSchema, input);
 }
 
-export function deleteEmailRule(ruleId: string): Promise<{ deleted: true }> {
-  return apiDelete<{ deleted: true }>(`/api/email-rules/${encodeURIComponent(ruleId)}`);
+export function deleteEmailRule(
+  ruleId: string,
+): Effect.Effect<{ deleted: true }, ApiClientError> {
+  return apiDelete(
+    `/api/email-rules/${encodeURIComponent(ruleId)}`,
+    DeletedTrueResponse,
+  );
 }
 
-export function fetchEmailFeedback(): Promise<{ feedback: EmailFeedback[] }> {
-  return apiGet<{ feedback: EmailFeedback[] }>("/api/email-feedback");
+export function fetchEmailFeedback(): Effect.Effect<
+  { feedback: EmailFeedback[] },
+  ApiClientError
+> {
+  return apiGet(
+    "/api/email-feedback",
+    listResponseSchema("feedback", browserSchema<EmailFeedback>(EmailFeedbackSchema)),
+  );
 }
 
 export function sendEmailActivityFeedback(
   activityId: string,
   verdict: EmailFeedbackVerdict | null,
   note?: string,
-): Promise<{ feedback: EmailFeedback | null }> {
-  return apiPost<{ feedback: EmailFeedback | null }>(
+): Effect.Effect<{ feedback: EmailFeedback | null }, ApiClientError> {
+  return apiPost(
     `/api/email-activity/${encodeURIComponent(activityId)}/feedback`,
+    Schema.Struct({ feedback: Schema.NullOr(EmailFeedbackSchema) }),
     { verdict, ...(note === undefined ? {} : { note }) },
   );
 }
 
 export function reprocessEmailActivity(
   activityId: string,
-): Promise<{ activity: EmailActivity }> {
-  return apiPost<{ activity: EmailActivity }>(
+): Effect.Effect<{ activity: EmailActivity }, ApiClientError> {
+  return apiPost(
     `/api/email-activity/${encodeURIComponent(activityId)}/reprocess`,
+    itemResponseSchema("activity", EmailActivitySchema),
   );
 }
 
 export function forgetParcelDelivery(
   trackingNumber: string,
-): Promise<{ deleted: true }> {
-  return apiDelete<{ deleted: true }>(
+): Effect.Effect<{ deleted: true }, ApiClientError> {
+  return apiDelete(
     `/api/parcel-tracker/deliveries/${encodeURIComponent(trackingNumber)}`,
+    DeletedTrueResponse,
   );
 }
 
 export function fetchRecommendation(
   recommendationId: string,
-): Promise<{ recommendation: Recommendation }> {
-  return apiGet<{ recommendation: Recommendation }>(
+): Effect.Effect<{ recommendation: Recommendation }, ApiClientError> {
+  return apiGet(
     `/api/recommendations/${encodeURIComponent(recommendationId)}`,
+    itemResponseSchema("recommendation", RecommendationSchema),
   );
 }
 
 export function fetchPodcastRecommendation(
   recommendationId: string,
-): Promise<{ recommendation: PodcastRecommendation }> {
-  return apiGet<{ recommendation: PodcastRecommendation }>(
+): Effect.Effect<{ recommendation: PodcastRecommendation }, ApiClientError> {
+  return apiGet(
     `/api/podcast-recommendations/${encodeURIComponent(recommendationId)}`,
+    itemResponseSchema("recommendation", PodcastRecommendationSchema),
   );
 }
 
@@ -1215,9 +2324,10 @@ export function sendRecommendationFeedback(
   recommendationId: string,
   feedback: RecommendationFeedback | null,
   note?: string,
-): Promise<{ recommendation: Recommendation }> {
-  return apiPost<{ recommendation: Recommendation }>(
+): Effect.Effect<{ recommendation: Recommendation }, ApiClientError> {
+  return apiPost(
     `/api/recommendations/${encodeURIComponent(recommendationId)}/feedback`,
+    itemResponseSchema("recommendation", RecommendationSchema),
     {
       ...(feedback ? { feedback } : {}),
       ...(note === undefined ? {} : { note }),
@@ -1225,19 +2335,27 @@ export function sendRecommendationFeedback(
   );
 }
 
-export function fetchPodcastRecommendations(): Promise<{
-  recommendations: PodcastRecommendation[];
-}> {
-  return apiGet<{ recommendations: PodcastRecommendation[] }>(
+export function fetchPodcastRecommendations(): Effect.Effect<
+  {
+    recommendations: PodcastRecommendation[];
+  },
+  ApiClientError
+> {
+  return apiGet(
     "/api/podcast-recommendations",
+    listResponseSchema("recommendations", PodcastRecommendationSchema),
   );
 }
 
-export function fetchPodcastTasteProfile(): Promise<{
-  profile: PodcastTasteProfile | null;
-}> {
-  return apiGet<{ profile: PodcastTasteProfile | null }>(
+export function fetchPodcastTasteProfile(): Effect.Effect<
+  {
+    profile: PodcastTasteProfile | null;
+  },
+  ApiClientError
+> {
+  return apiGet(
     "/api/podcast-recommendations/taste-profile",
+    Schema.Struct({ profile: Schema.NullOr(PodcastTasteProfileSchema) }),
   );
 }
 
@@ -1245,9 +2363,10 @@ export function sendPodcastRecommendationFeedback(
   recommendationId: string,
   feedback: PodcastFeedback | null,
   note?: string,
-): Promise<{ recommendation: PodcastRecommendation }> {
-  return apiPost<{ recommendation: PodcastRecommendation }>(
+): Effect.Effect<{ recommendation: PodcastRecommendation }, ApiClientError> {
+  return apiPost(
     `/api/podcast-recommendations/${encodeURIComponent(recommendationId)}/feedback`,
+    itemResponseSchema("recommendation", PodcastRecommendationSchema),
     {
       ...(feedback ? { feedback } : {}),
       ...(note === undefined ? {} : { note }),

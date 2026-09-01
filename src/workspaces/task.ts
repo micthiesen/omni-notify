@@ -1,18 +1,17 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { z } from "zod";
-import { runWorkspace } from "./engine.js";
+import { Effect, Schema } from "effect";
+import { runPromise } from "../effect/interop.js";
+import { WorkspaceValidationError } from "./errors.js";
+import { runWorkspaceEffect } from "./engine.js";
 import { listWorkspaceSubjects } from "./persistence.js";
-import type {
-  WorkspaceDefinition,
-  WorkspaceManualInput,
-  WorkspaceRunResult,
-} from "./types.js";
+import { workspaceRepositoryEffect } from "./repository.js";
+import type { WorkspaceDefinition, WorkspaceRunResult } from "./types.js";
 
-const manualInputSchema: z.ZodType<WorkspaceManualInput> = z.object({
-  message: z.string().trim().min(1).max(20_000),
-  subjectId: z.string().min(1).optional(),
-  trigger: z.enum(["message", "email"]).optional(),
+const manualInputSchema = Schema.Struct({
+  message: Schema.String,
+  subjectId: Schema.optional(Schema.String),
+  trigger: Schema.optional(Schema.Literal("message", "email")),
 });
 
 export class WorkspaceTask extends ScheduledTask {
@@ -33,57 +32,92 @@ export class WorkspaceTask extends ScheduledTask {
     this.logger = parentLogger.extend(`${definition.taskName}Task`);
   }
 
-  public async run(): Promise<void> {
-    if (this.definition.scheduledRuns === false) {
-      this.lastSummary = "On-demand workspace; scheduled refresh skipped";
-      return;
-    }
-    const subjects = listWorkspaceSubjects(this.definition.id).filter(
-      (subject) => subject.status === "active",
-    );
-    if (subjects.length === 0) {
-      this.lastSummary = "No active subjects to research";
-      return;
-    }
-    let updated = 0;
-    let actions = 0;
-    const failures: string[] = [];
-    for (const subject of subjects) {
-      try {
-        const result = await runWorkspace(
-          this.definition,
-          { trigger: "scheduled", subjectId: subject.subjectId },
-          this.logger,
-        );
-        updated += result.updatedSubjects;
-        actions += result.createdActions;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push(`${subject.title}: ${message}`);
-        this.logger.warn(`Workspace research failed for ${subject.title}`, message);
+  private scheduledRunEffect() {
+    return Effect.gen(this, function* () {
+      if (this.definition.scheduledRuns === false) {
+        this.lastSummary = "On-demand workspace; scheduled refresh skipped";
+        return;
       }
-    }
-    this.lastSummary = `Updated ${updated} subject(s), proposed ${actions} action(s), ${failures.length} failed`;
-    if (failures.length > 0) {
-      throw new AggregateError(
-        failures.map((failure) => new Error(failure)),
-        this.lastSummary,
+      const subjects = (yield* workspaceRepositoryEffect(
+        "list active workspace subjects",
+        () => listWorkspaceSubjects(this.definition.id),
+      )).filter((subject) => subject.status === "active");
+      if (subjects.length === 0) {
+        this.lastSummary = "No active subjects to research";
+        return;
+      }
+      let updated = 0;
+      let actions = 0;
+      const failures: string[] = [];
+      const results = yield* Effect.forEach(subjects, (subject) =>
+        Effect.either(
+          runWorkspaceEffect(
+            this.definition,
+            { trigger: "scheduled", subjectId: subject.subjectId },
+            this.logger,
+          ),
+        ).pipe(Effect.map((result) => ({ subject, result }))),
       );
-    }
+      for (const { subject, result } of results) {
+        if (result._tag === "Right") {
+          const value = result.right;
+          updated += value.updatedSubjects;
+          actions += value.createdActions;
+        } else {
+          const message = result.left.message;
+          failures.push(`${subject.title}: ${message}`);
+          this.logger.warn(`Workspace research failed for ${subject.title}`, message);
+        }
+      }
+      this.lastSummary = `Updated ${updated} subject(s), proposed ${actions} action(s), ${failures.length} failed`;
+      if (failures.length > 0) {
+        return yield* new WorkspaceValidationError({
+          message: `${this.lastSummary}: ${failures.join("; ")}`,
+        });
+      }
+    });
   }
 
-  public async runManual(input: unknown): Promise<void> {
-    const parsed = manualInputSchema.parse(input);
-    const result: WorkspaceRunResult = await runWorkspace(
-      this.definition,
-      {
-        trigger: parsed.trigger ?? "message",
-        message: parsed.message,
-        subjectId: parsed.subjectId,
-      },
-      this.logger,
-    );
-    this.lastSummary = result.summary;
+  public run(): Promise<void> {
+    return runPromise(this.scheduledRunEffect());
+  }
+
+  private manualRunEffect(input: unknown) {
+    return Effect.gen(this, function* () {
+      const parsed = yield* Schema.decodeUnknown(manualInputSchema)(input).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceValidationError({
+              message: "Invalid workspace manual input",
+              cause,
+            }),
+        ),
+      );
+      const message = parsed.message.trim();
+      if (
+        !message ||
+        message.length > 20_000 ||
+        (parsed.subjectId !== undefined && !parsed.subjectId)
+      ) {
+        return yield* new WorkspaceValidationError({
+          message: "Workspace manual input is empty or too long",
+        });
+      }
+      const result: WorkspaceRunResult = yield* runWorkspaceEffect(
+        this.definition,
+        {
+          trigger: parsed.trigger ?? "message",
+          message,
+          subjectId: parsed.subjectId,
+        },
+        this.logger,
+      );
+      this.lastSummary = result.summary;
+    });
+  }
+
+  public runManual(input: unknown): Promise<void> {
+    return runPromise(this.manualRunEffect(input));
   }
 
   public getLastRunSummary(): string | undefined {

@@ -1,9 +1,10 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Data, Effect, Schema } from "effect";
 import { extractInterestingLinks, htmlToText } from "../htmlToText.js";
 import type { EmailAttachment, FetchedEmail } from "../types.js";
 import type { JmapContext } from "./client.js";
 import {
-  getMailboxRoles,
+  getMailboxRolesEffect,
   isEmailInAllowedMailbox,
   type MailboxRoles,
 } from "./mailboxes.js";
@@ -11,6 +12,17 @@ import {
 export interface FetchResult {
   emails: FetchedEmail[];
   newState: string;
+}
+
+export class JmapFetchError extends Data.TaggedError("JmapFetchError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `${this.operation} failed: ${detail}`;
+  }
 }
 
 const EMAIL_PROPERTIES = [
@@ -32,74 +44,135 @@ const MAX_EMAILS_PER_PASS = 500;
 /** How many emails the fallback Email/query recovery may pull. */
 export const RECOVERY_QUERY_LIMIT = 200;
 
-export async function fetchNewEmails(
+const EmailAddressSchema = Schema.Struct({
+  email: Schema.optional(Schema.NullOr(Schema.String)),
+  name: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const EmailBodyPartSchema = Schema.Struct({
+  partId: Schema.String,
+  type: Schema.optional(Schema.String),
+});
+
+const EmailBodyValueSchema = Schema.Struct({
+  value: Schema.optional(Schema.String),
+});
+
+const EmailAttachmentSchema = Schema.Struct({
+  blobId: Schema.optional(Schema.String),
+  name: Schema.optional(Schema.NullOr(Schema.String)),
+  type: Schema.optional(Schema.String),
+  size: Schema.optional(Schema.Number),
+});
+
+const JmapEmailSchema = Schema.Struct({
+  id: Schema.String,
+  subject: Schema.optional(Schema.NullOr(Schema.String)),
+  from: Schema.optional(Schema.NullOr(Schema.Array(EmailAddressSchema))),
+  textBody: Schema.optional(Schema.NullOr(Schema.Array(EmailBodyPartSchema))),
+  htmlBody: Schema.optional(Schema.NullOr(Schema.Array(EmailBodyPartSchema))),
+  bodyValues: Schema.optional(
+    Schema.Record({ key: Schema.String, value: EmailBodyValueSchema }),
+  ),
+  receivedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  attachments: Schema.optional(Schema.NullOr(Schema.Array(EmailAttachmentSchema))),
+  mailboxIds: Schema.optional(
+    Schema.Record({ key: Schema.String, value: Schema.Boolean }),
+  ),
+});
+
+type JmapEmail = typeof JmapEmailSchema.Type;
+type EmailBodyValues = NonNullable<JmapEmail["bodyValues"]>;
+
+const EmailGetSchema = Schema.Struct({
+  state: Schema.String,
+  list: Schema.Array(JmapEmailSchema),
+});
+const EmailChangesSchema = Schema.Struct({
+  newState: Schema.String,
+  hasMoreChanges: Schema.Boolean,
+});
+
+export function fetchNewEmailsEffect(
   ctx: JmapContext,
   sinceState: string,
   logger: Logger,
-): Promise<FetchResult> {
-  const roles = await getMailboxRoles(ctx, logger);
+): Effect.Effect<FetchResult, JmapFetchError> {
+  return Effect.gen(function* () {
+    const roles = yield* getMailboxRolesEffect(ctx, logger);
 
-  const emails: FetchedEmail[] = [];
-  let state = sinceState;
-  let totalFetched = 0;
+    const emails: FetchedEmail[] = [];
+    let state = sinceState;
+    let totalFetched = 0;
 
-  for (;;) {
-    const page = await fetchChangesPage(ctx, state, logger);
-    totalFetched += page.rawEmails.length;
-    for (const raw of page.rawEmails) {
-      const mapped = mapAndFilterEmail(raw, roles, logger);
-      if (mapped) emails.push(mapped);
+    for (;;) {
+      const page = yield* fetchChangesPageEffect(ctx, state, logger);
+      totalFetched += page.rawEmails.length;
+      for (const raw of page.rawEmails) {
+        const mapped = yield* Effect.try({
+          try: () => mapAndFilterEmail(raw, roles, logger),
+          catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
+        });
+        if (mapped) emails.push(mapped);
+      }
+
+      const stale = page.newState === state;
+      state = page.newState;
+      if (!page.hasMoreChanges) break;
+      if (stale) {
+        logger.warn(
+          "Email/changes reported more changes without advancing state; stopping pass",
+        );
+        break;
+      }
+      if (totalFetched >= MAX_EMAILS_PER_PASS) {
+        logger.warn(
+          `Email fetch pass hit the ${MAX_EMAILS_PER_PASS}-email cap with changes ` +
+            "remaining; they will be picked up on the next pass",
+        );
+        break;
+      }
     }
 
-    const stale = page.newState === state;
-    state = page.newState;
-    if (!page.hasMoreChanges) break;
-    if (stale) {
-      logger.warn(
-        "Email/changes reported more changes without advancing state; stopping pass",
-      );
-      break;
-    }
-    if (totalFetched >= MAX_EMAILS_PER_PASS) {
-      logger.warn(
-        `Email fetch pass hit the ${MAX_EMAILS_PER_PASS}-email cap with changes ` +
-          "remaining; they will be picked up on the next pass",
-      );
-      break;
-    }
-  }
-
-  logger.debug(`Fetched ${emails.length} new email(s)`);
-  return { emails, newState: state };
+    logger.debug(`Fetched ${emails.length} new email(s)`);
+    return { emails, newState: state };
+  });
 }
 
 /**
  * Fetch a single email by id (same properties/mapping as fetchNewEmails).
  * Returns undefined when the email no longer exists.
  */
-export async function fetchEmailById(
+export function fetchEmailByIdEffect(
   ctx: JmapContext,
   emailId: string,
   logger: Logger,
-): Promise<FetchedEmail | undefined> {
-  const { jam, accountId } = ctx;
-  const [result] = await jam.request([
-    "Email/get",
-    {
-      accountId,
-      ids: [emailId],
-      properties: EMAIL_PROPERTIES,
-      fetchTextBodyValues: true,
-      fetchHTMLBodyValues: true,
-    },
-  ]);
+): Effect.Effect<FetchedEmail | undefined, JmapFetchError> {
+  return Effect.gen(function* () {
+    const { jam, accountId } = ctx;
+    const [result] = yield* Effect.tryPromise({
+      try: () =>
+        jam.request([
+          "Email/get",
+          {
+            accountId,
+            ids: [emailId],
+            properties: EMAIL_PROPERTIES,
+            fetchTextBodyValues: true,
+            fetchHTMLBodyValues: true,
+          },
+        ]),
+      catch: (cause) => new JmapFetchError({ operation: "Email/get", cause }),
+    });
 
-  const list = (result as Record<string, unknown>).list as
-    | Record<string, unknown>[]
-    | undefined;
-  const raw = list?.[0];
-  if (!raw) return undefined;
-  return mapEmail(raw, logger);
+    const response = yield* decodeEmailGetEffect(result, "decode Email/get");
+    const raw = response.list[0];
+    if (!raw) return undefined;
+    return yield* Effect.try({
+      try: () => mapEmail(raw, logger),
+      catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
+    });
+  });
 }
 
 export interface QueryFetchResult {
@@ -113,92 +186,112 @@ export interface QueryFetchResult {
  * or after `sinceMs` (newest first, bounded by RECOVERY_QUERY_LIMIT), fetch
  * and mailbox-filter them, and report the fresh Email state.
  */
-export async function fetchEmailsReceivedSince(
+export function fetchEmailsReceivedSinceEffect(
   ctx: JmapContext,
   sinceMs: number,
   logger: Logger,
-): Promise<QueryFetchResult> {
-  const roles = await getMailboxRoles(ctx, logger);
-  const { jam, accountId } = ctx;
+): Effect.Effect<QueryFetchResult, JmapFetchError> {
+  return Effect.gen(function* () {
+    const roles = yield* getMailboxRolesEffect(ctx, logger);
+    const { jam, accountId } = ctx;
 
-  const [{ emails }] = await jam.requestMany((t) => {
-    const query = t.Email.query({
-      accountId,
-      filter: { after: new Date(sinceMs).toISOString() },
-      sort: [{ property: "receivedAt", isAscending: false }],
-      limit: RECOVERY_QUERY_LIMIT,
+    const [{ emails }] = yield* Effect.tryPromise({
+      try: () =>
+        jam.requestMany((t) => {
+          const query = t.Email.query({
+            accountId,
+            filter: { after: new Date(sinceMs).toISOString() },
+            sort: [{ property: "receivedAt", isAscending: false }],
+            limit: RECOVERY_QUERY_LIMIT,
+          });
+
+          const emails = t.Email.get({
+            accountId,
+            ids: query.$ref("/ids"),
+            properties: EMAIL_PROPERTIES,
+            fetchTextBodyValues: true,
+            fetchHTMLBodyValues: true,
+          });
+
+          return { query, emails };
+        }),
+      catch: (cause) => new JmapFetchError({ operation: "Email/query", cause }),
     });
 
-    const emails = t.Email.get({
-      accountId,
-      ids: query.$ref("/ids"),
-      properties: EMAIL_PROPERTIES,
-      fetchTextBodyValues: true,
-      fetchHTMLBodyValues: true,
-    });
+    const { state, list: rawList } = yield* decodeEmailGetEffect(
+      emails,
+      "decode query",
+    );
 
-    return { query, emails };
+    const fetched: FetchedEmail[] = [];
+    for (const raw of rawList) {
+      const mapped = yield* Effect.try({
+        try: () => mapAndFilterEmail(raw, roles, logger),
+        catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
+      });
+      if (mapped) fetched.push(mapped);
+    }
+    return { emails: fetched, state };
   });
-
-  const response = emails as Record<string, unknown>;
-  const state = response.state as string;
-  const rawList = (response.list ?? []) as Record<string, unknown>[];
-
-  const fetched: FetchedEmail[] = [];
-  for (const raw of rawList) {
-    const mapped = mapAndFilterEmail(raw, roles, logger);
-    if (mapped) fetched.push(mapped);
-  }
-  return { emails: fetched, state };
 }
 
 interface ChangesPage {
-  rawEmails: Record<string, unknown>[];
+  rawEmails: readonly JmapEmail[];
   newState: string;
   hasMoreChanges: boolean;
 }
 
-async function fetchChangesPage(
+function fetchChangesPageEffect(
   ctx: JmapContext,
   sinceState: string,
   logger: Logger,
-): Promise<ChangesPage> {
-  const { jam, accountId } = ctx;
+): Effect.Effect<ChangesPage, JmapFetchError> {
+  return Effect.gen(function* () {
+    const { jam, accountId } = ctx;
 
-  const [{ changes, emails }] = await jam.requestMany((t) => {
-    const changes = t.Email.changes({
-      accountId,
-      sinceState,
-      maxChanges: MAX_CHANGES_PER_REQUEST,
+    const [{ changes, emails }] = yield* Effect.tryPromise({
+      try: () =>
+        jam.requestMany((t) => {
+          const changes = t.Email.changes({
+            accountId,
+            sinceState,
+            maxChanges: MAX_CHANGES_PER_REQUEST,
+          });
+
+          const emails = t.Email.get({
+            accountId,
+            ids: changes.$ref("/created"),
+            properties: EMAIL_PROPERTIES,
+            fetchTextBodyValues: true,
+            fetchHTMLBodyValues: true,
+          });
+
+          return { changes, emails };
+        }),
+      catch: (cause) => new JmapFetchError({ operation: "Email/changes", cause }),
     });
 
-    const emails = t.Email.get({
-      accountId,
-      ids: changes.$ref("/created"),
-      properties: EMAIL_PROPERTIES,
-      fetchTextBodyValues: true,
-      fetchHTMLBodyValues: true,
+    const { newState, hasMoreChanges, rawEmails } = yield* Effect.try({
+      try: () => {
+        const decodedChanges = Schema.decodeUnknownSync(EmailChangesSchema)(changes);
+        const decodedEmails = Schema.decodeUnknownSync(EmailGetSchema)(emails);
+        return {
+          ...decodedChanges,
+          rawEmails: decodedEmails.list,
+        };
+      },
+      catch: (cause) => new JmapFetchError({ operation: "decode changes", cause }),
     });
 
-    return { changes, emails };
+    if (rawEmails.length === 0) {
+      logger.debug("No new emails in this state change");
+    }
+    return { rawEmails, newState, hasMoreChanges };
   });
-
-  const changesResponse = changes as Record<string, unknown>;
-  const newState = changesResponse.newState as string;
-  const hasMoreChanges = Boolean(changesResponse.hasMoreChanges);
-  const rawEmails =
-    ((emails as Record<string, unknown>).list as
-      | Record<string, unknown>[]
-      | undefined) ?? [];
-
-  if (rawEmails.length === 0) {
-    logger.debug("No new emails in this state change");
-  }
-  return { rawEmails, newState, hasMoreChanges };
 }
 
 function mapAndFilterEmail(
-  raw: Record<string, unknown>,
+  raw: JmapEmail,
   roles: MailboxRoles | undefined,
   logger: Logger,
 ): FetchedEmail | undefined {
@@ -212,14 +305,14 @@ function mapAndFilterEmail(
   return mapEmail(raw, logger);
 }
 
-function mapEmail(e: Record<string, unknown>, logger: Logger): FetchedEmail {
+function mapEmail(e: JmapEmail, logger: Logger): FetchedEmail {
   const email: FetchedEmail = {
-    id: e.id as string,
-    subject: (e.subject as string) ?? "",
+    id: e.id,
+    subject: e.subject ?? "",
     from: formatFrom(e.from),
     textBody: extractTextBody(e),
     links: extractLinks(e),
-    receivedAt: (e.receivedAt as string) ?? "",
+    receivedAt: e.receivedAt ?? "",
     attachments: extractAttachments(e),
   };
   logger.debug(
@@ -232,42 +325,24 @@ function mapEmail(e: Record<string, unknown>, logger: Logger): FetchedEmail {
   return email;
 }
 
-function formatFrom(from: unknown): string {
-  if (!Array.isArray(from) || from.length === 0) return "";
-  const first = from[0] as { email?: string; name?: string };
+function formatFrom(from: JmapEmail["from"]): string {
+  if (!from || from.length === 0) return "";
+  const first = from[0];
   return first.email ?? first.name ?? "";
 }
 
-interface BodyPart {
-  partId: string;
-  type?: string;
-}
-
-function isBodyPartArray(value: unknown): value is BodyPart[] {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      (p) => typeof p === "object" && p !== null && typeof p.partId === "string",
-    )
-  );
-}
-
-function isBodyValues(value: unknown): value is Record<string, { value?: string }> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function extractTextBody(email: Record<string, unknown>): string {
-  if (!isBodyValues(email.bodyValues)) return "";
+function extractTextBody(email: JmapEmail): string {
+  if (!email.bodyValues) return "";
   const bodyValues = email.bodyValues;
 
   // Prefer HTML body: it's typically more complete than plain text (some senders
   // render fields like appointment times only in HTML, leaving "undefined" in text).
-  if (isBodyPartArray(email.htmlBody)) {
+  if (email.htmlBody) {
     const html = extractParts(email.htmlBody, bodyValues, true);
     if (html) return html;
   }
 
-  if (isBodyPartArray(email.textBody)) {
+  if (email.textBody) {
     return extractParts(email.textBody, bodyValues, false);
   }
 
@@ -275,8 +350,8 @@ function extractTextBody(email: Record<string, unknown>): string {
 }
 
 function extractParts(
-  parts: BodyPart[],
-  bodyValues: Record<string, { value?: string }>,
+  parts: readonly (typeof EmailBodyPartSchema.Type)[],
+  bodyValues: EmailBodyValues,
   convertHtml: boolean,
 ): string {
   return parts
@@ -289,18 +364,15 @@ function extractParts(
     .join("\n");
 }
 
-function extractLinks(email: Record<string, unknown>): string[] {
-  if (!isBodyValues(email.bodyValues)) return [];
-  if (!isBodyPartArray(email.htmlBody)) return [];
+function extractLinks(email: JmapEmail): string[] {
+  if (!email.bodyValues || !email.htmlBody) return [];
   const bodyValues = email.bodyValues;
   const html = email.htmlBody.map((p) => bodyValues[p.partId]?.value ?? "").join("\n");
   return extractInterestingLinks(html);
 }
 
-function extractAttachments(email: Record<string, unknown>): EmailAttachment[] {
-  const attachments = email.attachments as
-    | { blobId?: string; name?: string; type?: string; size?: number }[]
-    | undefined;
+function extractAttachments(email: JmapEmail): EmailAttachment[] {
+  const attachments = email.attachments;
   if (!attachments) return [];
   return attachments
     .filter(
@@ -312,4 +384,14 @@ function extractAttachments(email: Record<string, unknown>): EmailAttachment[] {
       type: a.type,
       size: a.size ?? 0,
     }));
+}
+
+function decodeEmailGetEffect(
+  response: unknown,
+  operation: string,
+): Effect.Effect<typeof EmailGetSchema.Type, JmapFetchError> {
+  return Effect.try({
+    try: () => Schema.decodeUnknownSync(EmailGetSchema)(response),
+    catch: (cause) => new JmapFetchError({ operation, cause }),
+  });
 }

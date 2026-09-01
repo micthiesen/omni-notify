@@ -1,6 +1,22 @@
 import { promises as dns, lookup } from "node:dns";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import got, { type OptionsInit } from "got";
+import { Effect } from "effect";
+import {
+  type LimitedTextResponse,
+  readBufferResponseWithLimit,
+  readTextResponseWithLimit,
+} from "../effect/publicHttp.js";
+import { PressPodsError, tryPromise } from "./effect.js";
+
+export const PRESS_PODS_HTML_MAX_BYTES = 10 * 1024 * 1024;
+export const PRESS_PODS_JSON_MAX_BYTES = 5 * 1024 * 1024;
+export const PRESS_PODS_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+
+export type PressPodsTextRequest = (
+  url: string | URL,
+  options: OptionsInit,
+) => LimitedTextResponse;
 
 const blockedAddresses = new BlockList();
 
@@ -85,20 +101,34 @@ export function assertPublicHttpUrlSyntax(value: string | URL): URL {
   return url;
 }
 
-export async function assertPublicHttpUrl(value: string | URL): Promise<URL> {
-  const url = assertPublicHttpUrlSyntax(value);
-  const hostname = url.hostname.replace(/^\[|\]$/g, "");
-  if (isIP(hostname)) return url;
+export const assertPublicHttpUrl = (
+  value: string | URL,
+): Effect.Effect<URL, PressPodsError> =>
+  Effect.gen(function* () {
+    const url = yield* Effect.try({
+      try: () => assertPublicHttpUrlSyntax(value),
+      catch: (cause) =>
+        new PressPodsError({ operation: "validate public PressPods URL", cause }),
+    });
+    const hostname = url.hostname.replace(/^\[|\]$/g, "");
+    if (isIP(hostname)) return url;
+    const addresses = yield* tryPromise("resolve public PressPods URL", () =>
+      dns.lookup(hostname, { all: true, verbatim: true }),
+    );
+    if (
+      addresses.length === 0 ||
+      addresses.some(({ address }) => !isPublicAddress(address))
+    ) {
+      return yield* new PressPodsError({
+        operation: "validate public PressPods URL",
+        cause: new Error("PressPods URLs must resolve only to public addresses"),
+      });
+    }
+    return url;
+  });
 
-  const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
-  if (
-    addresses.length === 0 ||
-    addresses.some(({ address }) => !isPublicAddress(address))
-  ) {
-    throw new Error("PressPods URLs must resolve only to public addresses");
-  }
-  return url;
-}
+/** @deprecated Use the canonical Effect API, `assertPublicHttpUrl`. */
+export const assertPublicHttpUrlEffect = assertPublicHttpUrl;
 
 /**
  * Resolve every outbound connection through a public-address gate. Got invokes
@@ -109,16 +139,17 @@ export function createPublicDnsLookup(
   resolve: LookupFunction = lookup,
 ): LookupFunction {
   return (hostname, options, callback) => {
+    const returnAll = options.all === true;
     resolve(
       hostname,
-      { ...options, verbatim: true },
+      { ...options, all: true, verbatim: true },
       (error, address, resultFamily) => {
         const resolvedAddresses =
           typeof address === "string"
             ? [{ address, family: resultFamily ?? isIP(address) }]
             : (address ?? []);
         if (error) {
-          callback(error, options.all ? [] : "", resultFamily);
+          callback(error, returnAll ? [] : "", resultFamily);
           return;
         }
         if (
@@ -129,12 +160,12 @@ export function createPublicDnsLookup(
         ) {
           callback(
             new Error("PressPods URLs must resolve only to public addresses"),
-            options.all ? [] : "",
+            returnAll ? [] : "",
             resultFamily,
           );
           return;
         }
-        if (options.all) {
+        if (returnAll) {
           callback(null, resolvedAddresses);
           return;
         }
@@ -157,7 +188,9 @@ export function publicGot(url: string | URL, options: OptionsInit = {}) {
       ...options.hooks,
       beforeRequest: [
         async (requestOptions) => {
-          if (requestOptions.url) await assertPublicHttpUrl(requestOptions.url);
+          if (requestOptions.url) {
+            await Effect.runPromise(assertPublicHttpUrl(requestOptions.url));
+          }
         },
         ...existingBeforeRequest,
       ],
@@ -171,10 +204,99 @@ export function publicGot(url: string | URL, options: OptionsInit = {}) {
   });
 }
 
-export async function fetchPublicHtml(url: string, userAgent: string): Promise<string> {
-  return publicGot(url, {
-    headers: { "User-Agent": userAgent, Accept: "text/html" },
-    timeout: { request: 20_000 },
-    retry: { limit: 2, methods: ["GET"] },
-  }).text();
+export function publicGotStream(
+  url: string | URL,
+  options: OptionsInit = {},
+): LimitedTextResponse {
+  const existingBeforeRequest = options.hooks?.beforeRequest ?? [];
+  const existingBeforeRedirect = options.hooks?.beforeRedirect ?? [];
+  return got.stream(url, {
+    ...options,
+    dnsLookup: publicDnsLookup,
+    hooks: {
+      ...options.hooks,
+      beforeRequest: [
+        async (requestOptions) => {
+          if (requestOptions.url) {
+            await Effect.runPromise(assertPublicHttpUrl(requestOptions.url));
+          }
+        },
+        ...existingBeforeRequest,
+      ],
+      beforeRedirect: [
+        (requestOptions) => {
+          if (requestOptions.url) assertPublicHttpUrlSyntax(requestOptions.url);
+        },
+        ...existingBeforeRedirect,
+      ],
+    },
+  });
+}
+
+export interface BoundedPublicBuffer {
+  readonly body: Buffer;
+  readonly headers: Record<string, string | string[] | undefined>;
+}
+
+export function fetchPublicBuffer(
+  url: string,
+  options: OptionsInit,
+  operation: string,
+  maxBytes: number,
+  request: PressPodsTextRequest = publicGotStream,
+): Effect.Effect<BoundedPublicBuffer, PressPodsError> {
+  return tryPromise(operation, async (signal) => {
+    const response = request(url, { ...options, signal });
+    const body = await readBufferResponseWithLimit(response, maxBytes);
+    return { body, headers: response.response?.headers ?? {} };
+  });
+}
+
+export function fetchPublicText(
+  url: string,
+  options: OptionsInit,
+  operation: string,
+  maxBytes = PRESS_PODS_HTML_MAX_BYTES,
+  request: PressPodsTextRequest = publicGotStream,
+): Effect.Effect<string, PressPodsError> {
+  return tryPromise(operation, (signal) =>
+    readTextResponseWithLimit(request(url, { ...options, signal }), maxBytes),
+  );
+}
+
+export function fetchPublicJson(
+  url: string,
+  options: OptionsInit,
+  operation: string,
+  maxBytes = PRESS_PODS_JSON_MAX_BYTES,
+  request: PressPodsTextRequest = publicGotStream,
+): Effect.Effect<unknown, PressPodsError> {
+  return fetchPublicText(url, options, operation, maxBytes, request).pipe(
+    Effect.flatMap((body) =>
+      Effect.try({
+        try: () => JSON.parse(body) as unknown,
+        catch: (cause) =>
+          new PressPodsError({ operation: `decode ${operation} JSON`, cause }),
+      }),
+    ),
+  );
+}
+
+export function fetchPublicHtml(
+  url: string,
+  userAgent: string,
+  request: PressPodsTextRequest = publicGotStream,
+  maxBytes = PRESS_PODS_HTML_MAX_BYTES,
+): Effect.Effect<string, PressPodsError> {
+  return fetchPublicText(
+    url,
+    {
+      headers: { "User-Agent": userAgent, Accept: "text/html" },
+      timeout: { request: 20_000 },
+      retry: { limit: 2, methods: ["GET"] },
+    },
+    "fetch public PressPods HTML",
+    maxBytes,
+    request,
+  );
 }

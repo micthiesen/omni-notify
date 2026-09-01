@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { Effect } from "effect";
 import {
   fetchRecommendations,
   fetchTasteProfile,
   sendRecommendationFeedback,
 } from "../api";
+import { forkUiEffect, runUiEffect } from "../effect";
 import type {
   Recommendation,
   RecommendationFeedback,
@@ -230,44 +232,45 @@ export default function RecommendationsPage() {
   // so freshly generated picks appear without a manual refresh.
   useEffect(() => {
     if (running) return;
-    let cancelled = false;
-    fetchRecommendations()
-      .then((data) => {
-        if (cancelled) return;
-        setRecs(data.recommendations);
-        setRecsError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setRecsError(
-          err instanceof Error ? err.message : "Failed to fetch recommendations",
-        );
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      fetchRecommendations().pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setRecs(data.recommendations);
+            setRecsError(null);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() =>
+            setRecsError(
+              err instanceof Error ? err.message : "Failed to fetch recommendations",
+            ),
+          ),
+        ),
+      ),
+    );
   }, [running]);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchTasteProfile()
-      .then((data) => {
-        if (cancelled) return;
-        setTasteProfile(data.profile);
-        setTasteError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setTasteError(
-          err instanceof Error ? err.message : "Failed to fetch taste profile",
-        );
-      })
-      .finally(() => {
-        if (!cancelled) setTasteLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiEffect(
+      fetchTasteProfile().pipe(
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setTasteProfile(data.profile);
+            setTasteError(null);
+            setTasteLoading(false);
+          }),
+        ),
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            setTasteError(
+              err instanceof Error ? err.message : "Failed to fetch taste profile",
+            );
+            setTasteLoading(false);
+          }),
+        ),
+      ),
+    );
   }, [latestTasteRunId]);
 
   const handleRun = async () => {
@@ -281,7 +284,9 @@ export default function RecommendationsPage() {
   ) => {
     setSavingId(recommendationId);
     try {
-      const result = await sendRecommendationFeedback(recommendationId, feedback);
+      const result = await runUiEffect(
+        sendRecommendationFeedback(recommendationId, feedback),
+      );
       setRecs(
         (current) =>
           current?.map((rec) =>

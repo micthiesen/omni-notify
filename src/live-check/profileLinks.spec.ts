@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { Deferred, Effect, Fiber } from "effect";
+import { describe, expect, it, vi } from "vitest";
 import { canonicalBindingKey } from "./identityLinks.js";
 import { Platform } from "./platforms/index.js";
 import {
   bindingFromProfileUrl,
   extractProfileLinks,
   fetchProfileLinks,
+  fetchProfileLinksEffect,
   profileIdentityEvidence,
   profilePageUrl,
 } from "./profileLinks.js";
@@ -130,5 +132,73 @@ describe("fetchProfileLinks", () => {
         { fetchImpl, maxBytes: 10 },
       ),
     ).rejects.toThrow("10 byte limit");
+  });
+
+  it("cancels and releases the response reader when reading fails", async () => {
+    const cancel = vi.fn(async () => undefined);
+    const releaseLock = vi.fn();
+    const reader = {
+      read: vi.fn(async () => {
+        throw new Error("profile stream failed");
+      }),
+      cancel,
+      releaseLock,
+    };
+    const fetchImpl = async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        body: { getReader: () => reader },
+      }) as unknown as Response;
+
+    await expect(
+      Effect.runPromise(
+        fetchProfileLinksEffect(
+          { platform: Platform.Kick, username: "iri" },
+          { fetchImpl },
+        ),
+      ),
+    ).rejects.toThrow("profile stream failed");
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
+  });
+
+  it("cancels and releases the response reader when interrupted", async () => {
+    const readStarted = await Effect.runPromise(Deferred.make<void>());
+    const cancel = vi.fn(async () => undefined);
+    const releaseLock = vi.fn();
+    const reader = {
+      read: vi.fn(() =>
+        Effect.runPromise(
+          Deferred.succeed(readStarted, undefined).pipe(Effect.zipRight(Effect.never)),
+        ),
+      ),
+      cancel,
+      releaseLock,
+    };
+    const fetchImpl = async () =>
+      ({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        body: { getReader: () => reader },
+      }) as unknown as Response;
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.fork(
+          fetchProfileLinksEffect(
+            { platform: Platform.Kick, username: "iri" },
+            { fetchImpl },
+          ),
+        );
+        yield* Deferred.await(readStarted);
+        yield* Fiber.interrupt(fiber);
+      }),
+    );
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
   });
 });

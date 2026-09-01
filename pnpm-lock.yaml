@@ -65,6 +65,9 @@ importers:
       date-fns-tz:
         specifier: ^3.2.0
         version: 3.2.0(date-fns@4.4.0)
+      effect:
+        specifier: 3.22.1
+        version: 3.22.1
       eventsource:
         specifier: ^4.1.1
         version: 4.1.1
@@ -116,9 +119,6 @@ importers:
       nodemailer:
         specifier: ^9.0.4
         version: 9.0.4
-      p-queue:
-        specifier: ^9.3.3
-        version: 9.3.3
       podcast:
         specifier: ^2.0.1
         version: 2.0.1
@@ -141,6 +141,9 @@ importers:
       '@dotenvx/dotenvx':
         specifier: ^2.19.2
         version: 2.19.2
+      '@effect/vitest':
+        specifier: 0.30.0
+        version: 0.30.0(effect@3.22.1)(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5)))
       '@modelcontextprotocol/client':
         specifier: 2.0.0
         version: 2.0.0
@@ -183,6 +186,9 @@ importers:
 
   frontend:
     dependencies:
+      effect:
+        specifier: 3.22.1
+        version: 3.22.1
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -274,6 +280,12 @@ packages:
 
   '@dotenvx/tooling@1.0.3':
     resolution: {integrity: sha512-Gd6qQol/ICb4MPRWpiIH56y+pR9AVB7kPBkbhrLSGLtAiF4Qgy+k651/f2pze0Xbm3H5XewbPfIm4y9K+ic30Q==}
+
+  '@effect/vitest@0.30.0':
+    resolution: {integrity: sha512-2qcK7F4XSwOn7Ye9vgEkrndHiiHVf9Nl+U5jvvLBKeYx4+8++O5Y8RFezaQzs/rWx8GkdlStv/s+HYMHZ/2/AQ==}
+    peerDependencies:
+      effect: ^3.22.0
+      vitest: ^3.2.0
 
   '@esbuild/aix-ppc64@0.28.1':
     resolution: {integrity: sha512-Svl7tq8k/08+p6CXPpRjQ1fKX+1odH/BQbb48fV6fj3CWHhsoIOoY87w1oHXm0qEpkIK3ZfVgp0hed3XBXzXMQ==}
@@ -1486,6 +1498,9 @@ packages:
   ecc-jsbn@0.1.2:
     resolution: {integrity: sha512-eh9O+hwRHNbG4BLTjEl3nw044CkGm5X6LoaCf7LPp7UU8Qrt47JYNi6nPX8xjW97TKGKm1ouctg0QSpZe9qrnw==}
 
+  effect@3.22.1:
+    resolution: {integrity: sha512-TNoXushmPOBAjJlthF5d2QwnX2xBPEtcNJr5XKNKbRLbDvBcOYkXlYDfvGfSA0zriwLFuCll5MDtNMAdZL17PQ==}
+
   ellipsize@0.1.0:
     resolution: {integrity: sha512-5gxbEjcb/Z2n6TTmXZx9wVi3N/DOzE7RXY3Xg9dakDuhX/izwumB9rGjeWUV6dTA0D0+juvo+JonZgNR9sgA5A==}
 
@@ -1589,6 +1604,10 @@ packages:
 
   fast-base64-decode@1.0.0:
     resolution: {integrity: sha512-qwaScUgUGBYeDNRnbc/KyllVU88Jk1pRHPStuF/lO7B0/RTRLj7U0lkdTAutlBblY08rwZDff6tNU9cjv6j//Q==}
+
+  fast-check@3.23.2:
+    resolution: {integrity: sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A==}
+    engines: {node: '>=8.0.0'}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -2202,6 +2221,9 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
+  pure-rand@6.1.0:
+    resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
+
   qs@6.14.2:
     resolution: {integrity: sha512-V/yCWTTF7VJ9hIh18Ugr2zhJMP01MY7c5kh4J870L7imm6/DIzBsNLTXzMwUA3yZ5b/KBqLx8Kp3uRvd7xSe3Q==}
     engines: {node: '>=0.6'}
@@ -2802,6 +2824,11 @@ snapshots:
   '@dotenvx/primitives@2.1.2': {}
 
   '@dotenvx/tooling@1.0.3': {}
+
+  '@effect/vitest@0.30.0(effect@3.22.1)(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5)))':
+    dependencies:
+      effect: 3.22.1
+      vitest: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5))
 
   '@esbuild/aix-ppc64@0.28.1':
     optional: true
@@ -3728,6 +3755,11 @@ snapshots:
       jsbn: 0.1.1
       safer-buffer: 2.1.2
 
+  effect@3.22.1:
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      fast-check: 3.23.2
+
   ellipsize@0.1.0: {}
 
   encoding-japanese@2.2.0: {}
@@ -3822,6 +3854,10 @@ snapshots:
   extsprintf@1.4.1: {}
 
   fast-base64-decode@1.0.0: {}
+
+  fast-check@3.23.2:
+    dependencies:
+      pure-rand: 6.1.0
 
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
@@ -4446,6 +4482,8 @@ snapshots:
   punycode.js@2.3.1: {}
 
   punycode@2.3.1: {}
+
+  pure-rand@6.1.0: {}
 
   qs@6.14.2:
     dependencies:

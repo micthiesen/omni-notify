@@ -1,29 +1,36 @@
 import { Logger } from "@micthiesen/mitools/logging";
 import Parser from "@postlight/parser";
+import { Effect } from "effect";
+import { PressPodsError, tryPromise } from "../effect.js";
 import { cleanText } from "../formatting/index.js";
 import { fetchPublicHtml } from "../publicHttp.js";
 import type { Article } from "../types.js";
 
 const LOGGER = new Logger("PressPods.retrievers.postlight");
 
-export async function retrieveArticlePostlight(
+export function retrieveArticlePostlight(
   url: string,
   userAgent: string,
-): Promise<Article> {
-  const html = await fetchPublicHtml(url, userAgent);
-  const result = await Parser.parse(url, {
-    contentType: "html",
-    html,
-  });
-  LOGGER.debug("Parsed article with postlight:", result);
-
-  return {
-    title: result.title ?? undefined,
-    text: cleanText(result.content ?? ""),
-    author: result.author ?? undefined,
-    domain: result.domain ?? undefined,
-    publishedAt: result.date_published ? new Date(result.date_published) : undefined,
-    leadImageUrl: result.lead_image_url ?? undefined,
-    url,
-  };
+): Effect.Effect<Article, PressPodsError> {
+  return fetchPublicHtml(url, userAgent).pipe(
+    Effect.flatMap((html) =>
+      tryPromise("parse article with Postlight", () =>
+        Parser.parse(url, { contentType: "html", html }),
+      ),
+    ),
+    Effect.map((result) => {
+      LOGGER.debug("Parsed article with postlight:", result);
+      return {
+        title: result.title ?? undefined,
+        text: cleanText(result.content ?? ""),
+        author: result.author ?? undefined,
+        domain: result.domain ?? undefined,
+        publishedAt: result.date_published
+          ? new Date(result.date_published)
+          : undefined,
+        leadImageUrl: result.lead_image_url ?? undefined,
+        url,
+      };
+    }),
+  );
 }

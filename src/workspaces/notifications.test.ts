@@ -5,14 +5,18 @@ import type { WorkspaceNotificationData } from "./persistence.js";
 const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
   markFailed: vi.fn(),
+  markSending: vi.fn(),
   markSent: vi.fn(),
+  markUnknown: vi.fn(),
 }));
 
 vi.mock("@micthiesen/mitools/pushover", () => ({ notify: mocks.notify }));
 vi.mock("./persistence.js", () => ({
   listDueWorkspaceNotifications: vi.fn().mockReturnValue([]),
   markWorkspaceNotificationFailed: mocks.markFailed,
+  markWorkspaceNotificationSending: mocks.markSending,
   markWorkspaceNotificationSent: mocks.markSent,
+  markWorkspaceNotificationUnknown: mocks.markUnknown,
 }));
 
 import { deliverWorkspaceNotification } from "./notifications.js";
@@ -41,6 +45,32 @@ describe("deliverWorkspaceNotification", () => {
       true,
     );
     expect(mocks.markSent).toHaveBeenCalledWith("notification-1");
+    expect(mocks.markSending).toHaveBeenCalledWith("notification-1", 1);
+    expect(mocks.markSending.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.notify.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("does not resend after delivery succeeded but the sent acknowledgement failed", async () => {
+    mocks.notify.mockResolvedValue(undefined);
+    mocks.markSent.mockImplementationOnce(() => {
+      throw new Error("database unavailable");
+    });
+
+    await expect(deliverWorkspaceNotification(notification, logger)).rejects.toThrow(
+      "database unavailable",
+    );
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
+
+    await expect(
+      deliverWorkspaceNotification(
+        { ...notification, status: "sending", attempts: 1 },
+        logger,
+      ),
+    ).resolves.toBe(true);
+    expect(mocks.notify).toHaveBeenCalledTimes(1);
+    expect(mocks.markSent).toHaveBeenCalledTimes(1);
+    expect(mocks.markUnknown).toHaveBeenCalledWith("notification-1");
   });
 
   it("keeps a failed delivery queued with its attempt count", async () => {
@@ -51,7 +81,7 @@ describe("deliverWorkspaceNotification", () => {
     expect(mocks.markFailed).toHaveBeenCalledWith(
       "notification-1",
       1,
-      "Pushover unavailable",
+      "send workspace notification failed: Pushover unavailable",
     );
   });
 

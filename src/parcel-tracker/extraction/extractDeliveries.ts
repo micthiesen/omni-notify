@@ -3,11 +3,13 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { Effect, Schema } from "effect";
 import { hasPrice, llmCostCents } from "../../ai/cost.js";
 import { getExtractionModel } from "../../ai/registry.js";
 import { MAX_CARRIER_CANDIDATES } from "../carriers/candidates.js";
-import { getCarrierCodesForPrompt } from "../carriers/carrierMap.js";
-import { deliveryExtractionSchema } from "./schema.js";
+import { getCarrierCodesForPromptEffect } from "../carriers/carrierMap.js";
+import { ParcelExtractionError } from "../effect.js";
+import { DeliveryExtractionEffectSchema, deliveryExtractionSchema } from "./schema.js";
 
 const MAX_BODY_CHARS = 12000;
 
@@ -23,20 +25,21 @@ export interface ExtractDeliveriesResult {
   costCents: number | null;
 }
 
-export async function extractDeliveries(
+export function extractDeliveriesEffect(
   email: { subject: string; from: string; textBody: string; links: string[] },
   logger: Logger,
   logFile?: LogFile,
-): Promise<ExtractDeliveriesResult> {
-  const { model, modelId } = getExtractionModel();
-  const carrierCodes = await getCarrierCodesForPrompt(logger);
-  const body = email.textBody.slice(0, MAX_BODY_CHARS);
-  const linksSection =
-    email.links.length > 0
-      ? `\n\nURLs from the email (tracking numbers sometimes appear only inside these):\n${email.links.join("\n")}`
-      : "";
+): Effect.Effect<ExtractDeliveriesResult, ParcelExtractionError> {
+  return Effect.gen(function* () {
+    const { model, modelId } = getExtractionModel();
+    const carrierCodes = yield* getCarrierCodesForPromptEffect(logger);
+    const body = email.textBody.slice(0, MAX_BODY_CHARS);
+    const linksSection =
+      email.links.length > 0
+        ? `\n\nURLs from the email (tracking numbers sometimes appear only inside these):\n${email.links.join("\n")}`
+        : "";
 
-  const prompt = `Extract package tracking numbers from this email. If no tracking numbers are found, return an empty deliveries array.
+    const prompt = `Extract package tracking numbers from this email. If no tracking numbers are found, return an empty deliveries array.
 
 Rules for what counts as a tracking number:
 - A number labeled "Order #", "order number", or appearing in a subject like "Order Shipped #123456" or "Order Confirmed #123456" is NEVER a tracking number. Order numbers identify the merchant order, not the shipment.
@@ -55,55 +58,71 @@ Subject: ${email.subject}
 
 ${body}${linksSection}`;
 
-  if (logFile) {
-    logFile.log(
-      logger,
-      LogLevel.INFO,
-      `Extraction Prompt (${modelId})`,
-      codeBlock(prompt),
-      { consoleSummary: `Extraction prompt (${modelId}) [${prompt.length} chars]` },
-    );
-  } else {
-    logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
-  }
+    if (logFile) {
+      logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Extraction Prompt (${modelId})`,
+        codeBlock(prompt),
+        { consoleSummary: `Extraction prompt (${modelId}) [${prompt.length} chars]` },
+      );
+    } else {
+      logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
+    }
 
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: deliveryExtractionSchema }),
-    prompt,
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        generateText({
+          model,
+          output: Output.object({ schema: deliveryExtractionSchema }),
+          prompt,
+        }),
+      catch: (cause) => new ParcelExtractionError({ cause, transient: true }),
+    });
+
+    const decoded = yield* Schema.decodeUnknown(DeliveryExtractionEffectSchema)(
+      result.output ?? { deliveries: [] },
+    ).pipe(
+      Effect.mapError(
+        (cause) => new ParcelExtractionError({ cause, transient: false }),
+      ),
+    );
+
+    const response = JSON.stringify(result.output, null, 2);
+    if (logFile) {
+      logFile.log(
+        logger,
+        LogLevel.INFO,
+        "Extraction Response",
+        codeBlock(response, "json"),
+      );
+    } else {
+      logger.info(`Extraction response: ${response}`);
+    }
+    logger.info(
+      `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+    );
+
+    const costCents = hasPrice(modelId)
+      ? llmCostCents(modelId, {
+          inputTokens: result.usage.inputTokens ?? 0,
+          outputTokens: result.usage.outputTokens ?? 0,
+        })
+      : null;
+    if (costCents === null) {
+      logger.debug(`No pricing data for extraction model "${modelId}"`);
+    }
+
+    const deliveries = decoded.deliveries;
+    return {
+      deliveries: deliveries.map((delivery): ExtractedDelivery => ({
+        ...delivery,
+        carrier_candidates: [...delivery.carrier_candidates].slice(
+          0,
+          MAX_CARRIER_CANDIDATES,
+        ),
+      })),
+      costCents,
+    };
   });
-
-  const response = JSON.stringify(result.output, null, 2);
-  if (logFile) {
-    logFile.log(
-      logger,
-      LogLevel.INFO,
-      "Extraction Response",
-      codeBlock(response, "json"),
-    );
-  } else {
-    logger.info(`Extraction response: ${response}`);
-  }
-  logger.info(
-    `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
-  );
-
-  const costCents = hasPrice(modelId)
-    ? llmCostCents(modelId, {
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
-      })
-    : null;
-  if (costCents === null) {
-    logger.debug(`No pricing data for extraction model "${modelId}"`);
-  }
-
-  const deliveries = result.output?.deliveries ?? [];
-  return {
-    deliveries: deliveries.map((delivery) => ({
-      ...delivery,
-      carrier_candidates: delivery.carrier_candidates.slice(0, MAX_CARRIER_CANDIDATES),
-    })),
-    costCents,
-  };
 }

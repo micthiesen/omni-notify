@@ -1,59 +1,82 @@
 import { extractDomain } from "@micthiesen/mitools/strings";
+import { Effect, Schema } from "effect";
+import { PressPodsError } from "../effect.js";
 import { cleanText } from "../formatting/index.js";
-import { publicGot } from "../publicHttp.js";
+import { fetchPublicJson, fetchPublicText } from "../publicHttp.js";
 import type { Article } from "../types.js";
 import { extractTitleFromHtml } from "./constants.js";
 
 const WAYBACK_AVAILABILITY_API = "https://archive.org/wayback/available";
 
-type WaybackResponse = {
-  url: string;
-  archived_snapshots: {
-    closest?: {
-      status: string;
-      available: boolean;
-      url: string;
-      timestamp: string;
-    };
-  };
-};
+const WaybackResponseSchema = Schema.Struct({
+  url: Schema.String,
+  archived_snapshots: Schema.Struct({
+    closest: Schema.optional(
+      Schema.Struct({
+        status: Schema.String,
+        available: Schema.Boolean,
+        url: Schema.String,
+        timestamp: Schema.String,
+      }),
+    ),
+  }),
+});
 
 /**
  * Retrieve article from the Internet Archive Wayback Machine
  * (most recent archived snapshot of the URL).
  */
-export async function retrieveArticleWayback(
+export function retrieveArticleWayback(
   url: string,
   userAgent: string,
-): Promise<Article> {
+): Effect.Effect<Article, PressPodsError> {
   const availabilityUrl = `${WAYBACK_AVAILABILITY_API}?url=${encodeURIComponent(url)}`;
-
-  const availabilityResponse = await publicGot(availabilityUrl, {
-    timeout: { request: 10000 },
-  }).json<WaybackResponse>();
-
-  const snapshot = availabilityResponse.archived_snapshots.closest;
-  if (!snapshot?.available) {
-    throw new Error("No archived snapshot available for this URL");
-  }
-
-  const archivedResponse = await publicGot(snapshot.url, {
-    headers: { "User-Agent": userAgent },
-    timeout: { request: 20000 },
-    retry: { limit: 2, methods: ["GET"] },
-  });
-
-  const html = archivedResponse.body;
-
-  return {
-    title: extractTitleFromHtml(html),
-    text: cleanText(html),
-    author: undefined, // Archive doesn't provide author
-    domain: extractDomain(url) ?? undefined,
-    publishedAt: parseWaybackTimestamp(snapshot.timestamp),
-    leadImageUrl: undefined,
-    url,
-  };
+  return fetchPublicJson(
+    availabilityUrl,
+    { timeout: { request: 10000 } },
+    "query Wayback availability",
+  ).pipe(
+    Effect.flatMap((raw) =>
+      Schema.decodeUnknown(WaybackResponseSchema)(raw).pipe(
+        Effect.mapError(
+          (cause) =>
+            new PressPodsError({ operation: "decode Wayback response", cause }),
+        ),
+      ),
+    ),
+    Effect.flatMap((availabilityResponse) => {
+      const snapshot = availabilityResponse.archived_snapshots.closest;
+      if (!snapshot?.available) {
+        return Effect.fail(
+          new PressPodsError({
+            operation: "retrieve article with Wayback",
+            cause: new Error("No archived snapshot available for this URL"),
+          }),
+        );
+      }
+      return fetchPublicText(
+        snapshot.url,
+        {
+          headers: { "User-Agent": userAgent },
+          timeout: { request: 20000 },
+          retry: { limit: 2, methods: ["GET"] },
+        },
+        "fetch Wayback snapshot",
+      ).pipe(
+        Effect.map((html) => {
+          return {
+            title: extractTitleFromHtml(html),
+            text: cleanText(html),
+            author: undefined,
+            domain: extractDomain(url) ?? undefined,
+            publishedAt: parseWaybackTimestamp(snapshot.timestamp),
+            leadImageUrl: undefined,
+            url,
+          };
+        }),
+      );
+    }),
+  );
 }
 
 /** Parse Wayback Machine timestamp (YYYYMMDDhhmmss) to Date. */

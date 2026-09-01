@@ -2,7 +2,9 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import { createProviderRegistry, type LanguageModel, wrapLanguageModel } from "ai";
+import { Effect } from "effect";
 import { currentCostFeature, recordCostEventSafely } from "../costs/persistence.js";
+import { fromPromise, runPromise } from "../effect/interop.js";
 import config from "../utils/config.js";
 import { hasPrice, llmCostCents } from "./cost.js";
 
@@ -159,32 +161,37 @@ function resolveModel(
     model: modelRegistry.languageModel(modelId),
     middleware: {
       specificationVersion: "v4",
-      wrapGenerate: async ({ doGenerate }) => {
-        const result = await doGenerate();
-        const inputTokens = result.usage.inputTokens.total ?? 0;
-        const outputTokens = result.usage.outputTokens.total ?? 0;
-        recordCostEventSafely({
-          category: "llm",
-          feature: currentCostFeature(feature),
-          operation,
-          service,
-          model: bareModel,
-          costCents: hasPrice(modelId)
-            ? llmCostCents(modelId, { inputTokens, outputTokens })
-            : null,
-          priceStatus: hasPrice(modelId) ? "estimated" : "unknown",
-          usage: {
-            inputTokens,
-            inputNoCacheTokens: result.usage.inputTokens.noCache ?? 0,
-            cacheReadTokens: result.usage.inputTokens.cacheRead ?? 0,
-            cacheWriteTokens: result.usage.inputTokens.cacheWrite ?? 0,
-            outputTokens,
-            reasoningTokens: result.usage.outputTokens.reasoning ?? 0,
-            requests: 1,
-          },
-        });
-        return result;
-      },
+      wrapGenerate: ({ doGenerate }) =>
+        runPromise(
+          fromPromise("generate language-model response", () => doGenerate()).pipe(
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                const inputTokens = result.usage.inputTokens.total ?? 0;
+                const outputTokens = result.usage.outputTokens.total ?? 0;
+                recordCostEventSafely({
+                  category: "llm",
+                  feature: currentCostFeature(feature),
+                  operation,
+                  service,
+                  model: bareModel,
+                  costCents: hasPrice(modelId)
+                    ? llmCostCents(modelId, { inputTokens, outputTokens })
+                    : null,
+                  priceStatus: hasPrice(modelId) ? "estimated" : "unknown",
+                  usage: {
+                    inputTokens,
+                    inputNoCacheTokens: result.usage.inputTokens.noCache ?? 0,
+                    cacheReadTokens: result.usage.inputTokens.cacheRead ?? 0,
+                    cacheWriteTokens: result.usage.inputTokens.cacheWrite ?? 0,
+                    outputTokens,
+                    reasoningTokens: result.usage.outputTokens.reasoning ?? 0,
+                    requests: 1,
+                  },
+                });
+              }),
+            ),
+          ),
+        ),
     },
   });
   return { model, modelId };

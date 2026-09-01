@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Deferred, Effect } from "effect";
 import { enrichCandidates, type PooledCandidate } from "./candidates.js";
 import { CandidateSource, MediaType, makeCanonicalId } from "./types.js";
 
@@ -14,6 +15,8 @@ vi.mock("./tmdb/client.js", () => ({
   fetchTitleDetails: mocks.fetchTitleDetails,
   fetchTrending: vi.fn(),
   getGenreMap: mocks.getGenreMap,
+  fetchTitleDetailsEffect: mocks.fetchTitleDetails,
+  getGenreMapEffect: mocks.getGenreMap,
 }));
 
 function candidate(tmdbId: number): PooledCandidate {
@@ -34,25 +37,25 @@ function candidate(tmdbId: number): PooledCandidate {
 describe("enrichCandidates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getGenreMap.mockImplementation(async () => new Map([[18, "Drama"]]));
+    mocks.getGenreMap.mockReturnValue(Effect.succeed(new Map([[18, "Drama"]])));
   });
 
   it("keeps a candidate when its detail request fails", async () => {
     mocks.fetchTitleDetails
-      .mockResolvedValueOnce({
-        runtimeMinutes: 110,
-        originCountries: ["US"],
-        creators: [],
-        cast: [],
-        keywords: [],
-      })
-      .mockRejectedValueOnce(new Error("TMDB unavailable"));
+      .mockReturnValueOnce(
+        Effect.succeed({
+          runtimeMinutes: 110,
+          originCountries: ["US"],
+          creators: [],
+          cast: [],
+          keywords: [],
+        }),
+      )
+      .mockReturnValueOnce(Effect.fail(new Error("TMDB unavailable")));
     const logger = { warn: vi.fn() } as unknown as Logger;
 
-    const enriched = await enrichCandidates(
-      [candidate(1), candidate(2)],
-      new Set(["tmdb:movie:1"]),
-      logger,
+    const enriched = await Effect.runPromise(
+      enrichCandidates([candidate(1), candidate(2)], new Set(["tmdb:movie:1"]), logger),
     );
 
     expect(enriched).toHaveLength(2);
@@ -71,22 +74,28 @@ describe("enrichCandidates", () => {
   it("bounds concurrent detail requests", async () => {
     let active = 0;
     let maximumActive = 0;
-    mocks.fetchTitleDetails.mockImplementation(async () => {
-      active++;
-      maximumActive = Math.max(maximumActive, active);
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      active--;
-      return {
-        originCountries: [],
-        creators: [],
-        cast: [],
-        keywords: [],
-      };
-    });
+    const release = await Effect.runPromise(Deferred.make<void>());
+    mocks.fetchTitleDetails.mockImplementation(() =>
+      Effect.gen(function* () {
+        active++;
+        maximumActive = Math.max(maximumActive, active);
+        if (active === 6) yield* Deferred.succeed(release, undefined);
+        yield* Deferred.await(release);
+        active--;
+        return {
+          originCountries: [],
+          creators: [],
+          cast: [],
+          keywords: [],
+        };
+      }),
+    );
 
-    await enrichCandidates(
-      Array.from({ length: 12 }, (_, index) => candidate(index + 1)),
-      new Set(),
+    await Effect.runPromise(
+      enrichCandidates(
+        Array.from({ length: 12 }, (_, index) => candidate(index + 1)),
+        new Set(),
+      ),
     );
 
     expect(maximumActive).toBeLessThanOrEqual(6);

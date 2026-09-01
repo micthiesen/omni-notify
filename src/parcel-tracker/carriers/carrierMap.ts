@@ -1,54 +1,92 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import got from "got";
+import { Effect, Schema } from "effect";
+import {
+  fetchPublicText,
+  PUBLIC_HTTP_USER_AGENT,
+  type PublicTextRequest,
+} from "../../effect/publicHttp.js";
+import { CarrierListError } from "../effect.js";
 
 type CarrierEntry = { code: string; name: string };
-type CarrierResponseValue = string | { name?: unknown };
-
 // In-memory cache for Parcel's carrier list
 let cachedCarriers: CarrierEntry[] | undefined;
 let cachedAt = 0;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+export const CARRIER_LIST_MAX_BYTES = 2 * 1024 * 1024;
+const refreshMutex = Effect.unsafeMakeSemaphore(1);
+const CarrierResponseSchema = Schema.Record({
+  key: Schema.String,
+  value: Schema.Union(
+    Schema.String,
+    Schema.Struct({ name: Schema.optional(Schema.String) }),
+  ),
+});
+
+interface CarrierListDependencies {
+  readonly request?: PublicTextRequest;
+  readonly maxResponseBytes?: number;
+}
+
+export function getCarrierCodesForPromptEffect(
+  logger: Logger,
+  dependencies: CarrierListDependencies = {},
+): Effect.Effect<string, never> {
+  return Effect.map(fetchCarrierListEffect(logger, dependencies), (carriers) =>
+    (carriers ?? []).map((c) => `${c.code}: ${c.name}`).join("\n"),
+  );
+}
 
 /** Returns "code: name" lines for inclusion in the LLM extraction prompt. */
-export async function getCarrierCodesForPrompt(logger: Logger): Promise<string> {
-  const carriers = await fetchCarrierList(logger);
-  if (!carriers) return "";
-  return carriers.map((c) => `${c.code}: ${c.name}`).join("\n");
+export function getValidCarrierCodesEffect(
+  logger: Logger,
+  dependencies: CarrierListDependencies = {},
+): Effect.Effect<ReadonlySet<string> | undefined, never> {
+  return Effect.map(fetchCarrierListEffect(logger, dependencies), (carriers) =>
+    carriers ? new Set(carriers.map((c) => c.code)) : undefined,
+  );
 }
 
 /**
  * Returns the set of valid Parcel carrier codes, or undefined when the carrier
  * list is unavailable (fetch failed and no cache).
  */
-export async function getValidCarrierCodes(
+function fetchCarrierListEffect(
   logger: Logger,
-): Promise<ReadonlySet<string> | undefined> {
-  const carriers = await fetchCarrierList(logger);
-  if (!carriers) return undefined;
-  return new Set(carriers.map((c) => c.code));
-}
+  dependencies: CarrierListDependencies,
+): Effect.Effect<CarrierEntry[] | undefined, never> {
+  return refreshMutex.withPermits(1)(
+    Effect.gen(function* () {
+      const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+      if (cachedCarriers && now - cachedAt < CACHE_TTL_MS) return cachedCarriers;
 
-async function fetchCarrierList(logger: Logger): Promise<CarrierEntry[] | undefined> {
-  if (cachedCarriers && Date.now() - cachedAt < CACHE_TTL_MS) {
-    return cachedCarriers;
-  }
-
-  try {
-    const response = await got(
-      "https://api.parcel.app/external/supported_carriers.json",
-    ).json<Record<string, CarrierResponseValue>>();
-    cachedCarriers = Object.entries(response)
-      .filter(([code]) => !isBlacklistedCarrier(code))
-      .flatMap(([code, value]) => {
-        const name = typeof value === "string" ? value : value.name;
-        return typeof name === "string" ? [{ code, name }] : [];
-      });
-    cachedAt = Date.now();
-    return cachedCarriers;
-  } catch (error) {
-    logger.warn(`Failed to fetch Parcel carrier list: ${(error as Error).message}`);
-    return cachedCarriers; // Return stale cache if available
-  }
+      const decoded = yield* fetchPublicText(
+        "https://api.parcel.app/external/supported_carriers.json",
+        {
+          headers: { "User-Agent": PUBLIC_HTTP_USER_AGENT },
+          timeout: { request: 15_000 },
+        },
+        "Fetch Parcel carrier list",
+        dependencies.request,
+        dependencies.maxResponseBytes ?? CARRIER_LIST_MAX_BYTES,
+      ).pipe(
+        Effect.flatMap(Schema.decodeUnknown(Schema.parseJson(CarrierResponseSchema))),
+        Effect.mapError((cause) => new CarrierListError({ cause })),
+        Effect.catchAll((error) => {
+          logger.warn(`Failed to fetch Parcel carrier list: ${error.message}`);
+          return Effect.succeed(undefined);
+        }),
+      );
+      if (!decoded) return cachedCarriers;
+      cachedCarriers = Object.entries(decoded)
+        .filter(([code]) => !isBlacklistedCarrier(code))
+        .flatMap(([code, value]) => {
+          const name = typeof value === "string" ? value : value.name;
+          return typeof name === "string" ? [{ code, name }] : [];
+        });
+      cachedAt = now;
+      return cachedCarriers;
+    }),
+  );
 }
 
 // Maintenance: To prune this list, fetch https://api.parcel.app/external/supported_carriers.json
@@ -207,10 +245,13 @@ function isBlacklistedCarrier(code: string): boolean {
 }
 
 /** Fetches carrier names and returns word-boundary regexes. */
-export async function getCarrierNamePatterns(logger: Logger): Promise<RegExp[]> {
-  const carriers = await fetchCarrierList(logger);
-  if (!carriers) return [];
-  return carriers.map((c) => new RegExp(`\\b${escapeRegExp(c.name)}\\b`, "i"));
+export function getCarrierNamePatternsEffect(
+  logger: Logger,
+  dependencies: CarrierListDependencies = {},
+): Effect.Effect<RegExp[], never> {
+  return Effect.map(fetchCarrierListEffect(logger, dependencies), (carriers) =>
+    (carriers ?? []).map((c) => new RegExp(`\\b${escapeRegExp(c.name)}\\b`, "i")),
+  );
 }
 
 function escapeRegExp(str: string): string {

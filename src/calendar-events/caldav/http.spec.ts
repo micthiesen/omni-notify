@@ -1,11 +1,53 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { assertTrustedCaldavUrl, CALDAV_REQUEST_TIMEOUT_MS, propfind } from "./http.js";
+import { Effect, Fiber } from "effect";
+import {
+  assertTrustedCaldavUrl,
+  CALDAV_REQUEST_TIMEOUT_MS,
+  CALDAV_XML_MAX_BYTES,
+  propfindEffect,
+} from "./http.js";
+
+const propfind = (...args: Parameters<typeof propfindEffect>) =>
+  Effect.runPromise(propfindEffect(...args));
+
+function abortableFetchMock(): {
+  fetchMock: ReturnType<typeof vi.fn>;
+  started: Promise<AbortSignal>;
+} {
+  const started = Promise.withResolvers<AbortSignal>();
+  const fetchMock = vi.fn(
+    (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const signal = init?.signal as AbortSignal;
+      started.resolve(signal);
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    },
+  );
+  return { fetchMock, started: started.promise };
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("CalDAV HTTP safety", () => {
+  it("aborts an in-flight PROPFIND when its Effect is interrupted", async () => {
+    const { fetchMock, started } = abortableFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const fiber = Effect.runFork(
+      propfindEffect("https://caldav.icloud.com/", "Basic secret", "0", "<propfind/>"),
+    );
+    const signal = await started;
+    expect(signal.aborted).toBe(false);
+
+    await Effect.runPromise(Fiber.interrupt(fiber));
+
+    expect(signal.aborted).toBe(true);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("follows iCloud shard redirects with authorization and a timeout", async () => {
     const fetchMock = vi
       .fn()
@@ -65,5 +107,49 @@ describe("CalDAV HTTP safety", () => {
     expect(() =>
       assertTrustedCaldavUrl("https://calendar.example/", "fastmail"),
     ).toThrow("Untrusted fastmail CalDAV URL");
+  });
+
+  it("rejects a response whose Content-Length exceeds the XML limit", async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      pull() {},
+      cancel,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 207,
+          headers: { "Content-Length": String(CALDAV_XML_MAX_BYTES + 1) },
+        }),
+      ),
+    );
+
+    await expect(
+      propfind("https://caldav.icloud.com/", "Basic secret", "0", "<propfind/>"),
+    ).rejects.toThrow(`response exceeds the ${CALDAV_XML_MAX_BYTES}-byte limit`);
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a chunked response as soon as it exceeds the XML limit", async () => {
+    const cancel = vi.fn();
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new Uint8Array(1024 * 1024));
+      },
+      cancel,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(body, { status: 207 })),
+    );
+
+    await expect(
+      propfind("https://caldav.icloud.com/", "Basic secret", "0", "<propfind/>"),
+    ).rejects.toThrow(`response exceeds the ${CALDAV_XML_MAX_BYTES}-byte limit`);
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(pulls).toBeLessThanOrEqual(4);
   });
 });

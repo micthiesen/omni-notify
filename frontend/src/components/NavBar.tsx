@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchWorkspaces, type WorkspaceSummary } from "../api";
+import { forkUiRequest } from "../effect";
 import { useLiveData } from "../live";
 import { Link } from "../router";
 
@@ -213,23 +214,21 @@ export function NavBar({ path }: { path: string }) {
   }, [path]);
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelRefresh = () => {};
     const refresh = () => {
-      fetchWorkspaces()
-        .then(({ workspaces: next }) => {
-          if (!cancelled) {
-            setWorkspaces(next);
-            setWorkspaceLoadFailed(false);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setWorkspaceLoadFailed(true);
-        });
+      cancelRefresh();
+      cancelRefresh = forkUiRequest(fetchWorkspaces(), {
+        onSuccess: ({ workspaces: next }) => {
+          setWorkspaces(next);
+          setWorkspaceLoadFailed(false);
+        },
+        onFailure: () => setWorkspaceLoadFailed(true),
+      });
     };
     refresh();
     window.addEventListener("workspace-updated", refresh);
     return () => {
-      cancelled = true;
+      cancelRefresh();
       window.removeEventListener("workspace-updated", refresh);
     };
   }, []);

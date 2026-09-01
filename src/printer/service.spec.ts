@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { publicGot } from "../press-pods/publicHttp.js";
 import {
+  type AcceptedPrintRecord,
   createPdfDownloader,
   IppPrinterService,
   type PrinterServiceDependencies,
@@ -55,6 +56,7 @@ describe("IppPrinterService", () => {
       stateReasons: ["job-completed-successfully"],
       impressionsCompleted: 2,
     });
+    const acceptedPrints = new Map<string, AcceptedPrintRecord>();
     dependencies = {
       tempRoot,
       now: () => 1_000_000,
@@ -66,6 +68,15 @@ describe("IppPrinterService", () => {
       printer: { print, status, jobStatus } as NonNullable<
         PrinterServiceDependencies["printer"]
       >,
+      acceptedPrintStore: {
+        get: (fingerprint) => acceptedPrints.get(fingerprint),
+        upsert: (record) => acceptedPrints.set(record.fingerprint, record),
+        deleteOlderThan: (cutoff) => {
+          for (const [fingerprint, record] of acceptedPrints) {
+            if (record.acceptedAt <= cutoff) acceptedPrints.delete(fingerprint);
+          }
+        },
+      },
       execFile: async (executable, args) => {
         processCalls.push({ executable, args });
         if (executable === "pdfinfo") {
@@ -261,6 +272,36 @@ describe("IppPrinterService", () => {
     expect(print).toHaveBeenCalledTimes(3);
   });
 
+  it("suppresses an accepted duplicate after the service restarts", async () => {
+    const input = { url: "https://example.com/file.pdf" };
+    await new IppPrinterService({ dependencies }).printPdf(input);
+
+    await expect(
+      new IppPrinterService({ dependencies }).printPdf(input),
+    ).rejects.toThrow("allowDuplicate");
+    expect(print).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports acceptance without inviting a retry when durable suppression fails", async () => {
+    dependencies.acceptedPrintStore = {
+      get: () => undefined,
+      upsert: () => {
+        throw new Error("database unavailable");
+      },
+      deleteOlderThan: () => undefined,
+    };
+    const service = new IppPrinterService({ dependencies });
+    const input = { url: "https://example.com/file.pdf" };
+
+    await expect(service.printPdf(input)).resolves.toMatchObject({
+      accepted: true,
+      message:
+        "The printer accepted the job, but durable duplicate suppression failed; do not retry it automatically",
+    });
+    await expect(service.printPdf(input)).rejects.toThrow("allowDuplicate");
+    expect(print).toHaveBeenCalledTimes(1);
+  });
+
   it("prevents concurrent duplicate submissions unless explicitly allowed", async () => {
     let releasePrint: (() => void) | undefined;
     print.mockImplementationOnce(
@@ -294,6 +335,21 @@ describe("IppPrinterService", () => {
     await expect(service.printPdf(input)).rejects.toThrow("connection closed");
     await expect(service.printPdf(input)).resolves.toMatchObject({ accepted: true });
     expect(print).toHaveBeenCalledTimes(2);
+    expect(await readdir(tempRoot)).toEqual([]);
+  });
+
+  it("suppresses duplicates immediately after IPP acceptance when status polling fails", async () => {
+    jobStatus.mockRejectedValue(new Error("Get-Job-Attributes timed out"));
+    const service = new IppPrinterService({ dependencies });
+    const input = { url: "https://example.com/file.pdf" };
+
+    await expect(service.printPdf(input)).resolves.toMatchObject({
+      accepted: true,
+      completed: false,
+      message: "The printer accepted the job; physical completion is not confirmed",
+    });
+    await expect(service.printPdf(input)).rejects.toThrow("allowDuplicate");
+    expect(print).toHaveBeenCalledTimes(1);
     expect(await readdir(tempRoot)).toEqual([]);
   });
 

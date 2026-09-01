@@ -1,6 +1,7 @@
 import { gunzipSync, gzipSync } from "node:zlib";
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger, type LogLevel } from "@micthiesen/mitools/logging";
+import { transaction } from "@micthiesen/mitools/docstore";
 
 const logger = new Logger("TaskRuns");
 
@@ -105,6 +106,22 @@ export function markScheduleEvaluated(
   evaluatedThrough: number,
 ): void {
   TaskScheduleStateEntity.upsert({ taskName, schedule, evaluatedThrough });
+}
+
+/** Atomically establish a durable run before advancing its catch-up cursor. */
+export function recordRunStartAndMarkSchedule(
+  taskName: string,
+  trigger: TaskRunTrigger,
+  schedule: string,
+  evaluatedThrough: number,
+  runId?: string,
+  scheduledFor?: number,
+): TaskRunData {
+  return transaction(() => {
+    const run = recordRunStart(taskName, trigger, runId, scheduledFor);
+    markScheduleEvaluated(taskName, schedule, evaluatedThrough);
+    return run;
+  });
 }
 
 export function recordRunEnd(

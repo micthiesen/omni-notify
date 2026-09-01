@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { EventSource } from "eventsource";
+import { Data, Effect, Fiber, Random, Schema, Scope } from "effect";
 import type { JmapContext } from "./client.js";
 
 // Inactivity timeout modeled after Fastmail's own Overture client (6 min default):
@@ -22,6 +23,21 @@ const INACTIVITY_TIMEOUT_MS = 6 * 60_000;
 // https://github.com/fastmail/overture/blob/master/source/io/EventSource.js
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 5 * 60_000;
+
+const StateEventSchema = Schema.Struct({
+  changed: Schema.Record({
+    key: Schema.String,
+    value: Schema.Record({ key: Schema.String, value: Schema.String }),
+  }),
+});
+
+export class EventSourceSetupError extends Data.TaggedError("EventSourceSetupError")<{
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause);
+  }
+}
 
 /**
  * Resilient SSE connection to Fastmail's JMAP event source for real-time email
@@ -47,8 +63,8 @@ const MAX_BACKOFF_MS = 5 * 60_000;
  */
 class JmapEventSource {
   private es: EventSource | null = null;
-  private inactivityTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private inactivityFiber: Fiber.RuntimeFiber<void, never> | null = null;
+  private reconnectFiber: Fiber.RuntimeFiber<void, never> | null = null;
   private backoffMs = 0;
   private connected = false;
   private closed = false;
@@ -60,65 +76,85 @@ class JmapEventSource {
     private readonly logger: Logger,
   ) {}
 
-  connect(): void {
-    this.es = new EventSource(this.url, {
-      fetch: (input, init) => {
-        const headers = (init?.headers ?? {}) as Record<string, string>;
-        headers.Authorization = this.bearerToken;
-        return globalThis.fetch(input, { ...init, headers });
-      },
-    });
+  readonly connectEffect: Effect.Effect<void, EventSourceSetupError> = Effect.try({
+    try: () => {
+      const eventSource = new EventSource(this.url, {
+        fetch: (input, init) => {
+          const headers = (init?.headers ?? {}) as Record<string, string>;
+          headers.Authorization = this.bearerToken;
+          return globalThis.fetch(input, { ...init, headers });
+        },
+      });
+      this.es = eventSource;
 
-    this.resetInactivityTimer();
+      eventSource.addEventListener("open", () => {
+        this.backoffMs = INITIAL_BACKOFF_MS;
+        if (!this.connected) {
+          this.logger.info("EventSource connected");
+          this.connected = true;
+        }
+        this.resetInactivityTimer();
+        // Catch-up drain: state pushes that fired while we were disconnected are
+        // gone forever, so treat every (re)connect as a potential missed change
+        // and let the dispatcher diff against its saved state immediately.
+        this.onEmailStateChange();
+      });
 
-    this.es.addEventListener("open", () => {
-      this.backoffMs = INITIAL_BACKOFF_MS;
-      if (!this.connected) {
-        this.logger.info("EventSource connected");
-        this.connected = true;
-      }
+      // RFC 8620 §7.3: `event: state` with JSON payload
+      // { changed: { [accountId]: { [dataType]: newState } } }
+      eventSource.addEventListener("state", (event) => {
+        this.resetInactivityTimer();
+        this.handleStateEvent(event);
+      });
+
+      // RFC 8620 §7.3: `event: ping` with { interval: <ms> } payload.
+      // Serves as a keepalive heartbeat to prove the connection is alive.
+      eventSource.addEventListener("ping", () => {
+        this.resetInactivityTimer();
+      });
+
+      // Fastmail closes the SSE connection after each state push. The `eventsource`
+      // library fires an error event for these disconnects and auto-reconnects.
+      // We reset the inactivity timer here since even error events prove liveness.
+      eventSource.addEventListener("error", (event) => {
+        this.resetInactivityTimer();
+        this.handleErrorEvent(event);
+      });
+
       this.resetInactivityTimer();
-      // Catch-up drain: state pushes that fired while we were disconnected are
-      // gone forever, so treat every (re)connect as a potential missed change
-      // and let the dispatcher diff against its saved state immediately.
-      this.onEmailStateChange();
-    });
+    },
+    catch: (cause) => new EventSourceSetupError({ cause }),
+  }).pipe(Effect.tapError(() => this.rollbackConnectionEffect));
 
-    // RFC 8620 §7.3: `event: state` with JSON payload
-    // { changed: { [accountId]: { [dataType]: newState } } }
-    this.es.addEventListener("state", (event) => {
-      this.resetInactivityTimer();
-      this.handleStateEvent(event);
-    });
+  /**
+   * Undo a failed connection attempt without permanently shutting down the
+   * resource. Reconnect setup failures are transient; only closeEffect may set
+   * `closed` and prevent later attempts.
+   */
+  private readonly rollbackConnectionEffect: Effect.Effect<void, never> = Effect.gen(
+    this,
+    function* () {
+      if (this.inactivityFiber) yield* Fiber.interrupt(this.inactivityFiber);
+      this.inactivityFiber = null;
+      this.es?.close();
+      this.es = null;
+    },
+  );
 
-    // RFC 8620 §7.3: `event: ping` with { interval: <ms> } payload.
-    // Serves as a keepalive heartbeat to prove the connection is alive.
-    this.es.addEventListener("ping", () => {
-      this.resetInactivityTimer();
-    });
-
-    // Fastmail closes the SSE connection after each state push. The `eventsource`
-    // library fires an error event for these disconnects and auto-reconnects.
-    // We reset the inactivity timer here since even error events prove liveness.
-    this.es.addEventListener("error", (event) => {
-      this.resetInactivityTimer();
-      this.handleErrorEvent(event);
-    });
-  }
-
-  close(): void {
+  readonly closeEffect: Effect.Effect<void, never> = Effect.gen(this, function* () {
     this.closed = true;
-    if (this.inactivityTimer) clearTimeout(this.inactivityTimer);
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.inactivityFiber) yield* Fiber.interrupt(this.inactivityFiber);
+    if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
+    this.inactivityFiber = null;
+    this.reconnectFiber = null;
     this.logger.info("Closing EventSource connection");
     this.es?.close();
-  }
+    this.es = null;
+  });
 
   private handleStateEvent(event: MessageEvent): void {
     try {
-      const data = JSON.parse(event.data) as {
-        changed: Record<string, Record<string, string>>;
-      };
+      const data = Schema.decodeUnknownSync(StateEventSchema)(JSON.parse(event.data));
 
       const hasEmailChange = Object.values(data.changed).some(
         (changes) => "Email" in changes,
@@ -142,7 +178,7 @@ class JmapEventSource {
         "EventSource auth error, closing connection",
         `Code ${code}: ${message}`,
       );
-      this.close();
+      Effect.runFork(this.closeEffect);
       return;
     }
 
@@ -154,54 +190,86 @@ class JmapEventSource {
   }
 
   private resetInactivityTimer(): void {
-    if (this.inactivityTimer) clearTimeout(this.inactivityTimer);
     if (this.closed) return;
-    this.inactivityTimer = setTimeout(() => {
-      if (this.closed) return;
-      this.logger.warn("EventSource inactivity timeout, forcing reconnect");
-      this.reconnect();
-    }, INACTIVITY_TIMEOUT_MS);
+    const previous = this.inactivityFiber;
+    this.inactivityFiber = Effect.runFork(
+      Effect.gen(this, function* () {
+        if (previous) yield* Fiber.interrupt(previous);
+        yield* Effect.sleep(INACTIVITY_TIMEOUT_MS);
+        if (this.closed) return;
+        this.logger.warn("EventSource inactivity timeout, forcing reconnect");
+        yield* this.reconnectEffect;
+      }).pipe(Effect.catchAllCause(() => Effect.void)),
+    );
   }
 
-  private reconnect(): void {
-    this.es?.close();
-    if (this.closed) return;
-
-    // First reconnect uses random jitter (0-3s) to avoid thundering herd.
-    // Subsequent attempts double the delay, capped at MAX_BACKOFF_MS.
-    if (this.backoffMs === 0) {
-      this.backoffMs = Math.round(Math.random() * 3_000);
-    } else {
-      this.backoffMs = Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
-    }
-
-    this.logger.debug(`EventSource reconnecting in ${this.backoffMs}ms`);
-    this.reconnectTimer = setTimeout(() => {
+  private readonly reconnectEffect: Effect.Effect<void, never> = Effect.gen(
+    this,
+    function* () {
+      this.es?.close();
+      this.es = null;
       if (this.closed) return;
-      this.connect();
-    }, this.backoffMs);
-  }
+      if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
+      let fiber!: Fiber.RuntimeFiber<void, never>;
+      fiber = yield* this.reconnectLoopEffect.pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (this.reconnectFiber === fiber) this.reconnectFiber = null;
+          }),
+        ),
+        Effect.forkDaemon,
+      );
+      this.reconnectFiber = fiber;
+    },
+  );
+
+  private readonly reconnectLoopEffect: Effect.Effect<void, never> = Effect.gen(
+    this,
+    function* () {
+      const delay =
+        this.backoffMs === 0
+          ? yield* Random.nextIntBetween(0, 3_001)
+          : Math.min(this.backoffMs * 2, MAX_BACKOFF_MS);
+      this.backoffMs = delay;
+      this.logger.debug(`EventSource reconnecting in ${delay}ms`);
+      yield* Effect.sleep(delay);
+      if (this.closed) return;
+      yield* this.connectEffect.pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() =>
+            this.logger.warn(`EventSource reconnect failed: ${error.message}`),
+          ).pipe(Effect.zipRight(Effect.suspend(() => this.reconnectLoopEffect))),
+        ),
+      );
+    },
+  );
 }
 
 /**
- * Create a resilient JMAP EventSource connection. Returns a cleanup function
- * that closes the connection and cancels all timers.
+ * Acquire a resilient JMAP EventSource connection in the current Scope.
+ * Closing the Scope closes the connection and cancels all timers.
  */
-export async function createEventSource(
+export function createEventSourceEffect(
   ctx: JmapContext,
   onEmailStateChange: () => void,
   logger: Logger,
-): Promise<() => void> {
-  const session = await ctx.jam.session;
-  const url = `${session.eventSourceUrl}?types=Email&closeafter=no&ping=60`;
+): Effect.Effect<void, EventSourceSetupError, Scope.Scope> {
+  return Effect.gen(function* () {
+    const session = yield* Effect.tryPromise({
+      try: () => ctx.jam.session,
+      catch: (cause) => new EventSourceSetupError({ cause }),
+    });
+    const url = `${session.eventSourceUrl}?types=Email&closeafter=no&ping=60`;
+    const source = new JmapEventSource(
+      url,
+      ctx.jam.authHeader,
+      onEmailStateChange,
+      logger,
+    );
 
-  const source = new JmapEventSource(
-    url,
-    ctx.jam.authHeader,
-    onEmailStateChange,
-    logger,
-  );
-  source.connect();
-
-  return () => source.close();
+    // acquireRelease registers the finalizer before acquisition can return to
+    // its caller. The retaining transport owns the Scope, not an unscoped
+    // cleanup value that can be lost to startup interruption.
+    yield* Effect.acquireRelease(source.connectEffect, () => source.closeEffect);
+  });
 }

@@ -1,5 +1,6 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { EmailRetryEntity, enqueueEmailRetry } from "./retry.js";
 import EmailRetryTask from "./retryTask.js";
@@ -27,7 +28,7 @@ const fakeEmail: FetchedEmail = {
 
 const logger = new Logger("Test");
 const fakeTransport = {
-  fetchEmailById: async (): Promise<FetchedEmail> => fakeEmail,
+  fetchEmailByIdEffect: (): Effect.Effect<FetchedEmail> => Effect.succeed(fakeEmail),
 } as unknown as EmailTransport;
 
 function dueRow(pipeline: string, emailId: string, attempts: number): void {
@@ -57,7 +58,7 @@ describe("EmailRetryTask", () => {
     dueRow("ParcelTracker", "e1", 1);
     const handler: EmailHandler = {
       name: "ParcelTracker",
-      handleEmails: async () => {},
+      handleEmailsEffect: () => Effect.void,
     };
     const task = new EmailRetryTask(
       () => ({
@@ -76,13 +77,14 @@ describe("EmailRetryTask", () => {
     // Mirrors the pipelines: transient failure is swallowed and re-enqueued
     const handler: EmailHandler = {
       name: "ParcelTracker",
-      handleEmails: async () => {
-        enqueueEmailRetry({
-          pipeline: "ParcelTracker",
-          emailId: "e1",
-          reason: "still down",
-        });
-      },
+      handleEmailsEffect: () =>
+        Effect.sync(() => {
+          enqueueEmailRetry({
+            pipeline: "ParcelTracker",
+            emailId: "e1",
+            reason: "still down",
+          });
+        }),
     };
     const task = new EmailRetryTask(
       () => ({
@@ -102,13 +104,14 @@ describe("EmailRetryTask", () => {
     dueRow("ParcelTracker", "e1", 5);
     const handler: EmailHandler = {
       name: "ParcelTracker",
-      handleEmails: async () => {
-        enqueueEmailRetry({
-          pipeline: "ParcelTracker",
-          emailId: "e1",
-          reason: "still down",
-        });
-      },
+      handleEmailsEffect: () =>
+        Effect.sync(() => {
+          enqueueEmailRetry({
+            pipeline: "ParcelTracker",
+            emailId: "e1",
+            reason: "still down",
+          });
+        }),
     };
     const task = new EmailRetryTask(
       () => ({
@@ -126,9 +129,7 @@ describe("EmailRetryTask", () => {
     dueRow("ParcelTracker", "e1", 1);
     const handler: EmailHandler = {
       name: "ParcelTracker",
-      handleEmails: async () => {
-        throw new Error("boom");
-      },
+      handleEmailsEffect: () => Effect.fail(new Error("boom")),
     };
     const task = new EmailRetryTask(
       () => ({

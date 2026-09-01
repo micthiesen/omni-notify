@@ -29,6 +29,15 @@ export interface AutoReadLogger {
   warn(message: string): void;
 }
 
+export class AutoReadError extends Data.TaggedError("AutoReadError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause);
+  }
+}
+
 /**
  * Select only the server-designated Archive, Junk, and Trash mailboxes.
  * Special-use roles are authoritative, so localized mailbox paths work too.
@@ -43,42 +52,66 @@ export function selectAutoReadFolders(mailboxes: readonly AutoReadMailbox[]): st
   return [...paths];
 }
 
-export async function discoverAutoReadFolders(
+export function discoverAutoReadFoldersEffect(
   client: AutoReadClient,
-): Promise<string[]> {
-  return selectAutoReadFolders(await client.list());
+): Effect.Effect<string[], AutoReadError> {
+  return Effect.tryPromise({
+    try: () => client.list(),
+    catch: (cause) => new AutoReadError({ operation: "list mailboxes", cause }),
+  }).pipe(Effect.map(selectAutoReadFolders));
 }
 
 /** Mark recent unread messages read, continuing when an individual folder fails. */
-export async function markRecentUnreadRead(
+export function markRecentUnreadReadEffect(
   client: AutoReadClient,
   folders: readonly string[],
   logger: AutoReadLogger,
-): Promise<void> {
-  const since = new Date(Date.now() - AUTO_READ_AGE_MS);
+): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    const since = new Date(now - AUTO_READ_AGE_MS);
 
-  for (const folder of folders) {
-    try {
-      const lock = await client.getMailboxLock(folder, { readOnly: false });
-      try {
-        const found = await client.search({ seen: false, since }, { uid: true });
-        if (Array.isArray(found) && found.length > 0) {
-          await client.messageFlagsAdd(found, ["\\Seen"], {
-            uid: true,
-            silent: true,
-          });
-        }
-      } finally {
-        lock.release();
-      }
-    } catch (error) {
-      logger.warn(
-        `IMAP auto-read failed for folder "${folder}": ${errorMessage(error)}`,
-      );
-    }
-  }
+    yield* Effect.forEach(
+      folders,
+      (folder) =>
+        Effect.acquireUseRelease(
+          Effect.tryPromise({
+            try: () => client.getMailboxLock(folder, { readOnly: false }),
+            catch: (cause) => new AutoReadError({ operation: `lock ${folder}`, cause }),
+          }),
+          () =>
+            Effect.tryPromise({
+              try: () => client.search({ seen: false, since }, { uid: true }),
+              catch: (cause) =>
+                new AutoReadError({ operation: `search ${folder}`, cause }),
+            }).pipe(
+              Effect.flatMap((found) => {
+                if (Array.isArray(found) && found.length > 0) {
+                  return Effect.tryPromise({
+                    try: () =>
+                      client.messageFlagsAdd(found, ["\\Seen"], {
+                        uid: true,
+                        silent: true,
+                      }),
+                    catch: (cause) =>
+                      new AutoReadError({ operation: `mark ${folder}`, cause }),
+                  });
+                }
+                return Effect.void;
+              }),
+            ),
+          (lock) => Effect.sync(() => lock.release()),
+        ).pipe(
+          Effect.catchAll((error) =>
+            Effect.sync(() =>
+              logger.warn(
+                `IMAP auto-read failed for folder "${folder}": ${error.message}`,
+              ),
+            ),
+          ),
+        ),
+      { concurrency: 1, discard: true },
+    );
+  });
 }
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+import { Clock, Data, Effect } from "effect";

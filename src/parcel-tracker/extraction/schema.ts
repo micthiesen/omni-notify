@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Schema } from "effect";
 
 export const deliveryExtractionSchema = z.object({
   deliveries: z.array(
@@ -20,3 +21,13 @@ export const deliveryExtractionSchema = z.object({
 });
 
 export type DeliveryExtraction = z.infer<typeof deliveryExtractionSchema>;
+
+export const DeliveryExtractionEffectSchema = Schema.Struct({
+  deliveries: Schema.Array(
+    Schema.Struct({
+      tracking_number: Schema.String,
+      carrier_candidates: Schema.Array(Schema.String),
+      description: Schema.String,
+    }),
+  ),
+});

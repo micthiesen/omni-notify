@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchRecommendation, sendRecommendationFeedback } from "../api";
 import type { Recommendation, RecommendationFeedback } from "../api";
+import { forkUiRequest, runUiEffect } from "../effect";
 import { ImageWithFallback } from "../components/ImageWithFallback";
 import { Toast, useToast } from "../components/Toast";
 import { Link } from "../router";
@@ -66,28 +67,20 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
   const { toast, showToast } = useToast();
 
   useEffect(() => {
-    let cancelled = false;
-    fetchRecommendation(id)
-      .then((res) => {
-        if (!cancelled) {
-          setRec(res.recommendation);
-          setNoteText(res.recommendation.feedbackNote ?? "");
-        }
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchRecommendation(id), {
+      onSuccess: (res) => {
+        setRec(res.recommendation);
+        setNoteText(res.recommendation.feedbackNote ?? "");
+      },
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load"),
+    });
   }, [id]);
 
   const handleFeedback = async (feedback: RecommendationFeedback) => {
     setSaving(true);
     try {
-      const result = await sendRecommendationFeedback(id, feedback);
+      const result = await runUiEffect(sendRecommendationFeedback(id, feedback));
       setRec(result.recommendation);
       showToast("Feedback saved", "info");
     } catch (err) {
@@ -103,7 +96,9 @@ export default function RecommendationDetailPage({ id }: { id: string }) {
   const handleSaveNote = async () => {
     setSavingNote(true);
     try {
-      const result = await sendRecommendationFeedback(id, null, noteText.trim());
+      const result = await runUiEffect(
+        sendRecommendationFeedback(id, null, noteText.trim()),
+      );
       setRec(result.recommendation);
       showToast("Note saved", "info");
     } catch (err) {

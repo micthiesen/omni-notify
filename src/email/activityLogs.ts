@@ -1,7 +1,8 @@
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger } from "@micthiesen/mitools/logging";
+import { Data, Effect } from "effect";
 import {
-  runWithLogCapture,
+  runWithLogCaptureEffect,
   startRunLogCapture,
   takeRunLogCapture,
 } from "../task-runs/logCapture.js";
@@ -36,29 +37,55 @@ export const EmailActivityLogEntity = new Entity<
   ["activityId"]
 >("email-activity-log", ["activityId"]);
 
+export class EmailLogCaptureError extends Data.TaggedError("EmailLogCaptureError")<{
+  readonly activityId: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause);
+  }
+}
+
 /**
  * Run fn with every log line attributed to this email's activity record, then
  * persist the capture. Filter-phase skips never enter here, so a missing log
  * row simply means the email never reached processing.
  */
-export async function withEmailLogCapture<T>(
+export function withEmailLogCaptureEffect<T, E>(
   activityId: string,
   pipeline: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  startRunLogCapture(activityId, pipeline);
-  try {
-    return await runWithLogCapture(activityId, fn);
-  } finally {
-    const buffer = takeRunLogCapture(activityId);
-    if (buffer) {
-      saveEmailActivityLogs({
-        activityId,
-        lines: buffer.lines,
-        dropped: buffer.dropped,
-      });
-    }
-  }
+  effect: () => Effect.Effect<T, E, never>,
+): Effect.Effect<T, E> {
+  return Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* () {
+      startRunLogCapture(activityId, pipeline);
+      const result = yield* Effect.exit(
+        restore(runWithLogCaptureEffect(activityId, effect())),
+      );
+      yield* Effect.try({
+        try: () => {
+          const buffer = takeRunLogCapture(activityId);
+          if (buffer) {
+            saveEmailActivityLogs({
+              activityId,
+              lines: buffer.lines,
+              dropped: buffer.dropped,
+            });
+          }
+        },
+        catch: (cause) => new EmailLogCaptureError({ activityId, cause }),
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() =>
+            logger.warn(
+              `Could not persist diagnostic log for "${activityId}": ${error.message}`,
+            ),
+          ).pipe(Effect.catchAllCause(() => Effect.void)),
+        ),
+      );
+      return yield* result;
+    }),
+  );
 }
 
 export function saveEmailActivityLogs(data: EmailActivityLogData): void {

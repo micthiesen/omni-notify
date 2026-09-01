@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Logger } from "@micthiesen/mitools/logging";
+import { Effect, Exit, Fiber, Runtime } from "effect";
 import { runLogBus } from "./events.js";
 import { saveRunLogs, type TaskRunLogLine } from "./persistence.js";
 
@@ -11,6 +12,7 @@ export const MAX_LINE_LENGTH = 32_768;
 interface RunLogBuffer {
   taskName: string;
   lines: TaskRunLogLine[];
+  nextLine: number;
   dropped: number;
 }
 
@@ -44,9 +46,11 @@ export function installLogCapture(): void {
       logger: item.loggerName,
       msg: text.length > MAX_LINE_LENGTH ? `${text.slice(0, MAX_LINE_LENGTH)}…` : text,
     };
-    buffer.lines.push(line);
-    if (buffer.lines.length > MAX_LINES_PER_RUN) {
-      buffer.lines.shift();
+    if (buffer.lines.length < MAX_LINES_PER_RUN) {
+      buffer.lines.push(line);
+    } else {
+      buffer.lines[buffer.nextLine] = line;
+      buffer.nextLine = (buffer.nextLine + 1) % MAX_LINES_PER_RUN;
       buffer.dropped++;
     }
     runLogBus.emit({ type: "line", runId: store.runId, line });
@@ -55,7 +59,17 @@ export function installLogCapture(): void {
 
 /** Begin buffering lines for a run. */
 export function startRunLogCapture(runId: string, taskName: string): void {
-  buffers.set(runId, { taskName, lines: [], dropped: 0 });
+  buffers.set(runId, { taskName, lines: [], nextLine: 0, dropped: 0 });
+}
+
+function orderedLines(buffer: RunLogBuffer): TaskRunLogLine[] {
+  if (buffer.lines.length < MAX_LINES_PER_RUN || buffer.nextLine === 0) {
+    return [...buffer.lines];
+  }
+  return [
+    ...buffer.lines.slice(buffer.nextLine),
+    ...buffer.lines.slice(0, buffer.nextLine),
+  ];
 }
 
 /**
@@ -66,6 +80,36 @@ export function startRunLogCapture(runId: string, taskName: string): void {
 export function runWithLogCapture<T>(runId: string, fn: () => Promise<T>): Promise<T> {
   const taskName = buffers.get(runId)?.taskName ?? "Unknown";
   return runContext.run({ runId, taskName }, fn);
+}
+
+/**
+ * Run an Effect inside the same AsyncLocalStorage context used by the legacy
+ * Promise task runner. Runtime.runFork is intentionally confined to this
+ * adapter because establishing an ALS scope requires starting the fiber while
+ * `AsyncLocalStorage.run` is active.
+ */
+export function runWithLogCaptureEffect<A, E, R>(
+  runId: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> {
+  return Effect.runtime<R>().pipe(
+    Effect.flatMap((runtime) =>
+      Effect.async<A, E>((resume) => {
+        const taskName = buffers.get(runId)?.taskName ?? "Unknown";
+        const fiber = runContext.run({ runId, taskName }, () =>
+          Runtime.runFork(runtime)(effect),
+        );
+        fiber.addObserver((exit) =>
+          resume(
+            Exit.isSuccess(exit)
+              ? Effect.succeed(exit.value)
+              : Effect.failCause(exit.cause),
+          ),
+        );
+        return Fiber.interrupt(fiber).pipe(Effect.asVoid);
+      }),
+    ),
+  );
 }
 
 /** The runId of the task run this code is executing inside, if any. */
@@ -82,7 +126,8 @@ export function getCurrentRunContext(): RunContext | undefined {
 export function getActiveRunLogs(
   runId: string,
 ): { lines: TaskRunLogLine[]; dropped: number } | undefined {
-  return buffers.get(runId);
+  const buffer = buffers.get(runId);
+  return buffer ? { lines: orderedLines(buffer), dropped: buffer.dropped } : undefined;
 }
 
 /**
@@ -94,7 +139,7 @@ export function takeRunLogCapture(
 ): { lines: TaskRunLogLine[]; dropped: number } | undefined {
   const buffer = buffers.get(id);
   buffers.delete(id);
-  return buffer ? { lines: buffer.lines, dropped: buffer.dropped } : undefined;
+  return buffer ? { lines: orderedLines(buffer), dropped: buffer.dropped } : undefined;
 }
 
 /**
@@ -105,13 +150,16 @@ export function takeRunLogCapture(
 export function finishRunLogCapture(runId: string): void {
   const buffer = buffers.get(runId);
   buffers.delete(runId);
-  if (buffer) {
-    saveRunLogs({
-      runId,
-      taskName: buffer.taskName,
-      lines: buffer.lines,
-      dropped: buffer.dropped,
-    });
+  try {
+    if (buffer) {
+      saveRunLogs({
+        runId,
+        taskName: buffer.taskName,
+        lines: orderedLines(buffer),
+        dropped: buffer.dropped,
+      });
+    }
+  } finally {
+    runLogBus.emit({ type: "end", runId });
   }
-  runLogBus.emit({ type: "end", runId });
 }

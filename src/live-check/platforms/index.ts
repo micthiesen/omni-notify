@@ -41,7 +41,9 @@ export interface PlatformConfig {
   platform: Platform;
   displayName: string;
   getLiveUrl: (username: string) => string;
-  fetchLiveStatus: (args: { username: string }) => Promise<FetchedStatus>;
+  fetchLiveStatus: (args: {
+    username: string;
+  }) => Effect.Effect<FetchedStatus> | Promise<FetchedStatus> | FetchedStatus;
 }
 
 export const platformConfigs: Record<Platform, PlatformConfig> = {
@@ -77,3 +79,4 @@ export function getNotificationUrlFields(
     url_title: `Watch on ${config.displayName}`,
   };
 }
+import type { Effect } from "effect";

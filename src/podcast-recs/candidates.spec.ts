@@ -1,13 +1,14 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import type { PodcastAccountClient } from "./account.js";
 import {
   pickBestByTitle,
   podcastIndexToCandidate,
-  resolveCandidates,
+  resolveCandidatesEffect,
 } from "./candidates.js";
-import { pickBestShowMatch, searchItunesPodcasts } from "./itunes.js";
-import { fetchFeedEpisodes, findEpisodeByTitle } from "./rss.js";
+import { pickBestShowMatch, searchItunesPodcastsEffect } from "./itunes.js";
+import { fetchFeedEpisodesEffect, findEpisodeByTitle } from "./rss.js";
 import type { DiscoveredEpisode } from "./types.js";
 
 vi.mock("./itunes.js");
@@ -32,27 +33,31 @@ function feedEpisode() {
 
 describe("resolveCandidates", () => {
   it("falls back to Castro search when iTunes cannot place the show", async () => {
-    vi.mocked(searchItunesPodcasts).mockResolvedValue([]);
+    vi.mocked(searchItunesPodcastsEffect).mockReturnValue(Effect.succeed([]));
     vi.mocked(pickBestShowMatch).mockReturnValue(undefined);
-    vi.mocked(fetchFeedEpisodes).mockResolvedValue([feedEpisode()]);
+    vi.mocked(fetchFeedEpisodesEffect).mockReturnValue(Effect.succeed([feedEpisode()]));
     vi.mocked(findEpisodeByTitle).mockReturnValue(feedEpisode());
 
     const account = {
-      searchPodcasts: vi.fn(async () => ({
-        status: "ok" as const,
-        value: [
-          {
-            clientId: "c1",
-            title: "Show",
-            feedUrl: "https://feeds/show",
-            itunesId: 42,
-            artworkUrl: "https://art",
-          },
-        ],
-      })),
+      searchPodcasts: vi.fn(() =>
+        Effect.succeed({
+          status: "ok" as const,
+          value: [
+            {
+              clientId: "c1",
+              title: "Show",
+              feedUrl: "https://feeds/show",
+              itunesId: 42,
+              artworkUrl: "https://art",
+            },
+          ],
+        }),
+      ),
     } as unknown as PodcastAccountClient;
 
-    const result = await resolveCandidates([discovered()], account, logger);
+    const result = await Effect.runPromise(
+      resolveCandidatesEffect([discovered()], account, logger),
+    );
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       showId: "itunes:42",
@@ -65,15 +70,17 @@ describe("resolveCandidates", () => {
   });
 
   it("drops the candidate when iTunes misses and no account is available", async () => {
-    vi.mocked(searchItunesPodcasts).mockResolvedValue([]);
+    vi.mocked(searchItunesPodcastsEffect).mockReturnValue(Effect.succeed([]));
     vi.mocked(pickBestShowMatch).mockReturnValue(undefined);
 
-    const result = await resolveCandidates([discovered()], undefined, logger);
+    const result = await Effect.runPromise(
+      resolveCandidatesEffect([discovered()], undefined, logger),
+    );
     expect(result).toHaveLength(0);
   });
 
   it("isolates per-item failures and dedupes by episodeId", async () => {
-    vi.mocked(searchItunesPodcasts).mockResolvedValue([]);
+    vi.mocked(searchItunesPodcastsEffect).mockReturnValue(Effect.succeed([]));
     vi.mocked(pickBestShowMatch).mockReturnValue({
       itunesId: 7,
       title: "Show",
@@ -81,16 +88,22 @@ describe("resolveCandidates", () => {
       genres: ["News"],
     });
     // First discovered item resolves; second throws; third duplicates the first.
-    vi.mocked(fetchFeedEpisodes)
-      .mockResolvedValueOnce([feedEpisode()])
-      .mockRejectedValueOnce(new Error("feed down"))
-      .mockResolvedValueOnce([feedEpisode()]);
+    vi.mocked(fetchFeedEpisodesEffect)
+      .mockReturnValueOnce(Effect.succeed([feedEpisode()]))
+      .mockReturnValueOnce(
+        Effect.fail(new Error("feed down")) as unknown as ReturnType<
+          typeof fetchFeedEpisodesEffect
+        >,
+      )
+      .mockReturnValueOnce(Effect.succeed([feedEpisode()]));
     vi.mocked(findEpisodeByTitle).mockReturnValue(feedEpisode());
 
-    const result = await resolveCandidates(
-      [discovered(), discovered({ episodeTitle: "Boom" }), discovered()],
-      undefined,
-      logger,
+    const result = await Effect.runPromise(
+      resolveCandidatesEffect(
+        [discovered(), discovered({ episodeTitle: "Boom" }), discovered()],
+        undefined,
+        logger,
+      ),
     );
     expect(result).toHaveLength(1);
     expect(result[0]?.showId).toBe("itunes:7");

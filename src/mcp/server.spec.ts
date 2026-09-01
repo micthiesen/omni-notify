@@ -1,6 +1,7 @@
 import { type ServerType, serve } from "@hono/node-server";
 import { Logger } from "@micthiesen/mitools/logging";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { Effect } from "effect";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EmailTransport, FetchedEmail } from "../email/types.js";
@@ -241,7 +242,7 @@ describe("Omni MCP streamable HTTP server", () => {
   });
 
   it("runs a mocked consequential podcast-account mutation without external effects", async () => {
-    const dequeueEpisode = vi.fn(async () => "removed" as const);
+    const dequeueEpisode = vi.fn(() => Effect.succeed("removed" as const));
     const handler = createOmniMcpHandler(
       runtime({
         podcastAccount: {
@@ -380,8 +381,8 @@ describe("Omni MCP streamable HTTP server", () => {
     };
     const transport = {
       name: "IMAP",
-      fetchEmailById: vi.fn(async (id: string) =>
-        id === email.id ? email : undefined,
+      fetchEmailByIdEffect: vi.fn((id: string) =>
+        Effect.succeed(id === email.id ? email : undefined),
       ),
     } as unknown as EmailTransport;
     const handler = createOmniMcpHandler(

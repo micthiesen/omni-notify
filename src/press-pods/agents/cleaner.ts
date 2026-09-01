@@ -1,10 +1,12 @@
 import { Logger } from "@micthiesen/mitools/logging";
 import { generateText } from "ai";
+import { Effect } from "effect";
 import { getPressPodsCleaningModel } from "../../ai/registry.js";
 import type CostCounter from "../costs.js";
 import type { CompletionUsage } from "../costs.js";
 import type { Article } from "../types.js";
 import { extractBetweenTags } from "./parsing.js";
+import { PressPodsError, tryPromise, trySync } from "../effect.js";
 
 const LOGGER = new Logger("PressPods.agents.cleaner");
 
@@ -12,17 +14,19 @@ const LOGGER = new Logger("PressPods.agents.cleaner");
 const MAX_CLEAN_ATTEMPTS = 3;
 
 /** Adapt the article text for TTS narration (junk removal, audio phrasing). */
-export async function getCleanedArticle(
+export function getCleanedArticle(
   article: Article,
   costCounter: CostCounter,
-): Promise<{ content: string }> {
-  const { model, modelId } = getPressPodsCleaningModel();
-  let lastError: unknown;
+): Effect.Effect<{ content: string }, PressPodsError> {
+  return Effect.gen(function* () {
+    const { model, modelId } = getPressPodsCleaningModel();
+    let lastError: unknown;
 
-  for (let attempt = 1; attempt <= MAX_CLEAN_ATTEMPTS; attempt++) {
-    const { text, usage } = await generateText({
-      model,
-      system: `You adapt a written article into a script for a single podcast host to read aloud (text-to-speech). Preserve the article's content and meaning faithfully — do NOT summarize, editorialize, or invent facts. Your job is to make it sound like an engaging host reading for the ear, not an eye.
+    for (let attempt = 1; attempt <= MAX_CLEAN_ATTEMPTS; attempt++) {
+      const { text, usage } = yield* tryPromise("clean PressPods narration", () =>
+        generateText({
+          model,
+          system: `You adapt a written article into a script for a single podcast host to read aloud (text-to-speech). Preserve the article's content and meaning faithfully — do NOT summarize, editorialize, or invent facts. Your job is to make it sound like an engaging host reading for the ear, not an eye.
 
 The input begins with a header line like "Title. By Author. Published Date on Domain." Use its facts, but restructure the opening (see OPENING).
 
@@ -66,25 +70,33 @@ NORMALIZE (spell out what TTS mispronounces):
 - Code/math: short expressions can stay; describe longer code blocks in words.
 
 Output ONLY the finished script wrapped in <cleaned_article> and </cleaned_article> tags — nothing before or after. Always emit the closing </cleaned_article> tag.`,
-      prompt: article.text,
-    });
-
-    const completionUsage: CompletionUsage = {
-      promptTokens: usage.inputTokens || 0,
-      completionTokens: usage.outputTokens || 0,
-      totalTokens: usage.totalTokens || 0,
-    };
-    costCounter.recordLlmUsage(modelId, "clean", completionUsage);
-
-    try {
-      return { content: extractBetweenTags(text, "cleaned_article") };
-    } catch (error) {
-      lastError = error;
-      LOGGER.info(
-        `Narration cleaning attempt ${attempt}/${MAX_CLEAN_ATTEMPTS} produced no usable output; retrying`,
+          prompt: article.text,
+        }),
       );
-    }
-  }
 
-  throw lastError;
+      const completionUsage: CompletionUsage = {
+        promptTokens: usage.inputTokens || 0,
+        completionTokens: usage.outputTokens || 0,
+        totalTokens: usage.totalTokens || 0,
+      };
+      costCounter.recordLlmUsage(modelId, "clean", completionUsage);
+
+      const extracted = yield* trySync("extract cleaned PressPods narration", () =>
+        extractBetweenTags(text, "cleaned_article"),
+      ).pipe(Effect.either);
+      if (extracted._tag === "Right") {
+        return { content: extracted.right };
+      } else {
+        lastError = extracted.left;
+        LOGGER.info(
+          `Narration cleaning attempt ${attempt}/${MAX_CLEAN_ATTEMPTS} produced no usable output; retrying`,
+        );
+      }
+    }
+
+    return yield* new PressPodsError({
+      operation: "clean PressPods narration",
+      cause: lastError,
+    });
+  });
 }

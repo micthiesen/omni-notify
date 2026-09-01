@@ -1,21 +1,32 @@
 import { extractHttpError } from "@micthiesen/mitools/http";
 import type { Logger } from "@micthiesen/mitools/logging";
-import got from "got";
 import * as mm from "music-metadata";
 import NodeID3 from "node-id3";
+import { Effect, Schema } from "effect";
 import type { Chapter } from "./types.js";
+import { PressPodsError, tryPromise } from "./effect.js";
+import { fetchPublicBuffer, PRESS_PODS_IMAGE_MAX_BYTES } from "./publicHttp.js";
 
-export async function getDuration(
+export function getDuration(
   audioFile: Buffer,
   logger: Logger,
-): Promise<number | undefined> {
-  try {
-    const metadata = await mm.parseBuffer(audioFile, undefined, { duration: true });
-    return metadata.format.duration;
-  } catch (error) {
-    logger.error("Error getting audio duration:", { error });
-    return undefined;
-  }
+): Effect.Effect<number | undefined> {
+  return tryPromise("parse episode audio metadata", () =>
+    mm.parseBuffer(audioFile, undefined, { duration: true }),
+  ).pipe(
+    Effect.flatMap((metadata) =>
+      Schema.decodeUnknown(
+        Schema.Struct({
+          format: Schema.Struct({ duration: Schema.optional(Schema.Number) }),
+        }),
+      )(metadata),
+    ),
+    Effect.map((metadata) => metadata.format.duration),
+    Effect.catchAll((error) => {
+      logger.error("Error getting audio duration:", { error });
+      return Effect.succeed(undefined);
+    }),
+  );
 }
 
 /**
@@ -24,7 +35,7 @@ export async function getDuration(
  * scrubbable chapter list. Best-effort overall — any failure returns the audio
  * untouched rather than losing the episode over a tagging error.
  */
-export async function tagEpisodeAudio(
+export function tagEpisodeAudio(
   audioFile: Buffer,
   {
     leadImageUrl,
@@ -36,50 +47,78 @@ export async function tagEpisodeAudio(
     durationSeconds?: number;
   },
   logger: Logger,
-): Promise<Buffer> {
-  const tags: NodeID3.Tags = {};
+): Effect.Effect<Buffer> {
+  return Effect.gen(function* () {
+    const tags: NodeID3.Tags = {};
 
-  if (leadImageUrl) {
-    try {
-      const imageResponse = await got.get(leadImageUrl, { responseType: "buffer" });
-      const respMime = imageResponse.headers["content-type"];
-      if (!respMime?.includes("image")) throw new Error("No mime type found for image");
-      tags.image = {
-        // Trust the response header; the URL path often carries query strings.
-        mime: respMime.split(";")[0].trim(),
-        type: { id: 3, name: "front cover" },
-        description: "Cover",
-        imageBuffer: Buffer.from(imageResponse.body),
-      };
-    } catch (error) {
-      logger.warn("Error fetching album art:", { error: extractHttpError(error) });
+    if (leadImageUrl) {
+      const imageResult = yield* fetchPublicBuffer(
+        leadImageUrl,
+        {
+          headers: { Accept: "image/*" },
+          timeout: { request: 20_000 },
+          retry: { limit: 1, methods: ["GET"] },
+        },
+        "fetch PressPods album art",
+        PRESS_PODS_IMAGE_MAX_BYTES,
+      ).pipe(Effect.either);
+      if (imageResult._tag === "Right") {
+        const imageResponse = imageResult.right;
+        const contentType = imageResponse.headers["content-type"];
+        const respMime = Array.isArray(contentType) ? contentType[0] : contentType;
+        if (!respMime?.includes("image")) {
+          logger.warn("Error fetching album art:", { error: "No image mime type" });
+        } else
+          tags.image = {
+            // Trust the response header; the URL path often carries query strings.
+            mime: respMime.split(";")[0].trim(),
+            type: { id: 3, name: "front cover" },
+            description: "Cover",
+            imageBuffer: imageResponse.body,
+          };
+      } else {
+        logger.warn("Error fetching album art:", {
+          error: extractHttpError(imageResult.left.cause),
+        });
+      }
     }
-  }
 
-  const chapterFrames = buildChapterFrames(chapters, durationSeconds);
-  if (chapterFrames) {
-    tags.chapter = chapterFrames.chapter;
-    tags.tableOfContents = chapterFrames.tableOfContents;
-  }
+    const chapterFrames = buildChapterFrames(chapters, durationSeconds);
+    if (chapterFrames) {
+      tags.chapter = chapterFrames.chapter;
+      tags.tableOfContents = chapterFrames.tableOfContents;
+    }
 
-  if (Object.keys(tags).length === 0) return audioFile;
+    if (Object.keys(tags).length === 0) return audioFile;
 
-  try {
-    const tagged = await new Promise<Buffer>((resolve, reject) => {
+    const taggedResult = yield* Effect.async<Buffer, PressPodsError>((resume) => {
       NodeID3.write(tags, audioFile, (err, buffer) => {
-        if (err || !buffer) reject(err ?? new Error("NodeID3 returned no buffer"));
-        else resolve(buffer);
+        if (err || !buffer) {
+          resume(
+            Effect.fail(
+              new PressPodsError({
+                operation: "write PressPods ID3 tags",
+                cause: err ?? new Error("NodeID3 returned no buffer"),
+              }),
+            ),
+          );
+        } else resume(Effect.succeed(buffer));
       });
-    });
-    logger.info("Embedded ID3 tags", {
-      art: Boolean(tags.image),
-      chapters: chapterFrames?.chapter.length ?? 0,
-    });
-    return tagged;
-  } catch (error) {
-    logger.warn("Error writing ID3 tags:", { error: extractHttpError(error) });
-    return audioFile;
-  }
+    }).pipe(Effect.either);
+    if (taggedResult._tag === "Right") {
+      const tagged = taggedResult.right;
+      logger.info("Embedded ID3 tags", {
+        art: Boolean(tags.image),
+        chapters: chapterFrames?.chapter.length ?? 0,
+      });
+      return tagged;
+    } else {
+      logger.warn("Error writing ID3 tags:", {
+        error: extractHttpError(taggedResult.left.cause),
+      });
+      return audioFile;
+    }
+  });
 }
 
 /** Build ID3 CHAP frames + the CTOC that references them (needs ≥2 chapters). */

@@ -15,7 +15,7 @@ export {
 export {
   formatPodcastTasteProfileDigest,
   PODCAST_TASTE_PROMPT_VERSION,
-  runPodcastTasteReflection,
+  runPodcastTasteReflectionEffect,
   selectPodcastReflectionEvidence,
   validatePodcastProfile,
 } from "./reflection.js";

@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Data, Effect } from "effect";
 import {
   type InboxEpisode,
   type PodcastAccountClient,
@@ -10,6 +11,17 @@ export const FREE_PREVIEW_DESCRIPTION_PREFIX = "This is a free preview";
 
 export function isFreePreviewEpisode(episode: InboxEpisode): boolean {
   return episode.description?.startsWith(FREE_PREVIEW_DESCRIPTION_PREFIX) ?? false;
+}
+
+class CastroInboxCleanupError extends Data.TaggedError("CastroInboxCleanupError")<{
+  readonly operation: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `${this.operation}: ${detail}`;
+  }
 }
 
 export class CastroInboxCleanupTask extends ScheduledTask {
@@ -41,31 +53,49 @@ export class CastroInboxCleanupTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
-    const inbox = await this.account.fetchInbox();
-    if (inbox.status === "unavailable") {
-      throw new Error(`Castro inbox unavailable: ${inbox.reason}`);
-    }
+    return Effect.runPromise(this.runEffect());
+  }
 
-    const previews = inbox.value.filter(isFreePreviewEpisode);
-    let removed = 0;
-    for (const episode of previews) {
-      const result = await this.account.clearInboxEpisode(episode.clientEpisodeId);
-      if (result === "removed") {
-        removed++;
-        this.logger.info(
-          `Cleared free preview from Castro inbox: ${episode.showTitle} - ${episode.episodeTitle}`,
-        );
-        continue;
-      }
-      if (result !== "not_found") {
-        throw new Error(
-          `Could not clear Castro preview episode (${result}): ${episode.episodeTitle}`,
+  private runEffect(): Effect.Effect<void, CastroInboxCleanupError> {
+    return Effect.gen(this, function* () {
+      const inbox = yield* this.account.fetchInbox();
+      if (inbox.status === "unavailable") {
+        return yield* Effect.fail(
+          new CastroInboxCleanupError({
+            operation: "fetch inbox",
+            cause: new Error(`Castro inbox unavailable: ${inbox.reason}`),
+          }),
         );
       }
-    }
 
-    this.lastRunSummary = `cleared ${removed} free preview episode(s) from inbox`;
-    this.logger.info(`Castro inbox cleanup finished: ${this.lastRunSummary}`);
+      const previews = inbox.value.filter(isFreePreviewEpisode);
+      const results = yield* Effect.forEach(previews, (episode) =>
+        Effect.gen(this, function* () {
+          const result = yield* this.account.clearInboxEpisode(episode.clientEpisodeId);
+          if (result === "removed") {
+            this.logger.info(
+              `Cleared free preview from Castro inbox: ${episode.showTitle} - ${episode.episodeTitle}`,
+            );
+            return true;
+          }
+          if (result !== "not_found") {
+            return yield* Effect.fail(
+              new CastroInboxCleanupError({
+                operation: "clear inbox episode",
+                cause: new Error(
+                  `Could not clear Castro preview episode (${result}): ${episode.episodeTitle}`,
+                ),
+              }),
+            );
+          }
+          return false;
+        }),
+      );
+
+      const removed = results.filter(Boolean).length;
+      this.lastRunSummary = `cleared ${removed} free preview episode(s) from inbox`;
+      this.logger.info(`Castro inbox cleanup finished: ${this.lastRunSummary}`);
+    });
   }
 
   public getLastRunSummary(): string | undefined {

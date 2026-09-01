@@ -75,6 +75,28 @@ describe("decideEpisodeOutcomes", () => {
     expect(changes[0]?.status).toBe(PodcastRecommendationStatus.Listened);
   });
 
+  it("matches a rewritten guid by media URL before title fallback", () => {
+    const changes = decideEpisodeOutcomes(
+      [
+        rec({
+          episodeTitle: "An Ambiguous Episode Title",
+          mediaUrl: "https://cdn.example.com/audio/episode.mp3?source=rss",
+        }),
+      ],
+      [
+        listened({
+          episodeGuid: "castro-rewritten-guid",
+          mediaUrl: "http://cdn.example.com/audio/episode.mp3?source=castro",
+          showTitle: "Different display title",
+          episodeTitle: "Different episode title",
+          completion: 0.9,
+        }),
+      ],
+      NOW,
+    );
+    expect(changes[0]?.status).toBe(PodcastRecommendationStatus.Listened);
+  });
+
   it("labels abandoned after stalling below the threshold", () => {
     const changes = decideEpisodeOutcomes(
       [rec({ recommendedAt: NOW - 20 * DAY, notifiedAt: NOW - 20 * DAY })],

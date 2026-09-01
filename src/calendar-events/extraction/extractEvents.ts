@@ -3,8 +3,10 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output, type UserContent } from "ai";
+import { Effect, Schema } from "effect";
 import { hasPrice, llmCostCents } from "../../ai/cost.js";
 import { getCalendarExtractionModel } from "../../ai/registry.js";
+import { CalendarExtractionError } from "../effect.js";
 import type { DownloadedAttachment } from "./attachments.js";
 import {
   isDegenerateExtraction,
@@ -13,6 +15,7 @@ import {
 } from "./sanitize.js";
 import {
   type CalendarEventExtraction,
+  CalendarEventExtractionEffectSchema,
   calendarEventExtractionSchema,
 } from "./schema.js";
 
@@ -72,23 +75,25 @@ function formatExistingEvent(e: ExistingEventContext): string {
   return parts.join(" ");
 }
 
-export async function extractCalendarEvents(
+export function extractCalendarEventsEffect(
   options: ExtractCalendarEventsOptions,
-): Promise<ExtractCalendarEventsResult> {
-  const { email, logger, logFile, attachments, localTimeZone, existingEvents } =
-    options;
-  const { model, modelId } = getCalendarExtractionModel();
-  const body = email.textBody.slice(0, MAX_BODY_CHARS);
+): Effect.Effect<ExtractCalendarEventsResult, CalendarExtractionError> {
+  return Effect.gen(function* () {
+    const { email, logger, logFile, attachments, localTimeZone, existingEvents } =
+      options;
+    const { model, modelId } = getCalendarExtractionModel();
+    const body = email.textBody.slice(0, MAX_BODY_CHARS);
 
-  const currentDate = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: localTimeZone,
-  });
+    const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+    const currentDate = new Date(now).toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: localTimeZone,
+    });
 
-  const promptText = `Extract calendar events from this email that the recipient would want on their personal calendar. Return an empty events array if no actionable events are found.
+    const promptText = `Extract calendar events from this email that the recipient would want on their personal calendar. Return an empty events array if no actionable events are found.
 
 Guidelines:
 - Extract real, scheduled events: appointments, flights, hotel stays, concert tickets, reservations, meetings, building maintenance/shutdowns, move-in/out dates, etc.
@@ -130,106 +135,144 @@ Subject: ${email.subject}
 
 ${body}`;
 
-  const attachmentNames = attachments?.map((a) => a.name).join(", ");
-  const logSummary = attachmentNames
-    ? `Extraction prompt (${modelId}) [${promptText.length} chars, attachments: ${attachmentNames}]`
-    : `Extraction prompt (${modelId}) [${promptText.length} chars]`;
+    const attachmentNames = attachments?.map((a) => a.name).join(", ");
+    const logSummary = attachmentNames
+      ? `Extraction prompt (${modelId}) [${promptText.length} chars, attachments: ${attachmentNames}]`
+      : `Extraction prompt (${modelId}) [${promptText.length} chars]`;
 
-  if (logFile) {
-    logFile.log(
-      logger,
-      LogLevel.INFO,
-      `Extraction Prompt (${modelId})`,
-      codeBlock(promptText),
-      {
-        consoleSummary: logSummary,
-      },
-    );
-  } else {
-    logger.info(logSummary);
-  }
-
-  // Build content parts: text + optional file attachments
-  const content: UserContent = [{ type: "text", text: promptText }];
-
-  if (attachments && attachments.length > 0) {
-    for (const attachment of attachments) {
-      content.push({
-        type: "file",
-        data: attachment.data,
-        mediaType: attachment.mimeType,
-      });
+    if (logFile) {
+      logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Extraction Prompt (${modelId})`,
+        codeBlock(promptText),
+        {
+          consoleSummary: logSummary,
+        },
+      );
+    } else {
+      logger.info(logSummary);
     }
-    logger.info(`Including ${attachments.length} attachment(s): ${attachmentNames}`);
-  }
 
-  const first = await runExtractionOnce({ model, content, logger, logFile, modelId });
+    // Build content parts: text + optional file attachments
+    const content: UserContent = [{ type: "text", text: promptText }];
 
-  // Degenerate outputs (mass-duplicated objects, field soup in timeZone) tend to
-  // be bad samples — one fresh retry usually recovers; keep whichever is cleaner.
-  if (!isDegenerateExtraction(first)) {
-    return { events: first.events, costCents: first.costCents };
-  }
-  logger.warn(
-    `Degenerate extraction output (${first.issues.join("; ")}); retrying once`,
-  );
-  const second = await runExtractionOnce({ model, content, logger, logFile, modelId });
-  const costCents = addCostCents(first.costCents, second.costCents);
-  if (second.issues.length < first.issues.length) {
-    logger.info("Retry produced a cleaner extraction; using the retry result");
-    return { events: second.events, costCents };
-  }
-  logger.info("Retry did not improve on the first extraction; keeping the first");
-  return { events: first.events, costCents };
+    if (attachments && attachments.length > 0) {
+      for (const attachment of attachments) {
+        content.push({
+          type: "file",
+          data: attachment.data,
+          mediaType: attachment.mimeType,
+        });
+      }
+      logger.info(`Including ${attachments.length} attachment(s): ${attachmentNames}`);
+    }
+
+    const first = yield* runExtractionOnce({
+      model,
+      content,
+      logger,
+      logFile,
+      modelId,
+    });
+
+    // Degenerate outputs (mass-duplicated objects, field soup in timeZone) tend to
+    // be bad samples — one fresh retry usually recovers; keep whichever is cleaner.
+    if (!isDegenerateExtraction(first)) {
+      const result = { events: first.events, costCents: first.costCents };
+      yield* validateExtraction(result);
+      return result;
+    }
+    logger.warn(
+      `Degenerate extraction output (${first.issues.join("; ")}); retrying once`,
+    );
+    const second = yield* runExtractionOnce({
+      model,
+      content,
+      logger,
+      logFile,
+      modelId,
+    });
+    const costCents = addCostCents(first.costCents, second.costCents);
+    if (second.issues.length < first.issues.length) {
+      logger.info("Retry produced a cleaner extraction; using the retry result");
+      const result = { events: second.events, costCents };
+      yield* validateExtraction(result);
+      return result;
+    }
+    logger.info("Retry did not improve on the first extraction; keeping the first");
+    const result = { events: first.events, costCents };
+    yield* validateExtraction(result);
+    return result;
+  });
 }
 
-async function runExtractionOnce(args: {
+function runExtractionOnce(args: {
   model: ReturnType<typeof getCalendarExtractionModel>["model"];
   content: UserContent;
   logger: Logger;
   logFile?: LogFile;
   modelId: string;
-}): Promise<ExtractionAttempt> {
-  const { model, content, logger, logFile, modelId } = args;
+}): Effect.Effect<ExtractionAttempt, CalendarExtractionError> {
+  return Effect.gen(function* () {
+    const { model, content, logger, logFile, modelId } = args;
 
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: calendarEventExtractionSchema }),
-    messages: [{ role: "user", content }],
-  });
+    const result = yield* Effect.tryPromise({
+      try: () =>
+        generateText({
+          model,
+          output: Output.object({ schema: calendarEventExtractionSchema }),
+          messages: [{ role: "user", content }],
+        }),
+      catch: (cause) => new CalendarExtractionError({ cause, transient: true }),
+    });
 
-  if (result.reasoningText && logFile) {
-    logFile.log(logger, LogLevel.INFO, "Reasoning", codeBlock(result.reasoningText));
-  }
+    if (result.reasoningText && logFile) {
+      logFile.log(logger, LogLevel.INFO, "Reasoning", codeBlock(result.reasoningText));
+    }
 
-  const response = JSON.stringify(result.output, null, 2);
-  if (logFile) {
-    logFile.log(
-      logger,
-      LogLevel.INFO,
-      "Extraction Response",
-      codeBlock(response, "json"),
+    const response = JSON.stringify(result.output, null, 2);
+    if (logFile) {
+      logFile.log(
+        logger,
+        LogLevel.INFO,
+        "Extraction Response",
+        codeBlock(response, "json"),
+      );
+    } else {
+      logger.info(`Extraction response: ${response}`);
+    }
+    logger.info(
+      `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
-  } else {
-    logger.info(`Extraction response: ${response}`);
-  }
-  logger.info(
-    `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+
+    const costCents = hasPrice(modelId)
+      ? llmCostCents(modelId, {
+          inputTokens: result.usage.inputTokens ?? 0,
+          outputTokens: result.usage.outputTokens ?? 0,
+        })
+      : null;
+    if (costCents === null) {
+      logger.debug(`No pricing data for extraction model "${modelId}"`);
+    }
+
+    const sanitized = sanitizeExtractedEvents(result.output?.events ?? []);
+    for (const issue of sanitized.issues) {
+      logger.warn(`Sanitized extraction output: ${issue}`);
+    }
+    return { ...sanitized, costCents };
+  });
+}
+
+function validateExtraction(
+  result: ExtractCalendarEventsResult,
+): Effect.Effect<void, CalendarExtractionError> {
+  return Schema.decodeUnknown(CalendarEventExtractionEffectSchema)({
+    events: result.events,
+  }).pipe(
+    Effect.asVoid,
+    Effect.mapError(
+      (cause) => new CalendarExtractionError({ cause, transient: false }),
+    ),
   );
-
-  const costCents = hasPrice(modelId)
-    ? llmCostCents(modelId, {
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
-      })
-    : null;
-  if (costCents === null) {
-    logger.debug(`No pricing data for extraction model "${modelId}"`);
-  }
-
-  const sanitized = sanitizeExtractedEvents(result.output?.events ?? []);
-  for (const issue of sanitized.issues) {
-    logger.warn(`Sanitized extraction output: ${issue}`);
-  }
-  return { ...sanitized, costCents };
 }

@@ -1,7 +1,9 @@
 import { truncate } from "@micthiesen/mitools/strings";
 import { escapeXml } from "@micthiesen/mitools/xml";
 import { Podcast } from "podcast";
-import { getAllEpisodes } from "./persistence.js";
+import { Effect } from "effect";
+import { PressPodsError, trySync } from "./effect.js";
+import { PressPodsPersistence, type PressPodsEpisodeData } from "./persistence.js";
 import { prepareTextForRss } from "./rssText.js";
 
 const FEED_EPISODE_LIMIT = 50;
@@ -10,7 +12,10 @@ const FEED_EPISODE_LIMIT = 50;
  * Build the podcast RSS feed. `baseUrl` is the public origin the podcast
  * client will fetch enclosures from (no trailing slash).
  */
-export function buildPressPodsFeed(baseUrl: string): string {
+function buildPressPodsFeedFromEpisodes(
+  baseUrl: string,
+  episodes: PressPodsEpisodeData[],
+): string {
   const imageUrl = `${baseUrl}/pods/logo.jpeg`;
 
   const feed = new Podcast({
@@ -23,7 +28,7 @@ export function buildPressPodsFeed(baseUrl: string): string {
     itunesImage: imageUrl,
   });
 
-  for (const episode of getAllEpisodes().slice(0, FEED_EPISODE_LIMIT)) {
+  for (const episode of episodes.slice(0, FEED_EPISODE_LIMIT)) {
     const excerpt = episode.excerpt ?? truncate(episode.content, 255);
     // The description is HTML (clients render show notes as HTML); dynamic
     // text is entity-escaped so article-controlled content can't inject tags.
@@ -52,7 +57,19 @@ export function buildPressPodsFeed(baseUrl: string): string {
   return feed.buildXml();
 }
 
-/** Cheap change marker for feed caching. */
-export function latestEpisodeId(): string {
-  return getAllEpisodes()[0]?.episodeId ?? "no-episodes";
+export function buildPressPodsFeedEffect(
+  baseUrl: string,
+): Effect.Effect<string, PressPodsError> {
+  return PressPodsPersistence.getAllEpisodes().pipe(
+    Effect.flatMap((episodes) =>
+      trySync("build PressPods RSS feed", () =>
+        buildPressPodsFeedFromEpisodes(baseUrl, episodes),
+      ),
+    ),
+  );
 }
+
+export const latestEpisodeIdEffect = (): Effect.Effect<string, PressPodsError> =>
+  PressPodsPersistence.getAllEpisodes().pipe(
+    Effect.map((episodes) => episodes[0]?.episodeId ?? "no-episodes"),
+  );

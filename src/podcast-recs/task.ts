@@ -3,8 +3,12 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Effect } from "effect";
 import config from "../utils/config.js";
-import { MAX_PODCAST_RECOMMENDATIONS_PER_RUN, runPodcastPipeline } from "./pipeline.js";
+import {
+  MAX_PODCAST_RECOMMENDATIONS_PER_RUN,
+  runPodcastPipelineEffect,
+} from "./pipeline.js";
 
 export interface PodcastRecommendationManualRunInput {
   maxRecommendations: number;
@@ -59,29 +63,31 @@ export class PodcastRecommendationTask extends ScheduledTask {
 
   public async run(): Promise<void> {
     // Topic-tier target per scheduled run; guest picks are on top of this.
-    await this.runPipeline(3);
+    await Effect.runPromise(this.runPipelineEffect(3));
   }
 
   public async runManual(input: unknown): Promise<void> {
-    await this.runPipeline(parseMaxRecommendations(input));
+    await Effect.runPromise(this.runPipelineEffect(parseMaxRecommendations(input)));
   }
 
-  private async runPipeline(maxRecommendations: number): Promise<void> {
-    const logFile = config.LOGS_PATH
-      ? new LogFile(
-          `${config.LOGS_PATH}/podcast-recs/${logTimestamp()}.md`,
-          "overwrite",
-        )
-      : undefined;
+  private runPipelineEffect(maxRecommendations: number): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      const logFile = config.LOGS_PATH
+        ? new LogFile(
+            `${config.LOGS_PATH}/podcast-recs/${logTimestamp()}.md`,
+            "overwrite",
+          )
+        : undefined;
 
-    this.logger.info(
-      `Podcast recommendation run requested up to ${maxRecommendations} episode(s)`,
-    );
-    const summary = await runPodcastPipeline(this.logger, logFile, {
-      maxRecommendations,
+      this.logger.info(
+        `Podcast recommendation run requested up to ${maxRecommendations} episode(s)`,
+      );
+      const summary = yield* runPodcastPipelineEffect(this.logger, logFile, {
+        maxRecommendations,
+      });
+      this.lastRunSummary = summary;
+      this.logger.info(`Podcast recommendation run finished: ${summary}`);
     });
-    this.lastRunSummary = summary;
-    this.logger.info(`Podcast recommendation run finished: ${summary}`);
   }
 
   /** Consumed by the task-run tracking registry. */

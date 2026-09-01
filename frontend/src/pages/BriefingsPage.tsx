@@ -5,6 +5,7 @@ import {
   fetchRunLogs,
   type TaskRun,
 } from "../api";
+import { forkUiRequest, runUiEffect } from "../effect";
 import { LogViewer } from "../components/LogViewer";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { formatAbsoluteWithYear, formatCents, toTitleCase } from "../utils/format";
@@ -35,7 +36,7 @@ export default function BriefingsPage() {
 
   const openLogs = async (runId: string) => {
     try {
-      const { run } = await fetchRunLogs(runId);
+      const { run } = await runUiEffect(fetchRunLogs(runId));
       setLogRun(run);
     } catch (err) {
       setLogsError(err instanceof Error ? err.message : "Failed to load logs");
@@ -43,19 +44,11 @@ export default function BriefingsPage() {
   };
 
   useEffect(() => {
-    let cancelled = false;
-    fetchBriefings()
-      .then((res) => {
-        if (!cancelled) setBriefings(res.briefings);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load briefings");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchBriefings(), {
+      onSuccess: (res) => setBriefings(res.briefings),
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load briefings"),
+    });
   }, []);
 
   const feed = useMemo(

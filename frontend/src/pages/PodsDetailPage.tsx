@@ -4,6 +4,7 @@ import {
   fetchPressPodsEpisode,
   retryPressPodsEpisode,
 } from "../api";
+import { forkUiRequest, runUiEffect } from "../effect";
 import type {
   PressPodsChunkStat,
   PressPodsEpisodeDetail,
@@ -279,7 +280,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
     if (!episode || retrying) return;
     setRetrying(true);
     try {
-      await retryPressPodsEpisode(episode.episodeId);
+      await runUiEffect(retryPressPodsEpisode(episode.episodeId));
       // A successful regeneration replaces (deletes) this episode row once the
       // new one lands, so this detail page would 404 on reload — send the user
       // back to the list where the in-progress job is visible.
@@ -303,7 +304,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
     if (!confirmed) return;
     setDeleting(true);
     try {
-      await deletePressPodsEpisode(episode.episodeId);
+      await runUiEffect(deletePressPodsEpisode(episode.episodeId));
       showToast("Episode deleted");
       navigate("/pods");
     } catch (err) {
@@ -316,19 +317,11 @@ export default function PodsDetailPage({ id }: { id: string }) {
   };
 
   useEffect(() => {
-    let cancelled = false;
-    fetchPressPodsEpisode(id)
-      .then((res) => {
-        if (!cancelled) setEpisode(res.episode);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load episode");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchPressPodsEpisode(id), {
+      onSuccess: (res) => setEpisode(res.episode),
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load episode"),
+    });
   }, [id]);
 
   if (error) {

@@ -3,9 +3,11 @@ import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
+import { Effect } from "effect";
 import { z } from "zod";
 import { getRecsShortlistModel } from "../ai/registry.js";
 import type { Candidate } from "./types.js";
+import { integrationEffect, RecommendationIntegrationError } from "./effect.js";
 
 export const FINALIST_COUNT = 5;
 
@@ -48,78 +50,82 @@ export function computeComposite(score: {
 }
 
 /** Score all eligible candidates with the cheap model and keep the top N. */
-export async function shortlistCandidates(
+export function shortlistCandidates(
   candidates: Candidate[],
   historyDigest: string,
   logger: Logger,
   logFile?: LogFile,
   finalistCount = FINALIST_COUNT,
-): Promise<ScoredCandidate[]> {
-  const { model, modelId } = getRecsShortlistModel();
+): Effect.Effect<ScoredCandidate[], RecommendationIntegrationError> {
+  return Effect.gen(function* () {
+    const { model, modelId } = getRecsShortlistModel();
 
-  // Deterministic, popularity-agnostic ordering to reduce position bias.
-  const ordered = [...candidates].sort((a, b) => a.tmdbId - b.tmdbId);
-  const prompt = buildPrompt(ordered, historyDigest);
+    // Deterministic, popularity-agnostic ordering to reduce position bias.
+    const ordered = [...candidates].sort((a, b) => a.tmdbId - b.tmdbId);
+    const prompt = buildPrompt(ordered, historyDigest);
 
-  logFile?.log(
-    logger,
-    LogLevel.INFO,
-    `Shortlist Prompt (${modelId})`,
-    codeBlock(prompt),
-    {
-      consoleSummary: `Scoring ${ordered.length} candidates (${modelId})`,
-    },
-  );
+    logFile?.log(
+      logger,
+      LogLevel.INFO,
+      `Shortlist Prompt (${modelId})`,
+      codeBlock(prompt),
+      {
+        consoleSummary: `Scoring ${ordered.length} candidates (${modelId})`,
+      },
+    );
 
-  const result = await generateText({
-    model,
-    output: Output.object({ schema: scoreSchema }),
-    prompt,
-  });
-  logger.info(
-    `Shortlist token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
-  );
+    const result = yield* integrationEffect("generate recommendation shortlist", () =>
+      generateText({
+        model,
+        output: Output.object({ schema: scoreSchema }),
+        prompt,
+      }),
+    );
+    logger.info(
+      `Shortlist token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
+    );
 
-  const byId = new Map<string, Candidate>(candidates.map((c) => [c.canonicalId, c]));
-  const scored: ScoredCandidate[] = [];
-  for (const score of result.output?.scores ?? []) {
-    const candidate = byId.get(score.candidate_id);
-    if (!candidate) {
-      logger.warn(`Shortlist returned unknown candidate_id: ${score.candidate_id}`);
-      continue;
-    }
-    scored.push({
-      candidate,
-      tasteMatch: score.taste_match,
-      novelty: score.novelty,
-      effortFit: score.effort_fit,
-      confidence: score.confidence,
-      risks: score.risks,
-      composite: computeComposite({
+    const byId = new Map<string, Candidate>(candidates.map((c) => [c.canonicalId, c]));
+    const scored: ScoredCandidate[] = [];
+    for (const score of result.output?.scores ?? []) {
+      const candidate = byId.get(score.candidate_id);
+      if (!candidate) {
+        logger.warn(`Shortlist returned unknown candidate_id: ${score.candidate_id}`);
+        continue;
+      }
+      scored.push({
+        candidate,
         tasteMatch: score.taste_match,
         novelty: score.novelty,
         effortFit: score.effort_fit,
         confidence: score.confidence,
-      }),
-    });
-  }
+        risks: score.risks,
+        composite: computeComposite({
+          tasteMatch: score.taste_match,
+          novelty: score.novelty,
+          effortFit: score.effort_fit,
+          confidence: score.confidence,
+        }),
+      });
+    }
 
-  scored.sort((a, b) => b.composite - a.composite);
-  const finalists = scored.slice(0, finalistCount);
+    scored.sort((a, b) => b.composite - a.composite);
+    const finalists = scored.slice(0, finalistCount);
 
-  logFile?.section(
-    "Shortlist Result",
-    codeBlock(
-      finalists
-        .map(
-          (s) =>
-            `${s.composite.toFixed(1)} ${s.candidate.title} (taste=${s.tasteMatch} novelty=${s.novelty} effort=${s.effortFit} conf=${s.confidence})`,
-        )
-        .join("\n"),
-    ),
-  );
+    logFile?.section(
+      "Shortlist Result",
+      codeBlock(
+        finalists
+          .map(
+            (s) =>
+              `${s.composite.toFixed(1)} ${s.candidate.title} (taste=${s.tasteMatch} novelty=${s.novelty} effort=${s.effortFit} conf=${s.confidence})`,
+          )
+          .join("\n"),
+      ),
+    );
 
-  return finalists;
+    return finalists;
+  });
 }
 
 function buildPrompt(candidates: Candidate[], historyDigest: string): string {

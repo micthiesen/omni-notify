@@ -1,16 +1,22 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import PQueue from "p-queue";
+import { Effect } from "effect";
+import { runPromise } from "../../effect/interop.js";
 import { getTasteReflectionModel } from "../../ai/registry.js";
 import config from "../../utils/config.js";
 import { completedWatches } from "../history.js";
 import { RESOLUTION_CONFIDENCE_THRESHOLD, resolveIdentity } from "../identity.js";
-import { fetchWatchHistory } from "../mediaLibrary.js";
+import { fetchWatchHistoryEffect as fetchWatchHistory } from "../mediaLibrary.js";
 import { getAllRecommendations } from "../persistence.js";
-import { fetchTitleDetails } from "../tmdb/client.js";
+import { fetchTitleDetailsEffect as fetchTitleDetails } from "../tmdb/client.js";
 import type { CanonicalId, WatchedItem } from "../types.js";
 import { runTasteReflection } from "./reflection.js";
 import type { CanonicalWatchObservation } from "./types.js";
+import {
+  effectMessage,
+  persistenceEffect,
+  RecommendationPersistenceError,
+} from "../effect.js";
 
 const MAX_WATCH_EVIDENCE = 160;
 
@@ -52,30 +58,43 @@ export class MediaTasteReflectionTask extends ScheduledTask {
     this.logger = logger.extend("TasteReflection");
   }
 
-  public async run(): Promise<void> {
-    const history = await fetchWatchHistory();
-    if (history.status === "unavailable") {
-      this.lastRunSummary = `skipped: ${history.reason}`;
-      this.logger.warn(`Taste reflection skipped: ${history.reason}`);
-      return;
-    }
+  public run(): Promise<void> {
+    return runPromise(this.runEffect());
+  }
 
-    const watched = await buildCanonicalWatchEvidence(history.value, this.logger);
-    const { model, modelId } = getTasteReflectionModel();
-    const result = await runTasteReflection({
-      watched,
-      recommendations: getAllRecommendations(),
-      model,
-      modelId,
+  public runEffect() {
+    return Effect.gen(this, function* () {
+      const history = yield* fetchWatchHistory();
+      if (history.status === "unavailable") {
+        this.lastRunSummary = `skipped: ${history.reason}`;
+        this.logger.warn(`Taste reflection skipped: ${history.reason}`);
+        return;
+      }
+
+      const watched = yield* buildCanonicalWatchEvidenceEffect(
+        history.value,
+        this.logger,
+      );
+      const { model, modelId } = getTasteReflectionModel();
+      const recommendations = yield* persistenceEffect(
+        "read recommendations for taste reflection",
+        () => getAllRecommendations(),
+      );
+      const result = yield* runTasteReflection({
+        watched,
+        recommendations,
+        model,
+        modelId,
+      });
+      if (result.status === "created") {
+        this.lastRunSummary = `profile v${result.profile.version}: ${result.profile.evidenceCount} evidence items, ${result.rejectedClaims} unsupported claims removed`;
+      } else if (result.status === "unchanged") {
+        this.lastRunSummary = `unchanged: profile v${result.profile.version}, no model call`;
+      } else {
+        this.lastRunSummary = "no completed watch or recommendation evidence";
+      }
+      this.logger.info(`Taste reflection finished: ${this.lastRunSummary}`);
     });
-    if (result.status === "created") {
-      this.lastRunSummary = `profile v${result.profile.version}: ${result.profile.evidenceCount} evidence items, ${result.rejectedClaims} unsupported claims removed`;
-    } else if (result.status === "unchanged") {
-      this.lastRunSummary = `unchanged: profile v${result.profile.version}, no model call`;
-    } else {
-      this.lastRunSummary = "no completed watch or recommendation evidence";
-    }
-    this.logger.info(`Taste reflection finished: ${this.lastRunSummary}`);
   }
 
   public getLastRunSummary(): string | undefined {
@@ -83,50 +102,51 @@ export class MediaTasteReflectionTask extends ScheduledTask {
   }
 }
 
-async function buildCanonicalWatchEvidence(
+export function buildCanonicalWatchEvidenceEffect(
   history: WatchedItem[],
   logger: Logger,
-): Promise<CanonicalWatchObservation[]> {
-  const unique = new Map<string, WatchedItem>();
-  for (const item of completedWatches(history)) {
-    if (!unique.has(item.guid)) unique.set(item.guid, item);
-    if (unique.size >= MAX_WATCH_EVIDENCE) break;
-  }
+): Effect.Effect<CanonicalWatchObservation[], RecommendationPersistenceError> {
+  return Effect.gen(function* () {
+    const unique = new Map<string, WatchedItem>();
+    for (const item of completedWatches(history)) {
+      if (!unique.has(item.guid)) unique.set(item.guid, item);
+      if (unique.size >= MAX_WATCH_EVIDENCE) break;
+    }
 
-  const resolutionQueue = new PQueue({ concurrency: 4 });
-  const resolved = await Promise.all(
-    [...unique.values()].map((item) =>
-      resolutionQueue.add(async () => {
-        const resolution = await resolveIdentity(item, logger);
-        return resolution.canonicalId &&
-          resolution.confidence >= RESOLUTION_CONFIDENCE_THRESHOLD
-          ? { canonicalId: resolution.canonicalId, item }
-          : undefined;
-      }),
-    ),
-  );
+    const resolved = yield* Effect.forEach(
+      [...unique.values()],
+      (item) =>
+        resolveIdentity(item, logger).pipe(
+          Effect.map((resolution) =>
+            resolution.canonicalId &&
+            resolution.confidence >= RESOLUTION_CONFIDENCE_THRESHOLD
+              ? { canonicalId: resolution.canonicalId, item }
+              : undefined,
+          ),
+        ),
+      { concurrency: 4 },
+    );
 
-  const detailsQueue = new PQueue({ concurrency: 6 });
-  const observations = await Promise.all(
-    resolved
-      .filter((item): item is { canonicalId: CanonicalId; item: WatchedItem } =>
+    const observations = yield* Effect.forEach(
+      resolved.filter((item): item is { canonicalId: CanonicalId; item: WatchedItem } =>
         Boolean(item),
-      )
-      .map(({ canonicalId, item }) =>
-        detailsQueue.add(async (): Promise<CanonicalWatchObservation> => {
+      ),
+      ({ canonicalId, item }) =>
+        Effect.gen(function* () {
           const tmdbId = Number(canonicalId.split(":")[2]);
-          const metadata = await fetchTitleDetails(item.mediaType, tmdbId).catch(
-            (error) => {
+          const metadata = yield* fetchTitleDetails(item.mediaType, tmdbId).pipe(
+            Effect.catchAll((error) => {
               logger.warn(
                 `Taste metadata lookup failed for ${canonicalId}`,
-                (error as Error).message,
+                effectMessage(error),
               );
-              return undefined;
-            },
+              return Effect.succeed(undefined);
+            }),
           );
           return { canonicalId, item, metadata };
         }),
-      ),
-  );
-  return observations;
+      { concurrency: 6 },
+    );
+    return observations;
+  });
 }

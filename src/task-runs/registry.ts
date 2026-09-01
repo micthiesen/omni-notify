@@ -1,7 +1,9 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Data, Effect, Fiber } from "effect";
 import cron, { type ScheduledTask as CronScheduledTask } from "node-cron";
-import PQueue from "p-queue";
+import type { IntegrationError, PersistenceError } from "../effect/errors.js";
+import { fromPromise, fromSync, runPromise } from "../effect/interop.js";
 import { decideCatchUp } from "./catchUp.js";
 import { taskRunBus } from "./events.js";
 import {
@@ -16,7 +18,7 @@ import {
   markInterruptedRuns,
   markScheduleEvaluated,
   recordRunEnd,
-  recordRunStart,
+  recordRunStartAndMarkSchedule,
   type TaskRunData,
   type TaskRunTrigger,
 } from "./persistence.js";
@@ -68,10 +70,16 @@ export interface TaskInfo {
 export class TaskRegistry {
   private tasks = new Map<
     string,
-    { task: ScheduledTask; queue: PQueue; cronTask: CronScheduledTask }
+    {
+      task: ScheduledTask;
+      semaphore: Effect.Semaphore;
+      cronTask: CronScheduledTask;
+    }
   >();
   private running = new Set<string>();
+  private queued = new Map<string, number>();
   private hasRun = new Set<string>();
+  private backgroundFibers = new Set<Fiber.RuntimeFiber<void, unknown>>();
   private logger: Logger;
 
   constructor(parentLogger: Logger) {
@@ -92,8 +100,8 @@ export class TaskRegistry {
     }
     // Never-started cron instance, used purely to compute upcoming run times.
     const cronTask = cron.createTask(task.schedule, () => {});
-    const queue = new PQueue({ concurrency: 1 });
-    this.tasks.set(task.name, { task, queue, cronTask });
+    const semaphore = Effect.runSync(Effect.makeSemaphore(1));
+    this.tasks.set(task.name, { task, semaphore, cronTask });
 
     const executeScheduled = () => this.execute(task.name, "schedule");
     return new (class extends ScheduledTask {
@@ -110,126 +118,268 @@ export class TaskRegistry {
   /** Queue a manual run. Rejects immediately if the task is already running. */
   public runNow(name: string, input?: unknown): { runId: string } {
     const entry = this.tasks.get(name);
-    if (!entry) throw new TaskNotFoundError(name);
+    if (!entry) throw new TaskNotFoundError({ name });
     if (input !== undefined && !handlesManualRunInput(entry.task)) {
-      throw new TaskManualInputUnsupportedError(name);
+      throw new TaskManualInputUnsupportedError({ name });
     }
-    if (this.running.has(name) || entry.queue.size + entry.queue.pending > 0) {
-      throw new TaskAlreadyRunningError(name);
+    if (this.running.has(name) || (this.queued.get(name) ?? 0) > 0) {
+      throw new TaskAlreadyRunningError({ name });
     }
     const runId = makeRunId(name);
-    void this.execute(name, "manual", runId, undefined, input).catch((error) => {
-      this.logger.error(`Manual run of "${name}" failed`, error);
-    });
+    const fiber = Effect.runFork(
+      this.queuedExecutionEffect(name, "manual", runId, undefined, input).pipe(
+        Effect.catchAllCause((cause) =>
+          Effect.sync(() => this.logger.error(`Manual run of "${name}" failed`, cause)),
+        ),
+      ),
+    );
+    this.backgroundFibers.add(fiber);
+    fiber.addObserver(() => this.backgroundFibers.delete(fiber));
     return { runId };
   }
 
-  /** Recover the newest eligible cron occurrence for each infrequent task. */
-  public async recoverMissedTasks(now = Date.now()): Promise<void> {
-    const recoveries: { name: string; scheduledFor: number }[] = [];
-
-    for (const [name, entry] of this.tasks) {
-      const state = getTaskScheduleState(name);
-      if (state && state.schedule !== entry.task.schedule) {
-        this.logger.info(
-          `Schedule changed for "${name}"; starting a new recovery baseline`,
+  /**
+   * Queue a manual run and keep the caller in the same structured Effect until
+   * that exact run has durably finished. Unlike the UI's fire-and-forget
+   * `runNow`, this deliberately waits behind an active run.
+   */
+  public runNowAndWaitEffect(
+    name: string,
+    input?: unknown,
+  ): Effect.Effect<
+    { runId: string },
+    | TaskNotFoundError
+    | TaskManualInputUnsupportedError
+    | PersistenceError
+    | IntegrationError
+  > {
+    return Effect.suspend(
+      (): Effect.Effect<
+        { runId: string },
+        | TaskNotFoundError
+        | TaskManualInputUnsupportedError
+        | PersistenceError
+        | IntegrationError
+      > => {
+        const entry = this.tasks.get(name);
+        if (!entry) return Effect.fail(new TaskNotFoundError({ name }));
+        if (input !== undefined && !handlesManualRunInput(entry.task)) {
+          return Effect.fail(new TaskManualInputUnsupportedError({ name }));
+        }
+        const runId = makeRunId(name);
+        return this.queuedExecutionEffect(name, "manual", runId, undefined, input).pipe(
+          Effect.as({ runId }),
         );
-        markScheduleEvaluated(name, entry.task.schedule, now);
-        continue;
-      }
-
-      const evaluatedThrough = state?.evaluatedThrough ?? getLastRun(name)?.startedAt;
-      if (evaluatedThrough === undefined || entry.task.runOnStartup) {
-        markScheduleEvaluated(name, entry.task.schedule, now);
-        continue;
-      }
-
-      const decision = decideCatchUp(entry.task.schedule, evaluatedThrough, now);
-      switch (decision.kind) {
-        case "run":
-          recoveries.push({ name, scheduledFor: decision.scheduledFor });
-          break;
-        case "stale":
-          this.logger.info(
-            `Skipping stale missed run of "${name}" from ${new Date(decision.scheduledFor).toISOString()}`,
-          );
-          markScheduleEvaluated(name, entry.task.schedule, now);
-          break;
-        case "disabled":
-        case "none":
-          markScheduleEvaluated(name, entry.task.schedule, now);
-          break;
-      }
-    }
-
-    // Recover sequentially so a reboot cannot unleash several expensive tasks at once.
-    for (const recovery of recoveries) {
-      this.logger.info(
-        `Recovering missed run of "${recovery.name}" from ${new Date(recovery.scheduledFor).toISOString()}`,
-      );
-      try {
-        await this.execute(recovery.name, "catchup", undefined, recovery.scheduledFor);
-      } catch (error) {
-        this.logger.error(`Catch-up run of "${recovery.name}" failed`, error);
-      }
-    }
+      },
+    );
   }
 
-  private async execute(
+  /** Interrupt task runs started outside the Scheduler during app shutdown. */
+  public shutdownEffect(): Effect.Effect<void> {
+    return Fiber.interruptAll([...this.backgroundFibers]);
+  }
+
+  /** Recover the newest eligible cron occurrence for each infrequent task. */
+  public recoverMissedTasksEffect(
+    now = Date.now(),
+  ): Effect.Effect<void, PersistenceError | TaskNotFoundError> {
+    return Effect.gen(this, function* () {
+      const recoveries: { name: string; scheduledFor: number }[] = [];
+
+      for (const [name, entry] of this.tasks) {
+        const state = yield* fromSync("read task schedule state", () =>
+          getTaskScheduleState(name),
+        );
+        if (state && state.schedule !== entry.task.schedule) {
+          this.logger.info(
+            `Schedule changed for "${name}"; starting a new recovery baseline`,
+          );
+          yield* fromSync("reset task recovery baseline", () =>
+            markScheduleEvaluated(name, entry.task.schedule, now),
+          );
+          continue;
+        }
+
+        const lastRun = yield* fromSync("read last task run", () => getLastRun(name));
+        const evaluatedThrough = state?.evaluatedThrough ?? lastRun?.startedAt;
+        if (evaluatedThrough === undefined || entry.task.runOnStartup) {
+          yield* fromSync("establish task recovery baseline", () =>
+            markScheduleEvaluated(name, entry.task.schedule, now),
+          );
+          continue;
+        }
+
+        const decision = decideCatchUp(entry.task.schedule, evaluatedThrough, now);
+        switch (decision.kind) {
+          case "run":
+            recoveries.push({ name, scheduledFor: decision.scheduledFor });
+            break;
+          case "stale":
+            this.logger.info(
+              `Skipping stale missed run of "${name}" from ${new Date(decision.scheduledFor).toISOString()}`,
+            );
+            yield* fromSync("skip stale task recovery", () =>
+              markScheduleEvaluated(name, entry.task.schedule, now),
+            );
+            break;
+          case "disabled":
+          case "none":
+            yield* fromSync("advance task recovery cursor", () =>
+              markScheduleEvaluated(name, entry.task.schedule, now),
+            );
+            break;
+        }
+      }
+
+      // Recover sequentially so a reboot cannot unleash several expensive tasks at once.
+      yield* Effect.forEach(
+        recoveries,
+        (recovery) => {
+          this.logger.info(
+            `Recovering missed run of "${recovery.name}" from ${new Date(recovery.scheduledFor).toISOString()}`,
+          );
+          return this.executeEffect(
+            recovery.name,
+            "catchup",
+            undefined,
+            recovery.scheduledFor,
+          ).pipe(
+            Effect.catchAll((error) =>
+              Effect.sync(() => {
+                this.logger.error(`Catch-up run of "${recovery.name}" failed`, error);
+              }),
+            ),
+          );
+        },
+        { concurrency: 1, discard: true },
+      );
+    });
+  }
+
+  public recoverMissedTasks(now = Date.now()): Promise<void> {
+    return runPromise(this.recoverMissedTasksEffect(now));
+  }
+
+  private execute(
     name: string,
     trigger: TaskRunTrigger,
     runId?: string,
     scheduledFor?: number,
     manualInput?: unknown,
   ): Promise<void> {
+    return runPromise(
+      this.queuedExecutionEffect(name, trigger, runId, scheduledFor, manualInput),
+    );
+  }
+
+  private queuedExecutionEffect(
+    name: string,
+    trigger: TaskRunTrigger,
+    runId?: string,
+    scheduledFor?: number,
+    manualInput?: unknown,
+  ): Effect.Effect<void, TaskNotFoundError | PersistenceError | IntegrationError> {
+    this.queued.set(name, (this.queued.get(name) ?? 0) + 1);
+    return this.executeEffect(name, trigger, runId, scheduledFor, manualInput).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          const remaining = (this.queued.get(name) ?? 1) - 1;
+          if (remaining > 0) this.queued.set(name, remaining);
+          else this.queued.delete(name);
+        }),
+      ),
+    );
+  }
+
+  private executeEffect(
+    name: string,
+    trigger: TaskRunTrigger,
+    runId?: string,
+    scheduledFor?: number,
+    manualInput?: unknown,
+  ): Effect.Effect<void, TaskNotFoundError | PersistenceError | IntegrationError> {
     const entry = this.tasks.get(name);
-    if (!entry) throw new TaskNotFoundError(name);
+    if (!entry) return Effect.fail(new TaskNotFoundError({ name }));
 
-    // The Scheduler fires runOnStartup tasks through the same path as cron
-    // runs; the very first scheduled execution of such a task is the boot run.
-    if (trigger === "schedule" && entry.task.runOnStartup && !this.hasRun.has(name)) {
-      trigger = "startup";
-    }
-    this.hasRun.add(name);
-
-    await entry.queue.add(async () => {
-      // Once an execution starts it counts as this occurrence's attempt, even if
-      // it fails or the process exits partway through.
-      markScheduleEvaluated(name, entry.task.schedule, scheduledFor ?? Date.now());
-      const run = recordRunStart(name, trigger, runId, scheduledFor);
-      this.running.add(name);
-      startRunLogCapture(run.runId, name);
-      taskRunBus.emit({ type: "run-started", taskName: name });
-      try {
-        await runWithLogCapture(run.runId, () =>
-          trigger === "manual" && manualInput !== undefined
-            ? (entry.task as ScheduledTask & HandlesManualRunInput).runManual(
-                manualInput,
-              )
-            : entry.task.run(),
+    return entry.semaphore.withPermits(1)(
+      Effect.gen(this, function* () {
+        // The Scheduler fires runOnStartup tasks through the same path as cron
+        // runs. Do not consume startup state until durable run creation succeeds.
+        const actualTrigger =
+          trigger === "schedule" && entry.task.runOnStartup && !this.hasRun.has(name)
+            ? "startup"
+            : trigger;
+        // Establish the durable run and catch-up cursor atomically. A crash can
+        // leave an interrupted run, but can never advance the cursor without a
+        // corresponding run row.
+        const run = yield* fromSync("record task run start", () =>
+          recordRunStartAndMarkSchedule(
+            name,
+            actualTrigger,
+            entry.task.schedule,
+            scheduledFor ?? Date.now(),
+            runId,
+            scheduledFor,
+          ),
         );
-        recordRunEnd(run.runId, {
-          status: "success",
-          summary: providesRunSummary(entry.task)
-            ? entry.task.getLastRunSummary()
-            : undefined,
-        });
-      } catch (error) {
-        recordRunEnd(run.runId, {
-          status: "error",
-          error: error instanceof Error ? error.message : String(error),
-          summary: providesRunSummary(entry.task)
-            ? entry.task.getLastRunSummary()
-            : undefined,
-        });
-        throw error;
-      } finally {
-        // After recordRunEnd, so log-stream clients see the settled status.
-        finishRunLogCapture(run.runId);
-        this.running.delete(name);
-        taskRunBus.emit({ type: "run-finished", taskName: name });
-      }
-    });
+        this.hasRun.add(name);
+        this.running.add(name);
+        startRunLogCapture(run.runId, name);
+        yield* taskRunBus.emitEffect({ type: "run-started", taskName: name });
+
+        const taskEffect = fromPromise("run scheduled task", () =>
+          runWithLogCapture(run.runId, () =>
+            actualTrigger === "manual" && manualInput !== undefined
+              ? (entry.task as ScheduledTask & HandlesManualRunInput).runManual(
+                  manualInput,
+                )
+              : entry.task.run(),
+          ),
+        );
+
+        yield* taskEffect.pipe(
+          Effect.matchEffect({
+            onFailure: (error) =>
+              fromSync("record failed task run", () =>
+                recordRunEnd(run.runId, {
+                  status: "error",
+                  error: error.message,
+                  summary: providesRunSummary(entry.task)
+                    ? entry.task.getLastRunSummary()
+                    : undefined,
+                }),
+              ).pipe(Effect.andThen(Effect.fail(error))),
+            onSuccess: () =>
+              fromSync("record successful task run", () =>
+                recordRunEnd(run.runId, {
+                  status: "success",
+                  summary: providesRunSummary(entry.task)
+                    ? entry.task.getLastRunSummary()
+                    : undefined,
+                }),
+              ),
+          }),
+          Effect.ensuring(this.finishRunEffect(run.runId, name)),
+        );
+      }),
+    );
+  }
+
+  private finishRunEffect(runId: string, name: string): Effect.Effect<void> {
+    const safely = (operation: string, action: () => void) =>
+      Effect.try({ try: action, catch: (cause) => cause }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => this.logger.error(`${operation} failed`, error)),
+        ),
+      );
+    return Effect.all(
+      [
+        safely("Finish task log capture", () => finishRunLogCapture(runId)),
+        Effect.sync(() => this.running.delete(name)),
+        taskRunBus.emitEffect({ type: "run-finished", taskName: name }),
+      ],
+      { concurrency: "unbounded", discard: true },
+    );
   }
 
   public list(): TaskInfo[] {
@@ -252,20 +402,26 @@ export class TaskRegistry {
   }
 }
 
-export class TaskNotFoundError extends Error {
-  constructor(name: string) {
-    super(`Unknown task "${name}"`);
+export class TaskNotFoundError extends Data.TaggedError("TaskNotFoundError")<{
+  readonly name: string;
+}> {
+  public override get message(): string {
+    return `Unknown task "${this.name}"`;
   }
 }
 
-export class TaskAlreadyRunningError extends Error {
-  constructor(name: string) {
-    super(`Task "${name}" is already running`);
+export class TaskAlreadyRunningError extends Data.TaggedError(
+  "TaskAlreadyRunningError",
+)<{ readonly name: string }> {
+  public override get message(): string {
+    return `Task "${this.name}" is already running`;
   }
 }
 
-export class TaskManualInputUnsupportedError extends Error {
-  constructor(name: string) {
-    super(`Task "${name}" does not accept manual input`);
+export class TaskManualInputUnsupportedError extends Data.TaggedError(
+  "TaskManualInputUnsupportedError",
+)<{ readonly name: string }> {
+  public override get message(): string {
+    return `Task "${this.name}" does not accept manual input`;
   }
 }

@@ -1,4 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Data, Effect, Schedule } from "effect";
+import { runPromise } from "../effect/interop.js";
 import type { Streamer } from "../live-check/streamers.js";
 import type { ApnsControlClient } from "./apns.js";
 import {
@@ -21,6 +23,10 @@ export type ControlRegistrationInput = {
   pushToken: string;
   environment: ApnsEnvironment;
 };
+
+class TransientControlPushError extends Data.TaggedError("TransientControlPushError")<{
+  readonly message: string;
+}> {}
 
 export class IOSControlService {
   private permanentFailures = new Set<string>();
@@ -57,37 +63,54 @@ export class IOSControlService {
     };
   }
 
-  public async registerDevice(
+  public registerDevice(
     deviceId: string,
     controls: ControlRegistrationInput[],
   ): Promise<void> {
-    const previous = new Map(
-      listIOSControlRegistrations()
-        .filter((row) => row.deviceId === deviceId)
-        .map((row) => [row.registrationId, row]),
-    );
-    const rows = replaceDeviceRegistrations(deviceId, controls);
-    const currentIds = new Set(rows.map((row) => row.registrationId));
-    for (const row of previous.values()) {
-      if (!currentIds.has(row.registrationId)) {
-        this.clearPermanentFailures(row.registrationId);
-      }
-    }
-    if (!this.apns) return;
-    for (const row of rows) {
-      // An explicit app sync is also an operator-requested retry after fixing
-      // a permanent APNs configuration error.
-      this.clearPermanentFailures(row.registrationId);
-    }
-    await this.deliver(this.undeliveredRegistrations());
+    return runPromise(this.registerDeviceEffect(deviceId, controls));
   }
 
-  public async reconcile(): Promise<void> {
-    const slots = buildLiveControlSlots(this.streamers, this.homeUrl);
-    this.lastReconciledAt = Date.now();
-    if (!this.apns) return;
-    const hashes = new Map(slots.map((slot) => [slot.slot, liveControlSlotHash(slot)]));
-    await this.deliver(this.undeliveredRegistrations(hashes));
+  public registerDeviceEffect(
+    deviceId: string,
+    controls: ControlRegistrationInput[],
+  ): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      const previous = new Map(
+        listIOSControlRegistrations()
+          .filter((row) => row.deviceId === deviceId)
+          .map((row) => [row.registrationId, row]),
+      );
+      const rows = replaceDeviceRegistrations(deviceId, controls);
+      const currentIds = new Set(rows.map((row) => row.registrationId));
+      for (const row of previous.values()) {
+        if (!currentIds.has(row.registrationId)) {
+          this.clearPermanentFailures(row.registrationId);
+        }
+      }
+      if (!this.apns) return;
+      for (const row of rows) {
+        // An explicit app sync is also an operator-requested retry after fixing
+        // a permanent APNs configuration error.
+        this.clearPermanentFailures(row.registrationId);
+      }
+      yield* this.deliverEffect(this.undeliveredRegistrations());
+    });
+  }
+
+  public reconcile(): Promise<void> {
+    return runPromise(this.reconcileEffect());
+  }
+
+  public reconcileEffect(): Effect.Effect<void> {
+    return Effect.gen(this, function* () {
+      const slots = buildLiveControlSlots(this.streamers, this.homeUrl);
+      this.lastReconciledAt = Date.now();
+      if (!this.apns) return;
+      const hashes = new Map(
+        slots.map((slot) => [slot.slot, liveControlSlotHash(slot)]),
+      );
+      yield* this.deliverEffect(this.undeliveredRegistrations(hashes));
+    });
   }
 
   public close(): void {
@@ -113,19 +136,22 @@ export class IOSControlService {
     });
   }
 
-  private async deliver(
+  private deliverEffect(
     registrations: Array<{ registrationId: string; hash: string }>,
-  ): Promise<void> {
-    await Promise.all(
-      registrations.map(async ({ registrationId, hash }) => {
-        const failureKey = `${registrationId}:${hash}`;
-        if (this.permanentFailures.has(failureKey)) return;
-        const outcome = await this.push(registrationId, hash);
-        if (outcome === "permanent") this.permanentFailures.add(failureKey);
-        else if (outcome === "delivered") {
-          this.clearPermanentFailures(registrationId);
-        }
-      }),
+  ): Effect.Effect<void> {
+    return Effect.forEach(
+      registrations,
+      ({ registrationId, hash }) =>
+        Effect.gen(this, function* () {
+          const failureKey = `${registrationId}:${hash}`;
+          if (this.permanentFailures.has(failureKey)) return;
+          const outcome = yield* this.pushEffect(registrationId, hash);
+          if (outcome === "permanent") this.permanentFailures.add(failureKey);
+          else if (outcome === "delivered") {
+            this.clearPermanentFailures(registrationId);
+          }
+        }),
+      { concurrency: "unbounded", discard: true },
     );
   }
 
@@ -135,50 +161,58 @@ export class IOSControlService {
     }
   }
 
-  private async push(
+  private pushEffect(
     registrationId: string,
     desiredHash: string,
-  ): Promise<"delivered" | "transient" | "permanent"> {
+  ): Effect.Effect<"delivered" | "transient" | "permanent"> {
     const registration = listIOSControlRegistrations().find(
       (row) => row.registrationId === registrationId,
     );
-    if (!registration || !this.apns) return "delivered";
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const result = await this.apns.sendControlChanged(registration);
-        if (result.kind === "sent") {
-          markIOSControlDelivered(
-            registration.registrationId,
-            registration.pushToken,
-            desiredHash,
-          );
-          return "delivered";
-        }
-        if (result.kind === "invalid-token") {
-          deleteIOSControlRegistration(
-            registration.registrationId,
-            registration.pushToken,
-          );
-          this.logger.info(`Removed stale control token: ${result.reason}`);
-          return "delivered";
-        }
-        const transient =
-          result.status === 0 || result.status === 429 || result.status >= 500;
-        if (transient && attempt === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          continue;
-        }
-        this.logger.warn(`Control push failed (${result.status}): ${result.reason}`);
-        return transient ? "transient" : "permanent";
-      } catch (error) {
-        if (attempt === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 250));
-          continue;
-        }
-        this.logger.warn(`Control push failed: ${(error as Error).message}`);
-        return "transient";
+    if (!registration || !this.apns) return Effect.succeed("delivered");
+    const apns = this.apns;
+    const attempt = Effect.gen(this, function* () {
+      const result = yield* apns.sendControlChangedEffect(registration).pipe(
+        Effect.mapError(
+          (cause) =>
+            new TransientControlPushError({
+              message: cause.message,
+            }),
+        ),
+      );
+      if (result.kind === "sent") {
+        markIOSControlDelivered(
+          registration.registrationId,
+          registration.pushToken,
+          desiredHash,
+        );
+        return "delivered" as const;
       }
-    }
-    return "delivered";
+      if (result.kind === "invalid-token") {
+        deleteIOSControlRegistration(
+          registration.registrationId,
+          registration.pushToken,
+        );
+        this.logger.info(`Removed stale control token: ${result.reason}`);
+        return "delivered" as const;
+      }
+      const transient =
+        result.status === 0 || result.status === 429 || result.status >= 500;
+      if (transient) {
+        return yield* new TransientControlPushError({
+          message: `Control push failed (${result.status}): ${result.reason}`,
+        });
+      }
+      this.logger.warn(`Control push failed (${result.status}): ${result.reason}`);
+      return "permanent" as const;
+    });
+    return attempt.pipe(
+      Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 1 }),
+      Effect.catchTag("TransientControlPushError", (error) =>
+        Effect.sync(() => {
+          this.logger.warn(error.message);
+          return "transient" as const;
+        }),
+      ),
+    );
   }
 }

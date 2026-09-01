@@ -1,9 +1,15 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EnqueueEpisodeRequest } from "../account.js";
 import { PodcastQueuePosition } from "../account.js";
 import type { CastroApi } from "./api.js";
-import { CastroClient, matchEpisode, normalizeMediaUrl } from "./client.js";
+import {
+  CastroClient,
+  matchEpisode,
+  normalizeMediaUrl,
+  sharedCastroApi,
+} from "./client.js";
 import {
   type CastroAction,
   CastroActionType,
@@ -14,6 +20,19 @@ import {
 const PODCAST_ID = "33333333-3333-4333-8333-333333333333";
 const EPISODE_ID = "11111111-1111-4111-8111-111111111111";
 const FEED_URL = "https://example.com/feed.xml";
+
+describe("sharedCastroApi", () => {
+  it("reuses pacing for unchanged credentials", () => {
+    expect(sharedCastroApi("device-a", "secret-a")).toBe(
+      sharedCastroApi("device-a", "secret-a"),
+    );
+  });
+
+  it("does not retain an API signed with stale credentials", () => {
+    const original = sharedCastroApi("device-a", "secret-a");
+    expect(sharedCastroApi("device-b", "secret-b")).not.toBe(original);
+  });
+});
 
 const searchResult = {
   artwork_url: {
@@ -46,34 +65,38 @@ const podcast = {
 
 function fakeApi() {
   return {
-    searchPodcasts: vi.fn(async () => [searchResult]),
-    searchEpisodes: vi.fn(async () => [
-      {
-        artwork_url: "https://example.com/episode.jpg",
-        author: "Example Author",
-        podcast_artwork_url: "https://example.com/podcast.jpg",
-        podcast_name: "Example Podcast",
-        published_at: "2026-07-16T17:30:00.000Z",
-        tentacles_id: EPISODE_ID,
-        title: "Example Episode",
-      },
-    ]),
-    fetchPodcast: vi.fn(async () => podcast),
-    fetchSubscriptions: vi.fn(async () => []),
+    searchPodcasts: vi.fn(() => Effect.succeed([searchResult])),
+    searchEpisodes: vi.fn(() =>
+      Effect.succeed([
+        {
+          artwork_url: "https://example.com/episode.jpg",
+          author: "Example Author",
+          podcast_artwork_url: "https://example.com/podcast.jpg",
+          podcast_name: "Example Podcast",
+          published_at: "2026-07-16T17:30:00.000Z",
+          tentacles_id: EPISODE_ID,
+          title: "Example Episode",
+        },
+      ]),
+    ),
+    fetchPodcast: vi.fn(() => Effect.succeed(podcast)),
+    fetchSubscriptions: vi.fn(() => Effect.succeed([])),
     fetchQueue: vi.fn(
-      async (): Promise<{
+      (): Effect.Effect<{
         queue_items: {
           episode_id: string;
           podcast_id: string;
           fractional_position: string;
         }[];
-      }> => ({ queue_items: [] }),
+      }> => Effect.succeed({ queue_items: [] }),
     ),
-    postActions: vi.fn(async (_actions: CastroAction[]) => undefined),
-    subscribe: vi.fn(async () => ({
-      subscribed: [{ feed_id: PODCAST_ID, feed_url: FEED_URL }],
-      latest_event_id: 1,
-    })),
+    postActions: vi.fn((_actions: CastroAction[]) => Effect.void),
+    subscribe: vi.fn(() =>
+      Effect.succeed({
+        subscribed: [{ feed_id: PODCAST_ID, feed_url: FEED_URL }],
+        latest_event_id: 1,
+      }),
+    ),
   };
 }
 
@@ -84,9 +107,13 @@ describe("CastroClient search-backed writes", () => {
 
   it("maps general podcast and episode searches", async () => {
     const api = fakeApi();
-    const client = new CastroClient(api as unknown as CastroApi, logger);
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
 
-    await expect(client.searchPodcasts("example")).resolves.toMatchObject({
+    await expect(
+      Effect.runPromise(client.searchPodcasts("example")),
+    ).resolves.toMatchObject({
       status: "ok",
       value: [
         {
@@ -97,7 +124,9 @@ describe("CastroClient search-backed writes", () => {
         },
       ],
     });
-    await expect(client.searchEpisodes("example episode")).resolves.toMatchObject({
+    await expect(
+      Effect.runPromise(client.searchEpisodes("example episode")),
+    ).resolves.toMatchObject({
       status: "ok",
       value: [{ clientId: EPISODE_ID, showTitle: "Example Podcast" }],
     });
@@ -105,17 +134,21 @@ describe("CastroClient search-backed writes", () => {
 
   it("resolves an unsubscribed RSS feed and enqueues its episode", async () => {
     const api = fakeApi();
-    const client = new CastroClient(api as unknown as CastroApi, logger);
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
 
     await expect(
-      client.enqueueEpisode({
-        feedUrl: FEED_URL,
-        itunesId: 1234,
-        episodeGuid: "rss-guid",
-        showTitle: "Example Podcast",
-        episodeTitle: "Example Episode",
-        position: PodcastQueuePosition.Last,
-      }),
+      Effect.runPromise(
+        client.enqueueEpisode({
+          feedUrl: FEED_URL,
+          itunesId: 1234,
+          episodeGuid: "rss-guid",
+          showTitle: "Example Podcast",
+          episodeTitle: "Example Episode",
+          position: PodcastQueuePosition.Last,
+        }),
+      ),
     ).resolves.toBe("added");
 
     expect(api.searchPodcasts).toHaveBeenCalledWith(FEED_URL);
@@ -126,24 +159,104 @@ describe("CastroClient search-backed writes", () => {
     ).toEqual([CastroActionType.EpisodeQueued, CastroActionType.ClearEpisodeNew]);
   });
 
-  it("Queue Next inserts after the current top item, not above it", async () => {
-    const api = fakeApi();
-    // A queue whose top item ("a0") is playing/up-next and a second item ("a1").
-    api.fetchQueue = vi.fn(async () => ({
-      queue_items: [
-        { episode_id: "e0", podcast_id: PODCAST_ID, fractional_position: "a0" },
-        { episode_id: "e1", podcast_id: PODCAST_ID, fractional_position: "a1" },
-      ],
-    }));
-    const client = new CastroClient(api as unknown as CastroApi, logger);
-
-    await client.enqueueEpisode({
+  it("allocates unique action ids across overlapping client instances", async () => {
+    const firstApi = fakeApi();
+    const secondApi = fakeApi();
+    const [first, second] = await Effect.runPromise(
+      Effect.all([
+        CastroClient.make(firstApi as unknown as CastroApi, logger),
+        CastroClient.make(secondApi as unknown as CastroApi, logger),
+      ]),
+    );
+    const request: EnqueueEpisodeRequest = {
       feedUrl: FEED_URL,
       episodeGuid: "rss-guid",
       showTitle: "Example Podcast",
       episodeTitle: "Example Episode",
-      position: PodcastQueuePosition.Next,
-    });
+    };
+
+    await Effect.runPromise(
+      Effect.all([first.enqueueEpisode(request), second.enqueueEpisode(request)], {
+        concurrency: "unbounded",
+      }),
+    );
+
+    const ids = [
+      ...(firstApi.postActions.mock.calls[0]?.[0] ?? []),
+      ...(secondApi.postActions.mock.calls[0]?.[0] ?? []),
+    ].map(({ id }) => id);
+    expect(new Set(ids).size).toBe(4);
+  });
+
+  it("serializes concurrent queue read/decision/write across client instances", async () => {
+    let queued = false;
+    const api = fakeApi();
+    api.fetchQueue = vi.fn(() =>
+      Effect.succeed({
+        queue_items: queued
+          ? [
+              {
+                episode_id: EPISODE_ID,
+                podcast_id: PODCAST_ID,
+                fractional_position: "a0",
+              },
+            ]
+          : [],
+      }),
+    );
+    api.postActions = vi.fn(() =>
+      Effect.sync(() => {
+        queued = true;
+      }),
+    );
+    const [first, second] = await Effect.runPromise(
+      Effect.all([
+        CastroClient.make(api as unknown as CastroApi, logger),
+        CastroClient.make(api as unknown as CastroApi, logger),
+      ]),
+    );
+    const request: EnqueueEpisodeRequest = {
+      feedUrl: FEED_URL,
+      episodeGuid: "rss-guid",
+      showTitle: "Example Podcast",
+      episodeTitle: "Example Episode",
+    };
+
+    const results = await Effect.runPromise(
+      Effect.all([first.enqueueEpisode(request), second.enqueueEpisode(request)], {
+        concurrency: "unbounded",
+      }),
+    );
+
+    expect(results.sort()).toEqual(["added", "already_exists"]);
+    expect(api.postActions).toHaveBeenCalledTimes(1);
+    expect(api.fetchQueue).toHaveBeenCalledTimes(2);
+  });
+
+  it("Queue Next inserts after the current top item, not above it", async () => {
+    const api = fakeApi();
+    // A queue whose top item ("a0") is playing/up-next and a second item ("a1").
+    api.fetchQueue = vi.fn(() =>
+      Effect.succeed({
+        queue_items: [
+          { episode_id: "e0", podcast_id: PODCAST_ID, fractional_position: "a0" },
+          { episode_id: "e1", podcast_id: PODCAST_ID, fractional_position: "a1" },
+        ],
+      }),
+    );
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
+
+    await Effect.runPromise(
+      client.enqueueEpisode({
+        feedUrl: FEED_URL,
+        episodeGuid: "rss-guid",
+        showTitle: "Example Podcast",
+        episodeTitle: "Example Episode",
+        position: PodcastQueuePosition.Next,
+      }),
+    );
 
     const queued = api.postActions.mock.calls[0]?.[0][0];
     const pos = JSON.parse(queued?.event_data ?? "{}").fractional_position as string;
@@ -153,14 +266,18 @@ describe("CastroClient search-backed writes", () => {
 
   it("resolves an RSS feed and subscribes by Castro podcast id", async () => {
     const api = fakeApi();
-    const client = new CastroClient(api as unknown as CastroApi, logger);
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
 
     await expect(
-      client.subscribeToShow({
-        title: "Example Podcast",
-        feedUrl: FEED_URL,
-        itunesId: 1234,
-      }),
+      Effect.runPromise(
+        client.subscribeToShow({
+          title: "Example Podcast",
+          feedUrl: FEED_URL,
+          itunesId: 1234,
+        }),
+      ),
     ).resolves.toBe("added");
     expect(api.subscribe).toHaveBeenCalledWith([PODCAST_ID]);
   });
@@ -170,42 +287,50 @@ describe("CastroClient Inbox", () => {
   it("returns only is_new episodes and clears them without dequeueing", async () => {
     const api = {
       ...fakeApi(),
-      fetchSubscriptions: vi.fn(async () => [
-        { podcast_id: PODCAST_ID, private: false, will_notify_device: true },
-      ]),
-      fetchPodcastState: vi.fn(async () => ({
-        public_id: PODCAST_ID,
-        episode_states: [
-          {
-            episode_id: EPISODE_ID,
-            is_new: true,
-            is_starred: false,
-            is_played: false,
-            last_played: null,
-            progress_seconds: 0,
-          },
-          {
-            episode_id: "22222222-2222-4222-8222-222222222222",
-            is_new: false,
-            is_starred: false,
-            is_played: false,
-            last_played: null,
-            progress_seconds: 0,
-          },
-        ],
-      })),
-      fetchEpisode: vi.fn(async () =>
-        castroEpisode({
-          public_id: EPISODE_ID,
-          guid: "rss-guid",
-          title: "Preview Episode",
-          description: "This is a free preview of a paid post.",
+      fetchSubscriptions: vi.fn(() =>
+        Effect.succeed([
+          { podcast_id: PODCAST_ID, private: false, will_notify_device: true },
+        ]),
+      ),
+      fetchPodcastState: vi.fn(() =>
+        Effect.succeed({
+          public_id: PODCAST_ID,
+          episode_states: [
+            {
+              episode_id: EPISODE_ID,
+              is_new: true,
+              is_starred: false,
+              is_played: false,
+              last_played: null,
+              progress_seconds: 0,
+            },
+            {
+              episode_id: "22222222-2222-4222-8222-222222222222",
+              is_new: false,
+              is_starred: false,
+              is_played: false,
+              last_played: null,
+              progress_seconds: 0,
+            },
+          ],
         }),
       ),
+      fetchEpisode: vi.fn(() =>
+        Effect.succeed(
+          castroEpisode({
+            public_id: EPISODE_ID,
+            guid: "rss-guid",
+            title: "Preview Episode",
+            description: "This is a free preview of a paid post.",
+          }),
+        ),
+      ),
     };
-    const client = new CastroClient(api as unknown as CastroApi, logger);
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
 
-    await expect(client.fetchInbox()).resolves.toMatchObject({
+    await expect(Effect.runPromise(client.fetchInbox())).resolves.toMatchObject({
       status: "ok",
       value: [
         {
@@ -215,7 +340,9 @@ describe("CastroClient Inbox", () => {
         },
       ],
     });
-    await expect(client.clearInboxEpisode(EPISODE_ID)).resolves.toBe("removed");
+    await expect(Effect.runPromise(client.clearInboxEpisode(EPISODE_ID))).resolves.toBe(
+      "removed",
+    );
     expect(api.fetchQueue).not.toHaveBeenCalled();
     expect(api.postActions).toHaveBeenLastCalledWith([
       expect.objectContaining({
@@ -284,19 +411,25 @@ describe("CastroClient.fetchListenHistory", () => {
       },
     };
     return {
-      fetchSubscriptions: vi.fn(async () => [
-        { podcast_id: PODCAST_ID, private: false, will_notify_device: true },
-      ]),
-      fetchPodcast: vi.fn(async () => ({
-        public_id: PODCAST_ID,
-        title: "Example Podcast",
-        episodes: [],
-      })),
-      fetchPodcastState: vi.fn(async () => ({
-        podcast_id: PODCAST_ID,
-        episode_states: episodeStates,
-      })),
-      fetchEpisode: vi.fn(async (id: string) => episodes[id]),
+      fetchSubscriptions: vi.fn(() =>
+        Effect.succeed([
+          { podcast_id: PODCAST_ID, private: false, will_notify_device: true },
+        ]),
+      ),
+      fetchPodcast: vi.fn(() =>
+        Effect.succeed({
+          public_id: PODCAST_ID,
+          title: "Example Podcast",
+          episodes: [],
+        }),
+      ),
+      fetchPodcastState: vi.fn(() =>
+        Effect.succeed({
+          podcast_id: PODCAST_ID,
+          episode_states: episodeStates,
+        }),
+      ),
+      fetchEpisode: vi.fn((id: string) => Effect.succeed(episodes[id])),
     };
   }
 
@@ -327,9 +460,13 @@ describe("CastroClient.fetchListenHistory", () => {
         progress_seconds: 10,
       },
     ]);
-    const client = new CastroClient(api as unknown as CastroApi, logger);
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
 
-    const result = await client.fetchListenHistory(Date.now() - 10 * DAY);
+    const result = await Effect.runPromise(
+      client.fetchListenHistory(Date.now() - 10 * DAY),
+    );
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     // The 100-day-old play is excluded by the cutoff.
@@ -338,6 +475,7 @@ describe("CastroClient.fetchListenHistory", () => {
     const partial = result.value.find((e) => e.episodeGuid === "guid-partial");
     expect(played?.completion).toBe(1);
     expect(played?.starred).toBe(true);
+    expect(played?.mediaUrl).toBe("u1");
     expect(partial?.completion).toBeCloseTo(0.3);
   });
 
@@ -352,9 +490,11 @@ describe("CastroClient.fetchListenHistory", () => {
         progress_seconds: 500,
       },
     ]);
-    const client = new CastroClient(api as unknown as CastroApi, logger);
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
 
-    const result = await client.fetchListenHistory();
+    const result = await Effect.runPromise(client.fetchListenHistory());
     if (result.status !== "ok") throw new Error("expected ok");
     expect(result.value[0]?.completion).toBe(1);
   });
@@ -370,9 +510,11 @@ describe("CastroClient.fetchListenHistory", () => {
         progress_seconds: 0,
       },
     ]);
-    const client = new CastroClient(api as unknown as CastroApi, logger);
+    const client = await Effect.runPromise(
+      CastroClient.make(api as unknown as CastroApi, logger),
+    );
 
-    const result = await client.fetchListenHistory();
+    const result = await Effect.runPromise(client.fetchListenHistory());
     if (result.status !== "ok") throw new Error("expected ok");
     expect(result.value).toHaveLength(0);
   });

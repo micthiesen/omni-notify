@@ -7,6 +7,7 @@ import {
   fetchCosts,
   type ServiceCost,
 } from "../api";
+import { forkUiRequest } from "../effect";
 import {
   formatAbsoluteWithYear,
   formatCalendarDate,
@@ -75,21 +76,13 @@ export default function CostsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     setData(null);
     setError(null);
-    fetchCosts(range)
-      .then((result) => {
-        if (!cancelled) setData(result);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load costs");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
+    return forkUiRequest(fetchCosts(range), {
+      onSuccess: setData,
+      onFailure: (err) =>
+        setError(err instanceof Error ? err.message : "Failed to load costs"),
+    });
   }, [range]);
 
   const featureNames = useMemo(

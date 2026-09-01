@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { ApiError, fetchSnapshot, runTaskRequest } from "./api";
+import { Effect, Ref, Schedule, Schema } from "effect";
+import { ApiError, fetchSnapshot, runTaskRequest, SnapshotSchema } from "./api";
 import type { ManualRunOptions, Snapshot } from "./api";
+import { forkUiEffect, makeUiCallbackRuntime, runUiEffect } from "./effect";
 
 export type ConnectionState = "connecting" | "live" | "polling";
 
@@ -19,9 +21,6 @@ interface LiveDataValue {
 
 const LiveDataContext = createContext<LiveDataValue | null>(null);
 
-const POLL_MS = 10_000;
-const RECONNECT_MS = 5_000;
-
 /**
  * Single source of dashboard state for the whole app. Subscribes to the
  * server's SSE stream (`/api/events`) for realtime snapshots, and falls back
@@ -33,81 +32,111 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let closed = false;
-    let live = false;
-    let source: EventSource | null = null;
-    let reconnectTimer: number | undefined;
-    let pollTimer: number | undefined;
-    let pollInFlight = false;
+    const lifecycle = Effect.scoped(
+      Effect.gen(function* () {
+        const isLive = yield* Ref.make(false);
 
-    const stopPolling = () => {
-      window.clearTimeout(pollTimer);
-      pollTimer = undefined;
-    };
+        const poll = Ref.get(isLive).pipe(
+          Effect.flatMap((live) =>
+            live
+              ? Effect.void
+              : fetchSnapshot().pipe(
+                  Effect.tap((next) =>
+                    Ref.get(isLive).pipe(
+                      Effect.tap((becameLive) =>
+                        becameLive
+                          ? Effect.void
+                          : Effect.sync(() => {
+                              setSnapshot(next);
+                              setError(null);
+                            }),
+                      ),
+                    ),
+                  ),
+                ),
+          ),
+          Effect.catchAll((cause) =>
+            Effect.sync(() => {
+              setError(
+                cause instanceof Error ? cause.message : "Failed to fetch snapshot",
+              );
+            }),
+          ),
+        );
 
-    const poll = async () => {
-      if (closed || pollInFlight) return;
-      stopPolling();
-      pollInFlight = true;
-      try {
-        const snap = await fetchSnapshot();
-        if (closed) return;
-        // A fetch that resolves after the stream came up is stale relative to
-        // the SSE snapshot; don't let it clobber newer data.
-        if (!live) {
-          setSnapshot(snap);
-          setError(null);
-        }
-      } catch (err) {
-        if (closed) return;
-        setError(err instanceof Error ? err.message : "Failed to fetch snapshot");
-      } finally {
-        pollInFlight = false;
-      }
-      if (!closed && !live) pollTimer = window.setTimeout(() => void poll(), POLL_MS);
-    };
+        // Fetch immediately for first paint, then continue as a fallback while
+        // EventSource is disconnected. Ref prevents stale polls replacing SSE data.
+        yield* Effect.forkScoped(Effect.repeat(poll, Schedule.spaced("10 seconds")));
 
-    const connect = () => {
-      source = new EventSource("/api/events");
-      source.addEventListener("snapshot", (event) => {
-        if (closed) return;
-        live = true;
-        stopPolling();
-        setConnection("live");
-        setError(null);
-        setSnapshot(JSON.parse((event as MessageEvent<string>).data) as Snapshot);
-      });
-      source.onerror = () => {
-        if (closed) return;
-        // EventSource retries transient failures itself; only rebuild the
-        // connection when it gives up. Poll while disconnected either way.
-        live = false;
-        setConnection("polling");
-        void poll();
-        if (source?.readyState === EventSource.CLOSED) {
-          source.close();
-          reconnectTimer = window.setTimeout(connect, RECONNECT_MS);
-        }
-      };
-    };
+        const connect = Effect.scoped(
+          Effect.gen(function* () {
+            const runCallback = yield* makeUiCallbackRuntime();
+            yield* Effect.acquireUseRelease(
+              Effect.sync(() => new EventSource("/api/events")),
+              (source) =>
+                Effect.async<void>((resume) => {
+                  const onSnapshot = (event: Event) => {
+                    const data = (event as MessageEvent<string>).data;
+                    runCallback(
+                      Effect.try({
+                        try: () => JSON.parse(data) as unknown,
+                        catch: (cause) => cause,
+                      }).pipe(
+                        Effect.flatMap(Schema.decodeUnknown(SnapshotSchema)),
+                        Effect.tap(() => Ref.set(isLive, true)),
+                        Effect.tap((next) =>
+                          Effect.sync(() => {
+                            setConnection("live");
+                            setError(null);
+                            setSnapshot(next);
+                          }),
+                        ),
+                        Effect.catchAll((cause) =>
+                          Effect.sync(() =>
+                            setError(
+                              cause instanceof Error
+                                ? cause.message
+                                : "Invalid live snapshot",
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  };
+                  const onError = () => {
+                    runCallback(
+                      Ref.set(isLive, false).pipe(
+                        Effect.tap(() => Effect.sync(() => setConnection("polling"))),
+                        Effect.tap(() =>
+                          source.readyState === EventSource.CLOSED
+                            ? Effect.sync(() => resume(Effect.void))
+                            : Effect.void,
+                        ),
+                      ),
+                    );
+                  };
+                  source.addEventListener("snapshot", onSnapshot);
+                  source.addEventListener("error", onError);
+                  return Effect.sync(() => {
+                    source.removeEventListener("snapshot", onSnapshot);
+                    source.removeEventListener("error", onError);
+                  });
+                }),
+              (source) => Effect.sync(() => source.close()),
+            );
+          }),
+        );
 
-    connect();
-    // First paint must not be hostage to the SSE connection: a stalled (but
-    // not yet failed) stream fires no error, so fetch a snapshot in parallel
-    // and keep polling until the stream delivers.
-    void poll();
-    return () => {
-      closed = true;
-      source?.close();
-      window.clearTimeout(reconnectTimer);
-      stopPolling();
-    };
+        yield* Effect.repeat(connect, Schedule.spaced("5 seconds"));
+      }),
+    );
+    return forkUiEffect(lifecycle);
   }, []);
 
   const runTask = useCallback(
     async (name: string, options?: ManualRunOptions): Promise<RunResult> => {
       try {
-        await runTaskRequest(name, options);
+        await runUiEffect(runTaskRequest(name, options));
         // The SSE snapshot lands ~200ms later; flip the flag now so the button
         // reacts instantly.
         setSnapshot((prev) =>

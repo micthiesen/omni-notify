@@ -1,4 +1,4 @@
-import { EventEmitter } from "node:events";
+import { Effect } from "effect";
 import type { TaskRunLogLine } from "./persistence.js";
 
 export interface TaskRunEvent {
@@ -11,23 +11,29 @@ export type RunLogEvent =
   | { type: "end"; runId: string };
 
 class Bus<TEvent> {
-  private emitter = new EventEmitter();
-
-  public constructor() {
-    // One listener per connected dashboard/log viewer; the default cap of 10
-    // is too low.
-    this.emitter.setMaxListeners(0);
-  }
+  private listeners = new Set<(event: TEvent) => void>();
 
   public emit(event: TEvent): void {
-    this.emitter.emit("event", event);
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        // A dashboard/SSE observer is never allowed to corrupt task state or
+        // replace the task's original failure.
+        console.error("Task event subscriber failed", error);
+      }
+    }
+  }
+
+  public emitEffect(event: TEvent): Effect.Effect<void> {
+    return Effect.sync(() => this.emit(event));
   }
 
   /** Returns an unsubscribe function. */
   public subscribe(listener: (event: TEvent) => void): () => void {
-    this.emitter.on("event", listener);
+    this.listeners.add(listener);
     return () => {
-      this.emitter.off("event", listener);
+      this.listeners.delete(listener);
     };
   }
 }

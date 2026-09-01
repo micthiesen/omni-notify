@@ -1,6 +1,3 @@
-import { readFileSync } from "node:fs";
-import config from "../utils/config.js";
-
 const SECTION_HEADER_RE = /^##\s+voices\b/i;
 const HEADER_RE = /^##(?!#)/;
 const LIST_ITEM_RE = /^\s*[-*]\s+(.+)$/;
@@ -54,15 +51,4 @@ function cleanVoiceItem(raw: string): string | undefined {
   if (cleaned.startsWith("<")) return undefined;
 
   return cleaned;
-}
-
-/** Reads and parses the voices section from the configured taste profile. */
-export function loadVoices(): string[] {
-  const path = config.PODCAST_TASTE_PATH;
-  if (!path) return [];
-  try {
-    return parseVoices(readFileSync(path, "utf8"));
-  } catch {
-    return [];
-  }
 }

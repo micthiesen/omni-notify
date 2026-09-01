@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Effect } from "effect";
 import type { FetchedEmail } from "../email/types.js";
 import type {
   WorkspaceEmailScopeData,
   WorkspaceSourceData,
   WorkspaceSubjectData,
 } from "./persistence.js";
+import { WorkspaceOperationError } from "./errors.js";
 
 const mocks = vi.hoisted(() => ({
   sources: new Map<string, WorkspaceSourceData>(),
@@ -20,9 +22,15 @@ vi.mock("./persistence.js", () => ({
   getWorkspaceSource: (sourceId: string) => mocks.sources.get(sourceId),
   getWorkspaceSubject: () => mocks.subject,
   listAllWorkspaceEmailScopes: () => mocks.scopes,
+  markWorkspaceSourcesTriggered: (sourceIds: string[]) => {
+    for (const sourceId of sourceIds) {
+      const source = mocks.sources.get(sourceId);
+      if (source) source.triggeredAt = 1;
+    }
+  },
 }));
 
-import { WorkspaceEmailHandler } from "./email.js";
+import { WorkspaceEmailHandler, type WorkspaceEmailTrigger } from "./email.js";
 
 const email: FetchedEmail = {
   id: "email-1",
@@ -60,13 +68,13 @@ describe("WorkspaceEmailHandler", () => {
   });
 
   it("persists and triggers a newly matched active-subject email once", async () => {
-    const trigger = vi.fn();
+    const trigger = vi.fn(() => Effect.void);
     const handler = new WorkspaceEmailHandler(trigger, {
       info: vi.fn(),
     } as never);
 
-    await handler.handleEmails([email]);
-    await handler.handleEmails([email]);
+    await Effect.runPromise(handler.handleEmailsEffect([email]));
+    await Effect.runPromise(handler.handleEmailsEffect([email]));
 
     expect(mocks.sources.size).toBe(1);
     expect(trigger).toHaveBeenCalledTimes(1);
@@ -80,14 +88,60 @@ describe("WorkspaceEmailHandler", () => {
 
   it("does not ingest for a paused subject", async () => {
     if (mocks.subject) mocks.subject.status = "paused";
-    const trigger = vi.fn();
+    const trigger = vi.fn(() => Effect.void);
     const handler = new WorkspaceEmailHandler(trigger, {
       info: vi.fn(),
     } as never);
 
-    await handler.handleEmails([email]);
+    await Effect.runPromise(handler.handleEmailsEffect([email]));
 
     expect(mocks.sources.size).toBe(0);
     expect(trigger).not.toHaveBeenCalled();
+  });
+
+  it("retries a persisted email whose workspace trigger failed", async () => {
+    const trigger = vi.fn<WorkspaceEmailTrigger>();
+    trigger.mockReturnValue(Effect.void);
+    trigger.mockImplementationOnce(() =>
+      Effect.fail(
+        new WorkspaceOperationError({
+          operation: "workspace run",
+          cause: new Error("Workspace run failed"),
+        }),
+      ),
+    );
+    const handler = new WorkspaceEmailHandler(trigger, {
+      info: vi.fn(),
+    } as never);
+
+    await expect(
+      Effect.runPromise(handler.handleEmailsEffect([email])),
+    ).rejects.toThrow("Workspace run failed");
+    expect(mocks.sources.size).toBe(1);
+    expect([...mocks.sources.values()][0]?.triggeredAt).toBeUndefined();
+
+    await Effect.runPromise(handler.handleEmailsEffect([email]));
+    expect(trigger).toHaveBeenCalledTimes(2);
+    expect([...mocks.sources.values()][0]?.triggeredAt).toBe(1);
+  });
+
+  it("does not mark sources triggered until the workspace run completes", async () => {
+    let complete!: () => void;
+    const trigger = vi.fn(() =>
+      Effect.async<void>((resume) => {
+        complete = () => resume(Effect.void);
+      }),
+    );
+    const handler = new WorkspaceEmailHandler(trigger, {
+      info: vi.fn(),
+    } as never);
+
+    const handling = Effect.runPromise(handler.handleEmailsEffect([email]));
+    await vi.waitFor(() => expect(trigger).toHaveBeenCalledTimes(1));
+    expect([...mocks.sources.values()][0]?.triggeredAt).toBeUndefined();
+
+    complete();
+    await handling;
+    expect([...mocks.sources.values()][0]?.triggeredAt).toBe(1);
   });
 });

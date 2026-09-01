@@ -4,7 +4,10 @@ import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import { IOSControlRegistrationEntity } from "./persistence.js";
-import { registerIOSControlRoutes } from "./routes.js";
+import {
+  IOS_CONTROL_MAX_SIGNED_BODY_BYTES,
+  registerIOSControlRoutes,
+} from "./routes.js";
 import { IOSControlService } from "./service.js";
 
 Injector.configure({
@@ -26,20 +29,24 @@ function app(): Hono {
   return app;
 }
 
-function authenticatedRequest(path: string, method = "GET", body = "") {
+function signedHeaders(path: string, method = "GET", body = "") {
   const timestamp = Math.floor(Date.now() / 1_000).toString();
   const nonce = randomUUID();
   const bodyHash = createHash("sha256").update(body).digest("hex");
   const canonical = `${timestamp}\n${nonce}\n${method}\n${path}\n${bodyHash}`;
   const signature = createHmac("sha256", token).update(canonical).digest("hex");
   return {
+    Authorization: `Omni-HMAC ${signature}`,
+    "X-Omni-Timestamp": timestamp,
+    "X-Omni-Nonce": nonce,
+    ...(body ? { "Content-Type": "application/json" } : {}),
+  };
+}
+
+function authenticatedRequest(path: string, method = "GET", body = "") {
+  return {
     method,
-    headers: {
-      Authorization: `Omni-HMAC ${signature}`,
-      "X-Omni-Timestamp": timestamp,
-      "X-Omni-Nonce": nonce,
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
+    headers: signedHeaders(path, method, body),
     ...(body ? { body } : {}),
   };
 }
@@ -109,5 +116,43 @@ describe("iOS control routes", () => {
     expect((await server.request("/api/ios-controls/slots/1", request)).status).toBe(
       401,
     );
+  });
+
+  it("rejects an oversized declared body before reading it", async () => {
+    const path = "/api/ios-controls/registrations";
+    const response = await app().request(path, {
+      method: "PUT",
+      headers: {
+        ...signedHeaders(path, "PUT", "{}"),
+        "Content-Length": String(IOS_CONTROL_MAX_SIGNED_BODY_BYTES + 1),
+      },
+      body: "{}",
+    });
+
+    expect(response.status).toBe(413);
+  });
+
+  it("rejects a chunked body that crosses the signed-body limit", async () => {
+    const path = "/api/ios-controls/registrations";
+    const first = "a".repeat(IOS_CONTROL_MAX_SIGNED_BODY_BYTES);
+    const second = "b";
+    const body = `${first}${second}`;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(Buffer.from(first));
+        controller.enqueue(Buffer.from(second));
+        controller.close();
+      },
+    });
+    const request = new Request(`http://localhost${path}`, {
+      method: "PUT",
+      headers: signedHeaders(path, "PUT", body),
+      body: stream,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const response = await app().request(request);
+
+    expect(response.status).toBe(413);
   });
 });

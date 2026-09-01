@@ -1,6 +1,8 @@
 import { createPrivateKey, sign } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { type ClientHttp2Session, connect } from "node:http2";
+import { Data, Effect, Scope } from "effect";
+import { runPromise } from "../effect/interop.js";
 import type { ApnsEnvironment, IOSControlRegistration } from "./persistence.js";
 
 export type ApnsConfig = {
@@ -14,6 +16,32 @@ export type ApnsControlPushResult =
   | { kind: "sent" }
   | { kind: "invalid-token"; reason: string }
   | { kind: "failed"; status: number; reason: string };
+
+export class ApnsTransportError extends Data.TaggedError("ApnsTransportError")<{
+  readonly operation?: string;
+  readonly cause: unknown;
+}> {
+  public override get message(): string {
+    const detail =
+      this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `APNs ${this.operation ?? "transport"} failed: ${detail}`;
+  }
+}
+
+export interface ApnsClientDependencies {
+  readonly readPrivateKey: (path: string) => Effect.Effect<string, ApnsTransportError>;
+  readonly connect: (authority: string) => ClientHttp2Session;
+}
+
+const defaultDependencies: ApnsClientDependencies = {
+  readPrivateKey: (path) =>
+    Effect.tryPromise({
+      try: () => readFile(path, "utf8"),
+      catch: (cause) =>
+        new ApnsTransportError({ operation: "signing key read", cause }),
+    }),
+  connect,
+};
 
 export function buildApnsControlRequest(
   bundleId: string,
@@ -57,12 +85,36 @@ export function createApnsProviderToken(
 }
 
 export class ApnsControlClient {
-  private readonly privateKeyPem: string;
   private token?: { value: string; issuedAt: number };
   private sessions = new Map<ApnsEnvironment, ClientHttp2Session>();
 
-  public constructor(private readonly config: ApnsConfig) {
-    this.privateKeyPem = readFileSync(config.privateKeyPath, "utf8");
+  private constructor(
+    private readonly config: ApnsConfig,
+    private readonly privateKeyPem: string,
+    private readonly dependencies: ApnsClientDependencies,
+  ) {}
+
+  public static createEffect(
+    config: ApnsConfig,
+    dependencies: ApnsClientDependencies = defaultDependencies,
+  ): Effect.Effect<ApnsControlClient, ApnsTransportError> {
+    return dependencies
+      .readPrivateKey(config.privateKeyPath)
+      .pipe(
+        Effect.map(
+          (privateKeyPem) => new ApnsControlClient(config, privateKeyPem, dependencies),
+        ),
+      );
+  }
+
+  public static scoped(
+    config: ApnsConfig,
+    dependencies: ApnsClientDependencies = defaultDependencies,
+  ): Effect.Effect<ApnsControlClient, ApnsTransportError, Scope.Scope> {
+    return Effect.acquireRelease(
+      ApnsControlClient.createEffect(config, dependencies),
+      (client) => client.closeEffect(),
+    );
   }
 
   public close(): void {
@@ -70,72 +122,120 @@ export class ApnsControlClient {
     this.sessions.clear();
   }
 
-  public async sendControlChanged(
+  public closeEffect(): Effect.Effect<void> {
+    return Effect.sync(() => this.close());
+  }
+
+  public sendControlChanged(
     registration: IOSControlRegistration,
   ): Promise<ApnsControlPushResult> {
-    const session = this.session(registration.environment);
-    const { headers, body } = buildApnsControlRequest(
-      this.config.bundleId,
-      registration.pushToken,
-      this.providerToken(),
+    return runPromise(this.sendControlChangedEffect(registration));
+  }
+
+  public sendControlChangedEffect(
+    registration: IOSControlRegistration,
+  ): Effect.Effect<ApnsControlPushResult, ApnsTransportError> {
+    return Effect.gen(this, function* () {
+      const session = yield* this.sessionEffect(registration.environment);
+      const providerToken = yield* this.providerTokenEffect();
+      const { headers, body } = buildApnsControlRequest(
+        this.config.bundleId,
+        registration.pushToken,
+        providerToken,
+      );
+      return yield* Effect.async<ApnsControlPushResult, ApnsTransportError>(
+        (resume) => {
+          let request: ReturnType<ClientHttp2Session["request"]>;
+          try {
+            request = session.request(headers);
+          } catch (cause) {
+            resume(
+              Effect.fail(new ApnsTransportError({ operation: "request", cause })),
+            );
+            return;
+          }
+          let status = 0;
+          let response = "";
+          request.setEncoding("utf8");
+          request.on("response", (headers) => {
+            status = Number(headers[":status"] ?? 0);
+          });
+          request.on("data", (chunk) => {
+            response += chunk;
+          });
+          request.on("end", () => {
+            if (status === 200) return resume(Effect.succeed({ kind: "sent" }));
+            let reason = response || `HTTP ${status}`;
+            try {
+              reason = JSON.parse(response).reason ?? reason;
+            } catch {}
+            if (
+              status === 410 ||
+              reason === "BadDeviceToken" ||
+              reason === "DeviceTokenNotForTopic" ||
+              reason === "Unregistered"
+            ) {
+              return resume(Effect.succeed({ kind: "invalid-token", reason }));
+            }
+            resume(Effect.succeed({ kind: "failed", status, reason }));
+          });
+          request.on("error", (cause) =>
+            resume(
+              Effect.fail(new ApnsTransportError({ operation: "request", cause })),
+            ),
+          );
+          request.end(body);
+          return Effect.sync(() => request.destroy());
+        },
+      );
+    }).pipe(
+      Effect.timeoutFail({
+        duration: "5 seconds",
+        onTimeout: () =>
+          new ApnsTransportError({
+            operation: "request",
+            cause: new Error("APNs control push timed out"),
+          }),
+      }),
     );
-    return new Promise((resolve, reject) => {
-      const request = session.request(headers);
-      let status = 0;
-      let response = "";
-      request.setEncoding("utf8");
-      request.on("response", (headers) => {
-        status = Number(headers[":status"] ?? 0);
-      });
-      request.on("data", (chunk) => {
-        response += chunk;
-      });
-      request.on("end", () => {
-        if (status === 200) return resolve({ kind: "sent" });
-        let reason = response || `HTTP ${status}`;
-        try {
-          reason = JSON.parse(response).reason ?? reason;
-        } catch {}
-        if (
-          status === 410 ||
-          reason === "BadDeviceToken" ||
-          reason === "DeviceTokenNotForTopic" ||
-          reason === "Unregistered"
-        ) {
-          return resolve({ kind: "invalid-token", reason });
+  }
+
+  private providerTokenEffect(): Effect.Effect<string, ApnsTransportError> {
+    return Effect.try({
+      try: () => {
+        const issuedAt = Math.floor(Date.now() / 1000);
+        if (!this.token || issuedAt - this.token.issuedAt >= 50 * 60) {
+          this.token = {
+            value: createApnsProviderToken(this.config, this.privateKeyPem, issuedAt),
+            issuedAt,
+          };
         }
-        resolve({ kind: "failed", status, reason });
-      });
-      request.on("error", reject);
-      request.setTimeout(5_000, () => {
-        request.destroy(new Error("APNs control push timed out"));
-      });
-      request.end(body);
+        return this.token.value;
+      },
+      catch: (cause) =>
+        new ApnsTransportError({ operation: "provider token creation", cause }),
     });
   }
 
-  private providerToken(): string {
-    const issuedAt = Math.floor(Date.now() / 1000);
-    if (!this.token || issuedAt - this.token.issuedAt >= 50 * 60) {
-      this.token = {
-        value: createApnsProviderToken(this.config, this.privateKeyPem, issuedAt),
-        issuedAt,
-      };
-    }
-    return this.token.value;
-  }
-
-  private session(environment: ApnsEnvironment): ClientHttp2Session {
-    const current = this.sessions.get(environment);
-    if (current && !current.closed && !current.destroyed) return current;
-    const host =
-      environment === "sandbox"
-        ? "https://api.sandbox.push.apple.com"
-        : "https://api.push.apple.com";
-    const session = connect(host);
-    session.on("error", () => this.sessions.delete(environment));
-    session.on("close", () => this.sessions.delete(environment));
-    this.sessions.set(environment, session);
-    return session;
+  private sessionEffect(
+    environment: ApnsEnvironment,
+  ): Effect.Effect<ClientHttp2Session, ApnsTransportError> {
+    return Effect.try({
+      try: () => {
+        const current = this.sessions.get(environment);
+        if (current && !current.closed && !current.destroyed) return current;
+        const host =
+          environment === "sandbox"
+            ? "https://api.sandbox.push.apple.com"
+            : "https://api.push.apple.com";
+        const session = this.dependencies.connect(host);
+        session.on("error", () => this.sessions.delete(environment));
+        session.on("close", () => this.sessions.delete(environment));
+        this.sessions.set(environment, session);
+        return session;
+      },
+      catch: (cause) =>
+        new ApnsTransportError({ operation: "HTTP/2 session creation", cause }),
+    });
   }
 }

@@ -1,5 +1,19 @@
-import { describe, expect, it } from "vitest";
-import { type ItunesShow, pickBestShowMatch } from "./itunes.js";
+import { Effect } from "effect";
+import { describe, expect, it, vi } from "vitest";
+import type { LimitedTextResponse, PublicTextRequest } from "../effect/publicHttp.js";
+import {
+  type ItunesShow,
+  pickBestShowMatch,
+  searchItunesPodcastsEffect,
+} from "./itunes.js";
+
+function response(chunks: string[]): LimitedTextResponse {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const chunk of chunks) yield chunk;
+    },
+  };
+}
 
 function show(overrides: Partial<ItunesShow> & { itunesId: number }): ItunesShow {
   return { title: "Untitled", genres: [], ...overrides };
@@ -41,5 +55,68 @@ describe("pickBestShowMatch", () => {
 
   it("returns undefined for an empty shows list", () => {
     expect(pickBestShowMatch([], "Anything")).toBeUndefined();
+  });
+});
+
+describe("searchItunesPodcastsEffect", () => {
+  it("streams and decodes the bounded iTunes response", async () => {
+    const request = vi.fn(() =>
+      response([
+        JSON.stringify({
+          results: [
+            {
+              collectionId: 123,
+              collectionName: "Example Podcast",
+              feedUrl: "https://example.com/feed.xml",
+              genres: ["News"],
+            },
+          ],
+        }),
+      ]),
+    ) as PublicTextRequest;
+
+    await expect(
+      Effect.runPromise(
+        searchItunesPodcastsEffect("example", 5, {
+          request,
+          maxResponseBytes: 1024,
+        }),
+      ),
+    ).resolves.toEqual([
+      {
+        itunesId: 123,
+        title: "Example Podcast",
+        feedUrl: "https://example.com/feed.xml",
+        artworkUrl: undefined,
+        genres: ["News"],
+      },
+    ]);
+    expect(request).toHaveBeenCalledWith(
+      "https://itunes.apple.com/search",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("rejects a response that exceeds the byte limit while streaming", async () => {
+    const request = vi.fn(() => response(["12345", "67890"])) as PublicTextRequest;
+
+    await expect(
+      Effect.runPromise(
+        searchItunesPodcastsEffect("example", 5, {
+          request,
+          maxResponseBytes: 8,
+        }),
+      ),
+    ).rejects.toThrow("Response exceeds the 8-byte limit");
+  });
+
+  it("rejects a structurally invalid provider response", async () => {
+    const request = vi.fn(() =>
+      response([JSON.stringify({ results: [{ collectionId: "123" }] })]),
+    ) as PublicTextRequest;
+
+    await expect(
+      Effect.runPromise(searchItunesPodcastsEffect("example", 5, { request })),
+    ).rejects.toThrow();
   });
 });

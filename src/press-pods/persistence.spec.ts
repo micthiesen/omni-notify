@@ -1,5 +1,6 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   deleteEpisodesByNormalizedUrlExcept,
@@ -11,6 +12,7 @@ import {
   PressPodsEpisodeEntity,
   type PressPodsJobData,
   PressPodsJobEntity,
+  PressPodsPersistence,
   reclaimProcessingJobsAtBoot,
   recordJobFailure,
   requeueJobNow,
@@ -206,6 +208,105 @@ describe("findEpisodeForJob", () => {
     );
     expect(found?.episodeId).toBe(row.episodeId);
     PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+  });
+});
+
+describe("PressPodsPersistence episode decoding", () => {
+  const episode = (overrides: Partial<PressPodsEpisodeData>): PressPodsEpisodeData => ({
+    episodeId: secureId(),
+    title: "Persisted episode",
+    articleUrl: "https://decode.example/article",
+    content: "Narration",
+    audioFile: "episode.mp3",
+    fileBytes: 100,
+    createdAt: NOW,
+    ...overrides,
+  });
+
+  it("decodes every nested persisted diagnostic field", async () => {
+    const row = episode({
+      chapters: [{ startTimeSeconds: 1.5, title: "Opening" }],
+      chunks: [
+        {
+          index: 0,
+          sectionIndex: 1,
+          sectionTitle: "Lead",
+          text: "Narration",
+          charCount: 9,
+          durationSeconds: 2.5,
+          startTimeSeconds: 1.5,
+          secPerChar: 0.27,
+          attempts: 2,
+          coverage: 0.98,
+          wordRatio: 1,
+          expectedWords: 1,
+          resplit: true,
+          resplitDepth: 1,
+        },
+      ],
+      retrieverAttempts: [
+        { name: "readability", success: true, contentRating: 9, textChars: 1000 },
+        { name: "fetch", success: false, error: "HTTP 500" },
+      ],
+      costs: {
+        llmCents: 1.2,
+        ttsCents: 3.4,
+        detailCents: { metadata: 1.2 },
+        detailTokens: { metadata: { input: 100, output: 20 } },
+        detailChars: { speech: 1000 },
+      },
+    });
+    PressPodsEpisodeEntity.upsert(row);
+    try {
+      await expect(
+        Effect.runPromise(PressPodsPersistence.getEpisode(row.episodeId)),
+      ).resolves.toEqual(row);
+    } finally {
+      PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+    }
+  });
+
+  it.each([
+    ["chapters", [{ startTimeSeconds: "soon", title: "Opening" }]],
+    [
+      "chunks",
+      [
+        {
+          index: 0,
+          sectionIndex: 0,
+          charCount: 9,
+          durationSeconds: 2,
+          startTimeSeconds: 0,
+          secPerChar: 0.2,
+          attempts: 1,
+        },
+      ],
+    ],
+    ["retrieverAttempts", [{ name: "fetch", success: true, textChars: 100 }]],
+    [
+      "costs",
+      {
+        llmCents: 1,
+        ttsCents: 2,
+        detailCents: {},
+        detailTokens: { metadata: { input: 10, output: "twenty" } },
+        detailChars: {},
+      },
+    ],
+  ])("rejects malformed persisted %s", async (field, malformed) => {
+    const row = episode({
+      episodeId: `malformed-${field}`,
+      [field]: malformed,
+    } as unknown as Partial<PressPodsEpisodeData>);
+    PressPodsEpisodeEntity.upsert(row);
+    try {
+      const error = await Effect.runPromise(
+        Effect.flip(PressPodsPersistence.getEpisode(row.episodeId)),
+      );
+      expect(error.operation).toBe("decode PressPods episode");
+    } finally {
+      PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+    }
   });
 });
 

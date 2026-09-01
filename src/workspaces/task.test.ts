@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceDefinition } from "./types.js";
 
@@ -17,7 +18,10 @@ const mocks = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock("./engine.js", () => ({ runWorkspace: mocks.runWorkspace }));
+vi.mock("./engine.js", () => ({
+  runWorkspaceEffect: (...args: unknown[]) =>
+    Effect.promise(() => mocks.runWorkspace(...args)),
+}));
 vi.mock("./persistence.js", () => ({
   listWorkspaceSubjects: () => mocks.subjects,
 }));

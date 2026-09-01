@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
+import { Effect } from "effect";
 import { z } from "zod";
 import { buildICalendar } from "../../calendar-events/caldav/ics.js";
 import {
-  createCalendarEvent,
-  deleteCalendarEvent,
-  discoverCaldavSession,
+  createCalendarEventEffect,
+  deleteCalendarEventEffect,
+  discoverCaldavSessionEffect,
   getCaldavProvider,
-  updateCalendarEvent,
+  updateCalendarEventEffect,
 } from "../../calendar-events/caldav/index.js";
 import { isValidTimeZone } from "../../calendar-events/extraction/sanitize.js";
 import type { ExtractedCalendarEvent } from "../../calendar-events/extraction/schema.js";
@@ -43,7 +44,7 @@ import {
   upsertEmailRuleChecked,
 } from "../../email/senderRules.js";
 import type { FetchedEmail } from "../../email/types.js";
-import { sendEmail } from "../../emails/send.js";
+import { sendEmailEffect } from "../../emails/send.js";
 import {
   CARRIER_SENDER_DOMAINS as PARCEL_BUILTIN_AUTO_PASS,
   BLACKLISTED_SENDERS as PARCEL_BUILTIN_BLOCKED,
@@ -59,7 +60,7 @@ import {
   paginationInputShape,
   truncate,
 } from "../tool.js";
-import { handleEmailThenClearRetry } from "./email-reprocess.js";
+import { handleEmailThenClearRetryEffect } from "./email-reprocess.js";
 
 const pipelineSchema = z.enum(["ParcelTracker", "CalendarEvents"]);
 const dateSchema = z
@@ -406,27 +407,30 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "No paid API; bounded IMAP reads",
         recommendedPolicy: "allow",
       },
-      async execute(input) {
-        const transport = getActiveEmailRuntime(runtime);
-        if (!transport.searchEmails) {
-          throw new Error("The active email transport does not support mailbox search");
-        }
-        const emails = await transport.searchEmails({
-          query: input.query,
-          from: input.from,
-          to: input.to,
-          subject: input.subject,
-          unread: input.unread,
-          since: parseDateTime(input.since),
-          before: parseDateTime(input.before),
-          folder: input.folder,
-          limit: input.limit,
-        });
-        return {
-          items: emails.map((email) => serializeEmail(email, input.excerptChars)),
-          count: emails.length,
-        };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          const transport = getActiveEmailRuntime(runtime);
+          if (!transport.searchEmailsEffect) {
+            throw new Error(
+              "The active email transport does not support mailbox search",
+            );
+          }
+          const emails = yield* transport.searchEmailsEffect({
+            query: input.query,
+            from: input.from,
+            to: input.to,
+            subject: input.subject,
+            unread: input.unread,
+            since: parseDateTime(input.since),
+            before: parseDateTime(input.before),
+            folder: input.folder,
+            limit: input.limit,
+          });
+          return {
+            items: emails.map((email) => serializeEmail(email, input.excerptChars)),
+            count: emails.length,
+          };
+        }),
     }),
 
     defineTool({
@@ -447,13 +451,15 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "No paid API; one bounded IMAP lookup",
         recommendedPolicy: "allow",
       },
-      async execute(input) {
-        const email = await getActiveEmailRuntime(runtime).fetchEmailById(
-          input.emailId,
-        );
-        if (!email) throw new Error("Email no longer exists in the monitored mailbox");
-        return { email: serializeEmail(email, input.bodyChars) };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          const email = yield* getActiveEmailRuntime(runtime).fetchEmailByIdEffect(
+            input.emailId,
+          );
+          if (!email)
+            throw new Error("Email no longer exists in the monitored mailbox");
+          return { email: serializeEmail(email, input.bodyChars) };
+        }),
     }),
 
     defineTool({
@@ -478,25 +484,26 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "None",
         recommendedPolicy: "allow",
       },
-      async execute() {
-        const transport = runtime.emailControls.transport;
-        const provider = getCaldavProvider();
-        return {
-          monitoring: {
-            active: Boolean(transport),
-            transport: transport?.name ?? null,
-            pipelines: [...(runtime.emailControls.handlers?.keys() ?? [])].sort(),
-            searchAvailable: Boolean(transport?.searchEmails),
-          },
-          smtp: {
-            configured: Boolean(
-              config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS,
-            ),
-            configuredFrom: Boolean(config.EMAIL_FROM),
-          },
-          caldav: { configured: Boolean(provider), provider: provider ?? null },
-        };
-      },
+      execute: () =>
+        Effect.sync(() => {
+          const transport = runtime.emailControls.transport;
+          const provider = getCaldavProvider();
+          return {
+            monitoring: {
+              active: Boolean(transport),
+              transport: transport?.name ?? null,
+              pipelines: [...(runtime.emailControls.handlers?.keys() ?? [])].sort(),
+              searchAvailable: Boolean(transport?.searchEmailsEffect),
+            },
+            smtp: {
+              configured: Boolean(
+                config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS,
+              ),
+              configuredFrom: Boolean(config.EMAIL_FROM),
+            },
+            caldav: { configured: Boolean(provider), provider: provider ?? null },
+          };
+        }),
     }),
 
     defineTool({
@@ -517,15 +524,16 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute(input) {
-        return paginate(
-          getRecentEmailActivity(input.pipeline, KEEP_PER_PIPELINE * 2).map(
-            serializeActivity,
-          ),
-          input.cursor,
-          input.limit,
-        );
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          return paginate(
+            getRecentEmailActivity(input.pipeline, KEEP_PER_PIPELINE * 2).map(
+              serializeActivity,
+            ),
+            input.cursor,
+            input.limit,
+          );
+        }),
     }),
 
     defineTool({
@@ -554,23 +562,24 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute(input) {
-        const activity = getActivityOrThrow(input.activityId);
-        const stored = getEmailActivityLogs(input.activityId);
-        const lines = stored?.lines ?? [];
-        const selected = input.logLimit === 0 ? [] : lines.slice(-input.logLimit);
-        return {
-          activity: serializeActivity(activity),
-          logs: selected.map((line) => ({
-            timestamp: line.t,
-            level: line.level,
-            logger: line.logger,
-            message: truncate(line.msg, 4_000).text,
-          })),
-          dropped: stored?.dropped ?? 0,
-          logsTruncated: selected.length < lines.length,
-        };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          const activity = getActivityOrThrow(input.activityId);
+          const stored = getEmailActivityLogs(input.activityId);
+          const lines = stored?.lines ?? [];
+          const selected = input.logLimit === 0 ? [] : lines.slice(-input.logLimit);
+          return {
+            activity: serializeActivity(activity),
+            logs: selected.map((line) => ({
+              timestamp: line.t,
+              level: line.level,
+              logger: line.logger,
+              message: truncate(line.msg, 4_000).text,
+            })),
+            dropped: stored?.dropped ?? 0,
+            logsTruncated: selected.length < lines.length,
+          };
+        }),
     }),
 
     defineTool({
@@ -589,23 +598,25 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "May incur configured LLM and third-party workflow costs",
         recommendedPolicy: "require_approval",
       },
-      async execute(input) {
-        const activity = getActivityOrThrow(input.activityId);
-        const transport = getActiveEmailRuntime(runtime);
-        const handler = runtime.emailControls.handlers?.get(activity.pipeline);
-        if (!handler)
-          throw new Error(`Email pipeline is not active: ${activity.pipeline}`);
-        const email = await transport.fetchEmailById(activity.emailId);
-        if (!email) throw new Error("Email no longer exists in the monitored mailbox");
-        await handleEmailThenClearRetry(handler, email, () =>
-          clearEmailRetry(activity.pipeline, activity.emailId),
-        );
-        return {
-          activity: serializeActivity(
-            getEmailActivity(activity.activityId) ?? activity,
-          ),
-        };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          const activity = getActivityOrThrow(input.activityId);
+          const transport = getActiveEmailRuntime(runtime);
+          const handler = runtime.emailControls.handlers?.get(activity.pipeline);
+          if (!handler)
+            throw new Error(`Email pipeline is not active: ${activity.pipeline}`);
+          const email = yield* transport.fetchEmailByIdEffect(activity.emailId);
+          if (!email)
+            throw new Error("Email no longer exists in the monitored mailbox");
+          yield* handleEmailThenClearRetryEffect(handler, email, () =>
+            clearEmailRetry(activity.pipeline, activity.emailId),
+          );
+          return {
+            activity: serializeActivity(
+              getEmailActivity(activity.activityId) ?? activity,
+            ),
+          };
+        }),
     }),
 
     defineTool({
@@ -637,21 +648,22 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute() {
-        return {
-          rules: listEmailRules(),
-          builtin: {
-            parcel: {
-              blocked: [...PARCEL_BUILTIN_BLOCKED],
-              autoPass: [...PARCEL_BUILTIN_AUTO_PASS],
+      execute: () =>
+        Effect.sync(() => {
+          return {
+            rules: listEmailRules(),
+            builtin: {
+              parcel: {
+                blocked: [...PARCEL_BUILTIN_BLOCKED],
+                autoPass: [...PARCEL_BUILTIN_AUTO_PASS],
+              },
+              calendar: {
+                blocked: [...CALENDAR_BUILTIN_BLOCKED],
+                autoPass: [...CALENDAR_BUILTIN_AUTO_PASS],
+              },
             },
-            calendar: {
-              blocked: [...CALENDAR_BUILTIN_BLOCKED],
-              autoPass: [...CALENDAR_BUILTIN_AUTO_PASS],
-            },
-          },
-        };
-      },
+          };
+        }),
     }),
 
     defineTool({
@@ -684,21 +696,22 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "None",
         recommendedPolicy: "allow",
       },
-      async execute(input) {
-        const pattern = normalizeRulePattern(input.pattern);
-        if (input.verdict === "block" && matchesBuiltinBlock(pattern, input.scope)) {
-          return { status: "builtin" as const, rule: null };
-        }
-        const result = upsertEmailRuleChecked({ ...input, pattern });
-        return {
-          status: result.alreadyExists
-            ? ("exists" as const)
-            : result.merged
-              ? ("merged" as const)
-              : ("created" as const),
-          rule: result.rule,
-        };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          const pattern = normalizeRulePattern(input.pattern);
+          if (input.verdict === "block" && matchesBuiltinBlock(pattern, input.scope)) {
+            return { status: "builtin" as const, rule: null };
+          }
+          const result = upsertEmailRuleChecked({ ...input, pattern });
+          return {
+            status: result.alreadyExists
+              ? ("exists" as const)
+              : result.merged
+                ? ("merged" as const)
+                : ("created" as const),
+            rule: result.rule,
+          };
+        }),
     }),
 
     defineTool({
@@ -716,9 +729,10 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "None",
         recommendedPolicy: "require_approval",
       },
-      async execute(input) {
-        return { deleted: deleteEmailRule(input.ruleId) };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          return { deleted: deleteEmailRule(input.ruleId) };
+        }),
     }),
 
     defineTool({
@@ -748,14 +762,15 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute(input) {
-        return {
-          items: listEmailFeedback(input.pipeline, input.limit).map((feedback) => ({
-            ...feedback,
-            note: feedback.note ?? null,
-          })),
-        };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          return {
+            items: listEmailFeedback(input.pipeline, input.limit).map((feedback) => ({
+              ...feedback,
+              note: feedback.note ?? null,
+            })),
+          };
+        }),
     }),
 
     defineTool({
@@ -792,22 +807,23 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "None",
         recommendedPolicy: "allow",
       },
-      async execute(input) {
-        const activity = getActivityOrThrow(input.activityId);
-        if (input.verdict === null) {
-          deleteEmailFeedback(activity.activityId);
-          return { feedback: null };
-        }
-        const feedback = recordEmailFeedback({
-          pipeline: activity.pipeline,
-          emailId: activity.emailId,
-          subject: activity.subject,
-          from: activity.from,
-          verdict: input.verdict,
-          note: input.note || undefined,
-        });
-        return { feedback: { ...feedback, note: feedback.note ?? null } };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          const activity = getActivityOrThrow(input.activityId);
+          if (input.verdict === null) {
+            deleteEmailFeedback(activity.activityId);
+            return { feedback: null };
+          }
+          const feedback = recordEmailFeedback({
+            pipeline: activity.pipeline,
+            emailId: activity.emailId,
+            subject: activity.subject,
+            from: activity.from,
+            verdict: input.verdict,
+            note: input.note || undefined,
+          });
+          return { feedback: { ...feedback, note: feedback.note ?? null } };
+        }),
     }),
 
     defineTool({
@@ -835,13 +851,14 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute(input) {
-        const retries = EmailRetryEntity.getAll()
-          .filter((retry) => !input.pipeline || retry.pipeline === input.pipeline)
-          .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)
-          .map((retry) => ({ ...retry, reason: truncate(retry.reason, 1_000).text }));
-        return paginate(retries, input.cursor, input.limit);
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          const retries = EmailRetryEntity.getAll()
+            .filter((retry) => !input.pipeline || retry.pipeline === input.pipeline)
+            .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)
+            .map((retry) => ({ ...retry, reason: truncate(retry.reason, 1_000).text }));
+          return paginate(retries, input.cursor, input.limit);
+        }),
     }),
 
     defineTool({
@@ -859,12 +876,13 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "None",
         recommendedPolicy: "require_approval",
       },
-      async execute(input) {
-        const retryKey = `${input.pipeline}#${input.emailId}`;
-        const existed = Boolean(EmailRetryEntity.get({ retryKey }));
-        clearEmailRetry(input.pipeline, input.emailId);
-        return { cleared: existed };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          const retryKey = `${input.pipeline}#${input.emailId}`;
+          const existed = Boolean(EmailRetryEntity.get({ retryKey }));
+          clearEmailRetry(input.pipeline, input.emailId);
+          return { cleared: existed };
+        }),
     }),
 
     defineTool({
@@ -890,22 +908,23 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "No per-call paid API expected; consumes SMTP provider quota",
         recommendedPolicy: "require_approval",
       },
-      async execute(input) {
-        if (!config.EMAIL_FROM)
-          throw new Error("SMTP sender address is not configured");
-        if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
-          throw new Error("SMTP is not configured");
-        }
-        const sent = await sendEmail({
-          to: input.to,
-          from: config.EMAIL_FROM,
-          subject: input.subject,
-          text: input.text,
-          html: htmlFromPlainText(input.text),
-        });
-        if (!sent) throw new Error("SMTP delivery failed");
-        return { sent: true, to: input.to, subject: input.subject };
-      },
+      execute: (input) =>
+        Effect.gen(function* () {
+          if (!config.EMAIL_FROM)
+            throw new Error("SMTP sender address is not configured");
+          if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
+            throw new Error("SMTP is not configured");
+          }
+          const sent = yield* sendEmailEffect({
+            to: input.to,
+            from: config.EMAIL_FROM,
+            subject: input.subject,
+            text: input.text,
+            html: htmlFromPlainText(input.text),
+          });
+          if (!sent) throw new Error("SMTP delivery failed");
+          return { sent: true, to: input.to, subject: input.subject };
+        }),
     }),
 
     defineTool({
@@ -929,32 +948,33 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute(input) {
-        const query = input.query?.toLowerCase();
-        const events = CreatedCalendarEventEntity.getAll()
-          .filter((event) => {
-            const status = event.status === "cancelled" ? "cancelled" : "active";
-            if (input.status !== "all" && input.status !== status) return false;
-            if (input.from && event.startDate < input.from) return false;
-            if (input.through && event.startDate > input.through) return false;
-            if (
-              query &&
-              !`${event.title}\n${event.location ?? ""}\n${event.description ?? ""}`
-                .toLowerCase()
-                .includes(query)
-            ) {
-              return false;
-            }
-            return true;
-          })
-          .sort((a, b) =>
-            `${a.startDate}T${a.startTime ?? "00:00"}`.localeCompare(
-              `${b.startDate}T${b.startTime ?? "00:00"}`,
-            ),
-          )
-          .map(serializeTrackedEvent);
-        return paginate(events, input.cursor, input.limit);
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          const query = input.query?.toLowerCase();
+          const events = CreatedCalendarEventEntity.getAll()
+            .filter((event) => {
+              const status = event.status === "cancelled" ? "cancelled" : "active";
+              if (input.status !== "all" && input.status !== status) return false;
+              if (input.from && event.startDate < input.from) return false;
+              if (input.through && event.startDate > input.through) return false;
+              if (
+                query &&
+                !`${event.title}\n${event.location ?? ""}\n${event.description ?? ""}`
+                  .toLowerCase()
+                  .includes(query)
+              ) {
+                return false;
+              }
+              return true;
+            })
+            .sort((a, b) =>
+              `${a.startDate}T${a.startTime ?? "00:00"}`.localeCompare(
+                `${b.startDate}T${b.startTime ?? "00:00"}`,
+              ),
+            )
+            .map(serializeTrackedEvent);
+          return paginate(events, input.cursor, input.limit);
+        }),
     }),
 
     defineTool({
@@ -966,11 +986,12 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       outputSchema: z.object({ event: trackedEventSchema }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute(input) {
-        return {
-          event: serializeTrackedEvent(getTrackedEventOrThrow(input.eventHash)),
-        };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          return {
+            event: serializeTrackedEvent(getTrackedEventOrThrow(input.eventHash)),
+          };
+        }),
     }),
 
     defineTool({
@@ -990,20 +1011,23 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute() {
-        const events = CreatedCalendarEventEntity.getAll();
-        const cancelled = events.filter((event) => event.status === "cancelled").length;
-        const provider = getCaldavProvider();
-        return {
-          configured: Boolean(provider),
-          provider: provider ?? null,
-          tracked: {
-            active: events.length - cancelled,
-            cancelled,
-            total: events.length,
-          },
-        };
-      },
+      execute: () =>
+        Effect.sync(() => {
+          const events = CreatedCalendarEventEntity.getAll();
+          const cancelled = events.filter(
+            (event) => event.status === "cancelled",
+          ).length;
+          const provider = getCaldavProvider();
+          return {
+            configured: Boolean(provider),
+            provider: provider ?? null,
+            tracked: {
+              active: events.length - cancelled,
+              cancelled,
+              total: events.length,
+            },
+          };
+        }),
     }),
 
     defineTool({
@@ -1019,19 +1043,20 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
-      async execute(input) {
-        const event = toExtractedEvent(input.event);
-        const eventHash = computeEventHash(
-          event.title,
-          event.startDate,
-          event.startTime,
-        );
-        return {
-          eventHash,
-          duplicateTrackedEvent: hasCreatedEvent(eventHash),
-          iCalendar: buildICalendar(event, "preview@omni-notify"),
-        };
-      },
+      execute: (input) =>
+        Effect.sync(() => {
+          const event = toExtractedEvent(input.event);
+          const eventHash = computeEventHash(
+            event.title,
+            event.startDate,
+            event.startTime,
+          );
+          return {
+            eventHash,
+            duplicateTrackedEvent: hasCreatedEvent(eventHash),
+            iCalendar: buildICalendar(event, "preview@omni-notify"),
+          };
+        }),
     }),
 
     defineTool({
@@ -1053,37 +1078,43 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "No paid API expected; one CalDAV discovery/write sequence",
         recommendedPolicy: "require_approval",
       },
-      async execute(input) {
-        const event = toExtractedEvent(input.event);
-        const eventHash = computeEventHash(
-          event.title,
-          event.startDate,
-          event.startTime,
-        );
-        const existing = CreatedCalendarEventEntity.get({ eventHash });
-        if (existing && existing.status !== "cancelled") {
-          return {
-            status: "already_exists" as const,
-            event: serializeTrackedEvent(existing),
+      execute: (input) =>
+        Effect.gen(function* () {
+          const event = toExtractedEvent(input.event);
+          const eventHash = computeEventHash(
+            event.title,
+            event.startDate,
+            event.startTime,
+          );
+          const existing = CreatedCalendarEventEntity.get({ eventHash });
+          if (existing && existing.status !== "cancelled") {
+            return {
+              status: "already_exists" as const,
+              event: serializeTrackedEvent(existing),
+            };
+          }
+          const session = yield* discoverCaldavSessionEffect(logger);
+          const eventUid = `mcp-${createHash("sha256").update(eventHash).digest("hex").slice(0, 32)}@omni-notify`;
+          const result = yield* createCalendarEventEffect(
+            session,
+            event,
+            logger,
+            eventUid,
+          );
+          if (result.status === "error") throw new Error(result.message);
+          const row: CreatedCalendarEventData = {
+            eventHash,
+            emailId: "mcp",
+            calendarEventId: result.eventUid,
+            ...input.event,
+            createdAt: Date.now(),
           };
-        }
-        const session = await discoverCaldavSession(logger);
-        const eventUid = `mcp-${createHash("sha256").update(eventHash).digest("hex").slice(0, 32)}@omni-notify`;
-        const result = await createCalendarEvent(session, event, logger, eventUid);
-        if (result.status === "error") throw new Error(result.message);
-        const row: CreatedCalendarEventData = {
-          eventHash,
-          emailId: "mcp",
-          calendarEventId: result.eventUid,
-          ...input.event,
-          createdAt: Date.now(),
-        };
-        recordCreatedEvent(row);
-        return {
-          status: result.status === "already_exists" ? "reconciled" : "created",
-          event: serializeTrackedEvent(row),
-        };
-      },
+          recordCreatedEvent(row);
+          return {
+            status: result.status === "already_exists" ? "reconciled" : "created",
+            event: serializeTrackedEvent(row),
+          };
+        }),
     }),
 
     defineTool({
@@ -1110,77 +1141,82 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "No paid API expected; one CalDAV discovery/write sequence when changed",
         recommendedPolicy: "require_approval",
       },
-      async execute(input) {
-        const existing = getTrackedEventOrThrow(input.eventHash);
-        if (existing.status === "cancelled")
-          throw new Error("Cancelled events cannot be updated");
-        const clearedChanges = Object.fromEntries(
-          Object.entries(input.changes).map(([key, value]) => [
-            key,
-            value ?? undefined,
-          ]),
-        );
-        const merged = calendarEventInputSchema.parse({
-          title: existing.title,
-          startDate: existing.startDate,
-          startTime: existing.startTime,
-          endDate: existing.endDate,
-          endTime: existing.endTime,
-          allDay: existing.allDay,
-          location: existing.location,
-          timeZone: existing.timeZone,
-          description: existing.description,
-          duration: existing.duration,
-          reminderMinutes: existing.reminderMinutes,
-          recurrence: existing.recurrence,
-          ...clearedChanges,
-        });
-        const event: ExtractedCalendarEvent = { action: "update", ...merged };
-        if (!hasEventChanged(existing, event)) {
-          return {
-            status: "unchanged" as const,
-            event: serializeTrackedEvent(existing),
-          };
-        }
-        const newHash = computeEventHash(event.title, event.startDate, event.startTime);
-        const priorNewHash =
-          newHash === existing.eventHash
-            ? undefined
-            : CreatedCalendarEventEntity.get({ eventHash: newHash });
-        if (priorNewHash && priorNewHash.status !== "cancelled") {
-          if (priorNewHash.calendarEventId !== existing.calendarEventId) {
-            throw new Error("Update would collide with another active tracked event");
+      execute: (input) =>
+        Effect.gen(function* () {
+          const existing = getTrackedEventOrThrow(input.eventHash);
+          if (existing.status === "cancelled")
+            throw new Error("Cancelled events cannot be updated");
+          const clearedChanges = Object.fromEntries(
+            Object.entries(input.changes).map(([key, value]) => [
+              key,
+              value ?? undefined,
+            ]),
+          );
+          const merged = calendarEventInputSchema.parse({
+            title: existing.title,
+            startDate: existing.startDate,
+            startTime: existing.startTime,
+            endDate: existing.endDate,
+            endTime: existing.endTime,
+            allDay: existing.allDay,
+            location: existing.location,
+            timeZone: existing.timeZone,
+            description: existing.description,
+            duration: existing.duration,
+            reminderMinutes: existing.reminderMinutes,
+            recurrence: existing.recurrence,
+            ...clearedChanges,
+          });
+          const event: ExtractedCalendarEvent = { action: "update", ...merged };
+          if (!hasEventChanged(existing, event)) {
+            return {
+              status: "unchanged" as const,
+              event: serializeTrackedEvent(existing),
+            };
           }
-          // Reconcile a prior remote/local partial success. The replacement row
-          // was persisted before the old row was tombstoned, so no remote write
-          // is needed on this retry.
-          markEventCancelled(existing.eventHash);
-          return {
-            status: "updated" as const,
-            event: serializeTrackedEvent(priorNewHash),
+          const newHash = computeEventHash(
+            event.title,
+            event.startDate,
+            event.startTime,
+          );
+          const priorNewHash =
+            newHash === existing.eventHash
+              ? undefined
+              : CreatedCalendarEventEntity.get({ eventHash: newHash });
+          if (priorNewHash && priorNewHash.status !== "cancelled") {
+            if (priorNewHash.calendarEventId !== existing.calendarEventId) {
+              throw new Error("Update would collide with another active tracked event");
+            }
+            // Reconcile a prior remote/local partial success. The replacement row
+            // was persisted before the old row was tombstoned, so no remote write
+            // is needed on this retry.
+            markEventCancelled(existing.eventHash);
+            return {
+              status: "updated" as const,
+              event: serializeTrackedEvent(priorNewHash),
+            };
+          }
+          const session = yield* discoverCaldavSessionEffect(logger);
+          const result = yield* updateCalendarEventEffect(
+            session,
+            event,
+            existing.calendarEventId,
+            logger,
+          );
+          if (result.status === "error") throw new Error(result.message);
+          const row: CreatedCalendarEventData = {
+            eventHash: newHash,
+            emailId: existing.emailId,
+            calendarEventId: existing.calendarEventId,
+            ...merged,
+            createdAt: Date.now(),
           };
-        }
-        const session = await discoverCaldavSession(logger);
-        const result = await updateCalendarEvent(
-          session,
-          event,
-          existing.calendarEventId,
-          logger,
-        );
-        if (result.status === "error") throw new Error(result.message);
-        const row: CreatedCalendarEventData = {
-          eventHash: newHash,
-          emailId: existing.emailId,
-          calendarEventId: existing.calendarEventId,
-          ...merged,
-          createdAt: Date.now(),
-        };
-        // Persist the replacement before tombstoning the old identity. If the
-        // second write fails, the same request reconciles the two rows above.
-        recordCreatedEvent(row);
-        if (newHash !== existing.eventHash) markEventCancelled(existing.eventHash);
-        return { status: "updated" as const, event: serializeTrackedEvent(row) };
-      },
+          // Persist the replacement before tombstoning the old identity. If the
+          // second write fails, the same request reconciles the two rows above.
+          recordCreatedEvent(row);
+          if (newHash !== existing.eventHash) markEventCancelled(existing.eventHash);
+          return { status: "updated" as const, event: serializeTrackedEvent(row) };
+        }),
     }),
 
     defineTool({
@@ -1202,27 +1238,28 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         cost: "No paid API expected; one CalDAV discovery/delete sequence",
         recommendedPolicy: "require_approval",
       },
-      async execute(input) {
-        const existing = getTrackedEventOrThrow(input.eventHash);
-        if (existing.status === "cancelled") {
+      execute: (input) =>
+        Effect.gen(function* () {
+          const existing = getTrackedEventOrThrow(input.eventHash);
+          if (existing.status === "cancelled") {
+            return {
+              status: "already_deleted" as const,
+              event: serializeTrackedEvent(existing),
+            };
+          }
+          const session = yield* discoverCaldavSessionEffect(logger);
+          const result = yield* deleteCalendarEventEffect(
+            session,
+            existing.calendarEventId,
+            logger,
+          );
+          if (result.status === "error") throw new Error(result.message);
+          markEventCancelled(existing.eventHash);
           return {
-            status: "already_deleted" as const,
-            event: serializeTrackedEvent(existing),
+            status: "deleted" as const,
+            event: serializeTrackedEvent({ ...existing, status: "cancelled" }),
           };
-        }
-        const session = await discoverCaldavSession(logger);
-        const result = await deleteCalendarEvent(
-          session,
-          existing.calendarEventId,
-          logger,
-        );
-        if (result.status === "error") throw new Error(result.message);
-        markEventCancelled(existing.eventHash);
-        return {
-          status: "deleted" as const,
-          event: serializeTrackedEvent({ ...existing, status: "cancelled" }),
-        };
-      },
+        }),
     }),
   ];
 }

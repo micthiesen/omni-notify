@@ -1,10 +1,11 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Effect } from "effect";
 import { getPodcastTasteReflectionModel } from "../../ai/registry.js";
 import config from "../../utils/config.js";
 import { resolvePodcastAccount } from "../account.js";
 import { getAllPodcastRecommendations } from "../persistence.js";
-import { runPodcastTasteReflection } from "./reflection.js";
+import { runPodcastTasteReflectionEffect } from "./reflection.js";
 
 export class PodcastTasteReflectionTask extends ScheduledTask {
   public readonly name = "PodcastTasteReflection";
@@ -50,37 +51,43 @@ export class PodcastTasteReflectionTask extends ScheduledTask {
   }
 
   public async run(): Promise<void> {
-    const account = resolvePodcastAccount(this.logger);
-    if (!account) {
-      this.lastRunSummary = "skipped: no podcast account client";
-      this.logger.warn("Podcast taste reflection skipped: no account client");
-      return;
-    }
+    await Effect.runPromise(this.runEffect());
+  }
 
-    // Full window (the client caps at 180 days): unlike outcome sync, this is
-    // the deep evidence-gathering read, and it runs only weekly.
-    const history = await account.fetchListenHistory();
-    if (history.status === "unavailable") {
-      this.lastRunSummary = `skipped: ${history.reason}`;
-      this.logger.warn(`Podcast taste reflection skipped: ${history.reason}`);
-      return;
-    }
+  private runEffect(): Effect.Effect<void, unknown> {
+    return Effect.gen(this, function* () {
+      const account = resolvePodcastAccount(this.logger);
+      if (!account) {
+        this.lastRunSummary = "skipped: no podcast account client";
+        this.logger.warn("Podcast taste reflection skipped: no account client");
+        return;
+      }
 
-    const { model, modelId } = getPodcastTasteReflectionModel();
-    const result = await runPodcastTasteReflection({
-      listened: history.value,
-      recommendations: getAllPodcastRecommendations(),
-      model,
-      modelId,
+      // Full window (the client caps at 180 days): unlike outcome sync, this is
+      // the deep evidence-gathering read, and it runs only weekly.
+      const history = yield* account.fetchListenHistory();
+      if (history.status === "unavailable") {
+        this.lastRunSummary = `skipped: ${history.reason}`;
+        this.logger.warn(`Podcast taste reflection skipped: ${history.reason}`);
+        return;
+      }
+
+      const { model, modelId } = getPodcastTasteReflectionModel();
+      const result = yield* runPodcastTasteReflectionEffect({
+        listened: history.value,
+        recommendations: getAllPodcastRecommendations(),
+        model,
+        modelId,
+      });
+      if (result.status === "created") {
+        this.lastRunSummary = `profile v${result.profile.version}: ${result.profile.evidenceCount} evidence items, ${result.rejectedClaims} unsupported claims removed`;
+      } else if (result.status === "unchanged") {
+        this.lastRunSummary = `unchanged: profile v${result.profile.version}, no model call`;
+      } else {
+        this.lastRunSummary = "no listen or recommendation evidence";
+      }
+      this.logger.info(`Podcast taste reflection finished: ${this.lastRunSummary}`);
     });
-    if (result.status === "created") {
-      this.lastRunSummary = `profile v${result.profile.version}: ${result.profile.evidenceCount} evidence items, ${result.rejectedClaims} unsupported claims removed`;
-    } else if (result.status === "unchanged") {
-      this.lastRunSummary = `unchanged: profile v${result.profile.version}, no model call`;
-    } else {
-      this.lastRunSummary = "no listen or recommendation evidence";
-    }
-    this.logger.info(`Podcast taste reflection finished: ${this.lastRunSummary}`);
   }
 
   public getLastRunSummary(): string | undefined {

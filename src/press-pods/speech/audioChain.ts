@@ -4,6 +4,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { Effect, Exit, Schema } from "effect";
+import {
+  ignoreFailure,
+  InvalidPressPodsDataError,
+  PressPodsError,
+  tryPromise,
+} from "../effect.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -65,28 +72,45 @@ const DENOISE_FILTER =
   `highpass=f=80,aresample=48000:${RESAMPLE_HQ},` +
   `arnndn=m=${DENOISE_MODEL_PATH},${FIZZ_SHELF}`;
 
-async function ffmpeg(args: string[]): Promise<string> {
-  const { stderr } = await execFileAsync("ffmpeg", ["-hide_banner", "-y", ...args], {
-    maxBuffer: 128 * 1024 * 1024,
-  });
-  return stderr;
+function ffmpeg(args: string[]): Effect.Effect<string, PressPodsError> {
+  return tryPromise("run ffmpeg", (signal) =>
+    execFileAsync("ffmpeg", ["-hide_banner", "-y", ...args], {
+      maxBuffer: 128 * 1024 * 1024,
+      signal,
+    }),
+  ).pipe(Effect.map(({ stderr }) => stderr));
 }
 
 function tmpFile(ext: string): string {
   return path.join(os.tmpdir(), `pp_${randomBytes(8).toString("hex")}.${ext}`);
 }
 
-export async function probeDurationSeconds(file: string): Promise<number> {
-  const { stdout } = await execFileAsync("ffprobe", [
-    "-v",
-    "error",
-    "-show_entries",
-    "format=duration",
-    "-of",
-    "csv=p=0",
-    file,
-  ]);
-  return Number.parseFloat(stdout.trim());
+const DurationOutputSchema = Schema.NumberFromString.pipe(
+  Schema.filter((duration) => Number.isFinite(duration) && duration >= 0),
+);
+
+export function probeDurationSeconds(
+  file: string,
+): Effect.Effect<number, PressPodsError | InvalidPressPodsDataError> {
+  return tryPromise("probe audio duration", (signal) =>
+    execFileAsync(
+      "ffprobe",
+      ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file],
+      { signal },
+    ),
+  ).pipe(
+    Effect.flatMap(({ stdout }) =>
+      Schema.decodeUnknown(DurationOutputSchema)(stdout.trim()).pipe(
+        Effect.mapError(
+          (cause) =>
+            new InvalidPressPodsDataError({
+              operation: "decode ffprobe duration",
+              cause,
+            }),
+        ),
+      ),
+    ),
+  );
 }
 
 /**
@@ -94,43 +118,70 @@ export async function probeDurationSeconds(file: string): Promise<number> {
  * gain (transparent — no dynamic pumping). One-pass loudnorm runs a dynamic
  * AGC that pumps and lifts quiet passages, so it is deliberately not used.
  */
-async function twoPassLoudnorm(
+function twoPassLoudnorm(
   inFile: string,
   outFile: string,
   target: number,
   toWav: boolean,
-): Promise<void> {
-  const spec = `I=${target}:TP=-1.5:LRA=11`;
-  const stderr = await ffmpeg([
-    "-i",
-    inFile,
-    "-af",
-    `loudnorm=${spec}:print_format=json`,
-    "-f",
-    "null",
-    "-",
-  ]);
-  const jsonMatch = stderr.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
-  if (!jsonMatch) throw new Error(`loudnorm measurement failed for ${inFile}`);
-  const m = JSON.parse(jsonMatch[0]);
-  const filter =
-    `loudnorm=${spec}:linear=true` +
-    `:measured_I=${m.input_i}:measured_TP=${m.input_tp}` +
-    `:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}` +
-    `:offset=${m.target_offset},aresample=${SAMPLE_RATE}:${RESAMPLE_HQ}`;
-  const encode = toWav ? ["-c:a", "pcm_s16le"] : ["-c:a", "libmp3lame", "-b:a", "96k"];
-  await ffmpeg([
-    "-i",
-    inFile,
-    "-af",
-    filter,
-    "-ar",
-    String(SAMPLE_RATE),
-    "-ac",
-    "1",
-    ...encode,
-    outFile,
-  ]);
+): Effect.Effect<void, PressPodsError | InvalidPressPodsDataError> {
+  return Effect.gen(function* () {
+    const spec = `I=${target}:TP=-1.5:LRA=11`;
+    const stderr = yield* ffmpeg([
+      "-i",
+      inFile,
+      "-af",
+      `loudnorm=${spec}:print_format=json`,
+      "-f",
+      "null",
+      "-",
+    ]);
+    const jsonMatch = stderr.match(/\{[^{}]*"input_i"[\s\S]*?\}/);
+    if (!jsonMatch) {
+      return yield* new InvalidPressPodsDataError({
+        operation: "decode ffmpeg loudnorm measurement",
+        cause: new Error(`loudnorm measurement failed for ${inFile}`),
+      });
+    }
+    const LoudnormSchema = Schema.Struct({
+      input_i: Schema.String,
+      input_tp: Schema.String,
+      input_lra: Schema.String,
+      input_thresh: Schema.String,
+      target_offset: Schema.String,
+    });
+    const m = yield* Effect.try({
+      try: () => JSON.parse(jsonMatch[0]) as unknown,
+      catch: (cause) =>
+        new InvalidPressPodsDataError({ operation: "parse loudnorm JSON", cause }),
+    }).pipe(
+      Effect.flatMap(Schema.decodeUnknown(LoudnormSchema)),
+      Effect.mapError((cause) =>
+        cause instanceof InvalidPressPodsDataError
+          ? cause
+          : new InvalidPressPodsDataError({ operation: "decode loudnorm JSON", cause }),
+      ),
+    );
+    const filter =
+      `loudnorm=${spec}:linear=true` +
+      `:measured_I=${m.input_i}:measured_TP=${m.input_tp}` +
+      `:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}` +
+      `:offset=${m.target_offset},aresample=${SAMPLE_RATE}:${RESAMPLE_HQ}`;
+    const encode = toWav
+      ? ["-c:a", "pcm_s16le"]
+      : ["-c:a", "libmp3lame", "-b:a", "96k"];
+    yield* ffmpeg([
+      "-i",
+      inFile,
+      "-af",
+      filter,
+      "-ar",
+      String(SAMPLE_RATE),
+      "-ac",
+      "1",
+      ...encode,
+      outFile,
+    ]);
+  });
 }
 
 /**
@@ -146,49 +197,52 @@ export interface PreparedChunk {
   durationSeconds: number;
 }
 
-export async function prepareChunk(
+export function prepareChunk(
   mp3: Buffer,
   { denoise = false }: { denoise?: boolean } = {},
-): Promise<PreparedChunk> {
-  const rawPath = tmpFile("mp3");
-  const trimmedPath = tmpFile("wav");
+): Effect.Effect<PreparedChunk, PressPodsError | InvalidPressPodsDataError> {
   const wavPath = tmpFile("wav");
-  await fs.writeFile(rawPath, mp3);
-  try {
-    const edge =
-      `atempo=${SPEED_MULTIPLIER},` +
-      (denoise ? `${DENOISE_FILTER},` : "") +
-      "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
-      `afade=t=in:st=0:d=${EDGE_FADE_SEC},` +
-      "areverse," +
-      "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.25," +
-      `afade=t=in:st=0:d=${EDGE_FADE_SEC},` +
-      "areverse," +
-      `aresample=${SAMPLE_RATE}:${RESAMPLE_HQ}`;
-    await ffmpeg([
-      "-i",
-      rawPath,
-      "-af",
-      edge,
-      "-ar",
-      String(SAMPLE_RATE),
-      "-ac",
-      "1",
-      trimmedPath,
-    ]);
-    await twoPassLoudnorm(trimmedPath, wavPath, CHUNK_LUFS, true);
-    const durationSeconds = await probeDurationSeconds(wavPath);
-    return { wavPath, durationSeconds };
-  } finally {
-    await fs.unlink(rawPath).catch(() => {});
-    await fs.unlink(trimmedPath).catch(() => {});
-  }
+  return withTemporaryPath("mp3", (rawPath) =>
+    withTemporaryPath("wav", (trimmedPath) =>
+      Effect.gen(function* () {
+        yield* tryPromise("write raw TTS chunk", (signal) =>
+          fs.writeFile(rawPath, mp3, { signal }),
+        );
+        const edge =
+          `atempo=${SPEED_MULTIPLIER},` +
+          (denoise ? `${DENOISE_FILTER},` : "") +
+          "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.15," +
+          `afade=t=in:st=0:d=${EDGE_FADE_SEC},` +
+          "areverse," +
+          "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.25," +
+          `afade=t=in:st=0:d=${EDGE_FADE_SEC},` +
+          "areverse," +
+          `aresample=${SAMPLE_RATE}:${RESAMPLE_HQ}`;
+        yield* ffmpeg([
+          "-i",
+          rawPath,
+          "-af",
+          edge,
+          "-ar",
+          String(SAMPLE_RATE),
+          "-ac",
+          "1",
+          trimmedPath,
+        ]);
+        yield* twoPassLoudnorm(trimmedPath, wavPath, CHUNK_LUFS, true);
+        const durationSeconds = yield* probeDurationSeconds(wavPath);
+        return { wavPath, durationSeconds };
+      }),
+    ),
+  ).pipe(
+    Effect.onExit((exit) => (Exit.isFailure(exit) ? removeFile(wavPath) : Effect.void)),
+  );
 }
 
 /** A silence WAV of the given length, used as a gap between chunks/sections. */
-export async function makeSilenceWav(seconds: number): Promise<string> {
+export function makeSilenceWav(seconds: number): Effect.Effect<string, PressPodsError> {
   const out = tmpFile("wav");
-  await ffmpeg([
+  return ffmpeg([
     "-f",
     "lavfi",
     "-i",
@@ -196,24 +250,30 @@ export async function makeSilenceWav(seconds: number): Promise<string> {
     "-t",
     seconds.toFixed(3),
     out,
-  ]);
-  return out;
+  ]).pipe(
+    Effect.as(out),
+    Effect.onError(() => removeFile(out)),
+  );
 }
 
 /** Concatenate same-format WAVs (concat demuxer, stream copy). */
-async function concatWavs(files: string[]): Promise<string> {
-  const listPath = tmpFile("txt");
+function concatWavs(files: string[]): Effect.Effect<string, PressPodsError> {
   const out = tmpFile("wav");
-  await fs.writeFile(
-    listPath,
-    files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"),
+  return withTemporaryPath("txt", (listPath) =>
+    Effect.gen(function* () {
+      yield* tryPromise("write ffmpeg concat manifest", (signal) =>
+        fs.writeFile(
+          listPath,
+          files.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join("\n"),
+          { signal },
+        ),
+      );
+      yield* ffmpeg(["-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", out]);
+      return out;
+    }),
+  ).pipe(
+    Effect.onExit((exit) => (Exit.isFailure(exit) ? removeFile(out) : Effect.void)),
   );
-  try {
-    await ffmpeg(["-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", out]);
-    return out;
-  } finally {
-    await fs.unlink(listPath).catch(() => {});
-  }
 }
 
 /**
@@ -222,21 +282,24 @@ async function concatWavs(files: string[]): Promise<string> {
  * (96k mono — transparent for speech, half the size of 128k). A single final
  * encode replaces the old three-generation MP3 chain.
  */
-export async function assembleEpisode(
+export function assembleEpisode(
   chunkWavPaths: string[],
   introMp3: Buffer,
-): Promise<Buffer> {
-  const speechRaw = await concatWavs(chunkWavPaths);
+): Effect.Effect<Buffer, PressPodsError | InvalidPressPodsDataError> {
+  let speechRaw: string | undefined;
   const speechMastered = tmpFile("wav");
   const introPath = tmpFile("mp3");
   const outPath = tmpFile("mp3");
-  try {
-    await twoPassLoudnorm(speechRaw, speechMastered, MASTER_LUFS, true);
-    await fs.writeFile(introPath, introMp3);
+  return Effect.gen(function* () {
+    speechRaw = yield* concatWavs(chunkWavPaths);
+    yield* twoPassLoudnorm(speechRaw, speechMastered, MASTER_LUFS, true);
+    yield* tryPromise("write intro audio", (signal) =>
+      fs.writeFile(introPath, introMp3, { signal }),
+    );
     // Conform both inputs to 44.1k mono, loudness-match the intro to the same
     // target, then concat and encode once. filter_complex handles the join
     // click-free without the codec-padding gaps of an MP3-level concat.
-    await ffmpeg([
+    yield* ffmpeg([
       "-i",
       introPath,
       "-i",
@@ -261,15 +324,41 @@ export async function assembleEpisode(
       "1",
       outPath,
     ]);
-    return await fs.readFile(outPath);
-  } finally {
-    for (const f of [speechRaw, speechMastered, introPath, outPath]) {
-      await fs.unlink(f).catch(() => {});
-    }
-  }
+    return yield* tryPromise("read assembled episode", (signal) =>
+      fs.readFile(outPath, { signal }),
+    );
+  }).pipe(
+    Effect.ensuring(
+      Effect.forEach(
+        [speechRaw, speechMastered, introPath, outPath].filter(
+          (file): file is string => file !== undefined,
+        ),
+        removeFile,
+        { discard: true },
+      ),
+    ),
+  );
 }
 
 /** Best-effort cleanup of prepared chunk/gap WAVs after assembly. */
-export async function cleanupWavs(files: Iterable<string>): Promise<void> {
-  for (const f of new Set(files)) await fs.unlink(f).catch(() => {});
+function removeFile(file: string): Effect.Effect<void> {
+  return ignoreFailure(
+    tryPromise("remove temporary audio file", () => fs.unlink(file)),
+  );
+}
+
+function withTemporaryPath<A, E>(
+  extension: string,
+  use: (file: string) => Effect.Effect<A, E>,
+): Effect.Effect<A, E> {
+  return Effect.scoped(
+    Effect.acquireRelease(
+      Effect.sync(() => tmpFile(extension)),
+      removeFile,
+    ).pipe(Effect.flatMap(use)),
+  );
+}
+
+export function cleanupWavs(files: Iterable<string>): Effect.Effect<void> {
+  return Effect.forEach(new Set(files), removeFile, { discard: true });
 }

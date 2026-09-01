@@ -1,5 +1,6 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Deferred, Effect, Fiber } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   StreamerStatusEntity,
@@ -7,8 +8,13 @@ import {
 } from "../live-check/persistence.js";
 import { Platform } from "../live-check/platforms/index.js";
 import type { Streamer } from "../live-check/streamers.js";
-import type { ApnsControlClient } from "./apns.js";
 import {
+  type ApnsControlClient,
+  type ApnsControlPushResult,
+  ApnsTransportError,
+} from "./apns.js";
+import {
+  type IOSControlRegistration,
   IOSControlRegistrationEntity,
   listIOSControlRegistrations,
   replaceDeviceRegistrations,
@@ -32,6 +38,21 @@ const streamer: Streamer = {
   tier: "primary",
 };
 
+function mockApns(
+  sendControlChanged: (
+    registration: IOSControlRegistration,
+  ) => Promise<ApnsControlPushResult>,
+): ApnsControlClient {
+  return {
+    sendControlChangedEffect: (registration: IOSControlRegistration) =>
+      Effect.tryPromise({
+        try: () => sendControlChanged(registration),
+        catch: (cause) => new ApnsTransportError({ cause }),
+      }),
+    close: vi.fn(),
+  } as unknown as ApnsControlClient;
+}
+
 afterEach(() => {
   StreamerStatusEntity.deleteAll();
   IOSControlRegistrationEntity.deleteAll();
@@ -40,10 +61,7 @@ afterEach(() => {
 describe("IOSControlService", () => {
   it("pushes a new token once but not on an unchanged app resync", async () => {
     const sendControlChanged = vi.fn().mockResolvedValue({ kind: "sent" });
-    const apns = {
-      sendControlChanged,
-      close: vi.fn(),
-    } as unknown as ApnsControlClient;
+    const apns = mockApns(sendControlChanged);
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
@@ -71,10 +89,7 @@ describe("IOSControlService", () => {
       [streamer],
       "http://omni.boris",
       new Logger("Test"),
-      {
-        sendControlChanged: firstSend,
-        close: vi.fn(),
-      } as unknown as ApnsControlClient,
+      mockApns(firstSend),
     );
     await first.registerDevice("device-one", [
       {
@@ -91,10 +106,7 @@ describe("IOSControlService", () => {
       [streamer],
       "http://omni.boris",
       new Logger("Test"),
-      {
-        sendControlChanged: restartedSend,
-        close: vi.fn(),
-      } as unknown as ApnsControlClient,
+      mockApns(restartedSend),
     );
     await restarted.reconcile();
 
@@ -107,10 +119,7 @@ describe("IOSControlService", () => {
       .fn()
       .mockResolvedValueOnce({ kind: "failed", status: 503, reason: "Shutdown" })
       .mockResolvedValueOnce({ kind: "sent" });
-    const apns = {
-      sendControlChanged,
-      close: vi.fn(),
-    } as unknown as ApnsControlClient;
+    const apns = mockApns(sendControlChanged);
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
@@ -135,10 +144,7 @@ describe("IOSControlService", () => {
     const sendControlChanged = vi
       .fn()
       .mockResolvedValue({ kind: "failed", status: 503, reason: "Shutdown" });
-    const apns = {
-      sendControlChanged,
-      close: vi.fn(),
-    } as unknown as ApnsControlClient;
+    const apns = mockApns(sendControlChanged);
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
@@ -172,10 +178,7 @@ describe("IOSControlService", () => {
       .fn()
       .mockRejectedValueOnce(new Error("socket reset"))
       .mockResolvedValueOnce({ kind: "sent" });
-    const apns = {
-      sendControlChanged,
-      close: vi.fn(),
-    } as unknown as ApnsControlClient;
+    const apns = mockApns(sendControlChanged);
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
@@ -199,10 +202,7 @@ describe("IOSControlService", () => {
     const sendControlChanged = vi
       .fn()
       .mockResolvedValue({ kind: "invalid-token", reason: "Unregistered" });
-    const apns = {
-      sendControlChanged,
-      close: vi.fn(),
-    } as unknown as ApnsControlClient;
+    const apns = mockApns(sendControlChanged);
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
@@ -227,10 +227,7 @@ describe("IOSControlService", () => {
     const sendControlChanged = vi
       .fn()
       .mockResolvedValue({ kind: "failed", status: 403, reason: "Forbidden" });
-    const apns = {
-      sendControlChanged,
-      close: vi.fn(),
-    } as unknown as ApnsControlClient;
+    const apns = mockApns(sendControlChanged);
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
@@ -260,10 +257,7 @@ describe("IOSControlService", () => {
       [streamer],
       "http://omni.boris",
       new Logger("Test"),
-      {
-        sendControlChanged,
-        close: vi.fn(),
-      } as unknown as ApnsControlClient,
+      mockApns(sendControlChanged),
     );
 
     await service.registerDevice("device-one", [
@@ -281,10 +275,7 @@ describe("IOSControlService", () => {
 
   it("pushes only registered slots whose displayed state changed", async () => {
     const sendControlChanged = vi.fn().mockResolvedValue({ kind: "sent" });
-    const apns = {
-      sendControlChanged,
-      close: vi.fn(),
-    } as unknown as ApnsControlClient;
+    const apns = mockApns(sendControlChanged);
     replaceDeviceRegistrations("device-one", [
       {
         controlId: "slot-one",
@@ -324,5 +315,38 @@ describe("IOSControlService", () => {
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
     expect(sendControlChanged.mock.calls[0][0]).toMatchObject({ slot: 1 });
+  });
+
+  it("interrupts an in-flight APNs request with its parent reconciliation", async () => {
+    const started = await Effect.runPromise(Deferred.make<void>());
+    const cancelled = await Effect.runPromise(Deferred.make<void>());
+    const service = new IOSControlService(
+      [streamer],
+      "http://omni.boris",
+      new Logger("Test"),
+      {
+        sendControlChangedEffect: () =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.zipRight(Effect.never),
+            Effect.ensuring(Deferred.succeed(cancelled, undefined)),
+          ),
+        close: vi.fn(),
+      } as unknown as ApnsControlClient,
+    );
+    replaceDeviceRegistrations("device-one", [
+      {
+        controlId: "slot-one",
+        slot: 1,
+        pushToken: "ab".repeat(32),
+        environment: "sandbox",
+      },
+    ]);
+
+    const fiber = Effect.runFork(service.reconcileEffect());
+    await Effect.runPromise(Deferred.await(started));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+
+    await Effect.runPromise(Deferred.await(cancelled));
+    expect(service.diagnostics().undeliveredCount).toBe(1);
   });
 });

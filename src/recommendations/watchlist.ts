@@ -1,4 +1,6 @@
 import config from "../utils/config.js";
+import { Effect } from "effect";
+import { runPromise } from "../effect/interop.js";
 import type { ArrConfig } from "./arr/client.js";
 import { addRadarrMovie, fetchRadarrMovies } from "./arr/radarr.js";
 import { addSonarrSeries, fetchSonarrSeries } from "./arr/sonarr.js";
@@ -29,24 +31,32 @@ export interface WatchlistAddRequest {
   externalIds?: ExternalIds;
 }
 
-export async function fetchWatchlist(): Promise<FetchResult<MediaItem[]>> {
-  const [movies, series] = await Promise.all([
-    fetchRadarrMovies(radarrConfig()),
-    fetchSonarrSeries(sonarrConfig()),
-  ]);
-  if (movies.status !== "ok" || series.status !== "ok") {
-    return { status: "unavailable", reason: "Radarr or Sonarr is unavailable" };
-  }
-  return { status: "ok", value: [...movies.value, ...series.value] };
+export function fetchWatchlistEffect(): Effect.Effect<FetchResult<MediaItem[]>> {
+  return Effect.gen(function* () {
+    const [movies, series] = yield* Effect.all(
+      [fetchRadarrMovies(radarrConfig()), fetchSonarrSeries(sonarrConfig())] as const,
+      { concurrency: "unbounded" },
+    );
+    if (movies.status !== "ok" || series.status !== "ok") {
+      return { status: "unavailable", reason: "Radarr or Sonarr is unavailable" };
+    }
+    return { status: "ok", value: [...movies.value, ...series.value] };
+  });
 }
 
-export async function addToWatchlist(
+export function addToWatchlistEffect(
   request: WatchlistAddRequest,
-): Promise<WatchlistAddOutcome> {
+): Effect.Effect<WatchlistAddOutcome> {
   return request.mediaType === MediaType.Movie
-    ? { result: await addRadarrMovie(radarrConfig(), request.tmdbId) }
+    ? addRadarrMovie(radarrConfig(), request.tmdbId).pipe(
+        Effect.map((result) => ({ result })),
+      )
     : addSonarrSeries(sonarrConfig(), request.tmdbId);
 }
+
+export const fetchWatchlist = () => runPromise(fetchWatchlistEffect());
+export const addToWatchlist = (request: WatchlistAddRequest) =>
+  runPromise(addToWatchlistEffect(request));
 
 function radarrConfig(): ArrConfig {
   return {

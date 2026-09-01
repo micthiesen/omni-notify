@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import type { Effect } from "effect";
 import type { FetchResult } from "../utils/fetchResult.js";
 import { createCastroClient } from "./castro/client.js";
 
@@ -62,6 +63,8 @@ export interface ListenedEpisode {
   episodeTitle: string;
   /** RSS item GUID when known, else a stable client-native id. */
   episodeGuid?: string;
+  /** Enclosure/audio URL, used when the podcast client rewrites the RSS guid. */
+  mediaUrl?: string;
   feedUrl?: string;
   itunesId?: number;
   /** Epoch ms of the most recent playback activity. */
@@ -133,7 +136,7 @@ export interface PodcastAccountClient {
   /** Human-readable client name for logs (e.g. "Castro"). */
   readonly name: string;
 
-  fetchSubscriptions(): Promise<FetchResult<PodcastSubscription[]>>;
+  fetchSubscriptions(): Effect.Effect<FetchResult<PodcastSubscription[]>>;
   /**
    * Playback history, newest first. Completion fractions power outcome
    * labeling (listened ≥80% vs abandoned), so include them when available.
@@ -143,19 +146,21 @@ export interface PodcastAccountClient {
    * heaviest thing this client does, so a narrow window keeps us a
    * well-behaved API consumer. Omitted means the implementation's default.
    */
-  fetchListenHistory(sinceMs?: number): Promise<FetchResult<ListenedEpisode[]>>;
-  fetchQueue(): Promise<FetchResult<QueuedEpisode[]>>;
-  fetchInbox(): Promise<FetchResult<InboxEpisode[]>>;
-  searchPodcasts(query: string): Promise<FetchResult<PodcastSearchResult[]>>;
-  searchEpisodes(query: string): Promise<FetchResult<PodcastEpisodeSearchResult[]>>;
+  fetchListenHistory(sinceMs?: number): Effect.Effect<FetchResult<ListenedEpisode[]>>;
+  fetchQueue(): Effect.Effect<FetchResult<QueuedEpisode[]>>;
+  fetchInbox(): Effect.Effect<FetchResult<InboxEpisode[]>>;
+  searchPodcasts(query: string): Effect.Effect<FetchResult<PodcastSearchResult[]>>;
+  searchEpisodes(
+    query: string,
+  ): Effect.Effect<FetchResult<PodcastEpisodeSearchResult[]>>;
 
   /** Add one episode to the play queue. Idempotency: report already_exists. */
-  enqueueEpisode(request: EnqueueEpisodeRequest): Promise<PodcastWriteResult>;
+  enqueueEpisode(request: EnqueueEpisodeRequest): Effect.Effect<PodcastWriteResult>;
   /** Remove one episode from the play queue. Idempotency: report not_found. */
-  dequeueEpisode(episodeGuid: string): Promise<PodcastWriteResult>;
+  dequeueEpisode(episodeGuid: string): Effect.Effect<PodcastWriteResult>;
   /** Clear an episode's new state so it no longer appears in the Inbox. */
-  clearInboxEpisode(clientEpisodeId: string): Promise<PodcastWriteResult>;
-  subscribeToShow(request: SubscribeToShowRequest): Promise<PodcastWriteResult>;
+  clearInboxEpisode(clientEpisodeId: string): Effect.Effect<PodcastWriteResult>;
+  subscribeToShow(request: SubscribeToShowRequest): Effect.Effect<PodcastWriteResult>;
 }
 
 /** The configured podcast account client, or undefined when none is available. */
