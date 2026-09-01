@@ -51,6 +51,65 @@ describe("frontend API schemas", () => {
     });
   });
 
+  it("accepts null and populated podcast recommendation fields", () => {
+    const recommendation = {
+      recommendationId: "rec_1",
+      showTitle: "A Show",
+      episodeTitle: "An Episode",
+      feedUrl: "https://example.com/feed.xml",
+      itunesId: null,
+      artworkUrl: null,
+      episodeUrl: null,
+      publishedAt: 1,
+      durationMinutes: null,
+      status: "notified",
+      whyForUser: null,
+      caveats: [],
+      confidence: null,
+      shortlistScores: null,
+      discoveredVia: null,
+      sourceUrl: null,
+      matchedVoices: [],
+      recommendedAt: 2,
+      notifiedAt: null,
+      queueResult: null,
+      feedback: null,
+      feedbackAt: null,
+      feedbackNote: null,
+    };
+    const populatedRecommendation = {
+      ...recommendation,
+      itunesId: 123,
+      artworkUrl: "https://example.com/artwork.jpg",
+      episodeUrl: "https://example.com/episode",
+      durationMinutes: 45,
+      whyForUser: "A strong match",
+      caveats: ["Part two"],
+      confidence: 0.9,
+      shortlistScores: {
+        tasteMatch: 8,
+        novelty: 7,
+        composite: 7.5,
+        risks: ["Requires context"],
+      },
+      discoveredVia: "guest search",
+      sourceUrl: "https://example.com/source",
+      matchedVoices: ["A Guest"],
+      notifiedAt: 3,
+      queueResult: "queued",
+      feedback: "good_pick",
+      feedbackAt: 4,
+      feedbackNote: "More like this",
+    };
+
+    expect(
+      Schema.decodeUnknownSync(PodcastRecommendationSchema)(recommendation),
+    ).toEqual(recommendation);
+    expect(
+      Schema.decodeUnknownSync(PodcastRecommendationSchema)(populatedRecommendation),
+    ).toEqual(populatedRecommendation);
+  });
+
   it("rejects malformed nested PressPods cost accounting", () => {
     expectDecodeFailure(PressPodsEpisodeDetailSchema, {
       episodeId: "episode_1",

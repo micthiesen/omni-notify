@@ -470,30 +470,30 @@ export interface PodcastRecommendation {
   showTitle: string;
   episodeTitle: string;
   feedUrl: string;
-  itunesId?: number;
-  artworkUrl?: string;
-  episodeUrl?: string;
+  itunesId: number | null;
+  artworkUrl: string | null;
+  episodeUrl: string | null;
   publishedAt: number;
-  durationMinutes?: number;
+  durationMinutes: number | null;
   status: PodcastRecommendationStatus;
-  whyForUser?: string;
-  caveats?: string[];
-  confidence?: number;
-  shortlistScores?: {
+  whyForUser: string | null;
+  caveats: string[];
+  confidence: number | null;
+  shortlistScores: {
     tasteMatch: number;
     novelty: number;
     composite: number;
     risks: string[];
-  };
-  discoveredVia?: string;
-  sourceUrl?: string;
-  matchedVoices?: string[];
+  } | null;
+  discoveredVia: string | null;
+  sourceUrl: string | null;
+  matchedVoices: string[];
   recommendedAt: number;
-  notifiedAt?: number;
-  queueResult?: PodcastQueueResult | null;
-  feedback?: PodcastFeedback;
-  feedbackAt?: number;
-  feedbackNote?: string | null;
+  notifiedAt: number | null;
+  queueResult: PodcastQueueResult | null;
+  feedback: PodcastFeedback | null;
+  feedbackAt: number | null;
+  feedbackNote: string | null;
 }
 
 export type EmailPipeline = "ParcelTracker" | "CalendarEvents";
@@ -1423,11 +1423,11 @@ export const PodcastRecommendationSchema = browserSchema<PodcastRecommendation>(
     showTitle: Schema.String,
     episodeTitle: Schema.String,
     feedUrl: Schema.String,
-    itunesId: Schema.optional(Schema.Number),
-    artworkUrl: Schema.optional(Schema.String),
-    episodeUrl: Schema.optional(Schema.String),
+    itunesId: Schema.NullOr(Schema.Number),
+    artworkUrl: Schema.NullOr(Schema.String),
+    episodeUrl: Schema.NullOr(Schema.String),
     publishedAt: Schema.Number,
-    durationMinutes: Schema.optional(Schema.Number),
+    durationMinutes: Schema.NullOr(Schema.Number),
     status: Schema.Literals([
       "pending",
       "notified",
@@ -1436,21 +1436,21 @@ export const PodcastRecommendationSchema = browserSchema<PodcastRecommendation>(
       "ignored",
       "failed",
     ]),
-    whyForUser: Schema.optional(Schema.String),
-    caveats: Schema.optional(Schema.Array(Schema.String)),
-    confidence: Schema.optional(Schema.Number),
-    shortlistScores: Schema.optional(PodcastShortlistScoresSchema),
-    discoveredVia: Schema.optional(Schema.String),
-    sourceUrl: Schema.optional(Schema.String),
-    matchedVoices: Schema.optional(Schema.Array(Schema.String)),
+    whyForUser: Schema.NullOr(Schema.String),
+    caveats: Schema.Array(Schema.String),
+    confidence: Schema.NullOr(Schema.Number),
+    shortlistScores: Schema.NullOr(PodcastShortlistScoresSchema),
+    discoveredVia: Schema.NullOr(Schema.String),
+    sourceUrl: Schema.NullOr(Schema.String),
+    matchedVoices: Schema.Array(Schema.String),
     recommendedAt: Schema.Number,
-    notifiedAt: Schema.optional(Schema.Number),
-    queueResult: Schema.optional(
-      Schema.NullOr(Schema.Literals(["queued", "already_queued", "not_queued"])),
+    notifiedAt: Schema.NullOr(Schema.Number),
+    queueResult: Schema.NullOr(
+      Schema.Literals(["queued", "already_queued", "not_queued"]),
     ),
-    feedback: Schema.optional(Schema.Literals(["good_pick", "not_for_me"])),
-    feedbackAt: Schema.optional(Schema.Number),
-    feedbackNote: Schema.optional(Schema.NullOr(Schema.String)),
+    feedback: Schema.NullOr(Schema.Literals(["good_pick", "not_for_me"])),
+    feedbackAt: Schema.NullOr(Schema.Number),
+    feedbackNote: Schema.NullOr(Schema.String),
   }),
 );
 export const PodcastTasteProfileSchema = browserSchema<PodcastTasteProfile>(
