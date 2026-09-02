@@ -142,25 +142,6 @@ describe("extractCalendarCollections", () => {
       },
     ]);
   });
-
-  it("handles Fastmail-style responses without component sets", () => {
-    const xml = `<d:multistatus xmlns:d="DAV:" xmlns:cal="urn:ietf:params:xml:ns:caldav">
-      <d:response>
-        <d:href>/dav/calendars/user/user@example.com/abc123/</d:href>
-        <d:propstat><d:prop>
-          <d:displayname><![CDATA[Default]]></d:displayname>
-          <d:resourcetype><d:collection/><cal:calendar/></d:resourcetype>
-        </d:prop></d:propstat>
-      </d:response>
-    </d:multistatus>`;
-    expect(extractCalendarCollections(xml)).toEqual([
-      {
-        href: "/dav/calendars/user/user@example.com/abc123/",
-        name: "Default",
-        components: undefined,
-      },
-    ]);
-  });
 });
 
 describe("pickCalendarCollection", () => {

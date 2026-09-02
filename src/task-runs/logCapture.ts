@@ -29,7 +29,7 @@ const buffers = new Map<string, RunLogBuffer>();
  * Route every Logger call made inside a task run to that run's log buffer.
  * Console output is untouched (and still respects LOG_LEVEL); the tap sees
  * everything down to DEBUG, so the UI can show more detail than the compose
- * logs. Lines logged outside any run (server, JMAP pipelines) are ignored.
+ * logs. Lines logged outside any run (server, email pipelines) are ignored.
  * Call once at boot.
  */
 export function installLogCapture(): void {

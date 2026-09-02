@@ -30,7 +30,7 @@ Model IDs: pick the newest **generally-available** model from the *same provider
 - Manifests: root `package.json`, `frontend/package.json`. Keep `@types/node` major **matched to the Node runtime major**, not latest.
 - Version pins travel together: `.node-version`, `engines`, `packageManager`, Dockerfile `FROM` + pnpm install line, CI (`node-version-file` already covers Node there).
 - pnpm settings live in `pnpm-workspace.yaml`, not `package.json#pnpm` (pnpm 11+): `allowBuilds`, `peerDependencyRules`, `patchedDependencies`, `overrides`.
-- Patched deps: if a bump changes a patched package's resolved version, check whether upstream fixed the issue; if not, re-key the patch (rename `patches/<name>@<old>.patch` → `@<new>` and update `patchedDependencies`). The `jmap-rfc-types` patch (broken `.ts` extension imports) has survived multiple upstream versions — verify before dropping it.
+- Patched deps: if a bump changes a patched package's resolved version, check whether upstream fixed the issue; if not, re-key the patch (rename `patches/<name>@<old>.patch` → `@<new>` and update `patchedDependencies`).
 - Install: `CI=true pnpm install --no-frozen-lockfile`, then `CI=true pnpm update -r` for in-range minors. (`CI=true` avoids the no-TTY modules-purge abort; `--no-frozen-lockfile` because `CI=true` implies frozen.)
 - If Node changed: `fnm install <version>` locally and run all commands via `fnm exec --using=<version>` (this machine uses fnm; pnpm comes from corepack, so also set `COREPACK_ENABLE_DOWNLOAD_PROMPT=0`).
 - Fix code breakage from majors. When a migration guide claims a rename, confirm against the installed d.ts before editing — guides sometimes describe aliases that still exist.

@@ -1,15 +1,10 @@
 import { Effect, Schema } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
 
-/**
- * Transport-agnostic email pipeline types. Two transports implement
- * EmailTransport: Fastmail JMAP (src/email/jmap/) and iCloud IMAP
- * (src/email/imap/), selected via EMAIL_TRANSPORT during the Fastmail →
- * iCloud migration.
- */
+/** Transport-agnostic email pipeline types implemented by iCloud IMAP. */
 
 export interface EmailAttachment {
-  /** Opaque transport-specific handle (JMAP blobId / IMAP folder+uid coords). */
+  /** Opaque IMAP folder and UID coordinates. */
   blobId: string;
   name: string;
   type: string; // MIME type
@@ -88,7 +83,7 @@ export interface EmailSearchOptions {
 }
 
 export interface EmailTransport<out E = unknown> {
-  /** Short label for logs ("JMAP", "IMAP"). */
+  /** Short label for logs ("IMAP"). */
   readonly name: string;
   /**
    * Begin push monitoring. onMailEvent may fire spuriously (reconnects,
@@ -105,8 +100,7 @@ export interface EmailTransport<out E = unknown> {
   fetchEmailByIdEffect(id: string): Effect.Effect<FetchedEmail | undefined, E>;
   /**
    * Search the monitored mailbox without exposing transport credentials or raw
-   * protocol access. Optional because the retiring JMAP adapter does not offer
-   * this capability; the active iCloud IMAP adapter does.
+   * protocol access.
    */
   searchEmailsEffect?(options: EmailSearchOptions): Effect.Effect<FetchedEmail[], E>;
   /** Download one attachment's bytes; undefined when unavailable. */

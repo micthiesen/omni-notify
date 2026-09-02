@@ -7,9 +7,6 @@ settings:
 overrides:
   '@postlight/parser>difflib': npm:difflib@0.2.4
 
-patchedDependencies:
-  jmap-rfc-types@0.2.0: de64b735cee5efadda6ad1f64c9bc7ac01c62e9b55931f90ae8d9b75885c763b
-
 importers:
 
   .:
@@ -68,9 +65,6 @@ importers:
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112
-      eventsource:
-        specifier: ^4.1.1
-        version: 4.1.1
       fluent-ffmpeg:
         specifier: 2.1.3
         version: 2.1.3
@@ -95,9 +89,6 @@ importers:
       imapflow:
         specifier: ^1.6.5
         version: 1.6.5
-      jmap-jam:
-        specifier: ^0.13.3
-        version: 0.13.3
       linkedom:
         specifier: ^0.18.13
         version: 0.18.13
@@ -1605,10 +1596,6 @@ packages:
     resolution: {integrity: sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==}
     engines: {node: '>=18.0.0'}
 
-  eventsource@4.1.1:
-    resolution: {integrity: sha512-D6bTRWh6KahHTK/m4WnjPQyEinNPf9eFLEZSEoj7d6fTibspnAVYfzHvirL7u/aoX5d9YYfIkBVAhmigUELk9w==}
-    engines: {node: '>=20.0.0'}
-
   expand-template@2.0.3:
     resolution: {integrity: sha512-XYfuKMvj4O35f/pOXLObndIRvyQ+/+6AhODh+OKWj9S9498pHHn/IMszH+gt0fBCRWMNfk1ZSp5x3AifmnI2vg==}
     engines: {node: '>=6'}
@@ -1823,12 +1810,6 @@ packages:
 
   isstream@0.1.2:
     resolution: {integrity: sha512-Yljz7ffyPbrLpLngrMtZ7NduUgVvi6wG9RJ9IUcyCd59YQ911PBJphODUcbOVbqYfxe1wuYf/LJ8PauMRwsM/g==}
-
-  jmap-jam@0.13.3:
-    resolution: {integrity: sha512-lyt1MzO3Unk0y/BUkFIIw+k+vKa3/pRXL1p6p3CV3EiL8Aeq1huXdzqzhmuzVZgOW6I1DdtwOfA/xACSwYLEHw==}
-
-  jmap-rfc-types@0.2.0:
-    resolution: {integrity: sha512-M4uK9olM22f0hvsk7gAw58CBPEnyCKIKWJSH59CYJR3bMA0duKQIKhaZyLaoD6LSZla+JoJ/9NEPRlwXmO9BFg==}
 
   jose@6.2.10:
     resolution: {integrity: sha512-iiW7J9qRFlGxvCOIBDBDxFePQSn7ZMAnrYGhrrOo6siO/MIqwfyilLR27pkfDgUk+raLuzADS8A3S/KLBisc0g==}
@@ -3894,10 +3875,6 @@ snapshots:
     dependencies:
       eventsource-parser: 3.1.0
 
-  eventsource@4.1.1:
-    dependencies:
-      eventsource-parser: 3.1.0
-
   expand-template@2.0.3: {}
 
   expect-type@1.4.0: {}
@@ -4121,15 +4098,6 @@ snapshots:
       - encoding
 
   isstream@0.1.2: {}
-
-  jmap-jam@0.13.3:
-    dependencies:
-      jmap-rfc-types: 0.2.0(patch_hash=de64b735cee5efadda6ad1f64c9bc7ac01c62e9b55931f90ae8d9b75885c763b)
-      type-fest: 5.8.0
-
-  jmap-rfc-types@0.2.0(patch_hash=de64b735cee5efadda6ad1f64c9bc7ac01c62e9b55931f90ae8d9b75885c763b):
-    dependencies:
-      type-fest: 5.8.0
 
   jose@6.2.10: {}
 

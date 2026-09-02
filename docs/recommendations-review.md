@@ -26,4 +26,4 @@ Revisit these decisions after at least **20 delivered recommendations** and enou
 - No vector database or custom recommendation model. The evidence volume does not justify either yet.
 - No real-time profile rebuild. Weekly checkpointed reflection is cheaper and less reactive.
 - No autonomous prompt, code, or scoring-rule rewriting. Reflection may update versioned taste context, while application behavior remains reviewable code.
-- No JMAP-style Plex checkpoint protocol. Bounded paginated polling is simple, reliable, and proportionate to this library.
+- No persistent Plex checkpoint protocol. Bounded paginated polling is simple, reliable, and proportionate to this library.

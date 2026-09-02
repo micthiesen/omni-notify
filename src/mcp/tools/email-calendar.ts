@@ -1012,7 +1012,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       inputSchema: emptyInputSchema,
       outputSchema: z.object({
         configured: z.boolean(),
-        provider: z.enum(["fastmail", "icloud"]).nullable(),
+        provider: z.literal("icloud").nullable(),
         tracked: z.object({
           active: z.number(),
           cancelled: z.number(),

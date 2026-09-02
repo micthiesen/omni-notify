@@ -91,22 +91,16 @@ describe("CalDAV HTTP safety", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("accepts only provider-owned HTTPS collection URLs", () => {
+  it("accepts only iCloud HTTPS collection URLs", () => {
     expect(
-      assertTrustedCaldavUrl(
-        "https://p03-caldav.icloud.com/123/calendars/home/",
-        "icloud",
-      ),
+      assertTrustedCaldavUrl("https://p03-caldav.icloud.com/123/calendars/home/"),
     ).toContain("p03-caldav.icloud.com");
-    expect(() => assertTrustedCaldavUrl("http://caldav.icloud.com/", "icloud")).toThrow(
-      "Untrusted icloud CalDAV URL",
+    expect(() => assertTrustedCaldavUrl("http://caldav.icloud.com/")).toThrow(
+      "Untrusted iCloud CalDAV URL",
     );
     expect(() =>
-      assertTrustedCaldavUrl("https://icloud.com.attacker.example/", "icloud"),
-    ).toThrow("Untrusted icloud CalDAV URL");
-    expect(() =>
-      assertTrustedCaldavUrl("https://calendar.example/", "fastmail"),
-    ).toThrow("Untrusted fastmail CalDAV URL");
+      assertTrustedCaldavUrl("https://icloud.com.attacker.example/"),
+    ).toThrow("Untrusted iCloud CalDAV URL");
   });
 
   it("rejects a response whose Content-Length exceeds the XML limit", async () => {

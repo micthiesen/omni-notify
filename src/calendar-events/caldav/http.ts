@@ -49,18 +49,11 @@ function isIcloudCaldavHost(hostname: string): boolean {
 }
 
 /** Reject URLs that could disclose a provider password to another origin. */
-export function assertTrustedCaldavUrl(
-  url: string,
-  provider: "icloud" | "fastmail",
-): string {
+export function assertTrustedCaldavUrl(url: string): string {
   const parsed = new URL(url);
-  const trusted =
-    parsed.protocol === "https:" &&
-    (provider === "icloud"
-      ? isIcloudCaldavHost(parsed.hostname)
-      : parsed.hostname === "caldav.fastmail.com");
+  const trusted = parsed.protocol === "https:" && isIcloudCaldavHost(parsed.hostname);
   if (!trusted) {
-    throw new Error(`Untrusted ${provider} CalDAV URL: ${parsed.origin}`);
+    throw new Error(`Untrusted iCloud CalDAV URL: ${parsed.origin}`);
   }
   return parsed.toString();
 }

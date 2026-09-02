@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**omni-notify** monitors livestream platforms (YouTube, Twitch), email through iCloud IMAP, and more — sending Pushover notifications and taking automated actions. Features include live-check notifications, AI briefing agents, parcel tracking from emails, and automatic calendar event creation through CalDAV. The Fastmail JMAP adapter remains available only as a legacy selectable transport.
+**omni-notify** monitors livestream platforms (YouTube, Twitch), email through iCloud IMAP, and more — sending Pushover notifications and taking automated actions. Features include live-check notifications, AI briefing agents, parcel tracking from emails, and automatic calendar event creation through CalDAV.
 
 ## Quick Reference
 
@@ -165,14 +165,7 @@ src/
 │   ├── watchdogTask.ts      # EmailWatchdogTask: warns when no email dispatched >72h
 │   ├── persistence.ts       # Last-dispatched watermark (SQLite)
 │   ├── htmlToText.ts        # HTML email body → text + shipment-shaped link extraction
-│   ├── jmap/                # Fastmail transport (EMAIL_TRANSPORT=fastmail)
-│   │   ├── client.ts        # JMAP session + account resolution
-│   │   ├── transport.ts     # JmapTransport: state-cursor polling + cannotCalculateChanges recovery
-│   │   ├── eventSource.ts   # SSE for real-time email state changes (drains on reconnect)
-│   │   ├── emailFetcher.ts  # Fetch new emails (paged changes, mailbox-scoped, links, by-id)
-│   │   ├── mailboxes.ts     # Mailbox role resolution: only inbox/archive are processed
-│   │   └── persistence.ts   # JMAP state cursor (SQLite)
-│   └── imap/                # iCloud transport (EMAIL_TRANSPORT=icloud)
+│   └── imap/                # iCloud IMAP transport
 │       ├── transport.ts     # ImapTransport: IDLE push + reconnect backoff + folder sweeps
 │       ├── sync.ts          # Pure per-folder UID-cursor sync planning
 │       ├── mapMessage.ts    # mailparser output → FetchedEmail (Message-ID ids, blob handles)
@@ -191,9 +184,8 @@ src/
 │   ├── persistence.ts       # Dedup gate, 365d context window, evt_N resolution (SQLite)
 │   ├── extraction/          # LLM event extraction + output sanitization + retry
 │   ├── filter/              # Tiered filter: rules → blacklist → auto-pass → triage
-│   └── caldav/              # CalDAV API (iCalendar incl. RRULE) + provider discovery
-│                            #   fastmail.ts (username-based URLs) / icloud.ts (RFC 6764
-│                            #   principal → home-set → collection discovery, pXX shards)
+│   └── caldav/              # iCloud CalDAV API and RFC 6764 discovery
+│                            #   principal → home-set → collection discovery, pXX shards
 ├── press-pods/              # PressPods: article URL → TTS podcast episode + RSS feed
 │   ├── task.ts              # PressPodsTask: drains the job queue (5min sweep; submissions
 │   │                        #   kick a manual run immediately via TaskRegistry.runNow)
@@ -482,7 +474,7 @@ History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
 Every log line emitted during a task run is captured and viewable in the web UI (click a task card's last-run line, a history row, or an activity row). How it works:
 
 - `installLogCapture()` (called at boot) sets the global `Logger.onLog` tap from mitools ≥2.4.0. The tap fires for **every** log call regardless of `LOG_LEVEL`, so DEBUG lines reach the UI while console/compose output still respects the threshold.
-- `TaskRegistry.execute` wraps `task.run()` in an `AsyncLocalStorage` context carrying the `runId`; the tap attributes lines to the active run (across awaits, sub-loggers, and concurrent tasks). Lines logged outside any run (server, JMAP pipelines) are ignored.
+- `TaskRegistry.execute` wraps `task.run()` in an `AsyncLocalStorage` context carrying the `runId`; the tap attributes lines to the active run (across awaits, sub-loggers, and concurrent tasks). Lines logged outside any run (server, email pipelines) are ignored.
 - In-flight lines live in a per-run memory buffer (capped at 2000 lines / 4KB per line, oldest dropped) and are broadcast on `runLogBus`. On run end the buffer is persisted as one `TaskRunLogEntity` row, pruned alongside `TaskRunEntity`'s 50-runs-per-task retention.
 - API: `GET /api/task-runs/:runId/logs` (buffer if running, else stored row); `GET /api/task-runs/:runId/logs/stream` (SSE live tail: `init` replays the buffer, `line` frames follow, `done` carries the settled run). Logs never ride the dashboard snapshot stream.
 - Frontend: `LogViewer.tsx` modal — level filter chips (debug hidden by default), stick-to-bottom tailing, LIVE badge while streaming.
@@ -584,13 +576,7 @@ ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
 OPENAI_API_KEY=xxx                      # Required for openai: models
 TAVILY_API_KEY=tvly-xxx                 # Tavily web search (briefings + recommendations)
 BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
-EMAIL_TRANSPORT=fastmail|icloud         # Optional: mailbox transport (default: fastmail while FASTMAIL_API_TOKEN set)
-CALDAV_PROVIDER=fastmail|icloud         # Optional: calendar-write backend (default: follows EMAIL_TRANSPORT)
-EMAIL_SELF_ADDRESS=user@example.com     # Optional: own receiving address for self-sent filters (default: FASTMAIL_USERNAME)
-FASTMAIL_API_TOKEN=xxx                  # Fastmail API token (JMAP email monitoring)
-FASTMAIL_APP_PASSWORD=xxx               # Fastmail app password (CalDAV calendar creation)
-FASTMAIL_USERNAME=user@fastmail.com     # Fastmail username
-FASTMAIL_CALENDAR_ID=xxx                # Optional: CalDAV calendar ID (auto-discovers default)
+EMAIL_SELF_ADDRESS=user@example.com     # Optional: own receiving address for self-sent filters (default: ICLOUD_USERNAME)
 ICLOUD_USERNAME=user@icloud.com         # iCloud primary username (IMAP + CalDAV; NOT the custom-domain address)
 ICLOUD_APP_PASSWORD=xxx                 # iCloud app-specific password (IMAP + CalDAV)
 ICLOUD_CALENDAR_NAME=Personal           # Optional: display name of the iCloud calendar to write to
@@ -641,7 +627,6 @@ For any web requests you must make with curl or otherwise, always set your user 
 - **@ai-sdk/google**, **@ai-sdk/anthropic**, **@ai-sdk/openai**: AI provider SDKs (configured via `BRIEFING_MODEL` env var)
 - **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities. Source is cloned locally (usually/always at `../mitools`), and modifying + releasing it is fully supported (the release/publish is automated). So when a change really wants a shared primitive, extending mitools and cutting a new version is a legitimate option, not a last resort. Prefer an in-repo change when it suffices; reach for a mitools release when the primitive is genuinely shared or belongs in the toolkit.
 - **got**: HTTP client for all outbound requests (Tavily, platform checks, URL fetching)
-- **jmap-jam**: Fastmail JMAP client (email transport; retires after the iCloud cutover)
 - **imapflow** + **mailparser**: iCloud IMAP client (IDLE, UID fetch) + RFC 822 parsing
 - **@mozilla/readability**: Firefox Reader View algorithm for extracting article content
 - **linkedom**: Lightweight DOM parser (used by Readability, 3x faster than jsdom)
@@ -673,14 +658,13 @@ For any web requests you must make with curl or otherwise, always set your user 
 - Zod validates response schema
 - More stable than YouTube scraping
 
-### Email Integration (selectable transport: Fastmail JMAP / iCloud IMAP, + CalDAV)
+### Email Integration (iCloud IMAP + CalDAV)
 
-Both parcel-tracker and calendar-events share the same infrastructure (`src/email/`). The mailbox transport is selectable via `EMAIL_TRANSPORT` (`fastmail` | `icloud`) behind the `EmailTransport` interface (`src/email/types.ts`) — added for the Fastmail → iCloud migration (2026-08); the Fastmail path stays until the MX cutover completes, then its env vars get removed and it can be deleted.
+Both parcel-tracker and calendar-events share the same iCloud email infrastructure (`src/email/`) behind the `EmailTransport` interface (`src/email/types.ts`).
 
 - **EmailDispatcher** (transport-agnostic): on every mail event, polls the transport for new emails and fans out to registered `EmailHandler`s (parcel-tracker, calendar-events). Events arriving mid-processing set a pending flag and re-run (never dropped). Transport cursors commit only after dispatch, so a crash re-delivers instead of dropping (pipeline dedup gates absorb it).
-- **Fastmail transport** (`src/email/jmap/`, via `jmap-jam`): SSE event source push; `Email/changes` paged via `maxChanges` with a 500-email/pass cap; on `cannotCalculateChanges` it recovers the gap with a bounded `Email/query` from the last dispatched timestamp before resetting state (warn → Pushover). Mailbox scoping: only role inbox/archive is processed (fails open if roles can't be resolved). Auth: `FASTMAIL_API_TOKEN` bearer.
-- **iCloud transport** (`src/email/imap/`, via `imapflow` + `mailparser`): IMAP IDLE on INBOX (re-issued every 13 min, well under the RFC 2177 29-min limit) plus a 5-min sweep of INBOX + Archive (server-side rules can file mail straight into Archive, which IDLE on INBOX won't see). Delta sync is plain UID-cursor per folder (`uidNext`), deliberately NOT CONDSTORE/QRESYNC — iCloud rejects parameterized `SELECT (CONDSTORE)` (MailKit #970), and the pipelines only consume new messages anyway. Pre-login CAPABILITY lies (Bugzilla #1611624); imapflow re-reads post-auth. Email ids are RFC Message-IDs (stable across INBOX→Archive moves; UIDs aren't), with folder-coordinate fallback. A 7-day age guard cursor-skips bulk imports (an imapsync sweep copies old mail in with new UIDs but preserved INTERNALDATEs) so they can't flood the pipelines/triage. UIDVALIDITY change mirrors the JMAP recovery: re-dispatch since the last-dispatch watermark, reseat cursor. Auth: `ICLOUD_USERNAME` (the @icloud.com primary, NOT the custom-domain address) + `ICLOUD_APP_PASSWORD` (app-specific password) against imap.mail.me.com:993.
-- **CalDAV** (raw HTTP, provider-selectable via `CALDAV_PROVIDER`, default follows `EMAIL_TRANSPORT`): event creation is `PUT` iCalendar. Fastmail uses username-based URLs (`caldav.fastmail.com/dav/calendars/user/...`). iCloud has no such URLs: discovery follows RFC 6764 (PROPFIND `current-user-principal` at caldav.icloud.com → redirects to a per-account `pXX-caldav.icloud.com/<dsid>/` shard → `calendar-home-set` → collections, filtered to VEVENT-capable, picked by `ICLOUD_CALENDAR_NAME`); never hardcode the shard, and `ICLOUD_CALENDAR_URL` pins a known collection to skip discovery. iCloud quirk: cross-calendar event moves return 403 (delete + recreate) — not currently exercised since we always write to one calendar.
+- **iCloud transport** (`src/email/imap/`, via `imapflow` + `mailparser`): IMAP IDLE on INBOX (re-issued every 13 min, well under the RFC 2177 29-min limit) plus a 5-min sweep of INBOX + Archive (server-side rules can file mail straight into Archive, which IDLE on INBOX won't see). Delta sync is plain UID-cursor per folder (`uidNext`), deliberately NOT CONDSTORE/QRESYNC — iCloud rejects parameterized `SELECT (CONDSTORE)` (MailKit #970), and the pipelines only consume new messages anyway. Pre-login CAPABILITY lies (Bugzilla #1611624); imapflow re-reads post-auth. Email ids are RFC Message-IDs (stable across INBOX→Archive moves; UIDs aren't), with folder-coordinate fallback. A 7-day age guard cursor-skips bulk imports (an imapsync sweep copies old mail in with new UIDs but preserved INTERNALDATEs) so they can't flood the pipelines/triage. UIDVALIDITY change re-dispatches since the last-dispatch watermark, then reseats the cursor. Auth: `ICLOUD_USERNAME` (the @icloud.com primary, NOT the custom-domain address) + `ICLOUD_APP_PASSWORD` (app-specific password) against imap.mail.me.com:993.
+- **CalDAV** (raw HTTP): event creation is `PUT` iCalendar. Discovery follows RFC 6764 (PROPFIND `current-user-principal` at caldav.icloud.com → redirects to a per-account `pXX-caldav.icloud.com/<dsid>/` shard → `calendar-home-set` → collections, filtered to VEVENT-capable, picked by `ICLOUD_CALENDAR_NAME`); never hardcode the shard, and `ICLOUD_CALENDAR_URL` pins a known collection to skip discovery. iCloud quirk: cross-calendar event moves return 403 (delete + recreate) — not currently exercised since we always write to one calendar.
 - Each pipeline implements `EmailHandler` with a `handleEmails(emails)` method for filtering and processing; retry/reprocess re-fetch emails by id through the transport (`fetchEmailById`), and calendar attachments download through it too (`downloadAttachment`).
 
 ### Email Pipeline Design Invariants

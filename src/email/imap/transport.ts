@@ -41,7 +41,7 @@ const IMAP_PORT = 993;
 
 /**
  * Folders whose new mail feeds the pipelines — the IMAP equivalent of the
- * JMAP inbox/archive mailbox-role scoping. Archive is watched directly
+ * Inbox/archive mailbox scoping. Archive is watched directly
  * because iCloud server-side rules can file mail there before IMAP delivery.
  */
 const FOLDERS = ["INBOX", "Archive"];
@@ -53,7 +53,7 @@ const SWEEP_INTERVAL_MS = 5 * 60_000;
 /** Re-issue IDLE well before the RFC 2177 29-minute limit. */
 const MAX_IDLE_TIME_MS = 13 * 60_000;
 
-// Reconnect backoff mirrors the JMAP EventSource: first attempt jittered
+// Reconnect backoff starts with a jittered first attempt
 // 0-3s, then doubling, capped at 5 min, reset on successful connect.
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 5 * 60_000;

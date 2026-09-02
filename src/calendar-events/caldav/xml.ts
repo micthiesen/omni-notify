@@ -1,7 +1,7 @@
 /**
  * Minimal CalDAV multistatus XML parsing. Regex-based on purpose: the two
- * servers we talk to (Fastmail, iCloud) emit simple, flat PROPFIND responses,
- * and namespace prefixes vary per server (d:, D:, none, A:, ...) so matching
+ * iCloud emits simple, flat PROPFIND responses, and namespace prefixes vary
+ * (d:, D:, none, A:, ...) so matching
  * is prefix-agnostic. Pure functions, tested in xml.spec.ts.
  */
 

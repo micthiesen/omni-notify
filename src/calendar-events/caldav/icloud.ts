@@ -13,8 +13,7 @@ import {
 const ICLOUD_CALDAV_ROOT = "https://caldav.icloud.com/";
 
 /**
- * iCloud CalDAV discovery. Unlike Fastmail there are no username-based URLs:
- * the well-known root redirects to a per-account shard
+ * iCloud CalDAV discovery. The well-known root redirects to a per-account shard
  * (https://pXX-caldav.icloud.com/<dsid>/...), so we must follow the RFC 6764
  * chain — current-user-principal → calendar-home-set → calendar collections —
  * and never hardcode the shard. ICLOUD_CALENDAR_URL short-circuits everything
@@ -36,7 +35,7 @@ export function discoverIcloudCalendarEffect(
       const configuredUrl = config.ICLOUD_CALENDAR_URL.endsWith("/")
         ? config.ICLOUD_CALENDAR_URL
         : `${config.ICLOUD_CALENDAR_URL}/`;
-      const url = assertTrustedCaldavUrl(configuredUrl, "icloud");
+      const url = assertTrustedCaldavUrl(configuredUrl);
       logger.info(`Using configured iCloud calendar: ${url}`);
       return { calendarUrl: url, authHeader };
     }
@@ -64,7 +63,6 @@ export function discoverIcloudCalendarEffect(
     }
     const principalUrl = assertTrustedCaldavUrl(
       new URL(principalHref, principalResponse.url).toString(),
-      "icloud",
     );
     logger.debug(`iCloud CalDAV principal: ${principalUrl}`);
 
@@ -88,7 +86,6 @@ export function discoverIcloudCalendarEffect(
     }
     const homeUrl = assertTrustedCaldavUrl(
       new URL(homeHref, homeResponse.url).toString(),
-      "icloud",
     );
     logger.debug(`iCloud CalDAV calendar home: ${homeUrl}`);
 
@@ -120,7 +117,6 @@ export function discoverIcloudCalendarEffect(
 
     const calendarUrl = assertTrustedCaldavUrl(
       new URL(selected.href, listResponse.url).toString(),
-      "icloud",
     );
     logger.info(`Using iCloud calendar: ${selected.name} (${calendarUrl})`);
     return { calendarUrl, authHeader };

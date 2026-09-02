@@ -41,7 +41,7 @@ describe("Effect application configuration", () => {
       IOS_CONTROL_HOME_URL: "http://omni.boris",
       IOS_CONTROL_BUNDLE_ID: "com.micthiesen.OmniLive",
     });
-    expect(config.EMAIL_TRANSPORT).toBeUndefined();
+    expect(config.EMAIL_SELF_ADDRESS).toBeUndefined();
   });
 
   it("decodes coercions, refinements, normalization, and Whisker credentials", () => {
@@ -89,27 +89,30 @@ describe("Effect application configuration", () => {
     expect(config.FRONTEND_PORT).toBe(0);
   });
 
-  it("derives transport, self address, and feature Pushover tokens", () => {
-    const fastmail = load({
-      FASTMAIL_API_TOKEN: "fastmail-api-token",
-      FASTMAIL_USERNAME: "fastmail@example.com",
-      PUSHOVER_TOKEN: "shared-pushover-token",
-      PUSHOVER_RECS_TOKEN: "recommendations-token",
-    });
-
-    expect(fastmail.EMAIL_TRANSPORT).toBe("fastmail");
-    expect(fastmail.EMAIL_SELF_ADDRESS).toBe("fastmail@example.com");
-    expect(fastmail.PUSHOVER_LIVE_TOKEN).toBe("shared-pushover-token");
-    expect(fastmail.PUSHOVER_CALENDAR_TOKEN).toBe("shared-pushover-token");
-    expect(fastmail.PUSHOVER_RECS_TOKEN).toBe("recommendations-token");
-
+  it("derives the self address and feature Pushover tokens", () => {
     const icloud = load({
       ICLOUD_USERNAME: "icloud@example.com",
       ICLOUD_APP_PASSWORD: "app-password",
-      FASTMAIL_USERNAME: "legacy@example.com",
+      PUSHOVER_TOKEN: "shared-pushover-token",
+      PUSHOVER_RECS_TOKEN: "recommendations-token",
     });
-    expect(icloud.EMAIL_TRANSPORT).toBe("icloud");
     expect(icloud.EMAIL_SELF_ADDRESS).toBe("icloud@example.com");
+    expect(icloud.PUSHOVER_LIVE_TOKEN).toBe("shared-pushover-token");
+    expect(icloud.PUSHOVER_CALENDAR_TOKEN).toBe("shared-pushover-token");
+    expect(icloud.PUSHOVER_RECS_TOKEN).toBe("recommendations-token");
+  });
+
+  it("ignores removed Fastmail transport settings", () => {
+    const config = load({
+      EMAIL_TRANSPORT: "fastmail",
+      FASTMAIL_API_TOKEN: "obsolete-token",
+      FASTMAIL_USERNAME: "obsolete@example.com",
+    });
+
+    expect(config.EMAIL_SELF_ADDRESS).toBeUndefined();
+    expect(config).not.toHaveProperty("EMAIL_TRANSPORT");
+    expect(config).not.toHaveProperty("FASTMAIL_API_TOKEN");
+    expect(config).not.toHaveProperty("FASTMAIL_USERNAME");
   });
 
   it.each([
@@ -120,7 +123,6 @@ describe("Effect application configuration", () => {
     { PRINTER_IPP_URL: "https://printer.example/ipp/print" },
     { IOS_CONTROL_AUTH_TOKEN: "too-short" },
     { WHISKER_CREDENTIALS: "missing-password:" },
-    { EMAIL_TRANSPORT: "smtp" },
     { DOCKERIZED: "prod" },
     { OFFLINE_NOTIFICATIONS: "yes" },
   ])("returns ConfigLoadError for invalid input %#", (environment) => {
@@ -147,8 +149,8 @@ describe("Effect application configuration", () => {
     load({
       PUSHOVER_USER: "private-user-id",
       PUSHOVER_TOKEN: "private-token",
-      FASTMAIL_USERNAME: "private@example.com",
-      FASTMAIL_API_TOKEN: "private-fastmail-token",
+      ICLOUD_USERNAME: "private@example.com",
+      ICLOUD_APP_PASSWORD: "private-icloud-password",
       WHISKER_CREDENTIALS: "private@example.com:private-password",
     });
 

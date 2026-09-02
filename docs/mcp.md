@@ -38,9 +38,7 @@ Searches and listings use pagination or fixed bounds, and large text fields are
 truncated with explicit metadata. Cost summaries are limited to 7, 30, or 90
 days and refuse to scan more than 100,000 stored events.
 
-Production email uses the active iCloud IMAP transport, SMTP client, and iCloud
-CalDAV discovery. The legacy Fastmail JMAP transport remains selectable but is
-not the basis of the MCP design.
+Production email uses iCloud IMAP, SMTP, and iCloud CalDAV discovery.
 
 Printing is enabled only when `PRINTER_IPP_URL` names one fixed `ipp://` or
 `ipps://` endpoint. The caller supplies a public HTTPS PDF URL, never a printer

@@ -11,7 +11,6 @@ import { createCalendarHandler } from "./calendar-events/index.js";
 import { importHistoricalCosts } from "./costs/migrate.js";
 import { EmailDispatcher } from "./email/dispatcher.js";
 import { ImapTransport } from "./email/imap/transport.js";
-import { JmapTransport } from "./email/jmap/transport.js";
 import EmailRetryTask from "./email/retryTask.js";
 import { EmailTriageService } from "./email/triage.js";
 import type { EmailHandler, EmailTransport } from "./email/types.js";
@@ -72,11 +71,30 @@ const LEGACY_CHANNEL_ENV_VARS = [
   "KICK_CHANNEL_NAMES",
 ] as const;
 
+const LEGACY_EMAIL_ENV_VARS = [
+  "EMAIL_TRANSPORT",
+  "CALDAV_PROVIDER",
+  "FASTMAIL_API_TOKEN",
+  "FASTMAIL_APP_PASSWORD",
+  "FASTMAIL_USERNAME",
+  "FASTMAIL_CALENDAR_ID",
+] as const;
+
 function warnOnLegacyChannelEnvVars(): void {
   for (const key of LEGACY_CHANNEL_ENV_VARS) {
     if (process.env[key]) {
       logger.warn(
         `${key} is no longer read — channels are configured in channels.json`,
+      );
+    }
+  }
+}
+
+function warnOnLegacyEmailEnvVars(): void {
+  for (const key of LEGACY_EMAIL_ENV_VARS) {
+    if (process.env[key]) {
+      logger.warn(
+        `${key} is no longer read, email and calendar use iCloud credentials`,
       );
     }
   }
@@ -88,6 +106,7 @@ function loadStreamers(): {
   availablePlatforms: Set<Platform>;
 } {
   warnOnLegacyChannelEnvVars();
+  warnOnLegacyEmailEnvVars();
 
   const liveCheckConfig = loadChannelsConfig();
   const streamers = buildStreamers(liveCheckConfig.channels);
@@ -336,14 +355,14 @@ if (!serverOnly) {
   // so a failed transport connect at boot can't silently disable them — the
   // exact outage the watchdog exists to catch. The retry task no-ops until
   // the controls fill in; the connect itself retries in the background.
-  if (config.EMAIL_TRANSPORT) {
+  if (config.ICLOUD_USERNAME && config.ICLOUD_APP_PASSWORD) {
     scheduler.register(registry.track(new EmailWatchdogTask(logger)));
     scheduler.register(registry.track(new EmailRetryTask(() => emailControls, logger)));
     emailStartupFiber = Effect.runFork(startEmailWithRetryEffect(logger));
   } else {
     logger.info(
       "Email features disabled: no transport configured " +
-        "(FASTMAIL_API_TOKEN or ICLOUD_USERNAME + ICLOUD_APP_PASSWORD)",
+        "(ICLOUD_USERNAME + ICLOUD_APP_PASSWORD)",
     );
   }
 
@@ -459,34 +478,15 @@ function createEmailTransportEffect(
   EmailTransport | undefined,
   import("./effect/errors.js").IntegrationError
 > {
-  switch (config.EMAIL_TRANSPORT) {
-    case "fastmail":
-      if (!config.FASTMAIL_API_TOKEN) return Effect.succeed(undefined);
-      return JmapTransport.createEffect(
-        config.FASTMAIL_API_TOKEN,
-        logger.extend("JMAP"),
-      ).pipe(
-        Effect.mapError(
-          (cause) =>
-            new IntegrationError({
-              operation: "create JMAP transport",
-              cause,
-            }),
-        ),
-      );
-    case "icloud":
-      if (!config.ICLOUD_USERNAME || !config.ICLOUD_APP_PASSWORD) {
-        return Effect.succeed(undefined);
-      }
-      return Effect.succeed(
-        new ImapTransport(
-          { user: config.ICLOUD_USERNAME, pass: config.ICLOUD_APP_PASSWORD },
-          logger.extend("IMAP"),
-        ),
-      );
-    default:
-      return Effect.succeed(undefined);
+  if (!config.ICLOUD_USERNAME || !config.ICLOUD_APP_PASSWORD) {
+    return Effect.succeed(undefined);
   }
+  return Effect.succeed(
+    new ImapTransport(
+      { user: config.ICLOUD_USERNAME, pass: config.ICLOUD_APP_PASSWORD },
+      logger.extend("IMAP"),
+    ),
+  );
 }
 
 function startEmailFeaturesEffect(

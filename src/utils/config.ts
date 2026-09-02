@@ -172,11 +172,6 @@ const rawConfigSchema = Schema.Struct({
   LOGS_PATH: optionalString,
   CHANNELS_CONFIG_PATH: optionalString,
   BRIEFINGS_PATH: optionalString,
-  EMAIL_TRANSPORT: Schema.optional(Schema.Literals(["fastmail", "icloud"])),
-  CALDAV_PROVIDER: Schema.optional(Schema.Literals(["fastmail", "icloud"])),
-  FASTMAIL_API_TOKEN: optionalString,
-  FASTMAIL_APP_PASSWORD: optionalString,
-  FASTMAIL_USERNAME: optionalString,
   ICLOUD_USERNAME: optionalString,
   ICLOUD_APP_PASSWORD: optionalString,
   ICLOUD_CALENDAR_NAME: optionalString,
@@ -186,7 +181,6 @@ const rawConfigSchema = Schema.Struct({
   EXTRACTION_MODEL: optionalString,
   CALENDAR_EXTRACTION_MODEL: optionalString,
   TRIAGE_MODEL: optionalString,
-  FASTMAIL_CALENDAR_ID: optionalString,
   TMDB_API_KEY: optionalString,
   RECS_SHORTLIST_MODEL: optionalString,
   RECS_SELECTION_MODEL: optionalString,
@@ -271,24 +265,9 @@ const rawConfigSchema = Schema.Struct({
 type RawConfig = Schema.Schema.Type<typeof rawConfigSchema>;
 
 const deriveConfig = (raw: RawConfig) => {
-  const emailTransport =
-    raw.EMAIL_TRANSPORT ??
-    (raw.FASTMAIL_API_TOKEN
-      ? ("fastmail" as const)
-      : raw.ICLOUD_USERNAME && raw.ICLOUD_APP_PASSWORD
-        ? ("icloud" as const)
-        : undefined);
-
   return {
     ...raw,
-    EMAIL_TRANSPORT: emailTransport,
-    EMAIL_SELF_ADDRESS:
-      raw.EMAIL_SELF_ADDRESS ??
-      (emailTransport === "icloud"
-        ? raw.ICLOUD_USERNAME
-        : emailTransport === "fastmail"
-          ? raw.FASTMAIL_USERNAME
-          : (raw.ICLOUD_USERNAME ?? raw.FASTMAIL_USERNAME)),
+    EMAIL_SELF_ADDRESS: raw.EMAIL_SELF_ADDRESS ?? raw.ICLOUD_USERNAME,
     PUSHOVER_LIVE_TOKEN: raw.PUSHOVER_LIVE_TOKEN ?? raw.PUSHOVER_TOKEN,
     PUSHOVER_BRIEFING_TOKEN: raw.PUSHOVER_BRIEFING_TOKEN ?? raw.PUSHOVER_TOKEN,
     PUSHOVER_WORKSPACE_TOKEN: raw.PUSHOVER_WORKSPACE_TOKEN ?? raw.PUSHOVER_TOKEN,
@@ -307,7 +286,6 @@ export class ConfigLoadError extends Data.TaggedError("ConfigLoadError")<{
 
 const privateConfigKeys = [
   "PUSHOVER_USER",
-  "FASTMAIL_USERNAME",
   "ICLOUD_USERNAME",
   "EMAIL_SELF_ADDRESS",
   "SMTP_USER",

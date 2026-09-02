@@ -61,7 +61,7 @@ export function mapParsedMessage(
     from: from?.address ?? from?.name ?? "",
     textBody,
     links: html ? extractInterestingLinks(html) : [],
-    // INTERNALDATE is the server's receive time (the JMAP receivedAt analog);
+    // INTERNALDATE is the server's receive time;
     // the Date header is sender-controlled and only a fallback.
     receivedAt: (internalDate ?? parsed.date)?.toISOString() ?? "",
     attachments,

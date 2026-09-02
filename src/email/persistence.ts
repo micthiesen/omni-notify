@@ -14,11 +14,11 @@ const EmailDispatchSchema = Schema.Struct({
 });
 
 /**
- * Watermark for the EmailWatchdog task and transport cursor-loss recovery
- * (JMAP cannotCalculateChanges / IMAP UIDVALIDITY change). Kept as its own
- * row so cursor saves and dispatch marks never clobber each other.
+ * Watermark for the EmailWatchdog task and IMAP UIDVALIDITY recovery. Kept as
+ * its own row so cursor saves and dispatch marks never clobber each other.
  */
 export const EmailDispatchEntity = new Entity<EmailDispatchData, ["key"]>(
+  // Retain the historical collection name so existing production state survives.
   "jmap-email-dispatch",
   ["key"],
 );

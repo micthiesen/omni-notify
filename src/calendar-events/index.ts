@@ -12,7 +12,7 @@ export function createCalendarHandler(
   const logger = parentLogger.extend("CalendarEvents");
 
   if (!getCaldavProvider()) {
-    logger.info("Disabled: no CalDAV credentials (Fastmail or iCloud) configured");
+    logger.info("Disabled: no iCloud CalDAV credentials configured");
     return undefined;
   }
 

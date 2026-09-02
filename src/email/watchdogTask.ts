@@ -23,7 +23,7 @@ export function shouldWarn(
 }
 
 /**
- * Guards against silent JMAP pipeline outages (a June incident went 16 days
+ * Guards against silent email pipeline outages (a June incident went 16 days
  * unnoticed): if no email batch has been dispatched for 72 hours, warn loudly
  * (warns reach Pushover via mitools).
  */
@@ -61,7 +61,7 @@ export default class EmailWatchdogTask extends ScheduledTask {
             : `boot at ${new Date(this.bootedAt).toISOString()}`;
         this.lastRunSummary = `Stuck: no dispatch since ${since}`;
         this.logger.warn(
-          `No email has been dispatched since ${since} — the JMAP pipeline may be stuck`,
+          `No email has been dispatched since ${since} — the email pipeline may be stuck`,
         );
         return;
       }
