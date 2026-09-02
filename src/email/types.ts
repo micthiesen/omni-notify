@@ -62,7 +62,7 @@ export interface EmailPoll {
    * it after fan-out so a crash mid-dispatch re-delivers instead of dropping
    * (pipeline dedup gates make re-delivery safe).
    */
-  commit: () => void;
+  commit: Effect.Effect<void, unknown>;
 }
 
 export interface EmailSearchOptions {

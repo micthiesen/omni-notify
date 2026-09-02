@@ -8,6 +8,7 @@ vi.mock("./persistence.js", () => ({
 }));
 
 import { EmailDispatcher } from "./dispatcher.js";
+import { saveLastDispatchedAtEffect } from "./persistence.js";
 import type { EmailHandler, EmailPoll, EmailTransport, FetchedEmail } from "./types.js";
 
 const email: FetchedEmail = {
@@ -40,10 +41,29 @@ function transport(poll: Effect.Effect<EmailPoll>): EmailTransport {
 }
 
 describe("EmailDispatcher durability", () => {
+  it("does not advance the dispatch watermark when cursor persistence fails", async () => {
+    vi.mocked(saveLastDispatchedAtEffect).mockClear();
+    const dispatcher = new EmailDispatcher(
+      transport(
+        Effect.succeed({
+          emails: [email],
+          commit: Effect.fail(new Error("cursor unavailable")),
+        }),
+      ),
+      logger,
+    );
+    dispatcher.register({ name: "ok", handleEmailsEffect: () => Effect.void });
+
+    await runPromise(dispatcher.onMailEventEffect);
+
+    expect(saveLastDispatchedAtEffect).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
+  });
+
   it("does not commit the cursor when any handler fails", async () => {
     const commit = vi.fn();
     const dispatcher = new EmailDispatcher(
-      transport(Effect.succeed({ emails: [email], commit })),
+      transport(Effect.succeed({ emails: [email], commit: Effect.sync(commit) })),
       logger,
     );
     const successful: EmailHandler = {
@@ -68,7 +88,7 @@ describe("EmailDispatcher durability", () => {
   it("commits only after every handler succeeds", async () => {
     const commit = vi.fn();
     const dispatcher = new EmailDispatcher(
-      transport(Effect.succeed({ emails: [email], commit })),
+      transport(Effect.succeed({ emails: [email], commit: Effect.sync(commit) })),
       logger,
     );
     dispatcher.register({ name: "ok", handleEmailsEffect: vi.fn(() => Effect.void) });
@@ -90,11 +110,11 @@ describe("EmailDispatcher durability", () => {
           if (pollCount === 1) {
             return Deferred.succeed(firstStarted, undefined).pipe(
               Effect.andThen(Deferred.await(releaseFirst)),
-              Effect.as({ emails: [], commit: vi.fn() }),
+              Effect.as({ emails: [], commit: Effect.void }),
             );
           }
           return Deferred.succeed(secondFinished, undefined).pipe(
-            Effect.as({ emails: [], commit: vi.fn() }),
+            Effect.as({ emails: [], commit: Effect.void }),
           );
         }),
       ),
@@ -130,7 +150,7 @@ describe("EmailDispatcher durability", () => {
         ...transport(
           Effect.sync(() => {
             pollCount++;
-            return { emails: [], commit: vi.fn() };
+            return { emails: [], commit: Effect.void };
           }),
         ),
         startEffect: () => Effect.fail(new Error("connection failed")),

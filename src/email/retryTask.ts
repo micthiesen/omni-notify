@@ -4,8 +4,8 @@ import { Data, Effect } from "effect";
 import { runPromise } from "../effect/interop.js";
 import {
   clearEmailRetry,
+  claimEmailRetry,
   EmailRetryEntity,
-  enqueueEmailRetry,
   MAX_RETRY_ATTEMPTS,
   selectDueRetries,
 } from "./retry.js";
@@ -56,7 +56,12 @@ export default class EmailRetryTask extends ScheduledTask {
   }
 
   private readonly runEffect = Effect.gen({ self: this }, function* () {
-    const due = selectDueRetries(EmailRetryEntity.getAll());
+    const rows = EmailRetryEntity.getAll();
+    const staleExhausted = rows.filter((row) => row.attempts >= MAX_RETRY_ATTEMPTS);
+    for (const row of staleExhausted) {
+      clearEmailRetry(row.pipeline, row.emailId);
+    }
+    const due = selectDueRetries(rows);
     if (due.length === 0) {
       this.logger.debug("No email retries due");
       this.lastRunSummary = "No retries due";
@@ -77,11 +82,13 @@ export default class EmailRetryTask extends ScheduledTask {
     let exhausted = 0;
     let missing = 0;
     let orphaned = 0;
+    let permanent = 0;
 
     yield* Effect.forEach(
       due,
       (row) =>
         Effect.gen({ self: this }, function* () {
+          const claimed = claimEmailRetry(row);
           const handler = handlers.get(row.pipeline);
           if (!handler) {
             this.logger.warn(
@@ -93,13 +100,26 @@ export default class EmailRetryTask extends ScheduledTask {
             return;
           }
 
-          const email = yield* transport
-            .fetchEmailByIdEffect(row.emailId)
-            .pipe(
-              Effect.mapError(
-                (cause) => new EmailRetryError({ operation: "fetch email", cause }),
-              ),
+          const fetched = yield* transport.fetchEmailByIdEffect(row.emailId).pipe(
+            Effect.mapError(
+              (cause) => new EmailRetryError({ operation: "fetch email", cause }),
+            ),
+            Effect.result,
+          );
+          if (fetched._tag === "Failure") {
+            if (claimed.attempts >= MAX_RETRY_ATTEMPTS) {
+              clearEmailRetry(row.pipeline, row.emailId);
+              exhausted++;
+            } else {
+              requeued++;
+            }
+            this.logger.warn(
+              `Could not fetch ${row.pipeline} email ${row.emailId} ` +
+                `(attempt ${claimed.attempts}/${MAX_RETRY_ATTEMPTS}): ${fetched.failure.message}`,
             );
+            return;
+          }
+          const email = fetched.success;
           if (!email) {
             this.logger.info(
               `Email ${row.emailId} no longer exists; dropping ${row.pipeline} retry`,
@@ -120,19 +140,19 @@ export default class EmailRetryTask extends ScheduledTask {
                   // throwing, so a resolved handler is NOT proof of success: only clear
                   // the row if the run didn't just bump it again.
                   const after = EmailRetryEntity.get({ retryKey: row.retryKey });
-                  if (after && after.attempts > row.attempts) {
-                    if (after.attempts > MAX_RETRY_ATTEMPTS) {
+                  if (after && (after.enqueueCount ?? 0) > (row.enqueueCount ?? 0)) {
+                    if (claimed.attempts >= MAX_RETRY_ATTEMPTS) {
                       clearEmailRetry(row.pipeline, row.emailId);
                       exhausted++;
                       this.logger.warn(
                         `Giving up on ${row.pipeline} email "${email.subject}" after ` +
-                          `${row.attempts} attempts: ${after.reason}`,
+                          `${claimed.attempts} attempts: ${after.reason}`,
                       );
                     } else {
                       requeued++;
                       this.logger.info(
                         `Retry failed again for ${row.pipeline} email "${email.subject}" ` +
-                          `(attempt ${after.attempts}/${MAX_RETRY_ATTEMPTS}): ${after.reason}`,
+                          `(attempt ${claimed.attempts}/${MAX_RETRY_ATTEMPTS}): ${after.reason}`,
                       );
                     }
                     return;
@@ -141,32 +161,17 @@ export default class EmailRetryTask extends ScheduledTask {
                   succeeded++;
                   this.logger.info(
                     `Retry succeeded for ${row.pipeline} email "${email.subject}" ` +
-                      `(attempt ${row.attempts})`,
+                      `(attempt ${claimed.attempts})`,
                   );
                 }),
               onFailure: (error) =>
                 Effect.sync(() => {
-                  const reason = error.message;
-                  const attempts = row.attempts + 1;
-                  if (attempts > MAX_RETRY_ATTEMPTS) {
-                    clearEmailRetry(row.pipeline, row.emailId);
-                    exhausted++;
-                    this.logger.warn(
-                      `Giving up on ${row.pipeline} email "${email.subject}" after ` +
-                        `${row.attempts} attempts: ${reason}`,
-                    );
-                  } else {
-                    enqueueEmailRetry({
-                      pipeline: row.pipeline,
-                      emailId: row.emailId,
-                      reason,
-                    });
-                    requeued++;
-                    this.logger.info(
-                      `Retry failed for ${row.pipeline} email "${email.subject}" ` +
-                        `(attempt ${attempts}/${MAX_RETRY_ATTEMPTS}): ${reason}`,
-                    );
-                  }
+                  clearEmailRetry(row.pipeline, row.emailId);
+                  permanent++;
+                  this.logger.warn(
+                    `Dropping permanent ${row.pipeline} retry for email ` +
+                      `"${email.subject}": ${error.message}`,
+                  );
                 }),
             }),
           );
@@ -175,9 +180,11 @@ export default class EmailRetryTask extends ScheduledTask {
     );
 
     const orphanedSuffix = orphaned > 0 ? `, ${orphaned} orphaned` : "";
+    const permanentSuffix = permanent > 0 ? `, ${permanent} permanent` : "";
     this.lastRunSummary =
       `${due.length} due, ${succeeded} succeeded, ${requeued} requeued, ` +
-      `${exhausted} exhausted, ${missing} missing${orphanedSuffix}`;
+      `${exhausted + staleExhausted.length} exhausted, ${missing} missing` +
+      `${orphanedSuffix}${permanentSuffix}`;
     this.logger.info(`Email retry pass: ${this.lastRunSummary}`);
   });
 }

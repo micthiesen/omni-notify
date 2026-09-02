@@ -12,6 +12,8 @@ export type EmailRetryData = {
   pipeline: string;
   emailId: string;
   reason: string;
+  /** Counts enqueue signals without consuming retry attempts. */
+  enqueueCount?: number;
   attempts: number;
   nextAttemptAt: number;
   createdAt: number;
@@ -32,16 +34,38 @@ export function enqueueEmailRetry(entry: {
 }): void {
   const retryKey = `${entry.pipeline}#${entry.emailId}`;
   const existing = EmailRetryEntity.get({ retryKey });
-  const attempts = (existing?.attempts ?? 0) + 1;
-  EmailRetryEntity.upsert({
+  const now = Date.now();
+  EmailRetryEntity.upsert(planEmailRetryEnqueue(existing, entry, now));
+}
+
+export function planEmailRetryEnqueue(
+  existing: EmailRetryData | undefined,
+  entry: { pipeline: string; emailId: string; reason: string },
+  now: number,
+): EmailRetryData {
+  const retryKey = `${entry.pipeline}#${entry.emailId}`;
+  const attempts = existing?.attempts ?? 0;
+  return {
     retryKey,
     pipeline: entry.pipeline,
     emailId: entry.emailId,
     reason: entry.reason,
+    enqueueCount: (existing?.enqueueCount ?? 0) + 1,
     attempts,
-    nextAttemptAt: Date.now() + retryDelayMs(attempts),
-    createdAt: existing?.createdAt ?? Date.now(),
-  });
+    nextAttemptAt: existing?.nextAttemptAt ?? now + retryDelayMs(1),
+    createdAt: existing?.createdAt ?? now,
+  };
+}
+
+/** Mark one due row as attempted before doing any network or handler work. */
+export function claimEmailRetry(row: EmailRetryData, now = Date.now()): EmailRetryData {
+  const claimed = {
+    ...row,
+    attempts: row.attempts + 1,
+    nextAttemptAt: now + retryDelayMs(row.attempts + 1),
+  };
+  EmailRetryEntity.upsert(claimed);
+  return claimed;
 }
 
 export function retryDelayMs(attempts: number): number {
@@ -54,7 +78,7 @@ export function selectDueRetries(
   now = Date.now(),
 ): EmailRetryData[] {
   return rows
-    .filter((r) => r.attempts <= MAX_RETRY_ATTEMPTS && r.nextAttemptAt <= now)
+    .filter((r) => r.attempts < MAX_RETRY_ATTEMPTS && r.nextAttemptAt <= now)
     .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt);
 }
 

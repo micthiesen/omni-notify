@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type EmailRetryData,
   MAX_RETRY_ATTEMPTS,
+  planEmailRetryEnqueue,
   retryDelayMs,
   selectDueRetries,
 } from "./retry.js";
@@ -37,7 +38,7 @@ describe("selectDueRetries", () => {
       makeRetry({ retryKey: "ok", attempts: MAX_RETRY_ATTEMPTS }),
       makeRetry({ retryKey: "done", attempts: MAX_RETRY_ATTEMPTS + 1 }),
     ];
-    expect(selectDueRetries(rows, NOW).map((r) => r.retryKey)).toEqual(["ok"]);
+    expect(selectDueRetries(rows, NOW)).toEqual([]);
   });
 
   it("sorts due rows oldest-first by nextAttemptAt", () => {
@@ -49,6 +50,26 @@ describe("selectDueRetries", () => {
       "earlier",
       "later",
     ]);
+  });
+});
+
+describe("enqueueEmailRetry", () => {
+  it("coalesces repeated signals without consuming retry attempts", () => {
+    const first = planEmailRetryEnqueue(
+      undefined,
+      { pipeline: "ParcelTracker", emailId: "email-1", reason: "a" },
+      NOW,
+    );
+    const second = planEmailRetryEnqueue(
+      first,
+      { pipeline: "ParcelTracker", emailId: "email-1", reason: "b" },
+      NOW + 1,
+    );
+
+    expect(second.attempts).toBe(0);
+    expect(second.enqueueCount).toBe(2);
+    expect(second.reason).toBe("b");
+    expect(second.nextAttemptAt).toBe(first.nextAttemptAt);
   });
 });
 

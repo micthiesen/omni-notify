@@ -11,7 +11,7 @@ import {
   Schedule,
   Semaphore,
 } from "effect";
-import { getLastDispatchedAt } from "../persistence.js";
+import { getLastDispatchedAtEffect } from "../persistence.js";
 import type {
   DownloadedAttachment,
   EmailAttachment,
@@ -30,7 +30,7 @@ import {
   type MessageCoords,
   mapParsedMessage,
 } from "./mapMessage.js";
-import { getFolderCursor, saveFolderCursor } from "./persistence.js";
+import { getFolderCursorEffect, saveFolderCursorEffect } from "./persistence.js";
 import { planFolderSync } from "./sync.js";
 
 const IMAP_HOST = "imap.mail.me.com";
@@ -311,7 +311,10 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
         const commits = results.flatMap((result) =>
           result.commit ? [result.commit] : [],
         );
-        return { emails, commit: () => commits.forEach((commit) => commit()) };
+        return {
+          emails,
+          commit: Effect.all(commits, { concurrency: 1, discard: true }),
+        };
       }).pipe(Effect.ensuring(this.restoreInboxEffect())),
     );
 
@@ -341,7 +344,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     client: ImapFlow,
     folder: string,
   ): Effect.Effect<
-    { emails: FetchedEmail[]; commit?: () => void },
+    { emails: FetchedEmail[]; commit?: Effect.Effect<void, unknown> },
     ImapOperationError
   > {
     return Effect.gen({ self: this }, function* () {
@@ -356,7 +359,13 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
       }
       const uidValidity = String(status.uidValidity);
       const uidNext = status.uidNext;
-      const plan = planFolderSync(getFolderCursor(folder), { uidValidity, uidNext });
+      const cursor = yield* getFolderCursorEffect(folder).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ImapOperationError({ operation: `read cursor ${folder}`, cause }),
+        ),
+      );
+      const plan = planFolderSync(cursor, { uidValidity, uidNext });
       switch (plan.action) {
         case "init":
           this.logger.info(
@@ -364,7 +373,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
           );
           return {
             emails: [],
-            commit: () => saveFolderCursor(folder, uidValidity, uidNext),
+            commit: saveFolderCursorEffect(folder, uidValidity, uidNext),
           };
         case "none":
           return { emails: [] };
@@ -385,7 +394,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
           );
           return {
             emails,
-            commit: () => saveFolderCursor(folder, uidValidity, nextUid),
+            commit: saveFolderCursorEffect(folder, uidValidity, nextUid),
           };
         }
       }
@@ -462,17 +471,27 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     uidValidity: string,
     uidNext: number,
   ): Effect.Effect<
-    { emails: FetchedEmail[]; commit?: () => void },
+    { emails: FetchedEmail[]; commit?: Effect.Effect<void, unknown> },
     ImapOperationError
   > {
     return Effect.gen({ self: this }, function* () {
-      const lastDispatchedAt = getLastDispatchedAt();
-      const commit = () => saveFolderCursor(folder, uidValidity, uidNext);
+      const lastDispatchedAt = yield* getLastDispatchedAtEffect.pipe(
+        Effect.mapError(
+          (cause) =>
+            new ImapOperationError({
+              operation: "read dispatch watermark",
+              cause,
+            }),
+        ),
+      );
       if (lastDispatchedAt === undefined) {
         this.logger.warn(
           `${folder}: UIDVALIDITY changed with no last-dispatch timestamp; resetting cursor only`,
         );
-        return { emails: [], commit };
+        return {
+          emails: [],
+          commit: saveFolderCursorEffect(folder, uidValidity, uidNext),
+        };
       }
       const since = new Date(lastDispatchedAt - 60 * 60_000);
       const found = yield* Effect.acquireUseRelease(
@@ -487,7 +506,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
       );
       const uids = Array.isArray(found) ? found : [];
       const cursorForFetch = uids.length > 0 ? Math.min(...uids) : uidNext;
-      const { emails } = yield* this.fetchNewInFolderEffect(
+      const { emails, nextUid } = yield* this.fetchNewInFolderEffect(
         client,
         folder,
         uidValidity,
@@ -497,7 +516,10 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
       this.logger.warn(
         `${folder}: UIDVALIDITY changed; recovered ${emails.length} email(s) received since ${since.toISOString()}`,
       );
-      return { emails, commit };
+      return {
+        emails,
+        commit: saveFolderCursorEffect(folder, uidValidity, nextUid),
+      };
     });
   }
 

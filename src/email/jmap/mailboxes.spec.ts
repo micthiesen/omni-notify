@@ -45,17 +45,17 @@ describe("isEmailInAllowedMailbox", () => {
     );
   });
 
-  it("fails open when role resolution failed", () => {
-    expect(isEmailInAllowedMailbox({ "mb-sent": true }, undefined)).toBe(true);
+  it("fails closed when role resolution failed", () => {
+    expect(isEmailInAllowedMailbox({ "mb-sent": true }, new Map())).toBe(false);
   });
 
-  it("fails open when the email has no mailbox info", () => {
-    expect(isEmailInAllowedMailbox(undefined, roles)).toBe(true);
-    expect(isEmailInAllowedMailbox({}, roles)).toBe(true);
+  it("fails closed when the email has no mailbox info", () => {
+    expect(isEmailInAllowedMailbox(undefined, roles)).toBe(false);
+    expect(isEmailInAllowedMailbox({}, roles)).toBe(false);
   });
 
-  it("fails open when every mailbox id is unknown to the snapshot", () => {
-    expect(isEmailInAllowedMailbox({ "mb-new": true }, roles)).toBe(true);
+  it("fails closed when every mailbox id is unknown to the snapshot", () => {
+    expect(isEmailInAllowedMailbox({ "mb-new": true }, roles)).toBe(false);
   });
 
   it("drops mail when a known disallowed mailbox is present among unknowns", () => {

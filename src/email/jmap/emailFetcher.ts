@@ -41,7 +41,7 @@ const EMAIL_PROPERTIES = [
 const MAX_CHANGES_PER_REQUEST = 200;
 /** Safety cap on total emails fetched in one pass across hasMoreChanges pages. */
 const MAX_EMAILS_PER_PASS = 500;
-/** How many emails the fallback Email/query recovery may pull. */
+/** Page size for the fallback Email/query recovery drain. */
 export const RECOVERY_QUERY_LIMIT = 200;
 
 const EmailAddressSchema = Schema.Struct({
@@ -87,6 +87,9 @@ const EmailGetSchema = Schema.Struct({
 const EmailChangesSchema = Schema.Struct({
   newState: Schema.String,
   hasMoreChanges: Schema.Boolean,
+});
+const EmailQuerySchema = Schema.Struct({
+  ids: Schema.Array(Schema.String),
 });
 
 export function fetchNewEmailsEffect(
@@ -179,8 +182,9 @@ export interface QueryFetchResult {
 
 /**
  * Fallback for cannotCalculateChanges gap recovery: query emails received on
- * or after `sinceMs` (newest first, bounded by RECOVERY_QUERY_LIMIT), fetch
- * and mailbox-filter them, and report the fresh Email state.
+ * or after `sinceMs`, drain every page, mailbox-filter the results, and report
+ * the Email state captured before the drain. Mail arriving during recovery is
+ * therefore picked up by the next normal Email/changes pass.
  */
 export function fetchEmailsReceivedSinceEffect(
   ctx: JmapContext,
@@ -191,43 +195,60 @@ export function fetchEmailsReceivedSinceEffect(
     const roles = yield* getMailboxRolesEffect(ctx, logger);
     const { jam, accountId } = ctx;
 
-    const [{ emails }] = yield* Effect.tryPromise({
-      try: () =>
-        jam.requestMany((t) => {
-          const query = t.Email.query({
-            accountId,
-            filter: { after: new Date(sinceMs).toISOString() },
-            sort: [{ property: "receivedAt", isAscending: false }],
-            limit: RECOVERY_QUERY_LIMIT,
-          });
-
-          const emails = t.Email.get({
-            accountId,
-            ids: query.$ref("/ids"),
-            properties: EMAIL_PROPERTIES,
-            fetchTextBodyValues: true,
-            fetchHTMLBodyValues: true,
-          });
-
-          return { query, emails };
-        }),
-      catch: (cause) => new JmapFetchError({ operation: "Email/query", cause }),
+    const [stateResult] = yield* Effect.tryPromise({
+      try: () => jam.request(["Email/get", { accountId, ids: [], properties: ["id"] }]),
+      catch: (cause) => new JmapFetchError({ operation: "Email/get state", cause }),
+    });
+    const recoveryState = yield* Effect.try({
+      try: () => Schema.decodeUnknownSync(EmailGetSchema)(stateResult).state,
+      catch: (cause) =>
+        new JmapFetchError({ operation: "decode recovery state", cause }),
     });
 
-    const { state, list: rawList } = yield* decodeEmailGetEffect(
-      emails,
-      "decode query",
-    );
-
     const fetched: FetchedEmail[] = [];
-    for (const raw of rawList) {
-      const mapped = yield* Effect.try({
-        try: () => mapAndFilterEmail(raw, roles, logger),
-        catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
+    let position = 0;
+    for (;;) {
+      const [{ query, emails }] = yield* Effect.tryPromise({
+        try: () =>
+          jam.requestMany((t) => {
+            const query = t.Email.query({
+              accountId,
+              filter: { after: new Date(sinceMs).toISOString() },
+              sort: [{ property: "receivedAt", isAscending: true }],
+              position,
+              limit: RECOVERY_QUERY_LIMIT,
+            });
+
+            const emails = t.Email.get({
+              accountId,
+              ids: query.$ref("/ids"),
+              properties: EMAIL_PROPERTIES,
+              fetchTextBodyValues: true,
+              fetchHTMLBodyValues: true,
+            });
+
+            return { query, emails };
+          }),
+        catch: (cause) => new JmapFetchError({ operation: "Email/query", cause }),
       });
-      if (mapped) fetched.push(mapped);
+
+      const ids = yield* Effect.try({
+        try: () => Schema.decodeUnknownSync(EmailQuerySchema)(query).ids,
+        catch: (cause) => new JmapFetchError({ operation: "decode query ids", cause }),
+      });
+      const { list: rawList } = yield* decodeEmailGetEffect(emails, "decode query");
+
+      for (const raw of rawList) {
+        const mapped = yield* Effect.try({
+          try: () => mapAndFilterEmail(raw, roles, logger),
+          catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
+        });
+        if (mapped) fetched.push(mapped);
+      }
+      if (ids.length < RECOVERY_QUERY_LIMIT) break;
+      position += ids.length;
     }
-    return { emails: fetched, state };
+    return { emails: fetched, state: recoveryState };
   });
 }
 
@@ -288,7 +309,7 @@ function fetchChangesPageEffect(
 
 function mapAndFilterEmail(
   raw: JmapEmail,
-  roles: MailboxRoles | undefined,
+  roles: MailboxRoles,
   logger: Logger,
 ): FetchedEmail | undefined {
   const mailboxIds = raw.mailboxIds as Record<string, boolean> | undefined;

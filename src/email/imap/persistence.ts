@@ -1,5 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
-import { Schema } from "effect";
+import { Clock, Effect, Schema } from "effect";
 import { fromSync } from "../../effect/interop.js";
 
 export type ImapFolderCursorData = {
@@ -24,23 +24,6 @@ export const ImapFolderCursorEntity = new Entity<ImapFolderCursorData, ["folder"
   ["folder"],
 );
 
-export function getFolderCursor(folder: string): ImapFolderCursorData | undefined {
-  return ImapFolderCursorEntity.get({ folder });
-}
-
-export function saveFolderCursor(
-  folder: string,
-  uidValidity: string,
-  uidNext: number,
-): void {
-  ImapFolderCursorEntity.upsert({
-    folder,
-    uidValidity,
-    uidNext,
-    updatedAt: Date.now(),
-  });
-}
-
 export function getFolderCursorEffect(folder: string) {
   return fromSync("read IMAP folder cursor", () => {
     const row = ImapFolderCursorEntity.get({ folder });
@@ -53,7 +36,15 @@ export function saveFolderCursorEffect(
   uidValidity: string,
   uidNext: number,
 ) {
-  return fromSync("save IMAP folder cursor", () =>
-    saveFolderCursor(folder, uidValidity, uidNext),
-  );
+  return Effect.gen(function* () {
+    const updatedAt = yield* Clock.currentTimeMillis;
+    yield* fromSync("save IMAP folder cursor", () =>
+      ImapFolderCursorEntity.upsert({
+        folder,
+        uidValidity,
+        uidNext,
+        updatedAt,
+      }),
+    );
+  });
 }

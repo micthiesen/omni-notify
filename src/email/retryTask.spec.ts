@@ -125,7 +125,7 @@ describe("EmailRetryTask", () => {
     expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })).toBeUndefined();
   });
 
-  it("re-enqueues with bumped attempts when the handler throws", async () => {
+  it("drops a permanent handler failure instead of retrying it", async () => {
     dueRow("ParcelTracker", "e1", 1);
     const handler: EmailHandler = {
       name: "ParcelTracker",
@@ -140,7 +140,38 @@ describe("EmailRetryTask", () => {
     );
 
     await task.run();
-    const row = EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" });
-    expect(row?.attempts).toBe(2);
+    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })).toBeUndefined();
+  });
+
+  it("continues the pass when fetching one due email fails", async () => {
+    dueRow("ParcelTracker", "e1", 0);
+    dueRow("ParcelTracker", "e2", 0);
+    const handled: string[] = [];
+    const transport = {
+      fetchEmailByIdEffect: (id: string) =>
+        id === "e1"
+          ? Effect.fail(new Error("temporary transport failure"))
+          : Effect.succeed({ ...fakeEmail, id }),
+    } as unknown as EmailTransport;
+    const handler: EmailHandler = {
+      name: "ParcelTracker",
+      handleEmailsEffect: (emails) =>
+        Effect.sync(() => {
+          handled.push(...emails.map((email) => email.id));
+        }),
+    };
+    const task = new EmailRetryTask(
+      () => ({
+        transport,
+        handlers: new Map([["ParcelTracker", handler]]),
+      }),
+      logger,
+    );
+
+    await task.run();
+
+    expect(handled).toEqual(["e2"]);
+    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })?.attempts).toBe(1);
+    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e2" })).toBeUndefined();
   });
 });

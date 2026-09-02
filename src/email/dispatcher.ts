@@ -123,11 +123,13 @@ export class EmailDispatcher {
       if (poll.emails.length > 0) yield* this.dispatchEffect(poll.emails);
       // Cursor advancement is valid only after every handler durably accepts the
       // batch. On failure, replay is intentional and downstream dedup is the gate.
-      yield* Effect.try({
-        try: poll.commit,
-        catch: (cause) =>
-          new EmailHandlerError({ handler: `${this.transport.name} cursor`, cause }),
-      });
+      yield* poll.commit.pipe(
+        Effect.mapError(
+          (cause) =>
+            new EmailHandlerError({ handler: `${this.transport.name} cursor`, cause }),
+        ),
+      );
+      if (poll.emails.length > 0) yield* saveLastDispatchedAtEffect();
     });
   }
 
@@ -149,7 +151,6 @@ export class EmailDispatcher {
         this.logger.error(failure.failure.message);
       }
       if (failures[0]) yield* Effect.fail(failures[0].failure);
-      yield* saveLastDispatchedAtEffect();
     });
   }
 }

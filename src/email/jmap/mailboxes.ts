@@ -34,13 +34,13 @@ const MailboxGetSchema = Schema.Struct({
 /**
  * Resolve the account's mailbox id -> role map via Mailbox/get, cached in
  * memory per JmapContext (fetched lazily, refreshed every few hours). Returns
- * undefined when resolution fails so callers can fail open — losing parcels
- * is worse than processing extra mail.
+ * a stale known-good snapshot when refresh fails. With no snapshot, returns an
+ * empty map so mailbox uncertainty cannot admit sent, junk, or trash mail.
  */
 export function getMailboxRolesEffect(
   ctx: JmapContext,
   logger: Logger,
-): Effect.Effect<MailboxRoles | undefined> {
+): Effect.Effect<MailboxRoles> {
   return Effect.gen(function* () {
     const cached = rolesCache.get(ctx);
     const now = yield* Clock.currentTimeMillis;
@@ -67,10 +67,9 @@ export function getMailboxRolesEffect(
       Effect.catch((error) =>
         Effect.sync(() => {
           logger.warn(
-            `Failed to resolve mailbox roles, processing all emails: ${(error as Error).message}`,
+            `Failed to resolve mailbox roles, failing closed: ${(error as Error).message}`,
           );
-          // A stale snapshot beats no snapshot when the refresh fails.
-          return cached?.roles;
+          return cached?.roles ?? new Map<string, string | null>();
         }),
       ),
     );
@@ -78,27 +77,22 @@ export function getMailboxRolesEffect(
 }
 
 /**
- * Pure: should an email in these mailboxes be processed? Allowed when any of
- * its mailboxes has role "inbox" or "archive". Fails open (true) when role
- * resolution failed, mailbox info is missing, or every mailbox id is unknown
- * to our snapshot (e.g. a mailbox created after the cache was populated).
+ * Pure: should an email in these mailboxes be processed? Allowed only when one
+ * of its known mailboxes has role "inbox" or "archive".
  */
 export function isEmailInAllowedMailbox(
   mailboxIds: Record<string, boolean> | undefined,
-  roles: MailboxRoles | undefined,
+  roles: MailboxRoles,
 ): boolean {
-  if (roles === undefined) return true;
-  if (mailboxIds === undefined) return true;
+  if (mailboxIds === undefined) return false;
 
   const ids = Object.keys(mailboxIds).filter((id) => mailboxIds[id]);
-  if (ids.length === 0) return true;
+  if (ids.length === 0) return false;
 
-  let anyKnown = false;
   for (const id of ids) {
     if (!roles.has(id)) continue;
-    anyKnown = true;
     const role = roles.get(id);
     if (role !== null && role !== undefined && ALLOWED_ROLES.has(role)) return true;
   }
-  return !anyKnown;
+  return false;
 }

@@ -15,14 +15,14 @@ import {
   fetchNewEmailsEffect,
 } from "./emailFetcher.js";
 import { createEventSourceEffect } from "./eventSource.js";
-import { getEmailStateEffect, saveEmailState } from "./persistence.js";
+import { getEmailStateEffect, saveEmailStateEffect } from "./persistence.js";
 
 /** Overlap window when recovering from a JMAP state reset: re-query emails
  * received up to this long before the last dispatch (pipelines dedup). */
 const RECOVERY_OVERLAP_MS = 60 * 60_000;
 export const MAX_JMAP_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 const EmailStateResponseSchema = Schema.Struct({
-  state: Schema.optional(Schema.String),
+  state: Schema.String,
 });
 
 export class JmapTransportError extends Data.TaggedError("JmapTransportError")<{
@@ -211,12 +211,15 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
         const state = yield* this.fetchCurrentEmailStateEffect;
         return {
           emails: [],
-          commit: () => {
-            if (state) {
-              saveEmailState(state);
-              this.logger.info(`Saved initial JMAP state: ${state}`);
-            }
-          },
+          commit: state
+            ? saveEmailStateEffect(state).pipe(
+                Effect.tap(() =>
+                  Effect.sync(() =>
+                    this.logger.info(`Saved initial JMAP state: ${state}`),
+                  ),
+                ),
+              )
+            : Effect.void,
         };
       }
 
@@ -226,7 +229,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
         ),
         Effect.map(({ emails, newState }) => ({
           emails,
-          commit: () => saveEmailState(newState),
+          commit: saveEmailStateEffect(newState),
         })),
         Effect.catch((error) =>
           error.message.includes("cannotCalculateChanges")
@@ -261,9 +264,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
       const state = yield* this.fetchCurrentEmailStateEffect;
       return {
         emails: [],
-        commit: () => {
-          if (state) saveEmailState(state);
-        },
+        commit: state ? saveEmailStateEffect(state) : Effect.void,
       };
     }
 
@@ -281,7 +282,7 @@ export class JmapTransport implements EmailTransport<JmapTransportError> {
       `cannotCalculateChanges: JMAP state was reset; recovered ${emails.length} ` +
         `email(s) received since ${new Date(sinceMs).toISOString()}`,
     );
-    return { emails, commit: () => saveEmailState(state) };
+    return { emails, commit: saveEmailStateEffect(state) };
   });
 
   fetchEmailByIdEffect(
