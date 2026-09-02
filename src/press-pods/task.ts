@@ -1,6 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { runPromise } from "../effect/interop.js";
 import { getCurrentRunId } from "../task-runs/logCapture.js";
 import config from "../utils/config.js";
@@ -53,16 +53,6 @@ export default class PressPodsTask extends ScheduledTask {
       parentLogger.info(`PressPods disabled: missing ${missing.join(", ")}`);
       return null;
     }
-    // A bad audio dir must disable the feature, not crash-loop the whole app
-    // at boot; the warn reaches Pushover so the misconfiguration is loud.
-    try {
-      Effect.runSync(ensureAudioDir());
-    } catch (error) {
-      parentLogger.warn(
-        `PressPods disabled: cannot create audio dir "${getAudioDir()}": ${(error as Error).message}`,
-      );
-      return null;
-    }
     return new PressPodsTask(parentLogger);
   }
 
@@ -79,8 +69,17 @@ export default class PressPodsTask extends ScheduledTask {
     return runPromise(this.runEffect());
   }
 
-  private runEffect(): Effect.Effect<void, PressPodsError> {
+  public runEffect(): Effect.Effect<void, PressPodsError> {
     return Effect.gen({ self: this }, function* () {
+      yield* ensureAudioDir().pipe(
+        Effect.mapError(
+          (cause) =>
+            new PressPodsError({
+              operation: `prepare audio directory ${getAudioDir()}`,
+              cause,
+            }),
+        ),
+      );
       // First run of a fresh process: any `processing` job was orphaned by the
       // restart (single-process deployment), so make its claim immediately
       // reclaimable instead of waiting out the 30-minute stale window. The drain
@@ -101,7 +100,8 @@ export default class PressPodsTask extends ScheduledTask {
       // Drain until nothing is due: jobs submitted while a run is in flight are
       // picked up by the same run instead of waiting for the next sweep.
       for (;;) {
-        const due = selectDueJobs(yield* PressPodsPersistence.getAllJobs());
+        const now = yield* Clock.currentTimeMillis;
+        const due = selectDueJobs(yield* PressPodsPersistence.getAllJobs(), now);
         const job = due[0];
         if (!job) break;
 

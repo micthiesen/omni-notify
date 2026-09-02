@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Duration, Effect, Schema } from "effect";
 import { readFetchResponseTextWithLimit } from "../../effect/publicHttp.js";
 import { PressPodsError, tryPromise, trySync } from "../effect.js";
 import type { Article } from "../types.js";
@@ -282,9 +282,16 @@ export function retrieveArticleX(
     const response = yield* tryPromise("retrieve X article", (signal) =>
       fetch(`${FXTWITTER_THREAD_API}/${requested.id}`, {
         headers: { "User-Agent": userAgent, Accept: "application/json" },
-        signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+        signal,
         redirect: "error",
       }),
+    ).pipe(
+      Effect.timeout(Duration.millis(REQUEST_TIMEOUT_MS)),
+      Effect.mapError((cause) =>
+        cause instanceof PressPodsError
+          ? cause
+          : new PressPodsError({ operation: "retrieve X article", cause }),
+      ),
     );
     if (!response.ok) {
       return yield* new PressPodsError({

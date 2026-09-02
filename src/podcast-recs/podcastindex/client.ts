@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Clock, Data, Effect, Ref, Schedule, Schema, Semaphore } from "effect";
+import { isTransientHttpError } from "../../effect/errors.js";
 import { fetchPublicText, PUBLIC_HTTP_USER_AGENT } from "../../effect/publicHttp.js";
 import config from "../../utils/config.js";
 import { type PodcastIndexCredentials, podcastIndexAuthHeaders } from "./auth.js";
@@ -148,6 +149,7 @@ class PodcastIndexApiClient implements PodcastIndexClient {
         Effect.retry({
           schedule: Schedule.exponential("200 millis"),
           times: 2,
+          while: isTransientHttpError,
         }),
       );
 

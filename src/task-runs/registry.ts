@@ -1,15 +1,16 @@
 import type { Effect as EffectType } from "effect/Effect";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { Data, Effect, Fiber, Semaphore } from "effect";
+import { Cause, Data, Effect, Exit, Fiber, Semaphore } from "effect";
 import cron, { type ScheduledTask as CronScheduledTask } from "node-cron";
-import type { IntegrationError, PersistenceError } from "../effect/errors.js";
+import { IntegrationError, type PersistenceError } from "../effect/errors.js";
 import { fromPromise, fromSync, runPromise } from "../effect/interop.js";
 import { decideCatchUp } from "./catchUp.js";
 import { taskRunBus } from "./events.js";
 import {
   finishRunLogCapture,
   runWithLogCapture,
+  runWithLogCaptureEffect,
   startRunLogCapture,
 } from "./logCapture.js";
 import {
@@ -33,6 +34,14 @@ interface HandlesManualRunInput {
   runManual(input: unknown): Promise<void>;
 }
 
+interface RunsEffect {
+  runEffect(): EffectType<void, unknown>;
+}
+
+interface HandlesManualRunInputEffect {
+  runManualEffect(input: unknown): EffectType<void, unknown>;
+}
+
 /** Tasks may report a friendlier name for the UI; `name` itself stays the load-bearing key. */
 interface HasDisplayName {
   displayName?: string;
@@ -48,6 +57,18 @@ function handlesManualRunInput(
   task: ScheduledTask,
 ): task is ScheduledTask & HandlesManualRunInput {
   return typeof (task as Partial<HandlesManualRunInput>).runManual === "function";
+}
+
+function runsEffect(task: ScheduledTask): task is ScheduledTask & RunsEffect {
+  return typeof (task as Partial<RunsEffect>).runEffect === "function";
+}
+
+function handlesManualRunInputEffect(
+  task: ScheduledTask,
+): task is ScheduledTask & HandlesManualRunInputEffect {
+  return (
+    typeof (task as Partial<HandlesManualRunInputEffect>).runManualEffect === "function"
+  );
 }
 
 function getDisplayName(task: ScheduledTask): string | undefined {
@@ -328,38 +349,47 @@ export class TaskRegistry {
         startRunLogCapture(run.runId, name);
         yield* taskRunBus.emitEffect({ type: "run-started", taskName: name });
 
-        const taskEffect = fromPromise("run scheduled task", () =>
-          runWithLogCapture(run.runId, () =>
-            actualTrigger === "manual" && manualInput !== undefined
-              ? (entry.task as ScheduledTask & HandlesManualRunInput).runManual(
-                  manualInput,
-                )
-              : entry.task.run(),
-          ),
-        );
+        const nativeEffect =
+          actualTrigger === "manual" && manualInput !== undefined
+            ? handlesManualRunInputEffect(entry.task)
+              ? entry.task.runManualEffect(manualInput)
+              : undefined
+            : runsEffect(entry.task)
+              ? entry.task.runEffect()
+              : undefined;
+        const taskEffect = nativeEffect
+          ? runWithLogCaptureEffect(run.runId, nativeEffect).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new IntegrationError({ operation: "run scheduled task", cause }),
+              ),
+            )
+          : fromPromise("run scheduled task", () =>
+              runWithLogCapture(run.runId, () =>
+                actualTrigger === "manual" && manualInput !== undefined
+                  ? (entry.task as ScheduledTask & HandlesManualRunInput).runManual(
+                      manualInput,
+                    )
+                  : entry.task.run(),
+              ),
+            );
 
         yield* taskEffect.pipe(
-          Effect.matchEffect({
-            onFailure: (error) =>
-              fromSync("record failed task run", () =>
+          Effect.onExit((exit) =>
+            fromSync(
+              Exit.isSuccess(exit)
+                ? "record successful task run"
+                : "record failed task run",
+              () =>
                 recordRunEnd(run.runId, {
-                  status: "error",
-                  error: error.message,
+                  status: Exit.isSuccess(exit) ? "success" : "error",
+                  error: Exit.isFailure(exit) ? Cause.pretty(exit.cause) : undefined,
                   summary: providesRunSummary(entry.task)
                     ? entry.task.getLastRunSummary()
                     : undefined,
                 }),
-              ).pipe(Effect.andThen(Effect.fail(error))),
-            onSuccess: () =>
-              fromSync("record successful task run", () =>
-                recordRunEnd(run.runId, {
-                  status: "success",
-                  summary: providesRunSummary(entry.task)
-                    ? entry.task.getLastRunSummary()
-                    : undefined,
-                }),
-              ),
-          }),
+            ),
+          ),
           Effect.ensuring(this.finishRunEffect(run.runId, name)),
         );
       }),

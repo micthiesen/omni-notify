@@ -1,6 +1,6 @@
 import type { Effect as EffectType } from "effect/Effect";
 import { spawn } from "node:child_process";
-import { Data, Effect, Schema } from "effect";
+import { Clock, Data, Effect, Schema } from "effect";
 
 const USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 const SAMPLE_RATE = 16_000;
@@ -126,7 +126,8 @@ export class LivestreamAudioCapture {
   ): EffectType<ResolvedMedia, AudioProcessError | AudioDecodeError> {
     return Effect.gen({ self: this }, function* () {
       const cached = this.cache.get(streamUrl);
-      if (cached && cached.expiresAt > Date.now()) return cached.media;
+      const now = yield* Clock.currentTimeMillis;
+      if (cached && cached.expiresAt > now) return cached.media;
       const { stdout } = yield* runAudioProcess(
         this.ytDlpPath,
         [
@@ -158,7 +159,7 @@ export class LivestreamAudioCapture {
             }),
         ),
       );
-      this.cache.set(streamUrl, { media: parsed, expiresAt: Date.now() + 10 * 60_000 });
+      this.cache.set(streamUrl, { media: parsed, expiresAt: now + 10 * 60_000 });
       return parsed;
     });
   }

@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { transaction } from "@micthiesen/mitools/docstore";
 
 export type BriefingNotification = {
   title: string;
@@ -44,14 +45,16 @@ export function reserveBriefingDelivery(
   briefingName: string,
   deliveryId: string,
 ): boolean {
-  const key = { briefingName, deliveryId };
-  if (BriefingDeliveryEntity.get(key)) return false;
-  BriefingDeliveryEntity.upsert({
-    ...key,
-    status: "sending",
-    updatedAt: Date.now(),
+  return transaction(() => {
+    const key = { briefingName, deliveryId };
+    if (BriefingDeliveryEntity.get(key)) return false;
+    BriefingDeliveryEntity.upsert({
+      ...key,
+      status: "sending",
+      updatedAt: Date.now(),
+    });
+    return true;
   });
-  return true;
 }
 
 /** Keep successful delivery reservations permanently as idempotency records. */
@@ -92,12 +95,14 @@ export function addBriefingNotification(
   briefingName: string,
   notification: BriefingNotification,
 ): void {
-  const history = getBriefingHistory(briefingName);
-  history.notifications.push(notification);
-  if (history.notifications.length > MAX_NOTIFICATIONS) {
-    history.notifications = history.notifications.slice(-MAX_NOTIFICATIONS);
-  }
-  BriefingHistoryEntity.upsert(history);
+  transaction(() => {
+    const history = getBriefingHistory(briefingName);
+    history.notifications.push(notification);
+    if (history.notifications.length > MAX_NOTIFICATIONS) {
+      history.notifications = history.notifications.slice(-MAX_NOTIFICATIONS);
+    }
+    BriefingHistoryEntity.upsert(history);
+  });
 }
 
 /**
@@ -114,14 +119,16 @@ export function distributeBriefingRunCost(
   runId: string | undefined,
   totalCostCents: number | null,
 ): void {
-  const history = getBriefingHistory(briefingName);
-  const own = runId
-    ? history.notifications.filter((n) => n.runId === runId)
-    : history.notifications.slice(-1);
-  if (own.length === 0) return;
-  const per = totalCostCents === null ? null : totalCostCents / own.length;
-  for (const notification of own) notification.costCents = per;
-  BriefingHistoryEntity.upsert(history);
+  transaction(() => {
+    const history = getBriefingHistory(briefingName);
+    const own = runId
+      ? history.notifications.filter((n) => n.runId === runId)
+      : history.notifications.slice(-1);
+    if (own.length === 0) return;
+    const per = totalCostCents === null ? null : totalCostCents / own.length;
+    for (const notification of own) notification.costCents = per;
+    BriefingHistoryEntity.upsert(history);
+  });
 }
 
 export function formatNotifications(

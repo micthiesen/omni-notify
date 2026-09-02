@@ -1,8 +1,10 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
+import { describe, expect, it } from "@effect/vitest";
 import { Deferred, Effect, Exit, Fiber } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { TestClock } from "effect/testing";
+import { afterEach, vi } from "vitest";
 import { Platform } from "../platforms/index.js";
 import type { Streamer } from "../streamers.js";
 import {
@@ -67,6 +69,30 @@ describe("EffectWorkQueue close", () => {
     expect(queue.pending).toBe(0);
     expect(queue.size).toBe(0);
   });
+
+  it.effect("interrupts a hung detached job after the graceful drain window", () =>
+    Effect.gen(function* () {
+      const queue = new EffectWorkQueue(1);
+      let finalized = false;
+      yield* queue.fork(
+        Effect.never.pipe(
+          Effect.ensuring(
+            Effect.sync(() => {
+              finalized = true;
+            }),
+          ),
+        ),
+      );
+      yield* Effect.yieldNow;
+      const closing = yield* Effect.forkChild(queue.close());
+
+      yield* TestClock.adjust("30 seconds");
+      yield* Fiber.join(closing);
+
+      expect(finalized).toBe(true);
+      expect(queue.pending).toBe(0);
+    }),
+  );
 });
 
 const { capture, detectDestiny } = vi.hoisted(() => ({

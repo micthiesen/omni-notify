@@ -1,4 +1,4 @@
-import { execFile as execFileCallback } from "node:child_process";
+import { type ChildProcess, execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,7 +12,6 @@ import {
 import { getAttributes, IppOperation, IppTag } from "@pnosolutions/ipp-core";
 import { Entity } from "@micthiesen/mitools/entities";
 import { Data, Duration, Effect, Schedule, Schema } from "effect";
-import { runPromise } from "../effect/interop.js";
 import { publicGot } from "../press-pods/publicHttp.js";
 
 export const PRINTER_DOWNLOAD_USER_AGENT =
@@ -66,10 +65,9 @@ export interface AcceptedPrintJob extends Record<string, unknown> {
   impressionsCompleted: number | null;
   message: string;
 }
-/** Promise facade required by the MCP interface. */
 export interface PrinterService {
-  status(): Promise<PrinterStatus>;
-  printPdf(input: PrintPdfInput): Promise<AcceptedPrintJob>;
+  statusEffect(): Effect.Effect<PrinterStatus, PrinterError>;
+  printPdfEffect(input: PrintPdfInput): Effect.Effect<AcceptedPrintJob, PrinterError>;
 }
 export class PrinterError extends Data.TaggedError("PrinterError")<{
   operation: string;
@@ -274,8 +272,21 @@ function childProcess(
         );
       },
     );
-    return Effect.sync(() => child.kill("SIGTERM"));
+    return terminateChildProcess(child);
   });
+}
+
+function terminateChildProcess(child: ChildProcess): Effect.Effect<void> {
+  return Effect.callback<void>((resume) => {
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resume(Effect.void);
+      return;
+    }
+    const onClose = () => resume(Effect.void);
+    child.once("close", onClose);
+    child.kill("SIGTERM");
+    return Effect.sync(() => child.off("close", onClose));
+  }).pipe(Effect.timeout(Duration.seconds(5)), Effect.ignore);
 }
 function validatePdf(download: DownloadedFile): Buffer {
   const type = download.contentType?.split(";", 1)[0]?.trim().toLowerCase();
@@ -498,9 +509,6 @@ export class IppPrinterService implements PrinterService {
       };
     });
   }
-  status(): Promise<PrinterStatus> {
-    return runPromise(this.statusEffect());
-  }
 
   printPdfEffect(input: PrintPdfInput): Effect.Effect<AcceptedPrintJob, PrinterError> {
     return Effect.gen({ self: this }, function* () {
@@ -569,9 +577,6 @@ export class IppPrinterService implements PrinterService {
         ),
       );
     });
-  }
-  printPdf(input: PrintPdfInput): Promise<AcceptedPrintJob> {
-    return runPromise(this.printPdfEffect(input));
   }
 
   private submitPrintJob(

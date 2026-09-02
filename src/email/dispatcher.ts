@@ -1,5 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import { Cause, Data, Effect, Fiber, Queue, Semaphore } from "effect";
+import { Cause, Data, Effect, Exit, Fiber, Queue, Scope, Semaphore } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
 import { saveLastDispatchedAtEffect } from "./persistence.js";
 import type { EmailHandler, EmailTransport, FetchedEmail } from "./types.js";
@@ -25,6 +25,7 @@ export class EmailDispatcher {
   private readonly lifecycleSemaphore = Semaphore.makeUnsafe(1);
   private triggerQueue: Queue.Queue<"trigger" | "stop"> | undefined;
   private supervisor: Fiber.Fiber<void, never> | undefined;
+  private supervisorScope: Scope.Closeable | undefined;
 
   constructor(
     private readonly transport: EmailTransport,
@@ -49,21 +50,29 @@ export class EmailDispatcher {
   /** Start the owned trigger supervisor before push monitoring can emit. */
   public get startEffect(): Effect.Effect<void, unknown> {
     return this.lifecycleSemaphore.withPermits(1)(
-      Effect.gen({ self: this }, function* () {
-        if (this.supervisor) return;
-        const queue = yield* Queue.bounded<"trigger" | "stop">(1);
-        this.triggerQueue = queue;
-        this.supervisor = yield* Effect.forkDetach(this.superviseEffect(queue));
-        yield* this.transport
-          .startEffect(() => this.onMailEvent())
-          .pipe(
-            Effect.onError(() =>
-              this.transport.stopEffect.pipe(
-                Effect.ensuring(this.stopSupervisorEffect),
-              ),
+      Effect.uninterruptibleMask((restore) =>
+        Effect.gen({ self: this }, function* () {
+          if (this.supervisor) return;
+          const queue = yield* Queue.bounded<"trigger" | "stop">(1);
+          const scope = yield* Scope.make();
+          const supervisor = yield* this.superviseEffect(queue).pipe(
+            Effect.forkScoped,
+            Effect.provideService(Scope.Scope, scope),
+          );
+          this.triggerQueue = queue;
+          this.supervisor = supervisor;
+          this.supervisorScope = scope;
+          yield* restore(this.transport.startEffect(() => this.onMailEvent())).pipe(
+            Effect.onExit((exit) =>
+              Exit.isSuccess(exit)
+                ? Effect.void
+                : this.transport.stopEffect.pipe(
+                    Effect.andThen(this.stopSupervisorEffect),
+                  ),
             ),
           );
-      }),
+        }),
+      ),
     );
   }
 
@@ -78,12 +87,18 @@ export class EmailDispatcher {
     return Effect.gen({ self: this }, function* () {
       const queue = this.triggerQueue;
       const supervisor = this.supervisor;
-      if (!queue || !supervisor) return;
+      const scope = this.supervisorScope;
+      this.triggerQueue = undefined;
+      this.supervisor = undefined;
+      this.supervisorScope = undefined;
+      if (!queue || !supervisor) {
+        if (scope) yield* Scope.close(scope, Exit.succeed(undefined));
+        return;
+      }
       yield* Queue.offer(queue, "stop");
       yield* Fiber.join(supervisor);
       yield* Queue.shutdown(queue);
-      this.triggerQueue = undefined;
-      this.supervisor = undefined;
+      if (scope) yield* Scope.close(scope, Exit.succeed(undefined));
     });
   }
 

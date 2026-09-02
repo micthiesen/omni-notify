@@ -55,15 +55,21 @@ export class MediaRecommendationTask extends ScheduledTask {
   }
 
   public run(): Promise<void> {
-    return runPromise(this.runPipelineEffect(1));
+    return runPromise(this.runEffect());
+  }
+
+  public runEffect() {
+    return this.runPipelineEffect(1);
   }
 
   public runManual(input: unknown): Promise<void> {
-    return runPromise(
-      decodeManualInput(input).pipe(
-        Effect.flatMap(({ maxRecommendations }) =>
-          this.runPipelineEffect(maxRecommendations),
-        ),
+    return runPromise(this.runManualEffect(input));
+  }
+
+  public runManualEffect(input: unknown) {
+    return decodeManualInput(input).pipe(
+      Effect.flatMap(({ maxRecommendations }) =>
+        this.runPipelineEffect(maxRecommendations),
       ),
     );
   }

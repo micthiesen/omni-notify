@@ -2,15 +2,32 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
 import { createProviderRegistry, type LanguageModel, wrapLanguageModel } from "ai";
-import { Effect } from "effect";
+import { Duration, Effect } from "effect";
 import { currentCostFeature, recordCostEventSafely } from "../costs/persistence.js";
+import { IntegrationError } from "../effect/errors.js";
 import { fromPromise, runPromise } from "../effect/interop.js";
 import config from "../utils/config.js";
 import { hasPrice, llmCostCents } from "./cost.js";
 
 type RegisteredModelId = Parameters<typeof modelRegistry.languageModel>[0];
+export const LANGUAGE_MODEL_TIMEOUT = Duration.minutes(5);
 
 export const modelRegistry = createProviderRegistry({ anthropic, google, openai });
+
+export const callLanguageModelEffect = Effect.fn("AiRegistry.generate")(function* <A>(
+  call: (signal: AbortSignal) => PromiseLike<A>,
+) {
+  return yield* fromPromise("generate language-model response", call).pipe(
+    Effect.timeout(LANGUAGE_MODEL_TIMEOUT),
+    Effect.mapError(
+      (cause) =>
+        new IntegrationError({
+          operation: "generate language-model response",
+          cause,
+        }),
+    ),
+  );
+});
 
 export function getBriefingModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
@@ -161,9 +178,16 @@ function resolveModel(
     model: modelRegistry.languageModel(modelId),
     middleware: {
       specificationVersion: "v4",
-      wrapGenerate: ({ doGenerate }) =>
+      wrapGenerate: ({ model: baseModel, params }) =>
         runPromise(
-          fromPromise("generate language-model response", () => doGenerate()).pipe(
+          callLanguageModelEffect((signal) =>
+            baseModel.doGenerate({
+              ...params,
+              abortSignal: params.abortSignal
+                ? AbortSignal.any([params.abortSignal, signal])
+                : signal,
+            }),
+          ).pipe(
             Effect.tap((result) =>
               Effect.sync(() => {
                 const inputTokens = result.usage.inputTokens.total ?? 0;

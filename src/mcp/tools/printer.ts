@@ -1,4 +1,3 @@
-import { Effect } from "effect";
 import { z } from "zod";
 import type { McpRuntime } from "../runtime.js";
 import {
@@ -49,7 +48,7 @@ export function createPrinterTools(runtime: McpRuntime): McpToolDefinition[] {
         cost: "none",
         recommendedPolicy: "allow",
       },
-      execute: () => Effect.tryPromise(() => requirePrinter(runtime).status()),
+      execute: () => requirePrinter(runtime).statusEffect(),
     }),
     defineTool({
       name: "print_document",
@@ -95,8 +94,7 @@ export function createPrinterTools(runtime: McpRuntime): McpToolDefinition[] {
         cost: "Consumes paper, toner, and electricity; no paid API",
         recommendedPolicy: "require_approval",
       },
-      execute: (input) =>
-        Effect.tryPromise(() => requirePrinter(runtime).printPdf(input)),
+      execute: (input) => requirePrinter(runtime).printPdfEffect(input),
     }),
   ];
 }

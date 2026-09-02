@@ -1,6 +1,8 @@
+import { it } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import type { OptionsInit } from "got";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { CastroApi, type CastroHttpRequest } from "./api.js";
 
 function api(request: CastroHttpRequest, maxResponseBytes = 1024): CastroApi {
@@ -13,10 +15,15 @@ function api(request: CastroHttpRequest, maxResponseBytes = 1024): CastroApi {
   );
 }
 
-function response(chunks: string[], contentLength?: number, destroy = vi.fn()) {
+function response(
+  chunks: string[],
+  contentLength?: number,
+  destroy = vi.fn(),
+  statusCode = 200,
+) {
   return {
     response: {
-      statusCode: 200,
+      statusCode,
       headers:
         contentLength === undefined ? {} : { "content-length": String(contentLength) },
     },
@@ -28,6 +35,33 @@ function response(chunks: string[], contentLength?: number, destroy = vi.fn()) {
 }
 
 describe("CastroApi bounded requests", () => {
+  it.effect("does not retry a permanent HTTP failure", () =>
+    Effect.gen(function* () {
+      const request = vi.fn(() =>
+        response(["bad request"], undefined, vi.fn(), 400),
+      ) as CastroHttpRequest;
+
+      const result = yield* Effect.result(api(request).getSyncStatus());
+
+      expect(result._tag).toBe("Failure");
+      expect(request).toHaveBeenCalledOnce();
+    }),
+  );
+
+  it.effect("retries rate limits and server failures", () =>
+    Effect.gen(function* () {
+      const request = vi.fn(() =>
+        response(["unavailable"], undefined, vi.fn(), 503),
+      ) as CastroHttpRequest;
+      const fiber = yield* Effect.forkChild(api(request).getSyncStatus());
+
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.await(fiber);
+
+      expect(request).toHaveBeenCalledTimes(3);
+    }),
+  );
+
   it("streams and decodes a concrete response", async () => {
     const request = vi.fn(() =>
       response([
@@ -57,7 +91,7 @@ describe("CastroApi bounded requests", () => {
     await expect(Effect.runPromise(api(request, 8).getSyncStatus())).rejects.toThrow(
       "Response exceeds the 8-byte limit",
     );
-    expect(destroy).toHaveBeenCalledTimes(3);
+    expect(destroy).toHaveBeenCalledOnce();
   });
 
   it("cancels a chunked oversized response", async () => {
@@ -69,7 +103,7 @@ describe("CastroApi bounded requests", () => {
     await expect(Effect.runPromise(api(request, 8).getSyncStatus())).rejects.toThrow(
       "Response exceeds the 8-byte limit",
     );
-    expect(destroy).toHaveBeenCalledTimes(3);
+    expect(destroy).toHaveBeenCalledOnce();
   });
 });
 

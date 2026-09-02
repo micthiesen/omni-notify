@@ -1,6 +1,7 @@
 import got from "got";
 import { Duration, Effect, Schedule, Schema } from "effect";
 import type { z } from "zod";
+import { isTransientHttpError } from "../../effect/errors.js";
 import config from "../../utils/config.js";
 import { MediaType } from "../types.js";
 import {
@@ -58,6 +59,7 @@ function tmdbGet<T>(
       Effect.retry({
         schedule: Schedule.exponential(Duration.millis(200)),
         times: 2,
+        while: isTransientHttpError,
       }),
     );
     const decoded = yield* Effect.try({

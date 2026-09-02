@@ -12,6 +12,12 @@ import {
 } from "./service.js";
 
 const PDF = Buffer.from("%PDF-1.7\nfixture");
+const statusOf = (service: IppPrinterService) =>
+  Effect.runPromise(service.statusEffect());
+const printPdf = (
+  service: IppPrinterService,
+  input: Parameters<IppPrinterService["printPdfEffect"]>[0],
+) => Effect.runPromise(service.printPdfEffect(input));
 
 function printerStatus(raw: Record<string, unknown> = {}) {
   return {
@@ -110,7 +116,7 @@ describe("IppPrinterService", () => {
     );
     const service = new IppPrinterService({ dependencies });
 
-    await expect(service.status()).resolves.toMatchObject({
+    await expect(statusOf(service)).resolves.toMatchObject({
       configured: true,
       state: "idle",
       ready: false,
@@ -124,7 +130,7 @@ describe("IppPrinterService", () => {
 
   it("converts, submits, and confirms a monochrome duplex brlaser job", async () => {
     const service = new IppPrinterService({ dependencies });
-    const result = await service.printPdf({
+    const result = await printPdf(service, {
       url: "https://example.com/file.pdf",
       paper: "a4",
       copies: 2,
@@ -182,7 +188,7 @@ describe("IppPrinterService", () => {
   ] as const)("passes %s through both CUPS filters", async (sides, duplexOption) => {
     const service = new IppPrinterService({ dependencies });
 
-    await service.printPdf({ url: "https://example.com/file.pdf", sides });
+    await printPdf(service, { url: "https://example.com/file.pdf", sides });
 
     expect(binaryProcessCalls[0]?.args).toEqual(expect.arrayContaining([duplexOption]));
     expect(binaryProcessCalls[1]?.args).toEqual(
@@ -199,7 +205,7 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
 
     await expect(
-      service.printPdf({ url: "https://example.com/file.pdf" }),
+      printPdf(service, { url: "https://example.com/file.pdf" }),
     ).rejects.toThrow("Printer aborted the job: document-format-error");
   });
 
@@ -216,7 +222,7 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
 
     await expect(
-      service.printPdf({ url: "https://example.com/file.pdf" }),
+      printPdf(service, { url: "https://example.com/file.pdf" }),
     ).rejects.toThrow(message);
     expect(print).not.toHaveBeenCalled();
     expect(processCalls).toEqual([]);
@@ -230,7 +236,7 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
 
     await expect(
-      service.printPdf({ url: "https://example.com/file.pdf" }),
+      printPdf(service, { url: "https://example.com/file.pdf" }),
     ).rejects.toThrow("Encrypted PDFs cannot be printed");
     expect(print).not.toHaveBeenCalled();
     expect(await readdir(tempRoot)).toEqual([]);
@@ -240,7 +246,7 @@ describe("IppPrinterService", () => {
       stderr: "",
     });
     await expect(
-      new IppPrinterService({ dependencies }).printPdf({
+      printPdf(new IppPrinterService({ dependencies }), {
         url: "https://example.com/file.pdf",
       }),
     ).rejects.toThrow("maximum is 25");
@@ -253,7 +259,7 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
 
     await expect(
-      service.printPdf({ url: "https://example.com/file.pdf" }),
+      printPdf(service, { url: "https://example.com/file.pdf" }),
     ).rejects.toThrow("Converted print data exceeds");
     expect(print).not.toHaveBeenCalled();
     expect(await readdir(tempRoot)).toEqual([]);
@@ -265,20 +271,20 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
     const input = { url: "https://example.com/file.pdf" };
 
-    await service.printPdf(input);
-    await expect(service.printPdf(input)).rejects.toThrow("allowDuplicate");
-    await service.printPdf({ ...input, allowDuplicate: true });
+    await printPdf(service, input);
+    await expect(printPdf(service, input)).rejects.toThrow("allowDuplicate");
+    await printPdf(service, { ...input, allowDuplicate: true });
     currentTime += 5 * 60 * 1000 + 1;
-    await service.printPdf(input);
+    await printPdf(service, input);
     expect(print).toHaveBeenCalledTimes(3);
   });
 
   it("suppresses an accepted duplicate after the service restarts", async () => {
     const input = { url: "https://example.com/file.pdf" };
-    await new IppPrinterService({ dependencies }).printPdf(input);
+    await printPdf(new IppPrinterService({ dependencies }), input);
 
     await expect(
-      new IppPrinterService({ dependencies }).printPdf(input),
+      printPdf(new IppPrinterService({ dependencies }), input),
     ).rejects.toThrow("allowDuplicate");
     expect(print).toHaveBeenCalledTimes(1);
   });
@@ -294,12 +300,12 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
     const input = { url: "https://example.com/file.pdf" };
 
-    await expect(service.printPdf(input)).resolves.toMatchObject({
+    await expect(printPdf(service, input)).resolves.toMatchObject({
       accepted: true,
       message:
         "The printer accepted the job, but durable duplicate suppression failed; do not retry it automatically",
     });
-    await expect(service.printPdf(input)).rejects.toThrow("allowDuplicate");
+    await expect(printPdf(service, input)).rejects.toThrow("allowDuplicate");
     expect(print).toHaveBeenCalledTimes(1);
   });
 
@@ -320,9 +326,9 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
     const input = { url: "https://example.com/file.pdf" };
 
-    const first = service.printPdf(input);
+    const first = printPdf(service, input);
     await vi.waitFor(() => expect(print).toHaveBeenCalledTimes(1));
-    await expect(service.printPdf(input)).rejects.toThrow("already being submitted");
+    await expect(printPdf(service, input)).rejects.toThrow("already being submitted");
     releasePrint?.();
     await expect(first).resolves.toMatchObject({ accepted: true });
     expect(print).toHaveBeenCalledTimes(1);
@@ -333,8 +339,8 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
     const input = { url: "https://example.com/file.pdf" };
 
-    await expect(service.printPdf(input)).rejects.toThrow("connection closed");
-    await expect(service.printPdf(input)).resolves.toMatchObject({ accepted: true });
+    await expect(printPdf(service, input)).rejects.toThrow("connection closed");
+    await expect(printPdf(service, input)).resolves.toMatchObject({ accepted: true });
     expect(print).toHaveBeenCalledTimes(2);
     expect(await readdir(tempRoot)).toEqual([]);
   });
@@ -344,12 +350,12 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
     const input = { url: "https://example.com/file.pdf" };
 
-    await expect(service.printPdf(input)).resolves.toMatchObject({
+    await expect(printPdf(service, input)).resolves.toMatchObject({
       accepted: true,
       completed: false,
       message: "The printer accepted the job; physical completion is not confirmed",
     });
-    await expect(service.printPdf(input)).rejects.toThrow("allowDuplicate");
+    await expect(printPdf(service, input)).rejects.toThrow("allowDuplicate");
     expect(print).toHaveBeenCalledTimes(1);
     expect(await readdir(tempRoot)).toEqual([]);
   });
@@ -358,10 +364,10 @@ describe("IppPrinterService", () => {
     const service = new IppPrinterService({ dependencies });
 
     await expect(
-      service.printPdf({ url: "http://example.com/file.pdf" }),
+      printPdf(service, { url: "http://example.com/file.pdf" }),
     ).rejects.toThrow("public HTTPS URL");
     await expect(
-      service.printPdf({ url: "https://example.com/file.pdf", copies: 4 }),
+      printPdf(service, { url: "https://example.com/file.pdf", copies: 4 }),
     ).rejects.toThrow("Copies must be an integer from 1 to 3");
     expect(dependencies.download).not.toHaveBeenCalled();
   });
@@ -391,7 +397,7 @@ describe("IppPrinterService", () => {
     };
     const service = new IppPrinterService({ dependencies });
     await expect(
-      service.printPdf({ url: "https://example.com/file.pdf" }),
+      printPdf(service, { url: "https://example.com/file.pdf" }),
     ).rejects.toThrow("inspection stopped");
     expect(await readdir(tempRoot)).toEqual([]);
   });

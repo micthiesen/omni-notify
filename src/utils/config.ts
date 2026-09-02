@@ -1,6 +1,6 @@
 import { logConfig } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
-import { Context, Data, Effect, Layer, Schema, SchemaGetter } from "effect";
+import { Data, Effect, Schema, SchemaGetter } from "effect";
 import { validateMcpTokenConfiguration } from "../mcp/auth.js";
 
 const optionalString = Schema.optional(Schema.String);
@@ -335,14 +335,21 @@ export const loadConfigEffect = (
     ),
   );
 
-/** Injectable configuration service for Effect-native workflows. */
-export class AppConfig extends Context.Service<AppConfig, Config>()("AppConfig") {}
+function loadBootConfig(
+  environment: Readonly<Record<string, string | undefined>>,
+): Config {
+  try {
+    const parsed = deriveConfig(Schema.decodeUnknownSync(rawConfigSchema)(environment));
+    validateMcpTokenConfiguration(parsed.OMNI_MCP_TOKEN, parsed.DOCKERIZED);
+    logConfig(parsed, [...privateConfigKeys]);
+    return parsed;
+  } catch (cause) {
+    throw new ConfigLoadError({ cause });
+  }
+}
 
-export const makeAppConfigLayer = (
-  environment: Readonly<Record<string, string | undefined>> = process.env,
-): Layer.Layer<AppConfig, ConfigLoadError> =>
-  Layer.effect(AppConfig, loadConfigEffect(environment));
-
-const config = Effect.runSync(loadConfigEffect());
+// Module initialization is the process bootstrap adapter. Runtime workflows
+// receive this immutable decoded value and never re-read process.env.
+const config = loadBootConfig(process.env);
 
 export default config;

@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Duration, Effect, Schema } from "effect";
 import { CaldavError } from "../effect.js";
 
 const MAX_REDIRECTS = 5;
@@ -29,13 +29,17 @@ export function requestCaldavEffect(
     try: (signal) =>
       fetch(input, {
         ...init,
-        signal: AbortSignal.any([
-          signal,
-          AbortSignal.timeout(CALDAV_REQUEST_TIMEOUT_MS),
-        ]),
+        signal,
       }),
     catch: (cause) => new CaldavError({ operation, cause, transient: true }),
-  });
+  }).pipe(
+    Effect.timeout(Duration.millis(CALDAV_REQUEST_TIMEOUT_MS)),
+    Effect.mapError((cause) =>
+      cause instanceof CaldavError
+        ? cause
+        : new CaldavError({ operation, cause, transient: true }),
+    ),
+  );
 }
 
 function isIcloudCaldavHost(hostname: string): boolean {

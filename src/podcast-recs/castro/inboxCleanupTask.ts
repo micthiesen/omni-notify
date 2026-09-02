@@ -56,7 +56,7 @@ export class CastroInboxCleanupTask extends ScheduledTask {
     return Effect.runPromise(this.runEffect());
   }
 
-  private runEffect(): Effect.Effect<void, CastroInboxCleanupError> {
+  public runEffect(): Effect.Effect<void, CastroInboxCleanupError> {
     return Effect.gen({ self: this }, function* () {
       const account =
         this.accountOverride ?? (yield* resolvePodcastAccountEffect(this.logger));

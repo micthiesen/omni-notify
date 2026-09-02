@@ -1,6 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { EventSource } from "eventsource";
-import { Data, Effect, Fiber, Random, Schema, Scope } from "effect";
+import { Data, Effect, Random, Schema, Scope } from "effect";
 import type { JmapContext } from "./client.js";
 
 // Inactivity timeout modeled after Fastmail's own Overture client (6 min default):
@@ -60,8 +60,8 @@ export class EventSourceSetupError extends Data.TaggedError("EventSourceSetupErr
  */
 class JmapEventSource {
   private es: EventSource | null = null;
-  private inactivityFiber: Fiber.Fiber<void, never> | null = null;
-  private reconnectFiber: Fiber.Fiber<void, never> | null = null;
+  private inactivityGeneration = 0;
+  private reconnecting = false;
   private backoffMs = 0;
   private connected = false;
   private closed = false;
@@ -71,7 +71,18 @@ class JmapEventSource {
     private readonly bearerToken: string,
     private readonly onEmailStateChange: () => void,
     private readonly logger: Logger,
+    private readonly scope: Scope.Scope,
   ) {}
+
+  private runOwned(effect: Effect.Effect<void, never>): void {
+    Effect.runFork(
+      effect.pipe(
+        Effect.forkScoped,
+        Effect.provideService(Scope.Scope, this.scope),
+        Effect.asVoid,
+      ),
+    );
+  }
 
   readonly connectEffect: Effect.Effect<void, EventSourceSetupError> = Effect.try({
     try: () => {
@@ -128,29 +139,21 @@ class JmapEventSource {
    * resource. Reconnect setup failures are transient; only closeEffect may set
    * `closed` and prevent later attempts.
    */
-  private readonly rollbackConnectionEffect: Effect.Effect<void, never> = Effect.gen(
-    { self: this },
-    function* () {
-      if (this.inactivityFiber) yield* Fiber.interrupt(this.inactivityFiber);
-      this.inactivityFiber = null;
+  private readonly rollbackConnectionEffect: Effect.Effect<void, never> = Effect.sync(
+    () => {
+      this.inactivityGeneration++;
       this.es?.close();
       this.es = null;
     },
   );
 
-  readonly closeEffect: Effect.Effect<void, never> = Effect.gen(
-    { self: this },
-    function* () {
-      this.closed = true;
-      if (this.inactivityFiber) yield* Fiber.interrupt(this.inactivityFiber);
-      if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
-      this.inactivityFiber = null;
-      this.reconnectFiber = null;
-      this.logger.info("Closing EventSource connection");
-      this.es?.close();
-      this.es = null;
-    },
-  );
+  readonly closeEffect: Effect.Effect<void, never> = Effect.sync(() => {
+    this.closed = true;
+    this.inactivityGeneration++;
+    this.logger.info("Closing EventSource connection");
+    this.es?.close();
+    this.es = null;
+  });
 
   private handleStateEvent(event: MessageEvent): void {
     try {
@@ -178,7 +181,7 @@ class JmapEventSource {
         "EventSource auth error, closing connection",
         `Code ${code}: ${message}`,
       );
-      Effect.runFork(this.closeEffect);
+      this.runOwned(this.closeEffect);
       return;
     }
 
@@ -187,16 +190,16 @@ class JmapEventSource {
     if (message) {
       this.logger.warn(`EventSource error: ${message}`);
     }
+    this.runOwned(this.reconnectEffect);
   }
 
   private resetInactivityTimer(): void {
     if (this.closed) return;
-    const previous = this.inactivityFiber;
-    this.inactivityFiber = Effect.runFork(
+    const generation = ++this.inactivityGeneration;
+    this.runOwned(
       Effect.gen({ self: this }, function* () {
-        if (previous) yield* Fiber.interrupt(previous);
         yield* Effect.sleep(INACTIVITY_TIMEOUT_MS);
-        if (this.closed) return;
+        if (this.closed || generation !== this.inactivityGeneration) return;
         this.logger.warn("EventSource inactivity timeout, forcing reconnect");
         yield* this.reconnectEffect;
       }).pipe(Effect.catchCause(() => Effect.void)),
@@ -208,18 +211,15 @@ class JmapEventSource {
     function* () {
       this.es?.close();
       this.es = null;
-      if (this.closed) return;
-      if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
-      let fiber!: Fiber.Fiber<void, never>;
-      fiber = yield* this.reconnectLoopEffect.pipe(
+      if (this.closed || this.reconnecting) return;
+      this.reconnecting = true;
+      yield* this.reconnectLoopEffect.pipe(
         Effect.ensuring(
           Effect.sync(() => {
-            if (this.reconnectFiber === fiber) this.reconnectFiber = null;
+            this.reconnecting = false;
           }),
         ),
-        Effect.forkDetach,
       );
-      this.reconnectFiber = fiber;
     },
   );
 
@@ -265,6 +265,7 @@ export function createEventSourceEffect(
       ctx.jam.authHeader,
       onEmailStateChange,
       logger,
+      yield* Scope.Scope,
     );
 
     // acquireRelease registers the finalizer before acquisition can return to

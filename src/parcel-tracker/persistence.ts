@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { transaction } from "@micthiesen/mitools/docstore";
 
 // Dedup gate: tracks every delivery submitted to Parcel API
 export type SubmittedDeliveryData = {
@@ -70,12 +71,14 @@ export function recordSubmittedDelivery(data: SubmittedDeliveryData): void {
 export function reserveDeliverySubmission(
   data: Omit<SubmittedDeliveryData, "status" | "attempts">,
 ): SubmittedDeliveryData {
-  const prior = getDeliverySubmission(data.trackingNumber);
-  const row: SubmittedDeliveryData = {
-    ...data,
-    status: "pending",
-    attempts: (prior?.attempts ?? 0) + 1,
-  };
-  SubmittedDeliveryEntity.upsert(row);
-  return row;
+  return transaction(() => {
+    const prior = getDeliverySubmission(data.trackingNumber);
+    const row: SubmittedDeliveryData = {
+      ...data,
+      status: "pending",
+      attempts: (prior?.attempts ?? 0) + 1,
+    };
+    SubmittedDeliveryEntity.upsert(row);
+    return row;
+  });
 }

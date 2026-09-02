@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@micthiesen/mitools/docstore", () => ({
+  transaction: <A>(apply: () => A) => apply(),
+}));
+
 vi.mock("@micthiesen/mitools/entities", () => {
   const store = new Map<string, unknown>();
   return {

@@ -61,13 +61,25 @@ export class PodcastRecommendationTask extends ScheduledTask {
     this.logger = parentLogger.extend("PodcastRecsTask");
   }
 
-  public async run(): Promise<void> {
+  public run(): Promise<void> {
     // Topic-tier target per scheduled run; guest picks are on top of this.
-    await Effect.runPromise(this.runPipelineEffect(3));
+    return Effect.runPromise(this.runEffect());
   }
 
-  public async runManual(input: unknown): Promise<void> {
-    await Effect.runPromise(this.runPipelineEffect(parseMaxRecommendations(input)));
+  public runEffect(): Effect.Effect<void, unknown> {
+    return this.runPipelineEffect(3);
+  }
+
+  public runManual(input: unknown): Promise<void> {
+    return Effect.runPromise(this.runManualEffect(input));
+  }
+
+  public runManualEffect(input: unknown): Effect.Effect<void, unknown> {
+    return Effect.try(() => parseMaxRecommendations(input)).pipe(
+      Effect.flatMap((maxRecommendations) =>
+        this.runPipelineEffect(maxRecommendations),
+      ),
+    );
   }
 
   private runPipelineEffect(maxRecommendations: number): Effect.Effect<void, unknown> {

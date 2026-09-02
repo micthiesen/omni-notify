@@ -32,7 +32,7 @@ export class WorkspaceTask extends ScheduledTask {
     this.logger = parentLogger.extend(`${definition.taskName}Task`);
   }
 
-  private scheduledRunEffect() {
+  public runEffect() {
     return Effect.gen({ self: this }, function* () {
       if (this.definition.scheduledRuns === false) {
         this.lastSummary = "On-demand workspace; scheduled refresh skipped";
@@ -79,10 +79,10 @@ export class WorkspaceTask extends ScheduledTask {
   }
 
   public run(): Promise<void> {
-    return runPromise(this.scheduledRunEffect());
+    return runPromise(this.runEffect());
   }
 
-  private manualRunEffect(input: unknown) {
+  public runManualEffect(input: unknown) {
     return Effect.gen({ self: this }, function* () {
       const parsed = yield* Schema.decodeUnknownEffect(manualInputSchema)(input).pipe(
         Effect.mapError(
@@ -117,7 +117,7 @@ export class WorkspaceTask extends ScheduledTask {
   }
 
   public runManual(input: unknown): Promise<void> {
-    return runPromise(this.manualRunEffect(input));
+    return runPromise(this.runManualEffect(input));
   }
 
   public getLastRunSummary(): string | undefined {

@@ -1,5 +1,6 @@
 import { Clock, Data, Effect, Ref, Schedule, Semaphore } from "effect";
 import type { z } from "zod";
+import { HttpResponseError, isTransientHttpError } from "../../effect/errors.js";
 import {
   type LimitedTextResponse,
   publicGotStream,
@@ -279,9 +280,10 @@ export class CastroApi {
           );
           const statusCode = response.response?.statusCode ?? 200;
           if (statusCode < 200 || statusCode >= 300) {
-            throw new Error(
-              `Castro ${method} ${pathAndQuery} failed with HTTP ${statusCode}${responseBody.length > 0 ? `: ${responseBody.slice(0, 200)}` : ""}`,
-            );
+            throw new HttpResponseError({
+              statusCode,
+              body: responseBody.slice(0, 200) || undefined,
+            });
           }
           return responseBody;
         },
@@ -297,6 +299,7 @@ export class CastroApi {
             Effect.retry({
               schedule: Schedule.exponential("200 millis"),
               times: 2,
+              while: isTransientHttpError,
             }),
           )
         : attempt;

@@ -6,9 +6,11 @@ import {
   Data,
   Duration,
   Effect,
+  Exit,
   Fiber,
   Random,
   Schedule,
+  Scope,
   Semaphore,
 } from "effect";
 import { getLastDispatchedAtEffect } from "../persistence.js";
@@ -99,8 +101,8 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   private logger: Logger;
   private client: ImapFlow | null = null;
   private onMailEvent: (() => void) | undefined;
-  private sweepFiber: Fiber.Fiber<void, never> | null = null;
-  private reconnectFiber: Fiber.Fiber<void, never> | null = null;
+  private runtimeScope: Scope.Closeable | null = null;
+  private reconnectScheduled = false;
   private stopped = false;
   /** Special-use mailboxes are rediscovered after every new connection. */
   private autoReadFolders: string[] | undefined;
@@ -117,30 +119,51 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
   }
 
   startEffect(onMailEvent: () => void): Effect.Effect<void, ImapOperationError> {
-    return Effect.gen({ self: this }, function* () {
-      this.stopped = false;
-      this.onMailEvent = onMailEvent;
-      // First connect fails to the boot retry boundary; later disconnects are
-      // supervised by the interruptible reconnect fiber.
-      yield* this.connectSingleFlightEffect;
-      if (this.sweepFiber) yield* Fiber.interrupt(this.sweepFiber);
-      this.sweepFiber = yield* Effect.sleep(SWEEP_INTERVAL_MS).pipe(
-        Effect.tap(() => Effect.sync(() => this.onMailEvent?.())),
-        Effect.forever,
-        Effect.forkDetach,
-      );
-      onMailEvent();
-    });
+    return Effect.uninterruptibleMask((restore) =>
+      Effect.gen({ self: this }, function* () {
+        const previousScope = this.runtimeScope;
+        this.runtimeScope = null;
+        if (previousScope) {
+          yield* Scope.close(previousScope, Exit.succeed(undefined));
+        }
+        const scope = yield* Scope.make();
+        this.runtimeScope = scope;
+        this.stopped = false;
+        this.onMailEvent = onMailEvent;
+        // First connect fails to the boot retry boundary; later disconnects are
+        // supervised by children of the retained runtime Scope.
+        yield* restore(this.connectSingleFlightEffect).pipe(
+          Effect.onExit((exit) =>
+            Exit.isSuccess(exit)
+              ? Effect.void
+              : Scope.close(scope, exit).pipe(
+                  Effect.tap(() =>
+                    Effect.sync(() => {
+                      if (this.runtimeScope === scope) this.runtimeScope = null;
+                    }),
+                  ),
+                ),
+          ),
+        );
+        yield* Effect.sleep(SWEEP_INTERVAL_MS).pipe(
+          Effect.tap(() => Effect.sync(() => this.onMailEvent?.())),
+          Effect.forever,
+          Effect.forkScoped,
+          Effect.provideService(Scope.Scope, scope),
+        );
+        onMailEvent();
+      }),
+    );
   }
 
   readonly stopEffect: Effect.Effect<void, never> = Effect.gen(
     { self: this },
     function* () {
       this.stopped = true;
-      if (this.sweepFiber) yield* Fiber.interrupt(this.sweepFiber);
-      this.sweepFiber = null;
-      if (this.reconnectFiber) yield* Fiber.interrupt(this.reconnectFiber);
-      this.reconnectFiber = null;
+      const scope = this.runtimeScope;
+      this.runtimeScope = null;
+      if (scope) yield* Scope.close(scope, Exit.succeed(undefined));
+      this.reconnectScheduled = false;
       if (this.connectFiber) yield* Fiber.interrupt(this.connectFiber);
       this.connectFiber = null;
       this.logger.info("Closing IMAP connection");
@@ -249,7 +272,9 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     );
 
   private scheduleReconnect(): void {
-    if (this.reconnectFiber || this.stopped) return;
+    const scope = this.runtimeScope;
+    if (this.reconnectScheduled || this.stopped || !scope) return;
+    this.reconnectScheduled = true;
 
     const retrySchedule = Schedule.exponential(
       Duration.millis(INITIAL_BACKOFF_MS),
@@ -259,7 +284,6 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
         Effect.succeed(Duration.min(duration, Duration.millis(MAX_BACKOFF_MS))),
       ),
     );
-    let fiber: Fiber.Fiber<void, never>;
     const reconnect = Effect.gen({ self: this }, function* () {
       const initialJitter = yield* Random.nextIntBetween(0, 3_001);
       this.logger.warn(`IMAP connection closed, reconnecting in ${initialJitter}ms`);
@@ -277,13 +301,18 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     }).pipe(
       Effect.ensuring(
         Effect.sync(() => {
-          if (this.reconnectFiber === fiber) this.reconnectFiber = null;
+          this.reconnectScheduled = false;
         }),
       ),
       Effect.catch(() => Effect.void),
     );
-    fiber = Effect.runFork(reconnect);
-    this.reconnectFiber = fiber;
+    Effect.runFork(
+      reconnect.pipe(
+        Effect.forkScoped,
+        Effect.provideService(Scope.Scope, scope),
+        Effect.asVoid,
+      ),
+    );
   }
 
   readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, ImapOperationError> =
@@ -414,7 +443,11 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
       ),
       () =>
         Effect.gen({ self: this }, function* () {
-          const metas = yield* collectFetchMetadataEffect(client, fromUid, folder);
+          const { metas, complete } = yield* collectFetchMetadataEffect(
+            client,
+            fromUid,
+            folder,
+          );
           const now = yield* Clock.currentTimeMillis;
           const cutoff = now - MAX_EMAIL_AGE_MS;
           const fresh = metas.filter(
@@ -455,8 +488,8 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
             ),
           );
           const nextUid =
-            fresh.length > selected.length && selected.length > 0
-              ? selected[selected.length - 1].uid + 1
+            !complete || fresh.length > selected.length
+              ? (selected.at(-1) ?? metas.at(-1))!.uid + 1
               : Math.max(statusUidNext, (metas.at(-1)?.uid ?? 0) + 1);
           this.logger.debug(`Fetched ${emails.length} new email(s) from ${folder}`);
           return { emails, nextUid };
@@ -808,25 +841,49 @@ function collectFetchMetadataEffect(
   client: ImapFlow,
   fromUid: number,
   folder: string,
-): Effect.Effect<Array<{ uid: number; internalDate?: Date }>, ImapOperationError> {
+): Effect.Effect<
+  { metas: Array<{ uid: number; internalDate?: Date }>; complete: boolean },
+  ImapOperationError
+> {
   // ImapFlow exposes message ranges only as an async iterable. This adapter is
   // the single Promise boundary for consuming that library protocol.
-  return Effect.tryPromise({
-    try: async () => {
-      const metas: Array<{ uid: number; internalDate?: Date }> = [];
-      for await (const message of client.fetch(
-        `${fromUid}:*`,
-        { internalDate: true },
-        { uid: true },
-      )) {
-        if (message.uid >= fromUid) {
-          metas.push({ uid: message.uid, internalDate: toDate(message.internalDate) });
-        }
-      }
-      return metas.sort((a, b) => a.uid - b.uid);
+  return Effect.acquireUseRelease(
+    Effect.sync(() =>
+      client
+        .fetch(`${fromUid}:*`, { internalDate: true }, { uid: true })
+        [Symbol.asyncIterator](),
+    ),
+    (iterator) =>
+      Effect.tryPromise({
+        try: async () => {
+          const metas: Array<{ uid: number; internalDate?: Date }> = [];
+          let complete = true;
+          for (;;) {
+            const next = await iterator.next();
+            if (next.done) break;
+            const message = next.value;
+            if (message.uid >= fromUid) {
+              metas.push({
+                uid: message.uid,
+                internalDate: toDate(message.internalDate),
+              });
+            }
+            if (metas.length > MAX_EMAILS_PER_PASS) {
+              complete = false;
+              break;
+            }
+          }
+          metas.sort((a, b) => a.uid - b.uid);
+          return { metas, complete };
+        },
+        catch: (cause) =>
+          new ImapOperationError({ operation: `scan ${folder}`, cause }),
+      }),
+    (iterator) => {
+      const close = iterator.return?.();
+      return close ? Effect.tryPromise(() => close).pipe(Effect.ignore) : Effect.void;
     },
-    catch: (cause) => new ImapOperationError({ operation: `scan ${folder}`, cause }),
-  });
+  );
 }
 
 /** imapflow types several results as `T | false`; normalize to undefined. */

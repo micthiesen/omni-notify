@@ -46,35 +46,36 @@ export default class EmailWatchdogTask extends ScheduledTask {
   }
 
   public run(): Promise<void> {
-    return runPromise(this.runEffect);
+    return runPromise(this.runEffect());
   }
 
-  private readonly runEffect = Effect.gen({ self: this }, function* () {
-    const lastDispatchedAt = yield* getLastDispatchedAtEffect;
-    const now = yield* Clock.currentTimeMillis;
+  public readonly runEffect = () =>
+    Effect.gen({ self: this }, function* () {
+      const lastDispatchedAt = yield* getLastDispatchedAtEffect;
+      const now = yield* Clock.currentTimeMillis;
 
-    if (shouldWarn(lastDispatchedAt, this.bootedAt, now)) {
-      const since =
-        lastDispatchedAt !== undefined
-          ? new Date(lastDispatchedAt).toISOString()
-          : `boot at ${new Date(this.bootedAt).toISOString()}`;
-      this.lastRunSummary = `Stuck: no dispatch since ${since}`;
-      this.logger.warn(
-        `No email has been dispatched since ${since} — the JMAP pipeline may be stuck`,
-      );
-      return;
-    }
+      if (shouldWarn(lastDispatchedAt, this.bootedAt, now)) {
+        const since =
+          lastDispatchedAt !== undefined
+            ? new Date(lastDispatchedAt).toISOString()
+            : `boot at ${new Date(this.bootedAt).toISOString()}`;
+        this.lastRunSummary = `Stuck: no dispatch since ${since}`;
+        this.logger.warn(
+          `No email has been dispatched since ${since} — the JMAP pipeline may be stuck`,
+        );
+        return;
+      }
 
-    if (lastDispatchedAt === undefined) {
-      this.lastRunSummary = "No dispatch since boot yet (within threshold)";
+      if (lastDispatchedAt === undefined) {
+        this.lastRunSummary = "No dispatch since boot yet (within threshold)";
+        this.logger.info(
+          "No email dispatched since boot yet (still within watchdog threshold)",
+        );
+        return;
+      }
+      this.lastRunSummary = `Healthy: last dispatch ${new Date(lastDispatchedAt).toISOString()}`;
       this.logger.info(
-        "No email dispatched since boot yet (still within watchdog threshold)",
+        `Email pipeline healthy: last dispatch at ${new Date(lastDispatchedAt).toISOString()}`,
       );
-      return;
-    }
-    this.lastRunSummary = `Healthy: last dispatch ${new Date(lastDispatchedAt).toISOString()}`;
-    this.logger.info(
-      `Email pipeline healthy: last dispatch at ${new Date(lastDispatchedAt).toISOString()}`,
-    );
-  });
+    });
 }

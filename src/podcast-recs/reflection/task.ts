@@ -54,7 +54,7 @@ export class PodcastTasteReflectionTask extends ScheduledTask {
     await Effect.runPromise(this.runEffect());
   }
 
-  private runEffect(): Effect.Effect<void, unknown> {
+  public runEffect(): Effect.Effect<void, unknown> {
     return Effect.gen({ self: this }, function* () {
       const account = yield* resolvePodcastAccountEffect(this.logger);
       if (!account) {

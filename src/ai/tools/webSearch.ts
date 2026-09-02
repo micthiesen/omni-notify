@@ -103,13 +103,6 @@ export function searchWebEffect(
   });
 }
 
-/** Compatibility adapter for consumers not yet inside an Effect workflow. */
-export function searchWeb(
-  options: Parameters<typeof searchWebEffect>[0],
-): Promise<Effect.Success<ReturnType<typeof searchWebEffect>>> {
-  return runPromise(searchWebEffect(options));
-}
-
 export const webSearch = tool({
   description:
     "Search the web for current information. Use topic 'news' for current events and breaking news.",

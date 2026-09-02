@@ -12,6 +12,7 @@ import {
   Queue,
   Schedule,
   Schema,
+  Semaphore,
   Stream,
 } from "effect";
 import { getAllBriefingHistories } from "./briefing-agent/persistence.js";
@@ -790,22 +791,34 @@ export function startServer(
   }
   const clients = new Set<SseClient>();
   let lastBroadcast: string | undefined;
+  let lastBroadcastAt = Number.NEGATIVE_INFINITY;
   let snapshotEventId = 0;
-  const broadcastEffect = buildSnapshot().pipe(
-    Effect.map(JSON.stringify),
-    Effect.tap((payload) =>
-      Effect.sync(() => {
-        if (payload === lastBroadcast) return;
-        lastBroadcast = payload;
-        const frame = {
-          event: "snapshot",
-          data: payload,
-          id: String(snapshotEventId++),
-        };
-        for (const client of clients) Queue.offerUnsafe(client.frames, frame);
+  const broadcastSemaphore = Semaphore.makeUnsafe(1);
+  const broadcastEffect = broadcastSemaphore.withPermits(1)(
+    Clock.currentTimeMillis.pipe(
+      Effect.flatMap((now) => {
+        // Every client observes the same task-run event. Coalesce those
+        // subscriptions into one snapshot build per debounce window.
+        if (now - lastBroadcastAt < SSE_DEBOUNCE_MS) return Effect.void;
+        lastBroadcastAt = now;
+        return buildSnapshot().pipe(
+          Effect.map(JSON.stringify),
+          Effect.tap((payload) =>
+            Effect.sync(() => {
+              if (payload === lastBroadcast) return;
+              lastBroadcast = payload;
+              const frame = {
+                event: "snapshot",
+                data: payload,
+                id: String(snapshotEventId++),
+              };
+              for (const client of clients) Queue.offerUnsafe(client.frames, frame);
+            }),
+          ),
+          Effect.asVoid,
+        );
       }),
     ),
-    Effect.asVoid,
   );
 
   app.get("/api/events", (c) => {
@@ -860,12 +873,15 @@ export function startServer(
               ),
             ).pipe(Effect.forkScoped);
 
-            const initialSnapshot = yield* buildSnapshot();
-            Queue.offerUnsafe(frames, {
-              event: "snapshot",
-              data: JSON.stringify(initialSnapshot),
-              id: String(snapshotEventId++),
-            });
+            if (lastBroadcast) {
+              Queue.offerUnsafe(frames, {
+                event: "snapshot",
+                data: lastBroadcast,
+                id: String(snapshotEventId++),
+              });
+            } else {
+              yield* broadcastEffect;
+            }
             yield* awaitSseWriter(
               writer,
               Effect.callback<void>((resume) => {

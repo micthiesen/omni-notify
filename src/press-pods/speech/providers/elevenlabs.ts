@@ -1,7 +1,8 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import got, { HTTPError } from "got";
+import got from "got";
 import { Duration, Effect, Schedule } from "effect";
 import { readBufferResponseWithLimit } from "../../../effect/publicHttp.js";
+import { isTransientHttpError } from "../../../effect/errors.js";
 import config from "../../../utils/config.js";
 import { PressPodsError, tryPromise } from "../../effect.js";
 import { getVoice, type Voice } from "../voices.js";
@@ -65,11 +66,7 @@ export class ElevenLabsProvider implements TtsProvider {
       Effect.retry({
         times: 2,
         schedule: Schedule.exponential(Duration.seconds(2)),
-        while: (error) => {
-          const cause = error.cause;
-          const status = cause instanceof HTTPError ? cause.response.statusCode : 0;
-          return status === 429 || status >= 500;
-        },
+        while: isTransientHttpError,
       }),
     );
   }

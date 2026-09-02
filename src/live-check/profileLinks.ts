@@ -1,6 +1,6 @@
 import type { Effect as EffectType } from "effect/Effect";
 import { decode } from "html-entities";
-import { Clock, Data, Effect } from "effect";
+import { Clock, Data, Duration, Effect } from "effect";
 import { parseHTML } from "linkedom";
 import type { PersistenceError } from "../effect/errors.js";
 import {
@@ -268,11 +268,17 @@ export function fetchProfileLinksEffect(
         // Refuse redirects so a platform-controlled response cannot turn this
         // bounded crawler into a fetch of an unrelated host.
         redirect: "error",
-        signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+        signal,
       }),
     catch: (cause) =>
       new ProfileLinkError({ operation: `fetch profile page ${url}`, cause }),
   }).pipe(
+    Effect.timeout(Duration.millis(timeoutMs)),
+    Effect.mapError((cause) =>
+      cause instanceof ProfileLinkError
+        ? cause
+        : new ProfileLinkError({ operation: `fetch profile page ${url}`, cause }),
+    ),
     Effect.flatMap((response) => readBoundedText(response, maxBytes)),
     Effect.map(extractProfileLinks),
   );

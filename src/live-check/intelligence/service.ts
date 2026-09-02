@@ -2,7 +2,7 @@ import type { Effect as EffectType } from "effect/Effect";
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import { Data, Effect, Semaphore } from "effect";
+import { Clock, Data, Effect, Fiber, Semaphore } from "effect";
 import { recordCostEventSafely } from "../../costs/persistence.js";
 import config from "../../utils/config.js";
 import type { StreamerStatusLive } from "../persistence.js";
@@ -172,6 +172,7 @@ export class EffectWorkQueueClosedError extends Data.TaggedError(
 
 export class EffectWorkQueue {
   private readonly semaphore: Semaphore.Semaphore;
+  private readonly fibers = new Set<Fiber.Fiber<unknown, unknown>>();
   private readonly drainWaiters = new Set<(effect: EffectType<void>) => void>();
   private accepting = true;
   private outstanding = 0;
@@ -237,7 +238,9 @@ export class EffectWorkQueue {
     return Effect.uninterruptibleMask(() =>
       Effect.gen({ self: this }, function* () {
         const admitted = yield* this.admit(job);
-        yield* Effect.forkDetach(Effect.interruptible(admitted));
+        const fiber = yield* Effect.forkDetach(Effect.interruptible(admitted));
+        this.fibers.add(fiber);
+        fiber.addObserver(() => this.fibers.delete(fiber));
       }),
     ).pipe(Effect.catchTag("EffectWorkQueueClosedError", () => Effect.void));
   }
@@ -257,9 +260,17 @@ export class EffectWorkQueue {
   }
 
   public close(): EffectType<void> {
-    return Effect.sync(() => {
+    return Effect.gen({ self: this }, function* () {
       this.accepting = false;
-    }).pipe(Effect.andThen(this.onIdle()));
+      const drained = yield* this.onIdle().pipe(
+        Effect.timeout("30 seconds"),
+        Effect.result,
+      );
+      if (drained._tag === "Failure") {
+        yield* Fiber.interruptAll([...this.fibers]);
+        yield* this.onIdle();
+      }
+    });
   }
 }
 
@@ -362,7 +373,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
 
   public observeLive(observation: LiveObservation): EffectType<void> {
     return Effect.gen({ self: this }, function* () {
-      const now = Date.now();
+      const now = yield* Clock.currentTimeMillis;
       this.active.set(observation.streamer.id, observation);
       const previous = getLivestreamIntelligence(observation.streamer.id);
       const sessionStartedAt = epoch(observation.status.startedAt);
@@ -505,10 +516,10 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   }
 
   public observeOffline(streamerId: string): EffectType<void> {
-    return Effect.sync(() => {
+    return Effect.gen({ self: this }, function* () {
       const current = getLivestreamIntelligence(streamerId);
       const diagnostics = getLivestreamDiagnostics(streamerId);
-      const finishedAt = Date.now();
+      const finishedAt = yield* Clock.currentTimeMillis;
       if (this.active.has(streamerId) && current) {
         this.recordEvent({
           streamerId,
@@ -545,7 +556,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
 
   public afterTick(): EffectType<void> {
     return Effect.gen({ self: this }, function* () {
-      const now = Date.now();
+      const now = yield* Clock.currentTimeMillis;
       const targets = selectVoiceTargets(
         [...this.active.values()].filter((observation) =>
           this.isVoiceTarget(observation),
@@ -631,65 +642,68 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   }
 
   private scheduleVoiceSample(observation: LiveObservation): EffectType<void> {
-    const id = observation.streamer.id;
-    const sessionStartedAt = epoch(observation.status.startedAt);
-    const startedAt = Date.now();
-    this.pendingVoice.set(id, sessionStartedAt);
-    this.lastVoiceSample.set(id, startedAt);
-    this.updateStage(id, sessionStartedAt, "voice", {
-      status: "running",
-      eligible: true,
-      startedAt,
-      detail: "Capturing a bounded voice sample",
+    return Effect.gen({ self: this }, function* () {
+      const id = observation.streamer.id;
+      const sessionStartedAt = epoch(observation.status.startedAt);
+      const startedAt = yield* Clock.currentTimeMillis;
+      this.pendingVoice.set(id, sessionStartedAt);
+      this.lastVoiceSample.set(id, startedAt);
+      this.updateStage(id, sessionStartedAt, "voice", {
+        status: "running",
+        eligible: true,
+        startedAt,
+        detail: "Capturing a bounded voice sample",
+      });
+      const job = Effect.gen({ self: this }, function* () {
+        const audio = yield* this.captureEffect(
+          streamUrl(observation.status),
+          config.LIVESTREAM_VOICE_SAMPLE_SECONDS,
+        );
+        yield* this.speechQueue.run(
+          Effect.gen({ self: this }, function* () {
+            const match = yield* this.speech.detectDestinyEffect(audio.samples);
+            yield* this.handleVoiceMatch(observation, audio.samples, match, startedAt);
+          }),
+        );
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.gen({ self: this }, function* () {
+            const finishedAt = yield* Clock.currentTimeMillis;
+            const detail = failureMessage(error).slice(0, 500);
+            this.updateStage(id, sessionStartedAt, "voice", {
+              status: "error",
+              eligible: true,
+              startedAt,
+              finishedAt,
+              nextAt:
+                startedAt + config.LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS * 1000,
+              durationMs: finishedAt - startedAt,
+              detail,
+            });
+            this.recordEvent({
+              streamerId: id,
+              sessionStartedAt,
+              kind: "voice",
+              status: "error",
+              title: "Voice scan failed",
+              detail,
+              durationMs: finishedAt - startedAt,
+            });
+            this.logger.warn(
+              `Voice sampling failed for ${observation.streamer.displayName}: ${detail}`,
+            );
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (this.pendingVoice.get(id) === sessionStartedAt) {
+              this.pendingVoice.delete(id);
+            }
+          }),
+        ),
+      );
+      return yield* this.captureQueue.fork(job);
     });
-    const job = Effect.gen({ self: this }, function* () {
-      const audio = yield* this.captureEffect(
-        streamUrl(observation.status),
-        config.LIVESTREAM_VOICE_SAMPLE_SECONDS,
-      );
-      yield* this.speechQueue.run(
-        Effect.gen({ self: this }, function* () {
-          const match = yield* this.speech.detectDestinyEffect(audio.samples);
-          yield* this.handleVoiceMatch(observation, audio.samples, match, startedAt);
-        }),
-      );
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.sync(() => {
-          const finishedAt = Date.now();
-          const detail = failureMessage(error).slice(0, 500);
-          this.updateStage(id, sessionStartedAt, "voice", {
-            status: "error",
-            eligible: true,
-            startedAt,
-            finishedAt,
-            nextAt: startedAt + config.LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS * 1000,
-            durationMs: finishedAt - startedAt,
-            detail,
-          });
-          this.recordEvent({
-            streamerId: id,
-            sessionStartedAt,
-            kind: "voice",
-            status: "error",
-            title: "Voice scan failed",
-            detail,
-            durationMs: finishedAt - startedAt,
-          });
-          this.logger.warn(
-            `Voice sampling failed for ${observation.streamer.displayName}: ${detail}`,
-          );
-        }),
-      ),
-      Effect.ensuring(
-        Effect.sync(() => {
-          if (this.pendingVoice.get(id) === sessionStartedAt) {
-            this.pendingVoice.delete(id);
-          }
-        }),
-      ),
-    );
-    return this.captureQueue.fork(job);
   }
 
   private handleVoiceMatch(
@@ -700,7 +714,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   ) {
     return Effect.gen({ self: this }, function* () {
       const id = observation.streamer.id;
-      const now = Date.now();
+      const now = yield* Clock.currentTimeMillis;
       const current = this.currentSession(observation);
       if (!current) return;
       const evidence = this.voiceEvidence.observe(
@@ -843,15 +857,16 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       }
       const latest = this.currentSession(observation);
       if (!latest) return;
+      const confirmedAt = yield* Clock.currentTimeMillis;
       saveLivestreamIntelligence({
         ...latest,
         destinyPresence: {
           state: "confirmed",
           confidence: Math.min(match.confidence, assessment.confidence),
-          detectedAt: Date.now(),
+          detectedAt: confirmedAt,
           reason: assessment.summary,
         },
-        updatedAt: Date.now(),
+        updatedAt: confirmedAt,
       });
       this.recordEvent({
         streamerId: id,
@@ -877,157 +892,159 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
   }
 
   private scheduleSummary(observation: LiveObservation): EffectType<void> {
-    const id = observation.streamer.id;
-    const sessionStartedAt = epoch(observation.status.startedAt);
-    const startedAt = Date.now();
-    const costBefore = livestreamSpendCents(startedAt);
-    this.pendingSummary.set(id, sessionStartedAt);
-    this.lastSummary.set(id, startedAt);
-    this.updateStage(id, sessionStartedAt, "summary", {
-      status: "running",
-      eligible: true,
-      startedAt,
-      detail: "Capturing and transcribing the current window",
-    });
-    const job = Effect.gen({ self: this }, function* () {
-      const audio = yield* this.captureEffect(
-        streamUrl(observation.status),
-        config.LIVESTREAM_SUMMARY_SAMPLE_SECONDS,
-      );
-      const transcript = yield* this.speechQueue.run(
-        this.transcribeEffect(audio.samples),
-      );
-      this.recordLocalTranscription("rolling-summary", audio.durationSeconds);
-      if (!transcript || transcript.length < 30) {
-        const finishedAt = Date.now();
-        this.updateStage(id, sessionStartedAt, "summary", {
-          status: "skipped",
-          eligible: true,
-          startedAt,
-          finishedAt,
-          nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
-          durationMs: finishedAt - startedAt,
-          detail: "Not enough speech in the captured window",
-        });
-        this.recordEvent({
-          streamerId: id,
-          sessionStartedAt,
-          kind: "summary",
-          status: "info",
-          title: "Summary window skipped",
-          detail: "Not enough transcribed speech",
-          durationMs: finishedAt - startedAt,
-        });
-        return;
-      }
-      const current = this.currentSession(observation);
-      if (!current) return;
-      const assessment = yield* this.llmQueue.run(
-        this.assessTranscriptEffect({
-          displayName: observation.streamer.displayName,
-          title: observation.status.primaryTitle,
-          transcript,
-          previousSummary: current.summary?.text,
-          previousTopic: current.summary?.topic,
-          viewerAnomaly: current.trend?.reason,
-          testingDestinyPresence: false,
-        }),
-      );
-      if (!assessment) {
-        const finishedAt = Date.now();
-        this.updateStage(id, sessionStartedAt, "summary", {
-          status: "skipped",
-          eligible: true,
-          startedAt,
-          finishedAt,
-          nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
-          durationMs: finishedAt - startedAt,
-          detail: "Monthly budget could not cover transcript assessment",
-        });
-        this.recordEvent({
-          streamerId: id,
-          sessionStartedAt,
-          kind: "summary",
-          status: "warning",
-          title: "Summary assessment skipped",
-          detail: "Monthly intelligence budget gate",
-        });
-        return;
-      }
-      yield* this.saveAssessment(
-        observation,
-        transcript,
-        audio.durationSeconds,
-        assessment,
-      );
-      const finishedAt = Date.now();
-      const costCents = Math.max(0, livestreamSpendCents(finishedAt) - costBefore);
+    return Effect.gen({ self: this }, function* () {
+      const id = observation.streamer.id;
+      const sessionStartedAt = epoch(observation.status.startedAt);
+      const startedAt = yield* Clock.currentTimeMillis;
+      const costBefore = livestreamSpendCents(startedAt);
+      this.pendingSummary.set(id, sessionStartedAt);
+      this.lastSummary.set(id, startedAt);
       this.updateStage(id, sessionStartedAt, "summary", {
-        status: "success",
+        status: "running",
         eligible: true,
         startedAt,
-        finishedAt,
-        nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
-        durationMs: finishedAt - startedAt,
-        detail: assessment.topic,
-        metrics: {
-          confidence: assessment.confidence,
-          audioSeconds: Math.round(audio.durationSeconds),
-          transcriptCharacters: transcript.length,
-          costCents,
-        },
+        detail: "Capturing and transcribing the current window",
       });
-      this.recordEvent({
-        streamerId: id,
-        sessionStartedAt,
-        kind: "summary",
-        status: "success",
-        title: "Now summary updated",
-        detail: assessment.topic,
-        durationMs: finishedAt - startedAt,
-        costCents,
-        metrics: {
-          confidence: assessment.confidence,
-          audioSeconds: Math.round(audio.durationSeconds),
-        },
-      });
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.sync(() => {
-          const finishedAt = Date.now();
-          const detail = failureMessage(error).slice(0, 500);
+      const job = Effect.gen({ self: this }, function* () {
+        const audio = yield* this.captureEffect(
+          streamUrl(observation.status),
+          config.LIVESTREAM_SUMMARY_SAMPLE_SECONDS,
+        );
+        const transcript = yield* this.speechQueue.run(
+          this.transcribeEffect(audio.samples),
+        );
+        this.recordLocalTranscription("rolling-summary", audio.durationSeconds);
+        if (!transcript || transcript.length < 30) {
+          const finishedAt = yield* Clock.currentTimeMillis;
           this.updateStage(id, sessionStartedAt, "summary", {
-            status: "error",
+            status: "skipped",
             eligible: true,
             startedAt,
             finishedAt,
             nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
             durationMs: finishedAt - startedAt,
-            detail,
+            detail: "Not enough speech in the captured window",
           });
           this.recordEvent({
             streamerId: id,
             sessionStartedAt,
             kind: "summary",
-            status: "error",
-            title: "Rolling summary failed",
-            detail,
+            status: "info",
+            title: "Summary window skipped",
+            detail: "Not enough transcribed speech",
             durationMs: finishedAt - startedAt,
           });
-          this.logger.warn(
-            `Rolling summary failed for ${observation.streamer.displayName}: ${detail}`,
-          );
-        }),
-      ),
-      Effect.ensuring(
-        Effect.sync(() => {
-          if (this.pendingSummary.get(id) === sessionStartedAt) {
-            this.pendingSummary.delete(id);
-          }
-        }),
-      ),
-    );
-    return this.captureQueue.fork(job);
+          return;
+        }
+        const current = this.currentSession(observation);
+        if (!current) return;
+        const assessment = yield* this.llmQueue.run(
+          this.assessTranscriptEffect({
+            displayName: observation.streamer.displayName,
+            title: observation.status.primaryTitle,
+            transcript,
+            previousSummary: current.summary?.text,
+            previousTopic: current.summary?.topic,
+            viewerAnomaly: current.trend?.reason,
+            testingDestinyPresence: false,
+          }),
+        );
+        if (!assessment) {
+          const finishedAt = yield* Clock.currentTimeMillis;
+          this.updateStage(id, sessionStartedAt, "summary", {
+            status: "skipped",
+            eligible: true,
+            startedAt,
+            finishedAt,
+            nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
+            durationMs: finishedAt - startedAt,
+            detail: "Monthly budget could not cover transcript assessment",
+          });
+          this.recordEvent({
+            streamerId: id,
+            sessionStartedAt,
+            kind: "summary",
+            status: "warning",
+            title: "Summary assessment skipped",
+            detail: "Monthly intelligence budget gate",
+          });
+          return;
+        }
+        yield* this.saveAssessment(
+          observation,
+          transcript,
+          audio.durationSeconds,
+          assessment,
+        );
+        const finishedAt = yield* Clock.currentTimeMillis;
+        const costCents = Math.max(0, livestreamSpendCents(finishedAt) - costBefore);
+        this.updateStage(id, sessionStartedAt, "summary", {
+          status: "success",
+          eligible: true,
+          startedAt,
+          finishedAt,
+          nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
+          durationMs: finishedAt - startedAt,
+          detail: assessment.topic,
+          metrics: {
+            confidence: assessment.confidence,
+            audioSeconds: Math.round(audio.durationSeconds),
+            transcriptCharacters: transcript.length,
+            costCents,
+          },
+        });
+        this.recordEvent({
+          streamerId: id,
+          sessionStartedAt,
+          kind: "summary",
+          status: "success",
+          title: "Now summary updated",
+          detail: assessment.topic,
+          durationMs: finishedAt - startedAt,
+          costCents,
+          metrics: {
+            confidence: assessment.confidence,
+            audioSeconds: Math.round(audio.durationSeconds),
+          },
+        });
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.gen({ self: this }, function* () {
+            const finishedAt = yield* Clock.currentTimeMillis;
+            const detail = failureMessage(error).slice(0, 500);
+            this.updateStage(id, sessionStartedAt, "summary", {
+              status: "error",
+              eligible: true,
+              startedAt,
+              finishedAt,
+              nextAt: startedAt + config.LIVESTREAM_SUMMARY_INTERVAL_SECONDS * 1000,
+              durationMs: finishedAt - startedAt,
+              detail,
+            });
+            this.recordEvent({
+              streamerId: id,
+              sessionStartedAt,
+              kind: "summary",
+              status: "error",
+              title: "Rolling summary failed",
+              detail,
+              durationMs: finishedAt - startedAt,
+            });
+            this.logger.warn(
+              `Rolling summary failed for ${observation.streamer.displayName}: ${detail}`,
+            );
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (this.pendingSummary.get(id) === sessionStartedAt) {
+              this.pendingSummary.delete(id);
+            }
+          }),
+        ),
+      );
+      return yield* this.captureQueue.fork(job);
+    });
   }
 
   private saveAssessment(
@@ -1039,7 +1056,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     return Effect.gen({ self: this }, function* () {
       const current = this.currentSession(observation);
       if (!current) return;
-      const now = Date.now();
+      const now = yield* Clock.currentTimeMillis;
       const summary: RollingSummary = {
         text: assessment.summary,
         topic: assessment.topic,
@@ -1123,6 +1140,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     return Effect.gen({ self: this }, function* () {
       const current = this.currentSession(input.observation);
       if (!current) return;
+      const now = yield* Clock.currentTimeMillis;
       const markSkipped = (detail: string) =>
         this.updateStage(
           input.observation.streamer.id,
@@ -1131,7 +1149,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           {
             status: "skipped",
             eligible: true,
-            finishedAt: Date.now(),
+            finishedAt: now,
             detail,
             metrics: { type: input.type, confidence: input.confidence },
           },
@@ -1145,7 +1163,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       }
       const key = `${input.observation.streamer.id}:${current.sessionStartedAt}:${input.type}`;
       const previous = this.alertTimes.get(key) ?? 0;
-      if (Date.now() - previous < ALERT_COOLDOWN_MS) {
+      if (now - previous < ALERT_COOLDOWN_MS) {
         markSkipped("A matching alert was already sent within the 30-minute cooldown");
         return;
       }
@@ -1167,10 +1185,10 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         message: input.message,
         reason: input.reason,
         confidence: input.confidence,
-        createdAt: Date.now(),
+        createdAt: now,
       };
       this.alertTimes.set(key, alert.createdAt);
-      const alertStartedAt = Date.now();
+      const alertStartedAt = now;
       this.updateStage(
         input.observation.streamer.id,
         current.sessionStartedAt,
@@ -1198,36 +1216,39 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       }).pipe(
         Effect.catch((error) => {
           if (this.alertTimes.get(key) === alert.createdAt) this.alertTimes.delete(key);
-          const finishedAt = Date.now();
-          const detail = (
-            error.cause instanceof Error ? error.cause.message : String(error.cause)
-          ).slice(0, 500);
-          this.updateStage(
-            input.observation.streamer.id,
-            current.sessionStartedAt,
-            "alert",
-            {
+          return Effect.gen({ self: this }, function* () {
+            const finishedAt = yield* Clock.currentTimeMillis;
+            const detail = (
+              error.cause instanceof Error ? error.cause.message : String(error.cause)
+            ).slice(0, 500);
+            this.updateStage(
+              input.observation.streamer.id,
+              current.sessionStartedAt,
+              "alert",
+              {
+                status: "error",
+                eligible: true,
+                startedAt: alertStartedAt,
+                finishedAt,
+                durationMs: finishedAt - alertStartedAt,
+                detail,
+              },
+            );
+            this.recordEvent({
+              streamerId: input.observation.streamer.id,
+              sessionStartedAt: current.sessionStartedAt,
+              kind: "alert",
               status: "error",
-              eligible: true,
-              startedAt: alertStartedAt,
-              finishedAt,
-              durationMs: finishedAt - alertStartedAt,
+              title: "Alert delivery failed",
               detail,
-            },
-          );
-          this.recordEvent({
-            streamerId: input.observation.streamer.id,
-            sessionStartedAt: current.sessionStartedAt,
-            kind: "alert",
-            status: "error",
-            title: "Alert delivery failed",
-            detail,
+            });
+            return yield* Effect.fail(error);
           });
-          return Effect.fail(error);
         }),
       );
       const latest = this.currentSession(input.observation);
       if (!latest) return;
+      const finishedAt = yield* Clock.currentTimeMillis;
       saveLivestreamIntelligence({
         ...latest,
         latestAlert: alert,
@@ -1235,9 +1256,8 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
           ...latest.alertedAtByType,
           [alert.type]: alert.createdAt,
         },
-        updatedAt: Date.now(),
+        updatedAt: finishedAt,
       });
-      const finishedAt = Date.now();
       this.updateStage(
         input.observation.streamer.id,
         latest.sessionStartedAt,

@@ -1,7 +1,7 @@
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getLastRun,
@@ -53,6 +53,28 @@ class FailingManualTask extends ManualInputTask {
   public override async runManual(input: unknown): Promise<void> {
     this.inputs.push(input);
     throw new Error("workspace run failed");
+  }
+}
+
+class NativeEffectTask extends FakeTask {
+  public started = false;
+  public finalized = false;
+
+  public override run(): Promise<void> {
+    throw new Error("Promise fallback must not run");
+  }
+
+  public runEffect(): Effect.Effect<void> {
+    return Effect.sync(() => {
+      this.started = true;
+    }).pipe(
+      Effect.andThen(Effect.never),
+      Effect.ensuring(
+        Effect.sync(() => {
+          this.finalized = true;
+        }),
+      ),
+    );
   }
 }
 
@@ -182,6 +204,19 @@ describe("TaskRegistry missed-run recovery", () => {
     await expect(
       Effect.runPromise(registry.runNowAndWaitEffect(task.name, { source: "email" })),
     ).rejects.toThrow();
+    expect(getLastRun(task.name)).toMatchObject({ status: "error" });
+  });
+
+  it("interrupts the native task Effect and records the stopped run", async () => {
+    const task = new NativeEffectTask("Native", "0 0 5 * * *");
+    const registry = new TaskRegistry(logger);
+    registry.track(task);
+    const fiber = Effect.runFork(registry.runNowAndWaitEffect(task.name));
+
+    await vi.waitFor(() => expect(task.started).toBe(true));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+
+    expect(task.finalized).toBe(true);
     expect(getLastRun(task.name)).toMatchObject({ status: "error" });
   });
 });

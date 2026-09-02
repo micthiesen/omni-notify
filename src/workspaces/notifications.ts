@@ -113,7 +113,7 @@ export class WorkspaceNotificationTask extends ScheduledTask {
     this.logger = parentLogger.extend("WorkspaceNotificationTask");
   }
 
-  private runEffect() {
+  public runEffect() {
     return Effect.gen({ self: this }, function* () {
       const due = yield* workspaceRepositoryEffect(
         "list due workspace notifications",

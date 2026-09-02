@@ -272,37 +272,41 @@ describe("Omni MCP streamable HTTP server", () => {
   });
 
   it("exposes guarded printer status and physical printing through a mocked service", async () => {
-    const status = vi.fn(async () => ({
-      configured: true as const,
-      name: "Brother HL-L2370DW series",
-      uri: "ipp://printer.test/ipp/print",
-      state: "idle" as const,
-      stateReasons: [],
-      ready: true,
-      acceptingJobs: true,
-      queuedJobCount: 0,
-      tonerPercent: 20,
-      monochromeOnly: true as const,
-      defaultSides: "two-sided-long-edge" as const,
-      supportedFormats: ["application/octet-stream"],
-      supportedMedia: ["na_letter_8.5x11in"],
-    }));
-    const printPdf = vi.fn(async () => ({
-      accepted: true as const,
-      completed: true,
-      jobId: 42,
-      jobUri: "ipp://printer.test/jobs/42",
-      jobState: "completed" as const,
-      jobName: "Test document",
-      pages: 2,
-      copies: 1,
-      paper: "letter" as const,
-      sides: "two-sided-long-edge" as const,
-      impressionsCompleted: 2,
-      message: "The printer completed the job successfully",
-    }));
+    const statusEffect = vi.fn(() =>
+      Effect.succeed({
+        configured: true as const,
+        name: "Brother HL-L2370DW series",
+        uri: "ipp://printer.test/ipp/print",
+        state: "idle" as const,
+        stateReasons: [],
+        ready: true,
+        acceptingJobs: true,
+        queuedJobCount: 0,
+        tonerPercent: 20,
+        monochromeOnly: true as const,
+        defaultSides: "two-sided-long-edge" as const,
+        supportedFormats: ["application/octet-stream"],
+        supportedMedia: ["na_letter_8.5x11in"],
+      }),
+    );
+    const printPdfEffect = vi.fn(() =>
+      Effect.succeed({
+        accepted: true as const,
+        completed: true,
+        jobId: 42,
+        jobUri: "ipp://printer.test/jobs/42",
+        jobState: "completed" as const,
+        jobName: "Test document",
+        pages: 2,
+        copies: 1,
+        paper: "letter" as const,
+        sides: "two-sided-long-edge" as const,
+        impressionsCompleted: 2,
+        message: "The printer completed the job successfully",
+      }),
+    );
     const handler = createOmniMcpHandler(
-      runtime({ printer: { status, printPdf } as PrinterService }),
+      runtime({ printer: { statusEffect, printPdfEffect } as PrinterService }),
       TEST_TOKEN,
     );
     handlers.push(handler);
@@ -328,7 +332,7 @@ describe("Omni MCP streamable HTTP server", () => {
     });
     expect(print.isError).not.toBe(true);
     expect(print.structuredContent).toMatchObject({ accepted: true, jobId: 42 });
-    expect(printPdf).toHaveBeenCalledWith({
+    expect(printPdfEffect).toHaveBeenCalledWith({
       url: "https://example.com/document.pdf",
       jobName: "Test document",
       copies: 1,
@@ -351,7 +355,7 @@ describe("Omni MCP streamable HTTP server", () => {
       arguments: { url: "file:///tmp/document.pdf", copies: 99 },
     });
     expect(malformed.isError).toBe(true);
-    expect(printPdf).toHaveBeenCalledTimes(1);
+    expect(printPdfEffect).toHaveBeenCalledTimes(1);
   });
 
   it("reports printer tools as unavailable when printing is not configured", async () => {

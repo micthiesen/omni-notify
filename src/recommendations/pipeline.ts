@@ -1,7 +1,7 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import config from "../utils/config.js";
 import { toDateStamp } from "../utils/dates.js";
 import { feedbackUrl } from "../utils/feedbackUrl.js";
@@ -199,6 +199,7 @@ export function runRecommendationPipelineEffect(
         `${watchlistUnresolved} watchlist item(s) unresolved; skipping absence-based outcome labels`,
       );
     }
+    const outcomeSyncNow = yield* Clock.currentTimeMillis;
     yield* persistenceEffect("sync recommendation outcomes", () =>
       syncOutcomes({
         watchedById,
@@ -206,6 +207,7 @@ export function runRecommendationPipelineEffect(
         inProgressAvailable: true,
         logger,
         logFile,
+        now: outcomeSyncNow,
       }),
     );
     yield* reconcileStalePendingEffect(watchlistIds, watchlistComplete, logger);
@@ -417,9 +419,10 @@ function syncOutcomes(args: {
   inProgressAvailable: boolean;
   logger: Logger;
   logFile?: LogFile;
+  now: number;
 }): void {
   const open = getOpenRecommendations();
-  const now = Date.now();
+  const now = args.now;
   for (const rec of open) {
     const history = args.watchedById.get(rec.canonicalId);
     const deliveredAt = rec.notifiedAt ?? rec.recommendedAt;
@@ -480,11 +483,12 @@ function reconcileStalePendingEffect(
   RecommendationIntegrationError | RecommendationPersistenceError
 > {
   return Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
     const stale = yield* persistenceEffect("read stale recommendations", () =>
       RecommendationEntity.getAll().filter(
         (r) =>
           r.status === RecommendationStatus.Pending &&
-          Date.now() - r.recommendedAt > STALE_PENDING_MS,
+          now - r.recommendedAt > STALE_PENDING_MS,
       ),
     );
     for (const rec of stale) {
@@ -504,7 +508,7 @@ function reconcileStalePendingEffect(
                   status: RecommendationStatus.Notified,
                   notificationState:
                     rec.notificationState === "reserved" ? "unknown" : "sent",
-                  notifiedAt: rec.notificationReservedAt ?? Date.now(),
+                  notifiedAt: rec.notificationReservedAt ?? now,
                 },
               ),
           );
@@ -514,7 +518,7 @@ function reconcileStalePendingEffect(
         logger.warn(
           `Reconciling pending recommendation ${rec.canonicalId}: re-notifying`,
         );
-        const reservedAt = Date.now();
+        const reservedAt = now;
         yield* persistenceEffect("reserve reconciled recommendation notification", () =>
           RecommendationEntity.patch(
             { recommendationId: rec.recommendationId },
@@ -564,7 +568,7 @@ function reconcileStalePendingEffect(
         yield* persistenceEffect("mark stale recommendation failed", () =>
           RecommendationEntity.patch(
             { recommendationId: rec.recommendationId },
-            { status: RecommendationStatus.Failed, resolvedAt: Date.now() },
+            { status: RecommendationStatus.Failed, resolvedAt: now },
           ),
         );
       } else {
@@ -612,6 +616,7 @@ function commitRecommendationEffect(
   RecommendationPersistenceError
 > {
   return Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
     const { candidate } = scored;
     const recommendationId = crypto.randomUUID();
     yield* persistenceEffect("insert pending recommendation", () =>
@@ -646,8 +651,8 @@ function commitRecommendationEffect(
           composite: scored.composite,
           risks: scored.risks,
         },
-        runDate: toDateStamp(),
-        recommendedAt: Date.now(),
+        runDate: toDateStamp(now),
+        recommendedAt: now,
         wasBackup,
       }),
     );
@@ -675,7 +680,7 @@ function commitRecommendationEffect(
           {
             status: RecommendationStatus.Failed,
             watchlistResult: "already_exists",
-            resolvedAt: Date.now(),
+            resolvedAt: now,
             ...(managerSlug ? { managerSlug } : {}),
           },
         ),
@@ -691,7 +696,7 @@ function commitRecommendationEffect(
           {
             status: RecommendationStatus.Failed,
             watchlistResult: "error",
-            resolvedAt: Date.now(),
+            resolvedAt: now,
           },
         ),
       );
@@ -706,7 +711,7 @@ function commitRecommendationEffect(
       ),
     );
 
-    const notificationReservedAt = Date.now();
+    const notificationReservedAt = now;
     yield* persistenceEffect("reserve recommendation notification", () =>
       RecommendationEntity.patch(
         { recommendationId },
