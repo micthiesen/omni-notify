@@ -62,7 +62,7 @@ describe("CastroInboxCleanupTask", () => {
         clientEpisodeId: "22222222-2222-4222-8222-222222222222",
       },
     ]);
-    const task = new CastroInboxCleanupTask(account, logger);
+    const task = new CastroInboxCleanupTask(logger, account);
 
     await task.run();
 
@@ -86,7 +86,7 @@ describe("CastroInboxCleanupTask", () => {
         reason: "Castro timed out",
       }),
     );
-    const task = new CastroInboxCleanupTask(account, logger);
+    const task = new CastroInboxCleanupTask(logger, account);
 
     await expect(task.run()).rejects.toThrow(
       "Castro inbox unavailable: Castro timed out",

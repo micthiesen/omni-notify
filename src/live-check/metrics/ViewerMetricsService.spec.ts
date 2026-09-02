@@ -82,9 +82,13 @@ describe("ViewerMetricsService notifications", () => {
     const base = { streamerId: "muted", displayName: "Muted", urlFields };
 
     // Climb to a new peak, then drop >5% to confirm it.
-    await service.recordViewerCount({ ...base, viewerCount: 100 });
+    await Effect.runPromise(
+      service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
+    );
     expect(notify).not.toHaveBeenCalled();
-    await service.recordViewerCount({ ...base, viewerCount: 90 });
+    await Effect.runPromise(
+      service.recordViewerCountEffect({ ...base, viewerCount: 90 }),
+    );
 
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(
@@ -100,9 +104,11 @@ describe("ViewerMetricsService notifications", () => {
     const service = makeService(undefined);
     const base = { streamerId: "muted", displayName: "Muted", urlFields };
 
-    await service.recordViewerCount({ ...base, viewerCount: 100 });
+    await Effect.runPromise(
+      service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
+    );
     expect(notify).not.toHaveBeenCalled();
-    await service.flushPendingPeaks(base);
+    await Effect.runPromise(service.flushPendingPeaksEffect(base));
 
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(
@@ -114,9 +120,15 @@ describe("ViewerMetricsService notifications", () => {
     const service = makeService(undefined);
     const base = { streamerId: "s", displayName: "S", urlFields };
 
-    await service.recordViewerCount({ ...base, viewerCount: 100 });
-    await service.recordViewerCount({ ...base, viewerCount: 150 });
-    await service.recordViewerCount({ ...base, viewerCount: 149 });
+    await Effect.runPromise(
+      service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
+    );
+    await Effect.runPromise(
+      service.recordViewerCountEffect({ ...base, viewerCount: 150 }),
+    );
+    await Effect.runPromise(
+      service.recordViewerCountEffect({ ...base, viewerCount: 149 }),
+    );
 
     expect(notify).not.toHaveBeenCalled();
   });
@@ -172,9 +184,13 @@ describe("ViewerMetricsService notifications", () => {
       const service = makeService("tok", "all-time-only");
       const base = { streamerId: "bg", displayName: "Background", urlFields };
 
-      await service.recordViewerCount({ ...base, viewerCount: 50 });
+      await Effect.runPromise(
+        service.recordViewerCountEffect({ ...base, viewerCount: 50 }),
+      );
       expect(notify).not.toHaveBeenCalled();
-      await service.recordViewerCount({ ...base, viewerCount: 40 });
+      await Effect.runPromise(
+        service.recordViewerCountEffect({ ...base, viewerCount: 40 }),
+      );
 
       expect(notify).not.toHaveBeenCalled();
       // Suppression is notification-only: tracking still persists the peak in
@@ -188,9 +204,13 @@ describe("ViewerMetricsService notifications", () => {
       const service = makeService("tok", "all-time-only");
       const base = { streamerId: "bg2", displayName: "Background2", urlFields };
 
-      await service.recordViewerCount({ ...base, viewerCount: 100 });
+      await Effect.runPromise(
+        service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
+      );
       expect(notify).not.toHaveBeenCalled();
-      await service.recordViewerCount({ ...base, viewerCount: 90 });
+      await Effect.runPromise(
+        service.recordViewerCountEffect({ ...base, viewerCount: 90 }),
+      );
 
       expect(notify).toHaveBeenCalledTimes(1);
       expect(notify).toHaveBeenCalledWith(
@@ -208,8 +228,10 @@ describe("ViewerMetricsService notifications", () => {
       const service = makeService("tok", "all-time-only");
       const base = { streamerId: "bg3", displayName: "Background3", urlFields };
 
-      await service.recordViewerCount({ ...base, viewerCount: 50 });
-      await service.flushPendingPeaks(base);
+      await Effect.runPromise(
+        service.recordViewerCountEffect({ ...base, viewerCount: 50 }),
+      );
+      await Effect.runPromise(service.flushPendingPeaksEffect(base));
 
       expect(notify).not.toHaveBeenCalled();
     });

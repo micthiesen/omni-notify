@@ -1,10 +1,11 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Data, Effect } from "effect";
+import config from "../../utils/config.js";
 import {
   type InboxEpisode,
   type PodcastAccountClient,
-  resolvePodcastAccount,
+  resolvePodcastAccountEffect,
 } from "../account.js";
 
 export const FREE_PREVIEW_DESCRIPTION_PREFIX = "This is a free preview";
@@ -35,19 +36,18 @@ export class CastroInboxCleanupTask extends ScheduledTask {
 
   public static create(parentLogger: Logger): CastroInboxCleanupTask | null {
     const logger = parentLogger.extend("CastroInboxCleanup");
-    const account = resolvePodcastAccount(logger);
-    if (!account) {
+    if (!config.CASTRO_ACCESS_ID || !config.CASTRO_SECRET_KEY) {
       parentLogger.info(
         "Castro inbox cleanup disabled: missing CASTRO_ACCESS_ID/CASTRO_SECRET_KEY",
       );
       return null;
     }
-    return new CastroInboxCleanupTask(account, logger);
+    return new CastroInboxCleanupTask(logger);
   }
 
   public constructor(
-    private readonly account: PodcastAccountClient,
     private readonly logger: Logger,
+    private readonly accountOverride?: PodcastAccountClient,
   ) {
     super();
   }
@@ -58,7 +58,17 @@ export class CastroInboxCleanupTask extends ScheduledTask {
 
   private runEffect(): Effect.Effect<void, CastroInboxCleanupError> {
     return Effect.gen({ self: this }, function* () {
-      const inbox = yield* this.account.fetchInbox();
+      const account =
+        this.accountOverride ?? (yield* resolvePodcastAccountEffect(this.logger));
+      if (!account) {
+        return yield* Effect.fail(
+          new CastroInboxCleanupError({
+            operation: "create account client",
+            cause: new Error("Castro account is not configured"),
+          }),
+        );
+      }
+      const inbox = yield* account.fetchInbox();
       if (inbox.status === "unavailable") {
         return yield* Effect.fail(
           new CastroInboxCleanupError({
@@ -71,7 +81,7 @@ export class CastroInboxCleanupTask extends ScheduledTask {
       const previews = inbox.value.filter(isFreePreviewEpisode);
       const results = yield* Effect.forEach(previews, (episode) =>
         Effect.gen({ self: this }, function* () {
-          const result = yield* this.account.clearInboxEpisode(episode.clientEpisodeId);
+          const result = yield* account.clearInboxEpisode(episode.clientEpisodeId);
           if (result === "removed") {
             this.logger.info(
               `Cleared free preview from Castro inbox: ${episode.showTitle} - ${episode.episodeTitle}`,

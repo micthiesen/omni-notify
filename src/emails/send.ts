@@ -2,7 +2,6 @@ import type { LogItem } from "@micthiesen/mitools/logging";
 import { Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 
-import { runPromise } from "../effect/interop.js";
 import config from "../utils/config.js";
 import { getTransporter } from "./client.js";
 import { type EmailContent, renderLogEmail } from "./templates.js";
@@ -42,10 +41,6 @@ export function sendEmailEffect(params: SendEmailParams): Effect.Effect<boolean>
   });
 }
 
-export function sendEmail(params: SendEmailParams): Promise<boolean> {
-  return runPromise(sendEmailEffect(params));
-}
-
 export function sendLogEmailEffect(
   subject: string,
   logs: LogItem[],
@@ -67,8 +62,4 @@ export function sendLogEmailEffect(
       text,
     });
   });
-}
-
-export function sendLogEmail(subject: string, logs: LogItem[]): Promise<boolean> {
-  return runPromise(sendLogEmailEffect(subject, logs));
 }

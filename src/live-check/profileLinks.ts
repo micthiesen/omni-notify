@@ -278,17 +278,6 @@ export function fetchProfileLinksEffect(
   );
 }
 
-export function fetchProfileLinks(
-  binding: PlatformBinding,
-  options: {
-    fetchImpl?: ProfilePageFetcher;
-    timeoutMs?: number;
-    maxBytes?: number;
-  } = {},
-): Promise<PlatformBinding[]> {
-  return Effect.runPromise(fetchProfileLinksEffect(binding, options));
-}
-
 function normalizedHandle(binding: PlatformBinding): string | undefined {
   const username = binding.username.trim().toLowerCase().replace(/^@/, "");
   return username.includes("/") ? undefined : username;
@@ -392,10 +381,4 @@ export function learnProfileIdentityEffect({
     }
     return undefined;
   });
-}
-
-export function learnProfileIdentity(
-  input: Parameters<typeof learnProfileIdentityEffect>[0],
-): Promise<ProfileIdentityLink | undefined> {
-  return Effect.runPromise(learnProfileIdentityEffect(input));
 }

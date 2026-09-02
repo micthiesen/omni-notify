@@ -96,7 +96,7 @@ export default class LiveCheckTask extends ScheduledTask {
   public constructor(
     streamers: Streamer[],
     parentLogger: Logger,
-    private readonly reconcileIOSControls?: () => Promise<void>,
+    private readonly reconcileIOSControls?: () => EffectType<void, unknown>,
     private readonly dggDiscovery?: {
       topEmbeds: number;
       availablePlatforms: ReadonlySet<Platform>;
@@ -159,9 +159,7 @@ export default class LiveCheckTask extends ScheduledTask {
       // advance on their slower cadence, since they're skipped above otherwise.
       yield* this.reportOutage();
       if (this.reconcileIOSControls) {
-        yield* fromPromise("reconcile iOS controls", () =>
-          this.reconcileIOSControls!(),
-        ).pipe(
+        yield* this.reconcileIOSControls().pipe(
           Effect.catch((error) =>
             Effect.sync(() => {
               // Controls are a convenience surface. APNs or control-state failures

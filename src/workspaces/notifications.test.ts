@@ -1,4 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceNotificationData } from "./persistence.js";
 
@@ -19,7 +20,7 @@ vi.mock("./persistence.js", () => ({
   markWorkspaceNotificationUnknown: mocks.markUnknown,
 }));
 
-import { deliverWorkspaceNotification } from "./notifications.js";
+import { deliverWorkspaceNotificationEffect } from "./notifications.js";
 
 const notification: WorkspaceNotificationData = {
   notificationId: "notification-1",
@@ -41,9 +42,9 @@ describe("deliverWorkspaceNotification", () => {
 
   it("records success after Pushover accepts the notification", async () => {
     mocks.notify.mockResolvedValue(undefined);
-    await expect(deliverWorkspaceNotification(notification, logger)).resolves.toBe(
-      true,
-    );
+    await expect(
+      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+    ).resolves.toBe(true);
     expect(mocks.markSent).toHaveBeenCalledWith("notification-1");
     expect(mocks.markSending).toHaveBeenCalledWith("notification-1", 1);
     expect(mocks.markSending.mock.invocationCallOrder[0]).toBeLessThan(
@@ -57,15 +58,17 @@ describe("deliverWorkspaceNotification", () => {
       throw new Error("database unavailable");
     });
 
-    await expect(deliverWorkspaceNotification(notification, logger)).rejects.toThrow(
-      "database unavailable",
-    );
+    await expect(
+      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+    ).rejects.toThrow("database unavailable");
     expect(mocks.notify).toHaveBeenCalledTimes(1);
 
     await expect(
-      deliverWorkspaceNotification(
-        { ...notification, status: "sending", attempts: 1 },
-        logger,
+      Effect.runPromise(
+        deliverWorkspaceNotificationEffect(
+          { ...notification, status: "sending", attempts: 1 },
+          logger,
+        ),
       ),
     ).resolves.toBe(true);
     expect(mocks.notify).toHaveBeenCalledTimes(1);
@@ -75,9 +78,9 @@ describe("deliverWorkspaceNotification", () => {
 
   it("keeps a failed delivery queued with its attempt count", async () => {
     mocks.notify.mockRejectedValue(new Error("Pushover unavailable"));
-    await expect(deliverWorkspaceNotification(notification, logger)).resolves.toBe(
-      false,
-    );
+    await expect(
+      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+    ).resolves.toBe(false);
     expect(mocks.markFailed).toHaveBeenCalledWith(
       "notification-1",
       1,
@@ -93,11 +96,13 @@ describe("deliverWorkspaceNotification", () => {
           finish = resolve;
         }),
     );
-    const first = deliverWorkspaceNotification(notification, logger);
-    await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledTimes(1));
-    await expect(deliverWorkspaceNotification(notification, logger)).resolves.toBe(
-      false,
+    const first = Effect.runPromise(
+      deliverWorkspaceNotificationEffect(notification, logger),
     );
+    await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledTimes(1));
+    await expect(
+      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+    ).resolves.toBe(false);
     finish?.();
     await expect(first).resolves.toBe(true);
     expect(mocks.notify).toHaveBeenCalledTimes(1);

@@ -5,6 +5,7 @@ import type { CalendarEventExtraction } from "../extraction/schema.js";
 export function buildICalendar(
   event: CalendarEventExtraction["events"][number],
   uid: string,
+  generatedAt: number,
 ): string {
   const tz = event.timeZone ?? config.TZ;
   const lines: string[] = [
@@ -14,7 +15,7 @@ export function buildICalendar(
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",
     `UID:${uid}`,
-    `DTSTAMP:${formatUtcNow()}`,
+    `DTSTAMP:${formatUtc(generatedAt)}`,
     `SUMMARY:${escapeIcal(event.title)}`,
   ];
 
@@ -71,14 +72,14 @@ export function buildICalendar(
   return lines.join("\r\n");
 }
 
-export function generateUid(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).slice(2, 10);
+export function generateUid(now: number, randomValue: number): string {
+  const timestamp = now.toString(36);
+  const random = randomValue.toString(36).slice(2, 10);
   return `${timestamp}-${random}@omni-notify`;
 }
 
-function formatUtcNow(): string {
-  const now = new Date();
+function formatUtc(timestamp: number): string {
+  const now = new Date(timestamp);
   const pad = (n: number) => n.toString().padStart(2, "0");
   return `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
 }

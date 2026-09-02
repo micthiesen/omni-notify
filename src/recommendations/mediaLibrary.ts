@@ -1,6 +1,5 @@
 import config from "../utils/config.js";
 import { Effect } from "effect";
-import { runPromise } from "../effect/interop.js";
 import { createPlexClient } from "./plex/client.js";
 import type { FetchResult, InProgressItem, MediaItem, WatchedItem } from "./types.js";
 
@@ -41,7 +40,3 @@ export function fetchLibraryIndexEffect(): Effect.Effect<FetchResult<MediaItem[]
     Effect.catch((error) => Effect.succeed(unavailable(error))),
   );
 }
-
-export const fetchWatchHistory = () => runPromise(fetchWatchHistoryEffect());
-export const fetchInProgress = () => runPromise(fetchInProgressEffect());
-export const fetchLibraryIndex = () => runPromise(fetchLibraryIndexEffect());

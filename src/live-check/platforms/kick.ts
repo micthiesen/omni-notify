@@ -35,7 +35,7 @@ const tokenResponseSchema = Schema.Struct({
 type CachedToken = { readonly accessToken: string; readonly expiresAt: number };
 // Serializing refreshes guarantees one client-credentials exchange for a burst
 // of callers observing an expired token.
-const tokenState = Effect.runSync(SynchronizedRef.make<CachedToken | null>(null));
+const tokenState = SynchronizedRef.makeUnsafe<CachedToken | null>(null);
 
 interface KickStreamResponse extends LimitedTextResponse {
   readonly response?: {

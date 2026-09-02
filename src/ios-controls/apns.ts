@@ -3,7 +3,6 @@ import { createPrivateKey, sign } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { type ClientHttp2Session, connect } from "node:http2";
 import { Data, Effect, Scope } from "effect";
-import { runPromise } from "../effect/interop.js";
 import type { ApnsEnvironment, IOSControlRegistration } from "./persistence.js";
 
 export type ApnsConfig = {
@@ -125,12 +124,6 @@ export class ApnsControlClient {
 
   public closeEffect(): EffectType<void> {
     return Effect.sync(() => this.close());
-  }
-
-  public sendControlChanged(
-    registration: IOSControlRegistration,
-  ): Promise<ApnsControlPushResult> {
-    return runPromise(this.sendControlChangedEffect(registration));
   }
 
   public sendControlChangedEffect(

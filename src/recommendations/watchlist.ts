@@ -1,6 +1,5 @@
 import config from "../utils/config.js";
 import { Effect } from "effect";
-import { runPromise } from "../effect/interop.js";
 import type { ArrConfig } from "./arr/client.js";
 import { addRadarrMovie, fetchRadarrMovies } from "./arr/radarr.js";
 import { addSonarrSeries, fetchSonarrSeries } from "./arr/sonarr.js";
@@ -53,10 +52,6 @@ export function addToWatchlistEffect(
       )
     : addSonarrSeries(sonarrConfig(), request.tmdbId);
 }
-
-export const fetchWatchlist = () => runPromise(fetchWatchlistEffect());
-export const addToWatchlist = (request: WatchlistAddRequest) =>
-  runPromise(addToWatchlistEffect(request));
 
 function radarrConfig(): ArrConfig {
   return {

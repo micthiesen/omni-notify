@@ -20,7 +20,7 @@ import { Data, Effect } from "effect";
 import { runPromise } from "../effect/interop.js";
 import {
   PodcastQueuePosition,
-  resolvePodcastAccount,
+  resolvePodcastAccountEffect,
 } from "../podcast-recs/account.js";
 import { fetchFeedEpisodesEffect } from "../podcast-recs/rss.js";
 import config from "../utils/config.js";
@@ -40,7 +40,7 @@ class SmokeError extends Data.TaggedError("SmokeError")<{
 const fail = (message: string, cause?: unknown) =>
   Effect.fail(new SmokeError({ message: `SMOKE FAILED: ${message}`, cause }));
 const program = Effect.gen(function* () {
-  const account = resolvePodcastAccount(logger);
+  const account = yield* resolvePodcastAccountEffect(logger);
   if (!account)
     return yield* fail(
       "no Castro account configured (CASTRO_ACCESS_ID/CASTRO_SECRET_KEY)",

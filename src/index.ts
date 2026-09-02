@@ -140,7 +140,7 @@ function buildTasks(
       new LiveCheckTask(
         streamers,
         logger,
-        () => iosControls?.reconcile() ?? Promise.resolve(),
+        () => iosControls?.reconcileEffect() ?? Effect.void,
         dggTopEmbeds > 0 ? { topEmbeds: dggTopEmbeds, availablePlatforms } : undefined,
         intelligence,
       ),
@@ -372,32 +372,30 @@ if (!serverOnly) {
             Effect.sync(() => logger.error(`${name} shutdown failed`, cause)),
           ),
         );
-      return Effect.all(
-        [
-          safely("HTTP server", fromPromise("close HTTP server", closeServer)),
-          emailStartupFiber
-            ? safely("email startup", Fiber.interrupt(emailStartupFiber))
-            : Effect.void,
-          safely("email transport", cleanupEmailTransportEffect ?? Effect.void),
-          safely(
-            "iOS controls",
-            Effect.sync(() => iosControls.close()),
-          ),
-          safely(
-            "scheduler",
-            fromPromise("stop scheduler", () => scheduler.shutdown()),
-          ),
-          safely("manual task runs", registry.shutdownEffect()),
-          livestreamIntelligence
-            ? safely("livestream intelligence", livestreamIntelligence.close())
-            : Effect.void,
-          safely("task recovery", Fiber.interrupt(recoveryFiber)),
-        ],
-        { concurrency: "unbounded", discard: true },
-      ).pipe(
-        Effect.tap(() => Effect.sync(() => logger.info("Shutdown complete"))),
-        Effect.tap(() => Effect.sync(() => process.exit(0))),
-      );
+      return Effect.gen(function* () {
+        // Stop new HTTP/manual ingress first, then wait for scheduled and manual
+        // work before releasing the transports and services those runs depend on.
+        yield* safely("HTTP server", closeServer);
+        yield* safely(
+          "scheduler",
+          fromPromise("stop scheduler", () => scheduler.shutdown()),
+        );
+        yield* safely("task recovery", Fiber.interrupt(recoveryFiber));
+        yield* safely("manual task runs", registry.shutdownEffect());
+        if (emailStartupFiber) {
+          yield* safely("email startup", Fiber.interrupt(emailStartupFiber));
+        }
+        yield* safely("email transport", cleanupEmailTransportEffect ?? Effect.void);
+        if (livestreamIntelligence) {
+          yield* safely("livestream intelligence", livestreamIntelligence.close());
+        }
+        yield* safely(
+          "iOS controls",
+          Effect.sync(() => iosControls.close()),
+        );
+        logger.info("Shutdown complete");
+        process.exit(0);
+      });
     });
   }
 

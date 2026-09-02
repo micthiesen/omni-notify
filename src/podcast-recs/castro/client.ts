@@ -36,7 +36,7 @@ const READ_CONCURRENCY = 8;
 // Action ids are process-wide Lamport timestamps. Multiple CastroClient
 // instances can overlap (recommendations, cleanup, and MCP), so instance-local
 // counters can collide when they emit actions in the same millisecond.
-const actionIdRef = Effect.runSync(Ref.make(0));
+const actionIdRef = Ref.makeUnsafe(0);
 // Queue placement is a read/decision/write transaction. Serialize it across
 // every CastroClient instance so overlapping tasks cannot both observe the
 // same queue and emit duplicate actions or the same fractional position.
@@ -591,14 +591,14 @@ export function sharedCastroApi(accessId: string, secret: string): CastroApi {
 }
 
 /** Returns the configured Castro client, or null when no credentials are set. */
-export function createCastroClient(logger: Logger): PodcastAccountClient | null {
+export const createCastroClientEffect = Effect.fn("Castro.createClient")(function* (
+  logger: Logger,
+) {
   const { CASTRO_ACCESS_ID: accessId, CASTRO_SECRET_KEY: secret } = config;
   if (!accessId && !secret) return null;
   if (!accessId || !secret) {
     logger.warn("Castro requires both CASTRO_ACCESS_ID and CASTRO_SECRET_KEY");
     return null;
   }
-  // Compatibility edge: task factories and MCP dependency assembly are
-  // synchronous. Cache construction itself remains expressed as an Effect.
-  return Effect.runSync(CastroClient.make(sharedCastroApi(accessId, secret), logger));
-}
+  return yield* CastroClient.make(sharedCastroApi(accessId, secret), logger);
+});

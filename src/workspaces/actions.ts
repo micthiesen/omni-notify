@@ -1,10 +1,10 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Effect, Schema } from "effect";
 import {
-  createCalendarEvent,
-  discoverCaldavSession,
+  createCalendarEventEffect,
+  discoverCaldavSessionEffect,
 } from "../calendar-events/caldav/index.js";
-import { runPromise } from "../effect/interop.js";
+import type { CaldavError } from "../calendar-events/effect.js";
 import {
   WorkspaceActionError,
   WorkspaceOperationError,
@@ -45,7 +45,8 @@ const resolvingActions = new Set<string>();
 type ActionFailure =
   | WorkspaceActionError
   | WorkspaceValidationError
-  | WorkspaceOperationError;
+  | WorkspaceOperationError
+  | CaldavError;
 
 function decodePayload<A, I>(
   actionId: string,
@@ -181,36 +182,19 @@ export function approveWorkspaceActionEffect(
           return yield* new WorkspaceValidationError({
             message: "A calendar event requires a title and start date",
           });
-        const session = yield* Effect.tryPromise({
-          try: () => discoverCaldavSession(logger),
-          catch: (cause) =>
-            new WorkspaceActionError({
-              actionId,
-              message: cause instanceof Error ? cause.message : String(cause),
-              cause,
-            }),
-        });
-        const result = yield* Effect.tryPromise({
-          try: () =>
-            createCalendarEvent(
-              session,
-              {
-                action: "create",
-                eventId: undefined,
-                duration: undefined,
-                recurrence: undefined,
-                ...(event as WorkspaceCalendarEventPayload),
-              },
-              logger,
-              `workspace-${action.actionId}@omni-notify`,
-            ),
-          catch: (cause) =>
-            new WorkspaceActionError({
-              actionId,
-              message: cause instanceof Error ? cause.message : String(cause),
-              cause,
-            }),
-        });
+        const session = yield* discoverCaldavSessionEffect(logger);
+        const result = yield* createCalendarEventEffect(
+          session,
+          {
+            action: "create",
+            eventId: undefined,
+            duration: undefined,
+            recurrence: undefined,
+            ...(event as WorkspaceCalendarEventPayload),
+          },
+          logger,
+          `workspace-${action.actionId}@omni-notify`,
+        );
         if (result.status === "error" && result.code !== 412)
           return yield* new WorkspaceActionError({ actionId, message: result.message });
         return yield* finishEffect(
@@ -224,46 +208,50 @@ export function approveWorkspaceActionEffect(
         Effect.tapError((error) =>
           workspaceRepositoryEffect("record workspace action failure", () =>
             setWorkspaceActionResult(actionId, "failed", error.message),
-          ).pipe(Effect.ignore),
+          ).pipe(
+            Effect.catch((persistenceError) =>
+              Effect.sync(() =>
+                logger.error(
+                  `Failed to record workspace action ${actionId} failure`,
+                  persistenceError,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     () => Effect.sync(() => resolvingActions.delete(actionId)),
   );
 }
 
-/** Promise adapter for Hono and MCP callers. */
-export function approveWorkspaceAction(
-  actionId: string,
-  logger: Logger,
-): Promise<WorkspaceActionData> {
-  return runPromise(approveWorkspaceActionEffect(actionId, logger));
-}
-
 export function rejectWorkspaceActionEffect(actionId: string) {
-  return Effect.gen(function* () {
-    if (resolvingActions.has(actionId))
+  const acquire = Effect.gen(function* () {
+    if (resolvingActions.has(actionId)) {
       return yield* new WorkspaceActionError({
         actionId,
         message: "Workspace action is already being resolved",
       });
+    }
     const action = yield* workspaceRepositoryEffect("read workspace action", () =>
       getWorkspaceAction(actionId),
     );
-    if (!action)
+    if (!action) {
       return yield* new WorkspaceActionError({
         actionId,
         message: "Workspace action not found",
       });
-    if (action.status !== "pending")
+    }
+    if (action.status !== "pending") {
       return yield* new WorkspaceActionError({
         actionId,
         message: `Workspace action is already ${action.status}`,
       });
-    return yield* finishEffect(actionId, "rejected", "Rejected by user");
+    }
+    resolvingActions.add(actionId);
   });
-}
-
-/** Synchronous adapter retained for existing request handlers. */
-export function rejectWorkspaceAction(actionId: string): WorkspaceActionData {
-  return Effect.runSync(rejectWorkspaceActionEffect(actionId));
+  return Effect.acquireUseRelease(
+    acquire,
+    () => finishEffect(actionId, "rejected", "Rejected by user"),
+    () => Effect.sync(() => resolvingActions.delete(actionId)),
+  );
 }

@@ -51,17 +51,6 @@ export class ViewerMetricsService {
     this.logger = parentLogger.extend("ViewerMetrics");
   }
 
-  recordViewerCount({
-    streamerId,
-    displayName,
-    viewerCount,
-    urlFields,
-  }: ViewerObservation): Promise<void> {
-    return Effect.runPromise(
-      this.recordViewerCountEffect({ streamerId, displayName, viewerCount, urlFields }),
-    );
-  }
-
   public recordViewerCountEffect({
     streamerId,
     displayName,
@@ -150,16 +139,6 @@ export class ViewerMetricsService {
         );
       }
     });
-  }
-
-  flushPendingPeaks({
-    streamerId,
-    displayName,
-    urlFields,
-  }: Omit<ViewerObservation, "viewerCount">): Promise<void> {
-    return Effect.runPromise(
-      this.flushPendingPeaksEffect({ streamerId, displayName, urlFields }),
-    );
   }
 
   public flushPendingPeaksEffect({

@@ -231,13 +231,6 @@ export function createPdfDownloaderEffect(
       catch: (cause) => failure("download PDF", cause),
     });
 }
-export function createPdfDownloader(
-  requestTimeoutMs: number,
-  requestPublicUrl: typeof publicGot = publicGot,
-) {
-  const effect = createPdfDownloaderEffect(requestTimeoutMs, requestPublicUrl);
-  return (url: string): Promise<DownloadedFile> => runPromise(effect(url));
-}
 function assertHttpsDocumentUrl(
   value: string | URL | undefined,
   subject = "Document URL",

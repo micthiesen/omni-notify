@@ -264,15 +264,6 @@ export function runWorkspaceEffect(
   });
 }
 
-/** Promise adapter for ScheduledTask and existing cross-tree callers. */
-export function runWorkspace(
-  definition: WorkspaceDefinition,
-  request: WorkspaceRunRequest,
-  logger: Logger,
-): Promise<WorkspaceRunResult> {
-  return runPromise(runWorkspaceEffect(definition, request, logger));
-}
-
 interface WorkspaceOutputPlan {
   readonly ids: ReadonlyMap<string, string>;
   readonly artifactKeys: ReadonlyMap<string, WorkspaceDefinition["artifacts"][number]>;
@@ -543,24 +534,6 @@ export function applyWorkspaceOutputEffect(
       createdActions: committed.actions.length,
     };
   });
-}
-
-export function applyWorkspaceOutput(
-  definition: WorkspaceDefinition,
-  output: WorkspaceOutput,
-  request: WorkspaceRunRequest,
-  logger: Logger,
-  persistedUserMessageId?: string,
-): Promise<WorkspaceRunResult> {
-  return runPromise(
-    applyWorkspaceOutputEffect(
-      definition,
-      output,
-      request,
-      logger,
-      persistedUserMessageId,
-    ),
-  );
 }
 
 function resolveSubjectId(

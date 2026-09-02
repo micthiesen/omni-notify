@@ -1,4 +1,4 @@
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
 import { IntegrationError, PersistenceError } from "./errors.js";
 
 /**
@@ -32,11 +32,4 @@ export function fromSync<A>(
  */
 export function runPromise<A, E>(effect: Effect.Effect<A, E, never>): Promise<A> {
   return Effect.runPromise(effect);
-}
-
-/** Capture success, typed failure, interruption, and defects at a boundary. */
-export function runPromiseExit<A, E>(
-  effect: Effect.Effect<A, E, never>,
-): Promise<Exit.Exit<A, E>> {
-  return Effect.runPromiseExit(effect);
 }

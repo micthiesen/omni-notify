@@ -33,9 +33,11 @@ Effect is the application runtime and the default API for all effectful TypeScri
   throw strings, collapse failures to `unknown`, or use defects for recoverable
   conditions. Wrap third-party Promise and throwing APIs with `Effect.tryPromise`
   or `Effect.try` at the leaf boundary.
-- Define capabilities as services and compose implementations with `Layer`.
-  Inject configuration, persistence, HTTP, logging, notifications, clock, and
-  randomness instead of reading globals inside workflows.
+- Define reusable named effectful functions with `Effect.fn`. Add a
+  `Context.Service` and `Layer` only when a real runtime or test seam appears,
+  such as multiple implementations or shared scoped construction. Do not
+  layerify modules speculatively. Use `Clock`, `Random`, and injected adapters
+  instead of reading ambient time, randomness, or globals inside workflows.
 - Decode every untrusted external, persisted, environment, AI, and protocol
   value with `Schema`. Zod may remain only at a protocol edge that requires its
   Standard Schema implementation; convert to Effect data immediately afterward.
@@ -43,11 +45,23 @@ Effect is the application runtime and the default API for all effectful TypeScri
   for bounded structured concurrency, `Cache`/`Ref` for coordinated state, and
   `Scope`/`acquireRelease` for resources. Do not introduce raw timers,
   `Promise.all`, fire-and-forget Promises, `p-queue`, or manual cleanup chains.
-- Tests for Effects use `@effect/vitest`, test Layers, and `TestClock`. Assert
-  typed failures through `Exit`; avoid real sleeps and ambient service state.
+- Tests for Effects use `@effect/vitest` and `TestClock`. Assert expected typed
+  failures through `Result`; reserve `Exit` for interruption and defects. Test
+  Layers when the production code has a real Layer seam. Avoid real sleeps,
+  ad hoc interpreter chains, and ambient service state.
 - Preserve failure semantics deliberately at side-effect ordering boundaries.
   Durable state or an outbox must make notifications, enqueue operations,
   external writes, and retries idempotent before the workflow reports success.
+
+Authoritative Effect 4 references:
+
+- [Effect 4 migration guide](https://github.com/Effect-TS/effect/blob/main/MIGRATION.md)
+  and its linked core guides define renamed APIs and changed semantics.
+- [Effect 4 source and API documentation](https://github.com/Effect-TS/effect/tree/main/packages/effect/src)
+  is authoritative for the installed release candidate, including `Effect.fn`,
+  `Scope`, `Schedule`, `Result`, and testing services.
+- Match all Effect ecosystem package versions to the installed `effect` version;
+  Effect 4 releases them as one versioned set.
 
 ## Deployment & Ops (boris)
 

@@ -13,9 +13,9 @@ vi.mock("../utils/config.js", () => ({
 vi.mock("./plex/client.js", () => ({ createPlexClient: () => plex }));
 
 import {
-  fetchInProgress,
-  fetchLibraryIndex,
-  fetchWatchHistory,
+  fetchInProgressEffect,
+  fetchLibraryIndexEffect,
+  fetchWatchHistoryEffect,
 } from "./mediaLibrary.js";
 
 describe("Plex media library bridge", () => {
@@ -28,18 +28,24 @@ describe("Plex media library bridge", () => {
     plex.fetchInProgress.mockReturnValue(Effect.succeed([]));
     plex.fetchLibraryIndex.mockReturnValue(Effect.succeed([]));
 
-    await expect(fetchWatchHistory()).resolves.toEqual({
+    await expect(Effect.runPromise(fetchWatchHistoryEffect())).resolves.toEqual({
       status: "ok",
       value: [{ guid: "plex://movie/1" }],
     });
-    await expect(fetchInProgress()).resolves.toEqual({ status: "ok", value: [] });
-    await expect(fetchLibraryIndex()).resolves.toEqual({ status: "ok", value: [] });
+    await expect(Effect.runPromise(fetchInProgressEffect())).resolves.toEqual({
+      status: "ok",
+      value: [],
+    });
+    await expect(Effect.runPromise(fetchLibraryIndexEffect())).resolves.toEqual({
+      status: "ok",
+      value: [],
+    });
   });
 
   it("reports Plex failures as unavailable instead of empty state", async () => {
     plex.fetchWatchHistory.mockReturnValue(Effect.fail(new Error("Plex timed out")));
 
-    await expect(fetchWatchHistory()).resolves.toEqual({
+    await expect(Effect.runPromise(fetchWatchHistoryEffect())).resolves.toEqual({
       status: "unavailable",
       reason: "Plex timed out",
     });

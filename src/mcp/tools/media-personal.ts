@@ -10,10 +10,9 @@ import {
 } from "../../pet-tracker/persistence.js";
 import {
   type EnqueueEpisodeRequest,
-  type PodcastAccountClient,
   PodcastQueuePosition,
   type PodcastWriteResult,
-  resolvePodcastAccount,
+  resolvePodcastAccountEffect,
 } from "../../podcast-recs/account.js";
 import {
   getAllPodcastRecommendations,
@@ -523,11 +522,16 @@ function kickPressPods(runtime: McpRuntime): void {
   }
 }
 
-function requirePodcastAccount(runtime: McpRuntime): PodcastAccountClient {
-  const account = runtime.podcastAccount ?? resolvePodcastAccount(runtime.logger);
-  if (!account) throw new Error("Podcast account is not configured");
-  return account;
-}
+const requirePodcastAccountEffect = Effect.fn("McpMedia.requirePodcastAccount")(
+  function* (runtime: McpRuntime) {
+    const account =
+      runtime.podcastAccount ?? (yield* resolvePodcastAccountEffect(runtime.logger));
+    if (!account) {
+      return yield* Effect.fail(new Error("Podcast account is not configured"));
+    }
+    return account;
+  },
+);
 
 function matchesQuery<
   T extends { title?: string; showTitle?: string; episodeTitle?: string },
@@ -996,7 +1000,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
       },
       execute: ({ resource, sinceDays, query, cursor, limit }) =>
         Effect.gen(function* () {
-          const account = requirePodcastAccount(runtime);
+          const account = yield* requirePodcastAccountEffect(runtime);
           if (resource === "subscriptions") {
             const values = matchesQuery(
               requireAvailable(yield* account.fetchSubscriptions()),
@@ -1078,7 +1082,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
       },
       execute: ({ resource, query, cursor, limit }) =>
         Effect.gen(function* () {
-          const account = requirePodcastAccount(runtime);
+          const account = yield* requirePodcastAccountEffect(runtime);
           if (resource === "shows") {
             return {
               account: account.name,
@@ -1156,7 +1160,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
       },
       execute: (input) =>
         Effect.gen(function* () {
-          const account = requirePodcastAccount(runtime);
+          const account = yield* requirePodcastAccountEffect(runtime);
           let result: PodcastWriteResult;
           if (input.action === "enqueue") {
             const request: EnqueueEpisodeRequest = {

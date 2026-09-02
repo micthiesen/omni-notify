@@ -571,7 +571,7 @@ export function startServer(
   emailControls: EmailControls = {},
   iosControls?: IOSControlService,
   livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider,
-): () => Promise<void> {
+): EffectType<void, IntegrationError> {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
   const mcp = registerOmniMcpRoute(
@@ -1751,5 +1751,5 @@ export function startServer(
     if ("closeAllConnections" in server) server.closeAllConnections();
     yield* closed;
   });
-  return () => runPromise(closeEffect);
+  return closeEffect;
 }

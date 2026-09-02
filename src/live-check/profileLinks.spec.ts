@@ -5,7 +5,6 @@ import { Platform } from "./platforms/index.js";
 import {
   bindingFromProfileUrl,
   extractProfileLinks,
-  fetchProfileLinks,
   fetchProfileLinksEffect,
   profileIdentityEvidence,
   profilePageUrl,
@@ -111,9 +110,11 @@ describe("fetchProfileLinks", () => {
       return new Response('<a href="https://youtube.com/@IRI">IRI</a>');
     };
 
-    const result = await fetchProfileLinks(
-      { platform: Platform.Kick, username: "iri" },
-      { fetchImpl },
+    const result = await Effect.runPromise(
+      fetchProfileLinksEffect(
+        { platform: Platform.Kick, username: "iri" },
+        { fetchImpl },
+      ),
     );
 
     expect(result.map(canonicalBindingKey)).toEqual(["youtube:@iri"]);
@@ -127,9 +128,11 @@ describe("fetchProfileLinks", () => {
   it("stops reading responses beyond the byte cap", async () => {
     const fetchImpl = async () => new Response("x".repeat(20));
     await expect(
-      fetchProfileLinks(
-        { platform: Platform.Kick, username: "iri" },
-        { fetchImpl, maxBytes: 10 },
+      Effect.runPromise(
+        fetchProfileLinksEffect(
+          { platform: Platform.Kick, username: "iri" },
+          { fetchImpl, maxBytes: 10 },
+        ),
       ),
     ).rejects.toThrow("10 byte limit");
   });

@@ -1,6 +1,5 @@
 import got from "got";
 import { Duration, Effect, Schedule, Schema } from "effect";
-import { runPromise } from "../../effect/interop.js";
 import type { z } from "zod";
 import config from "../../utils/config.js";
 import { MediaType } from "../types.js";
@@ -227,26 +226,6 @@ export function getGenreMapEffect(
     }),
   );
 }
-
-// Promise facades preserve the MCP contract while recommendation internals compose Effects.
-export const searchTitles = (...args: Parameters<typeof searchTitlesEffect>) =>
-  runPromise(searchTitlesEffect(...args));
-export const findByExternalId = (...args: Parameters<typeof findByExternalIdEffect>) =>
-  runPromise(findByExternalIdEffect(...args));
-export const fetchRecommendationsFor = (
-  ...args: Parameters<typeof fetchRecommendationsForEffect>
-) => runPromise(fetchRecommendationsForEffect(...args));
-export const discoverTitles = (...args: Parameters<typeof discoverTitlesEffect>) =>
-  runPromise(discoverTitlesEffect(...args));
-export const fetchTrending = () => runPromise(fetchTrendingEffect());
-export const fetchTitleGenreIds = (
-  ...args: Parameters<typeof fetchTitleGenreIdsEffect>
-) => runPromise(fetchTitleGenreIdsEffect(...args));
-export const fetchTitleDetails = (
-  ...args: Parameters<typeof fetchTitleDetailsEffect>
-) => runPromise(fetchTitleDetailsEffect(...args));
-export const getGenreMap = (...args: Parameters<typeof getGenreMapEffect>) =>
-  runPromise(getGenreMapEffect(...args));
 
 export function getTmdbUrl(mediaType: MediaType, tmdbId: number): string {
   return `https://www.themoviedb.org/${mediaType}/${tmdbId}`;

@@ -52,35 +52,31 @@ interface RequestControl {
   readonly apply: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
 }
 
-const requestControl = Effect.runSync(
-  Effect.gen(function* () {
-    const semaphore = yield* Semaphore.make(MAX_CONCURRENT_REQUESTS);
-    const rateState = yield* Ref.make({ windowStart: 0, used: 0 });
-    const takeRatePermit: Effect.Effect<void> = Effect.suspend(() =>
-      Effect.flatMap(Clock.currentTimeMillis, (now) =>
-        Ref.modify(rateState, (state) => {
-          if (now - state.windowStart >= RATE_INTERVAL_MS) {
-            return [0, { windowStart: now, used: 1 }] as const;
-          }
-          if (state.used < MAX_REQUESTS_PER_INTERVAL) {
-            return [0, { ...state, used: state.used + 1 }] as const;
-          }
-          return [state.windowStart + RATE_INTERVAL_MS - now, state] as const;
-        }),
-      ).pipe(
-        Effect.flatMap((waitMs) =>
-          waitMs > 0
-            ? Effect.sleep(`${waitMs} millis`).pipe(Effect.andThen(takeRatePermit))
-            : Effect.void,
-        ),
-      ),
-    );
-    return {
-      apply: (effect) =>
-        takeRatePermit.pipe(Effect.andThen(semaphore.withPermits(1)(effect))),
-    } satisfies RequestControl;
-  }),
+const requestSemaphore = Semaphore.makeUnsafe(MAX_CONCURRENT_REQUESTS);
+const rateState = Ref.makeUnsafe({ windowStart: 0, used: 0 });
+const takeRatePermit: Effect.Effect<void> = Effect.suspend(() =>
+  Effect.flatMap(Clock.currentTimeMillis, (now) =>
+    Ref.modify(rateState, (state) => {
+      if (now - state.windowStart >= RATE_INTERVAL_MS) {
+        return [0, { windowStart: now, used: 1 }] as const;
+      }
+      if (state.used < MAX_REQUESTS_PER_INTERVAL) {
+        return [0, { ...state, used: state.used + 1 }] as const;
+      }
+      return [state.windowStart + RATE_INTERVAL_MS - now, state] as const;
+    }),
+  ).pipe(
+    Effect.flatMap((waitMs) =>
+      waitMs > 0
+        ? Effect.sleep(`${waitMs} millis`).pipe(Effect.andThen(takeRatePermit))
+        : Effect.void,
+    ),
+  ),
 );
+const requestControl: RequestControl = {
+  apply: (effect) =>
+    takeRatePermit.pipe(Effect.andThen(requestSemaphore.withPermits(1)(effect))),
+};
 
 /**
  * Maps a raw search result to our episode shape. Returns undefined (the skip

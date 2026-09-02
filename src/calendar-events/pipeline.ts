@@ -2,7 +2,7 @@ import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
-import { Cause, Effect } from "effect";
+import { Effect } from "effect";
 import {
   type AdmitTier,
   deriveItemsOutcome,
@@ -35,17 +35,18 @@ import {
 } from "./extraction/sanitize.js";
 import type { ExtractedCalendarEvent } from "./extraction/schema.js";
 import { filterCalendarCandidateEffect } from "./filter/keywords.js";
-import { calendarPersistenceEffect, type CalendarPersistenceError } from "./effect.js";
+import { CalendarPersistenceError } from "./effect.js";
 import {
   type CreatedCalendarEventData,
   computeEventHash,
   computeCalendarEventUid,
-  getRecentEvents,
-  hasCreatedEvent,
+  getRecentEventsEffect,
+  hasCreatedEventEffect,
   hasEventChanged,
-  markEventCancelled,
-  reconcileEventHashes,
-  recordCreatedEvent,
+  markEventCancelledEffect,
+  reconcileEventHashesEffect,
+  recordCreatedEventEffect,
+  replaceCreatedEventEffect,
   resolveEventReference,
   resolveExplicitEventReference,
 } from "./persistence.js";
@@ -72,19 +73,27 @@ export class CalendarEventPipeline implements EmailHandler {
   private transport: EmailTransport;
   private triage: EmailTriageService;
   private caldav?: CaldavSession;
+  private persistenceInitialized = false;
 
   constructor(transport: EmailTransport, logger: Logger, triage: EmailTriageService) {
     this.transport = transport;
     this.logger = logger;
     this.triage = triage;
-    const rekeyed = reconcileEventHashes();
-    if (rekeyed > 0) {
-      this.logger.info(`Reconciled ${rekeyed} calendar event hash(es) to new scheme`);
-    }
   }
 
-  public handleEmailsEffect(emails: FetchedEmail[]): Effect.Effect<void, never> {
+  public handleEmailsEffect(
+    emails: FetchedEmail[],
+  ): Effect.Effect<void, CalendarPersistenceError> {
     return Effect.gen({ self: this }, function* () {
+      if (!this.persistenceInitialized) {
+        const rekeyed = yield* reconcileEventHashesEffect();
+        this.persistenceInitialized = true;
+        if (rekeyed > 0) {
+          this.logger.info(
+            `Reconciled ${rekeyed} calendar event hash(es) to new scheme`,
+          );
+        }
+      }
       const candidates = yield* Effect.forEach(emails, (email) =>
         filterCalendarCandidateEffect(email, this.triage).pipe(
           Effect.map((result) => {
@@ -172,10 +181,6 @@ export class CalendarEventPipeline implements EmailHandler {
             `${this.name}#${email.id}`,
             this.name,
             () => program,
-          ).pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.logError(cause),
-            ),
           );
         },
         { discard: true },
@@ -197,7 +202,7 @@ export class CalendarEventPipeline implements EmailHandler {
     admitTier: AdmitTier,
     triageCostCents: number | null | undefined,
     runLog?: LogFile,
-  ): Effect.Effect<void, never> {
+  ): Effect.Effect<void, CalendarPersistenceError> {
     return Effect.gen({ self: this }, function* () {
       this.logger.info(
         `Extracting events from: "${email.subject}" (from: ${email.from})`,
@@ -215,24 +220,25 @@ export class CalendarEventPipeline implements EmailHandler {
       // decoupling matching from the regenerated title. Fields are re-sanitized here so
       // historical poisoned rows (garbage timeZone, runaway text) can't re-enter prompts.
       const existingById = new Map<string, CreatedCalendarEventData>();
-      const existingEvents: ExistingEventContext[] = getRecentEvents().map((e, i) => {
-        const id = `evt_${i + 1}`;
-        existingById.set(id, e);
-        return {
-          id,
-          title: truncated(e.title, MAX_TITLE_CHARS),
-          startDate: e.startDate,
-          startTime: e.startTime,
-          endDate: e.endDate,
-          endTime: e.endTime,
-          allDay: e.allDay,
-          location:
-            e.location === undefined
-              ? undefined
-              : truncated(e.location, MAX_LOCATION_CHARS),
-          timeZone: sanitizeTimeZone(e.timeZone),
-        };
-      });
+      const existingEvents: ExistingEventContext[] =
+        (yield* getRecentEventsEffect()).map((e, i) => {
+          const id = `evt_${i + 1}`;
+          existingById.set(id, e);
+          return {
+            id,
+            title: truncated(e.title, MAX_TITLE_CHARS),
+            startDate: e.startDate,
+            startTime: e.startTime,
+            endDate: e.endDate,
+            endTime: e.endTime,
+            allDay: e.allDay,
+            location:
+              e.location === undefined
+                ? undefined
+                : truncated(e.location, MAX_LOCATION_CHARS),
+            timeZone: sanitizeTimeZone(e.timeZone),
+          };
+        });
 
       let extraction: ExtractCalendarEventsResult;
       try {
@@ -320,6 +326,9 @@ export class CalendarEventPipeline implements EmailHandler {
         const outcome = yield* Effect.result(operation);
         let result: ItemResult;
         if (outcome._tag === "Failure") {
+          if (outcome.failure instanceof CalendarPersistenceError) {
+            return yield* outcome.failure;
+          }
           // CalDAV calls throw on transport failures (fetch network errors), which
           // are retryable; HTTP-level failures come back as result objects instead.
           const message = outcome.failure.message;
@@ -369,11 +378,7 @@ export class CalendarEventPipeline implements EmailHandler {
       const eventHash = computeEventHash(event.title, event.startDate, event.startTime);
       const label = `"${event.title}" on ${event.startDate}`;
 
-      if (
-        yield* calendarPersistenceEffect("check created calendar event", () =>
-          hasCreatedEvent(eventHash),
-        )
-      ) {
+      if (yield* hasCreatedEventEffect(eventHash)) {
         this.logger.info(
           `Duplicate event: "${event.title}" on ${event.startDate} (skipping)`,
         );
@@ -405,26 +410,24 @@ export class CalendarEventPipeline implements EmailHandler {
       }
 
       const createdAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
-      yield* calendarPersistenceEffect("record created calendar event", () =>
-        recordCreatedEvent({
-          eventHash,
-          emailId,
-          calendarEventId: result.eventUid,
-          title: event.title,
-          startDate: event.startDate,
-          startTime: event.startTime,
-          endDate: event.endDate,
-          endTime: event.endTime,
-          allDay: event.allDay,
-          location: event.location,
-          timeZone: event.timeZone,
-          description: event.description,
-          duration: event.duration,
-          reminderMinutes: event.reminderMinutes,
-          recurrence: event.recurrence ?? undefined,
-          createdAt,
-        }),
-      );
+      yield* recordCreatedEventEffect({
+        eventHash,
+        emailId,
+        calendarEventId: result.eventUid,
+        title: event.title,
+        startDate: event.startDate,
+        startTime: event.startTime,
+        endDate: event.endDate,
+        endTime: event.endTime,
+        allDay: event.allDay,
+        location: event.location,
+        timeZone: event.timeZone,
+        description: event.description,
+        duration: event.duration,
+        reminderMinutes: event.reminderMinutes,
+        recurrence: event.recurrence ?? undefined,
+        createdAt,
+      });
 
       yield* this.sendNotification("Calendar Event Created", event);
       this.logger.info(`Created: "${event.title}" on ${event.startDate}`);
@@ -481,7 +484,7 @@ export class CalendarEventPipeline implements EmailHandler {
         };
       }
 
-      markEventCancelled(record.eventHash);
+      yield* markEventCancelledEffect(record.eventHash);
 
       yield* this.sendNotification("Calendar Event Cancelled", event);
       this.logger.info(`Cancelled: "${event.title}" on ${record.startDate}`);
@@ -562,31 +565,34 @@ export class CalendarEventPipeline implements EmailHandler {
         merged.startDate,
         merged.startTime,
       );
-      const collides = newHash !== record.eventHash && hasCreatedEvent(newHash);
+      const collides =
+        newHash !== record.eventHash && (yield* hasCreatedEventEffect(newHash));
       if (collides) {
         this.logger.warn(
           `Update for "${merged.title}" collides with another tracked event's key; keeping existing key`,
         );
       }
-      markEventCancelled(record.eventHash);
-      recordCreatedEvent({
-        eventHash: collides ? record.eventHash : newHash,
-        emailId,
-        calendarEventId: record.calendarEventId,
-        title: merged.title,
-        startDate: merged.startDate,
-        startTime: merged.startTime,
-        endDate: merged.endDate,
-        endTime: merged.endTime,
-        allDay: merged.allDay,
-        location: merged.location,
-        timeZone: merged.timeZone,
-        description: merged.description,
-        duration: merged.duration,
-        reminderMinutes: merged.reminderMinutes,
-        recurrence: merged.recurrence ?? undefined,
-        createdAt: yield* Effect.clockWith((clock) => clock.currentTimeMillis),
-      });
+      yield* replaceCreatedEventEffect(
+        {
+          eventHash: collides ? record.eventHash : newHash,
+          emailId,
+          calendarEventId: record.calendarEventId,
+          title: merged.title,
+          startDate: merged.startDate,
+          startTime: merged.startTime,
+          endDate: merged.endDate,
+          endTime: merged.endTime,
+          allDay: merged.allDay,
+          location: merged.location,
+          timeZone: merged.timeZone,
+          description: merged.description,
+          duration: merged.duration,
+          reminderMinutes: merged.reminderMinutes,
+          recurrence: merged.recurrence ?? undefined,
+          createdAt: yield* Effect.clockWith((clock) => clock.currentTimeMillis),
+        },
+        record.eventHash,
+      );
 
       yield* this.sendNotification("Calendar Event Updated", merged);
       this.logger.info(`Updated: "${event.title}" on ${event.startDate}`);

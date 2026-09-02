@@ -101,14 +101,6 @@ export function deliverWorkspaceNotificationEffect(
   );
 }
 
-/** Promise adapter for AI/workspace and test boundaries. */
-export function deliverWorkspaceNotification(
-  notification: WorkspaceNotificationData,
-  logger: Logger,
-): Promise<boolean> {
-  return runPromise(deliverWorkspaceNotificationEffect(notification, logger));
-}
-
 export class WorkspaceNotificationTask extends ScheduledTask {
   public readonly name = "WorkspaceNotifications";
   public readonly displayName = "Workspace Notifications";

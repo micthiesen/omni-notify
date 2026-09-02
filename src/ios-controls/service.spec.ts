@@ -77,8 +77,8 @@ describe("IOSControlService", () => {
       },
     ];
 
-    await service.registerDevice("device-one", controls);
-    await service.registerDevice("device-one", controls);
+    await Effect.runPromise(service.registerDeviceEffect("device-one", controls));
+    await Effect.runPromise(service.registerDeviceEffect("device-one", controls));
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
   });
@@ -91,14 +91,16 @@ describe("IOSControlService", () => {
       new Logger("Test"),
       mockApns(firstSend),
     );
-    await first.registerDevice("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await Effect.runPromise(
+      first.registerDeviceEffect("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
     expect(firstSend).toHaveBeenCalledTimes(1);
 
     const restartedSend = vi.fn().mockResolvedValue({ kind: "sent" });
@@ -108,7 +110,7 @@ describe("IOSControlService", () => {
       new Logger("Test"),
       mockApns(restartedSend),
     );
-    await restarted.reconcile();
+    await Effect.runPromise(restarted.reconcileEffect());
 
     expect(restartedSend).not.toHaveBeenCalled();
     expect(restarted.diagnostics().undeliveredCount).toBe(0);
@@ -127,14 +129,16 @@ describe("IOSControlService", () => {
       apns,
     );
 
-    await service.registerDevice("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await Effect.runPromise(
+      service.registerDeviceEffect("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
     expect(service.diagnostics().undeliveredCount).toBe(0);
@@ -152,23 +156,25 @@ describe("IOSControlService", () => {
       apns,
     );
 
-    await service.registerDevice("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await Effect.runPromise(
+      service.registerDeviceEffect("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
     expect(service.diagnostics().undeliveredCount).toBe(1);
 
-    await service.reconcile();
+    await Effect.runPromise(service.reconcileEffect());
     expect(sendControlChanged).toHaveBeenCalledTimes(4);
     expect(service.diagnostics().undeliveredCount).toBe(1);
 
     sendControlChanged.mockResolvedValue({ kind: "sent" });
-    await service.reconcile();
+    await Effect.runPromise(service.reconcileEffect());
     expect(sendControlChanged).toHaveBeenCalledTimes(5);
     expect(service.diagnostics().undeliveredCount).toBe(0);
   });
@@ -186,14 +192,16 @@ describe("IOSControlService", () => {
       apns,
     );
 
-    await service.registerDevice("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await Effect.runPromise(
+      service.registerDeviceEffect("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
   });
@@ -210,14 +218,16 @@ describe("IOSControlService", () => {
       apns,
     );
 
-    await service.registerDevice("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await Effect.runPromise(
+      service.registerDeviceEffect("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
     expect(listIOSControlRegistrations()).toEqual([]);
@@ -235,14 +245,16 @@ describe("IOSControlService", () => {
       apns,
     );
 
-    await service.registerDevice("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await Effect.runPromise(
+      service.registerDeviceEffect("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
     expect(listIOSControlRegistrations()).toHaveLength(1);
@@ -260,14 +272,16 @@ describe("IOSControlService", () => {
       mockApns(sendControlChanged),
     );
 
-    await service.registerDevice("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await Effect.runPromise(
+      service.registerDeviceEffect("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
     expect(service.diagnostics().undeliveredCount).toBe(0);
@@ -296,7 +310,7 @@ describe("IOSControlService", () => {
       new Logger("Test"),
       apns,
     );
-    await service.reconcile();
+    await Effect.runPromise(service.reconcileEffect());
     // Rows restored after a process restart are reconciled once even before a
     // new state transition, then their delivered hashes suppress duplicates.
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
@@ -311,7 +325,7 @@ describe("IOSControlService", () => {
       maxViewerCount: 12,
       viewerCount: 10,
     });
-    await service.reconcile();
+    await Effect.runPromise(service.reconcileEffect());
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
     expect(sendControlChanged.mock.calls[0][0]).toMatchObject({ slot: 1 });

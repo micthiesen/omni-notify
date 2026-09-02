@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ExtractedCalendarEvent } from "../extraction/schema.js";
-import { buildICalendar } from "./ics.js";
+import { buildICalendar, generateUid } from "./ics.js";
+
+const GENERATED_AT = Date.UTC(2026, 8, 1, 12, 34, 56);
 
 const evt = (overrides: Partial<ExtractedCalendarEvent>): ExtractedCalendarEvent => ({
   action: "create",
@@ -14,9 +16,13 @@ const evt = (overrides: Partial<ExtractedCalendarEvent>): ExtractedCalendarEvent
 });
 
 const icsLines = (event: ExtractedCalendarEvent): string[] =>
-  buildICalendar(event, "uid-1@omni-notify").split("\r\n");
+  buildICalendar(event, "uid-1@omni-notify", GENERATED_AT).split("\r\n");
 
 describe("buildICalendar recurrence", () => {
+  it("renders the supplied generation time and deterministic UID inputs", () => {
+    expect(icsLines(evt({}))).toContain("DTSTAMP:20260901T123456Z");
+    expect(generateUid(1234, 0.5)).toBe("ya-i@omni-notify");
+  });
   it("emits RRULE with a UTC UNTIL covering the last occurrence for timed events", () => {
     const lines = icsLines(
       evt({ recurrence: { frequency: "daily", until: "2026-07-13" } }),

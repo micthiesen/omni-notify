@@ -1,6 +1,5 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
-import { runPromise } from "../../effect/interop.js";
 import config from "../../utils/config.js";
 import { CaldavError } from "../effect.js";
 import type { CaldavSession } from "./api.js";
@@ -9,11 +8,8 @@ import { discoverIcloudCalendarEffect } from "./icloud.js";
 
 export {
   type CaldavSession,
-  createCalendarEvent,
   createCalendarEventEffect,
-  deleteCalendarEvent,
   deleteCalendarEventEffect,
-  updateCalendarEvent,
   updateCalendarEventEffect,
 } from "./api.js";
 
@@ -36,11 +32,6 @@ export function getCaldavProvider(): CaldavProviderName | undefined {
     return config.ICLOUD_USERNAME && config.ICLOUD_APP_PASSWORD ? "icloud" : undefined;
   }
   return undefined;
-}
-
-/** Resolve the active provider's calendar collection + auth. */
-export function discoverCaldavSession(logger: Logger): Promise<CaldavSession> {
-  return runPromise(discoverCaldavSessionEffect(logger));
 }
 
 export function discoverCaldavSessionEffect(

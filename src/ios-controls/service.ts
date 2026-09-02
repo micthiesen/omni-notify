@@ -1,7 +1,6 @@
 import type { Effect as EffectType } from "effect/Effect";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Data, Effect, Schedule } from "effect";
-import { runPromise } from "../effect/interop.js";
 import type { Streamer } from "../live-check/streamers.js";
 import type { ApnsControlClient } from "./apns.js";
 import {
@@ -64,13 +63,6 @@ export class IOSControlService {
     };
   }
 
-  public registerDevice(
-    deviceId: string,
-    controls: ControlRegistrationInput[],
-  ): Promise<void> {
-    return runPromise(this.registerDeviceEffect(deviceId, controls));
-  }
-
   public registerDeviceEffect(
     deviceId: string,
     controls: ControlRegistrationInput[],
@@ -96,10 +88,6 @@ export class IOSControlService {
       }
       yield* this.deliverEffect(this.undeliveredRegistrations());
     });
-  }
-
-  public reconcile(): Promise<void> {
-    return runPromise(this.reconcileEffect());
   }
 
   public reconcileEffect(): EffectType<void> {

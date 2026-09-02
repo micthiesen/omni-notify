@@ -1,11 +1,12 @@
 import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { publicGot } from "../press-pods/publicHttp.js";
 import {
   type AcceptedPrintRecord,
-  createPdfDownloader,
+  createPdfDownloaderEffect,
   IppPrinterService,
   type PrinterServiceDependencies,
 } from "./service.js";
@@ -371,9 +372,11 @@ describe("IppPrinterService", () => {
       hook?.({ url: new URL("http://example.com/file.pdf") } as never, {} as never);
       throw new Error("expected redirect hook to reject HTTP");
     }) as unknown as typeof publicGot;
-    const download = createPdfDownloader(1_000, request);
+    const download = createPdfDownloaderEffect(1_000, request);
 
-    await expect(download("https://example.com/file.pdf")).rejects.toThrow(
+    await expect(
+      Effect.runPromise(download("https://example.com/file.pdf")),
+    ).rejects.toThrow(
       "Document redirects must be a public HTTPS URL without credentials",
     );
   });

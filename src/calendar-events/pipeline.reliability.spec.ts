@@ -1,7 +1,7 @@
 import { Logger } from "@micthiesen/mitools/logging";
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { CalendarExtractionError } from "./effect.js";
+import { CalendarExtractionError, CalendarPersistenceError } from "./effect.js";
 
 const mocks = vi.hoisted(() => ({
   enqueue: vi.fn(),
@@ -41,15 +41,26 @@ vi.mock("./extraction/extractEvents.js", () => ({
   extractCalendarEventsEffect: mocks.extract,
 }));
 vi.mock("./persistence.js", () => ({
-  reconcileEventHashes: () => 0,
-  getRecentEvents: () => [],
+  reconcileEventHashesEffect: () => Effect.succeed(0),
+  getRecentEventsEffect: () => Effect.succeed([]),
   computeEventHash: () => "stable-event-hash",
   computeCalendarEventUid: () => "omni-stable@omni-notify",
   getAllTrackingNumbers: () => new Set(),
-  hasCreatedEvent: () => false,
+  hasCreatedEventEffect: () => Effect.succeed(false),
   hasEventChanged: () => false,
-  markEventCancelled: vi.fn(),
-  recordCreatedEvent: mocks.recordCreated,
+  markEventCancelledEffect: () => Effect.void,
+  recordCreatedEventEffect: (...args: unknown[]) =>
+    Effect.try({
+      try: () => mocks.recordCreated(...args),
+      catch: (cause) =>
+        new CalendarPersistenceError({ operation: "record created event", cause }),
+    }),
+  replaceCreatedEventEffect: (...args: unknown[]) =>
+    Effect.try({
+      try: () => mocks.recordCreated(...args),
+      catch: (cause) =>
+        new CalendarPersistenceError({ operation: "replace created event", cause }),
+    }),
   resolveEventReference: vi.fn(),
   resolveExplicitEventReference: vi.fn(),
 }));
@@ -212,7 +223,9 @@ describe("CalendarEventPipeline reliability", () => {
       attachments: [],
     };
 
-    await Effect.runPromise(pipeline.handleEmailsEffect([appointment]));
+    await expect(
+      Effect.runPromise(pipeline.handleEmailsEffect([appointment])),
+    ).rejects.toThrow("crash after CalDAV accepted PUT");
     await Effect.runPromise(pipeline.handleEmailsEffect([appointment]));
 
     expect(mocks.create).toHaveBeenCalledTimes(2);

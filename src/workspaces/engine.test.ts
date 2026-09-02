@@ -93,11 +93,7 @@ vi.mock("./persistence.js", () => ({
   },
 }));
 
-import {
-  applyWorkspaceOutput,
-  applyWorkspaceOutputEffect,
-  normalizeWorkspaceWebUrl,
-} from "./engine.js";
+import { applyWorkspaceOutputEffect, normalizeWorkspaceWebUrl } from "./engine.js";
 
 const definition: WorkspaceDefinition = {
   id: "purchase-research",
@@ -112,7 +108,7 @@ const definition: WorkspaceDefinition = {
 };
 const logger = { warn: vi.fn() } as unknown as Logger;
 
-type Output = Parameters<typeof applyWorkspaceOutput>[1];
+type Output = Parameters<typeof applyWorkspaceOutputEffect>[1];
 
 function output(subjectId = "new-1"): Output {
   return {
@@ -167,11 +163,13 @@ describe("workspace output application", () => {
   });
 
   it("maps one new subject across artifacts, sources, messages, and actions", async () => {
-    const result = await applyWorkspaceOutput(
-      definition,
-      output(),
-      { trigger: "message", message: "Find me a camera" },
-      logger,
+    const result = await Effect.runPromise(
+      applyWorkspaceOutputEffect(
+        definition,
+        output(),
+        { trigger: "message", message: "Find me a camera" },
+        logger,
+      ),
     );
 
     const subject = [...state.subjects.values()][0];
@@ -198,12 +196,14 @@ describe("workspace output application", () => {
       runId: "run-1",
     });
 
-    await applyWorkspaceOutput(
-      definition,
-      output(),
-      { trigger: "message", message: "Find me a camera" },
-      logger,
-      "persisted-user-message",
+    await Effect.runPromise(
+      applyWorkspaceOutputEffect(
+        definition,
+        output(),
+        { trigger: "message", message: "Find me a camera" },
+        logger,
+        "persisted-user-message",
+      ),
     );
 
     const subject = [...state.subjects.values()][0];
@@ -216,11 +216,13 @@ describe("workspace output application", () => {
 
   it("rejects hallucinated subject IDs instead of allocating a dossier", async () => {
     await expect(
-      applyWorkspaceOutput(
-        definition,
-        output("typo-subject"),
-        { trigger: "message", message: "Update it" },
-        logger,
+      Effect.runPromise(
+        applyWorkspaceOutputEffect(
+          definition,
+          output("typo-subject"),
+          { trigger: "message", message: "Update it" },
+          logger,
+        ),
       ),
     ).rejects.toThrow('unknown subject_id "typo-subject"');
     expect(state.subjects.size).toBe(0);
@@ -237,11 +239,13 @@ describe("workspace output application", () => {
       updatedAt: 1,
     });
     await expect(
-      applyWorkspaceOutput(
-        definition,
-        output("new-1"),
-        { trigger: "message", message: "Update it", subjectId: "camera" },
-        logger,
+      Effect.runPromise(
+        applyWorkspaceOutputEffect(
+          definition,
+          output("new-1"),
+          { trigger: "message", message: "Update it", subjectId: "camera" },
+          logger,
+        ),
       ),
     ).rejects.toThrow("Subject-scoped run attempted to update");
   });
@@ -287,11 +291,13 @@ describe("workspace output application", () => {
 
   it("does not renotify an existing pending action", async () => {
     state.actionCreated = false;
-    await applyWorkspaceOutput(
-      definition,
-      output(),
-      { trigger: "message", message: "Check again" },
-      logger,
+    await Effect.runPromise(
+      applyWorkspaceOutputEffect(
+        definition,
+        output(),
+        { trigger: "message", message: "Check again" },
+        logger,
+      ),
     );
     expect(state.deliver).not.toHaveBeenCalled();
   });

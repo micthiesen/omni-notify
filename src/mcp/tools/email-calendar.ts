@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { z } from "zod";
 import { buildICalendar } from "../../calendar-events/caldav/ics.js";
 import {
@@ -17,12 +17,14 @@ import {
 } from "../../calendar-events/filter/keywords.js";
 import {
   type CreatedCalendarEventData,
-  CreatedCalendarEventEntity,
   computeEventHash,
-  hasCreatedEvent,
+  getTrackedCalendarEventEffect,
+  getTrackedCalendarEventsEffect,
+  hasCreatedEventEffect,
   hasEventChanged,
-  markEventCancelled,
-  recordCreatedEvent,
+  markEventCancelledEffect,
+  recordCreatedEventEffect,
+  replaceCreatedEventEffect,
 } from "../../calendar-events/persistence.js";
 import {
   type EmailActivityData,
@@ -306,11 +308,17 @@ function getActivityOrThrow(activityId: string): EmailActivityData {
   return activity;
 }
 
-function getTrackedEventOrThrow(eventHash: string): CreatedCalendarEventData {
-  const event = CreatedCalendarEventEntity.get({ eventHash });
-  if (!event) throw new Error(`Unknown tracked calendar event: ${eventHash}`);
+const getTrackedEventOrFailEffect = Effect.fn("McpCalendar.getTrackedEvent")(function* (
+  eventHash: string,
+) {
+  const event = yield* getTrackedCalendarEventEffect(eventHash);
+  if (!event) {
+    return yield* Effect.fail(
+      new Error(`Unknown tracked calendar event: ${eventHash}`),
+    );
+  }
   return event;
-}
+});
 
 function parseDateTime(value: string | undefined): Date | undefined {
   if (!value) return undefined;
@@ -949,9 +957,9 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const query = input.query?.toLowerCase();
-          const events = CreatedCalendarEventEntity.getAll()
+          const events = (yield* getTrackedCalendarEventsEffect())
             .filter((event) => {
               const status = event.status === "cancelled" ? "cancelled" : "active";
               if (input.status !== "all" && input.status !== status) return false;
@@ -987,9 +995,11 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           return {
-            event: serializeTrackedEvent(getTrackedEventOrThrow(input.eventHash)),
+            event: serializeTrackedEvent(
+              yield* getTrackedEventOrFailEffect(input.eventHash),
+            ),
           };
         }),
     }),
@@ -1012,8 +1022,8 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: () =>
-        Effect.sync(() => {
-          const events = CreatedCalendarEventEntity.getAll();
+        Effect.gen(function* () {
+          const events = yield* getTrackedCalendarEventsEffect();
           const cancelled = events.filter(
             (event) => event.status === "cancelled",
           ).length;
@@ -1044,8 +1054,9 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const event = toExtractedEvent(input.event);
+          const generatedAt = yield* Clock.currentTimeMillis;
           const eventHash = computeEventHash(
             event.title,
             event.startDate,
@@ -1053,8 +1064,8 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
           );
           return {
             eventHash,
-            duplicateTrackedEvent: hasCreatedEvent(eventHash),
-            iCalendar: buildICalendar(event, "preview@omni-notify"),
+            duplicateTrackedEvent: yield* hasCreatedEventEffect(eventHash),
+            iCalendar: buildICalendar(event, "preview@omni-notify", generatedAt),
           };
         }),
     }),
@@ -1086,7 +1097,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             event.startDate,
             event.startTime,
           );
-          const existing = CreatedCalendarEventEntity.get({ eventHash });
+          const existing = yield* getTrackedCalendarEventEffect(eventHash);
           if (existing && existing.status !== "cancelled") {
             return {
               status: "already_exists" as const,
@@ -1107,9 +1118,9 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             emailId: "mcp",
             calendarEventId: result.eventUid,
             ...input.event,
-            createdAt: Date.now(),
+            createdAt: yield* Clock.currentTimeMillis,
           };
-          recordCreatedEvent(row);
+          yield* recordCreatedEventEffect(row);
           return {
             status: result.status === "already_exists" ? "reconciled" : "created",
             event: serializeTrackedEvent(row),
@@ -1143,7 +1154,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       },
       execute: (input) =>
         Effect.gen(function* () {
-          const existing = getTrackedEventOrThrow(input.eventHash);
+          const existing = yield* getTrackedEventOrFailEffect(input.eventHash);
           if (existing.status === "cancelled")
             throw new Error("Cancelled events cannot be updated");
           const clearedChanges = Object.fromEntries(
@@ -1182,7 +1193,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
           const priorNewHash =
             newHash === existing.eventHash
               ? undefined
-              : CreatedCalendarEventEntity.get({ eventHash: newHash });
+              : yield* getTrackedCalendarEventEffect(newHash);
           if (priorNewHash && priorNewHash.status !== "cancelled") {
             if (priorNewHash.calendarEventId !== existing.calendarEventId) {
               throw new Error("Update would collide with another active tracked event");
@@ -1190,7 +1201,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             // Reconcile a prior remote/local partial success. The replacement row
             // was persisted before the old row was tombstoned, so no remote write
             // is needed on this retry.
-            markEventCancelled(existing.eventHash);
+            yield* markEventCancelledEffect(existing.eventHash);
             return {
               status: "updated" as const,
               event: serializeTrackedEvent(priorNewHash),
@@ -1209,12 +1220,11 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             emailId: existing.emailId,
             calendarEventId: existing.calendarEventId,
             ...merged,
-            createdAt: Date.now(),
+            createdAt: yield* Clock.currentTimeMillis,
           };
           // Persist the replacement before tombstoning the old identity. If the
           // second write fails, the same request reconciles the two rows above.
-          recordCreatedEvent(row);
-          if (newHash !== existing.eventHash) markEventCancelled(existing.eventHash);
+          yield* replaceCreatedEventEffect(row, existing.eventHash);
           return { status: "updated" as const, event: serializeTrackedEvent(row) };
         }),
     }),
@@ -1240,7 +1250,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       },
       execute: (input) =>
         Effect.gen(function* () {
-          const existing = getTrackedEventOrThrow(input.eventHash);
+          const existing = yield* getTrackedEventOrFailEffect(input.eventHash);
           if (existing.status === "cancelled") {
             return {
               status: "already_deleted" as const,
@@ -1254,7 +1264,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             logger,
           );
           if (result.status === "error") throw new Error(result.message);
-          markEventCancelled(existing.eventHash);
+          yield* markEventCancelledEffect(existing.eventHash);
           return {
             status: "deleted" as const,
             event: serializeTrackedEvent({ ...existing, status: "cancelled" }),

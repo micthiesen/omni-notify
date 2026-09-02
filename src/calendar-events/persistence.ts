@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import { transaction } from "@micthiesen/mitools/docstore";
 import { Entity } from "@micthiesen/mitools/entities";
+import { Clock, Effect } from "effect";
 import { toDateStamp } from "../utils/dates.js";
+import { calendarPersistenceEffect } from "./effect.js";
 
 /** Fixed repeat pattern for a recurring event (RRULE FREQ + inclusive UNTIL date). */
 export type EventRecurrence = {
@@ -34,12 +37,12 @@ export const CreatedCalendarEventEntity = new Entity<
   ["eventHash"]
 >("calendar-created-event", ["eventHash"]);
 
-export function hasCreatedEvent(eventHash: string): boolean {
+function hasCreatedEvent(eventHash: string): boolean {
   const record = CreatedCalendarEventEntity.get({ eventHash });
   return record !== undefined && record.status !== "cancelled";
 }
 
-export function recordCreatedEvent(data: CreatedCalendarEventData): void {
+function recordCreatedEvent(data: CreatedCalendarEventData): void {
   CreatedCalendarEventEntity.upsert(data);
 }
 
@@ -81,7 +84,7 @@ export function computeCalendarEventUid(eventHash: string): string {
 export function selectRecentEvents(
   all: CreatedCalendarEventData[],
   futureDays: number,
-  now = Date.now(),
+  now: number,
 ): CreatedCalendarEventData[] {
   const pastCutoff = new Date(now);
   pastCutoff.setDate(pastCutoff.getDate() - 7);
@@ -102,10 +105,6 @@ export function selectRecentEvents(
  * a 90-day horizon once hid a September event announced in April, so the model
  * re-created it five times without ever seeing the earlier rows.
  */
-export function getRecentEvents(futureDays = 365): CreatedCalendarEventData[] {
-  return selectRecentEvents(CreatedCalendarEventEntity.getAll(), futureDays);
-}
-
 /**
  * From active candidates sharing a normalized title, pick the one on `startDate`. If none
  * match the date, fall back to a *lone* candidate only — never arbitrarily pick among
@@ -221,7 +220,7 @@ function recurrenceKey(recurrence: EventRecurrence | null | undefined): string {
  * Safe to run on every startup — once re-keyed, recomputed hashes match and it's a no-op.
  * Returns the number of rows re-keyed.
  */
-export function reconcileEventHashes(): number {
+function reconcileEventHashes(): number {
   let rekeyed = 0;
   for (const row of CreatedCalendarEventEntity.getAll()) {
     const expected = computeEventHash(row.title, row.startDate, row.startTime);
@@ -234,9 +233,78 @@ export function reconcileEventHashes(): number {
 }
 
 /** Mark an existing event as cancelled (preserves record to prevent re-creation). */
-export function markEventCancelled(eventHash: string): void {
+function markEventCancelled(eventHash: string): void {
   const record = CreatedCalendarEventEntity.get({ eventHash });
   if (record) {
     CreatedCalendarEventEntity.upsert({ ...record, status: "cancelled" });
   }
 }
+
+export const getTrackedCalendarEventsEffect = Effect.fn("CalendarPersistence.getAll")(
+  function* () {
+    return yield* calendarPersistenceEffect("list tracked calendar events", () =>
+      CreatedCalendarEventEntity.getAll(),
+    );
+  },
+);
+
+export const getTrackedCalendarEventEffect = Effect.fn("CalendarPersistence.get")(
+  function* (eventHash: string) {
+    return yield* calendarPersistenceEffect("read tracked calendar event", () =>
+      CreatedCalendarEventEntity.get({ eventHash }),
+    );
+  },
+);
+
+export const hasCreatedEventEffect = Effect.fn("CalendarPersistence.hasCreated")(
+  function* (eventHash: string) {
+    return yield* calendarPersistenceEffect("check created calendar event", () =>
+      hasCreatedEvent(eventHash),
+    );
+  },
+);
+
+export const recordCreatedEventEffect = Effect.fn("CalendarPersistence.recordCreated")(
+  function* (data: CreatedCalendarEventData) {
+    yield* calendarPersistenceEffect("record created calendar event", () =>
+      recordCreatedEvent(data),
+    );
+  },
+);
+
+export const replaceCreatedEventEffect = Effect.fn(
+  "CalendarPersistence.replaceCreated",
+)(function* (data: CreatedCalendarEventData, previousEventHash: string) {
+  yield* calendarPersistenceEffect("replace tracked calendar event", () =>
+    transaction(() => {
+      recordCreatedEvent(data);
+      if (data.eventHash !== previousEventHash) {
+        markEventCancelled(previousEventHash);
+      }
+    }),
+  );
+});
+
+export const markEventCancelledEffect = Effect.fn("CalendarPersistence.markCancelled")(
+  function* (eventHash: string) {
+    yield* calendarPersistenceEffect("mark calendar event cancelled", () =>
+      markEventCancelled(eventHash),
+    );
+  },
+);
+
+export const getRecentEventsEffect = Effect.fn("CalendarPersistence.getRecent")(
+  function* (futureDays = 365) {
+    const now = yield* Clock.currentTimeMillis;
+    const all = yield* getTrackedCalendarEventsEffect();
+    return selectRecentEvents(all, futureDays, now);
+  },
+);
+
+export const reconcileEventHashesEffect = Effect.fn(
+  "CalendarPersistence.reconcileHashes",
+)(function* () {
+  return yield* calendarPersistenceEffect("reconcile calendar event hashes", () =>
+    transaction(reconcileEventHashes),
+  );
+});

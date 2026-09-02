@@ -1,7 +1,7 @@
 import type { Logger } from "@micthiesen/mitools/logging";
-import type { Effect } from "effect";
+import { Effect } from "effect";
 import type { FetchResult } from "../utils/fetchResult.js";
-import { createCastroClient } from "./castro/client.js";
+import { createCastroClientEffect } from "./castro/client.js";
 
 /**
  * Bridge to the user's podcast client account (Castro). Split read/write
@@ -164,8 +164,8 @@ export interface PodcastAccountClient {
 }
 
 /** The configured podcast account client, or undefined when none is available. */
-export function resolvePodcastAccount(
-  logger: Logger,
-): PodcastAccountClient | undefined {
-  return createCastroClient(logger) ?? undefined;
-}
+export const resolvePodcastAccountEffect = Effect.fn("PodcastAccount.resolve")(
+  function* (logger: Logger) {
+    return (yield* createCastroClientEffect(logger)) ?? undefined;
+  },
+);

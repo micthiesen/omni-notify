@@ -3,7 +3,7 @@ import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Effect } from "effect";
 import { getPodcastTasteReflectionModel } from "../../ai/registry.js";
 import config from "../../utils/config.js";
-import { resolvePodcastAccount } from "../account.js";
+import { resolvePodcastAccountEffect } from "../account.js";
 import { getAllPodcastRecommendations } from "../persistence.js";
 import { runPodcastTasteReflectionEffect } from "./reflection.js";
 
@@ -56,7 +56,7 @@ export class PodcastTasteReflectionTask extends ScheduledTask {
 
   private runEffect(): Effect.Effect<void, unknown> {
     return Effect.gen({ self: this }, function* () {
-      const account = resolvePodcastAccount(this.logger);
+      const account = yield* resolvePodcastAccountEffect(this.logger);
       if (!account) {
         this.lastRunSummary = "skipped: no podcast account client";
         this.logger.warn("Podcast taste reflection skipped: no account client");

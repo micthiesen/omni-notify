@@ -9,7 +9,7 @@ import {
   type PodcastAccountClient,
   PodcastQueuePosition,
   type PodcastWriteResult,
-  resolvePodcastAccount,
+  resolvePodcastAccountEffect,
 } from "./account.js";
 import { resolveCandidatesEffect } from "./candidates.js";
 import { discoverEpisodesEffect } from "./discovery.js";
@@ -98,7 +98,7 @@ export function runPodcastPipelineEffect(
 
     // 1. Local state. Subscriptions follow the three-state rule: a configured
     //    source that fails aborts the run rather than weakening exclusions.
-    const account = resolvePodcastAccount(logger);
+    const account = yield* resolvePodcastAccountEffect(logger);
     const subscriptions = yield* resolveSubscriptionsEffect(account, logger);
     if (subscriptions.status === "unavailable") {
       logger.warn(`Podcast recommendation run skipped: ${subscriptions.reason}`);
