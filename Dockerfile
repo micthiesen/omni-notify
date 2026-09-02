@@ -6,7 +6,6 @@ RUN npm install -g pnpm@11.20.0
 
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches/ patches/
 COPY frontend/package.json frontend/
 RUN pnpm install --frozen-lockfile
 
