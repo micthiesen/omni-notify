@@ -21,7 +21,6 @@ import type {
   PodcastTasteProfileContent,
   PodcastTasteProfileData,
   PodcastTasteReflectionInput,
-  PodcastTasteReflectionResult,
 } from "./types.js";
 
 export const PODCAST_TASTE_PROMPT_VERSION = "podcast-taste-reflection-v1";
@@ -61,37 +60,44 @@ export class PodcastReflectionError extends Data.TaggedError("PodcastReflectionE
   }
 }
 
-export function runPodcastTasteReflectionEffect(
-  input: PodcastTasteReflectionInput,
-): Effect.Effect<PodcastTasteReflectionResult, PodcastReflectionError> {
+export function runPodcastTasteReflectionEffect(input: PodcastTasteReflectionInput) {
   return Effect.gen(function* () {
     const incoming = [
       ...deriveListenEvidence(input.listened),
       ...deriveRecommendationEvidence(input.recommendations),
     ];
-    const insertedEvidence = yield* Effect.try({
-      try: () => insertPodcastTasteEvidence(incoming),
-      catch: (cause) =>
-        new PodcastReflectionError({
-          operation: "insert podcast taste evidence",
-          cause,
-        }),
-    });
-    const allEvidence = yield* Effect.try({
-      try: getAllPodcastTasteEvidence,
-      catch: (cause) =>
-        new PodcastReflectionError({ operation: "read podcast taste evidence", cause }),
-    });
+    const insertedEvidence = yield* insertPodcastTasteEvidence(incoming).pipe(
+      Effect.mapError(
+        (cause) =>
+          new PodcastReflectionError({
+            operation: "insert podcast taste evidence",
+            cause,
+          }),
+      ),
+    );
+    const allEvidence = yield* getAllPodcastTasteEvidence().pipe(
+      Effect.mapError(
+        (cause) =>
+          new PodcastReflectionError({
+            operation: "read podcast taste evidence",
+            cause,
+          }),
+      ),
+    );
     if (allEvidence.length === 0) {
       return { status: "insufficient_evidence", insertedEvidence };
     }
 
     const evidenceFingerprint = fingerprintEvidence(allEvidence);
-    const latest = yield* Effect.try({
-      try: getLatestPodcastTasteProfile,
-      catch: (cause) =>
-        new PodcastReflectionError({ operation: "read podcast taste profile", cause }),
-    });
+    const latest = yield* getLatestPodcastTasteProfile().pipe(
+      Effect.mapError(
+        (cause) =>
+          new PodcastReflectionError({
+            operation: "read podcast taste profile",
+            cause,
+          }),
+      ),
+    );
     if (latest?.evidenceFingerprint === evidenceFingerprint) {
       return { status: "unchanged", profile: latest, insertedEvidence };
     }
@@ -160,14 +166,15 @@ export function runPodcastTasteReflectionEffect(
       promptVersion: PODCAST_TASTE_PROMPT_VERSION,
       stats,
     };
-    yield* Effect.try({
-      try: () => insertPodcastTasteProfile(profile),
-      catch: (cause) =>
-        new PodcastReflectionError({
-          operation: "insert podcast taste profile",
-          cause,
-        }),
-    });
+    yield* insertPodcastTasteProfile(profile).pipe(
+      Effect.mapError(
+        (cause) =>
+          new PodcastReflectionError({
+            operation: "insert podcast taste profile",
+            cause,
+          }),
+      ),
+    );
     return {
       status: "created",
       profile,
@@ -294,7 +301,7 @@ function isTasteBearingEvidence(item: PodcastTasteEvidenceData): boolean {
 }
 
 export function formatPodcastTasteProfileDigest(
-  profile: PodcastTasteProfileData | undefined = getLatestPodcastTasteProfile(),
+  profile?: PodcastTasteProfileData,
 ): string {
   if (!profile) return "No reflective podcast taste profile is available yet.";
   const claimLines = (label: string, claims: PodcastTasteClaim[]) =>

@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect, Option } from "effect";
 import { toDateStamp } from "../utils/dates.js";
 import type { CanonicalEpisodeId, CanonicalShowId } from "./types.js";
 
@@ -75,17 +76,21 @@ export const PodcastRecommendationEntity = new Entity<
   ["recommendationId"]
 >("podcast-recommendation-attempt", ["recommendationId"]);
 
-export function getAllPodcastRecommendations(): PodcastRecommendationData[] {
-  return PodcastRecommendationEntity.getAll().sort(
-    (a, b) => b.recommendedAt - a.recommendedAt,
-  );
-}
+export const getAllPodcastRecommendations = Effect.fn("PodcastRecommendations.getAll")(
+  function* () {
+    return (yield* PodcastRecommendationEntity.getAll()).sort(
+      (a, b) => b.recommendedAt - a.recommendedAt,
+    );
+  },
+);
 
-export function getPodcastRecommendation(
-  recommendationId: string,
-): PodcastRecommendationData | undefined {
-  return PodcastRecommendationEntity.get({ recommendationId });
-}
+export const getPodcastRecommendation = Effect.fn("PodcastRecommendations.get")(
+  function* (recommendationId: string) {
+    return Option.getOrUndefined(
+      yield* PodcastRecommendationEntity.get({ recommendationId }),
+    );
+  },
+);
 
 /** Same-show cooldown; episodes themselves are excluded permanently. */
 const SHOW_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
@@ -98,9 +103,11 @@ export interface PodcastExclusions {
   showIds: Set<CanonicalShowId>;
 }
 
-export function getPodcastExclusions(now: number): PodcastExclusions {
-  return computePodcastExclusions(PodcastRecommendationEntity.getAll(), now);
-}
+export const getPodcastExclusions = Effect.fn("PodcastRecommendations.getExclusions")(
+  function* (now: number) {
+    return computePodcastExclusions(yield* PodcastRecommendationEntity.getAll(), now);
+  },
+);
 
 export function computePodcastExclusions(
   records: PodcastRecommendationData[],
@@ -140,14 +147,16 @@ export function computePodcastExclusions(
 }
 
 /** Recommendations still awaiting an outcome label. */
-export function getOpenPodcastRecommendations(): PodcastRecommendationData[] {
-  return PodcastRecommendationEntity.getAll().filter(
+export const getOpenPodcastRecommendations = Effect.fn(
+  "PodcastRecommendations.getOpen",
+)(function* () {
+  return (yield* PodcastRecommendationEntity.getAll()).filter(
     (r) =>
       (r.status === PodcastRecommendationStatus.Notified ||
         r.status === PodcastRecommendationStatus.Pending) &&
       r.feedback !== "not_for_me",
   );
-}
+});
 
 export type PodcastFeedbackInput = {
   feedback?: PodcastFeedback;
@@ -158,19 +167,12 @@ export type PodcastFeedbackInput = {
  * Overloaded so existing callers passing a bare enum keep compiling: the note
  * is purely additive, and either input alone (or both) is a valid update.
  */
-export function setPodcastRecommendationFeedback(
-  recommendationId: string,
-  feedback: PodcastFeedback,
-): PodcastRecommendationData | undefined;
-export function setPodcastRecommendationFeedback(
-  recommendationId: string,
-  input: PodcastFeedbackInput,
-): PodcastRecommendationData | undefined;
-export function setPodcastRecommendationFeedback(
-  recommendationId: string,
-  input: PodcastFeedback | PodcastFeedbackInput,
-): PodcastRecommendationData | undefined {
-  const rec = PodcastRecommendationEntity.get({ recommendationId });
+export const setPodcastRecommendationFeedback = Effect.fn(
+  "PodcastRecommendations.setFeedback",
+)(function* (recommendationId: string, input: PodcastFeedback | PodcastFeedbackInput) {
+  const rec = Option.getOrUndefined(
+    yield* PodcastRecommendationEntity.get({ recommendationId }),
+  );
   if (!rec) return undefined;
   const { feedback, note } =
     typeof input === "string" ? { feedback: input, note: undefined } : input;
@@ -179,13 +181,17 @@ export function setPodcastRecommendationFeedback(
   };
   if (feedback !== undefined) patch.feedback = feedback;
   if (note !== undefined) patch.feedbackNote = note;
-  PodcastRecommendationEntity.patch({ recommendationId }, patch);
-  return PodcastRecommendationEntity.get({ recommendationId });
-}
+  yield* PodcastRecommendationEntity.patch({ recommendationId }, patch);
+  return Option.getOrUndefined(
+    yield* PodcastRecommendationEntity.get({ recommendationId }),
+  );
+});
 
-export function formatPodcastFeedbackDigest(): string {
-  return formatPodcastFeedbackDigestFrom(getAllPodcastRecommendations());
-}
+export const formatPodcastFeedbackDigest = Effect.fn(
+  "PodcastRecommendations.formatFeedbackDigest",
+)(function* () {
+  return formatPodcastFeedbackDigestFrom(yield* getAllPodcastRecommendations());
+});
 
 export function formatPodcastFeedbackDigestFrom(
   input: PodcastRecommendationData[],
@@ -233,8 +239,10 @@ function formatPodcastFeedbackEntry(
 }
 
 /** Recently recommended episodes, for the discovery/selection dedup context. */
-export function formatRecentRecommendationsDigest(limit = 15): string {
-  const recent = getAllPodcastRecommendations().slice(0, limit);
+export const formatRecentRecommendationsDigest = Effect.fn(
+  "PodcastRecommendations.formatRecentDigest",
+)(function* (limit = 15) {
+  const recent = (yield* getAllPodcastRecommendations()).slice(0, limit);
   if (recent.length === 0) return "No podcast episodes recommended yet.";
   return [
     "Recently recommended episodes (never repeat these):",
@@ -242,7 +250,7 @@ export function formatRecentRecommendationsDigest(limit = 15): string {
       (r) => `- ${r.showTitle} — ${r.episodeTitle} (${toDateStamp(r.recommendedAt)})`,
     ),
   ].join("\n");
-}
+});
 
 /**
  * Persisted cursor for rotating through the voices list. Person-searching every
@@ -277,16 +285,24 @@ export function computeVoiceBatch(
  * The caller must explicitly commit the cursor after discovery succeeds. This
  * prevents a transient discovery outage from silently skipping a whole batch.
  */
-export function nextVoiceBatch(voices: string[], max: number): string[] {
-  const cursor = PodcastRunStateEntity.get({ id: "singleton" })?.voiceCursor ?? 0;
-  return computeVoiceBatch(voices, max, cursor).batch;
-}
+export const nextVoiceBatch = Effect.fn("PodcastRecommendations.nextVoiceBatch")(
+  function* (voices: string[], max: number) {
+    const cursor =
+      Option.getOrUndefined(yield* PodcastRunStateEntity.get({ id: "singleton" }))
+        ?.voiceCursor ?? 0;
+    return computeVoiceBatch(voices, max, cursor).batch;
+  },
+);
 
 /** Advance the voice rotation only after the selected batch was searched. */
-export function advanceVoiceCursor(voices: string[], max: number): void {
-  const cursor = PodcastRunStateEntity.get({ id: "singleton" })?.voiceCursor ?? 0;
+export const advanceVoiceCursor = Effect.fn(
+  "PodcastRecommendations.advanceVoiceCursor",
+)(function* (voices: string[], max: number) {
+  const cursor =
+    Option.getOrUndefined(yield* PodcastRunStateEntity.get({ id: "singleton" }))
+      ?.voiceCursor ?? 0;
   const { nextCursor } = computeVoiceBatch(voices, max, cursor);
   if (voices.length > max) {
-    PodcastRunStateEntity.upsert({ id: "singleton", voiceCursor: nextCursor });
+    yield* PodcastRunStateEntity.upsert({ id: "singleton", voiceCursor: nextCursor });
   }
-}
+});

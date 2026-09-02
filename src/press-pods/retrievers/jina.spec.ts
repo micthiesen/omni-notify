@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runTest } from "../../live-check/testRuntime.js";
 import { JINA_READER_CENTS_PER_TOKEN, retrieveArticleJina } from "./jina.js";
 
 const mocks = vi.hoisted(() => ({
@@ -25,6 +26,7 @@ const HTML = `<html><head><title>Fallback title</title></head><body><article>${"
 describe("retrieveArticleJina", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.recordCostEventSafely.mockReturnValue(Effect.void);
     mocks.stream.mockImplementation(() => ({
       response: { headers: {} },
       async *[Symbol.asyncIterator]() {
@@ -42,7 +44,7 @@ describe("retrieveArticleJina", () => {
       },
     });
 
-    const article = await Effect.runPromise(
+    const article = await runTest(
       retrieveArticleJina("https://example.com/story", "ignored"),
     );
 
@@ -74,9 +76,7 @@ describe("retrieveArticleJina", () => {
   it("keeps missing usage explicitly unpriced instead of inventing a cost", async () => {
     mocks.json.mockResolvedValue({ data: { content: HTML } });
 
-    await Effect.runPromise(
-      retrieveArticleJina("https://example.com/story", "ignored"),
-    );
+    await runTest(retrieveArticleJina("https://example.com/story", "ignored"));
 
     expect(mocks.recordCostEventSafely).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,6 +1,6 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { LogLevel } from "@micthiesen/mitools/logging";
 import { afterEach, describe, expect, it } from "vitest";
+import { Effect } from "effect";
+import { runTest } from "../live-check/testRuntime.js";
 import {
   deleteIOSControlRegistration,
   IOSControlRegistrationEntity,
@@ -9,103 +9,69 @@ import {
   replaceDeviceRegistrations,
 } from "./persistence.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "ios-control-persistence.spec.db",
-  },
+afterEach(() => runTest(IOSControlRegistrationEntity.deleteAll()));
+
+const control = (controlId: string, slot: number, token: string) => ({
+  controlId,
+  slot,
+  pushToken: token.repeat(64),
+  environment: "sandbox" as const,
 });
 
-afterEach(() => IOSControlRegistrationEntity.deleteAll());
-
 describe("replaceDeviceRegistrations", () => {
-  it("replaces one device without touching another", () => {
-    replaceDeviceRegistrations(
-      "device-one",
-      [
-        {
-          controlId: "old",
-          slot: 1,
-          pushToken: "a".repeat(64),
-          environment: "sandbox",
-        },
-      ],
-      1,
-    );
-    replaceDeviceRegistrations(
-      "device-two",
-      [
-        {
-          controlId: "keep",
-          slot: 2,
-          pushToken: "b".repeat(64),
-          environment: "production",
-        },
-      ],
-      2,
-    );
-    replaceDeviceRegistrations(
-      "device-one",
-      [
-        {
-          controlId: "new",
-          slot: 4,
-          pushToken: "c".repeat(64),
-          environment: "sandbox",
-        },
-      ],
-      3,
-    );
-
+  it("replaces one device without touching another", async () => {
+    await runTest(replaceDeviceRegistrations("device-one", [control("old", 1, "a")]));
+    await runTest(replaceDeviceRegistrations("device-two", [control("keep", 2, "b")]));
+    await runTest(replaceDeviceRegistrations("device-one", [control("new", 4, "c")]));
     expect(
-      listIOSControlRegistrations()
+      (await runTest(listIOSControlRegistrations()))
         .map((row) => row.registrationId)
         .sort(),
     ).toEqual(["device-one:new", "device-two:keep"]);
   });
 
-  it("preserves delivered state only while token configuration is unchanged", () => {
-    replaceDeviceRegistrations("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "a".repeat(64),
-        environment: "sandbox",
-      },
-    ]);
-    markIOSControlDelivered("device-one:slot-one", "a".repeat(64), "state-hash");
-
-    const unchanged = replaceDeviceRegistrations("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "a".repeat(64),
-        environment: "sandbox",
-      },
-    ]);
-    expect(unchanged[0].lastDeliveredHash).toBe("state-hash");
-
-    const rotated = replaceDeviceRegistrations("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "b".repeat(64),
-        environment: "sandbox",
-      },
-    ]);
-    expect(rotated[0].lastDeliveredHash).toBeUndefined();
-
-    markIOSControlDelivered(
-      "device-one:slot-one",
-      "a".repeat(64),
-      "stale-in-flight-hash",
+  it("preserves delivered state only while token configuration is unchanged", async () => {
+    await runTest(
+      replaceDeviceRegistrations("device-one", [control("slot-one", 1, "a")]),
     );
-    expect(listIOSControlRegistrations()[0].lastDeliveredHash).toBeUndefined();
+    await runTest(
+      markIOSControlDelivered("device-one:slot-one", "a".repeat(64), "state-hash"),
+    );
+    const unchanged = await runTest(
+      replaceDeviceRegistrations("device-one", [control("slot-one", 1, "a")]),
+    );
+    expect(unchanged[0].lastDeliveredHash).toBe("state-hash");
+    const rotated = await runTest(
+      replaceDeviceRegistrations("device-one", [control("slot-one", 1, "b")]),
+    );
+    expect(rotated[0].lastDeliveredHash).toBeUndefined();
+    await runTest(
+      markIOSControlDelivered("device-one:slot-one", "a".repeat(64), "stale"),
+    );
+    await runTest(deleteIOSControlRegistration("device-one:slot-one", "a".repeat(64)));
+    expect((await runTest(listIOSControlRegistrations()))[0].pushToken).toBe(
+      "b".repeat(64),
+    );
+  });
 
-    deleteIOSControlRegistration("device-one:slot-one", "a".repeat(64));
-    expect(listIOSControlRegistrations()[0].pushToken).toBe("b".repeat(64));
+  it("never commits a mixed registration set under concurrent replacements", async () => {
+    const first = [control("a", 1, "a"), control("b", 2, "b")];
+    const second = [control("c", 3, "c"), control("d", 4, "d")];
+    await runTest(
+      Effect.all(
+        [
+          replaceDeviceRegistrations("device-one", first),
+          replaceDeviceRegistrations("device-one", second),
+        ],
+        { concurrency: "unbounded", discard: true },
+      ),
+    );
+    const ids = (await runTest(listIOSControlRegistrations()))
+      .map((row) => row.controlId)
+      .sort();
+    expect([
+      ["a", "b"],
+      ["c", "d"],
+    ]).toContainEqual(ids);
   });
 });

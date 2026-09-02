@@ -50,7 +50,7 @@ describe("selectAutoReadFolders", () => {
 describe("markRecentUnreadRead", () => {
   it("does nothing for an empty unread search", async () => {
     const client = makeClient();
-    const logger = { warn: vi.fn() };
+    const logger = { warn: vi.fn(() => Effect.void) };
 
     await Effect.runPromise(markRecentUnreadReadEffect(client, ["Archive"], logger));
 
@@ -65,7 +65,7 @@ describe("markRecentUnreadRead", () => {
     const client = makeClient({
       search: vi.fn(async () => [4, 9]),
     });
-    const logger = { warn: vi.fn() };
+    const logger = { warn: vi.fn(() => Effect.void) };
 
     try {
       await Effect.runPromise(markRecentUnreadReadEffect(client, ["Archive"], logger));
@@ -89,7 +89,7 @@ describe("markRecentUnreadRead", () => {
       getMailboxLock: vi.fn(async () => ({ release: successRelease })),
       search: vi.fn(async () => [3]),
     });
-    const logger = { warn: vi.fn() };
+    const logger = { warn: vi.fn(() => Effect.void) };
 
     await Effect.runPromise(
       markRecentUnreadReadEffect(successClient, ["Archive"], logger),
@@ -123,7 +123,7 @@ describe("markRecentUnreadRead", () => {
       }),
       search: vi.fn(async () => [8]),
     });
-    const logger = { warn: vi.fn() };
+    const logger = { warn: vi.fn(() => Effect.void) };
 
     await Effect.runPromise(
       markRecentUnreadReadEffect(client, ["Junk", "Trash"], logger),
@@ -149,7 +149,7 @@ describe("markRecentUnreadRead", () => {
         return [12];
       }),
     });
-    const logger = { warn: vi.fn() };
+    const logger = { warn: vi.fn(() => Effect.void) };
 
     await Effect.runPromise(
       markRecentUnreadReadEffect(client, ["Junk", "Trash"], logger),

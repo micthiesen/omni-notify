@@ -1,9 +1,12 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
 import { openai } from "@ai-sdk/openai";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { Logger } from "@micthiesen/mitools/logging";
 import { createProviderRegistry, type LanguageModel, wrapLanguageModel } from "ai";
-import { Duration, Effect } from "effect";
+import { Context, Duration, Effect, Fiber, Option } from "effect";
 import { currentCostFeature, recordCostEventSafely } from "../costs/persistence.js";
+import { runnerFromContext } from "../effect/appRuntime.js";
 import { IntegrationError } from "../effect/errors.js";
 import { fromPromise, runPromise } from "../effect/interop.js";
 import config from "../utils/config.js";
@@ -174,48 +177,59 @@ function resolveModel(
 ) {
   const modelId = (configured ?? fallback) as RegisteredModelId;
   const [service = "unknown", bareModel = modelId] = modelId.split(":", 2);
+  const fiber = Fiber.getCurrent();
+  const currentContext = fiber?.context;
+  const runner =
+    currentContext &&
+    Option.isSome(Context.getOption(currentContext, Logger)) &&
+    Option.isSome(Context.getOption(currentContext, Docstore))
+      ? runnerFromContext(
+          currentContext as unknown as Context.Context<Logger | Docstore>,
+        )
+      : undefined;
   const model = wrapLanguageModel({
     model: modelRegistry.languageModel(modelId),
     middleware: {
       specificationVersion: "v4",
-      wrapGenerate: ({ model: baseModel, params }) =>
-        runPromise(
-          callLanguageModelEffect((signal) =>
-            baseModel.doGenerate({
-              ...params,
-              abortSignal: params.abortSignal
-                ? AbortSignal.any([params.abortSignal, signal])
-                : signal,
+      wrapGenerate: ({ model: baseModel, params }) => {
+        const request = callLanguageModelEffect((signal) =>
+          baseModel.doGenerate({
+            ...params,
+            abortSignal: params.abortSignal
+              ? AbortSignal.any([params.abortSignal, signal])
+              : signal,
+          }),
+        );
+        if (!runner) return runPromise(request);
+        return runner.runPromise(
+          request.pipe(
+            Effect.tap((result) => {
+              const inputTokens = result.usage.inputTokens.total ?? 0;
+              const outputTokens = result.usage.outputTokens.total ?? 0;
+              return recordCostEventSafely({
+                category: "llm",
+                feature: currentCostFeature(feature),
+                operation,
+                service,
+                model: bareModel,
+                costCents: hasPrice(modelId)
+                  ? llmCostCents(modelId, { inputTokens, outputTokens })
+                  : null,
+                priceStatus: hasPrice(modelId) ? "estimated" : "unknown",
+                usage: {
+                  inputTokens,
+                  inputNoCacheTokens: result.usage.inputTokens.noCache ?? 0,
+                  cacheReadTokens: result.usage.inputTokens.cacheRead ?? 0,
+                  cacheWriteTokens: result.usage.inputTokens.cacheWrite ?? 0,
+                  outputTokens,
+                  reasoningTokens: result.usage.outputTokens.reasoning ?? 0,
+                  requests: 1,
+                },
+              });
             }),
-          ).pipe(
-            Effect.tap((result) =>
-              Effect.sync(() => {
-                const inputTokens = result.usage.inputTokens.total ?? 0;
-                const outputTokens = result.usage.outputTokens.total ?? 0;
-                recordCostEventSafely({
-                  category: "llm",
-                  feature: currentCostFeature(feature),
-                  operation,
-                  service,
-                  model: bareModel,
-                  costCents: hasPrice(modelId)
-                    ? llmCostCents(modelId, { inputTokens, outputTokens })
-                    : null,
-                  priceStatus: hasPrice(modelId) ? "estimated" : "unknown",
-                  usage: {
-                    inputTokens,
-                    inputNoCacheTokens: result.usage.inputTokens.noCache ?? 0,
-                    cacheReadTokens: result.usage.inputTokens.cacheRead ?? 0,
-                    cacheWriteTokens: result.usage.inputTokens.cacheWrite ?? 0,
-                    outputTokens,
-                    reasoningTokens: result.usage.outputTokens.reasoning ?? 0,
-                    requests: 1,
-                  },
-                });
-              }),
-            ),
           ),
-        ),
+        );
+      },
     },
   });
   return { model, modelId };

@@ -1,8 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import config from "../../utils/config.js";
 import { CaldavError } from "../effect.js";
-import type { CaldavSession } from "./api.js";
 import { discoverIcloudCalendarEffect } from "./icloud.js";
 
 export {
@@ -21,9 +20,7 @@ export function getCaldavProvider(): CaldavProviderName | undefined {
   return config.ICLOUD_USERNAME && config.ICLOUD_APP_PASSWORD ? "icloud" : undefined;
 }
 
-export function discoverCaldavSessionEffect(
-  logger: Logger,
-): Effect.Effect<CaldavSession, CaldavError> {
+export function discoverCaldavSessionEffect(logger: NamedLogger) {
   const provider = getCaldavProvider();
   return provider
     ? discoverIcloudCalendarEffect(logger)

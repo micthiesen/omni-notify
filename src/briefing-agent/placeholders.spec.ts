@@ -1,24 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("@micthiesen/mitools/entities", () => {
-  const store = new Map<string, unknown>();
-  return {
-    Entity: class {
-      constructor(
-        private name: string,
-        private keys: string[],
-      ) {}
-      get(key: Record<string, string>) {
-        return store.get(`${this.name}:${JSON.stringify(key)}`) ?? null;
-      }
-      upsert(data: Record<string, unknown>) {
-        const keyObj: Record<string, unknown> = {};
-        for (const k of this.keys) keyObj[k] = data[k];
-        store.set(`${this.name}:${JSON.stringify(keyObj)}`, data);
-      }
-    },
-  };
-});
+import { runTest } from "../live-check/testRuntime.js";
 
 import {
   resolveAllPlaceholders,
@@ -91,9 +72,9 @@ describe("resolveAllPlaceholders", () => {
     vi.useRealTimers();
   });
 
-  it("resolves {{date}}, {{time}}, and {{history:N}} together", () => {
+  it("resolves {{date}}, {{time}}, and {{history:N}} together", async () => {
     const prompt = "Date: {{date}}\nTime: {{time}}\nHistory:\n{{history:5}}";
-    const result = resolveAllPlaceholders(prompt, "TestBriefing");
+    const result = await runTest(resolveAllPlaceholders(prompt, "TestBriefing"));
     expect(result).not.toContain("{{date}}");
     expect(result).not.toContain("{{time}}");
     expect(result).not.toContain("{{history");
@@ -101,8 +82,8 @@ describe("resolveAllPlaceholders", () => {
     expect(result).toContain("No previous notifications");
   });
 
-  it("works with no placeholders", () => {
+  it("works with no placeholders", async () => {
     const prompt = "Just a plain prompt.";
-    expect(resolveAllPlaceholders(prompt, "Test")).toBe(prompt);
+    expect(await runTest(resolveAllPlaceholders(prompt, "Test"))).toBe(prompt);
   });
 });

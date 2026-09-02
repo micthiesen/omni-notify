@@ -1,7 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
-import { Deferred, Effect } from "effect";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
+import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { PersistenceError } from "../effect/errors.js";
-import { runPromise } from "../effect/interop.js";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./persistence.js", () => ({
@@ -11,6 +11,9 @@ vi.mock("./persistence.js", () => ({
 import { EmailDispatcher } from "./dispatcher.js";
 import { saveLastDispatchedAtEffect } from "./persistence.js";
 import type { EmailHandler, EmailPoll, EmailTransport, FetchedEmail } from "./types.js";
+
+const runtime = ManagedRuntime.make(Layer.merge(Docstore.layerMemory, Logger.layer()));
+const runPromise = runtime.runPromise.bind(runtime);
 
 const email: FetchedEmail = {
   id: "email-1",
@@ -23,12 +26,12 @@ const email: FetchedEmail = {
 };
 
 const logger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
+  debug: vi.fn(() => Effect.void),
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+  error: vi.fn(() => Effect.void),
   extend: vi.fn(),
-} as unknown as Logger;
+} as unknown as NamedLogger;
 
 function transport(poll: Effect.Effect<EmailPoll>): EmailTransport {
   return {

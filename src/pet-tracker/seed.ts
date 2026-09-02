@@ -1,15 +1,6 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { LogLevel } from "@micthiesen/mitools/logging";
-
-Injector.configure({
-  config: {
-    DB_NAME: "docstore.db",
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_USER: "",
-    PUSHOVER_TOKEN: "",
-    DOCKERIZED: false,
-  },
-});
+import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Sqlite } from "@micthiesen/mitools/sqlite";
+import { Effect, Layer } from "effect";
 
 const { clearAllData, insertWeightReading, upsertPet } =
   await import("./persistence.js");
@@ -68,45 +59,58 @@ function generateReadingTimes(day: Date, count: number): Date[] {
   return times.sort((a, b) => a.getTime() - b.getTime());
 }
 
-clearAllData();
+const seed = Effect.gen(function* () {
+  yield* clearAllData();
 
-const now = new Date();
-let totalReadings = 0;
+  const now = new Date();
+  let totalReadings = 0;
 
-for (const pet of pets) {
-  const finalWeight = pet.baselineWeight + pet.trendPerDay * DAYS;
+  for (const pet of pets) {
+    const finalWeight = pet.baselineWeight + pet.trendPerDay * DAYS;
 
-  for (let dayOffset = DAYS - 1; dayOffset >= 0; dayOffset--) {
-    const day = new Date(now);
-    day.setDate(day.getDate() - dayOffset);
-    day.setHours(0, 0, 0, 0);
+    for (let dayOffset = DAYS - 1; dayOffset >= 0; dayOffset--) {
+      const day = new Date(now);
+      day.setDate(day.getDate() - dayOffset);
+      day.setHours(0, 0, 0, 0);
 
-    const dayIndex = DAYS - dayOffset;
-    const trendWeight = pet.baselineWeight + pet.trendPerDay * dayIndex;
-    const readingCount = randomInt(MIN_READINGS_PER_DAY, MAX_READINGS_PER_DAY);
-    const times = generateReadingTimes(day, readingCount);
+      const dayIndex = DAYS - dayOffset;
+      const trendWeight = pet.baselineWeight + pet.trendPerDay * dayIndex;
+      const readingCount = randomInt(MIN_READINGS_PER_DAY, MAX_READINGS_PER_DAY);
+      const times = generateReadingTimes(day, readingCount);
 
-    for (const ts of times) {
-      const fluctuation = randomFloat(-FLUCTUATION, FLUCTUATION);
-      const weight = Math.round((trendWeight + fluctuation) * 100) / 100;
+      for (const ts of times) {
+        const fluctuation = randomFloat(-FLUCTUATION, FLUCTUATION);
+        const weight = Math.round((trendWeight + fluctuation) * 100) / 100;
 
-      insertWeightReading({
-        pet_id: pet.petId,
-        timestamp: ts.toISOString(),
-        weight,
-      });
-      totalReadings++;
+        yield* insertWeightReading({
+          pet_id: pet.petId,
+          timestamp: ts.toISOString(),
+          weight,
+        });
+        totalReadings++;
+      }
     }
+
+    yield* upsertPet({
+      pet_id: pet.petId,
+      name: pet.name,
+      current_weight: Math.round(finalWeight * 100) / 100,
+      updated_at: now.toISOString(),
+    });
   }
 
-  upsertPet({
-    pet_id: pet.petId,
-    name: pet.name,
-    current_weight: Math.round(finalWeight * 100) / 100,
-    updated_at: now.toISOString(),
-  });
-}
+  console.log(
+    `Seeded ${pets.length} pets with ${totalReadings} weight readings (${DAYS} days)`,
+  );
+});
 
-console.log(
-  `Seeded ${pets.length} pets with ${totalReadings} weight readings (${DAYS} days)`,
+await Effect.runPromise(
+  seed.pipe(
+    Effect.provide(
+      Layer.merge(
+        Sqlite.layer({ path: "docstore.db" }),
+        Logger.layer({ level: LogLevel.INFO }),
+      ),
+    ),
+  ),
 );

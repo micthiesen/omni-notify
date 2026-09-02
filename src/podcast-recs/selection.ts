@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
@@ -54,18 +54,19 @@ export function selectEpisodeEffect(
   research: Map<string, string>,
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<PodcastSelectionDecision | undefined, PodcastSelectionError> {
+) {
   return Effect.gen(function* () {
     const { model, modelId } = getRecsSelectionModel();
     const prompt = buildPrompt(finalists, tasteDigest, research);
 
-    logFile?.log(
-      logger,
-      LogLevel.INFO,
-      `Podcast Selection Prompt (${modelId})`,
-      codeBlock(prompt),
-      { consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})` },
-    );
+    if (logFile)
+      yield* logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Podcast Selection Prompt (${modelId})`,
+        codeBlock(prompt),
+        { consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})` },
+      );
 
     const result = yield* Effect.tryPromise({
       try: () =>
@@ -76,16 +77,17 @@ export function selectEpisodeEffect(
         }),
       catch: (cause) => new PodcastSelectionError({ operation: "select", cause }),
     });
-    logger.info(
+    yield* logger.info(
       `Selection token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
     const decision = result.output;
     if (decision) {
-      logFile?.section(
-        "Podcast Selection Decision",
-        codeBlock(JSON.stringify(decision, null, 2), "json"),
-      );
+      if (logFile)
+        yield* logFile.section(
+          "Podcast Selection Decision",
+          codeBlock(JSON.stringify(decision, null, 2), "json"),
+        );
     }
     return decision ?? undefined;
   });
@@ -95,26 +97,24 @@ export function researchFinalistsEffect(
   finalists: ScoredEpisode[],
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<Map<string, string>> {
+) {
   return Effect.gen(function* () {
     const entries = yield* Effect.forEach(
       finalists,
       ({ candidate }) =>
         Effect.gen(function* () {
           const query = `"${candidate.showTitle}" podcast ${candidate.episodeTitle} review discussion`;
-          logger.info(`Selection research: ${query}`);
+          yield* logger.info(`Selection research: ${query}`);
           const response = yield* searchWebEffect({
             query,
             maxResults: 3,
             maxContentChars: 800,
           }).pipe(
-            Effect.catch((error) => {
-              logger.warn(
-                `Research failed for ${candidate.episodeTitle}`,
-                String(error),
-              );
-              return Effect.succeed({ results: [] });
-            }),
+            Effect.catch((error) =>
+              logger
+                .warn(`Research failed for ${candidate.episodeTitle}`, String(error))
+                .pipe(Effect.as({ results: [] })),
+            ),
           );
           const summary = response.results
             .map(
@@ -122,10 +122,12 @@ export function researchFinalistsEffect(
                 `- ${result.title} (${result.url})\n  ${result.content.replace(/\s+/g, " ")}`,
             )
             .join("\n");
-          logFile?.section(
-            `Research: ${candidate.showTitle} — ${candidate.episodeTitle}`,
-            summary || "No results",
-          );
+          if (logFile) {
+            yield* logFile.section(
+              `Research: ${candidate.showTitle} — ${candidate.episodeTitle}`,
+              summary || "No results",
+            );
+          }
           return [
             candidate.episodeId,
             summary || "No research results available.",

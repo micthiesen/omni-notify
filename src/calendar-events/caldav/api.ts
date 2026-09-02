@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Clock, Effect, Random } from "effect";
 import { CaldavError } from "../effect.js";
 import type { CalendarEventExtraction } from "../extraction/schema.js";
@@ -16,29 +16,19 @@ export interface CaldavSession {
   authHeader: string;
 }
 
-type CreateResult =
-  | { status: "success"; eventUid: string }
-  | { status: "already_exists"; eventUid: string }
-  | { status: "error"; code: number; message: string };
-
-type DeleteResult =
-  | { status: "success" }
-  | { status: "not_found" }
-  | { status: "error"; code: number; message: string };
-
 /** Create a calendar event via CalDAV PUT with an iCalendar body. */
 export function createCalendarEventEffect(
   session: CaldavSession,
   event: CalendarEventExtraction["events"][number],
-  logger: Logger,
+  logger: NamedLogger,
   eventUid?: string,
-): Effect.Effect<CreateResult, CaldavError> {
+) {
   return Effect.gen(function* () {
     const generatedAt = yield* Clock.currentTimeMillis;
     const uid = eventUid ?? generateUid(generatedAt, yield* Random.next);
     const icsBody = buildICalendar(event, uid, generatedAt);
     const eventUrl = `${session.calendarUrl}${uid}.ics`;
-    logger.debug(`CalDAV PUT ${eventUrl}\n${icsBody}`);
+    yield* logger.debug(`CalDAV PUT ${eventUrl}\n${icsBody}`);
     const response = yield* requestCaldavEffect(
       eventUrl,
       {
@@ -53,15 +43,15 @@ export function createCalendarEventEffect(
       "create calendar event",
     );
     if (response.status === 201 || response.status === 204) {
-      logger.info(`Created calendar event: ${event.title} (${uid})`);
-      return { status: "success", eventUid: uid };
+      yield* logger.info(`Created calendar event: ${event.title} (${uid})`);
+      return { status: "success", eventUid: uid } as const;
     }
     if (response.status === 412) {
-      logger.info(`Calendar event already exists: ${uid}`);
-      return { status: "already_exists", eventUid: uid };
+      yield* logger.info(`Calendar event already exists: ${uid}`);
+      return { status: "already_exists", eventUid: uid } as const;
     }
     const text = yield* readResponseText(response, "create calendar event");
-    logger.error(
+    yield* logger.error(
       `CalDAV PUT failed: ${response.status} ${response.statusText}`,
       `URL: ${eventUrl}\nBody:\n${icsBody}\nResponse:\n${text}`,
     );
@@ -69,7 +59,7 @@ export function createCalendarEventEffect(
       status: "error",
       code: response.status,
       message: `CalDAV ${response.status}: ${response.statusText}`,
-    };
+    } as const;
   });
 }
 
@@ -78,13 +68,13 @@ export function updateCalendarEventEffect(
   session: CaldavSession,
   event: CalendarEventExtraction["events"][number],
   existingUid: string,
-  logger: Logger,
-): Effect.Effect<CreateResult, CaldavError> {
+  logger: NamedLogger,
+) {
   return Effect.gen(function* () {
     const generatedAt = yield* Clock.currentTimeMillis;
     const icsBody = buildICalendar(event, existingUid, generatedAt);
     const eventUrl = `${session.calendarUrl}${existingUid}.ics`;
-    logger.debug(`CalDAV PUT (update) ${eventUrl}\n${icsBody}`);
+    yield* logger.debug(`CalDAV PUT (update) ${eventUrl}\n${icsBody}`);
     const response = yield* requestCaldavEffect(
       eventUrl,
       {
@@ -98,11 +88,11 @@ export function updateCalendarEventEffect(
       "update calendar event",
     );
     if (response.status === 201 || response.status === 204) {
-      logger.info(`Updated calendar event: ${event.title} (${existingUid})`);
-      return { status: "success", eventUid: existingUid };
+      yield* logger.info(`Updated calendar event: ${event.title} (${existingUid})`);
+      return { status: "success", eventUid: existingUid } as const;
     }
     const text = yield* readResponseText(response, "update calendar event");
-    logger.error(
+    yield* logger.error(
       `CalDAV PUT (update) failed: ${response.status} ${response.statusText}`,
       `URL: ${eventUrl}\nBody:\n${icsBody}\nResponse:\n${text}`,
     );
@@ -110,7 +100,7 @@ export function updateCalendarEventEffect(
       status: "error",
       code: response.status,
       message: `CalDAV ${response.status}: ${response.statusText}`,
-    };
+    } as const;
   });
 }
 
@@ -118,43 +108,45 @@ export function updateCalendarEventEffect(
 export function deleteCalendarEventEffect(
   session: CaldavSession,
   uid: string,
-  logger: Logger,
-): Effect.Effect<DeleteResult, CaldavError> {
+  logger: NamedLogger,
+) {
   const eventUrl = `${session.calendarUrl}${uid}.ics`;
 
-  logger.debug(`CalDAV DELETE ${eventUrl}`);
+  return logger.debug(`CalDAV DELETE ${eventUrl}`).pipe(
+    Effect.andThen(
+      requestCaldavEffect(
+        eventUrl,
+        {
+          method: "DELETE",
+          headers: { Authorization: session.authHeader },
+        },
+        "delete calendar event",
+      ).pipe(
+        Effect.flatMap((response) =>
+          Effect.gen(function* () {
+            if (response.status === 204 || response.status === 200) {
+              yield* logger.info(`Deleted calendar event: ${uid}`);
+              return { status: "success" } as const;
+            }
 
-  return requestCaldavEffect(
-    eventUrl,
-    {
-      method: "DELETE",
-      headers: { Authorization: session.authHeader },
-    },
-    "delete calendar event",
-  ).pipe(
-    Effect.flatMap((response) =>
-      Effect.gen(function* () {
-        if (response.status === 204 || response.status === 200) {
-          logger.info(`Deleted calendar event: ${uid}`);
-          return { status: "success" };
-        }
+            if (response.status === 404) {
+              yield* logger.info(`Calendar event already gone: ${uid}`);
+              return { status: "not_found" } as const;
+            }
 
-        if (response.status === 404) {
-          logger.info(`Calendar event already gone: ${uid}`);
-          return { status: "not_found" };
-        }
-
-        const text = yield* readResponseText(response, "delete calendar event");
-        logger.error(
-          `CalDAV DELETE failed: ${response.status} ${response.statusText}`,
-          `URL: ${eventUrl}\nResponse:\n${text}`,
-        );
-        return {
-          status: "error",
-          code: response.status,
-          message: `CalDAV ${response.status}: ${response.statusText}`,
-        };
-      }),
+            const text = yield* readResponseText(response, "delete calendar event");
+            yield* logger.error(
+              `CalDAV DELETE failed: ${response.status} ${response.statusText}`,
+              `URL: ${eventUrl}\nResponse:\n${text}`,
+            );
+            return {
+              status: "error",
+              code: response.status,
+              message: `CalDAV ${response.status}: ${response.statusText}`,
+            } as const;
+          }),
+        ),
+      ),
     ),
   );
 }

@@ -6,11 +6,10 @@
  *
  * Usage: DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts
  */
-import { Injector } from "@micthiesen/mitools/config";
-import { Logger } from "@micthiesen/mitools/logging";
-import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
+import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Effect } from "effect";
-import { runPromise } from "../effect/interop.js";
+import { AppLayer, type AppServices, runnerFromContext } from "../effect/appRuntime.js";
 import { BriefingHistoryEntity } from "../briefing-agent/persistence.js";
 import { EmailActivityEntity } from "../email/activity.js";
 import { recordEmailFeedback } from "../email/feedback.js";
@@ -40,9 +39,8 @@ import {
 import { TasteProfileEntity } from "../recommendations/taste/index.js";
 import { MediaType } from "../recommendations/types.js";
 import { startServer } from "../server.js";
-import { installLogCapture } from "../task-runs/logCapture.js";
 import { TaskRunEntity } from "../task-runs/persistence.js";
-import { TaskRegistry } from "../task-runs/registry.js";
+import { TaskRegistry, type TaskServices } from "../task-runs/registry.js";
 import config from "../utils/config.js";
 import {
   addWorkspaceAction,
@@ -53,12 +51,10 @@ import {
   upsertWorkspaceSubject,
 } from "../workspaces/persistence.js";
 
-Injector.configure({ config });
-installLogCapture();
-const logger = new Logger("Preview");
+const logger = Logger.named("Preview");
 
-class FakeTask extends ScheduledTask {
-  protected readonly taskLogger: Logger;
+class FakeTask implements ScheduledTask<unknown, TaskServices> {
+  protected readonly taskLogger: NamedLogger;
 
   public constructor(
     public readonly name: string,
@@ -67,40 +63,37 @@ class FakeTask extends ScheduledTask {
     private readonly summary?: string,
     private readonly fail = false,
   ) {
-    super();
     this.taskLogger = logger.extend(name);
   }
 
   // Emits a spread of levels over the fake duration so the log viewer has
   // something realistic to tail.
-  protected runEffect(): Effect.Effect<void> {
+  protected runEffect() {
     return Effect.gen({ self: this }, function* () {
       const steps = Math.max(3, Math.round(this.durationMs / 400));
-      this.taskLogger.info(`Starting ${this.name} (${steps} steps)`);
+      yield* this.taskLogger.info(`Starting ${this.name} (${steps} steps)`);
       for (let i = 1; i <= steps; i++) {
         yield* Effect.sleep(this.durationMs / steps);
         if (i % 4 === 0) {
-          this.taskLogger.info(`Step ${i}/${steps}: fetched upstream page ${i}`);
+          yield* this.taskLogger.info(`Step ${i}/${steps}: fetched upstream page ${i}`);
         } else if (i % 7 === 0) {
-          this.taskLogger.warn(`Step ${i}/${steps}: upstream slow, retrying`);
+          yield* this.taskLogger.warn(`Step ${i}/${steps}: upstream slow, retrying`);
         } else {
-          this.taskLogger.debug(`Step ${i}/${steps}: processed batch`, {
+          yield* this.taskLogger.debug(`Step ${i}/${steps}: processed batch`, {
             items: i * 3,
           });
         }
       }
       if (this.fail) {
         // .warn, not .error: the error hook would send a real Pushover.
-        this.taskLogger.warn("Upstream returned 503 after retries, giving up");
+        yield* this.taskLogger.warn("Upstream returned 503 after retries, giving up");
         throw new Error("Simulated failure: upstream returned 503");
       }
-      this.taskLogger.info(`Finished ${this.name}`);
+      yield* this.taskLogger.info(`Finished ${this.name}`);
     });
   }
 
-  public run(): Promise<void> {
-    return runPromise(this.runEffect());
-  }
+  public readonly run = this.runEffect();
 
   public getLastRunSummary(): string | undefined {
     return this.summary;
@@ -109,916 +102,947 @@ class FakeTask extends ScheduledTask {
 
 /** Mirrors the real Recommendations task's manual-input support. */
 class FakeRecommendationsTask extends FakeTask {
-  public runManual(input: unknown): Promise<void> {
-    this.taskLogger.info("Manual run input", { input });
-    return this.run();
+  public runManual(input: unknown) {
+    return this.taskLogger
+      .info("Manual run input", { input })
+      .pipe(Effect.andThen(this.runEffect()));
   }
 }
 
 class FakeWorkspaceTask extends FakeTask {
-  public runManual(input: unknown): Promise<void> {
-    return runPromise(
-      Effect.gen({ self: this }, function* () {
-        const request = input as { message?: string; subjectId?: string };
-        if (request.message) {
-          addWorkspaceMessage({
-            workspaceId: "purchase-research",
-            subjectId: request.subjectId,
-            role: "user",
-            text: request.message,
-          });
-        }
-        yield* this.runEffect();
-        if (request.message) {
-          addWorkspaceMessage({
-            workspaceId: "purchase-research",
-            subjectId: request.subjectId,
-            role: "assistant",
-            text: "Preview response: I recorded that update and would refresh the relevant research next.",
-          });
-        }
-      }),
-    );
-  }
-}
-
-const now = Date.now();
-const MIN = 60_000;
-const HOUR = 3_600_000;
-
-// --- Streamers ---------------------------------------------------------------
-
-const streamers: Streamer[] = [
-  {
-    id: "pixeldust",
-    displayName: "PixelDust",
-    bindings: [{ platform: Platform.Twitch, username: "pixeldust" }],
-    tier: "primary",
-  },
-  {
-    id: "novabyte",
-    displayName: "NovaByte",
-    bindings: [
-      { platform: Platform.YouTube, username: "@novabyte" },
-      { platform: Platform.Twitch, username: "novabyte" },
-    ],
-    tier: "primary",
-  },
-  {
-    id: "retrorex",
-    displayName: "RetroRex",
-    bindings: [{ platform: Platform.Kick, username: "retrorex" }],
-    tier: "primary",
-  },
-  // Background tier: tracked (metrics/sessions/dashboard) but live-activity
-  // notifications are muted and only all-time viewer records notify.
-  {
-    id: "loopstation",
-    displayName: "LoopStation",
-    bindings: [{ platform: Platform.Twitch, username: "loopstation" }],
-    tier: "background",
-  },
-];
-
-StreamerStatusEntity.upsert({
-  streamerId: "pixeldust",
-  isLive: true,
-  primary: { platform: Platform.Twitch, username: "pixeldust" },
-  primaryTitle: "Ranked grind to Diamond — day 12, chat picks the loadout",
-  startedAt: new Date(now - 2.4 * HOUR),
-  maxViewerCount: 4230,
-  viewerCount: 3980,
-  category: "VALORANT",
-});
-StreamerStatusEntity.upsert({
-  streamerId: "novabyte",
-  isLive: true,
-  primary: { platform: Platform.YouTube, username: "@novabyte" },
-  primaryTitle: "Building a mechanical keyboard from scratch (live soldering)",
-  startedAt: new Date(now - 47 * MIN),
-  maxViewerCount: 812,
-  viewerCount: 690,
-  // YouTube never reports a category, unlike Twitch/Kick.
-});
-StreamerStatusEntity.upsert({
-  streamerId: "retrorex",
-  isLive: false,
-  lastStartedAt: new Date(now - 29 * HOUR),
-  lastEndedAt: new Date(now - 26 * HOUR),
-  lastMaxViewerCount: 1890,
-});
-StreamerStatusEntity.upsert({
-  streamerId: "loopstation",
-  isLive: true,
-  primary: { platform: Platform.Twitch, username: "loopstation" },
-  primaryTitle: "24/7 lo-fi beats to code to",
-  startedAt: new Date(now - 6 * HOUR),
-  maxViewerCount: 340,
-  viewerCount: 310,
-  category: "Music",
-});
-
-LivestreamIntelligenceEntity.upsert({
-  streamerId: "pixeldust",
-  sessionStartedAt: now - 2.4 * HOUR,
-  trend: {
-    percentChange: 68,
-    viewersPerMinute: 41,
-    dggPercentChange: null,
-    anomalous: true,
-    reason: "viewers up 68%",
-    updatedAt: now - 2 * MIN,
-  },
-  relevanceScore: 78,
-  relevanceReasons: ["primary channel", "viewers up 68%"],
-  summary: {
-    text: "Chat is choosing increasingly difficult loadouts during a close ranked promotion match.",
-    topic: "Ranked Promotion Match",
-    confidence: 0.91,
-    transcriptExcerpt: "chat gets to pick the next loadout",
-    updatedAt: now - 2 * MIN,
-    windowSeconds: 75,
-  },
-  chapters: [
-    {
-      chapterId: "preview-chapter-1",
-      startedAt: now - 24 * MIN,
-      title: "Promotion Match",
-      summary: "The session reached the final match needed for promotion.",
-    },
-    {
-      chapterId: "preview-chapter-2",
-      startedAt: now - 9 * MIN,
-      title: "Chat Picks the Loadout",
-      summary: "Viewers began choosing weapons and utility for each round.",
-    },
-  ],
-  latestAlert: {
-    alertId: "00000000-0000-4000-8000-000000000001",
-    type: "viewer_surge",
-    title: "PixelDust is surging",
-    message: "Viewer activity rose unusually quickly.",
-    reason: "viewers up 68%",
-    confidence: 0.85,
-    createdAt: now - 2 * MIN,
-  },
-  updatedAt: now - 2 * MIN,
-});
-
-const previewSessionStart = now - 2.4 * HOUR;
-updateLivestreamStage("pixeldust", previewSessionStart, "metadata", {
-  status: "skipped",
-  eligible: false,
-  finishedAt: now - 8 * MIN,
-  detail: "Title-only LLM classification is disabled",
-});
-updateLivestreamStage("pixeldust", previewSessionStart, "voice", {
-  status: "success",
-  eligible: true,
-  startedAt: now - 75_000,
-  finishedAt: now - MIN,
-  nextAt: now - 30_000,
-  durationMs: 15_000,
-  detail: "No Destiny evidence; 0/14 windows matched at 22% confidence",
-  metrics: {
-    confidence: 0.22,
-    matchedWindows: 0,
-    checkedWindows: 14,
-    evidence: "none",
-  },
-});
-updateLivestreamStage("pixeldust", previewSessionStart, "summary", {
-  status: "success",
-  eligible: true,
-  startedAt: now - 2 * MIN - 6_200,
-  finishedAt: now - 2 * MIN,
-  nextAt: now + 3 * MIN,
-  durationMs: 6_200,
-  detail: "Ranked Promotion Match",
-  metrics: {
-    confidence: 0.91,
-    audioSeconds: 75,
-    transcriptCharacters: 842,
-    costCents: 0.047,
-  },
-});
-updateLivestreamStage("pixeldust", previewSessionStart, "alert", {
-  status: "success",
-  eligible: true,
-  startedAt: now - 2 * MIN - 300,
-  finishedAt: now - 2 * MIN,
-  durationMs: 300,
-  detail: "PixelDust is surging",
-  metrics: { type: "viewer_surge", confidence: 0.85 },
-});
-
-const previewIntelligenceEvents: Array<
-  Omit<RecordLivestreamEventInput, "streamerId" | "sessionStartedAt">
-> = [
-  {
-    createdAt: previewSessionStart,
-    kind: "session" as const,
-    status: "info" as const,
-    title: "Live session started",
-    detail: "Ranked grind to Diamond — day 12, chat picks the loadout",
-  },
-  {
-    createdAt: now - 8 * MIN,
-    kind: "metadata" as const,
-    status: "success" as const,
-    title: "Semantic metadata updated",
-    detail: "A ranked VALORANT session with chat-controlled loadouts",
-    durationMs: 420,
-    costCents: 0.021,
-    metrics: { importance: 35, contentKind: "gaming" },
-  },
-  {
-    createdAt: now - 5 * MIN,
-    kind: "voice" as const,
-    status: "warning" as const,
-    title: "Possible Destiny voice match",
-    detail: "2/18 windows matched; awaiting another independent sample",
-    durationMs: 14_800,
-    metrics: { confidence: 0.67, matchedWindows: 2, checkedWindows: 18 },
-  },
-  {
-    createdAt: now - 4 * MIN,
-    kind: "voice" as const,
-    status: "info" as const,
-    title: "Destiny live participation not confirmed",
-    detail: "The matched audio came from a clip rather than live conversation.",
-    metrics: { assessmentConfidence: 0.88 },
-  },
-  {
-    createdAt: now - 2 * MIN,
-    kind: "summary" as const,
-    status: "success" as const,
-    title: "Now summary updated",
-    detail: "Ranked Promotion Match",
-    durationMs: 6_200,
-    costCents: 0.047,
-    metrics: { confidence: 0.91, audioSeconds: 75 },
-  },
-  {
-    createdAt: now - 2 * MIN + 500,
-    kind: "alert" as const,
-    status: "success" as const,
-    title: "Alert sent: PixelDust is surging",
-    detail: "Viewer count rose 68% in the rolling window.",
-    durationMs: 300,
-    metrics: { type: "viewer_surge", confidence: 0.85 },
-  },
-];
-for (const event of previewIntelligenceEvents) {
-  recordLivestreamEvent({
-    streamerId: "pixeldust",
-    sessionStartedAt: previewSessionStart,
-    ...event,
-  });
-}
-
-// --- Viewer metrics ------------------------------------------------------------
-
-// Deterministic pseudo-random daily peaks with off days, so the streamer
-// detail page has realistic history to render.
-function seedViewerMetrics(streamerId: string, base: number, days: number): void {
-  const buckets: DailyBucket[] = [];
-  for (let day = days; day >= 0; day--) {
-    if ((day * 7919) % 7 < 2) continue; // ~2 off days a week
-    const wave = 0.75 + 0.25 * Math.sin(day / 5);
-    const jitter = (((day * 104729) % 23) / 23) * 0.3;
-    const t = now - day * 24 * HOUR;
-    buckets.push({
-      date: new Date(t).toISOString().slice(0, 10),
-      maxViewers: Math.round(base * (wave + jitter)),
-      timestamp: t,
+  public runManual(input: unknown) {
+    return Effect.gen({ self: this }, function* () {
+      const request = input as { message?: string; subjectId?: string };
+      if (request.message) {
+        yield* addWorkspaceMessage({
+          workspaceId: "purchase-research",
+          subjectId: request.subjectId,
+          role: "user",
+          text: request.message,
+        });
+      }
+      yield* this.runEffect();
+      if (request.message) {
+        yield* addWorkspaceMessage({
+          workspaceId: "purchase-research",
+          subjectId: request.subjectId,
+          role: "assistant",
+          text: "Preview response: I recorded that update and would refresh the relevant research next.",
+        });
+      }
     });
   }
-  const bucketMax = Math.max(...buckets.map((b) => b.maxViewers));
-  ViewerMetricsEntity.upsert({
-    streamerId,
-    dailyBuckets: buckets,
-    // Slightly above the buckets and older than them, so the all-time tile
-    // shows a record that predates the retained window.
-    allTimeMax: Math.round(bucketMax * 1.15),
-    allTimeMaxTimestamp: now - (days + 30) * 24 * HOUR,
-  });
 }
 
-seedViewerMetrics("pixeldust", 4200, 95);
-seedViewerMetrics("novabyte", 850, 60);
-seedViewerMetrics("retrorex", 1900, 25);
-seedViewerMetrics("loopstation", 330, 40);
+const previewProgram = Effect.scoped(
+  Effect.gen(function* () {
+    const now = Date.now();
+    const MIN = 60_000;
+    const HOUR = 3_600_000;
 
-// --- Task run history ----------------------------------------------------------
+    // --- Streamers ---------------------------------------------------------------
 
-let seq = 0;
-function seedRun(
-  taskName: string,
-  startedAt: number,
-  durationMs: number,
-  status: "success" | "error",
-  extra: {
-    trigger?: "schedule" | "manual" | "startup" | "catchup";
-    error?: string;
-    summary?: string;
-  } = {},
-): void {
-  TaskRunEntity.upsert({
-    runId: `${taskName}:${startedAt}:${seq++}`,
-    taskName,
-    trigger: extra.trigger ?? "schedule",
-    startedAt,
-    finishedAt: startedAt + durationMs,
-    status,
-    error: extra.error,
-    summary: extra.summary,
-  });
-}
+    const streamers: Streamer[] = [
+      {
+        id: "pixeldust",
+        displayName: "PixelDust",
+        bindings: [{ platform: Platform.Twitch, username: "pixeldust" }],
+        tier: "primary",
+      },
+      {
+        id: "novabyte",
+        displayName: "NovaByte",
+        bindings: [
+          { platform: Platform.YouTube, username: "@novabyte" },
+          { platform: Platform.Twitch, username: "novabyte" },
+        ],
+        tier: "primary",
+      },
+      {
+        id: "retrorex",
+        displayName: "RetroRex",
+        bindings: [{ platform: Platform.Kick, username: "retrorex" }],
+        tier: "primary",
+      },
+      // Background tier: tracked (metrics/sessions/dashboard) but live-activity
+      // notifications are muted and only all-time viewer records notify.
+      {
+        id: "loopstation",
+        displayName: "LoopStation",
+        bindings: [{ platform: Platform.Twitch, username: "loopstation" }],
+        tier: "background",
+      },
+    ];
 
-for (let i = 1; i <= 12; i++) {
-  seedRun("LiveCheckTask", now - i * 20_000, 700 + i * 13, "success");
-}
-seedRun("LiveCheckTask", now - 42 * MIN, 1400, "error", {
-  error: "Twitch GQL returned 502 for pixeldust",
-});
-seedRun("MorningBriefing", now - 2 * HOUR, 34_000, "success", {
-  summary: "Covered 5 stories: GPU supply, tape-out delays, and more.",
-});
-seedRun("EveningBriefing", now - 14 * HOUR, 41_000, "error", {
-  error: "Tavily search failed after 3 retries: rate limited",
-});
-seedRun("PetTrackerTask", now - 34 * MIN, 2_300, "success", {
-  summary: "Mochi: 11.3 lbs, 3 visits today.",
-});
-seedRun("Recommendations", now - 22 * HOUR, 96_000, "success", {
-  trigger: "manual",
-  summary: "Picked The Iron Harvest (2025); added to watchlist.",
-});
-seedRun("Recommendations", now - 46 * HOUR, 71_000, "success", {
-  summary: "no_add: finalists were weaker than the current taste evidence",
-});
+    yield* StreamerStatusEntity.upsert({
+      streamerId: "pixeldust",
+      isLive: true,
+      primary: { platform: Platform.Twitch, username: "pixeldust" },
+      primaryTitle: "Ranked grind to Diamond — day 12, chat picks the loadout",
+      startedAt: new Date(now - 2.4 * HOUR),
+      maxViewerCount: 4230,
+      viewerCount: 3980,
+      category: "VALORANT",
+    });
+    yield* StreamerStatusEntity.upsert({
+      streamerId: "novabyte",
+      isLive: true,
+      primary: { platform: Platform.YouTube, username: "@novabyte" },
+      primaryTitle: "Building a mechanical keyboard from scratch (live soldering)",
+      startedAt: new Date(now - 47 * MIN),
+      maxViewerCount: 812,
+      viewerCount: 690,
+      // YouTube never reports a category, unlike Twitch/Kick.
+    });
+    yield* StreamerStatusEntity.upsert({
+      streamerId: "retrorex",
+      isLive: false,
+      lastStartedAt: new Date(now - 29 * HOUR),
+      lastEndedAt: new Date(now - 26 * HOUR),
+      lastMaxViewerCount: 1890,
+    });
+    yield* StreamerStatusEntity.upsert({
+      streamerId: "loopstation",
+      isLive: true,
+      primary: { platform: Platform.Twitch, username: "loopstation" },
+      primaryTitle: "24/7 lo-fi beats to code to",
+      startedAt: new Date(now - 6 * HOUR),
+      maxViewerCount: 340,
+      viewerCount: 310,
+      category: "Music",
+    });
 
-// --- Recommendations ---------------------------------------------------------
+    yield* LivestreamIntelligenceEntity.upsert({
+      streamerId: "pixeldust",
+      sessionStartedAt: now - 2.4 * HOUR,
+      trend: {
+        percentChange: 68,
+        viewersPerMinute: 41,
+        dggPercentChange: null,
+        anomalous: true,
+        reason: "viewers up 68%",
+        updatedAt: now - 2 * MIN,
+      },
+      relevanceScore: 78,
+      relevanceReasons: ["primary channel", "viewers up 68%"],
+      summary: {
+        text: "Chat is choosing increasingly difficult loadouts during a close ranked promotion match.",
+        topic: "Ranked Promotion Match",
+        confidence: 0.91,
+        transcriptExcerpt: "chat gets to pick the next loadout",
+        updatedAt: now - 2 * MIN,
+        windowSeconds: 75,
+      },
+      chapters: [
+        {
+          chapterId: "preview-chapter-1",
+          startedAt: now - 24 * MIN,
+          title: "Promotion Match",
+          summary: "The session reached the final match needed for promotion.",
+        },
+        {
+          chapterId: "preview-chapter-2",
+          startedAt: now - 9 * MIN,
+          title: "Chat Picks the Loadout",
+          summary: "Viewers began choosing weapons and utility for each round.",
+        },
+      ],
+      latestAlert: {
+        alertId: "00000000-0000-4000-8000-000000000001",
+        type: "viewer_surge",
+        title: "PixelDust is surging",
+        message: "Viewer activity rose unusually quickly.",
+        reason: "viewers up 68%",
+        confidence: 0.85,
+        createdAt: now - 2 * MIN,
+      },
+      updatedAt: now - 2 * MIN,
+    });
 
-RecommendationEntity.upsert({
-  recommendationId: "preview-iron-harvest",
-  canonicalId: "tmdb:movie:100001",
-  tmdbId: 100001,
-  mediaType: MediaType.Movie,
-  title: "The Iron Harvest",
-  year: 2025,
-  status: RecommendationStatus.Notified,
-  whyForUser:
-    "Slow-burn sci-fi with a strong ensemble cast — matches your recent run of cerebral thrillers and clocks in under two hours.",
-  caveats: ["Only on physical rental in some regions"],
-  confidence: 0.82,
-  runDate: "2026-07-14",
-  recommendedAt: now - 22 * HOUR,
-  notifiedAt: now - 22 * HOUR + MIN,
-  watchlistResult: "added",
-});
-// Additional open (notified, unresolved) rows so the dashboard's On Deck strip
-// renders with realistic variety: tv + movie, missing poster, missing why.
-RecommendationEntity.upsert({
-  recommendationId: "preview-glass-orchard",
-  canonicalId: "tmdb:tv:400004",
-  tmdbId: 400004,
-  mediaType: MediaType.Tv,
-  title: "The Glass Orchard",
-  year: 2026,
-  status: RecommendationStatus.Notified,
-  whyForUser: "Prestige family saga with a heist spine; two seasons, both tight.",
-  confidence: 0.77,
-  runDate: "2026-07-16",
-  recommendedAt: now - 3 * 24 * HOUR,
-  notifiedAt: now - 3 * 24 * HOUR + MIN,
-  watchlistResult: "added",
-});
-RecommendationEntity.upsert({
-  recommendationId: "preview-north-of-nowhere",
-  canonicalId: "tmdb:movie:500005",
-  tmdbId: 500005,
-  mediaType: MediaType.Movie,
-  title: "North of Nowhere",
-  year: 2025,
-  status: RecommendationStatus.Notified,
-  // No posterPath and no whyForUser: exercises the strip's fallback tile.
-  confidence: 0.58,
-  runDate: "2026-07-10",
-  recommendedAt: now - 6 * 24 * HOUR,
-  notifiedAt: now - 6 * 24 * HOUR + MIN,
-  watchlistResult: "already_exists",
-});
-RecommendationEntity.upsert({
-  recommendationId: "preview-harbor-lights",
-  canonicalId: "tmdb:tv:200002",
-  tmdbId: 200002,
-  mediaType: MediaType.Tv,
-  title: "Harbor Lights",
-  year: 2024,
-  status: RecommendationStatus.Watched,
-  whyForUser: "Character-driven mystery, one tight 8-episode season.",
-  confidence: 0.74,
-  runDate: "2026-06-20",
-  recommendedAt: now - 25 * 24 * HOUR,
-  notifiedAt: now - 25 * 24 * HOUR + MIN,
-  resolvedAt: now - 4 * 24 * HOUR,
-  watchlistResult: "added",
-});
-RecommendationEntity.upsert({
-  recommendationId: "preview-static-bloom",
-  canonicalId: "tmdb:movie:300003",
-  tmdbId: 300003,
-  mediaType: MediaType.Movie,
-  title: "Static Bloom",
-  year: 2023,
-  status: RecommendationStatus.Ignored,
-  whyForUser: "A24-style character study with a killer soundtrack.",
-  caveats: ["Slow first act", "Subtitled"],
-  confidence: 0.61,
-  runDate: "2026-05-30",
-  recommendedAt: now - 46 * 24 * HOUR,
-  notifiedAt: now - 46 * 24 * HOUR + MIN,
-  resolvedAt: now - 16 * 24 * HOUR,
-  watchlistResult: "already_exists",
-});
+    const previewSessionStart = now - 2.4 * HOUR;
+    yield* updateLivestreamStage("pixeldust", previewSessionStart, "metadata", {
+      status: "skipped",
+      eligible: false,
+      finishedAt: now - 8 * MIN,
+      detail: "Title-only LLM classification is disabled",
+    });
+    yield* updateLivestreamStage("pixeldust", previewSessionStart, "voice", {
+      status: "success",
+      eligible: true,
+      startedAt: now - 75_000,
+      finishedAt: now - MIN,
+      nextAt: now - 30_000,
+      durationMs: 15_000,
+      detail: "No Destiny evidence; 0/14 windows matched at 22% confidence",
+      metrics: {
+        confidence: 0.22,
+        matchedWindows: 0,
+        checkedWindows: 14,
+        evidence: "none",
+      },
+    });
+    yield* updateLivestreamStage("pixeldust", previewSessionStart, "summary", {
+      status: "success",
+      eligible: true,
+      startedAt: now - 2 * MIN - 6_200,
+      finishedAt: now - 2 * MIN,
+      nextAt: now + 3 * MIN,
+      durationMs: 6_200,
+      detail: "Ranked Promotion Match",
+      metrics: {
+        confidence: 0.91,
+        audioSeconds: 75,
+        transcriptCharacters: 842,
+        costCents: 0.047,
+      },
+    });
+    yield* updateLivestreamStage("pixeldust", previewSessionStart, "alert", {
+      status: "success",
+      eligible: true,
+      startedAt: now - 2 * MIN - 300,
+      finishedAt: now - 2 * MIN,
+      durationMs: 300,
+      detail: "PixelDust is surging",
+      metrics: { type: "viewer_surge", confidence: 0.85 },
+    });
 
-TasteProfileEntity.upsert({
-  profileId: "v3:preview",
-  version: 3,
-  generatedAt: now - 2 * 24 * HOUR,
-  evidenceFingerprint: "preview",
-  evidenceCount: 84,
-  modelId: "openai:gpt-5.6-luna",
-  promptVersion: "taste-reflection-v1",
-  summary:
-    "Strong preference for tightly constructed speculative stories and character-driven mysteries, with less patience for long, repetitive seasons.",
-  stablePreferences: [
-    {
-      claim: "Cerebral science fiction with a human emotional core",
-      confidence: 0.88,
-      evidenceIds: ["preview-1", "preview-2", "preview-3"],
-    },
-  ],
-  conditionalPreferences: [
-    {
-      claim: "Slow burns work when the ending rewards the setup",
-      confidence: 0.72,
-      evidenceIds: ["preview-4", "preview-5"],
-    },
-  ],
-  aversions: [
-    {
-      claim: "Avoid padded multi-season commitments",
-      confidence: 0.76,
-      evidenceIds: ["preview-6", "preview-7"],
-    },
-  ],
-  currentSaturation: [
-    {
-      claim: "Superhero stories",
-      confidence: 0.7,
-      evidenceIds: ["preview-8", "preview-9"],
-    },
-  ],
-  explorationTargets: [
-    {
-      claim: "International speculative drama",
-      confidence: 0.68,
-      evidenceIds: ["preview-1"],
-    },
-    {
-      claim: "Compact dark comedy",
-      confidence: 0.6,
-      evidenceIds: ["preview-4"],
-    },
-  ],
-  uncertainties: [
-    {
-      claim: "Musicals and unscripted series",
-      confidence: 0.5,
-      evidenceIds: ["preview-10"],
-    },
-  ],
-  commitmentPreferences: {
-    movies: {
-      preference: "positive",
-      confidence: 0.9,
-      evidenceIds: ["preview-1", "preview-2"],
-    },
-    limitedSeries: {
-      preference: "positive",
+    const previewIntelligenceEvents: Array<
+      Omit<RecordLivestreamEventInput, "streamerId" | "sessionStartedAt">
+    > = [
+      {
+        createdAt: previewSessionStart,
+        kind: "session" as const,
+        status: "info" as const,
+        title: "Live session started",
+        detail: "Ranked grind to Diamond — day 12, chat picks the loadout",
+      },
+      {
+        createdAt: now - 8 * MIN,
+        kind: "metadata" as const,
+        status: "success" as const,
+        title: "Semantic metadata updated",
+        detail: "A ranked VALORANT session with chat-controlled loadouts",
+        durationMs: 420,
+        costCents: 0.021,
+        metrics: { importance: 35, contentKind: "gaming" },
+      },
+      {
+        createdAt: now - 5 * MIN,
+        kind: "voice" as const,
+        status: "warning" as const,
+        title: "Possible Destiny voice match",
+        detail: "2/18 windows matched; awaiting another independent sample",
+        durationMs: 14_800,
+        metrics: { confidence: 0.67, matchedWindows: 2, checkedWindows: 18 },
+      },
+      {
+        createdAt: now - 4 * MIN,
+        kind: "voice" as const,
+        status: "info" as const,
+        title: "Destiny live participation not confirmed",
+        detail: "The matched audio came from a clip rather than live conversation.",
+        metrics: { assessmentConfidence: 0.88 },
+      },
+      {
+        createdAt: now - 2 * MIN,
+        kind: "summary" as const,
+        status: "success" as const,
+        title: "Now summary updated",
+        detail: "Ranked Promotion Match",
+        durationMs: 6_200,
+        costCents: 0.047,
+        metrics: { confidence: 0.91, audioSeconds: 75 },
+      },
+      {
+        createdAt: now - 2 * MIN + 500,
+        kind: "alert" as const,
+        status: "success" as const,
+        title: "Alert sent: PixelDust is surging",
+        detail: "Viewer count rose 68% in the rolling window.",
+        durationMs: 300,
+        metrics: { type: "viewer_surge", confidence: 0.85 },
+      },
+    ];
+    for (const event of previewIntelligenceEvents) {
+      yield* recordLivestreamEvent({
+        streamerId: "pixeldust",
+        sessionStartedAt: previewSessionStart,
+        ...event,
+      });
+    }
+
+    // --- Viewer metrics ------------------------------------------------------------
+
+    // Deterministic pseudo-random daily peaks with off days, so the streamer
+    // detail page has realistic history to render.
+    const seedViewerMetrics = Effect.fn("Preview.seedViewerMetrics")(function* (
+      streamerId: string,
+      base: number,
+      days: number,
+    ) {
+      const buckets: DailyBucket[] = [];
+      for (let day = days; day >= 0; day--) {
+        if ((day * 7919) % 7 < 2) continue; // ~2 off days a week
+        const wave = 0.75 + 0.25 * Math.sin(day / 5);
+        const jitter = (((day * 104729) % 23) / 23) * 0.3;
+        const t = now - day * 24 * HOUR;
+        buckets.push({
+          date: new Date(t).toISOString().slice(0, 10),
+          maxViewers: Math.round(base * (wave + jitter)),
+          timestamp: t,
+        });
+      }
+      const bucketMax = Math.max(...buckets.map((b) => b.maxViewers));
+      yield* ViewerMetricsEntity.upsert({
+        streamerId,
+        dailyBuckets: buckets,
+        // Slightly above the buckets and older than them, so the all-time tile
+        // shows a record that predates the retained window.
+        allTimeMax: Math.round(bucketMax * 1.15),
+        allTimeMaxTimestamp: now - (days + 30) * 24 * HOUR,
+      });
+    });
+
+    yield* seedViewerMetrics("pixeldust", 4200, 95);
+    yield* seedViewerMetrics("novabyte", 850, 60);
+    yield* seedViewerMetrics("retrorex", 1900, 25);
+    yield* seedViewerMetrics("loopstation", 330, 40);
+
+    // --- Task run history ----------------------------------------------------------
+
+    let seq = 0;
+    const seedRun = Effect.fn("Preview.seedRun")(function* (
+      taskName: string,
+      startedAt: number,
+      durationMs: number,
+      status: "success" | "error",
+      extra: {
+        trigger?: "schedule" | "manual" | "startup" | "catchup";
+        error?: string;
+        summary?: string;
+      } = {},
+    ) {
+      yield* TaskRunEntity.upsert({
+        runId: `${taskName}:${startedAt}:${seq++}`,
+        taskName,
+        trigger: extra.trigger ?? "schedule",
+        startedAt,
+        finishedAt: startedAt + durationMs,
+        status,
+        error: extra.error,
+        summary: extra.summary,
+      });
+    });
+
+    for (let i = 1; i <= 12; i++) {
+      yield* seedRun("LiveCheckTask", now - i * 20_000, 700 + i * 13, "success");
+    }
+    yield* seedRun("LiveCheckTask", now - 42 * MIN, 1400, "error", {
+      error: "Twitch GQL returned 502 for pixeldust",
+    });
+    yield* seedRun("MorningBriefing", now - 2 * HOUR, 34_000, "success", {
+      summary: "Covered 5 stories: GPU supply, tape-out delays, and more.",
+    });
+    yield* seedRun("EveningBriefing", now - 14 * HOUR, 41_000, "error", {
+      error: "Tavily search failed after 3 retries: rate limited",
+    });
+    yield* seedRun("PetTrackerTask", now - 34 * MIN, 2_300, "success", {
+      summary: "Mochi: 11.3 lbs, 3 visits today.",
+    });
+    yield* seedRun("Recommendations", now - 22 * HOUR, 96_000, "success", {
+      trigger: "manual",
+      summary: "Picked The Iron Harvest (2025); added to watchlist.",
+    });
+    yield* seedRun("Recommendations", now - 46 * HOUR, 71_000, "success", {
+      summary: "no_add: finalists were weaker than the current taste evidence",
+    });
+
+    // --- Recommendations ---------------------------------------------------------
+
+    yield* RecommendationEntity.upsert({
+      recommendationId: "preview-iron-harvest",
+      canonicalId: "tmdb:movie:100001",
+      tmdbId: 100001,
+      mediaType: MediaType.Movie,
+      title: "The Iron Harvest",
+      year: 2025,
+      status: RecommendationStatus.Notified,
+      whyForUser:
+        "Slow-burn sci-fi with a strong ensemble cast — matches your recent run of cerebral thrillers and clocks in under two hours.",
+      caveats: ["Only on physical rental in some regions"],
       confidence: 0.82,
-      evidenceIds: ["preview-3", "preview-4"],
-    },
-    longSeries: {
-      preference: "negative",
-      confidence: 0.76,
-      evidenceIds: ["preview-6", "preview-7"],
-    },
-  },
-  stats: {
-    completedMovies: 61,
-    completedSeries: 23,
-    rewatchedTitles: 9,
-    recommendations: {
-      total: 14,
-      watched: 6,
-      abandoned: 1,
-      ignored: 3,
-      failed: 1,
-      awaitingOutcome: 3,
-    },
-    feedback: { goodPick: 5, notForMe: 2, alreadyWatched: 1 },
-    averageHoursToStart: 31.5,
-    sourcePerformance: {},
-  },
-});
+      runDate: "2026-07-14",
+      recommendedAt: now - 22 * HOUR,
+      notifiedAt: now - 22 * HOUR + MIN,
+      watchlistResult: "added",
+    });
+    // Additional open (notified, unresolved) rows so the dashboard's On Deck strip
+    // renders with realistic variety: tv + movie, missing poster, missing why.
+    yield* RecommendationEntity.upsert({
+      recommendationId: "preview-glass-orchard",
+      canonicalId: "tmdb:tv:400004",
+      tmdbId: 400004,
+      mediaType: MediaType.Tv,
+      title: "The Glass Orchard",
+      year: 2026,
+      status: RecommendationStatus.Notified,
+      whyForUser: "Prestige family saga with a heist spine; two seasons, both tight.",
+      confidence: 0.77,
+      runDate: "2026-07-16",
+      recommendedAt: now - 3 * 24 * HOUR,
+      notifiedAt: now - 3 * 24 * HOUR + MIN,
+      watchlistResult: "added",
+    });
+    yield* RecommendationEntity.upsert({
+      recommendationId: "preview-north-of-nowhere",
+      canonicalId: "tmdb:movie:500005",
+      tmdbId: 500005,
+      mediaType: MediaType.Movie,
+      title: "North of Nowhere",
+      year: 2025,
+      status: RecommendationStatus.Notified,
+      // No posterPath and no whyForUser: exercises the strip's fallback tile.
+      confidence: 0.58,
+      runDate: "2026-07-10",
+      recommendedAt: now - 6 * 24 * HOUR,
+      notifiedAt: now - 6 * 24 * HOUR + MIN,
+      watchlistResult: "already_exists",
+    });
+    yield* RecommendationEntity.upsert({
+      recommendationId: "preview-harbor-lights",
+      canonicalId: "tmdb:tv:200002",
+      tmdbId: 200002,
+      mediaType: MediaType.Tv,
+      title: "Harbor Lights",
+      year: 2024,
+      status: RecommendationStatus.Watched,
+      whyForUser: "Character-driven mystery, one tight 8-episode season.",
+      confidence: 0.74,
+      runDate: "2026-06-20",
+      recommendedAt: now - 25 * 24 * HOUR,
+      notifiedAt: now - 25 * 24 * HOUR + MIN,
+      resolvedAt: now - 4 * 24 * HOUR,
+      watchlistResult: "added",
+    });
+    yield* RecommendationEntity.upsert({
+      recommendationId: "preview-static-bloom",
+      canonicalId: "tmdb:movie:300003",
+      tmdbId: 300003,
+      mediaType: MediaType.Movie,
+      title: "Static Bloom",
+      year: 2023,
+      status: RecommendationStatus.Ignored,
+      whyForUser: "A24-style character study with a killer soundtrack.",
+      caveats: ["Slow first act", "Subtitled"],
+      confidence: 0.61,
+      runDate: "2026-05-30",
+      recommendedAt: now - 46 * 24 * HOUR,
+      notifiedAt: now - 46 * 24 * HOUR + MIN,
+      resolvedAt: now - 16 * 24 * HOUR,
+      watchlistResult: "already_exists",
+    });
 
-// --- Podcast recommendations ---------------------------------------------------
+    yield* TasteProfileEntity.upsert({
+      profileId: "v3:preview",
+      version: 3,
+      generatedAt: now - 2 * 24 * HOUR,
+      evidenceFingerprint: "preview",
+      evidenceCount: 84,
+      modelId: "openai:gpt-5.6-luna",
+      promptVersion: "taste-reflection-v1",
+      summary:
+        "Strong preference for tightly constructed speculative stories and character-driven mysteries, with less patience for long, repetitive seasons.",
+      stablePreferences: [
+        {
+          claim: "Cerebral science fiction with a human emotional core",
+          confidence: 0.88,
+          evidenceIds: ["preview-1", "preview-2", "preview-3"],
+        },
+      ],
+      conditionalPreferences: [
+        {
+          claim: "Slow burns work when the ending rewards the setup",
+          confidence: 0.72,
+          evidenceIds: ["preview-4", "preview-5"],
+        },
+      ],
+      aversions: [
+        {
+          claim: "Avoid padded multi-season commitments",
+          confidence: 0.76,
+          evidenceIds: ["preview-6", "preview-7"],
+        },
+      ],
+      currentSaturation: [
+        {
+          claim: "Superhero stories",
+          confidence: 0.7,
+          evidenceIds: ["preview-8", "preview-9"],
+        },
+      ],
+      explorationTargets: [
+        {
+          claim: "International speculative drama",
+          confidence: 0.68,
+          evidenceIds: ["preview-1"],
+        },
+        {
+          claim: "Compact dark comedy",
+          confidence: 0.6,
+          evidenceIds: ["preview-4"],
+        },
+      ],
+      uncertainties: [
+        {
+          claim: "Musicals and unscripted series",
+          confidence: 0.5,
+          evidenceIds: ["preview-10"],
+        },
+      ],
+      commitmentPreferences: {
+        movies: {
+          preference: "positive",
+          confidence: 0.9,
+          evidenceIds: ["preview-1", "preview-2"],
+        },
+        limitedSeries: {
+          preference: "positive",
+          confidence: 0.82,
+          evidenceIds: ["preview-3", "preview-4"],
+        },
+        longSeries: {
+          preference: "negative",
+          confidence: 0.76,
+          evidenceIds: ["preview-6", "preview-7"],
+        },
+      },
+      stats: {
+        completedMovies: 61,
+        completedSeries: 23,
+        rewatchedTitles: 9,
+        recommendations: {
+          total: 14,
+          watched: 6,
+          abandoned: 1,
+          ignored: 3,
+          failed: 1,
+          awaitingOutcome: 3,
+        },
+        feedback: { goodPick: 5, notForMe: 2, alreadyWatched: 1 },
+        averageHoursToStart: 31.5,
+        sourcePerformance: {},
+      },
+    });
 
-PodcastRecommendationEntity.upsert({
-  recommendationId: "preview-pod-signal-drift",
-  episodeId: "itunes:900001#ep-2041" as CanonicalEpisodeId,
-  showId: "itunes:900001" as CanonicalShowId,
-  showTitle: "Signal Drift",
-  episodeTitle: "The grid runs on spreadsheets (with Casey Marlowe)",
-  feedUrl: "https://example.com/signal-drift.xml",
-  itunesId: 900001,
-  episodeGuid: "ep-2041",
-  episodeUrl: "https://example.com/signal-drift/2041",
-  publishedAt: now - 2 * 24 * HOUR,
-  durationMinutes: 94,
-  status: PodcastRecommendationStatus.Notified,
-  whyForUser:
-    "Casey Marlowe guests on a show you don't follow — a deep dive on grid software failures in the style you starred twice last month.",
-  caveats: ["Second half drifts into listener mail"],
-  confidence: 0.79,
-  matchedVoices: ["Casey Marlowe"],
-  discoveredVia: "podcastindex:byperson",
-  runDate: "2026-07-15",
-  recommendedAt: now - 26 * HOUR,
-  notifiedAt: now - 26 * HOUR + MIN,
-  queueResult: "queued",
-});
-PodcastRecommendationEntity.upsert({
-  recommendationId: "preview-pod-cold-open",
-  episodeId: "itunes:900002#ep-88" as CanonicalEpisodeId,
-  showId: "itunes:900002" as CanonicalShowId,
-  showTitle: "Cold Open",
-  episodeTitle: "The sitcom writers' room that sued itself",
-  feedUrl: "https://example.com/cold-open.xml",
-  itunesId: 900002,
-  episodeGuid: "ep-88",
-  publishedAt: now - 9 * 24 * HOUR,
-  durationMinutes: 52,
-  status: PodcastRecommendationStatus.Listened,
-  whyForUser: "Messy showbiz drama told by people who were in the room.",
-  confidence: 0.71,
-  discoveredVia: "tavily:drama",
-  sourceUrl: "https://example.com/discussion",
-  runDate: "2026-07-08",
-  recommendedAt: now - 8 * 24 * HOUR,
-  notifiedAt: now - 8 * 24 * HOUR + MIN,
-  resolvedAt: now - 5 * 24 * HOUR,
-  queueResult: "not_queued",
-});
+    // --- Podcast recommendations ---------------------------------------------------
 
-PodcastTasteProfileEntity.upsert({
-  profileId: "v2:preview-pod",
-  version: 2,
-  generatedAt: now - 3 * 24 * HOUR,
-  evidenceFingerprint: "preview-pod",
-  evidenceCount: 57,
-  modelId: "openai:gpt-5.6-luna",
-  promptVersion: "podcast-taste-reflection-v1",
-  summary:
-    "Gravitates to sharp conversational shows: media gossip argued in good faith, systems deep-dives, and hosts who push back on their guests.",
-  stablePreferences: [
-    {
-      claim: "Well-argued drama and beef between people who know their field",
-      confidence: 0.84,
-      evidenceIds: ["pp-1", "pp-2", "pp-3"],
-    },
-  ],
-  conditionalPreferences: [
-    {
-      claim: "Interview shows work when the host challenges the guest",
-      confidence: 0.7,
-      evidenceIds: ["pp-4", "pp-5"],
-    },
-  ],
-  aversions: [
-    {
-      claim: "Rage-farming and bad-faith culture-war framing",
-      confidence: 0.8,
-      evidenceIds: ["pp-6", "pp-7"],
-    },
-  ],
-  currentSaturation: [
-    { claim: "AI industry recap shows", confidence: 0.66, evidenceIds: ["pp-8"] },
-  ],
-  explorationTargets: [
-    {
-      claim: "Narrative investigative seasons",
-      confidence: 0.6,
-      evidenceIds: ["pp-9"],
-    },
-  ],
-  uncertainties: [
-    {
-      claim: "History deep-dives over two hours",
-      confidence: 0.5,
-      evidenceIds: ["pp-10"],
-    },
-  ],
-  stats: {
-    listenedEpisodes: 214,
-    startedEpisodes: 260,
-    starredEpisodes: 18,
-    distinctShows: 42,
-    recommendations: {
-      total: 9,
-      listened: 4,
-      abandoned: 1,
-      ignored: 2,
-      failed: 0,
-      awaitingOutcome: 2,
-    },
-    feedback: { goodPick: 3, notForMe: 1 },
-  },
-});
+    yield* PodcastRecommendationEntity.upsert({
+      recommendationId: "preview-pod-signal-drift",
+      episodeId: "itunes:900001#ep-2041" as CanonicalEpisodeId,
+      showId: "itunes:900001" as CanonicalShowId,
+      showTitle: "Signal Drift",
+      episodeTitle: "The grid runs on spreadsheets (with Casey Marlowe)",
+      feedUrl: "https://example.com/signal-drift.xml",
+      itunesId: 900001,
+      episodeGuid: "ep-2041",
+      episodeUrl: "https://example.com/signal-drift/2041",
+      publishedAt: now - 2 * 24 * HOUR,
+      durationMinutes: 94,
+      status: PodcastRecommendationStatus.Notified,
+      whyForUser:
+        "Casey Marlowe guests on a show you don't follow — a deep dive on grid software failures in the style you starred twice last month.",
+      caveats: ["Second half drifts into listener mail"],
+      confidence: 0.79,
+      matchedVoices: ["Casey Marlowe"],
+      discoveredVia: "podcastindex:byperson",
+      runDate: "2026-07-15",
+      recommendedAt: now - 26 * HOUR,
+      notifiedAt: now - 26 * HOUR + MIN,
+      queueResult: "queued",
+    });
+    yield* PodcastRecommendationEntity.upsert({
+      recommendationId: "preview-pod-cold-open",
+      episodeId: "itunes:900002#ep-88" as CanonicalEpisodeId,
+      showId: "itunes:900002" as CanonicalShowId,
+      showTitle: "Cold Open",
+      episodeTitle: "The sitcom writers' room that sued itself",
+      feedUrl: "https://example.com/cold-open.xml",
+      itunesId: 900002,
+      episodeGuid: "ep-88",
+      publishedAt: now - 9 * 24 * HOUR,
+      durationMinutes: 52,
+      status: PodcastRecommendationStatus.Listened,
+      whyForUser: "Messy showbiz drama told by people who were in the room.",
+      confidence: 0.71,
+      discoveredVia: "tavily:drama",
+      sourceUrl: "https://example.com/discussion",
+      runDate: "2026-07-08",
+      recommendedAt: now - 8 * 24 * HOUR,
+      notifiedAt: now - 8 * 24 * HOUR + MIN,
+      resolvedAt: now - 5 * 24 * HOUR,
+      queueResult: "not_queued",
+    });
 
-// --- Briefing archive ------------------------------------------------------------
+    yield* PodcastTasteProfileEntity.upsert({
+      profileId: "v2:preview-pod",
+      version: 2,
+      generatedAt: now - 3 * 24 * HOUR,
+      evidenceFingerprint: "preview-pod",
+      evidenceCount: 57,
+      modelId: "openai:gpt-5.6-luna",
+      promptVersion: "podcast-taste-reflection-v1",
+      summary:
+        "Gravitates to sharp conversational shows: media gossip argued in good faith, systems deep-dives, and hosts who push back on their guests.",
+      stablePreferences: [
+        {
+          claim: "Well-argued drama and beef between people who know their field",
+          confidence: 0.84,
+          evidenceIds: ["pp-1", "pp-2", "pp-3"],
+        },
+      ],
+      conditionalPreferences: [
+        {
+          claim: "Interview shows work when the host challenges the guest",
+          confidence: 0.7,
+          evidenceIds: ["pp-4", "pp-5"],
+        },
+      ],
+      aversions: [
+        {
+          claim: "Rage-farming and bad-faith culture-war framing",
+          confidence: 0.8,
+          evidenceIds: ["pp-6", "pp-7"],
+        },
+      ],
+      currentSaturation: [
+        { claim: "AI industry recap shows", confidence: 0.66, evidenceIds: ["pp-8"] },
+      ],
+      explorationTargets: [
+        {
+          claim: "Narrative investigative seasons",
+          confidence: 0.6,
+          evidenceIds: ["pp-9"],
+        },
+      ],
+      uncertainties: [
+        {
+          claim: "History deep-dives over two hours",
+          confidence: 0.5,
+          evidenceIds: ["pp-10"],
+        },
+      ],
+      stats: {
+        listenedEpisodes: 214,
+        startedEpisodes: 260,
+        starredEpisodes: 18,
+        distinctShows: 42,
+        recommendations: {
+          total: 9,
+          listened: 4,
+          abandoned: 1,
+          ignored: 2,
+          failed: 0,
+          awaitingOutcome: 2,
+        },
+        feedback: { goodPick: 3, notForMe: 1 },
+      },
+    });
 
-BriefingHistoryEntity.upsert({
-  briefingName: "MorningBriefing",
-  notifications: [
-    {
-      title: "Chip exports tighten again",
-      message:
-        "New export rules land Friday; TSMC and ASML both issued guidance. Three takeaways for the homelab GPU market:\n1) 48GB cards keep climbing\n2) grey-market risk\n3) rentals get cheaper.",
-      url: "https://example.com/chip-exports",
-      timestamp: now - 2 * HOUR,
-    },
-    {
-      title: "GPU supply loosens at the mid-range",
-      message:
-        "Street prices for mid-range cards fell 8% this month as the new generation ships in volume.",
-      url: "https://example.com/gpu-supply",
-      timestamp: now - 26 * HOUR,
-    },
-  ],
-});
-BriefingHistoryEntity.upsert({
-  briefingName: "VancouverWeekend",
-  notifications: [
-    {
-      title: "Rain clears Saturday afternoon",
-      message:
-        "Showers through Saturday morning, then sun. Sunday looks dry with a high of 24°C — good window for the seawall.",
-      url: "",
-      timestamp: now - 20 * HOUR,
-    },
-  ],
-});
+    // --- Briefing archive ------------------------------------------------------------
 
-// --- Email pipeline activity -------------------------------------------------------
+    yield* BriefingHistoryEntity.upsert({
+      briefingName: "MorningBriefing",
+      notifications: [
+        {
+          title: "Chip exports tighten again",
+          message:
+            "New export rules land Friday; TSMC and ASML both issued guidance. Three takeaways for the homelab GPU market:\n1) 48GB cards keep climbing\n2) grey-market risk\n3) rentals get cheaper.",
+          url: "https://example.com/chip-exports",
+          timestamp: now - 2 * HOUR,
+        },
+        {
+          title: "GPU supply loosens at the mid-range",
+          message:
+            "Street prices for mid-range cards fell 8% this month as the new generation ships in volume.",
+          url: "https://example.com/gpu-supply",
+          timestamp: now - 26 * HOUR,
+        },
+      ],
+    });
+    yield* BriefingHistoryEntity.upsert({
+      briefingName: "VancouverWeekend",
+      notifications: [
+        {
+          title: "Rain clears Saturday afternoon",
+          message:
+            "Showers through Saturday morning, then sun. Sunday looks dry with a high of 24°C — good window for the seawall.",
+          url: "",
+          timestamp: now - 20 * HOUR,
+        },
+      ],
+    });
 
-EmailActivityEntity.upsert({
-  activityId: "ParcelTracker#preview-1",
-  pipeline: "ParcelTracker",
-  emailId: "preview-1",
-  subject: "Your order has shipped!",
-  from: "orders@example-store.com",
-  receivedAt: now - 3 * HOUR,
-  processedAt: now - 3 * HOUR + 30_000,
-  outcome: "processed",
-  admitReason: "triage: shipment notification with a UPS tracking number",
-  items: ["1Z999AA10123456784 (ups): submitted"],
-});
-EmailActivityEntity.upsert({
-  activityId: "ParcelTracker#preview-5",
-  pipeline: "ParcelTracker",
-  emailId: "preview-5",
-  subject: "Order Shipped #945938211",
-  from: "noreply@info.iherb.example",
-  receivedAt: now - 5 * HOUR,
-  processedAt: now - 5 * HOUR + 20_000,
-  outcome: "failed",
-  admitReason: "carrier sender",
-  items: ["945938211 (asendia): rejected by Parcel (400)"],
-});
-EmailActivityEntity.upsert({
-  activityId: "ParcelTracker#preview-6",
-  pipeline: "ParcelTracker",
-  emailId: "preview-6",
-  subject: "Two packages on the way",
-  from: "shipping@multistore.example",
-  receivedAt: now - 12 * HOUR,
-  processedAt: now - 12 * HOUR + 25_000,
-  outcome: "partial",
-  admitReason: "triage: mentions tracking numbers for two shipments",
-  items: [
-    "9400111899223100315842 (usps): submitted",
-    "RA123456789CN (chinapost): rejected by Parcel (400)",
-  ],
-});
-EmailActivityEntity.upsert({
-  activityId: "CalendarEvents#preview-2",
-  pipeline: "CalendarEvents",
-  emailId: "preview-2",
-  subject: "Booking confirmed: Dr. Chen, Jul 22 at 2:10 PM",
-  from: "noreply@clinicbookings.example",
-  receivedAt: now - 7 * HOUR,
-  processedAt: now - 7 * HOUR + 45_000,
-  outcome: "processed",
-  admitReason: "triage: upcoming medical appointment with a concrete time",
-  items: ["Dr. Chen appointment → Jul 22, 2:10 PM (created)"],
-});
-EmailActivityEntity.upsert({
-  activityId: "ParcelTracker#preview-3",
-  pipeline: "ParcelTracker",
-  emailId: "preview-3",
-  subject: "Weekly newsletter: 10 deals you missed",
-  from: "news@example-store.com",
-  receivedAt: now - 9 * HOUR,
-  processedAt: now - 9 * HOUR + 15_000,
-  outcome: "filtered",
-  detail: "No shipping keywords or carrier hints in subject/body",
-});
-EmailActivityEntity.upsert({
-  activityId: "CalendarEvents#preview-4",
-  pipeline: "CalendarEvents",
-  emailId: "preview-4",
-  subject: "Your flight itinerary — YVR ⇄ NRT",
-  from: "itinerary@airline.example",
-  receivedAt: now - 30 * HOUR,
-  processedAt: now - 30 * HOUR + 60_000,
-  outcome: "error",
-  detail: "CalDAV PUT failed: 507 Insufficient Storage",
-});
+    // --- Email pipeline activity -------------------------------------------------------
 
-upsertEmailRule({ pattern: "news@example-store.com", scope: "both", verdict: "block" });
-upsertEmailRule({
-  pattern: "clinicbookings.example",
-  scope: "calendar",
-  verdict: "allow",
-});
+    yield* EmailActivityEntity.upsert({
+      activityId: "ParcelTracker#preview-1",
+      pipeline: "ParcelTracker",
+      emailId: "preview-1",
+      subject: "Your order has shipped!",
+      from: "orders@example-store.com",
+      receivedAt: now - 3 * HOUR,
+      processedAt: now - 3 * HOUR + 30_000,
+      outcome: "processed",
+      admitReason: "triage: shipment notification with a UPS tracking number",
+      items: ["1Z999AA10123456784 (ups): submitted"],
+    });
+    yield* EmailActivityEntity.upsert({
+      activityId: "ParcelTracker#preview-5",
+      pipeline: "ParcelTracker",
+      emailId: "preview-5",
+      subject: "Order Shipped #945938211",
+      from: "noreply@info.iherb.example",
+      receivedAt: now - 5 * HOUR,
+      processedAt: now - 5 * HOUR + 20_000,
+      outcome: "failed",
+      admitReason: "carrier sender",
+      items: ["945938211 (asendia): rejected by Parcel (400)"],
+    });
+    yield* EmailActivityEntity.upsert({
+      activityId: "ParcelTracker#preview-6",
+      pipeline: "ParcelTracker",
+      emailId: "preview-6",
+      subject: "Two packages on the way",
+      from: "shipping@multistore.example",
+      receivedAt: now - 12 * HOUR,
+      processedAt: now - 12 * HOUR + 25_000,
+      outcome: "partial",
+      admitReason: "triage: mentions tracking numbers for two shipments",
+      items: [
+        "9400111899223100315842 (usps): submitted",
+        "RA123456789CN (chinapost): rejected by Parcel (400)",
+      ],
+    });
+    yield* EmailActivityEntity.upsert({
+      activityId: "CalendarEvents#preview-2",
+      pipeline: "CalendarEvents",
+      emailId: "preview-2",
+      subject: "Booking confirmed: Dr. Chen, Jul 22 at 2:10 PM",
+      from: "noreply@clinicbookings.example",
+      receivedAt: now - 7 * HOUR,
+      processedAt: now - 7 * HOUR + 45_000,
+      outcome: "processed",
+      admitReason: "triage: upcoming medical appointment with a concrete time",
+      items: ["Dr. Chen appointment → Jul 22, 2:10 PM (created)"],
+    });
+    yield* EmailActivityEntity.upsert({
+      activityId: "ParcelTracker#preview-3",
+      pipeline: "ParcelTracker",
+      emailId: "preview-3",
+      subject: "Weekly newsletter: 10 deals you missed",
+      from: "news@example-store.com",
+      receivedAt: now - 9 * HOUR,
+      processedAt: now - 9 * HOUR + 15_000,
+      outcome: "filtered",
+      detail: "No shipping keywords or carrier hints in subject/body",
+    });
+    yield* EmailActivityEntity.upsert({
+      activityId: "CalendarEvents#preview-4",
+      pipeline: "CalendarEvents",
+      emailId: "preview-4",
+      subject: "Your flight itinerary — YVR ⇄ NRT",
+      from: "itinerary@airline.example",
+      receivedAt: now - 30 * HOUR,
+      processedAt: now - 30 * HOUR + 60_000,
+      outcome: "error",
+      detail: "CalDAV PUT failed: 507 Insufficient Storage",
+    });
 
-recordEmailFeedback({
-  pipeline: "ParcelTracker",
-  emailId: "preview-5",
-  subject: "Order Shipped #945938211",
-  from: "noreply@info.iherb.example",
-  verdict: "not_relevant",
-  note: "That's an order number, not a tracking number",
-});
+    yield* upsertEmailRule({
+      pattern: "news@example-store.com",
+      scope: "both",
+      verdict: "block",
+    });
+    yield* upsertEmailRule({
+      pattern: "clinicbookings.example",
+      scope: "calendar",
+      verdict: "allow",
+    });
 
-// --- Workspaces ---------------------------------------------------------------
+    yield* recordEmailFeedback({
+      pipeline: "ParcelTracker",
+      emailId: "preview-5",
+      subject: "Order Shipped #945938211",
+      from: "noreply@info.iherb.example",
+      verdict: "not_relevant",
+      note: "That's an order number, not a tracking number",
+    });
 
-upsertWorkspaceSubject({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  title: "Quiet Office Headphones",
-  status: "active",
-  summary:
-    "Comparing comfortable ANC headphones for long workdays, with strong multipoint support and a $500 CAD ceiling.",
-  lastResearchedAt: now - 18 * HOUR,
-});
-addWorkspaceArtifactRevision({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  artifactKey: "brief",
-  kind: "markdown",
-  summary: "Current buying brief",
-  content:
-    "## Goal\nFind over-ear headphones comfortable for 6+ hour work sessions.\n\n## Must Haves\n- Excellent ANC\n- Reliable laptop + phone multipoint\n- Replaceable ear pads\n- Under $500 CAD",
-});
-addWorkspaceArtifactRevision({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  artifactKey: "comparison",
-  kind: "structured",
-  summary: "Three leading candidates",
-  content:
-    "| Candidate | Strength | Concern |\n|---|---|---|\n| Sony XM6 | Best ANC | Warm pads |\n| Bose QC Ultra | Comfort | Higher price |\n| Sennheiser Momentum 4 | Battery | Weaker ANC |",
-});
-addWorkspaceMessage({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  role: "user",
-  text: "I wear glasses and care more about comfort than microphone quality.",
-  createdAt: now - 20 * HOUR,
-});
-addWorkspaceMessage({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  role: "assistant",
-  text: "I updated the requirements and moved clamp pressure and pad heat into the comparison criteria.",
-  createdAt: now - 19 * HOUR,
-});
-addWorkspaceSource({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  kind: "web",
-  title: "Long-term comfort comparison",
-  url: "https://example.com/headphone-comfort",
-  excerpt: "Measurements and owner reports comparing clamp force, pad depth, and heat.",
-  createdAt: now - 18 * HOUR,
-});
-const { action: previewAction } = addWorkspaceAction({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  type: "email_scope",
-  title: "Watch Headphone Deal Emails",
-  description: "Ingest deal alerts mentioning either current finalist.",
-  payload: JSON.stringify({
-    senders: ["alerts@deal-site.example"],
-    domains: [],
-    subjectKeywords: ["Sony XM6", "Bose QC Ultra"],
-    bodyKeywords: [],
+    // --- Workspaces ---------------------------------------------------------------
+
+    yield* upsertWorkspaceSubject({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      title: "Quiet Office Headphones",
+      status: "active",
+      summary:
+        "Comparing comfortable ANC headphones for long workdays, with strong multipoint support and a $500 CAD ceiling.",
+      lastResearchedAt: now - 18 * HOUR,
+    });
+    yield* addWorkspaceArtifactRevision({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      artifactKey: "brief",
+      kind: "markdown",
+      summary: "Current buying brief",
+      content:
+        "## Goal\nFind over-ear headphones comfortable for 6+ hour work sessions.\n\n## Must Haves\n- Excellent ANC\n- Reliable laptop + phone multipoint\n- Replaceable ear pads\n- Under $500 CAD",
+    });
+    yield* addWorkspaceArtifactRevision({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      artifactKey: "comparison",
+      kind: "structured",
+      summary: "Three leading candidates",
+      content:
+        "| Candidate | Strength | Concern |\n|---|---|---|\n| Sony XM6 | Best ANC | Warm pads |\n| Bose QC Ultra | Comfort | Higher price |\n| Sennheiser Momentum 4 | Battery | Weaker ANC |",
+    });
+    yield* addWorkspaceMessage({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      role: "user",
+      text: "I wear glasses and care more about comfort than microphone quality.",
+      createdAt: now - 20 * HOUR,
+    });
+    yield* addWorkspaceMessage({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      role: "assistant",
+      text: "I updated the requirements and moved clamp pressure and pad heat into the comparison criteria.",
+      createdAt: now - 19 * HOUR,
+    });
+    yield* addWorkspaceSource({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      kind: "web",
+      title: "Long-term comfort comparison",
+      url: "https://example.com/headphone-comfort",
+      excerpt:
+        "Measurements and owner reports comparing clamp force, pad depth, and heat.",
+      createdAt: now - 18 * HOUR,
+    });
+    const { action: previewAction } = yield* addWorkspaceAction({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      type: "email_scope",
+      title: "Watch Headphone Deal Emails",
+      description: "Ingest deal alerts mentioning either current finalist.",
+      payload: JSON.stringify({
+        senders: ["alerts@deal-site.example"],
+        domains: [],
+        subjectKeywords: ["Sony XM6", "Bose QC Ultra"],
+        bodyKeywords: [],
+      }),
+    });
+    yield* reportWorkspacePapercut({
+      workspaceId: "purchase-research",
+      subjectId: "quiet-office-headphones",
+      category: "poor-source-data",
+      title: "Canadian historical prices are inconsistent",
+      detail:
+        "Several retailer pages expose current price but no stable price history.",
+    });
+
+    // --- Pet ----------------------------------------------------------------------
+
+    yield* upsertPet({
+      pet_id: "mochi",
+      name: "Mochi",
+      current_weight: 11.3,
+      updated_at: new Date(now).toISOString(),
+    });
+    for (let day = 90; day >= 0; day--) {
+      const t = now - day * 24 * HOUR;
+      const weight =
+        11.6 -
+        day * 0.004 +
+        Math.sin(day / 6) * 0.15 +
+        (((day * 7919) % 13) / 13 - 0.5) * 0.2;
+      yield* insertWeightReading({
+        pet_id: "mochi",
+        timestamp: new Date(t).toISOString(),
+        weight: Math.round(weight * 100) / 100,
+      });
+    }
+
+    // --- Registry + server ---------------------------------------------------------
+
+    const registry = new TaskRegistry(logger);
+    yield* registry.initializeEffect();
+    registry.track(new FakeTask("LiveCheckTask", "*/20 * * * * *", 1_500));
+    registry.track(
+      new FakeTask(
+        "MorningBriefing",
+        "0 0 9 * * *",
+        6_000,
+        "Covered 4 stories: chip exports, new GPU rumors, and more.",
+      ),
+    );
+    registry.track(
+      new FakeTask("EveningBriefing", "0 0 21 * * *", 5_000, undefined, true),
+    );
+    registry.track(new FakeTask("PetTrackerTask", "0 */30 * * * *", 2_500));
+    registry.track(
+      new FakeRecommendationsTask(
+        "Recommendations",
+        "0 0 17 * * 1,3,5",
+        9_000,
+        "Picked Harbor Lights S2 (2026); added to watchlist.",
+      ),
+    );
+    registry.track(
+      new FakeWorkspaceTask(
+        "PurchaseResearch",
+        "0 0 9 * * 0",
+        2_000,
+        "Updated one purchase dossier.",
+      ),
+    );
+
+    const context = yield* Effect.context<AppServices>();
+    const effectRunner = runnerFromContext(context);
+    const closeServer = startServer(
+      config.FRONTEND_PORT,
+      logger,
+      effectRunner,
+      registry,
+      streamers,
+      {},
+      undefined,
+      {
+        getRuntimeDiagnostics: () =>
+          Effect.succeed({
+            enabled: true,
+            voiceprintLoaded: true,
+            model: "parakeet-tdt-0.6b-v3-int8",
+            queues: {
+              capture: { running: 0, queued: 0 },
+              speech: { running: 0, queued: 0 },
+              llm: { running: 0, queued: 0 },
+            },
+            activeStreamCount: 3,
+            activeVoiceTargetCount: 1,
+            budget: { spentCents: 0.18664, limitCents: 300, remainingCents: 299.81336 },
+            intervals: { voiceSeconds: 45, summarySeconds: 300 },
+          }),
+      },
+    );
+    yield* Effect.addFinalizer(() => closeServer.pipe(Effect.orDie));
+    yield* logger.info(
+      `Preview server ready; action deep link: /workspaces/purchase-research/quiet-office-headphones?section=actions&target=action-${previewAction.actionId}`,
+    );
+    return yield* Effect.never;
   }),
-});
-reportWorkspacePapercut({
-  workspaceId: "purchase-research",
-  subjectId: "quiet-office-headphones",
-  category: "poor-source-data",
-  title: "Canadian historical prices are inconsistent",
-  detail: "Several retailer pages expose current price but no stable price history.",
-});
-
-// --- Pet ----------------------------------------------------------------------
-
-upsertPet({
-  pet_id: "mochi",
-  name: "Mochi",
-  current_weight: 11.3,
-  updated_at: new Date(now).toISOString(),
-});
-for (let day = 90; day >= 0; day--) {
-  const t = now - day * 24 * HOUR;
-  const weight =
-    11.6 -
-    day * 0.004 +
-    Math.sin(day / 6) * 0.15 +
-    (((day * 7919) % 13) / 13 - 0.5) * 0.2;
-  insertWeightReading({
-    pet_id: "mochi",
-    timestamp: new Date(t).toISOString(),
-    weight: Math.round(weight * 100) / 100,
-  });
-}
-
-// --- Registry + server ---------------------------------------------------------
-
-const registry = new TaskRegistry(logger);
-await runPromise(registry.initializeEffect());
-registry.track(new FakeTask("LiveCheckTask", "*/20 * * * * *", 1_500));
-registry.track(
-  new FakeTask(
-    "MorningBriefing",
-    "0 0 9 * * *",
-    6_000,
-    "Covered 4 stories: chip exports, new GPU rumors, and more.",
-  ),
-);
-registry.track(new FakeTask("EveningBriefing", "0 0 21 * * *", 5_000, undefined, true));
-registry.track(new FakeTask("PetTrackerTask", "0 */30 * * * *", 2_500));
-registry.track(
-  new FakeRecommendationsTask(
-    "Recommendations",
-    "0 0 17 * * 1,3,5",
-    9_000,
-    "Picked Harbor Lights S2 (2026); added to watchlist.",
-  ),
-);
-registry.track(
-  new FakeWorkspaceTask(
-    "PurchaseResearch",
-    "0 0 9 * * 0",
-    2_000,
-    "Updated one purchase dossier.",
-  ),
 );
 
-startServer(config.FRONTEND_PORT, logger, registry, streamers, {}, undefined, {
-  getRuntimeDiagnostics: () => ({
-    enabled: true,
-    voiceprintLoaded: true,
-    model: "parakeet-tdt-0.6b-v3-int8",
-    queues: {
-      capture: { running: 0, queued: 0 },
-      speech: { running: 0, queued: 0 },
-      llm: { running: 0, queued: 0 },
-    },
-    activeStreamCount: 3,
-    activeVoiceTargetCount: 1,
-    budget: { spentCents: 0.18664, limitCents: 300, remainingCents: 299.81336 },
-    intervals: { voiceSeconds: 45, summarySeconds: 300 },
-  }),
-});
-logger.info(
-  `Preview server ready; action deep link: /workspaces/purchase-research/quiet-office-headphones?section=actions&target=action-${previewAction.actionId}`,
-);
+await Effect.runPromise(previewProgram.pipe(Effect.provide(AppLayer)));

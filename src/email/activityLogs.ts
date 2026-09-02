@@ -1,7 +1,7 @@
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger } from "@micthiesen/mitools/logging";
 import { randomUUID } from "node:crypto";
-import { Data, Effect } from "effect";
+import { Data, Effect, Option } from "effect";
 import {
   runWithLogCaptureEffect,
   startRunLogCapture,
@@ -13,7 +13,7 @@ import {
   type TaskRunLogLine,
 } from "../task-runs/persistence.js";
 
-const logger = new Logger("EmailActivityLogs");
+const logger = Logger.named("EmailActivityLogs");
 
 export type EmailActivityLogData = {
   activityId: string;
@@ -52,11 +52,11 @@ export class EmailLogCaptureError extends Data.TaggedError("EmailLogCaptureError
  * persist the capture. Filter-phase skips never enter here, so a missing log
  * row simply means the email never reached processing.
  */
-export function withEmailLogCaptureEffect<T, E>(
+export function withEmailLogCaptureEffect<T, E, R>(
   activityId: string,
   pipeline: string,
-  effect: () => Effect.Effect<T, E, never>,
-): Effect.Effect<T, E> {
+  effect: () => Effect.Effect<T, E, R>,
+) {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
       const captureId = `${activityId}:${randomUUID()}`;
@@ -64,59 +64,63 @@ export function withEmailLogCaptureEffect<T, E>(
       const result = yield* Effect.exit(
         restore(runWithLogCaptureEffect(captureId, effect())),
       );
-      yield* Effect.try({
-        try: () => {
-          const buffer = takeRunLogCapture(captureId);
-          if (buffer) {
-            saveEmailActivityLogs({
-              activityId,
-              lines: buffer.lines,
-              dropped: buffer.dropped,
-            });
-          }
-        },
-        catch: (cause) => new EmailLogCaptureError({ activityId, cause }),
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.sync(() =>
+      const buffer = takeRunLogCapture(captureId);
+      if (buffer) {
+        yield* saveEmailActivityLogs({
+          activityId,
+          lines: buffer.lines,
+          dropped: buffer.dropped,
+        }).pipe(
+          Effect.mapError((cause) => new EmailLogCaptureError({ activityId, cause })),
+          Effect.catch((error) =>
             logger.warn(
               `Could not persist diagnostic log for "${activityId}": ${error.message}`,
             ),
-          ).pipe(Effect.catchCause(() => Effect.void)),
-        ),
-      );
+          ),
+        );
+      }
       return yield* result;
     }),
   );
 }
 
-export function saveEmailActivityLogs(data: EmailActivityLogData): void {
+export const saveEmailActivityLogs = Effect.fn("EmailActivityLogs.save")(function* (
+  data: EmailActivityLogData,
+) {
   if (data.lines.length === 0 && data.dropped === 0) {
-    EmailActivityLogEntity.delete({ activityId: data.activityId });
+    yield* EmailActivityLogEntity.delete({ activityId: data.activityId });
     return;
   }
-  EmailActivityLogEntity.upsert({
+  yield* EmailActivityLogEntity.upsert({
     activityId: data.activityId,
     linesGz: compressLogLines(data.lines),
     dropped: data.dropped,
   });
-}
+});
 
-export function getEmailActivityLogs(
+export const getEmailActivityLogs = Effect.fn("EmailActivityLogs.get")(function* (
   activityId: string,
-): EmailActivityLogData | undefined {
-  try {
-    const row = EmailActivityLogEntity.get({ activityId });
+) {
+  return yield* Effect.gen(function* () {
+    const row = Option.getOrUndefined(
+      yield* EmailActivityLogEntity.get({ activityId }),
+    );
     if (!row) return undefined;
     return {
       activityId,
       lines: decompressLogLines(row.linesGz),
       dropped: row.dropped,
     };
-  } catch (err) {
-    // Drop an unreadable row rather than 500 the logs endpoint forever.
-    EmailActivityLogEntity.delete({ activityId });
-    logger.warn(`Dropped unreadable log row for "${activityId}": ${String(err)}`);
-    return undefined;
-  }
-}
+  }).pipe(
+    Effect.catch((err) =>
+      Effect.gen(function* () {
+        // Drop an unreadable row rather than 500 the logs endpoint forever.
+        yield* EmailActivityLogEntity.delete({ activityId });
+        yield* logger.warn(
+          `Dropped unreadable log row for "${activityId}": ${String(err)}`,
+        );
+        return undefined;
+      }),
+    ),
+  );
+});

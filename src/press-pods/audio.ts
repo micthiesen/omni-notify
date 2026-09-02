@@ -1,5 +1,5 @@
-import { extractHttpError } from "@micthiesen/mitools/http";
-import type { Logger } from "@micthiesen/mitools/logging";
+import { extractHttpError } from "./httpError.js";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import * as mm from "music-metadata";
 import NodeID3 from "node-id3";
 import { Effect, Schema } from "effect";
@@ -7,10 +7,7 @@ import type { Chapter } from "./types.js";
 import { PressPodsError, tryPromise } from "./effect.js";
 import { fetchPublicBuffer, PRESS_PODS_IMAGE_MAX_BYTES } from "./publicHttp.js";
 
-export function getDuration(
-  audioFile: Buffer,
-  logger: Logger,
-): Effect.Effect<number | undefined> {
+export function getDuration(audioFile: Buffer, logger: Logger) {
   return tryPromise("parse episode audio metadata", () =>
     mm.parseBuffer(audioFile, undefined, { duration: true }),
   ).pipe(
@@ -22,10 +19,11 @@ export function getDuration(
       )(metadata),
     ),
     Effect.map((metadata) => metadata.format.duration),
-    Effect.catch((error) => {
-      logger.error("Error getting audio duration:", { error });
-      return Effect.succeed(undefined);
-    }),
+    Effect.catch((error) =>
+      logger
+        .error("Error getting audio duration:", { error })
+        .pipe(Effect.as(undefined)),
+    ),
   );
 }
 
@@ -47,7 +45,7 @@ export function tagEpisodeAudio(
     durationSeconds?: number;
   },
   logger: Logger,
-): Effect.Effect<Buffer> {
+) {
   return Effect.gen(function* () {
     const tags: NodeID3.Tags = {};
 
@@ -67,7 +65,9 @@ export function tagEpisodeAudio(
         const contentType = imageResponse.headers["content-type"];
         const respMime = Array.isArray(contentType) ? contentType[0] : contentType;
         if (!respMime?.includes("image")) {
-          logger.warn("Error fetching album art:", { error: "No image mime type" });
+          yield* logger.warn("Error fetching album art:", {
+            error: "No image mime type",
+          });
         } else
           tags.image = {
             // Trust the response header; the URL path often carries query strings.
@@ -77,7 +77,7 @@ export function tagEpisodeAudio(
             imageBuffer: imageResponse.body,
           };
       } else {
-        logger.warn("Error fetching album art:", {
+        yield* logger.warn("Error fetching album art:", {
           error: extractHttpError(imageResult.failure.cause),
         });
       }
@@ -107,13 +107,13 @@ export function tagEpisodeAudio(
     }).pipe(Effect.result);
     if (taggedResult._tag === "Success") {
       const tagged = taggedResult.success;
-      logger.info("Embedded ID3 tags", {
+      yield* logger.info("Embedded ID3 tags", {
         art: Boolean(tags.image),
         chapters: chapterFrames?.chapter.length ?? 0,
       });
       return tagged;
     } else {
-      logger.warn("Error writing ID3 tags:", {
+      yield* logger.warn("Error writing ID3 tags:", {
         error: extractHttpError(taggedResult.failure.cause),
       });
       return audioFile;

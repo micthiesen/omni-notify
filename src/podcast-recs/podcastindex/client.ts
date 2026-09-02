@@ -1,8 +1,9 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Clock, Data, Effect, Ref, Schedule, Schema, Semaphore } from "effect";
 import { isTransientHttpError } from "../../effect/errors.js";
 import { fetchPublicText, PUBLIC_HTTP_USER_AGENT } from "../../effect/publicHttp.js";
 import config from "../../utils/config.js";
+import type { TaskServices } from "../../task-runs/registry.js";
 import { type PodcastIndexCredentials, podcastIndexAuthHeaders } from "./auth.js";
 import type { PodcastIndexEpisode } from "./types.js";
 
@@ -115,7 +116,7 @@ export function mapEpisode(
 export interface PodcastIndexClient {
   searchByPerson(
     name: string,
-  ): Effect.Effect<PodcastIndexEpisode[], PodcastIndexRequestError>;
+  ): Effect.Effect<PodcastIndexEpisode[], PodcastIndexRequestError, TaskServices>;
 }
 
 class PodcastIndexApiClient implements PodcastIndexClient {
@@ -126,7 +127,7 @@ class PodcastIndexApiClient implements PodcastIndexClient {
 
   public searchByPerson(
     name: string,
-  ): Effect.Effect<PodcastIndexEpisode[], PodcastIndexRequestError> {
+  ): Effect.Effect<PodcastIndexEpisode[], PodcastIndexRequestError, TaskServices> {
     return this.searchByPersonEffect(name);
   }
 
@@ -170,9 +171,12 @@ class PodcastIndexApiClient implements PodcastIndexClient {
         if (episode) {
           episodes.push(episode);
         } else {
-          this.logger.debug(`Skipping Podcast Index episode missing required fields`, {
-            title: raw.title,
-          });
+          yield* this.logger.debug(
+            `Skipping Podcast Index episode missing required fields`,
+            {
+              title: raw.title,
+            },
+          );
         }
       }
       return episodes;
@@ -181,12 +185,16 @@ class PodcastIndexApiClient implements PodcastIndexClient {
 }
 
 /** Returns the configured Podcast Index client, or null when no credentials are set. */
-export function createPodcastIndexClient(logger: Logger): PodcastIndexClient | null {
-  const { PODCASTINDEX_KEY: key, PODCASTINDEX_SECRET: secret } = config;
-  if (!key && !secret) return null;
-  if (!key || !secret) {
-    logger.warn("Podcast Index requires both PODCASTINDEX_KEY and PODCASTINDEX_SECRET");
-    return null;
-  }
-  return new PodcastIndexApiClient({ key, secret }, logger);
-}
+export const createPodcastIndexClient = Effect.fn("PodcastIndex.createClient")(
+  function* (logger: Logger) {
+    const { PODCASTINDEX_KEY: key, PODCASTINDEX_SECRET: secret } = config;
+    if (!key && !secret) return null;
+    if (!key || !secret) {
+      yield* logger.warn(
+        "Podcast Index requires both PODCASTINDEX_KEY and PODCASTINDEX_SECRET",
+      );
+      return null;
+    }
+    return new PodcastIndexApiClient({ key, secret }, logger);
+  },
+);

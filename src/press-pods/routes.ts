@@ -2,10 +2,12 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import fsAsync from "node:fs/promises";
 import { Readable } from "node:stream";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { EffectRunner } from "@micthiesen/mitools/boundary";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import type { Context, Hono } from "hono";
 import { Effect, Schema } from "effect";
 import { decodeJsonBody, effectHandler } from "../effect/http.js";
+import type { AppServices } from "../effect/appRuntime.js";
 import { fromPromise } from "../effect/interop.js";
 import {
   TaskAlreadyRunningError,
@@ -17,10 +19,9 @@ import {
   jobNormalizedUrl,
   type PressPodsEpisodeData,
   type PressPodsJobData,
-  PressPodsJobEntity,
   PressPodsPersistence,
 } from "./persistence.js";
-import { PressPodsError, trySync } from "./effect.js";
+import { trySync } from "./effect.js";
 import { assertPublicHttpUrlSyntax } from "./publicHttp.js";
 import { buildPressPodsFeedEffect, latestEpisodeIdEffect } from "./rss.js";
 import {
@@ -58,6 +59,7 @@ export function registerPressPodsRoutes(
   app: Hono,
   registry: TaskRegistry,
   parentLogger: Logger,
+  effectRunner: EffectRunner<AppServices>,
 ): void {
   if (!config.PRESSPODS_AUTH_TOKEN) return;
   const logger = parentLogger.extend("PressPods");
@@ -70,26 +72,29 @@ export function registerPressPodsRoutes(
       ? !config.ELEVENLABS_API_KEY && "ELEVENLABS_API_KEY"
       : !config.PRESSPODS_TTS_URL && "PRESSPODS_TTS_URL";
   if (ttsCredMissing) {
-    logger.warn(
-      `PressPods routes are active but the worker task is disabled ` +
-        `(missing ${ttsCredMissing}); submitted jobs will queue without processing`,
+    effectRunner.runFork(
+      logger.warn(
+        `PressPods routes are active but the worker task is disabled ` +
+          `(missing ${ttsCredMissing}); submitted jobs will queue without processing`,
+      ),
     );
   }
 
-  const kickWorker = (): void => {
-    try {
-      registry.runNow("PressPods");
-    } catch (error) {
-      // Already running (the drain loop will pick the job up) or server-only
-      // mode (no tasks registered; the job waits for a worker process).
-      if (
-        !(error instanceof TaskAlreadyRunningError) &&
-        !(error instanceof TaskNotFoundError)
-      ) {
-        throw error;
-      }
-    }
-  };
+  const kickWorker = () =>
+    registry.runNow("PressPods").pipe(
+      Effect.catch((error) => {
+        // Already running (the drain loop will pick the job up) or server-only
+        // mode (no tasks registered; the job waits for a worker process).
+        if (
+          error instanceof TaskAlreadyRunningError ||
+          error instanceof TaskNotFoundError
+        ) {
+          return Effect.void;
+        }
+        return Effect.fail(error);
+      }),
+      Effect.asVoid,
+    );
 
   // -------------------------------------------------------------------------
   // Public routes (token-gated; expose /pods/* through the reverse proxy)
@@ -97,12 +102,12 @@ export function registerPressPodsRoutes(
 
   app.post(
     "/pods/episodes",
-    effectHandler((c) => {
+    effectHandler(effectRunner, (c) => {
       if (!isAuthorized(c)) {
         return Effect.succeed(c.json({ error: "Unauthorized" }, 401));
       }
       return Effect.result(decodeSubmitUrlEffect(c)).pipe(
-        Effect.flatMap((decoded): Effect.Effect<Response, PressPodsError> =>
+        Effect.flatMap((decoded) =>
           decoded._tag === "Failure"
             ? Effect.succeed<Response>(
                 c.json({ error: "Body must be JSON: { url: string }" }, 400),
@@ -118,12 +123,12 @@ export function registerPressPodsRoutes(
   app.on(
     ["GET", "HEAD"],
     "/pods/rss",
-    effectHandler((c) => {
+    effectHandler(effectRunner, (c) => {
       if (!isAuthorized(c)) {
         return Effect.succeed(c.json({ error: "Unauthorized" }, 401));
       }
       return latestEpisodeIdEffect().pipe(
-        Effect.flatMap((latestId): Effect.Effect<Response, PressPodsError> => {
+        Effect.flatMap((latestId) => {
           const etag = `"${latestId}"`;
           c.header("ETag", etag);
           c.header("Cache-Control", "no-cache");
@@ -145,7 +150,7 @@ export function registerPressPodsRoutes(
   app.on(
     ["GET", "HEAD"],
     "/pods/audio/:file",
-    effectHandler((c) => {
+    effectHandler(effectRunner, (c) => {
       const file = c.req.param("file");
       if (!file || !AUDIO_FILE_RE.test(file)) {
         return Effect.succeed(c.body(null, 404));
@@ -189,7 +194,7 @@ export function registerPressPodsRoutes(
 
   app.get(
     "/pods/logo.jpeg",
-    effectHandler((c) =>
+    effectHandler(effectRunner, (c) =>
       Effect.result(
         fromPromise("read PressPods logo", () => fsAsync.readFile(LOGO_PATH)),
       ).pipe(
@@ -209,7 +214,7 @@ export function registerPressPodsRoutes(
 
   app.get(
     "/api/press-pods/episodes",
-    effectHandler((c) =>
+    effectHandler(effectRunner, (c) =>
       Effect.all(
         [PressPodsPersistence.getAllEpisodes(), PressPodsPersistence.getAllJobs()],
         { concurrency: 2 },
@@ -226,7 +231,7 @@ export function registerPressPodsRoutes(
 
   app.get(
     "/api/press-pods/episodes/:id",
-    effectHandler((c) =>
+    effectHandler(effectRunner, (c) =>
       PressPodsPersistence.getEpisode(c.req.param("id") ?? "").pipe(
         Effect.map((episode) =>
           episode
@@ -241,19 +246,15 @@ export function registerPressPodsRoutes(
   // never pruned automatically, so this is the only way one goes away.
   app.delete(
     "/api/press-pods/episodes/:id",
-    effectHandler((c) =>
+    effectHandler(effectRunner, (c) =>
       PressPodsPersistence.deleteEpisode(c.req.param("id") ?? "").pipe(
-        Effect.flatMap((deleted): Effect.Effect<Response> => {
+        Effect.flatMap((deleted) => {
           if (!deleted) {
             return Effect.succeed<Response>(c.json({ error: "Unknown episode" }, 404));
           }
           return deleteEpisodeAudio(deleted.audioFile).pipe(
             Effect.tap(() =>
-              Effect.sync(() =>
-                logger.info(
-                  `Deleted episode ${deleted.episodeId} ("${deleted.title}")`,
-                ),
-              ),
+              logger.info(`Deleted episode ${deleted.episodeId} ("${deleted.title}")`),
             ),
             Effect.map((): Response => c.json({ deleted: true })),
           );
@@ -267,9 +268,9 @@ export function registerPressPodsRoutes(
   // the fresh episode replaces this one on completion.
   app.post(
     "/api/press-pods/episodes/:id/retry",
-    effectHandler((c) =>
+    effectHandler(effectRunner, (c) =>
       PressPodsPersistence.getEpisode(c.req.param("id") ?? "").pipe(
-        Effect.flatMap((episode): Effect.Effect<Response, PressPodsError> =>
+        Effect.flatMap((episode) =>
           episode
             ? submitEpisodeUrlEffect(episode.articleUrl, kickWorker, logger).pipe(
                 Effect.map((job): Response => c.json({ job: serializeJob(job) }, 202)),
@@ -282,9 +283,9 @@ export function registerPressPodsRoutes(
 
   app.post(
     "/api/press-pods/submit",
-    effectHandler((c) =>
+    effectHandler(effectRunner, (c) =>
       Effect.result(decodeSubmitUrlEffect(c)).pipe(
-        Effect.flatMap((decoded): Effect.Effect<Response, PressPodsError> =>
+        Effect.flatMap((decoded) =>
           decoded._tag === "Failure"
             ? Effect.succeed<Response>(
                 c.json({ error: "A valid article URL is required" }, 400),
@@ -299,10 +300,10 @@ export function registerPressPodsRoutes(
 
   app.post(
     "/api/press-pods/jobs/:jobId/retry",
-    effectHandler((c) => {
+    effectHandler(effectRunner, (c) => {
       const jobId = c.req.param("jobId") ?? "";
       return PressPodsPersistence.getJob(jobId).pipe(
-        Effect.flatMap((existing): Effect.Effect<Response, PressPodsError> => {
+        Effect.flatMap((existing) => {
           if (!existing) {
             return Effect.succeed<Response>(c.json({ error: "Unknown job" }, 404));
           }
@@ -312,11 +313,11 @@ export function registerPressPodsRoutes(
             );
           }
           return PressPodsPersistence.requeueJobNow(jobId).pipe(
-            Effect.flatMap((job): Effect.Effect<Response, PressPodsError> => {
+            Effect.flatMap((job) => {
               if (!job) {
                 return Effect.succeed<Response>(c.json({ error: "Unknown job" }, 404));
               }
-              return trySync("kick PressPods worker", kickWorker).pipe(
+              return kickWorker().pipe(
                 Effect.map((): Response => c.json({ job: serializeJob(job) })),
               );
             }),
@@ -328,10 +329,10 @@ export function registerPressPodsRoutes(
 
   app.delete(
     "/api/press-pods/jobs/:jobId",
-    effectHandler((c) => {
+    effectHandler(effectRunner, (c) => {
       const jobId = c.req.param("jobId") ?? "";
       return PressPodsPersistence.getJob(jobId).pipe(
-        Effect.flatMap((existing): Effect.Effect<Response, PressPodsError> => {
+        Effect.flatMap((existing) => {
           if (!existing) {
             return Effect.succeed<Response>(c.json({ error: "Unknown job" }, 404));
           }
@@ -340,9 +341,7 @@ export function registerPressPodsRoutes(
               c.json({ error: "Job is currently processing" }, 409),
             );
           }
-          return trySync("delete PressPods job", () =>
-            PressPodsJobEntity.delete({ jobId }),
-          ).pipe(
+          return PressPodsPersistence.deleteJob(jobId).pipe(
             // Dismissing a job means giving up on it, including resume cache.
             Effect.andThen(
               clearChunkCheckpoints(checkpointWorkId(jobNormalizedUrl(existing))),

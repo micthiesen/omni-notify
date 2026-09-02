@@ -8,16 +8,13 @@ import type { Article } from "../types.js";
 import { extractBetweenTags } from "./parsing.js";
 import { PressPodsError, tryPromise, trySync } from "../effect.js";
 
-const LOGGER = new Logger("PressPods.agents.cleaner");
+const LOGGER = Logger.named("PressPods.agents.cleaner");
 
 /** Re-synthesize the narration if the model returns unusable/untagged output. */
 const MAX_CLEAN_ATTEMPTS = 3;
 
 /** Adapt the article text for TTS narration (junk removal, audio phrasing). */
-export function getCleanedArticle(
-  article: Article,
-  costCounter: CostCounter,
-): Effect.Effect<{ content: string }, PressPodsError> {
+export function getCleanedArticle(article: Article, costCounter: CostCounter) {
   return Effect.gen(function* () {
     const { model, modelId } = getPressPodsCleaningModel();
     let lastError: unknown;
@@ -79,7 +76,7 @@ Output ONLY the finished script wrapped in <cleaned_article> and </cleaned_artic
         completionTokens: usage.outputTokens || 0,
         totalTokens: usage.totalTokens || 0,
       };
-      costCounter.recordLlmUsage(modelId, "clean", completionUsage);
+      yield* costCounter.recordLlmUsage(modelId, "clean", completionUsage);
 
       const extracted = yield* trySync("extract cleaned PressPods narration", () =>
         extractBetweenTags(text, "cleaned_article"),
@@ -88,7 +85,7 @@ Output ONLY the finished script wrapped in <cleaned_article> and </cleaned_artic
         return { content: extracted.success };
       } else {
         lastError = extracted.failure;
-        LOGGER.info(
+        yield* LOGGER.info(
           `Narration cleaning attempt ${attempt}/${MAX_CLEAN_ATTEMPTS} produced no usable output; retrying`,
         );
       }

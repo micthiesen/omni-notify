@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import matter from "gray-matter";
 import { validate } from "node-cron";
 import { z } from "zod";
@@ -11,54 +12,58 @@ const frontmatterSchema = z.object({
   schedule: z.string(),
 });
 
-export function loadBriefingConfigs(parentLogger: Logger): BriefingConfig[] {
-  const logger = parentLogger.extend("Briefings");
-  const briefingsPath = config.BRIEFINGS_PATH;
-  if (!briefingsPath) {
-    logger.info("No BRIEFINGS_PATH configured, skipping briefing tasks");
-    return [];
-  }
-
-  let files: string[];
-  try {
-    files = readdirSync(briefingsPath).filter((f) => f.endsWith(".md"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      logger.warn(`Briefings folder not found: ${briefingsPath}`);
+export function loadBriefingConfigs(parentLogger: NamedLogger) {
+  return Effect.gen(function* () {
+    const logger = parentLogger.extend("Briefings");
+    const briefingsPath = config.BRIEFINGS_PATH;
+    if (!briefingsPath) {
+      yield* logger.info("No BRIEFINGS_PATH configured, skipping briefing tasks");
       return [];
     }
-    throw error;
-  }
 
-  const configs: BriefingConfig[] = [];
-
-  for (const file of files) {
-    const filePath = join(briefingsPath, file);
-    const raw = readFileSync(filePath, "utf-8");
-    const { data, content } = matter(raw);
-
-    const name = basename(file, ".md");
-    const parsed = frontmatterSchema.safeParse(data);
-    if (!parsed.success) {
-      logger.warn(`Skipping ${file}: missing or invalid 'schedule' field`);
-      continue;
+    let files: string[];
+    try {
+      files = readdirSync(briefingsPath).filter((f) => f.endsWith(".md"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        yield* logger.warn(`Briefings folder not found: ${briefingsPath}`);
+        return [];
+      }
+      throw error;
     }
 
-    const { schedule } = parsed.data;
-    if (!validate(schedule)) {
-      logger.warn(`Skipping ${file}: invalid cron expression "${schedule}"`);
-      continue;
+    const configs: BriefingConfig[] = [];
+
+    for (const file of files) {
+      const filePath = join(briefingsPath, file);
+      const raw = readFileSync(filePath, "utf-8");
+      const { data, content } = matter(raw);
+
+      const name = basename(file, ".md");
+      const parsed = frontmatterSchema.safeParse(data);
+      if (!parsed.success) {
+        yield* logger.warn(`Skipping ${file}: missing or invalid 'schedule' field`);
+        continue;
+      }
+
+      const { schedule } = parsed.data;
+      if (!validate(schedule)) {
+        yield* logger.warn(`Skipping ${file}: invalid cron expression "${schedule}"`);
+        continue;
+      }
+
+      const prompt = content.trim();
+      if (!prompt) {
+        yield* logger.warn(`Skipping ${file}: empty body`);
+        continue;
+      }
+
+      configs.push({ name, schedule, prompt });
     }
 
-    const prompt = content.trim();
-    if (!prompt) {
-      logger.warn(`Skipping ${file}: empty body`);
-      continue;
-    }
-
-    configs.push({ name, schedule, prompt });
-  }
-
-  logger.info(`Loaded ${configs.length} briefing config(s) from ${briefingsPath}`);
-  return configs;
+    yield* logger.info(
+      `Loaded ${configs.length} briefing config(s) from ${briefingsPath}`,
+    );
+    return configs;
+  });
 }

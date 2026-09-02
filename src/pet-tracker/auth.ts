@@ -9,7 +9,7 @@ import { Clock, Data, Effect, Ref, Schema } from "effect";
 const USER_POOL_ID = "us-east-1_rjhNnZVAm";
 const CLIENT_ID = "4552ujeu3aic90nf8qn53levmn";
 
-const logger = new Logger("WhiskerAuth");
+const logger = Logger.named("WhiskerAuth");
 
 const TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000; // Re-auth 5 min before expiry
 
@@ -37,15 +37,12 @@ const JwtPayload = Schema.Struct({
   exp: Schema.optional(Schema.Number),
 });
 
-export function authenticateWhisker(
-  email: string,
-  password: string,
-): Effect.Effect<{ idToken: string; userId: string }, WhiskerAuthenticationError> {
+export function authenticateWhisker(email: string, password: string) {
   return Effect.gen(function* () {
     const cached = yield* Ref.get(cachedAuth);
     const now = yield* Clock.currentTimeMillis;
     if (cached && now < cached.expiresAt - TOKEN_EXPIRY_BUFFER_MS) {
-      logger.debug("Using cached credentials");
+      yield* logger.debug("Using cached credentials");
       return { idToken: cached.idToken, userId: cached.userId };
     }
 
@@ -76,7 +73,7 @@ export function authenticateWhisker(
     const expiresAt = payload.exp ? payload.exp * 1000 : now + 60 * 60 * 1000;
 
     yield* Ref.set(cachedAuth, { idToken, userId, expiresAt });
-    logger.debug("Authenticated (fresh)", { userId });
+    yield* logger.debug("Authenticated (fresh)", { userId });
     return { idToken, userId };
   });
 }

@@ -2,8 +2,9 @@ import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { publicGot } from "../press-pods/publicHttp.js";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 import {
   type AcceptedPrintRecord,
   createPdfDownloaderEffect,
@@ -12,12 +13,13 @@ import {
 } from "./service.js";
 
 const PDF = Buffer.from("%PDF-1.7\nfixture");
-const statusOf = (service: IppPrinterService) =>
-  Effect.runPromise(service.statusEffect());
+const mitools = createMitoolsTestRuntime();
+afterAll(() => mitools.dispose());
+const statusOf = (service: IppPrinterService) => mitools.run(service.statusEffect());
 const printPdf = (
   service: IppPrinterService,
   input: Parameters<IppPrinterService["printPdfEffect"]>[0],
-) => Effect.runPromise(service.printPdfEffect(input));
+) => mitools.run(service.printPdfEffect(input));
 
 function printerStatus(raw: Record<string, unknown> = {}) {
   return {
@@ -76,13 +78,17 @@ describe("IppPrinterService", () => {
         PrinterServiceDependencies["printer"]
       >,
       acceptedPrintStore: {
-        get: (fingerprint) => acceptedPrints.get(fingerprint),
-        upsert: (record) => acceptedPrints.set(record.fingerprint, record),
-        deleteOlderThan: (cutoff) => {
-          for (const [fingerprint, record] of acceptedPrints) {
-            if (record.acceptedAt <= cutoff) acceptedPrints.delete(fingerprint);
-          }
-        },
+        get: (fingerprint) => Effect.succeed(acceptedPrints.get(fingerprint)),
+        upsert: (record) =>
+          Effect.sync(() => acceptedPrints.set(record.fingerprint, record)).pipe(
+            Effect.asVoid,
+          ),
+        deleteOlderThan: (cutoff) =>
+          Effect.sync(() => {
+            for (const [fingerprint, record] of acceptedPrints) {
+              if (record.acceptedAt <= cutoff) acceptedPrints.delete(fingerprint);
+            }
+          }),
       },
       execFile: async (executable, args) => {
         processCalls.push({ executable, args });
@@ -291,11 +297,9 @@ describe("IppPrinterService", () => {
 
   it("reports acceptance without inviting a retry when durable suppression fails", async () => {
     dependencies.acceptedPrintStore = {
-      get: () => undefined,
-      upsert: () => {
-        throw new Error("database unavailable");
-      },
-      deleteOlderThan: () => undefined,
+      get: () => Effect.succeed(undefined),
+      upsert: () => Effect.fail(new Error("database unavailable")),
+      deleteOlderThan: () => Effect.void,
     };
     const service = new IppPrinterService({ dependencies });
     const input = { url: "https://example.com/file.pdf" };

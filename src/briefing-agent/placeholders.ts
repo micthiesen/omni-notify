@@ -1,8 +1,8 @@
 import { resolveHistoryPlaceholders } from "./persistence.js";
+import { Clock, Effect } from "effect";
 
-export function resolveDatePlaceholder(prompt: string): string {
+export function resolveDatePlaceholder(prompt: string, now = new Date()): string {
   return prompt.replace(/\{\{date\}\}/g, () => {
-    const now = new Date();
     return now.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
@@ -12,9 +12,8 @@ export function resolveDatePlaceholder(prompt: string): string {
   });
 }
 
-export function resolveTimePlaceholder(prompt: string): string {
+export function resolveTimePlaceholder(prompt: string, now = new Date()): string {
   return prompt.replace(/\{\{time\}\}/g, () => {
-    const now = new Date();
     return now.toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
@@ -23,10 +22,12 @@ export function resolveTimePlaceholder(prompt: string): string {
   });
 }
 
-export function resolveAllPlaceholders(prompt: string, briefingName: string): string {
-  let resolved = prompt;
-  resolved = resolveHistoryPlaceholders(resolved, briefingName);
-  resolved = resolveDatePlaceholder(resolved);
-  resolved = resolveTimePlaceholder(resolved);
-  return resolved;
+export function resolveAllPlaceholders(prompt: string, briefingName: string) {
+  return Effect.gen(function* () {
+    const now = new Date(yield* Clock.currentTimeMillis);
+    let resolved = yield* resolveHistoryPlaceholders(prompt, briefingName);
+    resolved = resolveDatePlaceholder(resolved, now);
+    resolved = resolveTimePlaceholder(resolved, now);
+    return resolved;
+  });
 }

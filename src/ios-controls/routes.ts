@@ -1,6 +1,9 @@
 import type { Effect as EffectType } from "effect/Effect";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import type { Logger } from "@micthiesen/mitools/logging";
+import type { Docstore } from "@micthiesen/mitools/docstore";
+import type { EffectRunner } from "@micthiesen/mitools/boundary";
 import type { Hono } from "hono";
 import { Clock, Data, Effect, Schema } from "effect";
 import {
@@ -111,17 +114,18 @@ function pruneNonces(nonces: Map<string, number>, now: number): void {
   }
 }
 
-export function registerIOSControlRoutes(
+export function registerIOSControlRoutes<R>(
+  runner: EffectRunner<R | Logger | Docstore>,
   app: Hono,
   service: IOSControlService,
   authToken: string | undefined,
-  parentLogger: Logger,
+  parentLogger: NamedLogger,
 ): void {
   const logger = parentLogger.extend("IOSControlRoutes");
   const usedNonces = new Map<string, number>();
   app.use(
     "/api/ios-controls/*",
-    effectMiddleware((c, next) =>
+    effectMiddleware(runner, (c, next) =>
       Effect.gen(function* () {
         if (!authToken) {
           return c.json({ error: "iOS controls are not configured" }, 503);
@@ -171,21 +175,33 @@ export function registerIOSControlRoutes(
     ),
   );
 
-  app.get("/api/ios-controls/slots/:slot", (c) => {
-    const slot = service.getSlot(Number(c.req.param("slot")));
-    if (!slot) return c.json({ error: "Slot must be an integer from 1 to 4" }, 400);
-    c.header("Cache-Control", "no-store");
-    return c.json(slot);
-  });
+  app.get(
+    "/api/ios-controls/slots/:slot",
+    effectHandler(runner, (c) =>
+      service.getSlotEffect(Number(c.req.param("slot"))).pipe(
+        Effect.map((slot) => {
+          if (!slot)
+            return c.json({ error: "Slot must be an integer from 1 to 4" }, 400);
+          c.header("Cache-Control", "no-store");
+          return c.json(slot);
+        }),
+      ),
+    ),
+  );
 
-  app.get("/api/ios-controls/diagnostics", (c) => {
-    c.header("Cache-Control", "no-store");
-    return c.json(service.diagnostics());
-  });
+  app.get(
+    "/api/ios-controls/diagnostics",
+    effectHandler(runner, (c) =>
+      service.diagnosticsEffect().pipe(
+        Effect.tap(() => Effect.sync(() => c.header("Cache-Control", "no-store"))),
+        Effect.map((diagnostics) => c.json(diagnostics)),
+      ),
+    ),
+  );
 
   app.put(
     "/api/ios-controls/registrations",
-    effectHandler((c) =>
+    effectHandler(runner, (c) =>
       decodeJsonBody(c, registrationSchema).pipe(
         Effect.flatMap((input) =>
           service
@@ -195,10 +211,8 @@ export function registerIOSControlRoutes(
             )
             .pipe(
               Effect.tap(() =>
-                Effect.sync(() =>
-                  logger.info(
-                    `Registered ${input.controls.length} control(s) for one device`,
-                  ),
+                logger.info(
+                  `Registered ${input.controls.length} control(s) for one device`,
                 ),
               ),
               Effect.as(c.json({ registered: input.controls.length })),
@@ -211,10 +225,11 @@ export function registerIOSControlRoutes(
           Effect.succeed(c.json({ error: "Invalid control registration" }, 400)),
         ),
         Effect.catchCause((cause) =>
-          Effect.sync(() => {
-            logger.error("Failed to register iOS controls", cause);
-            return c.json({ error: "Could not save control registration" }, 500);
-          }),
+          logger
+            .error("Failed to register iOS controls", cause)
+            .pipe(
+              Effect.as(c.json({ error: "Could not save control registration" }, 500)),
+            ),
         ),
       ),
     ),

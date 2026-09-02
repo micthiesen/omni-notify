@@ -52,7 +52,7 @@ export function createOmniMcpHandler(
             annotations: tool.annotations,
           },
           (input) =>
-            Effect.runPromise(
+            runtime.effectRunner.runPromise(
               tool.execute(input).pipe(
                 Effect.match({
                   onFailure: failedToolResult,
@@ -65,7 +65,11 @@ export function createOmniMcpHandler(
       return server;
     },
     {
-      onerror: (error) => runtime.logger.warn(`MCP request failed: ${error.message}`),
+      onerror: (error) => {
+        runtime.effectRunner.runFork(
+          runtime.logger.warn(`MCP request failed: ${error.message}`),
+        );
+      },
     },
   );
 

@@ -1,16 +1,10 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect, Schema } from "effect";
 import {
   createCalendarEventEffect,
   discoverCaldavSessionEffect,
 } from "../calendar-events/caldav/index.js";
-import type { CaldavError } from "../calendar-events/effect.js";
-import {
-  WorkspaceActionError,
-  WorkspaceOperationError,
-  WorkspaceValidationError,
-} from "./errors.js";
-import type { WorkspaceActionData } from "./persistence.js";
+import { WorkspaceActionError, WorkspaceValidationError } from "./errors.js";
 import {
   getWorkspaceAction,
   setWorkspaceActionResult,
@@ -42,11 +36,6 @@ const CalendarEventPayloadSchema = Schema.Struct({
 });
 
 const resolvingActions = new Set<string>();
-type ActionFailure =
-  | WorkspaceActionError
-  | WorkspaceValidationError
-  | WorkspaceOperationError
-  | CaldavError;
 
 function decodePayload<A, I>(
   actionId: string,
@@ -75,9 +64,7 @@ function decodePayload<A, I>(
   );
 }
 
-function getApprovableActionEffect(
-  actionId: string,
-): Effect.Effect<WorkspaceActionData, ActionFailure> {
+function getApprovableActionEffect(actionId: string) {
   return workspaceRepositoryEffect("read workspace action", () =>
     getWorkspaceAction(actionId),
   ).pipe(
@@ -120,10 +107,7 @@ function finishEffect(
   );
 }
 
-export function approveWorkspaceActionEffect(
-  actionId: string,
-  logger: Logger,
-): Effect.Effect<WorkspaceActionData, ActionFailure> {
+export function approveWorkspaceActionEffect(actionId: string, logger: NamedLogger) {
   const acquire = Effect.gen(function* () {
     if (resolvingActions.has(actionId))
       return yield* new WorkspaceActionError({
@@ -210,11 +194,9 @@ export function approveWorkspaceActionEffect(
             setWorkspaceActionResult(actionId, "failed", error.message),
           ).pipe(
             Effect.catch((persistenceError) =>
-              Effect.sync(() =>
-                logger.error(
-                  `Failed to record workspace action ${actionId} failure`,
-                  persistenceError,
-                ),
+              logger.error(
+                `Failed to record workspace action ${actionId} failure`,
+                persistenceError,
               ),
             ),
           ),

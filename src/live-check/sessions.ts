@@ -1,7 +1,9 @@
 import type { Effect as EffectType } from "effect/Effect";
+import type { Docstore } from "@micthiesen/mitools/docstore";
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect, Option } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
-import { fromSync } from "../effect/interop.js";
+import { PersistenceError as PersistenceFailure } from "../effect/errors.js";
 import type { StreamerStatusLive } from "./persistence.js";
 import type { Platform } from "./platforms/index.js";
 
@@ -32,8 +34,17 @@ export const StreamSessionsEntity = new Entity<StreamSessionsData, ["streamerId"
   ["streamerId"],
 );
 
-export function getStreamSessions(streamerId: string): StreamSessionsData {
-  return StreamSessionsEntity.get({ streamerId }) ?? { streamerId, sessions: [] };
+export function getStreamSessions(
+  streamerId: string,
+): EffectType<StreamSessionsData, PersistenceError, Docstore> {
+  return StreamSessionsEntity.get({ streamerId }).pipe(
+    Effect.map(
+      Option.getOrElse((): StreamSessionsData => ({ streamerId, sessions: [] })),
+    ),
+    Effect.mapError(
+      (cause) => new PersistenceFailure({ operation: "read stream sessions", cause }),
+    ),
+  );
 }
 
 /** Pure: append a completed session, pruning entries beyond age/count caps. */
@@ -70,18 +81,19 @@ export function sessionFromLiveStatus(
   };
 }
 
-export function recordCompletedSession(live: StreamerStatusLive, endedAt: Date): void {
-  const data = getStreamSessions(live.streamerId);
-  StreamSessionsEntity.upsert(
-    appendSession(data, sessionFromLiveStatus(live, endedAt)),
-  );
-}
-
 export function recordCompletedSessionEffect(
   live: StreamerStatusLive,
   endedAt: Date,
-): EffectType<void, PersistenceError> {
-  return fromSync("record completed stream session", () =>
-    recordCompletedSession(live, endedAt),
+): EffectType<void, PersistenceError, Docstore> {
+  return Effect.gen(function* () {
+    const data = yield* getStreamSessions(live.streamerId);
+    yield* StreamSessionsEntity.upsert(
+      appendSession(data, sessionFromLiveStatus(live, endedAt)),
+    );
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new PersistenceFailure({ operation: "record completed stream session", cause }),
+    ),
   );
 }

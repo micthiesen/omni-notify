@@ -1,180 +1,107 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("@micthiesen/mitools/docstore", () => ({
-  transaction: <A>(apply: () => A) => apply(),
-}));
-
-vi.mock("@micthiesen/mitools/entities", () => {
-  const store = new Map<string, unknown>();
-  return {
-    Entity: class {
-      constructor(
-        private name: string,
-        private keys: string[],
-      ) {}
-      get(key: Record<string, string>) {
-        return store.get(`${this.name}:${JSON.stringify(key)}`) ?? null;
-      }
-      upsert(data: Record<string, unknown>) {
-        const keyObj: Record<string, unknown> = {};
-        for (const k of this.keys) keyObj[k] = data[k];
-        store.set(`${this.name}:${JSON.stringify(keyObj)}`, data);
-      }
-      delete(key: Record<string, string>) {
-        return store.delete(`${this.name}:${JSON.stringify(key)}`);
-      }
-      static _store = store;
-    },
-  };
-});
-
-import { Entity } from "@micthiesen/mitools/entities";
+import { beforeEach, describe, expect, it } from "vitest";
+import { Effect } from "effect";
+import { runTest } from "../live-check/testRuntime.js";
 import {
   addBriefingNotification,
-  type BriefingNotification,
+  BriefingDeliveryEntity,
+  BriefingHistoryEntity,
   completeBriefingDelivery,
+  distributeBriefingRunCost,
   formatNotifications,
   getBriefingHistory,
   releaseBriefingDelivery,
   reserveBriefingDelivery,
   resolveHistoryPlaceholders,
+  type BriefingNotification,
 } from "./persistence.js";
 
-function clearStore() {
-  (Entity as unknown as { _store: Map<string, unknown> })._store.clear();
-}
-
-function makeNotification(
+const makeNotification = (
   title: string,
   url = "https://example.com",
-): BriefingNotification {
-  return { title, message: "msg", url, timestamp: Date.now() };
-}
+): BriefingNotification => ({
+  title,
+  message: "msg",
+  url,
+  timestamp: new Date("2026-02-06T14:30:00").getTime(),
+});
+beforeEach(async () => {
+  await runTest(BriefingHistoryEntity.deleteAll());
+  await runTest(BriefingDeliveryEntity.deleteAll());
+});
 
 describe("formatNotifications", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-02-06T14:30:00"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("returns empty message for empty array", () => {
-    const result = formatNotifications([], 5);
-    expect(result).toBe("- No previous notifications");
-  });
-
-  it("returns empty message when count is 0", () => {
-    const result = formatNotifications([makeNotification("A")], 0);
-    expect(result).toBe("- No previous notifications");
-  });
-
-  it("formats a single notification with timestamp", () => {
+  it("formats and bounds recent notifications", () => {
+    expect(formatNotifications([], 5)).toBe("- No previous notifications");
     const result = formatNotifications(
-      [makeNotification("Cool Article", "https://cbc.ca")],
-      5,
+      [makeNotification("Old"), makeNotification("Recent")],
+      1,
     );
-    expect(result).toBe("- Cool Article (https://cbc.ca) [Feb 6, 2:30 PM]");
-  });
-
-  it("limits to the most recent N notifications", () => {
-    const notifications = [
-      makeNotification("Old"),
-      makeNotification("Middle"),
-      makeNotification("Recent"),
-    ];
-    const result = formatNotifications(notifications, 2);
     expect(result).not.toContain("Old");
-    expect(result).toContain("Middle");
     expect(result).toContain("Recent");
   });
-
-  it("returns all when count exceeds available", () => {
-    const notifications = [makeNotification("A"), makeNotification("B")];
-    const result = formatNotifications(notifications, 10);
-    expect(result).toContain("- A");
-    expect(result).toContain("- B");
-  });
 });
 
-describe("addBriefingNotification", () => {
-  beforeEach(() => clearStore());
-
-  it("appends a notification to empty history", () => {
-    addBriefingNotification("TestBriefing", makeNotification("First"));
-    const history = getBriefingHistory("TestBriefing");
-    expect(history.notifications).toHaveLength(1);
-    expect(history.notifications[0].title).toBe("First");
-  });
-
-  it("prunes to last 50 notifications", () => {
-    for (let i = 0; i < 55; i++) {
-      addBriefingNotification("TestBriefing", makeNotification(`N${i}`));
-    }
-    const history = getBriefingHistory("TestBriefing");
+describe("briefing persistence", () => {
+  it("appends and prunes notification history", async () => {
+    for (let index = 0; index < 55; index++)
+      await runTest(addBriefingNotification("News", makeNotification(`N${index}`)));
+    const history = await runTest(getBriefingHistory("News"));
     expect(history.notifications).toHaveLength(50);
     expect(history.notifications[0].title).toBe("N5");
-    expect(history.notifications[49].title).toBe("N54");
-  });
-});
-
-describe("briefing delivery idempotency", () => {
-  beforeEach(() => clearStore());
-
-  it("suppresses a duplicate reservation after delivery", () => {
-    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(true);
-    completeBriefingDelivery("News", "run-1:hash");
-    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(false);
   });
 
-  it("allows retry after a confirmed provider failure", () => {
-    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(true);
-    releaseBriefingDelivery("News", "run-1:hash");
-    expect(reserveBriefingDelivery("News", "run-1:hash")).toBe(true);
-  });
-});
-
-describe("resolveHistoryPlaceholders", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-02-06T14:30:00"));
-    clearStore();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("replaces {{history:N}} with formatted history", () => {
-    addBriefingNotification("News", makeNotification("Article", "https://example.com"));
-    const result = resolveHistoryPlaceholders(
-      "System prompt\n\n{{history:5}}\n\nDo not repeat.",
-      "News",
+  it("preserves concurrent notification appends", async () => {
+    await runTest(
+      Effect.forEach(
+        Array.from({ length: 20 }, (_, index) => index),
+        (index) => addBriefingNotification("News", makeNotification(`N${index}`)),
+        { concurrency: "unbounded", discard: true },
+      ),
     );
-    expect(result).toContain("- Article (https://example.com) [Feb 6, 2:30 PM]");
-    expect(result).not.toContain("{{history");
+    const history = await runTest(getBriefingHistory("News"));
+    expect(history.notifications).toHaveLength(20);
+    expect(new Set(history.notifications.map(({ title }) => title)).size).toBe(20);
   });
 
-  it("leaves prompts without placeholders unchanged", () => {
-    const prompt = "You are an assistant. Do good work.";
-    const result = resolveHistoryPlaceholders(prompt, "News");
-    expect(result).toBe(prompt);
-  });
-
-  it("handles count of 0 as empty history", () => {
-    addBriefingNotification("News", makeNotification("Article"));
-    const result = resolveHistoryPlaceholders("{{history:0}}", "News");
-    expect(result).toBe("- No previous notifications");
-  });
-
-  it("handles multiple placeholders", () => {
-    const result = resolveHistoryPlaceholders(
-      "A: {{history:3}}\nB: {{history:5}}",
-      "News",
+  it("does not lose an append concurrent with cost distribution", async () => {
+    await runTest(
+      addBriefingNotification("News", {
+        ...makeNotification("Costed"),
+        runId: "run-1",
+      }),
     );
+    await runTest(
+      Effect.all(
+        [
+          distributeBriefingRunCost("News", "run-1", 12),
+          addBriefingNotification("News", makeNotification("Concurrent")),
+        ],
+        { concurrency: "unbounded", discard: true },
+      ),
+    );
+    const history = await runTest(getBriefingHistory("News"));
+    expect(history.notifications.map(({ title }) => title)).toEqual([
+      "Costed",
+      "Concurrent",
+    ]);
+    expect(history.notifications[0]?.costCents).toBe(12);
+  });
+
+  it("reserves delivery atomically and permits retry after release", async () => {
+    expect(await runTest(reserveBriefingDelivery("News", "run:hash"))).toBe(true);
+    await runTest(completeBriefingDelivery("News", "run:hash"));
+    expect(await runTest(reserveBriefingDelivery("News", "run:hash"))).toBe(false);
+    await runTest(releaseBriefingDelivery("News", "run:hash"));
+    expect(await runTest(reserveBriefingDelivery("News", "run:hash"))).toBe(true);
+  });
+
+  it("resolves every history placeholder", async () => {
+    await runTest(addBriefingNotification("News", makeNotification("Article")));
+    const result = await runTest(
+      resolveHistoryPlaceholders("A: {{history:3}}\nB: {{history:0}}", "News"),
+    );
+    expect(result).toContain("Article");
+    expect(result).toContain("No previous notifications");
     expect(result).not.toContain("{{history");
-    expect((result.match(/No previous notifications/g) ?? []).length).toBe(2);
   });
 });

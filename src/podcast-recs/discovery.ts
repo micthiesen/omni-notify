@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
@@ -67,7 +67,7 @@ export function discoverEpisodesEffect(
   recentRecommendationsDigest: string,
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<DiscoveredEpisode[], DiscoveryModelError> {
+) {
   return Effect.gen(function* () {
     const searches = yield* Effect.forEach(
       DISCOVERY_QUERIES,
@@ -80,17 +80,18 @@ export function discoverEpisodesEffect(
           maxContentChars: 700,
         }).pipe(
           Effect.map(({ results }) => ({ query, results })),
-          Effect.catch((error) => {
-            logger.warn(`Discovery search failed: ${query}`, String(error));
-            return Effect.succeed({ query, results: [] as WebSearchResult[] });
-          }),
+          Effect.catch((error) =>
+            logger
+              .warn(`Discovery search failed: ${query}`, String(error))
+              .pipe(Effect.as({ query, results: [] as WebSearchResult[] })),
+          ),
         ),
       { concurrency: 3 },
     );
 
     const resultCount = searches.reduce((sum, s) => sum + s.results.length, 0);
     if (resultCount === 0) {
-      logger.warn("Discovery produced no search results");
+      yield* logger.warn("Discovery produced no search results");
       return [];
     }
 
@@ -100,15 +101,16 @@ export function discoverEpisodesEffect(
       tasteDigest,
       recentRecommendationsDigest,
     );
-    logFile?.log(
-      logger,
-      LogLevel.INFO,
-      `Discovery Extraction Prompt (${modelId})`,
-      codeBlock(prompt),
-      {
-        consoleSummary: `Extracting candidates from ${resultCount} results (${modelId})`,
-      },
-    );
+    if (logFile)
+      yield* logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Discovery Extraction Prompt (${modelId})`,
+        codeBlock(prompt),
+        {
+          consoleSummary: `Extracting candidates from ${resultCount} results (${modelId})`,
+        },
+      );
 
     const result = yield* Effect.tryPromise({
       try: () =>
@@ -119,7 +121,7 @@ export function discoverEpisodesEffect(
         }),
       catch: (cause) => new DiscoveryModelError({ cause }),
     });
-    logger.info(
+    yield* logger.info(
       `Discovery token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
@@ -138,12 +140,13 @@ export function discoverEpisodesEffect(
       if (episodes.length >= MAX_DISCOVERED) break;
     }
 
-    logFile?.section(
-      "Discovered Episodes",
-      episodes
-        .map((e) => `- ${e.showTitle} — ${e.episodeTitle} (${e.context})`)
-        .join("\n") || "none",
-    );
+    if (logFile)
+      yield* logFile.section(
+        "Discovered Episodes",
+        episodes
+          .map((e) => `- ${e.showTitle} — ${e.episodeTitle} (${e.context})`)
+          .join("\n") || "none",
+      );
     return episodes;
   });
 }

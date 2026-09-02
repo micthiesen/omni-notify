@@ -14,19 +14,15 @@
  * the credential is a live sync peer and the resolve→match→enqueue→dequeue
  * chain works.
  */
-import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { Data, Effect } from "effect";
-import { runPromise } from "../effect/interop.js";
 import {
   PodcastQueuePosition,
   resolvePodcastAccountEffect,
 } from "../podcast-recs/account.js";
 import { fetchFeedEpisodesEffect } from "../podcast-recs/rss.js";
-import config from "../utils/config.js";
 
-Injector.configure({ config });
-const logger = new Logger("CastroSmoke");
+const logger = Logger.named("CastroSmoke");
 
 // Radiolab: a show the owner does not subscribe to (Simplecast feed whose RSS
 // guids differ from Castro's, so this also covers media-URL matching).
@@ -56,9 +52,7 @@ const program = Effect.gen(function* () {
     ),
   ))[0];
   if (!episode) return yield* fail("could not read the test feed");
-  yield* Effect.sync(() =>
-    logger.info(`Test episode: ${SHOW_TITLE} — ${episode.title}`),
-  );
+  yield* logger.info(`Test episode: ${SHOW_TITLE} — ${episode.title}`);
 
   const enqueue = yield* account.enqueueEpisode({
     feedUrl: FEED_URL,
@@ -71,7 +65,7 @@ const program = Effect.gen(function* () {
   if (enqueue !== "added" && enqueue !== "already_exists") {
     return yield* fail(`enqueueEpisode returned "${enqueue}"`);
   }
-  yield* Effect.sync(() => logger.info(`enqueueEpisode → ${enqueue}`));
+  yield* logger.info(`enqueueEpisode → ${enqueue}`);
 
   // 2. Verify it actually landed in the server queue (not just a 200).
   const afterEnqueue = yield* account.fetchQueue();
@@ -85,10 +79,8 @@ const program = Effect.gen(function* () {
       "episode was NOT in the queue after enqueue (write did not land)",
     );
   const index = afterEnqueue.value.indexOf(ours);
-  yield* Effect.sync(() =>
-    logger.info(
-      `Verified in queue at position ${index + 1}/${afterEnqueue.value.length}`,
-    ),
+  yield* logger.info(
+    `Verified in queue at position ${index + 1}/${afterEnqueue.value.length}`,
   );
 
   // 3. Dequeue (clean up) using the guid the queue itself reports.
@@ -104,17 +96,14 @@ const program = Effect.gen(function* () {
   );
   if (stillThere) return yield* fail("episode still in the queue after dequeue");
 
-  yield* Effect.sync(() =>
-    logger.info(
-      "SMOKE PASSED: enqueue landed, verified, and cleaned up. Queue untouched.",
-    ),
+  yield* logger.info(
+    "SMOKE PASSED: enqueue landed, verified, and cleaned up. Queue untouched.",
   );
 });
 
-await runPromise(
+await Effect.runPromise(
   program.pipe(
-    Effect.tapError((error) =>
-      Effect.sync(() => logger.error(error.message, error.cause)),
-    ),
+    Effect.tapError((error) => logger.error(error.message, error.cause)),
+    Effect.provide(Logger.layer()),
   ),
 );

@@ -5,7 +5,6 @@ import { currentCostFeature, recordCostEventSafely } from "../../costs/persisten
 import config from "../../utils/config.js";
 import { cleanText } from "../formatting/index.js";
 import { fetchPublicJson } from "../publicHttp.js";
-import type { Article } from "../types.js";
 import { extractTitleFromHtml } from "./constants.js";
 
 const JINA_API_BASE = "https://r.jina.ai";
@@ -24,10 +23,7 @@ const JinaReaderResponseSchema = Schema.Struct({
  * Retrieve article using Jina.ai Reader API.
  * Uses a headless browser to render JS-heavy pages.
  */
-export function retrieveArticleJina(
-  url: string,
-  _userAgent: string,
-): Effect.Effect<Article, PressPodsError> {
+export function retrieveArticleJina(url: string, _userAgent: string) {
   const jinaUrl = `${JINA_API_BASE}/${url}`;
   return fetchPublicJson(
     jinaUrl,
@@ -54,42 +50,44 @@ export function retrieveArticleJina(
         ),
       ),
     ),
-    Effect.flatMap((response) => {
-      const html = response.data.content;
-      if (!html || html.length < 100) {
-        return Effect.fail(
-          new PressPodsError({
-            operation: "retrieve article with Jina",
-            cause: new Error("Jina returned empty or too short content"),
-          }),
-        );
-      }
-      const reportedTokens = response.data.usage?.tokens;
-      const tokens =
-        typeof reportedTokens === "number" &&
-        Number.isFinite(reportedTokens) &&
-        reportedTokens >= 0
-          ? reportedTokens
-          : null;
-      recordCostEventSafely({
-        category: "retrieval",
-        feature: currentCostFeature("press-pods"),
-        operation: "retrieve-article",
-        service: "jina",
-        model: "reader",
-        costCents: tokens === null ? null : tokens * JINA_READER_CENTS_PER_TOKEN,
-        priceStatus: tokens === null ? "unknown" : "estimated",
-        usage: { requests: 1, ...(tokens === null ? {} : { outputTokens: tokens }) },
-      });
-      return Effect.succeed({
-        title: response.data.title?.trim() || extractTitleFromHtml(html),
-        text: cleanText(html),
-        author: undefined,
-        domain: extractDomain(url) ?? undefined,
-        publishedAt: undefined,
-        leadImageUrl: undefined,
-        url,
-      });
-    }),
+    Effect.flatMap((response) =>
+      Effect.gen(function* () {
+        const html = response.data.content;
+        if (!html || html.length < 100) {
+          return yield* Effect.fail(
+            new PressPodsError({
+              operation: "retrieve article with Jina",
+              cause: new Error("Jina returned empty or too short content"),
+            }),
+          );
+        }
+        const reportedTokens = response.data.usage?.tokens;
+        const tokens =
+          typeof reportedTokens === "number" &&
+          Number.isFinite(reportedTokens) &&
+          reportedTokens >= 0
+            ? reportedTokens
+            : null;
+        yield* recordCostEventSafely({
+          category: "retrieval",
+          feature: currentCostFeature("press-pods"),
+          operation: "retrieve-article",
+          service: "jina",
+          model: "reader",
+          costCents: tokens === null ? null : tokens * JINA_READER_CENTS_PER_TOKEN,
+          priceStatus: tokens === null ? "unknown" : "estimated",
+          usage: { requests: 1, ...(tokens === null ? {} : { outputTokens: tokens }) },
+        });
+        return {
+          title: response.data.title?.trim() || extractTitleFromHtml(html),
+          text: cleanText(html),
+          author: undefined,
+          domain: extractDomain(url) ?? undefined,
+          publishedAt: undefined,
+          leadImageUrl: undefined,
+          url,
+        };
+      }),
+    ),
   );
 }

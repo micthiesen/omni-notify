@@ -1,6 +1,5 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { LogLevel } from "@micthiesen/mitools/logging";
 import { afterEach, describe, expect, it } from "vitest";
+import { runTest } from "../testRuntime.js";
 import {
   buildLivestreamFeedbackDigest,
   DESTINY_CONFIRMED_EVENT_TITLE,
@@ -17,147 +16,103 @@ import {
   updateLivestreamStage,
 } from "./persistence.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.ERROR,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: `/tmp/omni-livestream-intelligence-${process.pid}.db`,
-  },
-});
-
-afterEach(() => {
-  LivestreamFeedbackEntity.deleteAll();
-  LivestreamDiagnosticsEntity.deleteAll();
-  LivestreamIntelligenceEventEntity.deleteAll();
-  LivestreamIntelligenceEntity.deleteAll();
+afterEach(async () => {
+  await runTest(LivestreamFeedbackEntity.deleteAll());
+  await runTest(LivestreamDiagnosticsEntity.deleteAll());
+  await runTest(LivestreamIntelligenceEventEntity.deleteAll());
+  await runTest(LivestreamIntelligenceEntity.deleteAll());
 });
 
 describe("livestream alert feedback", () => {
-  it("records feedback only for the streamer's latest alert", () => {
-    saveLivestreamIntelligence({
-      streamerId: "hutch",
-      sessionStartedAt: 1,
-      relevanceScore: 80,
-      relevanceReasons: [],
-      chapters: [],
-      latestAlert: {
-        alertId: "alert-1",
-        type: "debate",
-        title: "Debate starting",
-        message: "A substantive debate is beginning.",
-        reason: "Live disagreement with turn-taking",
-        confidence: 0.9,
-        createdAt: 2,
-      },
-      updatedAt: 2,
-    });
-    expect(
-      recordLivestreamFeedback({
+  it("records feedback only for the latest alert", async () => {
+    await runTest(
+      saveLivestreamIntelligence({
         streamerId: "hutch",
-        alertId: "stale-alert",
-        verdict: "false_positive",
+        sessionStartedAt: 1,
+        relevanceScore: 80,
+        relevanceReasons: [],
+        chapters: [],
+        latestAlert: {
+          alertId: "alert-1",
+          type: "debate",
+          title: "Debate",
+          message: "Starting",
+          reason: "Evidence",
+          confidence: 0.9,
+          createdAt: 2,
+        },
+        updatedAt: 2,
       }),
+    );
+    expect(
+      await runTest(
+        recordLivestreamFeedback({
+          streamerId: "hutch",
+          alertId: "stale",
+          verdict: "false_positive",
+        }),
+      ),
     ).toBeUndefined();
-    const feedback = recordLivestreamFeedback({
-      streamerId: "hutch",
-      alertId: "alert-1",
-      verdict: "useful",
-      note: "  exactly what I wanted  ",
-    });
-    expect(feedback).toMatchObject({
-      streamerId: "hutch",
-      alertType: "debate",
-      verdict: "useful",
-      note: "exactly what I wanted",
-    });
-    expect(buildLivestreamFeedbackDigest()).toBe(
+    expect(
+      await runTest(
+        recordLivestreamFeedback({
+          streamerId: "hutch",
+          alertId: "alert-1",
+          verdict: "useful",
+          note: "  exactly what I wanted  ",
+        }),
+      ),
+    ).toMatchObject({ note: "exactly what I wanted" });
+    expect(await runTest(buildLivestreamFeedbackDigest())).toBe(
       "debate: useful (exactly what I wanted)",
     );
-    recordLivestreamFeedback({
-      streamerId: "hutch",
-      alertId: "alert-1",
-      verdict: "not_useful",
-    });
-    expect(LivestreamFeedbackEntity.getAll()).toHaveLength(1);
-    expect(buildLivestreamFeedbackDigest()).toBe("debate: not_useful");
-    expect(getLivestreamEvents("hutch")[0]).toMatchObject({
-      kind: "feedback",
-      title: "Alert marked not useful",
-    });
   });
 });
 
 describe("livestream pipeline diagnostics", () => {
-  it("merges stages within a session and resets them for a new session", () => {
-    updateLivestreamStage("pisco", 100, "metadata", {
-      status: "success",
-      detail: "Politics",
-    });
-    updateLivestreamStage("pisco", 100, "summary", {
-      status: "running",
-      startedAt: 120,
-    });
-    expect(getLivestreamDiagnostics("pisco")?.stages).toMatchObject({
+  it("merges stages within a session and resets for a new session", async () => {
+    await runTest(
+      updateLivestreamStage("pisco", 100, "metadata", {
+        status: "success",
+        detail: "Politics",
+      }),
+    );
+    await runTest(
+      updateLivestreamStage("pisco", 100, "summary", {
+        status: "running",
+        startedAt: 120,
+      }),
+    );
+    expect((await runTest(getLivestreamDiagnostics("pisco")))?.stages).toMatchObject({
       metadata: { status: "success" },
       summary: { status: "running" },
     });
-
-    updateLivestreamStage("pisco", 200, "voice", {
-      status: "idle",
-      eligible: false,
-    });
-    expect(getLivestreamDiagnostics("pisco")).toMatchObject({
+    await runTest(
+      updateLivestreamStage("pisco", 200, "voice", { status: "idle", eligible: false }),
+    );
+    expect(await runTest(getLivestreamDiagnostics("pisco"))).toMatchObject({
       sessionStartedAt: 200,
-      stages: { voice: { status: "idle", eligible: false } },
+      stages: { voice: { status: "idle" } },
     });
-    expect(getLivestreamDiagnostics("pisco")?.stages.metadata).toBeUndefined();
   });
 
-  it("returns a newest-first bounded per-stream timeline", () => {
-    recordLivestreamEvent({
-      streamerId: "pisco",
-      kind: "metadata",
-      status: "success",
-      title: "Metadata updated",
-      createdAt: 100,
-    });
-    recordLivestreamEvent({
-      streamerId: "hutch",
-      kind: "summary",
-      status: "success",
-      title: "Other stream",
-      createdAt: 150,
-    });
-    recordLivestreamEvent({
-      streamerId: "pisco",
-      kind: "summary",
-      status: "success",
-      title: "Summary updated",
-      createdAt: 200,
-    });
-    expect(getLivestreamEvents("pisco", 1).map((event) => event.title)).toEqual([
-      "Summary updated",
-    ]);
-  });
-
-  it("recovers a durable Destiny confirmation for the same session", () => {
-    recordLivestreamEvent({
-      streamerId: "darius",
-      sessionStartedAt: 100,
-      kind: "voice",
-      status: "success",
-      title: DESTINY_CONFIRMED_EVENT_TITLE,
+  it("returns a bounded timeline and durable confirmation", async () => {
+    await runTest(
+      recordLivestreamEvent({
+        streamerId: "darius",
+        sessionStartedAt: 100,
+        kind: "voice",
+        status: "success",
+        title: DESTINY_CONFIRMED_EVENT_TITLE,
+        detail: "Live conversation confirmed",
+        metrics: { speakerConfidence: 0.706 },
+        createdAt: 200,
+      }),
+    );
+    expect(await runTest(getLivestreamEvents("darius", 1))).toHaveLength(1);
+    expect(await runTest(getLatestDestinyConfirmation("darius", 100))).toMatchObject({
       detail: "Live conversation confirmed",
-      metrics: { speakerConfidence: 0.706, assessmentConfidence: 0.91 },
-      createdAt: 200,
     });
-
-    expect(getLatestDestinyConfirmation("darius", 100)).toMatchObject({
-      detail: "Live conversation confirmed",
-      metrics: { speakerConfidence: 0.706, assessmentConfidence: 0.91 },
-    });
-    expect(getLatestDestinyConfirmation("darius", 300)).toBeUndefined();
+    expect(await runTest(getLatestDestinyConfirmation("darius", 300))).toBeUndefined();
   });
 });

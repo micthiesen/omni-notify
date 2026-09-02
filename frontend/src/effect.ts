@@ -1,4 +1,5 @@
 import { Effect, FiberSet } from "effect";
+export { useEffectFiber as useUiEffect } from "@micthiesen/mitools/react";
 
 /** Interpret an application Effect at a React or browser callback boundary. */
 export const runUiEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> =>

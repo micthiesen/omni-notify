@@ -1,6 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { runTest } from "../../live-check/testRuntime.js";
 import type { EnqueueEpisodeRequest } from "../account.js";
 import { PodcastQueuePosition } from "../account.js";
 import type { CastroApi } from "./api.js";
@@ -100,20 +101,18 @@ function fakeApi() {
   };
 }
 
-const logger = { error: vi.fn() } as unknown as Logger;
+const logger = { error: vi.fn(() => Effect.void) } as unknown as Logger;
 
 describe("CastroClient search-backed writes", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("maps general podcast and episode searches", async () => {
     const api = fakeApi();
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
-    await expect(
-      Effect.runPromise(client.searchPodcasts("example")),
-    ).resolves.toMatchObject({
+    await expect(runTest(client.searchPodcasts("example"))).resolves.toMatchObject({
       status: "ok",
       value: [
         {
@@ -125,7 +124,7 @@ describe("CastroClient search-backed writes", () => {
       ],
     });
     await expect(
-      Effect.runPromise(client.searchEpisodes("example episode")),
+      runTest(client.searchEpisodes("example episode")),
     ).resolves.toMatchObject({
       status: "ok",
       value: [{ clientId: EPISODE_ID, showTitle: "Example Podcast" }],
@@ -134,12 +133,12 @@ describe("CastroClient search-backed writes", () => {
 
   it("resolves an unsubscribed RSS feed and enqueues its episode", async () => {
     const api = fakeApi();
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
     await expect(
-      Effect.runPromise(
+      runTest(
         client.enqueueEpisode({
           feedUrl: FEED_URL,
           itunesId: 1234,
@@ -162,7 +161,7 @@ describe("CastroClient search-backed writes", () => {
   it("allocates unique action ids across overlapping client instances", async () => {
     const firstApi = fakeApi();
     const secondApi = fakeApi();
-    const [first, second] = await Effect.runPromise(
+    const [first, second] = await runTest(
       Effect.all([
         CastroClient.make(firstApi as unknown as CastroApi, logger),
         CastroClient.make(secondApi as unknown as CastroApi, logger),
@@ -175,7 +174,7 @@ describe("CastroClient search-backed writes", () => {
       episodeTitle: "Example Episode",
     };
 
-    await Effect.runPromise(
+    await runTest(
       Effect.all([first.enqueueEpisode(request), second.enqueueEpisode(request)], {
         concurrency: "unbounded",
       }),
@@ -209,7 +208,7 @@ describe("CastroClient search-backed writes", () => {
         queued = true;
       }),
     );
-    const [first, second] = await Effect.runPromise(
+    const [first, second] = await runTest(
       Effect.all([
         CastroClient.make(api as unknown as CastroApi, logger),
         CastroClient.make(api as unknown as CastroApi, logger),
@@ -222,7 +221,7 @@ describe("CastroClient search-backed writes", () => {
       episodeTitle: "Example Episode",
     };
 
-    const results = await Effect.runPromise(
+    const results = await runTest(
       Effect.all([first.enqueueEpisode(request), second.enqueueEpisode(request)], {
         concurrency: "unbounded",
       }),
@@ -244,11 +243,11 @@ describe("CastroClient search-backed writes", () => {
         ],
       }),
     );
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
-    await Effect.runPromise(
+    await runTest(
       client.enqueueEpisode({
         feedUrl: FEED_URL,
         episodeGuid: "rss-guid",
@@ -266,12 +265,12 @@ describe("CastroClient search-backed writes", () => {
 
   it("resolves an RSS feed and subscribes by Castro podcast id", async () => {
     const api = fakeApi();
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
     await expect(
-      Effect.runPromise(
+      runTest(
         client.subscribeToShow({
           title: "Example Podcast",
           feedUrl: FEED_URL,
@@ -326,11 +325,11 @@ describe("CastroClient Inbox", () => {
         ),
       ),
     };
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
-    await expect(Effect.runPromise(client.fetchInbox())).resolves.toMatchObject({
+    await expect(runTest(client.fetchInbox())).resolves.toMatchObject({
       status: "ok",
       value: [
         {
@@ -340,7 +339,7 @@ describe("CastroClient Inbox", () => {
         },
       ],
     });
-    await expect(Effect.runPromise(client.clearInboxEpisode(EPISODE_ID))).resolves.toBe(
+    await expect(runTest(client.clearInboxEpisode(EPISODE_ID))).resolves.toBe(
       "removed",
     );
     expect(api.fetchQueue).not.toHaveBeenCalled();
@@ -460,13 +459,11 @@ describe("CastroClient.fetchListenHistory", () => {
         progress_seconds: 10,
       },
     ]);
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
-    const result = await Effect.runPromise(
-      client.fetchListenHistory(Date.now() - 10 * DAY),
-    );
+    const result = await runTest(client.fetchListenHistory(Date.now() - 10 * DAY));
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     // The 100-day-old play is excluded by the cutoff.
@@ -490,11 +487,11 @@ describe("CastroClient.fetchListenHistory", () => {
         progress_seconds: 500,
       },
     ]);
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
-    const result = await Effect.runPromise(client.fetchListenHistory());
+    const result = await runTest(client.fetchListenHistory());
     if (result.status !== "ok") throw new Error("expected ok");
     expect(result.value[0]?.completion).toBe(1);
   });
@@ -510,11 +507,11 @@ describe("CastroClient.fetchListenHistory", () => {
         progress_seconds: 0,
       },
     ]);
-    const client = await Effect.runPromise(
+    const client = await runTest(
       CastroClient.make(api as unknown as CastroApi, logger),
     );
 
-    const result = await Effect.runPromise(client.fetchListenHistory());
+    const result = await runTest(client.fetchListenHistory());
     if (result.status !== "ok") throw new Error("expected ok");
     expect(result.value).toHaveLength(0);
   });

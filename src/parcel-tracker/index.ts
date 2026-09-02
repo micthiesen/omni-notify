@@ -1,20 +1,20 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import type { EmailTriageService } from "../email/triage.js";
-import type { EmailHandler } from "../email/types.js";
 import config from "../utils/config.js";
 import { DeliveryPipeline } from "./pipeline.js";
 
-export function createParcelHandler(
-  parentLogger: Logger,
+export const createParcelHandler = Effect.fn("ParcelTracker.createHandler")(function* (
+  parentLogger: NamedLogger,
   triage: EmailTriageService,
-): EmailHandler | undefined {
+) {
   const logger = parentLogger.extend("ParcelTracker");
 
   if (!config.PARCEL_API_KEY) {
-    logger.info("Disabled: missing PARCEL_API_KEY");
+    yield* logger.info("Disabled: missing PARCEL_API_KEY");
     return undefined;
   }
 
-  logger.info("Pipeline created");
+  yield* logger.info("Pipeline created");
   return new DeliveryPipeline(config.PARCEL_API_KEY, logger, triage);
-}
+});

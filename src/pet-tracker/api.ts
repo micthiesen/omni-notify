@@ -4,7 +4,7 @@ import got from "got";
 
 const GRAPHQL_ENDPOINT = "https://pet-profile.iothings.site/graphql/";
 
-const logger = new Logger("pet-tracker:api");
+const logger = Logger.named("pet-tracker:api");
 
 export interface WeightReading {
   weight: number; // lbs
@@ -46,14 +46,14 @@ function graphqlRequest<A, I>(
   query: string,
   variables: Record<string, unknown>,
   dataSchema: Schema.Codec<A, I>,
-): Effect.Effect<A, WhiskerApiError> {
+) {
   const operation = query.match(/query (\w+)/)?.[1] ?? "Whisker GraphQL request";
   const responseSchema = Schema.Struct({
     data: Schema.optional(dataSchema),
     errors: Schema.optional(Schema.Array(GraphQlErrorSchema)),
   });
   return Effect.gen(function* () {
-    logger.debug(`GraphQL request: ${operation}`);
+    yield* logger.debug(`GraphQL request: ${operation}`);
     const response = yield* Effect.tryPromise({
       try: (signal) =>
         got
@@ -114,10 +114,7 @@ const GET_WEIGHT_HISTORY_BY_PET_ID = `
   }
 `;
 
-export function fetchPetsByUser(
-  idToken: string,
-  userId: string,
-): Effect.Effect<readonly WhiskerPet[], WhiskerApiError> {
+export function fetchPetsByUser(idToken: string, userId: string) {
   return graphqlRequest(
     idToken,
     GET_PETS_BY_USER,
@@ -126,11 +123,7 @@ export function fetchPetsByUser(
   ).pipe(Effect.map((data) => data.getPetsByUser));
 }
 
-export function fetchWeightHistory(
-  idToken: string,
-  petId: string,
-  limit?: number,
-): Effect.Effect<readonly WeightReading[], WhiskerApiError> {
+export function fetchWeightHistory(idToken: string, petId: string, limit?: number) {
   const variables: Record<string, unknown> = { petId };
   if (limit !== undefined) {
     variables.limit = limit;

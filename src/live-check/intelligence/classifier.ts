@@ -1,5 +1,4 @@
-import type { Effect as EffectType } from "effect/Effect";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { generateText, Output } from "ai";
 import { Data, Effect } from "effect";
 import { z } from "zod";
@@ -50,53 +49,58 @@ function monthStart(now: number): number {
   return new Date(date.getFullYear(), date.getMonth(), 1).getTime();
 }
 
-export function livestreamSpendCents(now = Date.now()): number {
+export function livestreamSpendCents(now = Date.now()) {
   const start = monthStart(now);
-  return getCostEvents()
-    .filter(
-      (event) =>
-        event.feature === "livestream-intelligence" &&
-        event.incurredAt >= start &&
-        event.costCents !== null,
-    )
-    .reduce((total, event) => total + (event.costCents ?? 0), 0);
+  return getCostEvents().pipe(
+    Effect.map((events) =>
+      events
+        .filter(
+          (event) =>
+            event.feature === "livestream-intelligence" &&
+            event.incurredAt >= start &&
+            event.costCents !== null,
+        )
+        .reduce((total, event) => total + (event.costCents ?? 0), 0),
+    ),
+  );
 }
 
-export function livestreamBudgetRemainingCents(now = Date.now()): number {
-  return Math.max(
-    0,
-    config.LIVESTREAM_MONTHLY_BUDGET_USD * 100 - livestreamSpendCents(now),
+export function livestreamBudgetRemainingCents(now = Date.now()) {
+  return livestreamSpendCents(now).pipe(
+    Effect.map((spent) =>
+      Math.max(0, config.LIVESTREAM_MONTHLY_BUDGET_USD * 100 - spent),
+    ),
   );
 }
 
 export class LivestreamClassifier {
   private reservedCents = 0;
 
-  public constructor(private readonly logger: Logger) {}
+  public constructor(private readonly logger: NamedLogger) {}
 
-  private reserveBudget(
-    operation: string,
-    maximumCents: number,
-  ): (() => void) | undefined {
-    if (livestreamBudgetRemainingCents() - this.reservedCents >= maximumCents) {
-      this.reservedCents += maximumCents;
-      return () => {
-        this.reservedCents = Math.max(0, this.reservedCents - maximumCents);
-      };
-    }
-    this.logger.warn(
-      `Skipping ${operation}: livestream intelligence monthly budget cannot cover the call`,
-    );
-    return undefined;
+  private reserveBudget(operation: string, maximumCents: number) {
+    return Effect.gen({ self: this }, function* () {
+      if (
+        (yield* livestreamBudgetRemainingCents()) - this.reservedCents >=
+        maximumCents
+      ) {
+        this.reservedCents += maximumCents;
+        return () => {
+          this.reservedCents = Math.max(0, this.reservedCents - maximumCents);
+        };
+      }
+      yield* this.logger.warn(
+        `Skipping ${operation}: livestream intelligence monthly budget cannot cover the call`,
+      );
+      return undefined;
+    });
   }
 
-  public assessTranscriptEffect(
-    input: TranscriptAssessmentInput,
-  ): EffectType<TranscriptAssessment | undefined, TranscriptAssessmentError> {
+  public assessTranscriptEffect(input: TranscriptAssessmentInput) {
     return Effect.gen({ self: this }, function* () {
-      const releaseBudget = this.reserveBudget("transcript assessment", 0.55);
+      const releaseBudget = yield* this.reserveBudget("transcript assessment", 0.55);
       if (!releaseBudget) return undefined;
-      const feedback = buildLivestreamFeedbackDigest();
+      const feedback = yield* buildLivestreamFeedbackDigest();
       const { model, modelId } = getLivestreamIntelligenceModel("assess-transcript");
       const result = yield* Effect.tryPromise({
         try: (signal) =>
@@ -141,7 +145,7 @@ ${input.transcript.slice(-14_000)}`,
         summary: cleanLivestreamSummary(result.output.summary),
         topic: cleanLivestreamTopic(result.output.topic),
       };
-      this.logger.info(
+      yield* this.logger.info(
         `Livestream transcript (${modelId}) ${input.displayName}: ${output.topic}`,
       );
       return output;

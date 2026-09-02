@@ -1,13 +1,17 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import { runTest } from "../live-check/testRuntime.js";
 import { PressPodsError } from "./effect.js";
 
 const mocks = vi.hoisted(() => ({
   enqueue: vi.fn(),
 }));
 
-vi.mock("@micthiesen/mitools/karakeep", () => ({ addBookmark: vi.fn() }));
+vi.mock("@micthiesen/mitools/karakeep", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@micthiesen/mitools/karakeep")>()),
+  addBookmark: vi.fn(() => Effect.succeed("bookmark")),
+}));
 vi.mock("./persistence.js", () => ({
   PressPodsPersistence: {
     findActiveJobByNormalizedUrl: vi.fn(() => Effect.succeed(undefined)),
@@ -31,10 +35,10 @@ import { submitEpisodeUrlEffect } from "./submit.js";
 
 describe("PressPods submission validation", () => {
   it("rejects DNS-private hosts before durable enqueue or bookmarking", async () => {
-    const logger = { info: vi.fn() } as unknown as Logger;
+    const logger = { info: vi.fn(() => Effect.void) } as unknown as Logger;
 
     await expect(
-      Effect.runPromise(
+      runTest(
         submitEpisodeUrlEffect("https://internal.example/article", vi.fn(), logger),
       ),
     ).rejects.toThrow("host resolves to a private address");

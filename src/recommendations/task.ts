@@ -1,10 +1,10 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
-import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { Effect, Schema } from "effect";
-import { runPromise } from "../effect/interop.js";
+import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Clock, Effect, Schema } from "effect";
 import config from "../utils/config.js";
+import type { TaskServices } from "../task-runs/registry.js";
 import { RecommendationInputError } from "./effect.js";
 import {
   MAX_RECOMMENDATIONS_PER_RUN,
@@ -15,58 +15,51 @@ export interface RecommendationManualRunInput {
   maxRecommendations: number;
 }
 
-export class MediaRecommendationTask extends ScheduledTask {
+export class MediaRecommendationTask implements ScheduledTask<unknown, TaskServices> {
   public readonly name = "Recommendations";
   public readonly displayName = "Media Recommendations";
   public readonly schedule = config.RECS_SCHEDULE;
-  public override readonly runOnStartup = false;
+  public readonly runOnStartup = false;
 
-  private logger: Logger;
+  private logger: NamedLogger;
   private lastRunSummary?: string;
 
-  public static create(parentLogger: Logger): MediaRecommendationTask | null {
-    const missing = [
-      ["TMDB_API_KEY", config.TMDB_API_KEY],
-      ["TAVILY_API_KEY", config.TAVILY_API_KEY],
-      ...requiredModelCredentials(),
-      ["PLEX_URL", config.PLEX_URL],
-      ["PLEX_TOKEN", config.PLEX_TOKEN],
-      ["RADARR_URL", config.RADARR_URL],
-      ["RADARR_API_KEY", config.RADARR_API_KEY],
-      ["RADARR_ROOT_FOLDER_PATH", config.RADARR_ROOT_FOLDER_PATH],
-      ["RADARR_QUALITY_PROFILE_ID", config.RADARR_QUALITY_PROFILE_ID],
-      ["SONARR_URL", config.SONARR_URL],
-      ["SONARR_API_KEY", config.SONARR_API_KEY],
-      ["SONARR_ROOT_FOLDER_PATH", config.SONARR_ROOT_FOLDER_PATH],
-      ["SONARR_QUALITY_PROFILE_ID", config.SONARR_QUALITY_PROFILE_ID],
-    ]
-      .filter(([, value]) => !value)
-      .map(([name]) => name);
-    if (missing.length > 0) {
-      parentLogger.info(`Recommendations disabled: missing ${missing.join(", ")}`);
-      return null;
-    }
-    return new MediaRecommendationTask(parentLogger);
+  public static create(parentLogger: NamedLogger) {
+    return Effect.gen(function* () {
+      const missing = [
+        ["TMDB_API_KEY", config.TMDB_API_KEY],
+        ["TAVILY_API_KEY", config.TAVILY_API_KEY],
+        ...requiredModelCredentials(),
+        ["PLEX_URL", config.PLEX_URL],
+        ["PLEX_TOKEN", config.PLEX_TOKEN],
+        ["RADARR_URL", config.RADARR_URL],
+        ["RADARR_API_KEY", config.RADARR_API_KEY],
+        ["RADARR_ROOT_FOLDER_PATH", config.RADARR_ROOT_FOLDER_PATH],
+        ["RADARR_QUALITY_PROFILE_ID", config.RADARR_QUALITY_PROFILE_ID],
+        ["SONARR_URL", config.SONARR_URL],
+        ["SONARR_API_KEY", config.SONARR_API_KEY],
+        ["SONARR_ROOT_FOLDER_PATH", config.SONARR_ROOT_FOLDER_PATH],
+        ["SONARR_QUALITY_PROFILE_ID", config.SONARR_QUALITY_PROFILE_ID],
+      ]
+        .filter(([, value]) => !value)
+        .map(([name]) => name);
+      if (missing.length > 0) {
+        yield* parentLogger.info(
+          `Recommendations disabled: missing ${missing.join(", ")}`,
+        );
+        return null;
+      }
+      return new MediaRecommendationTask(parentLogger);
+    });
   }
 
-  private constructor(parentLogger: Logger) {
-    super();
+  private constructor(parentLogger: NamedLogger) {
     this.logger = parentLogger.extend("RecsTask");
   }
 
-  public run(): Promise<void> {
-    return runPromise(this.runEffect());
-  }
+  public readonly run = this.runPipelineEffect(1);
 
-  public runEffect() {
-    return this.runPipelineEffect(1);
-  }
-
-  public runManual(input: unknown): Promise<void> {
-    return runPromise(this.runManualEffect(input));
-  }
-
-  public runManualEffect(input: unknown) {
+  public runManual(input: unknown) {
     return decodeManualInput(input).pipe(
       Effect.flatMap(({ maxRecommendations }) =>
         this.runPipelineEffect(maxRecommendations),
@@ -76,21 +69,22 @@ export class MediaRecommendationTask extends ScheduledTask {
 
   private runPipelineEffect(maxRecommendations: number) {
     return Effect.gen({ self: this }, function* () {
+      const now = yield* Clock.currentTimeMillis;
       const logFile = config.LOGS_PATH
-        ? new LogFile(
-            `${config.LOGS_PATH}/recommendations/${logTimestamp()}.md`,
+        ? yield* LogFile.make(
+            `${config.LOGS_PATH}/recommendations/${logTimestamp(new Date(now))}.md`,
             "overwrite",
           )
         : undefined;
 
-      this.logger.info(
+      yield* this.logger.info(
         `Recommendation run requested up to ${maxRecommendations} item(s)`,
       );
       const summary = yield* runRecommendationPipelineEffect(this.logger, logFile, {
         maxRecommendations,
       });
       this.lastRunSummary = summary;
-      this.logger.info(`Recommendation run finished: ${summary}`);
+      yield* this.logger.info(`Recommendation run finished: ${summary}`);
     });
   }
 

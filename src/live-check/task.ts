@@ -1,11 +1,14 @@
 import type { Effect as EffectType } from "effect/Effect";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import type { Logger } from "@micthiesen/mitools/logging";
+import type { Docstore } from "@micthiesen/mitools/docstore";
+import type { Pushover } from "@micthiesen/mitools/pushover";
 import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { formatDistance } from "date-fns";
 import { Cause, Clock, Effect, Option } from "effect";
 import { IntegrationError, PersistenceError } from "../effect/errors.js";
-import { fromPromise, runPromise } from "../effect/interop.js";
+import { fromPromise } from "../effect/interop.js";
 import appConfig from "../utils/config.js";
 import {
   canonicalBinding,
@@ -59,29 +62,16 @@ import {
 const PROFILE_IDENTITY_RETRY_MS = 24 * 60 * 60 * 1000;
 const PROFILE_IDENTITY_VERIFICATION_MS = 7 * 24 * 60 * 60 * 1000;
 
-function externalEffect<A>(
-  operation: string,
-  evaluate: () => A | PromiseLike<A>,
-): EffectType<A, unknown> {
-  return Effect.suspend(() => {
-    try {
-      const value = evaluate();
-      return value && typeof (value as PromiseLike<A>).then === "function"
-        ? fromPromise(operation, () => value as PromiseLike<A>)
-        : Effect.succeed(value as A);
-    } catch (cause) {
-      return Effect.fail(cause);
-    }
-  });
-}
-
-export default class LiveCheckTask extends ScheduledTask {
+export default class LiveCheckTask implements ScheduledTask<
+  unknown,
+  Logger | Docstore | Pushover
+> {
   public readonly name = "LiveCheckTask";
   public readonly schedule = "*/20 * * * * *";
-  public override readonly jitterMs = 3000;
-  public override readonly runOnStartup = true;
+  public readonly jitterMs = 3000;
+  public readonly runOnStartup = true;
 
-  private logger: Logger;
+  private logger: NamedLogger;
   private streamers: Streamer[];
   private streamersById: Map<string, Streamer>;
   private unknownStreaks = new Map<string, UnknownStreak>();
@@ -92,11 +82,16 @@ export default class LiveCheckTask extends ScheduledTask {
   private readonly profileIdentityAttempts = new Map<string, number>();
   private readonly configuredStreamers: Streamer[];
   private readonly dggStatuses = new Map<string, FetchedStatus>();
+  private loggedStreamers = false;
 
   public constructor(
     streamers: Streamer[],
-    parentLogger: Logger,
-    private readonly reconcileIOSControls?: () => EffectType<void, unknown>,
+    parentLogger: NamedLogger,
+    private readonly reconcileIOSControls?: () => EffectType<
+      void,
+      unknown,
+      Logger | Docstore
+    >,
     private readonly dggDiscovery?: {
       topEmbeds: number;
       availablePlatforms: ReadonlySet<Platform>;
@@ -109,7 +104,6 @@ export default class LiveCheckTask extends ScheduledTask {
     },
     private readonly intelligence?: LivestreamIntelligenceObserver,
   ) {
-    super();
     this.streamers = streamers;
     this.configuredStreamers = [...streamers];
     this.streamersById = new Map(streamers.map((s) => [s.id, s]));
@@ -119,28 +113,37 @@ export default class LiveCheckTask extends ScheduledTask {
       (streamerId) => this.resolveViewerRecordScope(streamerId),
       parentLogger,
     );
-    this.logStreamers();
   }
 
-  private logStreamers(): void {
-    for (const s of this.streamers) {
-      const bindings = s.bindings.map((b) => `${b.platform}:${b.username}`).join(", ");
-      const marker =
-        s.tier === "background"
-          ? " (background)"
-          : liveNotificationsEnabled(s)
-            ? ""
-            : " (live notifications off)";
-      this.logger.info(`Streamer "${s.displayName}" → ${bindings}${marker}`);
-    }
+  public get run() {
+    return this.runEffect();
   }
 
-  public run(): Promise<void> {
-    return runPromise(this.runEffect());
+  private logStreamers() {
+    return Effect.forEach(
+      this.streamers,
+      (s) => {
+        const bindings = s.bindings
+          .map((b) => `${b.platform}:${b.username}`)
+          .join(", ");
+        const marker =
+          s.tier === "background"
+            ? " (background)"
+            : liveNotificationsEnabled(s)
+              ? ""
+              : " (live notifications off)";
+        return this.logger.info(`Streamer "${s.displayName}" → ${bindings}${marker}`);
+      },
+      { discard: true },
+    );
   }
 
-  public runEffect(): EffectType<void, unknown> {
+  public runEffect() {
     return Effect.gen({ self: this }, function* () {
+      if (!this.loggedStreamers) {
+        yield* this.logStreamers();
+        this.loggedStreamers = true;
+      }
       // Background streamers skip ticks entirely (not just their notification
       // paths) — a skipped tick means no fetch, no transition, and no
       // unknown-streak change for that streamer this round. The startup run
@@ -161,10 +164,10 @@ export default class LiveCheckTask extends ScheduledTask {
       if (this.reconcileIOSControls) {
         yield* this.reconcileIOSControls().pipe(
           Effect.catch((error) =>
-            Effect.sync(() => {
+            Effect.gen({ self: this }, function* () {
               // Controls are a convenience surface. APNs or control-state failures
               // must never turn a successful live-status tick into a failed task run.
-              this.logger.warn(
+              yield* this.logger.warn(
                 `Failed to reconcile iOS controls: ${(error as Error).message}`,
               );
             }),
@@ -174,7 +177,7 @@ export default class LiveCheckTask extends ScheduledTask {
     });
   }
 
-  private refreshDggStreamers(): EffectType<void, PersistenceError> {
+  private refreshDggStreamers() {
     if (!this.dggDiscovery) return Effect.void;
     const discovery = this.dggDiscovery;
 
@@ -261,16 +264,17 @@ export default class LiveCheckTask extends ScheduledTask {
                   >)
                 : fromPromise("learn profile identity", () => identityValue);
             const link = yield* identityEffect.pipe(
-              Effect.catch((error) => {
-                this.logger.debug(
-                  `Could not resolve profile identity for ${source.platform}:${source.username}: ${String(error)}`,
-                );
-                return Effect.succeed(undefined);
-              }),
+              Effect.catch((error) =>
+                this.logger
+                  .debug(
+                    `Could not resolve profile identity for ${source.platform}:${source.username}: ${String(error)}`,
+                  )
+                  .pipe(Effect.as(undefined)),
+              ),
             );
             if (verify && link === undefined) {
               yield* forgetProfileIdentityLinkEffect(source);
-              this.logger.info(
+              yield* this.logger.info(
                 `Removed stale profile identity for ${source.platform}:${source.username}`,
               );
               return true;
@@ -368,7 +372,7 @@ export default class LiveCheckTask extends ScheduledTask {
             }`,
         )
         .join(", ");
-      this.logger.debug(
+      yield* this.logger.debug(
         `Destiny.gg discovery selected ${selected.length}/${discovery.topEmbeds}${summary ? `: ${summary}` : ""}`,
       );
     }).pipe(
@@ -378,9 +382,9 @@ export default class LiveCheckTask extends ScheduledTask {
         if (Option.isSome(failure) && failure.value instanceof PersistenceError) {
           return Effect.fail(failure.value);
         }
-        return Effect.sync(() => {
+        return Effect.gen({ self: this }, function* () {
           const message = String(cause);
-          this.logger.warn(`Failed to refresh Destiny.gg embeds: ${message}`);
+          yield* this.logger.warn(`Failed to refresh Destiny.gg embeds: ${message}`);
           for (const binding of this.dggStatuses.keys()) {
             this.dggStatuses.set(binding, {
               status: LiveStatus.Unknown,
@@ -403,7 +407,7 @@ export default class LiveCheckTask extends ScheduledTask {
    * stays at warn/info for the same reason: those levels don't notify, so the
    * alert can't be delivered twice.
    */
-  private reportOutage(): EffectType<void> {
+  private reportOutage() {
     return Effect.gen({ self: this }, function* () {
       const alert = this.outageAlerter.evaluate(
         [...this.unknownStreaks.values()],
@@ -413,17 +417,15 @@ export default class LiveCheckTask extends ScheduledTask {
       if (!alert) return;
 
       const line = `${alert.title}\n${alert.message}`;
-      if (alert.kind === "degraded") this.logger.warn(line);
-      else this.logger.info(line);
+      if (alert.kind === "degraded") yield* this.logger.warn(line);
+      else yield* this.logger.info(line);
 
-      yield* externalEffect("send live-check outage notification", () =>
-        notify({ title: alert.title, message: alert.message }),
-      ).pipe(
+      yield* notify({ title: alert.title, message: alert.message }).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
+          Effect.gen({ self: this }, function* () {
             // A failed send must not fail the run — the outage state has already
             // advanced, so retrying this exact alert isn't possible anyway.
-            this.logger.error(
+            yield* this.logger.error(
               "Failed to send live-check outage notification",
               error instanceof Error ? error.message : String(error),
             );
@@ -433,7 +435,7 @@ export default class LiveCheckTask extends ScheduledTask {
     });
   }
 
-  private tickStreamer(streamer: Streamer): EffectType<void, unknown> {
+  private tickStreamer(streamer: Streamer) {
     return Effect.gen({ self: this }, function* () {
       const results = yield* Effect.forEach(
         streamer.bindings,
@@ -453,17 +455,17 @@ export default class LiveCheckTask extends ScheduledTask {
         { concurrency: 4 },
       );
 
-      for (const r of results) this.logBindingStatus(streamer.displayName, r);
+      for (const r of results) yield* this.logBindingStatus(streamer.displayName, r);
 
       const previous = yield* getStreamerStatusEffect(streamer.id);
       const now = yield* Clock.currentTimeMillis;
       const decision = decideTransition(streamer.id, previous, results, new Date(now));
 
       if (decision.kind === "all-unknown") {
-        this.handleAllUnknown(streamer, decision.errors);
+        yield* this.handleAllUnknown(streamer, decision.errors);
         return;
       }
-      this.clearUnknownStreak(streamer);
+      yield* this.clearUnknownStreak(streamer);
       switch (decision.kind) {
         case "no-change":
           return;
@@ -480,26 +482,24 @@ export default class LiveCheckTask extends ScheduledTask {
     });
   }
 
-  private logBindingStatus(displayName: string, r: BindingFetchResult): void {
+  private logBindingStatus(displayName: string, r: BindingFetchResult) {
     const where = `${displayName} [${r.binding.platform}:${r.binding.username}]`;
     switch (r.status.status) {
       case "live":
-        this.logger.debug(`${where} is live: "${r.status.title}"`);
-        break;
+        return this.logger.debug(`${where} is live: "${r.status.title}"`);
       case "offline":
-        this.logger.debug(`${where} is offline`);
-        break;
+        return this.logger.debug(`${where} is offline`);
       case "unknown":
-        this.logger.debug(`${where} unknown: ${r.status.error}`);
-        break;
+        return this.logger.debug(`${where} unknown: ${r.status.error}`);
     }
+    return Effect.void;
   }
 
   /**
    * Records the streak only. Notifying is the aggregate outage alerter's job
    * (see reportOutage), so this stays below the level that reaches Pushover.
    */
-  private handleAllUnknown(streamer: Streamer, errors: string[]): void {
+  private handleAllUnknown(streamer: Streamer, errors: string[]) {
     const ticks = (this.unknownStreaks.get(streamer.id)?.ticks ?? 0) + 1;
     const error = errors.filter(Boolean).join("; ").slice(0, 300);
     this.unknownStreaks.set(streamer.id, {
@@ -509,30 +509,32 @@ export default class LiveCheckTask extends ScheduledTask {
     });
 
     const message = `${streamer.displayName}: ${ticks} consecutive all-unknown ticks: ${error}`;
-    if (ticks === UNREACHABLE_TICK_THRESHOLD) this.logger.info(message);
-    else this.logger.debug(message);
+    return ticks === UNREACHABLE_TICK_THRESHOLD
+      ? this.logger.info(message)
+      : this.logger.debug(message);
   }
 
-  private clearUnknownStreak(streamer: Streamer): void {
+  private clearUnknownStreak(streamer: Streamer) {
     const streak = this.unknownStreaks.get(streamer.id);
-    if (!streak) return;
+    if (!streak) return Effect.void;
     this.unknownStreaks.delete(streamer.id);
     if (streak.ticks >= UNREACHABLE_TICK_THRESHOLD) {
-      this.logger.info(
+      return this.logger.info(
         `${streamer.displayName} reachable again after ${streak.ticks} all-unknown ticks`,
       );
     }
+    return Effect.void;
   }
 
   private handleWentLive(
     streamer: Streamer,
     previous: StreamerStatus,
     decision: Extract<TickDecision, { kind: "went-live" }>,
-  ): EffectType<void, unknown> {
+  ) {
     return Effect.gen({ self: this }, function* () {
       const { next, summedViewerCount } = decision;
       const now = yield* Clock.currentTimeMillis;
-      this.logger.info(
+      yield* this.logger.info(
         `${streamer.displayName} is now LIVE (primary ${next.primary.platform}:${next.primary.username})`,
       );
 
@@ -548,18 +550,16 @@ export default class LiveCheckTask extends ScheduledTask {
       if (this.notificationPermissions(streamer).wentLive) {
         const message = buildLiveMessage(next.primaryTitle, previous, now);
 
-        yield* externalEffect("send went-live notification", () =>
-          notify({
-            title: `${streamer.displayName} is LIVE!`,
-            message,
-            token: this.getPushoverToken(streamer.id),
-            ...getNotificationUrlFields(
-              next.primary.platform,
-              next.primary.username,
-              next.primary.urlOverride,
-            ),
-          }),
-        );
+        yield* notify({
+          title: `${streamer.displayName} is LIVE!`,
+          message,
+          token: this.getPushoverToken(streamer.id),
+          ...getNotificationUrlFields(
+            next.primary.platform,
+            next.primary.username,
+            next.primary.urlOverride,
+          ),
+        });
       }
 
       yield* this.recordViewersIfAny(streamer, next, summedViewerCount);
@@ -577,13 +577,13 @@ export default class LiveCheckTask extends ScheduledTask {
   private handleStillLive(
     streamer: Streamer,
     decision: Extract<TickDecision, { kind: "still-live" }>,
-  ): EffectType<void, unknown> {
+  ) {
     return Effect.gen({ self: this }, function* () {
       const { next, summedViewerCount, titleChanged, primarySwitched } = decision;
       const now = yield* Clock.currentTimeMillis;
 
       if (primarySwitched) {
-        this.logger.info(
+        yield* this.logger.info(
           `${streamer.displayName} primary switched to ${next.primary.platform}:${next.primary.username}`,
         );
         // A title held from the old primary must not survive to be notified
@@ -593,7 +593,7 @@ export default class LiveCheckTask extends ScheduledTask {
       }
 
       if (titleChanged) {
-        this.logger.info(`${streamer.displayName} changed title`);
+        yield* this.logger.info(`${streamer.displayName} changed title`);
       }
 
       // The observation is authoritative even when a later notification fails.
@@ -609,18 +609,16 @@ export default class LiveCheckTask extends ScheduledTask {
           now,
         });
         if (debounced.action === "notify") {
-          yield* externalEffect("send title-change notification", () =>
-            notify({
-              title: `${streamer.displayName} changed title`,
-              message: debounced.title,
-              token: this.getPushoverToken(streamer.id),
-              ...getNotificationUrlFields(
-                next.primary.platform,
-                next.primary.username,
-                next.primary.urlOverride,
-              ),
-            }),
-          );
+          yield* notify({
+            title: `${streamer.displayName} changed title`,
+            message: debounced.title,
+            token: this.getPushoverToken(streamer.id),
+            ...getNotificationUrlFields(
+              next.primary.platform,
+              next.primary.username,
+              next.primary.urlOverride,
+            ),
+          });
         }
       }
 
@@ -640,10 +638,10 @@ export default class LiveCheckTask extends ScheduledTask {
     streamer: Streamer,
     previousLive: StreamerStatusLive,
     next: StreamerStatusOffline,
-  ): EffectType<void, unknown> {
+  ) {
     return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
-      this.logger.info(`${streamer.displayName} is now offline`);
+      yield* this.logger.info(`${streamer.displayName} is now offline`);
       this.titleDebouncer.clear(streamer.id);
 
       yield* this.metricsService.flushPendingPeaksEffect({
@@ -664,13 +662,11 @@ export default class LiveCheckTask extends ScheduledTask {
             ? `${baseText} with ${formatCount(previousLive.maxViewerCount)}.`
             : `${baseText}.`;
 
-        yield* externalEffect("send went-offline notification", () =>
-          notify({
-            title: `${streamer.displayName} is now offline`,
-            message,
-            token: this.getPushoverToken(streamer.id),
-          }),
-        );
+        yield* notify({
+          title: `${streamer.displayName} is now offline`,
+          message,
+          token: this.getPushoverToken(streamer.id),
+        });
       }
 
       // Keep the durable live state as the retry marker until the offline alert
@@ -691,7 +687,7 @@ export default class LiveCheckTask extends ScheduledTask {
     streamer: Streamer,
     status: StreamerStatusLive,
     summedViewerCount: number,
-  ): EffectType<void, unknown> {
+  ) {
     return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       if (summedViewerCount > 0) {

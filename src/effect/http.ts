@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler, Next } from "hono";
+import type { EffectRunner } from "@micthiesen/mitools/boundary";
 import { Data, Effect, Schema } from "effect";
-import { fromPromise, runPromise } from "./interop.js";
+import { fromPromise } from "./interop.js";
 
 export class HttpBodyError extends Data.TaggedError("HttpBodyError")<{
   readonly cause: unknown;
@@ -14,21 +15,23 @@ export class HttpBodyTooLargeError extends Data.TaggedError("HttpBodyTooLargeErr
 export const MAX_JSON_BODY_BYTES = 64 * 1024;
 
 /** The single interpreter used by Hono handlers in this application. */
-export function effectHandler<A extends Response, E>(
-  handler: (context: Context) => Effect.Effect<A, E, never>,
+export function effectHandler<A extends Response, E, R>(
+  runner: EffectRunner<R>,
+  handler: (context: Context) => Effect.Effect<A, E, R>,
 ): (context: Context) => Promise<A> {
-  return (context) => runPromise(handler(context));
+  return (context) => runner.runPromise(handler(context));
 }
 
 /** Adapt Hono's Promise-based middleware continuation at the framework edge. */
-export function effectMiddleware<E>(
+export function effectMiddleware<E, R>(
+  runner: EffectRunner<R>,
   middleware: (
     context: Context,
     next: Effect.Effect<void, HttpBodyError>,
-  ) => Effect.Effect<Response | void, E | HttpBodyError, never>,
+  ) => Effect.Effect<Response | void, E | HttpBodyError, R>,
 ): MiddlewareHandler {
   return (context: Context, next: Next) =>
-    runPromise(
+    runner.runPromise(
       middleware(
         context,
         fromPromise("continue Hono middleware", () => next()).pipe(

@@ -6,7 +6,7 @@ import config from "../utils/config.js";
 import { getTransporter } from "./client.js";
 import { type EmailContent, renderLogEmail } from "./templates.js";
 
-const logger = new Logger("Email");
+const logger = Logger.named("Email");
 
 interface SendEmailParams {
   to: string;
@@ -16,26 +16,25 @@ interface SendEmailParams {
   text: string;
 }
 
-export function sendEmailEffect(params: SendEmailParams): Effect.Effect<boolean> {
+export function sendEmailEffect(
+  params: SendEmailParams,
+): Effect.Effect<boolean, never, Logger> {
   return Effect.gen(function* () {
     const { to, from, subject, html, text } = params;
     const transporter = getTransporter();
     if (!transporter) {
-      logger.debug("SMTP not configured, skipping email");
+      yield* logger.debug("SMTP not configured, skipping email");
       return false;
     }
     return yield* Effect.tryPromise(() =>
       transporter.sendMail({ from, to, subject, html, text }),
     ).pipe(
       Effect.as(true),
-      Effect.tap(() =>
-        Effect.sync(() => logger.debug(`Email sent: "${subject}" to ${to}`)),
-      ),
+      Effect.tap(() => logger.debug(`Email sent: "${subject}" to ${to}`)),
       Effect.catch((error) =>
-        Effect.sync(() => {
-          logger.error(`Failed to send email "${subject}" to ${to}`, error);
-          return false;
-        }),
+        logger
+          .error(`Failed to send email "${subject}" to ${to}`, error)
+          .pipe(Effect.as(false)),
       ),
     );
   });
@@ -44,12 +43,12 @@ export function sendEmailEffect(params: SendEmailParams): Effect.Effect<boolean>
 export function sendLogEmailEffect(
   subject: string,
   logs: LogItem[],
-): Effect.Effect<boolean> {
+): Effect.Effect<boolean, never, Logger> {
   return Effect.gen(function* () {
     const { EMAIL_FROM, LOGS_EMAIL_TO } = config;
 
     if (!EMAIL_FROM || !LOGS_EMAIL_TO) {
-      logger.debug("Log email not configured, skipping");
+      yield* logger.debug("Log email not configured, skipping");
       return false;
     }
 

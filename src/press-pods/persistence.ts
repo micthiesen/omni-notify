@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
-import { Clock, Effect, Schema } from "effect";
+import { Clock, Effect, Option, Schema } from "effect";
 import type { Costs } from "./costs.js";
-import { PressPodsError, trySync } from "./effect.js";
+import { PressPodsError } from "./effect.js";
 import type { Chapter, ChunkStat, RetrieverAttempt } from "./types.js";
 import { normalizeUrl } from "./url.js";
 
@@ -54,29 +54,33 @@ export const PressPodsEpisodeEntity = new Entity<PressPodsEpisodeData, ["episode
   ["episodeId"],
 );
 
-export function getAllEpisodes(): PressPodsEpisodeData[] {
-  return PressPodsEpisodeEntity.getAll().sort((a, b) => b.createdAt - a.createdAt);
-}
+export const getAllEpisodes = Effect.fn("PressPods.getAllEpisodes")(function* () {
+  return (yield* PressPodsEpisodeEntity.getAll()).sort(
+    (a, b) => b.createdAt - a.createdAt,
+  );
+});
 
-export function getEpisode(episodeId: string): PressPodsEpisodeData | undefined {
-  return PressPodsEpisodeEntity.get({ episodeId });
-}
+export const getEpisode = Effect.fn("PressPods.getEpisode")(function* (
+  episodeId: string,
+) {
+  return Option.getOrUndefined(yield* PressPodsEpisodeEntity.get({ episodeId }));
+});
 
 /**
  * Idempotency probe for crash recovery: an episode for this job's URL created
  * after the job was submitted means the pipeline completed but the process
  * died before the job row was deleted — reprocessing would duplicate it.
  */
-export function findEpisodeForJob(
+export const findEpisodeForJob = Effect.fn("PressPods.findEpisodeForJob")(function* (
   job: PressPodsJobData,
-): PressPodsEpisodeData | undefined {
+) {
   const normalized = jobNormalizedUrl(job);
-  return PressPodsEpisodeEntity.getAll().find(
+  return (yield* PressPodsEpisodeEntity.getAll()).find(
     (episode) =>
       episodeNormalizedUrl(episode) === normalized &&
       episode.createdAt >= job.createdAt,
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Job queue (the SQS replacement): submissions become durable rows that the
@@ -115,7 +119,11 @@ const BASE_RETRY_DELAY_MS = 60_000; // 1min, doubling per attempt
 /** A `processing` claim older than this is presumed crashed and reclaimed. */
 export const STALE_CLAIM_MS = 30 * 60_000;
 
-export function enqueueEpisodeJob(url: string, now = Date.now()): PressPodsJobData {
+export const enqueueEpisodeJob = Effect.fn("PressPods.enqueueJob")(function* (
+  url: string,
+  now?: number,
+) {
+  const timestamp = now ?? (yield* Clock.currentTimeMillis);
   const job: PressPodsJobData = {
     jobId: secureId(),
     url,
@@ -123,12 +131,12 @@ export function enqueueEpisodeJob(url: string, now = Date.now()): PressPodsJobDa
     status: "queued",
     attempts: 0,
     nextAttemptAt: 0,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: timestamp,
+    updatedAt: timestamp,
   };
-  PressPodsJobEntity.upsert(job);
+  yield* PressPodsJobEntity.upsert(job);
   return job;
-}
+});
 
 /** Canonical identity for a job/episode, computed on read so pre-existing rows
  * (written before `normalizedUrl` was stored) still dedup correctly. */
@@ -141,24 +149,24 @@ export function episodeNormalizedUrl(episode: PressPodsEpisodeData): string {
 
 /** An in-flight job (queued or processing) for this URL — a resubmit joins it
  * instead of enqueueing a duplicate. Newest first. */
-export function findActiveJobByNormalizedUrl(
-  normalizedUrl: string,
-): PressPodsJobData | undefined {
-  return getAllJobs().find(
-    (j) =>
-      (j.status === "queued" || j.status === "processing") &&
-      jobNormalizedUrl(j) === normalizedUrl,
-  );
-}
+export const findActiveJobByNormalizedUrl = Effect.fn("PressPods.findActiveJob")(
+  function* (normalizedUrl: string) {
+    return (yield* getAllJobs()).find(
+      (j) =>
+        (j.status === "queued" || j.status === "processing") &&
+        jobNormalizedUrl(j) === normalizedUrl,
+    );
+  },
+);
 
 /** A failed job for this URL — a resubmit requeues it rather than stacking. */
-export function findFailedJobByNormalizedUrl(
-  normalizedUrl: string,
-): PressPodsJobData | undefined {
-  return getAllJobs().find(
-    (j) => j.status === "failed" && jobNormalizedUrl(j) === normalizedUrl,
-  );
-}
+export const findFailedJobByNormalizedUrl = Effect.fn("PressPods.findFailedJob")(
+  function* (normalizedUrl: string) {
+    return (yield* getAllJobs()).find(
+      (j) => j.status === "failed" && jobNormalizedUrl(j) === normalizedUrl,
+    );
+  },
+);
 
 export function retryDelayMs(attempts: number): number {
   return BASE_RETRY_DELAY_MS * 2 ** Math.max(0, attempts - 1);
@@ -178,54 +186,65 @@ export function selectDueJobs(
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
-export function claimJob(
+export const claimJob = Effect.fn("PressPods.claimJob")(function* (
   jobId: string,
   runId: string | undefined,
-  now = Date.now(),
-): void {
-  PressPodsJobEntity.patch(
+  now?: number,
+) {
+  const timestamp = now ?? (yield* Clock.currentTimeMillis);
+  yield* PressPodsJobEntity.patch(
     { jobId },
-    { status: "processing", claimedAt: now, updatedAt: now, lastRunId: runId },
+    {
+      status: "processing",
+      claimedAt: timestamp,
+      updatedAt: timestamp,
+      lastRunId: runId,
+    },
   );
-}
+});
 
-export function completeJob(jobId: string): void {
-  PressPodsJobEntity.delete({ jobId });
-}
+export const completeJob = Effect.fn("PressPods.completeJob")(function* (
+  jobId: string,
+) {
+  yield* PressPodsJobEntity.delete({ jobId });
+});
 
 /** Requeue with backoff, or mark failed once attempts are exhausted. */
-export function recordJobFailure(
+export const recordJobFailure = Effect.fn("PressPods.recordJobFailure")(function* (
   job: PressPodsJobData,
   error: string,
   retryable: boolean,
-  now = Date.now(),
-): PressPodsJobData {
+  now?: number,
+) {
+  const timestamp = now ?? (yield* Clock.currentTimeMillis);
   // Base the update on the live row, not the caller's pre-claim snapshot —
   // otherwise fields written since selection (e.g. claimJob's lastRunId) are
   // silently wiped. A missing row means a concurrent delete: compute the
   // outcome for the caller's logging but don't resurrect the job.
-  const existing = PressPodsJobEntity.get({ jobId: job.jobId });
+  const existing = Option.getOrUndefined(
+    yield* PressPodsJobEntity.get({ jobId: job.jobId }),
+  );
   const base = existing ?? job;
   const attempts = base.attempts + 1;
   const updated: PressPodsJobData = {
     ...base,
     attempts,
     lastError: error,
-    updatedAt: now,
+    updatedAt: timestamp,
     claimedAt: undefined,
     ...(retryable && attempts < MAX_JOB_ATTEMPTS
-      ? { status: "queued" as const, nextAttemptAt: now + retryDelayMs(attempts) }
+      ? { status: "queued" as const, nextAttemptAt: timestamp + retryDelayMs(attempts) }
       : { status: "failed" as const, nextAttemptAt: 0 }),
   };
   if (existing) {
-    PressPodsJobEntity.upsert(updated);
+    yield* PressPodsJobEntity.upsert(updated);
   }
   return updated;
-}
+});
 
-export function getJob(jobId: string): PressPodsJobData | undefined {
-  return PressPodsJobEntity.get({ jobId });
-}
+export const getJob = Effect.fn("PressPods.getJob")(function* (jobId: string) {
+  return Option.getOrUndefined(yield* PressPodsJobEntity.get({ jobId }));
+});
 
 /**
  * Manual retry from the UI (or a resubmit joining a failed job): reset a failed
@@ -235,11 +254,12 @@ export function getJob(jobId: string): PressPodsJobData | undefined {
  * shot a still-`MAX_JOB_ATTEMPTS` counter would leave (which would re-fail on
  * the next transient blip).
  */
-export function requeueJobNow(
+export const requeueJobNow = Effect.fn("PressPods.requeueJobNow")(function* (
   jobId: string,
-  now = Date.now(),
-): PressPodsJobData | undefined {
-  const job = PressPodsJobEntity.get({ jobId });
+  now?: number,
+) {
+  const timestamp = now ?? (yield* Clock.currentTimeMillis);
+  const job = Option.getOrUndefined(yield* PressPodsJobEntity.get({ jobId }));
   if (job?.status !== "failed") return undefined;
   const updated: PressPodsJobData = {
     ...job,
@@ -248,15 +268,15 @@ export function requeueJobNow(
     nextAttemptAt: 0,
     claimedAt: undefined,
     lastError: undefined,
-    updatedAt: now,
+    updatedAt: timestamp,
   };
-  PressPodsJobEntity.upsert(updated);
+  yield* PressPodsJobEntity.upsert(updated);
   return updated;
-}
+});
 
-export function getAllJobs(): PressPodsJobData[] {
-  return PressPodsJobEntity.getAll().sort((a, b) => b.createdAt - a.createdAt);
-}
+export const getAllJobs = Effect.fn("PressPods.getAllJobs")(function* () {
+  return (yield* PressPodsJobEntity.getAll()).sort((a, b) => b.createdAt - a.createdAt);
+});
 
 /**
  * Boot-time crash recovery. The deployment is single-process, so any job left
@@ -267,22 +287,30 @@ export function getAllJobs(): PressPodsJobData[] {
  * and requeues) instead of waiting out the 30-minute stale window. Returns the
  * number of orphaned jobs found.
  */
-export function reclaimProcessingJobsAtBoot(): number {
-  const orphaned = PressPodsJobEntity.getAll().filter((j) => j.status === "processing");
-  for (const job of orphaned) {
-    PressPodsJobEntity.patch({ jobId: job.jobId }, { claimedAt: 0 });
-  }
-  return orphaned.length;
-}
+export const reclaimProcessingJobsAtBoot = Effect.fn("PressPods.reclaimAtBoot")(
+  function* () {
+    const orphaned = (yield* PressPodsJobEntity.getAll()).filter(
+      (j) => j.status === "processing",
+    );
+    for (const job of orphaned) {
+      yield* PressPodsJobEntity.patch({ jobId: job.jobId }, { claimedAt: 0 });
+    }
+    return orphaned.length;
+  },
+);
 
 /** Remove an episode row. Returns the deleted row so the caller can clean up
  * its audio file (kept separate — persistence stays free of filesystem I/O). */
-export function deleteEpisode(episodeId: string): PressPodsEpisodeData | undefined {
-  const episode = PressPodsEpisodeEntity.get({ episodeId });
+export const deleteEpisode = Effect.fn("PressPods.deleteEpisode")(function* (
+  episodeId: string,
+) {
+  const episode = Option.getOrUndefined(
+    yield* PressPodsEpisodeEntity.get({ episodeId }),
+  );
   if (!episode) return undefined;
-  PressPodsEpisodeEntity.delete({ episodeId });
+  yield* PressPodsEpisodeEntity.delete({ episodeId });
   return episode;
-}
+});
 
 /**
  * Replace semantics for resubmit-as-retry: after a fresh episode is written for
@@ -290,18 +318,17 @@ export function deleteEpisode(episodeId: string): PressPodsEpisodeData | undefin
  * take wins instead of piling up duplicates. Returns the removed rows so the
  * caller can delete their audio files.
  */
-export function deleteEpisodesByNormalizedUrlExcept(
-  normalizedUrl: string,
-  keepEpisodeId: string,
-): PressPodsEpisodeData[] {
-  const stale = PressPodsEpisodeEntity.getAll().filter(
+export const deleteEpisodesByNormalizedUrlExcept = Effect.fn(
+  "PressPods.deleteEpisodesByUrl",
+)(function* (normalizedUrl: string, keepEpisodeId: string) {
+  const stale = (yield* PressPodsEpisodeEntity.getAll()).filter(
     (e) => e.episodeId !== keepEpisodeId && episodeNormalizedUrl(e) === normalizedUrl,
   );
   for (const episode of stale) {
-    PressPodsEpisodeEntity.delete({ episodeId: episode.episodeId });
+    yield* PressPodsEpisodeEntity.delete({ episodeId: episode.episodeId });
   }
   return stale;
-}
+});
 
 const PressPodsEpisodeSchema = Schema.Struct({
   episodeId: Schema.String,
@@ -422,103 +449,40 @@ const decodeJob = (value: unknown): Effect.Effect<PressPodsJobData, PressPodsErr
     ),
   );
 
-/** Canonical application API. The synchronous helpers above are the private
- * store implementation and remain exported only for focused persistence tests. */
+/** Canonical application API. */
 export const PressPodsPersistence = {
-  getAllEpisodes: (): Effect.Effect<PressPodsEpisodeData[], PressPodsError> =>
-    trySync("read PressPods episodes", getAllEpisodes).pipe(
+  getAllEpisodes: () =>
+    getAllEpisodes().pipe(
       Effect.flatMap((rows) => Effect.forEach(rows, decodeEpisode)),
     ),
-  getEpisode: (
-    episodeId: string,
-  ): Effect.Effect<PressPodsEpisodeData | undefined, PressPodsError> =>
-    trySync("read PressPods episode", () => getEpisode(episodeId)).pipe(
+  getEpisode: (episodeId: string) =>
+    getEpisode(episodeId).pipe(
       Effect.flatMap((row) => (row ? decodeEpisode(row) : Effect.succeed(undefined))),
     ),
-  findEpisodeForJob: (
-    job: PressPodsJobData,
-  ): Effect.Effect<PressPodsEpisodeData | undefined, PressPodsError> =>
-    trySync("find episode for PressPods job", () => findEpisodeForJob(job)).pipe(
+  findEpisodeForJob: (job: PressPodsJobData) =>
+    findEpisodeForJob(job).pipe(
       Effect.flatMap((row) => (row ? decodeEpisode(row) : Effect.succeed(undefined))),
     ),
-  upsertEpisode: (episode: PressPodsEpisodeData): Effect.Effect<void, PressPodsError> =>
-    trySync("persist PressPods episode", () => {
-      PressPodsEpisodeEntity.upsert(episode);
-    }),
-  enqueueEpisodeJob: (url: string): Effect.Effect<PressPodsJobData, PressPodsError> =>
-    Clock.currentTimeMillis.pipe(
-      Effect.flatMap((now) =>
-        trySync("enqueue PressPods job", () => enqueueEpisodeJob(url, now)),
-      ),
-    ),
-  findActiveJobByNormalizedUrl: (
-    normalizedUrl: string,
-  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
-    trySync("find active PressPods job", () =>
-      findActiveJobByNormalizedUrl(normalizedUrl),
-    ),
-  findFailedJobByNormalizedUrl: (
-    normalizedUrl: string,
-  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
-    trySync("find failed PressPods job", () =>
-      findFailedJobByNormalizedUrl(normalizedUrl),
-    ),
-  claimJob: (
-    jobId: string,
-    runId: string | undefined,
-  ): Effect.Effect<void, PressPodsError> =>
-    Clock.currentTimeMillis.pipe(
-      Effect.flatMap((now) =>
-        trySync("claim PressPods job", () => claimJob(jobId, runId, now)),
-      ),
-    ),
-  completeJob: (jobId: string): Effect.Effect<void, PressPodsError> =>
-    trySync("complete PressPods job", () => completeJob(jobId)),
-  recordJobFailure: (
-    job: PressPodsJobData,
-    error: string,
-    retryable: boolean,
-  ): Effect.Effect<PressPodsJobData, PressPodsError> =>
-    Clock.currentTimeMillis.pipe(
-      Effect.flatMap((now) =>
-        trySync("record PressPods job failure", () =>
-          recordJobFailure(job, error, retryable, now),
-        ),
-      ),
-    ),
-  getJob: (
-    jobId: string,
-  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
-    trySync("read PressPods job", () => getJob(jobId)).pipe(
+  upsertEpisode: (episode: PressPodsEpisodeData) =>
+    PressPodsEpisodeEntity.upsert(episode).pipe(Effect.asVoid),
+  enqueueEpisodeJob,
+  findActiveJobByNormalizedUrl,
+  findFailedJobByNormalizedUrl,
+  claimJob,
+  completeJob,
+  recordJobFailure: (job: PressPodsJobData, error: string, retryable: boolean) =>
+    recordJobFailure(job, error, retryable),
+  getJob: (jobId: string) =>
+    getJob(jobId).pipe(
       Effect.flatMap((row) => (row ? decodeJob(row) : Effect.succeed(undefined))),
     ),
-  requeueJobNow: (
-    jobId: string,
-  ): Effect.Effect<PressPodsJobData | undefined, PressPodsError> =>
-    Clock.currentTimeMillis.pipe(
-      Effect.flatMap((now) =>
-        trySync("requeue PressPods job", () => requeueJobNow(jobId, now)),
-      ),
-    ),
-  getAllJobs: (): Effect.Effect<PressPodsJobData[], PressPodsError> =>
-    trySync("read PressPods jobs", getAllJobs).pipe(
-      Effect.flatMap((rows) => Effect.forEach(rows, decodeJob)),
-    ),
-  reclaimProcessingJobsAtBoot: (): Effect.Effect<number, PressPodsError> =>
-    trySync("reclaim PressPods jobs at boot", reclaimProcessingJobsAtBoot),
-  deleteEpisode: (
-    episodeId: string,
-  ): Effect.Effect<PressPodsEpisodeData | undefined, PressPodsError> =>
-    trySync("delete PressPods episode", () => deleteEpisode(episodeId)),
-  deleteJob: (jobId: string): Effect.Effect<void, PressPodsError> =>
-    trySync("delete PressPods job", () => {
-      PressPodsJobEntity.delete({ jobId });
-    }),
-  deleteEpisodesByNormalizedUrlExcept: (
-    normalizedUrl: string,
-    keepEpisodeId: string,
-  ): Effect.Effect<PressPodsEpisodeData[], PressPodsError> =>
-    trySync("delete replaced PressPods episodes", () =>
-      deleteEpisodesByNormalizedUrlExcept(normalizedUrl, keepEpisodeId),
-    ),
+  requeueJobNow,
+  getAllJobs: () =>
+    getAllJobs().pipe(Effect.flatMap((rows) => Effect.forEach(rows, decodeJob))),
+  reclaimProcessingJobsAtBoot,
+  deleteEpisode,
+  deleteJob: (jobId: string) =>
+    PressPodsJobEntity.delete({ jobId }).pipe(Effect.asVoid),
+  deleteEpisodesByNormalizedUrlExcept: (normalizedUrl: string, keepEpisodeId: string) =>
+    deleteEpisodesByNormalizedUrlExcept(normalizedUrl, keepEpisodeId),
 } as const;

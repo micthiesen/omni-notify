@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { globalRunner } from "@micthiesen/mitools/boundary";
 import { Effect, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { decodeJsonBody, effectHandler, HttpBodyTooLargeError } from "./http.js";
@@ -10,7 +11,7 @@ function testApp() {
   const app = new Hono();
   app.post(
     "/json",
-    effectHandler((c) =>
+    effectHandler(globalRunner, (c) =>
       decodeJsonBody(c, BodySchema, TEST_BODY_LIMIT).pipe(
         Effect.map((body) => c.json(body)),
         Effect.catchTag("HttpBodyTooLargeError", () =>
@@ -85,7 +86,7 @@ describe("bounded HTTP JSON bodies", () => {
     let captured: unknown;
     app.post(
       "/json",
-      effectHandler((c) =>
+      effectHandler(globalRunner, (c) =>
         decodeJsonBody(c, BodySchema, TEST_BODY_LIMIT).pipe(
           Effect.map((body) => c.json(body)),
           Effect.catch((error) => {

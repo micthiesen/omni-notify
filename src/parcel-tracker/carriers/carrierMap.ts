@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect, Schema, Semaphore } from "effect";
 import {
   fetchPublicText,
@@ -28,9 +28,9 @@ interface CarrierListDependencies {
 }
 
 export function getCarrierCodesForPromptEffect(
-  logger: Logger,
+  logger: NamedLogger,
   dependencies: CarrierListDependencies = {},
-): Effect.Effect<string, never> {
+) {
   return Effect.map(fetchCarrierListEffect(logger, dependencies), (carriers) =>
     (carriers ?? []).map((c) => `${c.code}: ${c.name}`).join("\n"),
   );
@@ -38,9 +38,9 @@ export function getCarrierCodesForPromptEffect(
 
 /** Returns "code: name" lines for inclusion in the LLM extraction prompt. */
 export function getValidCarrierCodesEffect(
-  logger: Logger,
+  logger: NamedLogger,
   dependencies: CarrierListDependencies = {},
-): Effect.Effect<ReadonlySet<string> | undefined, never> {
+) {
   return Effect.map(fetchCarrierListEffect(logger, dependencies), (carriers) =>
     carriers ? new Set(carriers.map((c) => c.code)) : undefined,
   );
@@ -51,9 +51,9 @@ export function getValidCarrierCodesEffect(
  * list is unavailable (fetch failed and no cache).
  */
 function fetchCarrierListEffect(
-  logger: Logger,
+  logger: NamedLogger,
   dependencies: CarrierListDependencies,
-): Effect.Effect<CarrierEntry[] | undefined, never> {
+) {
   return refreshMutex.withPermits(1)(
     Effect.gen(function* () {
       const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
@@ -73,10 +73,11 @@ function fetchCarrierListEffect(
           Schema.decodeUnknownEffect(Schema.fromJsonString(CarrierResponseSchema)),
         ),
         Effect.mapError((cause) => new CarrierListError({ cause })),
-        Effect.catch((error) => {
-          logger.warn(`Failed to fetch Parcel carrier list: ${error.message}`);
-          return Effect.succeed(undefined);
-        }),
+        Effect.catch((error) =>
+          logger
+            .warn(`Failed to fetch Parcel carrier list: ${error.message}`)
+            .pipe(Effect.as(undefined)),
+        ),
       );
       if (!decoded) return cachedCarriers;
       cachedCarriers = Object.entries(decoded)
@@ -248,9 +249,9 @@ function isBlacklistedCarrier(code: string): boolean {
 
 /** Fetches carrier names and returns word-boundary regexes. */
 export function getCarrierNamePatternsEffect(
-  logger: Logger,
+  logger: NamedLogger,
   dependencies: CarrierListDependencies = {},
-): Effect.Effect<RegExp[], never> {
+) {
   return Effect.map(fetchCarrierListEffect(logger, dependencies), (carriers) =>
     (carriers ?? []).map((c) => new RegExp(`\\b${escapeRegExp(c.name)}\\b`, "i")),
   );

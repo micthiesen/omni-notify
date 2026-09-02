@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit } from "effect";
@@ -7,9 +7,11 @@ import { beforeEach, vi } from "vitest";
 import type { ViewerRecordScope } from "../notificationPolicy.js";
 import type { ViewerMetricsData } from "./types.js";
 import { ViewerMetricsService } from "./ViewerMetricsService.js";
+import { provideTest, runTest } from "../testRuntime.js";
 
-vi.mock("@micthiesen/mitools/pushover", () => ({
-  notify: vi.fn(async () => {}),
+vi.mock("@micthiesen/mitools/pushover", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@micthiesen/mitools/pushover")>()),
+  notify: vi.fn(() => Effect.void),
 }));
 
 const store = vi.hoisted(() => new Map<string, ViewerMetricsData>());
@@ -44,11 +46,11 @@ vi.mock("./persistence.js", () => ({
 
 const noopLogger = {
   extend: () => noopLogger,
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-} as unknown as Logger;
+  debug: () => Effect.void,
+  info: () => Effect.void,
+  warn: () => Effect.void,
+  error: () => Effect.void,
+} as unknown as NamedLogger;
 
 const urlFields = { url: "https://example.com", url_title: "Watch" };
 
@@ -82,13 +84,9 @@ describe("ViewerMetricsService notifications", () => {
     const base = { streamerId: "muted", displayName: "Muted", urlFields };
 
     // Climb to a new peak, then drop >5% to confirm it.
-    await Effect.runPromise(
-      service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
-    );
+    await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 100 }));
     expect(notify).not.toHaveBeenCalled();
-    await Effect.runPromise(
-      service.recordViewerCountEffect({ ...base, viewerCount: 90 }),
-    );
+    await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 90 }));
 
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(
@@ -104,11 +102,9 @@ describe("ViewerMetricsService notifications", () => {
     const service = makeService(undefined);
     const base = { streamerId: "muted", displayName: "Muted", urlFields };
 
-    await Effect.runPromise(
-      service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
-    );
+    await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 100 }));
     expect(notify).not.toHaveBeenCalled();
-    await Effect.runPromise(service.flushPendingPeaksEffect(base));
+    await runTest(service.flushPendingPeaksEffect(base));
 
     expect(notify).toHaveBeenCalledTimes(1);
     expect(notify).toHaveBeenCalledWith(
@@ -120,15 +116,9 @@ describe("ViewerMetricsService notifications", () => {
     const service = makeService(undefined);
     const base = { streamerId: "s", displayName: "S", urlFields };
 
-    await Effect.runPromise(
-      service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
-    );
-    await Effect.runPromise(
-      service.recordViewerCountEffect({ ...base, viewerCount: 150 }),
-    );
-    await Effect.runPromise(
-      service.recordViewerCountEffect({ ...base, viewerCount: 149 }),
-    );
+    await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 100 }));
+    await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 150 }));
+    await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 149 }));
 
     expect(notify).not.toHaveBeenCalled();
   });
@@ -144,7 +134,7 @@ describe("ViewerMetricsService notifications", () => {
 
       expect(store.get("clocked")?.allTimeMaxTimestamp).toBe(42_000);
       expect(store.get("clocked")?.dailyBuckets[0]?.timestamp).toBe(42_000);
-    }),
+    }).pipe(provideTest),
   );
 
   it.effect("returns persistence writes as typed failures", () =>
@@ -164,7 +154,7 @@ describe("ViewerMetricsService notifications", () => {
       if (Exit.isFailure(exit)) {
         expect(String(exit.cause)).toContain("viewer metrics write failed");
       }
-    }),
+    }).pipe(provideTest),
   );
 
   // Background-tier streamers resolve scope "all-time-only": every window is
@@ -184,13 +174,9 @@ describe("ViewerMetricsService notifications", () => {
       const service = makeService("tok", "all-time-only");
       const base = { streamerId: "bg", displayName: "Background", urlFields };
 
-      await Effect.runPromise(
-        service.recordViewerCountEffect({ ...base, viewerCount: 50 }),
-      );
+      await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 50 }));
       expect(notify).not.toHaveBeenCalled();
-      await Effect.runPromise(
-        service.recordViewerCountEffect({ ...base, viewerCount: 40 }),
-      );
+      await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 40 }));
 
       expect(notify).not.toHaveBeenCalled();
       // Suppression is notification-only: tracking still persists the peak in
@@ -204,13 +190,9 @@ describe("ViewerMetricsService notifications", () => {
       const service = makeService("tok", "all-time-only");
       const base = { streamerId: "bg2", displayName: "Background2", urlFields };
 
-      await Effect.runPromise(
-        service.recordViewerCountEffect({ ...base, viewerCount: 100 }),
-      );
+      await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 100 }));
       expect(notify).not.toHaveBeenCalled();
-      await Effect.runPromise(
-        service.recordViewerCountEffect({ ...base, viewerCount: 90 }),
-      );
+      await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 90 }));
 
       expect(notify).toHaveBeenCalledTimes(1);
       expect(notify).toHaveBeenCalledWith(
@@ -228,10 +210,8 @@ describe("ViewerMetricsService notifications", () => {
       const service = makeService("tok", "all-time-only");
       const base = { streamerId: "bg3", displayName: "Background3", urlFields };
 
-      await Effect.runPromise(
-        service.recordViewerCountEffect({ ...base, viewerCount: 50 }),
-      );
-      await Effect.runPromise(service.flushPendingPeaksEffect(base));
+      await runTest(service.recordViewerCountEffect({ ...base, viewerCount: 50 }));
+      await runTest(service.flushPendingPeaksEffect(base));
 
       expect(notify).not.toHaveBeenCalled();
     });

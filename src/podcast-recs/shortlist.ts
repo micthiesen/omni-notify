@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
@@ -57,7 +57,7 @@ export function shortlistEpisodesEffect(
   logger: Logger,
   logFile?: LogFile,
   finalistCount = FINALIST_COUNT,
-): Effect.Effect<ScoredEpisode[], ShortlistError> {
+) {
   return Effect.gen(function* () {
     const { model, modelId } = getRecsShortlistModel();
 
@@ -67,20 +67,21 @@ export function shortlistEpisodesEffect(
     );
     const prompt = buildPrompt(ordered, tasteDigest);
 
-    logFile?.log(
-      logger,
-      LogLevel.INFO,
-      `Podcast Shortlist Prompt (${modelId})`,
-      codeBlock(prompt),
-      { consoleSummary: `Scoring ${ordered.length} episodes (${modelId})` },
-    );
+    if (logFile)
+      yield* logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Podcast Shortlist Prompt (${modelId})`,
+        codeBlock(prompt),
+        { consoleSummary: `Scoring ${ordered.length} episodes (${modelId})` },
+      );
 
     const result = yield* Effect.tryPromise({
       try: () =>
         generateText({ model, output: Output.object({ schema: scoreSchema }), prompt }),
       catch: (cause) => new ShortlistError({ cause }),
     });
-    logger.info(
+    yield* logger.info(
       `Shortlist token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
@@ -89,7 +90,9 @@ export function shortlistEpisodesEffect(
     for (const score of result.output?.scores ?? []) {
       const candidate = byId.get(score.candidate_id);
       if (!candidate) {
-        logger.warn(`Shortlist returned unknown candidate_id: ${score.candidate_id}`);
+        yield* logger.warn(
+          `Shortlist returned unknown candidate_id: ${score.candidate_id}`,
+        );
         continue;
       }
       scored.push({
@@ -109,17 +112,18 @@ export function shortlistEpisodesEffect(
     scored.sort((a, b) => b.composite - a.composite);
     const finalists = scored.slice(0, finalistCount);
 
-    logFile?.section(
-      "Podcast Shortlist Result",
-      codeBlock(
-        finalists
-          .map(
-            (s) =>
-              `${s.composite.toFixed(1)} ${s.candidate.showTitle} — ${s.candidate.episodeTitle} (taste=${s.tasteMatch} novelty=${s.novelty} conf=${s.confidence})`,
-          )
-          .join("\n"),
-      ),
-    );
+    if (logFile)
+      yield* logFile.section(
+        "Podcast Shortlist Result",
+        codeBlock(
+          finalists
+            .map(
+              (s) =>
+                `${s.composite.toFixed(1)} ${s.candidate.showTitle} — ${s.candidate.episodeTitle} (taste=${s.tasteMatch} novelty=${s.novelty} conf=${s.confidence})`,
+            )
+            .join("\n"),
+        ),
+      );
 
     return finalists;
   });

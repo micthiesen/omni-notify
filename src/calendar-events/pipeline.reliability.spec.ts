@@ -1,5 +1,7 @@
+import { Docstore } from "@micthiesen/mitools/docstore";
 import { Logger } from "@micthiesen/mitools/logging";
-import { Cause, Deferred, Effect, Exit, Fiber } from "effect";
+import { Pushover } from "@micthiesen/mitools/pushover";
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CalendarExtractionError, CalendarPersistenceError } from "./effect.js";
 
@@ -10,8 +12,12 @@ const mocks = vi.hoisted(() => ({
   extract: vi.fn(),
   create: vi.fn(),
   recordCreated: vi.fn(),
-  notify: vi.fn().mockResolvedValue(undefined),
 }));
+
+const runtime = ManagedRuntime.make(
+  Layer.mergeAll(Docstore.layerMemory, Logger.layer(), Pushover.layerNoop),
+);
+const runEffect = runtime.runPromise.bind(runtime);
 
 vi.mock("../email/retry.js", () => ({
   EmailRetryPersistence: {
@@ -21,10 +27,12 @@ vi.mock("../email/retry.js", () => ({
     },
   },
 }));
-vi.mock("@micthiesen/mitools/pushover", () => ({ notify: mocks.notify }));
 vi.mock("../email/activity.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  recordEmailActivity: mocks.record,
+  recordEmailActivity: (...args: unknown[]) => {
+    mocks.record(...args);
+    return Effect.void;
+  },
 }));
 vi.mock("../email/activityLogs.js", () => ({
   withEmailLogCaptureEffect: (
@@ -80,11 +88,11 @@ describe("CalendarEventPipeline reliability", () => {
     const { CalendarEventPipeline } = await import("./pipeline.js");
     const pipeline = new CalendarEventPipeline(
       {} as never,
-      new Logger("CalendarPipelineReliabilitySpec"),
+      Logger.named("CalendarPipelineReliabilitySpec"),
       { getTriageCostCents: () => undefined } as never,
     );
 
-    await Effect.runPromise(
+    await runEffect(
       pipeline.handleEmailsEffect([
         {
           id: "mail-1",
@@ -121,11 +129,11 @@ describe("CalendarEventPipeline reliability", () => {
     const { CalendarEventPipeline } = await import("./pipeline.js");
     const pipeline = new CalendarEventPipeline(
       { downloadAttachment: vi.fn() } as never,
-      new Logger("CalendarPipelineReliabilitySpec"),
+      Logger.named("CalendarPipelineReliabilitySpec"),
       { getTriageCostCents: () => undefined } as never,
     );
 
-    await Effect.runPromise(
+    await runEffect(
       pipeline.handleEmailsEffect([
         {
           id: "mail-3",
@@ -151,18 +159,18 @@ describe("CalendarEventPipeline reliability", () => {
       calendarUrl: "https://caldav.example/calendar/",
       authHeader: "Basic test",
     });
-    const started = await Effect.runPromise(Deferred.make<void>());
+    const started = await runEffect(Deferred.make<void>());
     mocks.extract.mockReturnValueOnce(
       Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
     );
     const { CalendarEventPipeline } = await import("./pipeline.js");
     const pipeline = new CalendarEventPipeline(
       { downloadAttachment: vi.fn() } as never,
-      new Logger("CalendarPipelineReliabilitySpec"),
+      Logger.named("CalendarPipelineReliabilitySpec"),
       { getTriageCostCents: () => undefined } as never,
     );
 
-    const exit = await Effect.runPromise(
+    const exit = await runEffect(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
           pipeline.handleEmailsEffect([
@@ -217,7 +225,7 @@ describe("CalendarEventPipeline reliability", () => {
     const { CalendarEventPipeline } = await import("./pipeline.js");
     const pipeline = new CalendarEventPipeline(
       { downloadAttachment: vi.fn() } as never,
-      new Logger("CalendarPipelineReliabilitySpec"),
+      Logger.named("CalendarPipelineReliabilitySpec"),
       { getTriageCostCents: () => undefined } as never,
     );
     const appointment = {
@@ -230,10 +238,10 @@ describe("CalendarEventPipeline reliability", () => {
       attachments: [],
     };
 
-    await expect(
-      Effect.runPromise(pipeline.handleEmailsEffect([appointment])),
-    ).rejects.toThrow("crash after CalDAV accepted PUT");
-    await Effect.runPromise(pipeline.handleEmailsEffect([appointment]));
+    await expect(runEffect(pipeline.handleEmailsEffect([appointment]))).rejects.toThrow(
+      "crash after CalDAV accepted PUT",
+    );
+    await runEffect(pipeline.handleEmailsEffect([appointment]));
 
     expect(mocks.create).toHaveBeenCalledTimes(2);
     expect(mocks.create.mock.calls.map((call) => call[3])).toEqual([

@@ -1,5 +1,5 @@
-import type { Logger } from "@micthiesen/mitools/logging";
-import { Deferred, Effect, Fiber } from "effect";
+import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
+import { Deferred, Effect, Fiber, ManagedRuntime } from "effect";
 import { describe, expect, it, vi } from "vitest";
 
 const imapFlowMock = vi.hoisted(() => vi.fn());
@@ -7,13 +7,17 @@ vi.mock("imapflow", () => ({ ImapFlow: imapFlowMock }));
 
 import { ImapTransport } from "./transport.js";
 
+const runtime = ManagedRuntime.make(Logger.layer());
+const runPromise = runtime.runPromise.bind(runtime);
+const runFork = runtime.runFork.bind(runtime);
+
 const logger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
+  debug: vi.fn(() => Effect.void),
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+  error: vi.fn(() => Effect.void),
   extend: vi.fn(),
-} as unknown as Logger;
+} as unknown as NamedLogger;
 
 describe("ImapTransport mailbox serialization", () => {
   it("serializes complete select/use/restore operations", async () => {
@@ -52,7 +56,7 @@ describe("ImapTransport mailbox serialization", () => {
       ],
       { concurrency: "unbounded" },
     );
-    const fiber = Effect.runFork(searches);
+    const fiber = runFork(searches);
     await Effect.runPromise(Deferred.await(firstLockRequested));
     await Effect.runPromise(Deferred.succeed(releaseFirstLock, undefined));
     await Effect.runPromise(Fiber.join(fiber));
@@ -106,7 +110,7 @@ describe("ImapTransport mailbox serialization", () => {
         Effect.promise(() => active),
       ),
     );
-    const stop = Effect.runPromise(transport.stopEffect);
+    const stop = runPromise(transport.stopEffect);
     await Effect.runPromise(Effect.yieldNow);
     expect(logout).not.toHaveBeenCalled();
 
@@ -128,7 +132,7 @@ describe("ImapTransport mailbox serialization", () => {
       transport as unknown as { connectEffect: Effect.Effect<void, Error> }
     ).connectEffect;
 
-    await expect(Effect.runPromise(connectEffect)).rejects.toThrow("select failed");
+    await expect(runPromise(connectEffect)).rejects.toThrow("select failed");
     expect(client.close).toHaveBeenCalledOnce();
     expect((transport as unknown as { client: unknown }).client).toBeNull();
   });
@@ -145,7 +149,7 @@ describe("ImapTransport mailbox serialization", () => {
       transport as unknown as { connectEffect: Effect.Effect<void, Error> }
     ).connectEffect;
 
-    await expect(Effect.runPromise(connectEffect)).rejects.toThrow("connect failed");
+    await expect(runPromise(connectEffect)).rejects.toThrow("connect failed");
     expect(client.close).toHaveBeenCalledOnce();
     expect(client.mailboxOpen).not.toHaveBeenCalled();
     expect((transport as unknown as { client: unknown }).client).toBeNull();
@@ -169,7 +173,7 @@ describe("ImapTransport mailbox serialization", () => {
       transport as unknown as { connectEffect: Effect.Effect<void, Error> }
     ).connectEffect;
 
-    const fiber = Effect.runFork(connectEffect);
+    const fiber = runFork(connectEffect);
     await vi.waitFor(() => expect(client.connect).toHaveBeenCalledOnce());
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(client.close).toHaveBeenCalledOnce();
@@ -200,7 +204,7 @@ describe("ImapTransport mailbox serialization", () => {
       transport as unknown as { connectEffect: Effect.Effect<void, Error> }
     ).connectEffect;
 
-    const fiber = Effect.runFork(connectEffect);
+    const fiber = runFork(connectEffect);
     await vi.waitFor(() => expect(client.mailboxOpen).toHaveBeenCalledOnce());
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(client.close).toHaveBeenCalledOnce();

@@ -1,7 +1,7 @@
 import type { Effect as EffectType } from "effect/Effect";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { Logger } from "@micthiesen/mitools/logging";
-import { Effect, Exit, Fiber } from "effect";
+import type { LogTap } from "@micthiesen/mitools/logging";
+import { Context, Effect, Fiber } from "effect";
 import { runLogBus } from "./events.js";
 import { saveRunLogs, type TaskRunLogLine } from "./persistence.js";
 
@@ -23,7 +23,19 @@ export interface RunContext {
 }
 
 const runContext = new AsyncLocalStorage<RunContext>();
+const EffectRunContext = Context.Reference<RunContext | undefined>(
+  "omni-notify/TaskRunLogContext",
+  { defaultValue: () => undefined },
+);
 const buffers = new Map<string, RunLogBuffer>();
+
+function currentRunContext(): RunContext | undefined {
+  const fiber = Fiber.getCurrent();
+  const effectContext = fiber
+    ? Context.get(fiber.context, EffectRunContext)
+    : undefined;
+  return effectContext ?? runContext.getStore();
+}
 
 /**
  * Route every Logger call made inside a task run to that run's log buffer.
@@ -32,9 +44,9 @@ const buffers = new Map<string, RunLogBuffer>();
  * logs. Lines logged outside any run (server, email pipelines) are ignored.
  * Call once at boot.
  */
-export function installLogCapture(): void {
-  Logger.onLog = (item) => {
-    const store = runContext.getStore();
+export const taskLogTap: LogTap = (item) =>
+  Effect.sync(() => {
+    const store = currentRunContext();
     if (!store) return;
     const buffer = buffers.get(store.runId);
     if (!buffer) return;
@@ -55,8 +67,7 @@ export function installLogCapture(): void {
       buffer.dropped++;
     }
     runLogBus.emit({ type: "line", runId: store.runId, line });
-  };
-}
+  });
 
 /** Begin buffering lines for a run. */
 export function startRunLogCapture(runId: string, taskName: string): void {
@@ -84,43 +95,26 @@ export function runWithLogCapture<T>(runId: string, fn: () => Promise<T>): Promi
 }
 
 /**
- * Run an Effect inside the same AsyncLocalStorage context used by the legacy
- * Promise task runner. Effect.runForkWith is intentionally confined to this
- * adapter because establishing an ALS scope requires starting the fiber while
- * `AsyncLocalStorage.run` is active.
+ * Attribute an Effect with a fiber-local run context. Unlike Node
+ * AsyncLocalStorage, the Effect context is retained across scheduler
+ * suspensions and inherited by child fibers.
  */
 export function runWithLogCaptureEffect<A, E, R>(
   runId: string,
   effect: EffectType<A, E, R>,
 ): EffectType<A, E, R> {
-  return Effect.context<R>().pipe(
-    Effect.flatMap((services) =>
-      Effect.callback<A, E>((resume) => {
-        const taskName = buffers.get(runId)?.taskName ?? "Unknown";
-        const fiber = runContext.run({ runId, taskName }, () =>
-          Effect.runForkWith(services)(effect),
-        );
-        fiber.addObserver((exit) =>
-          resume(
-            Exit.isSuccess(exit)
-              ? Effect.succeed(exit.value)
-              : Effect.failCause(exit.cause),
-          ),
-        );
-        return Fiber.interrupt(fiber).pipe(Effect.asVoid);
-      }),
-    ),
-  );
+  const taskName = buffers.get(runId)?.taskName ?? "Unknown";
+  return Effect.provideService(effect, EffectRunContext, { runId, taskName });
 }
 
 /** The runId of the task run this code is executing inside, if any. */
 export function getCurrentRunId(): string | undefined {
-  return runContext.getStore()?.runId;
+  return currentRunContext()?.runId;
 }
 
 /** Current task or synthetic email-pipeline capture, used for cost attribution. */
 export function getCurrentRunContext(): RunContext | undefined {
-  return runContext.getStore();
+  return currentRunContext();
 }
 
 /** Live buffer contents for an in-flight run, if any. */
@@ -148,12 +142,14 @@ export function takeRunLogCapture(
  * be called after the run's final status is recorded, so "end" subscribers
  * read a settled run.
  */
-export function finishRunLogCapture(runId: string): void {
+export const finishRunLogCapture = Effect.fn("TaskRunLogs.finish")(function* (
+  runId: string,
+) {
   const buffer = buffers.get(runId);
   buffers.delete(runId);
   try {
     if (buffer) {
-      saveRunLogs({
+      yield* saveRunLogs({
         runId,
         taskName: buffer.taskName,
         lines: orderedLines(buffer),
@@ -163,4 +159,4 @@ export function finishRunLogCapture(runId: string): void {
   } finally {
     runLogBus.emit({ type: "end", runId });
   }
-}
+});

@@ -3,6 +3,7 @@ import { Data, Effect } from "effect";
 import config from "../utils/config.js";
 import { formatPodcastFeedbackDigest } from "./persistence.js";
 import { formatPodcastTasteProfileDigest } from "./reflection/index.js";
+import { getLatestPodcastTasteProfile } from "./reflection/persistence.js";
 import type { SubscriptionState } from "./subscriptions.js";
 import { formatSubscriptionsDigest } from "./subscriptions.js";
 
@@ -16,19 +17,21 @@ import { formatSubscriptionsDigest } from "./subscriptions.js";
  * 4. The versioned reflective taste profile distilled weekly from Castro
  *    listen history and recommendation outcomes (reflection/).
  */
-export function buildTasteDigest(
+export const buildTasteDigest = Effect.fn("PodcastTaste.buildDigest")(function* (
   subscriptions: SubscriptionState,
   seed: string,
-): string {
+) {
+  const feedback = yield* formatPodcastFeedbackDigest();
+  const profile = yield* getLatestPodcastTasteProfile();
   return [
     seed,
     formatSubscriptionsDigest(subscriptions),
-    formatPodcastFeedbackDigest(),
-    formatPodcastTasteProfileDigest(),
+    feedback,
+    formatPodcastTasteProfileDigest(profile),
   ]
     .filter((section) => section.length > 0)
     .join("\n\n");
-}
+});
 
 export class TasteSeedError extends Data.TaggedError("TasteSeedError")<{
   readonly path: string;

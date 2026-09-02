@@ -1,24 +1,13 @@
-import { describe, expect, it } from "@effect/vitest";
-import { Injector } from "@micthiesen/mitools/config";
-import { LogLevel } from "@micthiesen/mitools/logging";
+import { expect, layer } from "@effect/vitest";
+import { Docstore } from "@micthiesen/mitools/docstore";
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { EmailRetryEntity, EmailRetryPersistence } from "./retry.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "email-retry-effect.spec.db",
-  },
-});
-
-describe("EmailRetryPersistence", () => {
+layer(Docstore.layerMemory)("EmailRetryPersistence", (it) => {
   it.effect("uses the Effect clock and decodes persisted rows", () =>
     Effect.gen(function* () {
-      EmailRetryEntity.deleteAll();
+      yield* EmailRetryEntity.deleteAll();
       yield* TestClock.setTime(1_800_000_000_000);
 
       yield* EmailRetryPersistence.enqueue({
@@ -34,7 +23,7 @@ describe("EmailRetryPersistence", () => {
         createdAt: 1_800_000_000_000,
         nextAttemptAt: 1_800_001_800_000,
       });
-      EmailRetryEntity.deleteAll();
+      yield* EmailRetryEntity.deleteAll();
     }),
   );
 });

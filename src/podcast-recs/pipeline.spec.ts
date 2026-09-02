@@ -40,7 +40,7 @@ describe("enqueueAndPersistEffect", () => {
           events.push("enqueue");
           return "added" as const;
         }),
-      (result) => events.push(`persist:${result}`),
+      (result) => Effect.sync(() => events.push(`persist:${result}`)),
     ).pipe(
       Effect.tap(() => Effect.sync(() => events.push("notify-boundary"))),
       Effect.tap(() =>

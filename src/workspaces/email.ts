@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import type { EmailHandler, FetchedEmail } from "../email/types.js";
 import { Effect } from "effect";
 import { WorkspaceOperationError } from "./errors.js";
@@ -11,20 +11,24 @@ import {
   markWorkspaceSourcesTriggered,
 } from "./persistence.js";
 import { workspaceRepositoryEffect } from "./repository.js";
+import type { TaskServices } from "../task-runs/registry.js";
 
 export type WorkspaceEmailTrigger = (
   workspaceId: string,
   subjectId: string,
   message: string,
   trigger: "email",
-) => Effect.Effect<void, WorkspaceOperationError>;
+) => Effect.Effect<void, WorkspaceOperationError, TaskServices>;
 
-export class WorkspaceEmailHandler implements EmailHandler {
+export class WorkspaceEmailHandler implements EmailHandler<
+  WorkspaceOperationError,
+  TaskServices
+> {
   public readonly name = "Workspaces";
 
   public constructor(
     private readonly trigger: WorkspaceEmailTrigger,
-    private readonly logger: Logger,
+    private readonly logger: NamedLogger,
   ) {}
 
   public handleEmailsEffect(emails: FetchedEmail[]) {
@@ -73,7 +77,7 @@ export class WorkspaceEmailHandler implements EmailHandler {
         const separator = key.indexOf(":");
         const workspaceId = key.slice(0, separator);
         const subjectId = key.slice(separator + 1);
-        this.logger.info(
+        yield* this.logger.info(
           `Ingested ${matched.length} scoped email(s) for ${workspaceId}/${subjectId}`,
         );
         yield* this.trigger(

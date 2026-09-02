@@ -11,7 +11,8 @@ import {
 } from "@pnosolutions/ipp";
 import { getAttributes, IppOperation, IppTag } from "@pnosolutions/ipp-core";
 import { Entity } from "@micthiesen/mitools/entities";
-import { Data, Duration, Effect, Schedule, Schema } from "effect";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { Data, Duration, Effect, Option, Schedule, Schema } from "effect";
 import { publicGot } from "../press-pods/publicHttp.js";
 
 export const PRINTER_DOWNLOAD_USER_AGENT =
@@ -67,7 +68,9 @@ export interface AcceptedPrintJob extends Record<string, unknown> {
 }
 export interface PrinterService {
   statusEffect(): Effect.Effect<PrinterStatus, PrinterError>;
-  printPdfEffect(input: PrintPdfInput): Effect.Effect<AcceptedPrintJob, PrinterError>;
+  printPdfEffect(
+    input: PrintPdfInput,
+  ): Effect.Effect<AcceptedPrintJob, PrinterError | unknown, Docstore>;
 }
 export class PrinterError extends Data.TaggedError("PrinterError")<{
   operation: string;
@@ -93,24 +96,30 @@ export interface AcceptedPrintRecord {
   jobName: string;
 }
 export interface AcceptedPrintStore {
-  get(fingerprint: string): AcceptedPrintRecord | undefined;
-  upsert(record: AcceptedPrintRecord): void;
-  deleteOlderThan(cutoff: number): void;
+  get(
+    fingerprint: string,
+  ): Effect.Effect<AcceptedPrintRecord | undefined, unknown, Docstore>;
+  upsert(record: AcceptedPrintRecord): Effect.Effect<void, unknown, Docstore>;
+  deleteOlderThan(cutoff: number): Effect.Effect<void, unknown, Docstore>;
 }
 const PrinterAcceptedJobEntity = new Entity<AcceptedPrintRecord, ["fingerprint"]>(
   "printer-accepted-job",
   ["fingerprint"],
 );
 const durableAcceptedPrintStore: AcceptedPrintStore = {
-  get: (fingerprint) => PrinterAcceptedJobEntity.get({ fingerprint }) ?? undefined,
+  get: (fingerprint) =>
+    PrinterAcceptedJobEntity.get({ fingerprint }).pipe(
+      Effect.map(Option.getOrUndefined),
+    ),
   upsert: (record) => PrinterAcceptedJobEntity.upsert(record),
-  deleteOlderThan: (cutoff) => {
-    for (const record of PrinterAcceptedJobEntity.getAll()) {
-      if (record.acceptedAt <= cutoff) {
-        PrinterAcceptedJobEntity.delete({ fingerprint: record.fingerprint });
+  deleteOlderThan: (cutoff) =>
+    Effect.gen(function* () {
+      for (const record of yield* PrinterAcceptedJobEntity.getAll()) {
+        if (record.acceptedAt <= cutoff) {
+          yield* PrinterAcceptedJobEntity.delete({ fingerprint: record.fingerprint });
+        }
       }
-    }
-  },
+    }),
 };
 interface PrinterClient {
   status(): Promise<IppPrinterStatus & { raw?: Record<string, unknown> }>;
@@ -510,7 +519,7 @@ export class IppPrinterService implements PrinterService {
     });
   }
 
-  printPdfEffect(input: PrintPdfInput): Effect.Effect<AcceptedPrintJob, PrinterError> {
+  printPdfEffect(input: PrintPdfInput) {
     return Effect.gen({ self: this }, function* () {
       const printer = yield* this.requirePrinterEffect();
       const options = yield* normalizeInput(input);
@@ -530,10 +539,10 @@ export class IppPrinterService implements PrinterService {
         .update(pdf)
         .update(JSON.stringify(options))
         .digest("hex");
-      this.pruneDuplicates();
+      yield* this.pruneDuplicates();
       if (
         !input.allowDuplicate &&
-        (this.acceptedPrintStore.get(duplicateKey) ||
+        ((yield* this.acceptedPrintStore.get(duplicateKey)) ||
           this.volatileAcceptedPrints.has(duplicateKey))
       ) {
         return yield* Effect.fail(
@@ -585,7 +594,7 @@ export class IppPrinterService implements PrinterService {
     pdf: Buffer,
     options: NormalizedInput,
     duplicateKey: string,
-  ): Effect.Effect<AcceptedPrintJob, PrinterError> {
+  ): Effect.Effect<AcceptedPrintJob, PrinterError, Docstore> {
     return Effect.gen({ self: this }, function* () {
       const inputPath = join(directory, "input.pdf");
       const rasterPath = join(directory, "output.raster");
@@ -640,20 +649,19 @@ export class IppPrinterService implements PrinterService {
       // Acceptance is irreversible. Persist suppression before fallible polling
       // so a process restart cannot turn an uncertain retry into a second print.
       this.volatileAcceptedPrints.set(duplicateKey, this.now());
-      const suppressionPersisted = yield* Effect.try({
-        try: () => {
-          this.acceptedPrintStore.upsert({
-            fingerprint: duplicateKey,
-            acceptedAt: this.now(),
-            jobId: job.id,
-            jobUri: job.uri,
-            jobState: job.state,
-            jobName: job.name,
-          });
-          return true as const;
-        },
-        catch: (cause) => failure("persist accepted print job", cause),
-      }).pipe(Effect.catch(() => Effect.succeed(false as const)));
+      const suppressionPersisted = yield* this.acceptedPrintStore
+        .upsert({
+          fingerprint: duplicateKey,
+          acceptedAt: this.now(),
+          jobId: job.id,
+          jobUri: job.uri,
+          jobState: job.state,
+          jobName: job.name,
+        })
+        .pipe(
+          Effect.as(true as const),
+          Effect.catch(() => Effect.succeed(false as const)),
+        );
       const finalStatus = yield* this.waitForFinalJobStatus(printer, job);
       return {
         accepted: true,
@@ -731,12 +739,17 @@ export class IppPrinterService implements PrinterService {
       }),
     );
   }
-  private pruneDuplicates(): void {
+  private pruneDuplicates() {
     const cutoff = this.now() - DUPLICATE_WINDOW_MS;
-    this.acceptedPrintStore.deleteOlderThan(cutoff);
-    for (const [fingerprint, acceptedAt] of this.volatileAcceptedPrints) {
-      if (acceptedAt <= cutoff) this.volatileAcceptedPrints.delete(fingerprint);
-    }
+    return this.acceptedPrintStore.deleteOlderThan(cutoff).pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          for (const [fingerprint, acceptedAt] of this.volatileAcceptedPrints) {
+            if (acceptedAt <= cutoff) this.volatileAcceptedPrints.delete(fingerprint);
+          }
+        }),
+      ),
+    );
   }
 }
 

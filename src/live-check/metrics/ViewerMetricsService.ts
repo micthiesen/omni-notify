@@ -1,8 +1,6 @@
-import type { Effect as EffectType } from "effect/Effect";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { Clock, Data, Effect } from "effect";
-import type { PersistenceError } from "../../effect/errors.js";
 import type { ViewerRecordScope } from "../notificationPolicy.js";
 import { getViewerMetricsEffect, upsertViewerMetricsEffect } from "./persistence.js";
 import {
@@ -36,7 +34,7 @@ export class ViewerNotificationError extends Data.TaggedError(
 }> {}
 
 export class ViewerMetricsService {
-  private logger: Logger;
+  private logger: NamedLogger;
   private streamerStates = new Map<string, StreamerPeakState>();
   private resolveToken: TokenResolver;
   private resolveRecordScope: RecordScopeResolver;
@@ -44,7 +42,7 @@ export class ViewerMetricsService {
   constructor(
     resolveToken: TokenResolver,
     resolveRecordScope: RecordScopeResolver,
-    parentLogger: Logger,
+    parentLogger: NamedLogger,
   ) {
     this.resolveToken = resolveToken;
     this.resolveRecordScope = resolveRecordScope;
@@ -56,7 +54,7 @@ export class ViewerMetricsService {
     displayName,
     viewerCount,
     urlFields,
-  }: ViewerObservation): EffectType<void, ViewerNotificationError | PersistenceError> {
+  }: ViewerObservation) {
     return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       const observedAt = new Date(now);
@@ -85,7 +83,7 @@ export class ViewerMetricsService {
         if (pending) {
           if (viewerCount > pending.value) {
             pending.value = viewerCount;
-            this.logger.debug(
+            yield* this.logger.debug(
               `${streamerId}: Updated pending ${config.label} to ${viewerCount}`,
             );
           } else if (viewerCount < pending.value * HYSTERESIS) {
@@ -108,7 +106,7 @@ export class ViewerMetricsService {
               });
             }
 
-            this.logger.debug(
+            yield* this.logger.debug(
               `${streamerId}: Confirmed ${config.label} peak at ${pending.value}`,
             );
           }
@@ -117,7 +115,7 @@ export class ViewerMetricsService {
             value: viewerCount,
             previousMax: windowMax,
           });
-          this.logger.debug(
+          yield* this.logger.debug(
             `${streamerId}: Started tracking ${config.label} peak at ${viewerCount} (prev: ${windowMax})`,
           );
         }
@@ -145,10 +143,7 @@ export class ViewerMetricsService {
     streamerId,
     displayName,
     urlFields,
-  }: Omit<ViewerObservation, "viewerCount">): EffectType<
-    void,
-    ViewerNotificationError | PersistenceError
-  > {
+  }: Omit<ViewerObservation, "viewerCount">) {
     return Effect.gen({ self: this }, function* () {
       const state = this.streamerStates.get(streamerId);
       if (!state || state.pendingPeaks.size === 0) return;
@@ -172,7 +167,7 @@ export class ViewerMetricsService {
             previous: pending.previousMax,
           });
         }
-        this.logger.debug(
+        yield* this.logger.debug(
           `${streamerId}: Flushed pending ${config.label} peak at ${pending.value}`,
         );
       }
@@ -210,7 +205,7 @@ export class ViewerMetricsService {
     streamerId: string,
     displayName: string,
     urlFields: NotificationUrlFields,
-  ): EffectType<void, ViewerNotificationError> {
+  ) {
     const sorted = [...confirmedPeaks].sort(
       (a, b) => b.config.priority - a.config.priority,
     );
@@ -221,18 +216,16 @@ export class ViewerMetricsService {
       highest.previous > 0 ? ` (previous: ${highest.previous.toLocaleString()})` : "";
     const message = `Peaked at ${formatCount(highest.peak)}${previousPart}.`;
 
-    this.logger.info(
-      `${displayName}: ${highest.config.label} at ${highest.peak} viewers`,
-    );
-    return Effect.tryPromise({
-      try: () =>
-        notify({
-          title,
-          message,
-          token: this.resolveToken(streamerId),
-          ...urlFields,
-        }),
-      catch: (cause) => new ViewerNotificationError({ cause }),
+    return Effect.gen({ self: this }, function* () {
+      yield* this.logger.info(
+        `${displayName}: ${highest.config.label} at ${highest.peak} viewers`,
+      );
+      yield* notify({
+        title,
+        message,
+        token: this.resolveToken(streamerId),
+        ...urlFields,
+      }).pipe(Effect.mapError((cause) => new ViewerNotificationError({ cause })));
     });
   }
 }

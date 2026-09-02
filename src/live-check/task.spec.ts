@@ -1,32 +1,30 @@
-import { Injector } from "@micthiesen/mitools/config";
 import { Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { describe, expect, it } from "@effect/vitest";
 import { Cause, Effect, Exit, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, beforeEach, vi } from "vitest";
-import appConfig from "../utils/config.js";
 import type { DggFeed } from "./dgg.js";
 import {
   ProfileIdentityLinkEntity,
-  rememberProfileIdentityLink,
+  rememberProfileIdentityLinkEffect,
 } from "./identityLinks.js";
 import type { LivestreamIntelligenceObserver } from "./intelligence/service.js";
 import {
-  getStreamerStatus,
+  getStreamerStatusEffect,
   StreamerStatusEntity,
-  upsertStreamerStatus,
+  upsertStreamerStatusEffect,
 } from "./persistence.js";
 import { LiveStatus, Platform, platformConfigs } from "./platforms/index.js";
 import type { Streamer } from "./streamers.js";
 import LiveCheckTask from "./task.js";
+import { provideTest, runTest, testRuntime } from "./testRuntime.js";
 import { getStreamSessions, StreamSessionsEntity } from "./sessions.js";
 
-vi.mock("@micthiesen/mitools/pushover", () => ({ notify: vi.fn() }));
-
-Injector.configure({
-  config: { ...appConfig, DB_NAME: `/tmp/omni-dgg-task-${process.pid}.db` },
-});
+vi.mock("@micthiesen/mitools/pushover", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@micthiesen/mitools/pushover")>()),
+  notify: vi.fn(),
+}));
 
 function feed(id?: string): DggFeed {
   return {
@@ -54,11 +52,16 @@ function feed(id?: string): DggFeed {
 }
 
 describe("LiveCheckTask DGG discovery", () => {
-  beforeEach(() => vi.mocked(notify).mockClear());
-  afterEach(() => {
-    ProfileIdentityLinkEntity.deleteAll();
-    StreamerStatusEntity.deleteAll();
-    StreamSessionsEntity.deleteAll();
+  beforeEach(() =>
+    vi
+      .mocked(notify)
+      .mockReset()
+      .mockReturnValue(Effect.void as never),
+  );
+  afterEach(async () => {
+    await runTest(ProfileIdentityLinkEntity.deleteAll());
+    await runTest(StreamerStatusEntity.deleteAll());
+    await runTest(StreamSessionsEntity.deleteAll());
   });
 
   it("refreshes and polls DGG streams only on the background cadence", async () => {
@@ -67,7 +70,7 @@ describe("LiveCheckTask DGG discovery", () => {
     let fetches = 0;
     const task = new LiveCheckTask(
       sharedStreamers,
-      new Logger("DggTaskTest"),
+      Logger.named("DggTaskTest"),
       undefined,
       {
         topEmbeds: 1,
@@ -77,18 +80,18 @@ describe("LiveCheckTask DGG discovery", () => {
       },
     );
 
-    await task.run();
+    await runTest(task.run);
     expect(fetches).toBe(1);
     expect(sharedStreamers.map((streamer) => streamer.id)).toEqual([
       "dgg:twitch:first",
     ]);
 
-    await task.run();
-    await task.run();
+    await runTest(task.run);
+    await runTest(task.run);
     expect(fetches).toBe(1);
     expect(sharedStreamers).toHaveLength(1);
 
-    await task.run();
+    await runTest(task.run);
     expect(fetches).toBe(2);
     expect(sharedStreamers).toEqual([]);
     expect(notify).not.toHaveBeenCalled();
@@ -99,7 +102,7 @@ describe("LiveCheckTask DGG discovery", () => {
     let fetches = 0;
     const task = new LiveCheckTask(
       sharedStreamers,
-      new Logger("DggTaskFailureTest"),
+      Logger.named("DggTaskFailureTest"),
       undefined,
       {
         topEmbeds: 1,
@@ -113,10 +116,10 @@ describe("LiveCheckTask DGG discovery", () => {
       },
     );
 
-    await task.run();
-    await task.run();
-    await task.run();
-    await task.run();
+    await runTest(task.run);
+    await runTest(task.run);
+    await runTest(task.run);
+    await runTest(task.run);
 
     expect(sharedStreamers.map((streamer) => streamer.id)).toEqual([
       "dgg:twitch:retained",
@@ -126,12 +129,12 @@ describe("LiveCheckTask DGG discovery", () => {
 
   it("propagates interruption while refreshing DGG streams", async () => {
     const fetchFeed = vi.fn(() => Effect.never);
-    const task = new LiveCheckTask([], new Logger("DggInterruptTest"), undefined, {
+    const task = new LiveCheckTask([], Logger.named("DggInterruptTest"), undefined, {
       topEmbeds: 1,
       availablePlatforms: new Set(Object.values(Platform)),
       fetchFeed,
     });
-    const fiber = Effect.runFork(task.runEffect());
+    const fiber = testRuntime.runFork(task.runEffect());
     await vi.waitFor(() => expect(fetchFeed).toHaveBeenCalledTimes(1));
 
     await Effect.runPromise(Fiber.interrupt(fiber));
@@ -146,12 +149,12 @@ describe("LiveCheckTask DGG discovery", () => {
       Effect.gen(function* () {
         const getAll = vi
           .spyOn(ProfileIdentityLinkEntity, "getAll")
-          .mockImplementationOnce(() => {
-            throw new Error("identity database unavailable");
-          });
+          .mockReturnValueOnce(
+            Effect.fail(new Error("identity database unavailable")) as never,
+          );
         const task = new LiveCheckTask(
           [],
-          new Logger("DggPersistenceTest"),
+          Logger.named("DggPersistenceTest"),
           undefined,
           {
             topEmbeds: 1,
@@ -170,7 +173,7 @@ describe("LiveCheckTask DGG discovery", () => {
         } finally {
           getAll.mockRestore();
         }
-      }),
+      }).pipe(provideTest),
   );
 
   it("schedules intelligence work only after every due streamer was observed", async () => {
@@ -182,7 +185,7 @@ describe("LiveCheckTask DGG discovery", () => {
     } satisfies LivestreamIntelligenceObserver;
     const task = new LiveCheckTask(
       [],
-      new Logger("DggIntelligenceSchedulingTest"),
+      Logger.named("DggIntelligenceSchedulingTest"),
       undefined,
       {
         topEmbeds: 1,
@@ -193,7 +196,7 @@ describe("LiveCheckTask DGG discovery", () => {
       observer,
     );
 
-    await task.run();
+    await runTest(task.run);
 
     expect(observer.observeLive).toHaveBeenCalledTimes(1);
     expect(observer.afterTick).toHaveBeenCalledTimes(1);
@@ -224,7 +227,7 @@ describe("LiveCheckTask DGG discovery", () => {
     let dggFetches = 0;
     const task = new LiveCheckTask(
       sharedStreamers,
-      new Logger("DggConfiguredMergeTest"),
+      Logger.named("DggConfiguredMergeTest"),
       undefined,
       {
         topEmbeds: 1,
@@ -235,7 +238,7 @@ describe("LiveCheckTask DGG discovery", () => {
     );
 
     try {
-      await task.run();
+      await runTest(task.run);
       expect(sharedStreamers).toHaveLength(1);
       expect(sharedStreamers[0]).toMatchObject({
         id: "configured",
@@ -247,9 +250,9 @@ describe("LiveCheckTask DGG discovery", () => {
       expect(connector).toHaveBeenCalledTimes(1);
       expect(notify).toHaveBeenCalledTimes(1);
 
-      await task.run();
-      await task.run();
-      await task.run();
+      await runTest(task.run);
+      await runTest(task.run);
+      await runTest(task.run);
       expect(dggFetches).toBe(2);
       expect(connector).toHaveBeenCalledTimes(4);
       expect(notify).toHaveBeenCalledTimes(1);
@@ -288,7 +291,7 @@ describe("LiveCheckTask DGG discovery", () => {
       );
     const task = new LiveCheckTask(
       sharedStreamers,
-      new Logger("DggProfileIdentityTest"),
+      Logger.named("DggProfileIdentityTest"),
       undefined,
       {
         topEmbeds: 1,
@@ -316,19 +319,19 @@ describe("LiveCheckTask DGG discovery", () => {
             },
           ],
         }),
-        learnIdentity: async ({ source }) =>
-          rememberProfileIdentityLink({ source, target: youtube }),
+        learnIdentity: ({ source }) =>
+          rememberProfileIdentityLinkEffect({ source, target: youtube }),
       },
     );
 
     try {
-      await task.run();
+      await runTest(task.run);
       expect(sharedStreamers).toHaveLength(1);
       expect(sharedStreamers[0]?.bindings).toEqual([
         youtube,
         expect.objectContaining(kick),
       ]);
-      expect(getStreamerStatus("iri")).toMatchObject({
+      expect(await runTest(getStreamerStatusEffect("iri"))).toMatchObject({
         isLive: true,
         viewerCount: 902,
         sources: [
@@ -344,7 +347,9 @@ describe("LiveCheckTask DGG discovery", () => {
   it("removes a stale profile identity when direct ownership evidence disappears", async () => {
     const youtube = { platform: Platform.YouTube, username: "@iri" };
     const kick = { platform: Platform.Kick, username: "iri" };
-    rememberProfileIdentityLink({ source: kick, target: youtube, now: 0 });
+    await runTest(
+      rememberProfileIdentityLinkEffect({ source: kick, target: youtube, now: 0 }),
+    );
     const sharedStreamers: Streamer[] = [
       {
         id: "iri",
@@ -358,7 +363,7 @@ describe("LiveCheckTask DGG discovery", () => {
       .mockReturnValue(Effect.succeed({ status: LiveStatus.Offline }));
     const task = new LiveCheckTask(
       sharedStreamers,
-      new Logger("DggStaleProfileIdentityTest"),
+      Logger.named("DggStaleProfileIdentityTest"),
       undefined,
       {
         topEmbeds: 1,
@@ -388,8 +393,8 @@ describe("LiveCheckTask DGG discovery", () => {
     );
 
     try {
-      await task.run();
-      expect(ProfileIdentityLinkEntity.getAll()).toEqual([]);
+      await runTest(task.run);
+      expect(await runTest(ProfileIdentityLinkEntity.getAll())).toEqual([]);
       expect(sharedStreamers.map((streamer) => streamer.id)).toEqual([
         "iri",
         "dgg:kick:iri",
@@ -414,12 +419,16 @@ describe("LiveCheckTask DGG discovery", () => {
           title: "Already recorded",
         }),
       );
-    vi.mocked(notify).mockRejectedValueOnce(new Error("Pushover unavailable"));
-    const task = new LiveCheckTask([streamer], new Logger("DurableLiveTest"));
+    vi.mocked(notify).mockReturnValueOnce(
+      Effect.fail(new Error("Pushover unavailable")) as never,
+    );
+    const task = new LiveCheckTask([streamer], Logger.named("DurableLiveTest"));
 
-    await expect(task.run()).rejects.toThrow("Pushover unavailable");
-    expect(getStreamerStatus(streamer.id)).toMatchObject({ isLive: true });
-    await expect(task.run()).resolves.toBeUndefined();
+    await expect(runTest(task.run)).rejects.toThrow("Pushover unavailable");
+    expect(await runTest(getStreamerStatusEffect(streamer.id))).toMatchObject({
+      isLive: true,
+    });
+    await expect(runTest(task.run)).resolves.toBeUndefined();
     expect(notify).toHaveBeenCalledTimes(1);
     connector.mockRestore();
   });
@@ -431,14 +440,16 @@ describe("LiveCheckTask DGG discovery", () => {
       bindings: [{ platform: Platform.Twitch, username: "durable" }],
       tier: "primary",
     };
-    upsertStreamerStatus({
-      streamerId: streamer.id,
-      isLive: true,
-      primary: streamer.bindings[0]!,
-      primaryTitle: "Session",
-      startedAt: new Date(Date.now() - 60_000),
-      maxViewerCount: 10,
-    });
+    await runTest(
+      upsertStreamerStatusEffect({
+        streamerId: streamer.id,
+        isLive: true,
+        primary: streamer.bindings[0]!,
+        primaryTitle: "Session",
+        startedAt: new Date(Date.now() - 60_000),
+        maxViewerCount: 10,
+      }),
+    );
     const connector = vi
       .spyOn(platformConfigs[Platform.Twitch], "fetchLiveStatus")
       .mockReturnValue(
@@ -446,15 +457,21 @@ describe("LiveCheckTask DGG discovery", () => {
           status: LiveStatus.Offline,
         }),
       );
-    vi.mocked(notify).mockRejectedValueOnce(new Error("Pushover unavailable"));
-    const task = new LiveCheckTask([streamer], new Logger("DurableOfflineTest"));
+    vi.mocked(notify).mockReturnValueOnce(
+      Effect.fail(new Error("Pushover unavailable")) as never,
+    );
+    const task = new LiveCheckTask([streamer], Logger.named("DurableOfflineTest"));
 
-    await expect(task.run()).rejects.toThrow("Pushover unavailable");
-    expect(getStreamerStatus(streamer.id)).toMatchObject({ isLive: true });
-    expect(getStreamSessions(streamer.id).sessions).toHaveLength(0);
-    await expect(task.run()).resolves.toBeUndefined();
-    expect(getStreamerStatus(streamer.id)).toMatchObject({ isLive: false });
-    expect(getStreamSessions(streamer.id).sessions).toHaveLength(1);
+    await expect(runTest(task.run)).rejects.toThrow("Pushover unavailable");
+    expect(await runTest(getStreamerStatusEffect(streamer.id))).toMatchObject({
+      isLive: true,
+    });
+    expect((await runTest(getStreamSessions(streamer.id))).sessions).toHaveLength(0);
+    await expect(runTest(task.run)).resolves.toBeUndefined();
+    expect(await runTest(getStreamerStatusEffect(streamer.id))).toMatchObject({
+      isLive: false,
+    });
+    expect((await runTest(getStreamSessions(streamer.id))).sessions).toHaveLength(1);
     expect(notify).toHaveBeenCalledTimes(2);
     connector.mockRestore();
   });
@@ -478,16 +495,16 @@ describe("LiveCheckTask DGG discovery", () => {
         );
 
       try {
-        const task = new LiveCheckTask([streamer], new Logger("ClockedLiveTest"));
+        const task = new LiveCheckTask([streamer], Logger.named("ClockedLiveTest"));
         yield* task.runEffect();
 
-        const status = getStreamerStatus(streamer.id);
+        const status = yield* getStreamerStatusEffect(streamer.id);
         expect(status.isLive).toBe(true);
         if (status.isLive) expect(new Date(status.startedAt).getTime()).toBe(120_000);
       } finally {
         connector.mockRestore();
       }
-    }),
+    }).pipe(provideTest),
   );
 
   it.effect("returns streamer persistence failures in the typed error channel", () =>
@@ -505,14 +522,14 @@ describe("LiveCheckTask DGG discovery", () => {
         );
       const upsert = vi
         .spyOn(StreamerStatusEntity, "upsert")
-        .mockImplementationOnce(() => {
-          throw new Error("streamer database unavailable");
-        });
+        .mockReturnValueOnce(
+          Effect.fail(new Error("streamer database unavailable")) as never,
+        );
 
       try {
         const task = new LiveCheckTask(
           [streamer],
-          new Logger("PersistenceFailureTest"),
+          Logger.named("PersistenceFailureTest"),
         );
         const exit = yield* Effect.exit(task.runEffect());
 
@@ -525,6 +542,6 @@ describe("LiveCheckTask DGG discovery", () => {
         upsert.mockRestore();
         connector.mockRestore();
       }
-    }),
+    }).pipe(provideTest),
   );
 });

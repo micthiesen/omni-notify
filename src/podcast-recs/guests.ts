@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { generateText, Output } from "ai";
 import { Clock, Data, Effect } from "effect";
 import { z } from "zod";
@@ -48,10 +48,10 @@ export function discoverGuestAppearancesEffect(
   account: PodcastAccountClient | undefined,
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<EpisodeCandidate[], GuestDiscoveryError> {
+) {
   return Effect.gen(function* () {
     if (voices.length === 0) return [];
-    const pi = createPodcastIndexClient(logger);
+    const pi = yield* createPodcastIndexClient(logger);
     const now = yield* Clock.currentTimeMillis;
     const cutoff = now - RECENT_EPISODE_WINDOW_MS;
     const perVoice = yield* Effect.forEach(
@@ -77,18 +77,19 @@ export function discoverGuestAppearancesEffect(
     }
 
     const candidates = [...byId.values()];
-    logger.info(
+    yield* logger.info(
       `Guest discovery: ${candidates.length} candidate(s) across ${voices.length} voice(s)`,
     );
-    logFile?.section(
-      "Guest Appearances",
-      candidates
-        .map(
-          (c) =>
-            `- ${c.showTitle} — ${c.episodeTitle} [${(c.matchedVoices ?? []).join(", ")}]`,
-        )
-        .join("\n") || "none",
-    );
+    if (logFile)
+      yield* logFile.section(
+        "Guest Appearances",
+        candidates
+          .map(
+            (c) =>
+              `- ${c.showTitle} — ${c.episodeTitle} [${(c.matchedVoices ?? []).join(", ")}]`,
+          )
+          .join("\n") || "none",
+      );
     return candidates;
   });
 }
@@ -99,7 +100,7 @@ function discoverForVoiceEffect(
   account: PodcastAccountClient | undefined,
   cutoff: number,
   logger: Logger,
-): Effect.Effect<EpisodeCandidate[], GuestDiscoveryError> {
+) {
   return Effect.gen(function* () {
     const [fromPi, fromTavily] = yield* Effect.all(
       [
@@ -125,7 +126,7 @@ function discoverViaPodcastIndexEffect(
   pi: PodcastIndexClient | null,
   cutoff: number,
   logger: Logger,
-): Effect.Effect<EpisodeCandidate[] | undefined> {
+) {
   if (!pi) return Effect.succeed(undefined);
   return pi.searchByPerson(voice).pipe(
     Effect.map((episodes) =>
@@ -134,10 +135,11 @@ function discoverViaPodcastIndexEffect(
         .map((episode) => podcastIndexToCandidate(episode, voice))
         .filter((candidate): candidate is EpisodeCandidate => candidate !== undefined),
     ),
-    Effect.catch((error) => {
-      logger.warn(`Podcast Index byperson failed for ${voice}`, String(error));
-      return Effect.succeed(undefined);
-    }),
+    Effect.catch((error) =>
+      logger
+        .warn(`Podcast Index byperson failed for ${voice}`, String(error))
+        .pipe(Effect.as(undefined)),
+    ),
   );
 }
 
@@ -145,7 +147,7 @@ function discoverViaTavilyEffect(
   voice: string,
   account: PodcastAccountClient | undefined,
   logger: Logger,
-): Effect.Effect<EpisodeCandidate[] | undefined> {
+) {
   return Effect.gen(function* () {
     const response = yield* searchWebEffect({
       query: `"${voice}" podcast guest interview`,
@@ -154,10 +156,11 @@ function discoverViaTavilyEffect(
       maxResults: 6,
       maxContentChars: 700,
     }).pipe(
-      Effect.catch((error) => {
-        logger.warn(`Tavily person-search failed for ${voice}`, String(error));
-        return Effect.succeed(undefined);
-      }),
+      Effect.catch((error) =>
+        logger
+          .warn(`Tavily person-search failed for ${voice}`, String(error))
+          .pipe(Effect.as(undefined)),
+      ),
     );
     if (!response) return undefined;
     if (response.results.length === 0) return [];
@@ -179,10 +182,11 @@ Return JSON only; empty array if none clearly qualify.`;
         prompt,
       }),
     ).pipe(
-      Effect.catch((error) => {
-        logger.warn(`Guest extraction failed for ${voice}`, String(error));
-        return Effect.succeed(undefined);
-      }),
+      Effect.catch((error) =>
+        logger
+          .warn(`Guest extraction failed for ${voice}`, String(error))
+          .pipe(Effect.as(undefined)),
+      ),
     );
 
     if (!result) return undefined;

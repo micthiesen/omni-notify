@@ -1,8 +1,7 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { LogLevel } from "@micthiesen/mitools/logging";
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit } from "effect";
 import { afterEach, vi } from "vitest";
+import { runTest } from "../testRuntime.js";
 import { Platform } from "../platforms/index.js";
 import {
   getPlatformViewerMetrics,
@@ -11,46 +10,40 @@ import {
   recordPlatformViewerCountEffect,
 } from "./persistence.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.ERROR,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: `/tmp/omni-platform-metrics-${process.pid}.db`,
-  },
-});
-
-afterEach(() => {
-  PlatformViewerMetricsEntity.deleteAll();
-});
+afterEach(() => runTest(PlatformViewerMetricsEntity.deleteAll()));
 
 describe("platform viewer metrics", () => {
-  it("keeps each platform account in a separate daily series", () => {
+  it("keeps each platform account in a separate daily series", async () => {
     const now = new Date("2026-08-25T20:00:00Z");
-    recordPlatformViewerCount({
-      streamerId: "iri",
-      platform: Platform.YouTube,
-      username: "@imreallyimportant",
-      viewerCount: 427,
-      now,
-    });
-    recordPlatformViewerCount({
-      streamerId: "iri",
-      platform: Platform.Kick,
-      username: "imreallyimportant",
-      viewerCount: 475,
-      now,
-    });
-    recordPlatformViewerCount({
-      streamerId: "iri",
-      platform: Platform.Kick,
-      username: "IMREALLYIMPORTANT",
-      viewerCount: 500,
-      now,
-    });
+    await runTest(
+      recordPlatformViewerCount({
+        streamerId: "iri",
+        platform: Platform.YouTube,
+        username: "@imreallyimportant",
+        viewerCount: 427,
+        now,
+      }),
+    );
+    await runTest(
+      recordPlatformViewerCount({
+        streamerId: "iri",
+        platform: Platform.Kick,
+        username: "imreallyimportant",
+        viewerCount: 475,
+        now,
+      }),
+    );
+    await runTest(
+      recordPlatformViewerCount({
+        streamerId: "iri",
+        platform: Platform.Kick,
+        username: "IMREALLYIMPORTANT",
+        viewerCount: 500,
+        now,
+      }),
+    );
 
-    const metrics = getPlatformViewerMetrics("iri");
+    const metrics = await runTest(getPlatformViewerMetrics("iri"));
     expect(metrics).toHaveLength(2);
     expect(metrics).toEqual(
       expect.arrayContaining([
@@ -69,13 +62,13 @@ describe("platform viewer metrics", () => {
     );
   });
 
-  it.effect("maps an Entity write failure to PersistenceError", () =>
-    Effect.gen(function* () {
-      vi.spyOn(PlatformViewerMetricsEntity, "upsert").mockImplementationOnce(() => {
-        throw new Error("metrics database unavailable");
-      });
+  it("maps an Entity write failure to PersistenceError", async () => {
+    vi.spyOn(PlatformViewerMetricsEntity, "upsert").mockReturnValueOnce(
+      Effect.fail(new Error("metrics database unavailable")) as never,
+    );
 
-      const exit = yield* Effect.exit(
+    const exit = await runTest(
+      Effect.exit(
         recordPlatformViewerCountEffect({
           streamerId: "iri",
           platform: Platform.Kick,
@@ -83,13 +76,13 @@ describe("platform viewer metrics", () => {
           viewerCount: 10,
           now: new Date(0),
         }),
-      );
+      ),
+    );
 
-      expect(Exit.isFailure(exit)).toBe(true);
-      if (Exit.isFailure(exit)) {
-        expect(String(exit.cause)).toContain("PersistenceError");
-        expect(String(exit.cause)).toContain("metrics database unavailable");
-      }
-    }),
-  );
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) {
+      expect(String(exit.cause)).toContain("PersistenceError");
+      expect(String(exit.cause)).toContain("metrics database unavailable");
+    }
+  });
 });

@@ -38,12 +38,11 @@ export class ParcelPersistenceError extends Data.TaggedError("ParcelPersistenceE
   }
 }
 
-export function parcelPersistenceEffect<A>(
+export function parcelPersistenceEffect<A, E, R>(
   operation: string,
-  evaluate: () => A,
-): Effect.Effect<A, ParcelPersistenceError> {
-  return Effect.try({
-    try: evaluate,
-    catch: (cause) => new ParcelPersistenceError({ operation, cause }),
-  });
+  evaluate: () => Effect.Effect<A, E, R>,
+): Effect.Effect<A, ParcelPersistenceError, R> {
+  return evaluate().pipe(
+    Effect.mapError((cause) => new ParcelPersistenceError({ operation, cause })),
+  );
 }

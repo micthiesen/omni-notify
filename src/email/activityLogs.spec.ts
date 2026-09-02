@@ -1,8 +1,9 @@
-import { Injector } from "@micthiesen/mitools/config";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { OperationError } from "@micthiesen/mitools/errors";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
-import { Effect } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { installLogCapture } from "../task-runs/logCapture.js";
+import { taskLogTap } from "../task-runs/logCapture.js";
 import {
   EmailActivityLogEntity,
   getEmailActivityLogs,
@@ -10,96 +11,100 @@ import {
   withEmailLogCaptureEffect,
 } from "./activityLogs.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "activitylogs.spec.db",
-  },
-});
+const runtime = ManagedRuntime.make(
+  Layer.merge(Docstore.layerMemory, Logger.layer({ onLog: taskLogTap })),
+);
+const runEffect = runtime.runPromise.bind(runtime);
 
-const logger = new Logger("Test");
+const logger = Logger.named("Test");
 
 beforeAll(() => {
-  installLogCapture();
   vi.spyOn(console, "info").mockImplementation(() => {});
 });
 
-afterEach(() => {
-  EmailActivityLogEntity.deleteAll();
+afterEach(async () => {
+  await runEffect(EmailActivityLogEntity.deleteAll());
 });
 
 describe("email activity log capture", () => {
   it("captures lines logged during processing and persists them", async () => {
-    const result = await Effect.runPromise(
+    const result = await runEffect(
       withEmailLogCaptureEffect("ParcelTracker#e1", "ParcelTracker", () =>
         Effect.gen(function* () {
-          logger.info("extracting");
+          yield* logger.info("extracting");
           yield* Effect.yieldNow;
-          logger.info("submitted");
+          yield* logger.info("submitted");
           return 42;
         }),
       ),
     );
 
     expect(result).toBe(42);
-    const stored = getEmailActivityLogs("ParcelTracker#e1");
+    const stored = await runEffect(getEmailActivityLogs("ParcelTracker#e1"));
     expect(stored?.lines.map((l) => l.msg)).toEqual(["extracting", "submitted"]);
     expect(stored?.dropped).toBe(0);
   });
 
   it("persists no row when nothing was logged", async () => {
-    await Effect.runPromise(
+    await runEffect(
       withEmailLogCaptureEffect("ParcelTracker#e2", "ParcelTracker", () => Effect.void),
     );
-    expect(getEmailActivityLogs("ParcelTracker#e2")).toBeUndefined();
+    expect(await runEffect(getEmailActivityLogs("ParcelTracker#e2"))).toBeUndefined();
   });
 
   it("deletes a stale row when a reprocess captures nothing", async () => {
-    saveEmailActivityLogs({
-      activityId: "ParcelTracker#e3",
-      lines: [{ t: 1, level: LogLevel.INFO, logger: "Test", msg: "old" }],
-      dropped: 0,
-    });
-    expect(getEmailActivityLogs("ParcelTracker#e3")).toBeDefined();
+    await runEffect(
+      saveEmailActivityLogs({
+        activityId: "ParcelTracker#e3",
+        lines: [{ t: 1, level: LogLevel.INFO, logger: "Test", msg: "old" }],
+        dropped: 0,
+      }),
+    );
+    expect(await runEffect(getEmailActivityLogs("ParcelTracker#e3"))).toBeDefined();
 
-    await Effect.runPromise(
+    await runEffect(
       withEmailLogCaptureEffect("ParcelTracker#e3", "ParcelTracker", () => Effect.void),
     );
-    expect(getEmailActivityLogs("ParcelTracker#e3")).toBeUndefined();
+    expect(await runEffect(getEmailActivityLogs("ParcelTracker#e3"))).toBeUndefined();
   });
 
   it("still persists the capture when fn throws", async () => {
     await expect(
-      Effect.runPromise(
+      runEffect(
         withEmailLogCaptureEffect("ParcelTracker#e4", "ParcelTracker", () =>
           Effect.gen(function* () {
-            logger.info("before failure");
+            yield* logger.info("before failure");
             return yield* Effect.fail(new Error("boom"));
           }),
         ),
       ),
     ).rejects.toThrow("boom");
 
-    expect(getEmailActivityLogs("ParcelTracker#e4")?.lines.map((l) => l.msg)).toEqual([
-      "before failure",
-    ]);
+    expect(
+      (await runEffect(getEmailActivityLogs("ParcelTracker#e4")))?.lines.map(
+        (l) => l.msg,
+      ),
+    ).toEqual(["before failure"]);
   });
 
   it("preserves successful handler acceptance when diagnostic persistence fails", async () => {
     const failure = new Error("database unavailable");
     const upsert = vi
       .spyOn(EmailActivityLogEntity, "upsert")
-      .mockImplementationOnce(() => {
-        throw failure;
-      });
+      .mockImplementationOnce(() =>
+        Effect.fail(
+          new OperationError({
+            source: "docstore",
+            operation: "upsert",
+            cause: failure,
+          }),
+        ),
+      );
 
-    const result = await Effect.runPromise(
+    const result = await runEffect(
       withEmailLogCaptureEffect("ParcelTracker#e5", "ParcelTracker", () =>
-        Effect.sync(() => {
-          logger.info("external action completed");
+        Effect.gen(function* () {
+          yield* logger.info("external action completed");
           return "accepted";
         }),
       ),
@@ -113,15 +118,21 @@ describe("email activity log capture", () => {
     const handlerFailure = new Error("submission failed");
     const upsert = vi
       .spyOn(EmailActivityLogEntity, "upsert")
-      .mockImplementationOnce(() => {
-        throw new Error("database unavailable");
-      });
+      .mockImplementationOnce(() =>
+        Effect.fail(
+          new OperationError({
+            source: "docstore",
+            operation: "upsert",
+            cause: new Error("database unavailable"),
+          }),
+        ),
+      );
 
-    const error = await Effect.runPromise(
+    const error = await runEffect(
       Effect.flip(
         withEmailLogCaptureEffect("ParcelTracker#e6", "ParcelTracker", () =>
           Effect.gen(function* () {
-            logger.info("before handler failure");
+            yield* logger.info("before handler failure");
             return yield* Effect.fail(handlerFailure);
           }),
         ),

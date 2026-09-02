@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { Clock, Effect } from "effect";
 import got from "got";
@@ -53,9 +53,9 @@ export function submitDeliveryEffect(
     description: string;
   },
   apiKey: string,
-  logger: Logger,
+  logger: NamedLogger,
   rejectionLog?: LogFile,
-): Effect.Effect<SubmitResult, never> {
+) {
   const payload = {
     tracking_number: params.trackingNumber,
     carrier_code: params.carrierCode,
@@ -63,36 +63,39 @@ export function submitDeliveryEffect(
     send_push_confirmation: true,
   };
 
-  logger.info(`Submitting delivery: ${JSON.stringify(payload)}`);
-
-  return Effect.tryPromise({
-    try: () =>
-      got.post(API_URL, {
-        headers: { "api-key": apiKey },
-        json: payload,
-        timeout: { request: 10_000 },
+  return logger.info(`Submitting delivery: ${JSON.stringify(payload)}`).pipe(
+    Effect.andThen(
+      Effect.tryPromise({
+        try: () =>
+          got.post(API_URL, {
+            headers: { "api-key": apiKey },
+            json: payload,
+            timeout: { request: 10_000 },
+          }),
+        catch: (cause) => new ParcelSubmissionError({ cause }),
       }),
-    catch: (cause) => new ParcelSubmissionError({ cause }),
-  }).pipe(
-    Effect.map((response): SubmitResult => {
-      logger.info(
-        `Submitted delivery: ${params.trackingNumber} (${params.carrierCode}) → ${response.statusCode}`,
-      );
-      return { status: "success" } satisfies SubmitResult;
-    }),
+    ),
+    Effect.flatMap((response) =>
+      logger
+        .info(
+          `Submitted delivery: ${params.trackingNumber} (${params.carrierCode}) → ${response.statusCode}`,
+        )
+        .pipe(Effect.as({ status: "success" } satisfies SubmitResult)),
+    ),
     Effect.catch((error) =>
       Effect.gen(function* () {
         const { statusCode, body } = httpFailureDetails(error.cause);
-        logger.error(
+        yield* logger.error(
           `Failed to submit delivery ${params.trackingNumber}`,
           `${error.message}\nResponse: ${body}`,
         );
         if (statusCode && statusCode >= 400 && statusCode < 500) {
           const now = yield* Clock.currentTimeMillis;
-          rejectionLog?.section(
-            `Rejected: ${params.trackingNumber} (${statusCode}) — ${new Date(now).toISOString()}`,
-            `**Request:**\n${codeBlock(JSON.stringify(payload, null, 2), "json")}\n\n**Response:**\n${codeBlock(String(body))}`,
-          );
+          if (rejectionLog)
+            yield* rejectionLog.section(
+              `Rejected: ${params.trackingNumber} (${statusCode}) — ${new Date(now).toISOString()}`,
+              `**Request:**\n${codeBlock(JSON.stringify(payload, null, 2), "json")}\n\n**Response:**\n${codeBlock(String(body))}`,
+            );
           return { status: "rejected", statusCode } satisfies SubmitResult;
         }
         return { status: "error" } satisfies SubmitResult;

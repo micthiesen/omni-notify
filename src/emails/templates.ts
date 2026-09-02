@@ -5,7 +5,10 @@ export interface EmailContent {
   text: string;
 }
 
-export function renderLogEmail(subject: string, logs: LogItem[]): EmailContent {
+export function renderLogEmail(
+  subject: string,
+  logs: ReadonlyArray<LogItem>,
+): EmailContent {
   const htmlLines = logs.map((log) => {
     const color = getLogColor(log.level);
     const args = log.args.length > 0 ? ` ${formatArgs(log.args)}` : "";
@@ -49,7 +52,7 @@ function getLogColor(level: string): string {
   }
 }
 
-function formatArgs(args: unknown[]): string {
+function formatArgs(args: ReadonlyArray<unknown>): string {
   return args.map((arg) => JSON.stringify(arg)).join(" ");
 }
 

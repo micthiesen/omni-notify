@@ -15,7 +15,7 @@ export function registerOmniMcpRoute(
 
   app.all(
     "/mcp",
-    effectHandler((context) =>
+    effectHandler(runtime.effectRunner, (context) =>
       mcp
         ? fromPromise("serve MCP request", () => mcp.fetch(context.req.raw))
         : Effect.succeed(context.json({ error: "MCP is not configured" }, 503)),

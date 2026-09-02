@@ -41,14 +41,15 @@ export function integrationEffect<A>(
   });
 }
 
-export function persistenceEffect<A>(
+export function persistenceEffect<A, E, R>(
   operation: string,
-  evaluate: () => A,
-): Effect.Effect<A, RecommendationPersistenceError> {
-  return Effect.try({
-    try: evaluate,
-    catch: (cause) => new RecommendationPersistenceError({ operation, cause }),
-  });
+  evaluate: () => Effect.Effect<A, E, R>,
+): Effect.Effect<A, RecommendationPersistenceError, R> {
+  return Effect.suspend(evaluate).pipe(
+    Effect.mapError(
+      (cause) => new RecommendationPersistenceError({ operation, cause }),
+    ),
+  );
 }
 
 export function effectMessage(cause: unknown): string {

@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { Clock, Effect, Option } from "effect";
 import { hasPrice, TTS_CHARACTER_CENTS } from "../ai/cost.js";
 import { BriefingHistoryEntity } from "../briefing-agent/persistence.js";
 import { PressPodsEpisodeEntity } from "../press-pods/persistence.js";
@@ -18,14 +19,14 @@ export const CostMigrationEntity = new Entity<CostMigrationData, ["version"]>(
 const VERSION = "historical-v1";
 
 /** Seed the ledger once from cost-bearing rows that predate automatic capture. */
-export function importHistoricalCosts(): number {
-  if (CostMigrationEntity.get({ version: VERSION })) return 0;
+export const importHistoricalCosts = Effect.fn("Costs.importHistorical")(function* () {
+  if (Option.isSome(yield* CostMigrationEntity.get({ version: VERSION }))) return 0;
   let importedEvents = 0;
 
-  for (const history of BriefingHistoryEntity.getAll()) {
-    history.notifications.forEach((notification, index) => {
-      if (notification.costCents === undefined) return;
-      recordCostEvent({
+  for (const history of yield* BriefingHistoryEntity.getAll()) {
+    for (const [index, notification] of history.notifications.entries()) {
+      if (notification.costCents === undefined) continue;
+      yield* recordCostEvent({
         eventId: `legacy:briefing:${history.briefingName}:${notification.timestamp}:${index}`,
         incurredAt: notification.timestamp,
         category: "llm",
@@ -38,10 +39,10 @@ export function importHistoricalCosts(): number {
         runId: notification.runId,
       });
       importedEvents++;
-    });
+    }
   }
 
-  for (const episode of PressPodsEpisodeEntity.getAll()) {
+  for (const episode of yield* PressPodsEpisodeEntity.getAll()) {
     if (!episode.costs) continue;
     const tokenUsage = Object.values(episode.costs.detailTokens).reduce(
       (total, usage) => ({
@@ -60,7 +61,7 @@ export function importHistoricalCosts(): number {
     const ttsPricesKnown = Object.keys(episode.costs.detailChars).every((key) =>
       Object.hasOwn(TTS_CHARACTER_CENTS, key.replace(/-tts$/, "")),
     );
-    recordCostEvent({
+    yield* recordCostEvent({
       eventId: `legacy:press-pods:llm:${episode.episodeId}`,
       incurredAt: episode.createdAt,
       category: "llm",
@@ -72,7 +73,7 @@ export function importHistoricalCosts(): number {
       usage: tokenUsage,
       runId: episode.runId,
     });
-    recordCostEvent({
+    yield* recordCostEvent({
       eventId: `legacy:press-pods:tts:${episode.episodeId}`,
       incurredAt: episode.createdAt,
       category: "tts",
@@ -91,10 +92,10 @@ export function importHistoricalCosts(): number {
     importedEvents += 2;
   }
 
-  CostMigrationEntity.upsert({
+  yield* CostMigrationEntity.upsert({
     version: VERSION,
-    completedAt: Date.now(),
+    completedAt: yield* Clock.currentTimeMillis,
     importedEvents,
   });
   return importedEvents;
-}
+});

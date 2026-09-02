@@ -1,11 +1,10 @@
 import { addBookmark } from "@micthiesen/mitools/karakeep";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import { z } from "zod";
-import { type PressPodsJobData, PressPodsPersistence } from "./persistence.js";
+import { PressPodsPersistence } from "./persistence.js";
 import { assertPublicHttpUrl, assertPublicHttpUrlSyntax } from "./publicHttp.js";
 import { normalizeUrl } from "./url.js";
-import { PressPodsError, tryPromise, trySync } from "./effect.js";
 
 export const submitEpisodeSchema = z.object({
   // iOS Shortcuts sometimes duplicates the URL with a newline separator
@@ -35,11 +34,11 @@ export const submitEpisodeSchema = z.object({
  * bookmark the article in Karakeep (best-effort), and kick the worker so
  * processing starts immediately instead of at the next sweep.
  */
-export function submitEpisodeUrlEffect(
+export function submitEpisodeUrlEffect<E, R>(
   url: string,
-  kickWorker: () => void,
+  kickWorker: () => Effect.Effect<unknown, E, R>,
   logger: Logger,
-): Effect.Effect<PressPodsJobData, PressPodsError> {
+) {
   return Effect.gen(function* () {
     const publicUrl = yield* assertPublicHttpUrl(url);
     const validatedUrl = publicUrl.toString();
@@ -48,10 +47,10 @@ export function submitEpisodeUrlEffect(
     const active =
       yield* PressPodsPersistence.findActiveJobByNormalizedUrl(normalizedUrl);
     if (active) {
-      logger.info(
+      yield* logger.info(
         `Episode job already ${active.status} for ${validatedUrl}; joining it`,
       );
-      yield* trySync("kick PressPods worker", kickWorker);
+      yield* kickWorker();
       return active;
     }
 
@@ -60,22 +59,24 @@ export function submitEpisodeUrlEffect(
     if (failed) {
       const requeued = yield* PressPodsPersistence.requeueJobNow(failed.jobId);
       if (requeued) {
-        logger.info(`Retrying previously-failed episode job for ${validatedUrl}`);
-        yield* trySync("kick PressPods worker", kickWorker);
+        yield* logger.info(
+          `Retrying previously-failed episode job for ${validatedUrl}`,
+        );
+        yield* kickWorker();
         return requeued;
       }
     }
 
     const job = yield* PressPodsPersistence.enqueueEpisodeJob(validatedUrl);
-    logger.info(`Episode job enqueued for ${validatedUrl}`);
+    yield* logger.info(`Episode job enqueued for ${validatedUrl}`);
 
     // Bookmarking remains best-effort, but is kept inside the structured workflow
     // so interruption and failures cannot leave an unobserved Promise behind.
-    yield* tryPromise("bookmark PressPods article", () =>
-      addBookmark({ url: validatedUrl, archived: true, tags: ["PressPods"] }, logger),
-    ).pipe(Effect.catch(() => Effect.void));
+    yield* addBookmark({ url: validatedUrl, archived: true, tags: ["PressPods"] }).pipe(
+      Effect.catch(() => Effect.void),
+    );
 
-    yield* trySync("kick PressPods worker", kickWorker);
+    yield* kickWorker();
     return job;
   });
 }

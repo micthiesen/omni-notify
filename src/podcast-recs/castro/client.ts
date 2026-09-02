@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { generateKeyBetween } from "fractional-indexing";
 import { Cache, Clock, Effect, Ref, Semaphore } from "effect";
 import config from "../../utils/config.js";
@@ -13,7 +13,6 @@ import {
   PodcastQueuePosition,
   type PodcastSearchResult,
   type PodcastSubscription,
-  type PodcastWriteResult,
   type QueuedEpisode,
   type SubscribeToShowRequest,
 } from "../account.js";
@@ -323,9 +322,7 @@ export class CastroClient implements PodcastAccountClient {
     }).pipe(Effect.catch((error) => Effect.succeed(unavailable(error))));
   }
 
-  public enqueueEpisode(
-    request: EnqueueEpisodeRequest,
-  ): Effect.Effect<PodcastWriteResult> {
+  public enqueueEpisode(request: EnqueueEpisodeRequest) {
     const enqueue = Effect.gen({ self: this }, function* () {
       const resolved = yield* this.resolvePodcast(request);
       if (!resolved) return "not_found";
@@ -370,16 +367,15 @@ export class CastroClient implements PodcastAccountClient {
     return enqueueSemaphore
       .withPermits(1)(enqueue)
       .pipe(
-        Effect.catch((error) => {
-          this.logger.error("Castro enqueue failed", (error as Error).message);
-          return Effect.succeed("error" as const);
-        }),
+        Effect.catch((error) =>
+          this.logger
+            .error("Castro enqueue failed", (error as Error).message)
+            .pipe(Effect.as("error" as const)),
+        ),
       );
   }
 
-  public subscribeToShow(
-    request: SubscribeToShowRequest,
-  ): Effect.Effect<PodcastWriteResult> {
+  public subscribeToShow(request: SubscribeToShowRequest) {
     return Effect.gen({ self: this }, function* () {
       const resolved = yield* this.resolvePodcast(request);
       if (!resolved) return "not_found";
@@ -398,14 +394,15 @@ export class CastroClient implements PodcastAccountClient {
         ? "added"
         : "error";
     }).pipe(
-      Effect.catch((error) => {
-        this.logger.error("Castro subscribe lookup failed", (error as Error).message);
-        return Effect.succeed("error" as const);
-      }),
+      Effect.catch((error) =>
+        this.logger
+          .error("Castro subscribe lookup failed", (error as Error).message)
+          .pipe(Effect.as("error" as const)),
+      ),
     );
   }
 
-  public dequeueEpisode(episodeGuid: string): Effect.Effect<PodcastWriteResult> {
+  public dequeueEpisode(episodeGuid: string) {
     return Effect.gen({ self: this }, function* () {
       const queue = yield* this.api.fetchQueue();
       const episodes = yield* Effect.forEach(
@@ -439,14 +436,15 @@ export class CastroClient implements PodcastAccountClient {
       yield* this.api.postActions(actions);
       return "removed";
     }).pipe(
-      Effect.catch((error) => {
-        this.logger.error("Castro dequeue failed", (error as Error).message);
-        return Effect.succeed("error" as const);
-      }),
+      Effect.catch((error) =>
+        this.logger
+          .error("Castro dequeue failed", (error as Error).message)
+          .pipe(Effect.as("error" as const)),
+      ),
     );
   }
 
-  public clearInboxEpisode(clientEpisodeId: string): Effect.Effect<PodcastWriteResult> {
+  public clearInboxEpisode(clientEpisodeId: string) {
     return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       const action = yield* this.actionEffect(
@@ -457,10 +455,11 @@ export class CastroClient implements PodcastAccountClient {
       yield* this.api.postActions([action]);
     }).pipe(
       Effect.as("removed" as const),
-      Effect.catch((error) => {
-        this.logger.error("Castro inbox clear failed", (error as Error).message);
-        return Effect.succeed("error" as const);
-      }),
+      Effect.catch((error) =>
+        this.logger
+          .error("Castro inbox clear failed", (error as Error).message)
+          .pipe(Effect.as("error" as const)),
+      ),
     );
   }
 
@@ -604,7 +603,7 @@ export const createCastroClientEffect = Effect.fn("Castro.createClient")(functio
   const { CASTRO_ACCESS_ID: accessId, CASTRO_SECRET_KEY: secret } = config;
   if (!accessId && !secret) return null;
   if (!accessId || !secret) {
-    logger.warn("Castro requires both CASTRO_ACCESS_ID and CASTRO_SECRET_KEY");
+    yield* logger.warn("Castro requires both CASTRO_ACCESS_ID and CASTRO_SECRET_KEY");
     return null;
   }
   return yield* CastroClient.make(sharedCastroApi(accessId, secret), logger);

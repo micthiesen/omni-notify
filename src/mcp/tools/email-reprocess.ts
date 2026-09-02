@@ -8,11 +8,11 @@ export class EmailReprocessError extends Data.TaggedError("EmailReprocessError")
 }> {}
 
 /** Preserve an existing scheduled retry unless the manual reprocess succeeds. */
-export function handleEmailThenClearRetryEffect<E>(
-  handler: Pick<EmailHandler, "handleEmailsEffect">,
+export function handleEmailThenClearRetryEffect<E1, R1, E2, R2>(
+  handler: Pick<EmailHandler<E1, R1>, "handleEmailsEffect">,
   email: FetchedEmail,
-  clearRetry: () => EffectType<void, E>,
-): EffectType<void, EmailReprocessError> {
+  clearRetry: () => EffectType<void, E2, R2>,
+): EffectType<void, EmailReprocessError, R1 | R2> {
   return handler.handleEmailsEffect([email]).pipe(
     Effect.andThen(clearRetry),
     Effect.mapError((cause) => new EmailReprocessError({ emailId: email.id, cause })),

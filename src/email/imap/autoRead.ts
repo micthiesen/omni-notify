@@ -25,8 +25,8 @@ export interface AutoReadClient {
   ): Promise<boolean>;
 }
 
-export interface AutoReadLogger {
-  warn(message: string): void;
+export interface AutoReadLogger<R = never> {
+  warn(message: string): Effect.Effect<void, never, R>;
 }
 
 export class AutoReadError extends Data.TaggedError("AutoReadError")<{
@@ -62,11 +62,11 @@ export function discoverAutoReadFoldersEffect(
 }
 
 /** Mark recent unread messages read, continuing when an individual folder fails. */
-export function markRecentUnreadReadEffect(
+export function markRecentUnreadReadEffect<R>(
   client: AutoReadClient,
   folders: readonly string[],
-  logger: AutoReadLogger,
-): Effect.Effect<void> {
+  logger: AutoReadLogger<R>,
+) {
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const since = new Date(now - AUTO_READ_AGE_MS);
@@ -103,10 +103,8 @@ export function markRecentUnreadReadEffect(
           (lock) => Effect.sync(() => lock.release()),
         ).pipe(
           Effect.catch((error) =>
-            Effect.sync(() =>
-              logger.warn(
-                `IMAP auto-read failed for folder "${folder}": ${error.message}`,
-              ),
+            logger.warn(
+              `IMAP auto-read failed for folder "${folder}": ${error.message}`,
             ),
           ),
         ),

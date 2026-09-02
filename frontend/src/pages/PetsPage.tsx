@@ -10,7 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { apiGet } from "../api";
-import { forkUiEffect } from "../effect";
+import { useUiEffect } from "../effect";
 
 interface WeightEntry {
   timestamp: string;
@@ -562,8 +562,8 @@ export default function PetsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    return forkUiEffect(
+  useUiEffect(
+    () =>
       apiGet("/api/pets", Schema.Array(PetSchema)).pipe(
         Effect.tap((data) =>
           Effect.sync(() => {
@@ -578,8 +578,8 @@ export default function PetsPage() {
           }),
         ),
       ),
-    );
-  }, []);
+    [],
+  );
 
   return (
     <>

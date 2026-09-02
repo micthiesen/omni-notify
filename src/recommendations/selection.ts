@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
@@ -10,7 +10,6 @@ import { searchWebEffect } from "../ai/tools/webSearch.js";
 import type { ScoredCandidate } from "./shortlist.js";
 import { formatCandidateDetails } from "./shortlist.js";
 import { effectMessage, integrationEffect } from "./effect.js";
-import type { RecommendationIntegrationError } from "./effect.js";
 
 const notificationSchema = z.object({
   title: z
@@ -54,20 +53,21 @@ export function selectRecommendation(
   research: Map<string, string>,
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<SelectionDecision | undefined, RecommendationIntegrationError> {
+) {
   return Effect.gen(function* () {
     const { model, modelId } = getRecsSelectionModel();
     const prompt = buildPrompt(finalists, historyDigest, research);
 
-    logFile?.log(
-      logger,
-      LogLevel.INFO,
-      `Selection Prompt (${modelId})`,
-      codeBlock(prompt),
-      {
-        consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})`,
-      },
-    );
+    if (logFile)
+      yield* logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Selection Prompt (${modelId})`,
+        codeBlock(prompt),
+        {
+          consoleSummary: `Selecting from ${finalists.length} finalists (${modelId})`,
+        },
+      );
 
     const result = yield* integrationEffect("generate recommendation selection", () =>
       generateText({
@@ -76,16 +76,17 @@ export function selectRecommendation(
         prompt,
       }),
     );
-    logger.info(
+    yield* logger.info(
       `Selection token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
     const decision = result.output;
     if (decision) {
-      logFile?.section(
-        "Selection Decision",
-        codeBlock(JSON.stringify(decision, null, 2), "json"),
-      );
+      if (logFile)
+        yield* logFile.section(
+          "Selection Decision",
+          codeBlock(JSON.stringify(decision, null, 2), "json"),
+        );
     }
     return decision ?? undefined;
   });
@@ -95,22 +96,23 @@ export function researchFinalists(
   finalists: ScoredCandidate[],
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<Map<string, string>> {
+) {
   return Effect.forEach(
     finalists,
     ({ candidate }) =>
       Effect.gen(function* () {
         const query = `${candidate.title} ${candidate.year ?? ""} critical reception audience reviews ending quality`;
-        logger.info(`Selection research: ${query}`);
+        yield* logger.info(`Selection research: ${query}`);
         const response = yield* searchWebEffect({
           query,
           maxResults: 3,
           maxContentChars: 900,
         }).pipe(
-          Effect.catch((error) => {
-            logger.warn(`Research failed for ${candidate.title}`, effectMessage(error));
-            return Effect.succeed({ results: [] });
-          }),
+          Effect.catch((error) =>
+            logger
+              .warn(`Research failed for ${candidate.title}`, effectMessage(error))
+              .pipe(Effect.as({ results: [] })),
+          ),
         );
         const summary = response.results
           .map(
@@ -118,7 +120,12 @@ export function researchFinalists(
               `- ${result.title} (${result.url})\n  ${result.content.replace(/\s+/g, " ")}`,
           )
           .join("\n");
-        logFile?.section(`Research: ${candidate.title}`, summary || "No results");
+        if (logFile) {
+          yield* logFile.section(
+            `Research: ${candidate.title}`,
+            summary || "No results",
+          );
+        }
         return [
           candidate.canonicalId,
           summary || "No research results available.",

@@ -1,8 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import config from "../../utils/config.js";
 import { CaldavError } from "../effect.js";
-import type { CaldavSession } from "./api.js";
 import { assertTrustedCaldavUrl, basicAuth, propfindEffect } from "./http.js";
 import {
   extractCalendarCollections,
@@ -23,9 +22,7 @@ const ICLOUD_CALDAV_ROOT = "https://caldav.icloud.com/";
  * Auth is the same app-specific password as IMAP, against the iCloud primary
  * username (micthiesen@icloud.com style), not the custom-domain address.
  */
-export function discoverIcloudCalendarEffect(
-  logger: Logger,
-): Effect.Effect<CaldavSession, CaldavError> {
+export function discoverIcloudCalendarEffect(logger: NamedLogger) {
   return Effect.gen(function* () {
     const username = config.ICLOUD_USERNAME ?? "";
     const password = config.ICLOUD_APP_PASSWORD ?? "";
@@ -36,7 +33,7 @@ export function discoverIcloudCalendarEffect(
         ? config.ICLOUD_CALENDAR_URL
         : `${config.ICLOUD_CALENDAR_URL}/`;
       const url = assertTrustedCaldavUrl(configuredUrl);
-      logger.info(`Using configured iCloud calendar: ${url}`);
+      yield* logger.info(`Using configured iCloud calendar: ${url}`);
       return { calendarUrl: url, authHeader };
     }
 
@@ -64,7 +61,7 @@ export function discoverIcloudCalendarEffect(
     const principalUrl = assertTrustedCaldavUrl(
       new URL(principalHref, principalResponse.url).toString(),
     );
-    logger.debug(`iCloud CalDAV principal: ${principalUrl}`);
+    yield* logger.debug(`iCloud CalDAV principal: ${principalUrl}`);
 
     // 2. Calendar home on the principal.
     const homeResponse = yield* propfindEffect(
@@ -87,7 +84,7 @@ export function discoverIcloudCalendarEffect(
     const homeUrl = assertTrustedCaldavUrl(
       new URL(homeHref, homeResponse.url).toString(),
     );
-    logger.debug(`iCloud CalDAV calendar home: ${homeUrl}`);
+    yield* logger.debug(`iCloud CalDAV calendar home: ${homeUrl}`);
 
     // 3. List collections; filter to VEVENT-capable calendars (iCloud exposes
     //    reminder/task lists in the same home).
@@ -118,7 +115,7 @@ export function discoverIcloudCalendarEffect(
     const calendarUrl = assertTrustedCaldavUrl(
       new URL(selected.href, listResponse.url).toString(),
     );
-    logger.info(`Using iCloud calendar: ${selected.name} (${calendarUrl})`);
+    yield* logger.info(`Using iCloud calendar: ${selected.name} (${calendarUrl})`);
     return { calendarUrl, authHeader };
   });
 }

@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output, type UserContent } from "ai";
@@ -8,11 +8,7 @@ import { hasPrice, llmCostCents } from "../../ai/cost.js";
 import { getCalendarExtractionModel } from "../../ai/registry.js";
 import { CalendarExtractionError } from "../effect.js";
 import type { DownloadedAttachment } from "./attachments.js";
-import {
-  isDegenerateExtraction,
-  type SanitizeResult,
-  sanitizeExtractedEvents,
-} from "./sanitize.js";
+import { isDegenerateExtraction, sanitizeExtractedEvents } from "./sanitize.js";
 import {
   type CalendarEventExtraction,
   CalendarEventExtractionEffectSchema,
@@ -35,7 +31,7 @@ export interface ExistingEventContext {
 
 export interface ExtractCalendarEventsOptions {
   email: { subject: string; from: string; textBody: string };
-  logger: Logger;
+  logger: NamedLogger;
   logFile?: LogFile;
   attachments?: DownloadedAttachment[];
   localTimeZone?: string;
@@ -50,11 +46,6 @@ export interface ExtractCalendarEventsResult {
    * of whether the retry's events end up used). Null if any contributing
    * call ran on an unpriced model.
    */
-  costCents: number | null;
-}
-
-/** One `generateText` attempt's sanitized output plus its cost. */
-interface ExtractionAttempt extends SanitizeResult {
   costCents: number | null;
 }
 
@@ -75,9 +66,7 @@ function formatExistingEvent(e: ExistingEventContext): string {
   return parts.join(" ");
 }
 
-export function extractCalendarEventsEffect(
-  options: ExtractCalendarEventsOptions,
-): Effect.Effect<ExtractCalendarEventsResult, CalendarExtractionError> {
+export function extractCalendarEventsEffect(options: ExtractCalendarEventsOptions) {
   return Effect.gen(function* () {
     const { email, logger, logFile, attachments, localTimeZone, existingEvents } =
       options;
@@ -141,7 +130,7 @@ ${body}`;
       : `Extraction prompt (${modelId}) [${promptText.length} chars]`;
 
     if (logFile) {
-      logFile.log(
+      yield* logFile.log(
         logger,
         LogLevel.INFO,
         `Extraction Prompt (${modelId})`,
@@ -151,7 +140,7 @@ ${body}`;
         },
       );
     } else {
-      logger.info(logSummary);
+      yield* logger.info(logSummary);
     }
 
     // Build content parts: text + optional file attachments
@@ -165,7 +154,9 @@ ${body}`;
           mediaType: attachment.mimeType,
         });
       }
-      logger.info(`Including ${attachments.length} attachment(s): ${attachmentNames}`);
+      yield* logger.info(
+        `Including ${attachments.length} attachment(s): ${attachmentNames}`,
+      );
     }
 
     const first = yield* runExtractionOnce({
@@ -183,7 +174,7 @@ ${body}`;
       yield* validateExtraction(result);
       return result;
     }
-    logger.warn(
+    yield* logger.warn(
       `Degenerate extraction output (${first.issues.join("; ")}); retrying once`,
     );
     const second = yield* runExtractionOnce({
@@ -195,12 +186,14 @@ ${body}`;
     });
     const costCents = addCostCents(first.costCents, second.costCents);
     if (second.issues.length < first.issues.length) {
-      logger.info("Retry produced a cleaner extraction; using the retry result");
+      yield* logger.info("Retry produced a cleaner extraction; using the retry result");
       const result = { events: second.events, costCents };
       yield* validateExtraction(result);
       return result;
     }
-    logger.info("Retry did not improve on the first extraction; keeping the first");
+    yield* logger.info(
+      "Retry did not improve on the first extraction; keeping the first",
+    );
     const result = { events: first.events, costCents };
     yield* validateExtraction(result);
     return result;
@@ -210,10 +203,10 @@ ${body}`;
 function runExtractionOnce(args: {
   model: ReturnType<typeof getCalendarExtractionModel>["model"];
   content: UserContent;
-  logger: Logger;
+  logger: NamedLogger;
   logFile?: LogFile;
   modelId: string;
-}): Effect.Effect<ExtractionAttempt, CalendarExtractionError> {
+}) {
   return Effect.gen(function* () {
     const { model, content, logger, logFile, modelId } = args;
 
@@ -228,21 +221,26 @@ function runExtractionOnce(args: {
     });
 
     if (result.reasoningText && logFile) {
-      logFile.log(logger, LogLevel.INFO, "Reasoning", codeBlock(result.reasoningText));
+      yield* logFile.log(
+        logger,
+        LogLevel.INFO,
+        "Reasoning",
+        codeBlock(result.reasoningText),
+      );
     }
 
     const response = JSON.stringify(result.output, null, 2);
     if (logFile) {
-      logFile.log(
+      yield* logFile.log(
         logger,
         LogLevel.INFO,
         "Extraction Response",
         codeBlock(response, "json"),
       );
     } else {
-      logger.info(`Extraction response: ${response}`);
+      yield* logger.info(`Extraction response: ${response}`);
     }
-    logger.info(
+    yield* logger.info(
       `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
@@ -253,12 +251,12 @@ function runExtractionOnce(args: {
         })
       : null;
     if (costCents === null) {
-      logger.debug(`No pricing data for extraction model "${modelId}"`);
+      yield* logger.debug(`No pricing data for extraction model "${modelId}"`);
     }
 
     const sanitized = sanitizeExtractedEvents(result.output?.events ?? []);
     for (const issue of sanitized.issues) {
-      logger.warn(`Sanitized extraction output: ${issue}`);
+      yield* logger.warn(`Sanitized extraction output: ${issue}`);
     }
     return { ...sanitized, costCents };
   });

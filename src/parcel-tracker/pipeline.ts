@@ -1,5 +1,5 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { Cause, Effect } from "effect";
 import {
@@ -19,6 +19,7 @@ import {
   extractDeliveriesEffect,
 } from "./extraction/extractDeliveries.js";
 import { filterTrackingCandidateEffect } from "./filter/keywords.js";
+import type { AdmitTier } from "../email/activity.js";
 import { shouldTryNextCandidate, submitDeliveryEffect } from "./parcel/parcelApi.js";
 import { ParcelPersistenceError, parcelPersistenceEffect } from "./effect.js";
 import {
@@ -30,76 +31,79 @@ import {
   reserveDeliverySubmission,
 } from "./persistence.js";
 
-/** Per-delivery result: the activity item line + whether the item succeeded. */
-interface DeliveryResult {
-  line: string;
-  ok: boolean;
-}
-
-export class DeliveryPipeline implements EmailHandler {
+export class DeliveryPipeline implements EmailHandler<
+  unknown,
+  | import("@micthiesen/mitools/docstore").Docstore
+  | import("@micthiesen/mitools/logging").Logger
+> {
   public readonly name = "ParcelTracker";
-  private logger: Logger;
+  private logger: NamedLogger;
   private parcelApiKey: string;
   private triage: EmailTriageService;
   private rejectionLog?: LogFile;
 
-  constructor(parcelApiKey: string, logger: Logger, triage: EmailTriageService) {
+  constructor(parcelApiKey: string, logger: NamedLogger, triage: EmailTriageService) {
     this.parcelApiKey = parcelApiKey;
     this.logger = logger;
     this.triage = triage;
-
-    if (config.LOGS_PATH) {
-      const dir = `${config.LOGS_PATH}/parcel-tracker`;
-      this.rejectionLog = new LogFile(`${dir}/rejections.md`, "append");
-    }
   }
 
-  public handleEmailsEffect(emails: FetchedEmail[]): Effect.Effect<void, never> {
+  public handleEmailsEffect(emails: FetchedEmail[]) {
     return Effect.gen({ self: this }, function* () {
+      if (config.LOGS_PATH && !this.rejectionLog) {
+        const dir = `${config.LOGS_PATH}/parcel-tracker`;
+        this.rejectionLog = yield* LogFile.make(`${dir}/rejections.md`, "append");
+      }
       const candidates = yield* Effect.forEach(emails, (email) =>
         filterTrackingCandidateEffect(email, this.logger, this.triage).pipe(
-          Effect.map((result) => {
-            if (result.pass) {
-              this.logger.info(
-                `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
+          Effect.flatMap((result) =>
+            Effect.gen({ self: this }, function* () {
+              if (result.pass) {
+                yield* this.logger.info(
+                  `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
+                );
+                return {
+                  email,
+                  admitReason: result.reason,
+                  admitTier: result.admitTier as AdmitTier,
+                };
+              }
+              yield* this.logger.info(
+                `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
               );
-              return { email, admitReason: result.reason, admitTier: result.admitTier };
-            }
-            this.logger.info(
-              `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
-            );
-            recordEmailActivity({
-              pipeline: this.name,
-              email,
-              outcome: "filtered",
-              detail: result.reason,
-              costCents: this.triage.getTriageCostCents(email.id),
-            });
-            return undefined;
-          }),
+              yield* recordEmailActivity({
+                pipeline: this.name,
+                email,
+                outcome: "filtered",
+                detail: result.reason,
+                costCents: this.triage.getTriageCostCents(email.id),
+              });
+              return undefined;
+            }),
+          ),
         ),
       ).pipe(Effect.map((items) => items.filter((item) => item !== undefined)));
 
       yield* Effect.forEach(
         candidates,
-        ({ email, admitReason, admitTier }) => {
-          const runLog = config.LOGS_PATH
-            ? new LogFile(
-                `${config.LOGS_PATH}/parcel-tracker/${logTimestamp()}.md`,
-                "overwrite",
-              )
-            : undefined;
-          // Triage cost only counts toward this row when triage is what admitted
-          // it; the shared EmailTriageService memoizes per email, so the same
-          // triage cost may also appear on CalendarEvents' row for this email —
-          // acceptable for per-email transparency (see EmailTriageService docs).
-          const triageCostCents =
-            admitTier === "triage"
-              ? this.triage.getTriageCostCents(email.id)
+        ({ email, admitReason, admitTier }) =>
+          Effect.gen({ self: this }, function* () {
+            const runLog = config.LOGS_PATH
+              ? yield* LogFile.make(
+                  `${config.LOGS_PATH}/parcel-tracker/${logTimestamp()}.md`,
+                  "overwrite",
+                )
               : undefined;
-          const program = this.processEmail(email, runLog).pipe(
-            Effect.tap(({ results, costCents: extractionCostCents }) =>
-              Effect.sync(() => {
+            // Triage cost only counts toward this row when triage is what admitted
+            // it; the shared EmailTriageService memoizes per email, so the same
+            // triage cost may also appear on CalendarEvents' row for this email —
+            // acceptable for per-email transparency (see EmailTriageService docs).
+            const triageCostCents =
+              admitTier === "triage"
+                ? this.triage.getTriageCostCents(email.id)
+                : undefined;
+            const program = this.processEmail(email, runLog).pipe(
+              Effect.tap(({ results, costCents: extractionCostCents }) =>
                 recordEmailActivity({
                   pipeline: this.name,
                   email,
@@ -109,52 +113,51 @@ export class DeliveryPipeline implements EmailHandler {
                   admitTier,
                   costCents: sumCostCents([triageCostCents, extractionCostCents]),
                   items: results.length > 0 ? results.map((r) => r.line) : undefined,
-                });
-              }),
-            ),
-            Effect.catch((error) =>
-              Effect.gen({ self: this }, function* () {
-                this.logger.error(
-                  `Failed to process email "${email.subject}"`,
-                  error.message,
-                );
-                recordEmailActivity({
-                  pipeline: this.name,
-                  email,
-                  outcome: "error",
-                  detail: error.message,
-                  admitReason,
-                  admitTier,
-                  costCents: sumCostCents([triageCostCents]),
-                });
-                if (error.transient) {
-                  yield* EmailRetryPersistence.enqueue({
-                    pipeline: this.name,
-                    emailId: email.id,
-                    reason: error.message,
-                  }).pipe(
-                    Effect.mapError(
-                      (cause) =>
-                        new ParcelPersistenceError({
-                          operation: "enqueue parcel email retry",
-                          cause,
-                        }),
-                    ),
+                }),
+              ),
+              Effect.catch((error) =>
+                Effect.gen({ self: this }, function* () {
+                  yield* this.logger.error(
+                    `Failed to process email "${email.subject}"`,
+                    error.message,
                   );
-                }
-              }),
-            ),
-          );
-          return withEmailLogCaptureEffect(
-            `${this.name}#${email.id}`,
-            this.name,
-            () => program,
-          ).pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.logError(cause),
-            ),
-          );
-        },
+                  yield* recordEmailActivity({
+                    pipeline: this.name,
+                    email,
+                    outcome: "error",
+                    detail: error.message,
+                    admitReason,
+                    admitTier,
+                    costCents: sumCostCents([triageCostCents]),
+                  });
+                  if ("transient" in error && error.transient) {
+                    yield* EmailRetryPersistence.enqueue({
+                      pipeline: this.name,
+                      emailId: email.id,
+                      reason: error.message,
+                    }).pipe(
+                      Effect.mapError(
+                        (cause) =>
+                          new ParcelPersistenceError({
+                            operation: "enqueue parcel email retry",
+                            cause,
+                          }),
+                      ),
+                    );
+                  }
+                }),
+              ),
+            );
+            return yield* withEmailLogCaptureEffect(
+              `${this.name}#${email.id}`,
+              this.name,
+              () => program,
+            ).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.logError(cause),
+              ),
+            );
+          }),
         { discard: true },
       );
     });
@@ -173,12 +176,11 @@ export class DeliveryPipeline implements EmailHandler {
       links: string[];
     },
     runLog?: LogFile,
-  ): Effect.Effect<
-    { results: DeliveryResult[]; costCents: number | null },
-    import("./effect.js").ParcelExtractionError | ParcelPersistenceError
-  > {
+  ) {
     return Effect.gen({ self: this }, function* () {
-      this.logger.info(`Extracting from: "${email.subject}" (from: ${email.from})`);
+      yield* this.logger.info(
+        `Extracting from: "${email.subject}" (from: ${email.from})`,
+      );
       const { deliveries, costCents } = yield* extractDeliveriesEffect(
         {
           subject: email.subject,
@@ -191,11 +193,11 @@ export class DeliveryPipeline implements EmailHandler {
       );
 
       if (deliveries.length === 0) {
-        this.logger.info(`No tracking numbers found in "${email.subject}"`);
+        yield* this.logger.info(`No tracking numbers found in "${email.subject}"`);
         return { results: [], costCents };
       }
 
-      this.logger.info(
+      yield* this.logger.info(
         `Found ${deliveries.length} delivery(ies) in "${email.subject}"`,
       );
 
@@ -207,10 +209,7 @@ export class DeliveryPipeline implements EmailHandler {
   }
 
   /** Returns a short result line + success flag for the activity record. */
-  private processDelivery(
-    delivery: ExtractedDelivery,
-    emailId: string,
-  ): Effect.Effect<DeliveryResult, ParcelPersistenceError> {
+  private processDelivery(delivery: ExtractedDelivery, emailId: string) {
     return Effect.gen({ self: this }, function* () {
       const { tracking_number: trackingNumber, description } = delivery;
       const priorSubmission = yield* parcelPersistenceEffect(
@@ -224,7 +223,9 @@ export class DeliveryPipeline implements EmailHandler {
           hasSubmittedDelivery(trackingNumber),
         )
       ) {
-        this.logger.info(`Duplicate tracking number: ${trackingNumber} (skipping)`);
+        yield* this.logger.info(
+          `Duplicate tracking number: ${trackingNumber} (skipping)`,
+        );
         return { line: `${trackingNumber}: already submitted`, ok: true };
       }
 
@@ -239,7 +240,7 @@ export class DeliveryPipeline implements EmailHandler {
         knownTrackingNumbers,
       );
       if (nearDuplicate !== undefined) {
-        this.logger.info(
+        yield* this.logger.info(
           `Near-duplicate tracking number: ${trackingNumber} matches known ${nearDuplicate} (skipping)`,
         );
         return {
@@ -251,7 +252,7 @@ export class DeliveryPipeline implements EmailHandler {
       // Validate carrier candidates against the live Parcel carrier list
       const validCodes = yield* getValidCarrierCodesEffect(this.logger);
       if (!validCodes) {
-        this.logger.warn(
+        yield* this.logger.warn(
           `Carrier list unavailable, cannot validate candidates for ${trackingNumber}`,
         );
         return { line: `${trackingNumber}: carrier list unavailable`, ok: false };
@@ -272,16 +273,18 @@ export class DeliveryPipeline implements EmailHandler {
             ]
           : extractedCandidates;
       if (invalid.length > 0) {
-        this.logger.warn(
+        yield* this.logger.warn(
           `Dropped invalid carrier candidate(s) [${invalid.join(", ")}] for ${trackingNumber}`,
         );
       }
       if (candidates.length === 0) {
-        this.logger.warn(`No valid carrier candidates for ${trackingNumber}, skipping`);
+        yield* this.logger.warn(
+          `No valid carrier candidates for ${trackingNumber}, skipping`,
+        );
         return { line: `${trackingNumber}: no valid carrier candidates`, ok: false };
       }
 
-      this.logger.info(
+      yield* this.logger.info(
         `Carrier candidates for ${trackingNumber}: [${candidates.join(", ")}]`,
       );
 
@@ -312,10 +315,19 @@ export class DeliveryPipeline implements EmailHandler {
 
         if (result.status === "success") {
           if (index > 0) {
-            this.logger.info(
+            yield* this.logger.info(
               `Fallback candidate "${carrierCode}" succeeded for ${trackingNumber} (attempt ${attempt})`,
             );
           }
+          const confirmed = yield* getDeliverySubmission(trackingNumber).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ParcelPersistenceError({
+                  operation: "read delivery attempt",
+                  cause,
+                }),
+            ),
+          );
           yield* parcelPersistenceEffect("confirm Parcel submission", () =>
             recordSubmittedDelivery({
               trackingNumber,
@@ -324,7 +336,7 @@ export class DeliveryPipeline implements EmailHandler {
               submittedAt,
               emailId,
               status: "submitted",
-              attempts: getDeliverySubmission(trackingNumber)?.attempts,
+              attempts: confirmed?.attempts,
             }),
           );
           return { line: `${label}: submitted`, ok: true };
@@ -333,7 +345,7 @@ export class DeliveryPipeline implements EmailHandler {
         if (result.status === "error") {
           // Transient (network/5xx): don't burn remaining candidates or record
           // dedup; enqueue the email for a retry pass instead
-          this.logger.warn(`Failed to submit ${label}, will retry later`);
+          yield* this.logger.warn(`Failed to submit ${label}, will retry later`);
           yield* EmailRetryPersistence.enqueue({
             pipeline: this.name,
             emailId,
@@ -353,15 +365,21 @@ export class DeliveryPipeline implements EmailHandler {
         // Rejected
         const nextCandidate = candidates[index + 1];
         if (shouldTryNextCandidate(result) && nextCandidate !== undefined) {
-          this.logger.warn(
+          yield* this.logger.warn(
             `Parcel rejected ${label} with ${result.statusCode} (attempt ${attempt}), trying next candidate "${nextCandidate}"`,
           );
           continue;
         }
 
         // Terminal rejection: record to prevent retrying hopeless submissions
-        this.logger.warn(
+        yield* this.logger.warn(
           `Parcel rejected ${label} with ${result.statusCode} (attempt ${attempt}), recording to prevent retry`,
+        );
+        const rejected = yield* getDeliverySubmission(trackingNumber).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ParcelPersistenceError({ operation: "read delivery attempt", cause }),
+          ),
         );
         yield* parcelPersistenceEffect("confirm Parcel rejection", () =>
           recordSubmittedDelivery({
@@ -371,7 +389,7 @@ export class DeliveryPipeline implements EmailHandler {
             submittedAt,
             emailId,
             status: "rejected",
-            attempts: getDeliverySubmission(trackingNumber)?.attempts,
+            attempts: rejected?.attempts,
           }),
         );
         return {

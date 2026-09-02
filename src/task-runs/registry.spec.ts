@@ -1,8 +1,7 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { Logger, LogLevel } from "@micthiesen/mitools/logging";
-import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Effect, Fiber } from "effect";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 import {
   getLastRun,
   getTaskScheduleState,
@@ -12,71 +11,58 @@ import {
   TaskRunLogEntity,
   TaskScheduleStateEntity,
 } from "./persistence.js";
-import { TaskManualInputUnsupportedError, TaskRegistry } from "./registry.js";
+import {
+  type TaskServices,
+  TaskAlreadyRunningError,
+  TaskManualInputUnsupportedError,
+  TaskRegistry,
+} from "./registry.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "task-registry.spec.db",
-  },
-});
+const mitools = createMitoolsTestRuntime();
+const logger = mitools.logger;
+afterAll(() => mitools.dispose());
 
-const logger = new Logger("Test");
-
-class FakeTask extends ScheduledTask {
+class FakeTask implements ScheduledTask<unknown, TaskServices> {
   public runs = 0;
+  public readonly run = Effect.sync(() => {
+    this.runs++;
+  });
 
   public constructor(
     public readonly name: string,
     public readonly schedule: string,
-    public override readonly runOnStartup = false,
-  ) {
-    super();
-  }
-
-  public async run(): Promise<void> {
-    this.runs++;
-  }
+    public readonly runOnStartup = false,
+  ) {}
 }
 
 class ManualInputTask extends FakeTask {
   public inputs: unknown[] = [];
-
-  public async runManual(input: unknown): Promise<void> {
-    this.inputs.push(input);
+  public runManual(input: unknown): Effect.Effect<void, unknown> {
+    return Effect.sync(() => this.inputs.push(input)).pipe(Effect.asVoid);
   }
 }
 
 class FailingManualTask extends ManualInputTask {
-  public override async runManual(input: unknown): Promise<void> {
-    this.inputs.push(input);
-    throw new Error("workspace run failed");
+  public override runManual(input: unknown) {
+    return Effect.sync(() => this.inputs.push(input)).pipe(
+      Effect.andThen(Effect.fail(new Error("workspace run failed"))),
+    );
   }
 }
 
 class NativeEffectTask extends FakeTask {
   public started = false;
   public finalized = false;
-
-  public override run(): Promise<void> {
-    throw new Error("Promise fallback must not run");
-  }
-
-  public runEffect(): Effect.Effect<void> {
-    return Effect.sync(() => {
-      this.started = true;
-    }).pipe(
-      Effect.andThen(Effect.never),
-      Effect.ensuring(
-        Effect.sync(() => {
-          this.finalized = true;
-        }),
-      ),
-    );
-  }
+  public override readonly run = Effect.sync(() => {
+    this.started = true;
+  }).pipe(
+    Effect.andThen(Effect.never),
+    Effect.ensuring(
+      Effect.sync(() => {
+        this.finalized = true;
+      }),
+    ),
+  );
 }
 
 function localTime(day: number, hour: number): number {
@@ -84,26 +70,27 @@ function localTime(day: number, hour: number): number {
 }
 
 describe("TaskRegistry missed-run recovery", () => {
-  beforeEach(() => {
-    TaskRunEntity.deleteAll();
-    TaskRunLogEntity.deleteAll();
-    TaskScheduleStateEntity.deleteAll();
+  beforeEach(async () => {
+    await mitools.run(
+      Effect.all([
+        TaskRunEntity.deleteAll(),
+        TaskRunLogEntity.deleteAll(),
+        TaskScheduleStateEntity.deleteAll(),
+      ]),
+    );
     vi.spyOn(console, "info").mockImplementation(() => {});
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  afterEach(() => vi.restoreAllMocks());
 
   it("repairs interrupted runs through explicit initialization", async () => {
-    const running = recordRunStart("Interrupted", "schedule");
+    const running = await mitools.run(recordRunStart("Interrupted", "schedule"));
     const registry = new TaskRegistry(logger);
-
-    await Effect.runPromise(registry.initializeEffect());
-
-    expect(TaskRunEntity.get({ runId: running.runId })).toMatchObject({
-      status: "error",
-      error: "interrupted (process exited)",
+    await mitools.run(registry.initializeEffect());
+    await expect(
+      mitools.run(TaskRunEntity.get({ runId: running.runId })),
+    ).resolves.toMatchObject({
+      value: { status: "error", error: "interrupted (process exited)" },
     });
   });
 
@@ -112,11 +99,9 @@ describe("TaskRegistry missed-run recovery", () => {
     const task = new FakeTask("Daily", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
-
-    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
-
+    await mitools.run(registry.recoverMissedTasksEffect(now));
     expect(task.runs).toBe(0);
-    expect(getTaskScheduleState(task.name)).toEqual({
+    await expect(mitools.run(getTaskScheduleState(task.name))).resolves.toEqual({
       taskName: task.name,
       schedule: task.schedule,
       evaluatedThrough: now,
@@ -128,18 +113,20 @@ describe("TaskRegistry missed-run recovery", () => {
     const task = new FakeTask("Daily", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
-    markScheduleEvaluated(task.name, task.schedule, localTime(14, 6));
-
-    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
-
+    await mitools.run(
+      markScheduleEvaluated(task.name, task.schedule, localTime(14, 6)),
+    );
+    await mitools.run(registry.recoverMissedTasksEffect(now));
     expect(task.runs).toBe(1);
-    expect(getLastRun(task.name)).toMatchObject({
+    await expect(mitools.run(getLastRun(task.name))).resolves.toMatchObject({
       taskName: task.name,
       trigger: "catchup",
       scheduledFor: localTime(15, 5),
       status: "success",
     });
-    expect(getTaskScheduleState(task.name)?.evaluatedThrough).toBe(localTime(15, 5));
+    await expect(mitools.run(getTaskScheduleState(task.name))).resolves.toMatchObject({
+      evaluatedThrough: localTime(15, 5),
+    });
   });
 
   it("does not add recovery on top of a task that runs on startup", async () => {
@@ -147,12 +134,14 @@ describe("TaskRegistry missed-run recovery", () => {
     const task = new FakeTask("StartupDaily", "0 0 5 * * *", true);
     const registry = new TaskRegistry(logger);
     registry.track(task);
-    markScheduleEvaluated(task.name, task.schedule, localTime(14, 6));
-
-    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
-
+    await mitools.run(
+      markScheduleEvaluated(task.name, task.schedule, localTime(14, 6)),
+    );
+    await mitools.run(registry.recoverMissedTasksEffect(now));
     expect(task.runs).toBe(0);
-    expect(getTaskScheduleState(task.name)?.evaluatedThrough).toBe(now);
+    await expect(mitools.run(getTaskScheduleState(task.name))).resolves.toMatchObject({
+      evaluatedThrough: now,
+    });
   });
 
   it("resets the baseline when a task's schedule changes", async () => {
@@ -160,12 +149,12 @@ describe("TaskRegistry missed-run recovery", () => {
     const task = new FakeTask("Changed", "0 0 6 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
-    markScheduleEvaluated(task.name, "0 0 5 * * *", localTime(14, 6));
-
-    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
-
+    await mitools.run(
+      markScheduleEvaluated(task.name, "0 0 5 * * *", localTime(14, 6)),
+    );
+    await mitools.run(registry.recoverMissedTasksEffect(now));
     expect(task.runs).toBe(0);
-    expect(getTaskScheduleState(task.name)).toEqual({
+    await expect(mitools.run(getTaskScheduleState(task.name))).resolves.toEqual({
       taskName: task.name,
       schedule: task.schedule,
       evaluatedThrough: now,
@@ -176,34 +165,50 @@ describe("TaskRegistry missed-run recovery", () => {
     const task = new ManualInputTask("Parameterized", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
-
-    registry.runNow(task.name, { count: 5 });
-
-    await vi.waitFor(() => expect(task.inputs).toEqual([{ count: 5 }]));
+    await mitools.run(registry.runNowAndWaitEffect(task.name, { count: 5 }));
+    expect(task.inputs).toEqual([{ count: 5 }]);
     expect(task.runs).toBe(0);
   });
 
-  it("rejects manual input for ordinary scheduled tasks", () => {
+  it("rejects manual input for ordinary scheduled tasks", async () => {
     const task = new FakeTask("Ordinary", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
+    await expect(
+      mitools.run(registry.runNow(task.name, { count: 5 })),
+    ).rejects.toBeInstanceOf(TaskManualInputUnsupportedError);
+  });
 
-    expect(() => registry.runNow(task.name, { count: 5 })).toThrow(
-      TaskManualInputUnsupportedError,
+  it("atomically rejects one of two simultaneous manual runs", async () => {
+    const task = new NativeEffectTask("ConcurrentManual", "0 0 5 * * *");
+    const registry = new TaskRegistry(logger);
+    registry.track(task);
+    const results = await mitools.run(
+      Effect.all(
+        [
+          Effect.result(registry.runNow(task.name)),
+          Effect.result(registry.runNow(task.name)),
+        ],
+        { concurrency: "unbounded" },
+      ),
     );
+    expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
+    const failure = results.find((result) => result._tag === "Failure");
+    expect(failure?._tag === "Failure" ? failure.failure : undefined).toBeInstanceOf(
+      TaskAlreadyRunningError,
+    );
+    await mitools.run(registry.shutdownEffect());
   });
 
   it("waits for the exact manual run to finish successfully", async () => {
     const task = new ManualInputTask("Awaited", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
-
-    const result = await Effect.runPromise(
+    const result = await mitools.run(
       registry.runNowAndWaitEffect(task.name, { source: "email" }),
     );
-
     expect(task.inputs).toEqual([{ source: "email" }]);
-    expect(getLastRun(task.name)).toMatchObject({
+    await expect(mitools.run(getLastRun(task.name))).resolves.toMatchObject({
       runId: result.runId,
       status: "success",
     });
@@ -213,23 +218,24 @@ describe("TaskRegistry missed-run recovery", () => {
     const task = new FailingManualTask("AwaitedFailure", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
-
     await expect(
-      Effect.runPromise(registry.runNowAndWaitEffect(task.name, { source: "email" })),
+      mitools.run(registry.runNowAndWaitEffect(task.name, { source: "email" })),
     ).rejects.toThrow();
-    expect(getLastRun(task.name)).toMatchObject({ status: "error" });
+    await expect(mitools.run(getLastRun(task.name))).resolves.toMatchObject({
+      status: "error",
+    });
   });
 
   it("interrupts the native task Effect and records the stopped run", async () => {
     const task = new NativeEffectTask("Native", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
-    const fiber = Effect.runFork(registry.runNowAndWaitEffect(task.name));
-
+    const fiber = mitools.runFork(registry.runNowAndWaitEffect(task.name));
     await vi.waitFor(() => expect(task.started).toBe(true));
-    await Effect.runPromise(Fiber.interrupt(fiber));
-
+    await mitools.run(Fiber.interrupt(fiber));
     expect(task.finalized).toBe(true);
-    expect(getLastRun(task.name)).toMatchObject({ status: "error" });
+    await expect(mitools.run(getLastRun(task.name))).resolves.toMatchObject({
+      status: "error",
+    });
   });
 });

@@ -17,6 +17,7 @@ import {
 import {
   getAllPodcastRecommendations,
   getPodcastRecommendation,
+  type PodcastRecommendationData,
   setPodcastRecommendationFeedback,
 } from "../../podcast-recs/persistence.js";
 import {
@@ -47,6 +48,7 @@ import {
 import {
   getAllRecommendations,
   getRecommendation,
+  type RecommendationData,
   setRecommendationFeedback,
 } from "../../recommendations/persistence.js";
 import {
@@ -398,9 +400,7 @@ function serializeMediaItem(item: MediaItem | InProgressItem | WatchedItem) {
   };
 }
 
-function serializeRecommendation(
-  rec: ReturnType<typeof getAllRecommendations>[number],
-) {
+function serializeRecommendation(rec: RecommendationData) {
   return {
     recommendationId: rec.recommendationId,
     canonicalId: rec.canonicalId,
@@ -427,9 +427,7 @@ function serializeRecommendation(
   };
 }
 
-function serializePodcastRecommendation(
-  rec: ReturnType<typeof getAllPodcastRecommendations>[number],
-) {
+function serializePodcastRecommendation(rec: PodcastRecommendationData) {
   return {
     recommendationId: rec.recommendationId,
     episodeId: rec.episodeId,
@@ -504,17 +502,19 @@ function requireAvailable<T>(
   return result.value;
 }
 
-function kickPressPods(runtime: McpRuntime): void {
-  try {
-    runtime.registry.runNow("PressPods");
-  } catch (error) {
-    if (
-      !(error instanceof TaskAlreadyRunningError) &&
-      !(error instanceof TaskNotFoundError)
-    ) {
-      throw error;
-    }
-  }
+function kickPressPods(runtime: McpRuntime) {
+  return runtime.registry.runNow("PressPods").pipe(
+    Effect.catch((error) => {
+      if (
+        error instanceof TaskAlreadyRunningError ||
+        error instanceof TaskNotFoundError
+      ) {
+        return Effect.void;
+      }
+      return Effect.fail(error);
+    }),
+    Effect.asVoid,
+  );
 }
 
 const requirePodcastAccountEffect = Effect.fn("McpMedia.requirePodcastAccount")(
@@ -817,8 +817,8 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ status, feedback, cursor, limit }) =>
-        Effect.sync(() => {
-          let values = getAllRecommendations();
+        Effect.gen(function* () {
+          let values = yield* getAllRecommendations();
           if (status) values = values.filter((item) => item.status === status);
           if (feedback) {
             values = values.filter((item) =>
@@ -841,8 +841,8 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ recommendationId }) =>
-        Effect.sync(() => {
-          const value = getRecommendation(recommendationId);
+        Effect.gen(function* () {
+          const value = yield* getRecommendation(recommendationId);
           if (!value) throw new Error("Media recommendation not found");
           return { recommendation: serializeRecommendation(value) };
         }),
@@ -872,8 +872,11 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ recommendationId, feedback, note }) =>
-        Effect.sync(() => {
-          const value = setRecommendationFeedback(recommendationId, { feedback, note });
+        Effect.gen(function* () {
+          const value = yield* setRecommendationFeedback(recommendationId, {
+            feedback,
+            note,
+          });
           if (!value) throw new Error("Media recommendation not found");
           return { recommendation: serializeRecommendation(value) };
         }),
@@ -924,11 +927,11 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (input.resource === "profile") {
             return { resource: "profile", profile: getLatestTasteProfile() ?? null };
           }
-          const values = getAllTasteEvidence().map((item) => ({
+          const values = (yield* getAllTasteEvidence()).map((item) => ({
             evidenceId: item.evidenceId,
             kind: item.kind,
             canonicalId: item.canonicalId,
@@ -1205,8 +1208,8 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ status, feedback, cursor, limit }) =>
-        Effect.sync(() => {
-          let values = getAllPodcastRecommendations();
+        Effect.gen(function* () {
+          let values = yield* getAllPodcastRecommendations();
           if (status) values = values.filter((item) => item.status === status);
           if (feedback) {
             values = values.filter((item) =>
@@ -1229,8 +1232,8 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ recommendationId }) =>
-        Effect.sync(() => {
-          const value = getPodcastRecommendation(recommendationId);
+        Effect.gen(function* () {
+          const value = yield* getPodcastRecommendation(recommendationId);
           if (!value) throw new Error("Podcast recommendation not found");
           return { recommendation: serializePodcastRecommendation(value) };
         }),
@@ -1258,8 +1261,8 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ recommendationId, feedback, note }) =>
-        Effect.sync(() => {
-          const value = setPodcastRecommendationFeedback(recommendationId, {
+        Effect.gen(function* () {
+          const value = yield* setPodcastRecommendationFeedback(recommendationId, {
             feedback,
             note,
           });
@@ -1307,14 +1310,14 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (input.resource === "profile") {
             return {
               resource: "profile",
               profile: getLatestPodcastTasteProfile() ?? null,
             };
           }
-          const values = getAllPodcastTasteEvidence().map((item) => ({
+          const values = (yield* getAllPodcastTasteEvidence()).map((item) => ({
             evidenceId: item.evidenceId,
             kind: item.kind,
             showKey: item.showKey,
@@ -1541,7 +1544,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
                 new Error("PressPods job could not be retried"),
               );
             job = requeued;
-            kickPressPods(runtime);
+            yield* kickPressPods(runtime);
           }
           return { job: serializeJob(job) };
         }),
@@ -1646,26 +1649,33 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (input.resource === "list") {
+            const pets = yield* getAllPetsWithHistory();
             return {
               resource: "list",
-              pets: getAllPetsWithHistory().map((pet) => ({
-                petId: pet.pet_id,
-                name: pet.name,
-                currentWeight: pet.current_weight,
-                updatedAt: pet.updated_at,
-                recentWeights: pet.weightHistory
-                  .slice(-input.historyLimit)
-                  .map((row) => ({ timestamp: row.timestamp, weight: row.weight })),
-                recentVisits: getDailyVisitCounts(pet.pet_id).slice(
-                  -input.historyLimit,
+              pets: yield* Effect.forEach(pets, (pet) =>
+                getDailyVisitCounts(pet.pet_id).pipe(
+                  Effect.map((visits) => ({
+                    petId: pet.pet_id,
+                    name: pet.name,
+                    currentWeight: pet.current_weight,
+                    updatedAt: pet.updated_at,
+                    recentWeights: pet.weightHistory
+                      .slice(-input.historyLimit)
+                      .map((row) => ({
+                        timestamp: row.timestamp,
+                        weight: row.weight,
+                      })),
+                    recentVisits: visits.slice(-input.historyLimit),
+                  })),
                 ),
-              })),
+              ),
             };
           }
-          const pet = getPet(input.petId);
+          const pet = yield* getPet(input.petId);
           if (!pet) throw new Error("Pet not found");
+          const history = yield* getWeightHistory(input.petId);
           return {
             resource: "history",
             pet: {
@@ -1675,7 +1685,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
               updatedAt: pet.updated_at,
             },
             ...paginate(
-              getWeightHistory(input.petId).map((row) => ({
+              history.map((row) => ({
                 timestamp: row.timestamp,
                 weight: row.weight,
               })),
@@ -1774,14 +1784,14 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ days }) =>
-        Effect.sync(() => {
-          const count = CostEventEntity.count();
+        Effect.gen(function* () {
+          const count = yield* CostEventEntity.count();
           if (count > MAX_MCP_COST_EVENTS) {
             throw new Error(
               `Cost telemetry exceeds the MCP scan limit (${count} events; maximum ${MAX_MCP_COST_EVENTS})`,
             );
           }
-          return summarizeCosts(getCostEvents(), { days, timeZone: config.TZ });
+          return summarizeCosts(yield* getCostEvents(), { days, timeZone: config.TZ });
         }),
     }),
   );

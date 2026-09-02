@@ -1,4 +1,5 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { EffectRunner } from "@micthiesen/mitools/boundary";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import type { IOSControlService } from "../ios-controls/service.js";
 import type { LivestreamIntelligenceDiagnosticsProvider } from "../live-check/intelligence/service.js";
 import type { Streamer } from "../live-check/streamers.js";
@@ -6,9 +7,11 @@ import type { PodcastAccountClient } from "../podcast-recs/account.js";
 import type { PrinterService } from "../printer/service.js";
 import type { EmailControls } from "../server.js";
 import type { TaskRegistry } from "../task-runs/registry.js";
+import type { AppServices } from "../effect/appRuntime.js";
 
 export interface McpRuntime {
-  logger: Logger;
+  logger: NamedLogger;
+  effectRunner: EffectRunner<AppServices>;
   registry: TaskRegistry;
   streamers: Streamer[];
   emailControls: EmailControls;

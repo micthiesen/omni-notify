@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
@@ -27,9 +27,9 @@ export interface ExtractDeliveriesResult {
 
 export function extractDeliveriesEffect(
   email: { subject: string; from: string; textBody: string; links: string[] },
-  logger: Logger,
+  logger: NamedLogger,
   logFile?: LogFile,
-): Effect.Effect<ExtractDeliveriesResult, ParcelExtractionError> {
+) {
   return Effect.gen(function* () {
     const { model, modelId } = getExtractionModel();
     const carrierCodes = yield* getCarrierCodesForPromptEffect(logger);
@@ -59,7 +59,7 @@ Subject: ${email.subject}
 ${body}${linksSection}`;
 
     if (logFile) {
-      logFile.log(
+      yield* logFile.log(
         logger,
         LogLevel.INFO,
         `Extraction Prompt (${modelId})`,
@@ -67,7 +67,7 @@ ${body}${linksSection}`;
         { consoleSummary: `Extraction prompt (${modelId}) [${prompt.length} chars]` },
       );
     } else {
-      logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
+      yield* logger.info(`Extraction prompt (${modelId}):\n${prompt}`);
     }
 
     const result = yield* Effect.tryPromise({
@@ -90,16 +90,16 @@ ${body}${linksSection}`;
 
     const response = JSON.stringify(result.output, null, 2);
     if (logFile) {
-      logFile.log(
+      yield* logFile.log(
         logger,
         LogLevel.INFO,
         "Extraction Response",
         codeBlock(response, "json"),
       );
     } else {
-      logger.info(`Extraction response: ${response}`);
+      yield* logger.info(`Extraction response: ${response}`);
     }
-    logger.info(
+    yield* logger.info(
       `Token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
@@ -110,7 +110,7 @@ ${body}${linksSection}`;
         })
       : null;
     if (costCents === null) {
-      logger.debug(`No pricing data for extraction model "${modelId}"`);
+      yield* logger.debug(`No pricing data for extraction model "${modelId}"`);
     }
 
     const deliveries = decoded.deliveries;

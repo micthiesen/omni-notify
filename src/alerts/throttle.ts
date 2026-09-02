@@ -1,4 +1,5 @@
-import { Logger, type LogHook } from "@micthiesen/mitools/logging";
+import type { LogHook } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { formatElapsed } from "../utils/dates.js";
 
 /**
@@ -128,26 +129,28 @@ export function alertKey(loggerName: string, title: string): string {
  * been installed. Deliberately in-memory: containers restart rarely enough that
  * re-alerting once after a restart is the right trade.
  */
-export function installAlertThrottle(options?: AlertThrottleOptions): void {
+export function throttleLogHook<R>(
+  inner: LogHook<R>,
+  options?: AlertThrottleOptions,
+): LogHook<R> {
   const throttle = new AlertThrottle(options);
-  Logger.onError = wrapHook(Logger.onError, throttle);
-  // No-op while mitools leaves onWarn unset (warns don't notify today); wrapped
-  // so enabling warn notifications later can't reintroduce the spam.
-  Logger.onWarn = wrapHook(Logger.onWarn, throttle);
+  return wrapHook(inner, throttle);
 }
 
-function wrapHook(inner: LogHook | null, throttle: AlertThrottle): LogHook | null {
-  if (!inner) return inner;
-  return (notification) => {
-    const admitted = throttle.admit(
-      {
-        key: alertKey(notification.loggerName, notification.title),
-        title: notification.title,
-        body: notification.body,
+function wrapHook<R>(inner: LogHook<R>, throttle: AlertThrottle): LogHook<R> {
+  return (notification) =>
+    Effect.flatMap(
+      Effect.clockWith((clock) => clock.currentTimeMillis),
+      (now) => {
+        const admitted = throttle.admit(
+          {
+            key: alertKey(notification.loggerName, notification.title),
+            title: notification.title,
+            body: notification.body,
+          },
+          now,
+        );
+        return admitted ? inner({ ...notification, body: admitted.body }) : Effect.void;
       },
-      Date.now(),
     );
-    if (!admitted) return;
-    return inner({ ...notification, body: admitted.body });
-  };
 }

@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import got from "got";
 import { Duration, Effect, Schedule } from "effect";
 import { readBufferResponseWithLimit } from "../../../effect/publicHttp.js";
@@ -29,10 +29,7 @@ export class ElevenLabsProvider implements TtsProvider {
     this.voiceName = this.voice.name;
   }
 
-  public synthesizeChunk(
-    text: string,
-    logger: Logger,
-  ): Effect.Effect<Buffer, PressPodsError> {
+  public synthesizeChunk(text: string, logger: Logger) {
     const apiKey = config.ELEVENLABS_API_KEY;
     if (!apiKey) {
       return Effect.fail(
@@ -61,7 +58,7 @@ export class ElevenLabsProvider implements TtsProvider {
     );
     return request.pipe(
       Effect.tapError((error) =>
-        Effect.sync(() => logger.warn("ElevenLabs chunk request failed", { error })),
+        logger.warn("ElevenLabs chunk request failed", { error }),
       ),
       Effect.retry({
         times: 2,

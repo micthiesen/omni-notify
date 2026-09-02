@@ -1,6 +1,7 @@
 import fsAsync from "node:fs/promises";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Clock, Effect, Result, Exit } from "effect";
+import type { TaskServices } from "../../task-runs/registry.js";
 import type CostCounter from "../costs.js";
 import { errorCause, PressPodsError, tryPromise, trySync } from "../effect.js";
 import { isRetryableError } from "../errors.js";
@@ -129,7 +130,7 @@ function assessTake(
   stt: SttClient | null,
   useContent: boolean,
   logger: Logger,
-): Effect.Effect<Assessment> {
+) {
   if (useContent && stt) {
     return stt.transcribe(rawMp3, logger).pipe(
       Effect.map((transcript) => {
@@ -145,14 +146,13 @@ function assessTake(
             `coverage=${(coverage.coverage * 100).toFixed(0)}% ratio=${coverage.wordRatio.toFixed(2)}`,
         } satisfies Assessment;
       }),
-      Effect.catch((error) => {
+      Effect.catch((error) =>
         // STT down/erroring: fall through to the duration band for this take so a
         // flaky ASR server never blocks synthesis.
-        logger.warn(
-          `STT verify failed (${error.message}); falling back to duration check`,
-        );
-        return Effect.succeed(durationAssessment(take, text));
-      }),
+        logger
+          .warn(`STT verify failed (${error.message}); falling back to duration check`)
+          .pipe(Effect.as(durationAssessment(take, text))),
+      ),
     );
   }
   return Effect.succeed(durationAssessment(take, text));
@@ -176,7 +176,7 @@ function synthesizeChunkAudio(
   logger: Logger,
   ckpt: CheckpointCtx | null,
   maxAttempts: number = MAX_SYNTH_ATTEMPTS,
-): Effect.Effect<ChunkSynthesisOutcome, PressPodsError> {
+) {
   const takes: Array<{ chunk: PreparedChunk; assessment: Assessment }> = [];
   return Effect.gen(function* () {
     const opts = { denoise: provider.needsDenoise };
@@ -193,7 +193,7 @@ function synthesizeChunkAudio(
           const durationSeconds = yield* probeDurationSeconds(wavPath).pipe(
             Effect.onError(() => cleanupWavs([wavPath])),
           );
-          logger.info(`Resumed chunk from checkpoint (${text.length} chars)`);
+          yield* logger.info(`Resumed chunk from checkpoint (${text.length} chars)`);
           return { wavPath, durationSeconds };
         }).pipe(Effect.result);
         if (Result.isSuccess(resumed)) {
@@ -203,7 +203,7 @@ function synthesizeChunkAudio(
           // drop the bad entry so it isn't re-probed (and re-leaked) on every
           // future resume, then fall through to synthesize fresh.
           yield* deleteChunkCheckpoint(ckpt.workId, key);
-          logger.warn(
+          yield* logger.warn(
             `Discarded unreadable chunk checkpoint: ${resumed.failure.message}`,
           );
         }
@@ -224,14 +224,15 @@ function synthesizeChunkAudio(
 
     const synth = (): Effect.Effect<
       { chunk: PreparedChunk; raw: Buffer },
-      PressPodsError
+      PressPodsError,
+      TaskServices
     > =>
       Effect.gen(function* () {
         const raw = yield* provider.synthesizeChunk(text, logger);
         // Bill every real TTS response here, at the call site — retried and re-split
         // takes are all charged (ElevenLabs bills generated chars even when we later
         // discard the take), so cost tracks actual spend, not just the final pieces.
-        costCounter.recordTtsUsage(provider.modelId, "tts", text);
+        yield* costCounter.recordTtsUsage(provider.modelId, "tts", text);
         return { chunk: yield* prepareChunk(raw, opts), raw };
       }).pipe(
         Effect.mapError((cause) =>
@@ -271,7 +272,7 @@ function synthesizeChunkAudio(
         // closes). Without content mode, a duration accept is the real bar.
         if (assessment.accept && (assessment.verified || !useContent)) break;
         if (i < maxAttempts) {
-          logger.warn(
+          yield* logger.warn(
             `Chunk verify failed (${assessment.describe()}); retry ${i}/${maxAttempts}`,
           );
         }
@@ -285,7 +286,7 @@ function synthesizeChunkAudio(
         }
         // A corrupt/truncated response can fail prepareChunk's ffmpeg; retry
         // rather than aborting the episode.
-        logger.warn(
+        yield* logger.warn(
           `Chunk synth/prepare failed (attempt ${i}/${maxAttempts}): ${attempt.failure.message}`,
         );
       }
@@ -322,12 +323,12 @@ function synthesizeChunkAudio(
     const verificationUnavailable = useContent && verifiedTakes.length === 0;
     const passed = verificationUnavailable || chosen.assessment.accept;
     if (verificationUnavailable) {
-      logger.warn(
+      yield* logger.warn(
         `Content verification unavailable for every take (STT failing); shipping the ` +
           `duration-best take (${chosen.assessment.describe()}) — truncation may slip through`,
       );
     } else if (!chosen.assessment.accept) {
-      logger.warn(
+      yield* logger.warn(
         `Chunk still failing verification after ${attemptsMade} tries ` +
           `(${chosen.assessment.describe()})`,
       );
@@ -380,7 +381,7 @@ function synthesizeChunkAdaptive(
   logger: Logger,
   ckpt: CheckpointCtx | null,
   depth = 0,
-): Effect.Effect<ChunkPiece[], PressPodsError> {
+): Effect.Effect<ChunkPiece[], PressPodsError, TaskServices> {
   const completedPaths: string[] = [];
   return Effect.gen(function* () {
     const subChunks = splitChunkForRetry(text, depth);
@@ -407,7 +408,7 @@ function synthesizeChunkAdaptive(
       // durable job retry use its backoff and existing verified checkpoints
       // instead of multiplying requests across a re-split tree.
       if (!splittable || isRetryableError(errorCause(error))) return yield* error;
-      logger.warn(
+      yield* logger.warn(
         `Chunk synthesis threw on every probe (${(error as Error).message}); ` +
           `re-splitting to recover`,
       );
@@ -433,7 +434,7 @@ function synthesizeChunkAdaptive(
       });
     }
 
-    logger.warn(
+    yield* logger.warn(
       `Re-splitting failing chunk at level ${depth + 1} (${text.length} chars) ` +
         `into ${subChunks.length} ` +
         `boundary-safe sub-chunks and re-synthesizing`,
@@ -519,7 +520,7 @@ export function synthesizeSpeech({
   costCounter: CostCounter;
   /** Stable per-article id enabling per-chunk resume across restarts. */
   workId?: string;
-}): Effect.Effect<SynthesisResult, PressPodsError> {
+}) {
   const wavPaths: string[] = [];
   let chunkGap: string | undefined;
   let sectionGap: string | undefined;
@@ -535,7 +536,7 @@ export function synthesizeSpeech({
     const chunkProfile = initialChunkProfile(provider);
     const sections = splitSections(content);
 
-    logger.info("Starting speech synthesis", {
+    yield* logger.info("Starting speech synthesis", {
       provider: provider.providerName,
       voice: provider.voiceName,
       model: provider.modelId,
@@ -546,7 +547,7 @@ export function synthesizeSpeech({
       chunkMax: chunkProfile.max,
     });
     if (provider.verifyChunkContent && !stt) {
-      logger.warn(
+      yield* logger.warn(
         "Content verification unavailable (no PRESSPODS_STT_URL / PRESSPODS_TTS_URL); " +
           "falling back to the duration-band check, which lets some truncation through",
       );
@@ -635,7 +636,7 @@ export function synthesizeSpeech({
             resplit: piece.resplit,
             resplitDepth: piece.resplitDepth,
           });
-          logger.info(`Synthesized chunk ${chunkIndex}/${totalChunks}`);
+          yield* logger.info(`Synthesized chunk ${chunkIndex}/${totalChunks}`);
         }
       }
     }
@@ -647,7 +648,7 @@ export function synthesizeSpeech({
           : new PressPodsError({ operation: "assemble PressPods episode", cause }),
       ),
     );
-    logger.info("Speech synthesized", {
+    yield* logger.info("Speech synthesized", {
       audioBytes: audio.length,
       chapters: chapters.length,
     });

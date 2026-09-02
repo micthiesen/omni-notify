@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect } from "effect";
 import type { EmailPipelineName } from "./activity.js";
 
 export type EmailFeedbackVerdict =
@@ -24,14 +25,14 @@ export const EmailFeedbackEntity = new Entity<EmailFeedbackData, ["activityId"]>
   ["activityId"],
 );
 
-export function recordEmailFeedback(entry: {
+export const recordEmailFeedback = Effect.fn("EmailFeedback.record")(function* (entry: {
   pipeline: EmailPipelineName;
   emailId: string;
   subject: string;
   from: string;
   verdict: EmailFeedbackVerdict;
   note?: string;
-}): EmailFeedbackData {
+}) {
   const row: EmailFeedbackData = {
     activityId: `${entry.pipeline}#${entry.emailId}`,
     pipeline: entry.pipeline,
@@ -42,25 +43,25 @@ export function recordEmailFeedback(entry: {
     note: entry.note,
     createdAt: Date.now(),
   };
-  EmailFeedbackEntity.upsert(row);
+  yield* EmailFeedbackEntity.upsert(row);
   return row;
-}
+});
 
-export function deleteEmailFeedback(activityId: string): boolean {
-  if (EmailFeedbackEntity.get({ activityId }) === undefined) return false;
-  EmailFeedbackEntity.delete({ activityId });
-  return true;
-}
+export const deleteEmailFeedback = Effect.fn("EmailFeedback.delete")(function* (
+  activityId: string,
+) {
+  return yield* EmailFeedbackEntity.delete({ activityId });
+});
 
-export function listEmailFeedback(
+export const listEmailFeedback = Effect.fn("EmailFeedback.list")(function* (
   pipeline?: EmailPipelineName,
   limit = 50,
-): EmailFeedbackData[] {
-  return EmailFeedbackEntity.getAll()
+) {
+  return (yield* EmailFeedbackEntity.getAll())
     .filter((f) => pipeline === undefined || f.pipeline === pipeline)
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
-}
+});
 
 const PIPELINE_NAMES: Record<"parcel" | "calendar", EmailPipelineName> = {
   parcel: "ParcelTracker",
@@ -71,11 +72,11 @@ const PIPELINE_NAMES: Record<"parcel" | "calendar", EmailPipelineName> = {
  * Compact correction lines for prompt injection. Empty string when the user
  * has given no feedback for the pipeline.
  */
-export function formatFeedbackDigest(
+export const formatFeedbackDigest = Effect.fn("EmailFeedback.formatDigest")(function* (
   pipeline: "parcel" | "calendar",
   limit = 15,
-): string {
-  return listEmailFeedback(PIPELINE_NAMES[pipeline], limit)
+) {
+  return (yield* listEmailFeedback(PIPELINE_NAMES[pipeline], limit))
     .map((f) => {
       const label =
         f.verdict === "not_relevant"
@@ -85,4 +86,4 @@ export function formatFeedbackDigest(
       return `- "${f.subject}" from ${f.from}: ${label}${note}`;
     })
     .join("\n");
-}
+});

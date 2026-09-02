@@ -1,7 +1,7 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { LogLevel } from "@micthiesen/mitools/logging";
-import { Effect } from "effect";
+import { Effect, Option } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
+import { runTest } from "../live-check/testRuntime.js";
+import { PressPodsError } from "./effect.js";
 import {
   deleteEpisodesByNormalizedUrlExcept,
   findActiveJobByNormalizedUrl,
@@ -21,16 +21,6 @@ import {
   secureId,
   selectDueJobs,
 } from "./persistence.js";
-
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.ERROR,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "presspods-persistence.spec.db",
-  },
-});
 
 const NOW = 1_700_000_000_000;
 
@@ -102,70 +92,84 @@ describe("retryDelayMs", () => {
 describe("recordJobFailure", () => {
   // recordJobFailure reads the live row, so stale rows from previous test
   // runs (the spec DB persists on disk) must be cleared.
-  beforeEach(() => {
-    for (const jobId of ["r1", "r2", "r3", "gone"]) {
-      PressPodsJobEntity.delete({ jobId });
-    }
+  beforeEach(async () => {
+    await runTest(
+      Effect.forEach(
+        ["r1", "r2", "r3", "gone"],
+        (jobId) => PressPodsJobEntity.delete({ jobId }),
+        { discard: true },
+      ),
+    );
   });
 
-  it("requeues a retryable failure with backoff", () => {
-    const updated = recordJobFailure(job({ jobId: "r1" }), "boom", true);
+  it("requeues a retryable failure with backoff", async () => {
+    const updated = await runTest(recordJobFailure(job({ jobId: "r1" }), "boom", true));
     expect(updated.status).toBe("queued");
     expect(updated.attempts).toBe(1);
     expect(updated.nextAttemptAt).toBeGreaterThan(Date.now() - 1000);
     expect(updated.lastError).toBe("boom");
   });
 
-  it("fails permanently on a non-retryable error", () => {
-    const updated = recordJobFailure(job({ jobId: "r2" }), "bad article", false);
+  it("fails permanently on a non-retryable error", async () => {
+    const updated = await runTest(
+      recordJobFailure(job({ jobId: "r2" }), "bad article", false),
+    );
     expect(updated.status).toBe("failed");
   });
 
-  it("fails permanently once attempts are exhausted", () => {
-    const updated = recordJobFailure(
-      job({ jobId: "r3", attempts: MAX_JOB_ATTEMPTS - 1 }),
-      "still broken",
-      true,
+  it("fails permanently once attempts are exhausted", async () => {
+    const updated = await runTest(
+      recordJobFailure(
+        job({ jobId: "r3", attempts: MAX_JOB_ATTEMPTS - 1 }),
+        "still broken",
+        true,
+      ),
     );
     expect(updated.status).toBe("failed");
     expect(updated.attempts).toBe(MAX_JOB_ATTEMPTS);
   });
 
-  it("does not resurrect a concurrently-deleted job", () => {
+  it("does not resurrect a concurrently-deleted job", async () => {
     const deleted = job({ jobId: "gone" });
-    recordJobFailure(deleted, "boom", true);
-    expect(PressPodsJobEntity.get({ jobId: "gone" })).toBeUndefined();
+    await runTest(recordJobFailure(deleted, "boom", true));
+    expect(
+      Option.getOrUndefined(await runTest(PressPodsJobEntity.get({ jobId: "gone" }))),
+    ).toBeUndefined();
   });
 });
 
 describe("requeueJobNow", () => {
-  it("requeues a failed job immediately", () => {
-    PressPodsJobEntity.upsert(job({ jobId: "f1", status: "failed" }));
-    const updated = requeueJobNow("f1");
+  it("requeues a failed job immediately", async () => {
+    await runTest(PressPodsJobEntity.upsert(job({ jobId: "f1", status: "failed" })));
+    const updated = await runTest(requeueJobNow("f1"));
     expect(updated?.status).toBe("queued");
     expect(updated?.nextAttemptAt).toBe(0);
-    PressPodsJobEntity.delete({ jobId: "f1" });
+    await runTest(PressPodsJobEntity.delete({ jobId: "f1" }));
   });
 
-  it("refuses non-failed jobs", () => {
-    PressPodsJobEntity.upsert(job({ jobId: "q1", status: "processing" }));
-    expect(requeueJobNow("q1")).toBeUndefined();
-    PressPodsJobEntity.delete({ jobId: "q1" });
-  });
-
-  it("resets the attempt budget so an exhausted job gets a fresh retry cycle", () => {
-    PressPodsJobEntity.upsert(
-      job({
-        jobId: "f2",
-        status: "failed",
-        attempts: MAX_JOB_ATTEMPTS,
-        lastError: "boom",
-      }),
+  it("refuses non-failed jobs", async () => {
+    await runTest(
+      PressPodsJobEntity.upsert(job({ jobId: "q1", status: "processing" })),
     );
-    const updated = requeueJobNow("f2");
+    expect(await runTest(requeueJobNow("q1"))).toBeUndefined();
+    await runTest(PressPodsJobEntity.delete({ jobId: "q1" }));
+  });
+
+  it("resets the attempt budget so an exhausted job gets a fresh retry cycle", async () => {
+    await runTest(
+      PressPodsJobEntity.upsert(
+        job({
+          jobId: "f2",
+          status: "failed",
+          attempts: MAX_JOB_ATTEMPTS,
+          lastError: "boom",
+        }),
+      ),
+    );
+    const updated = await runTest(requeueJobNow("f2"));
     expect(updated?.attempts).toBe(0);
     expect(updated?.lastError).toBeUndefined();
-    PressPodsJobEntity.delete({ jobId: "f2" });
+    await runTest(PressPodsJobEntity.delete({ jobId: "f2" }));
   });
 });
 
@@ -181,33 +185,37 @@ describe("findEpisodeForJob", () => {
     ...overrides,
   });
 
-  it("finds an episode created after the job was submitted", () => {
+  it("finds an episode created after the job was submitted", async () => {
     const row = episode({ createdAt: NOW });
-    PressPodsEpisodeEntity.upsert(row);
-    expect(findEpisodeForJob(job({ createdAt: NOW - 1000 }))?.episodeId).toBe(
-      row.episodeId,
-    );
-    PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+    await runTest(PressPodsEpisodeEntity.upsert(row));
+    expect(
+      (await runTest(findEpisodeForJob(job({ createdAt: NOW - 1000 }))))?.episodeId,
+    ).toBe(row.episodeId);
+    await runTest(PressPodsEpisodeEntity.delete({ episodeId: row.episodeId }));
   });
 
-  it("ignores older episodes for the same URL (resubmissions)", () => {
+  it("ignores older episodes for the same URL (resubmissions)", async () => {
     const row = episode({ createdAt: NOW - 60_000 });
-    PressPodsEpisodeEntity.upsert(row);
-    expect(findEpisodeForJob(job({ createdAt: NOW - 1000 }))).toBeUndefined();
-    PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+    await runTest(PressPodsEpisodeEntity.upsert(row));
+    expect(
+      await runTest(findEpisodeForJob(job({ createdAt: NOW - 1000 }))),
+    ).toBeUndefined();
+    await runTest(PressPodsEpisodeEntity.delete({ episodeId: row.episodeId }));
   });
 
-  it("matches on canonical identity despite tracking-param differences", () => {
+  it("matches on canonical identity despite tracking-param differences", async () => {
     const row = episode({
       createdAt: NOW,
       articleUrl: "https://example.com/story?utm_source=rss",
     });
-    PressPodsEpisodeEntity.upsert(row);
-    const found = findEpisodeForJob(
-      job({ createdAt: NOW - 1000, url: "https://example.com/story?ref=twitter" }),
+    await runTest(PressPodsEpisodeEntity.upsert(row));
+    const found = await runTest(
+      findEpisodeForJob(
+        job({ createdAt: NOW - 1000, url: "https://example.com/story?ref=twitter" }),
+      ),
     );
     expect(found?.episodeId).toBe(row.episodeId);
-    PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+    await runTest(PressPodsEpisodeEntity.delete({ episodeId: row.episodeId }));
   });
 });
 
@@ -256,13 +264,13 @@ describe("PressPodsPersistence episode decoding", () => {
         detailChars: { speech: 1000 },
       },
     });
-    PressPodsEpisodeEntity.upsert(row);
+    await runTest(PressPodsEpisodeEntity.upsert(row));
     try {
       await expect(
-        Effect.runPromise(PressPodsPersistence.getEpisode(row.episodeId)),
+        runTest(PressPodsPersistence.getEpisode(row.episodeId)),
       ).resolves.toEqual(row);
     } finally {
-      PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+      await runTest(PressPodsEpisodeEntity.delete({ episodeId: row.episodeId }));
     }
   });
 
@@ -298,14 +306,17 @@ describe("PressPodsPersistence episode decoding", () => {
       episodeId: `malformed-${field}`,
       [field]: malformed,
     } as unknown as Partial<PressPodsEpisodeData>);
-    PressPodsEpisodeEntity.upsert(row);
+    await runTest(PressPodsEpisodeEntity.upsert(row));
     try {
-      const error = await Effect.runPromise(
+      const error = await runTest(
         Effect.flip(PressPodsPersistence.getEpisode(row.episodeId)),
       );
-      expect(error.operation).toBe("decode PressPods episode");
+      expect(error).toBeInstanceOf(PressPodsError);
+      if (error instanceof PressPodsError) {
+        expect(error.operation).toBe("decode PressPods episode");
+      }
     } finally {
-      PressPodsEpisodeEntity.delete({ episodeId: row.episodeId });
+      await runTest(PressPodsEpisodeEntity.delete({ episodeId: row.episodeId }));
     }
   });
 });
@@ -314,46 +325,74 @@ describe("URL-based dedup lookups", () => {
   const URL_A = "https://dedup.example/piece?utm_source=x";
   const NORM = "https://dedup.example/piece";
 
-  beforeEach(() => {
-    for (const jobId of ["active", "failed"]) PressPodsJobEntity.delete({ jobId });
-  });
-
-  it("finds a queued or processing job by canonical URL", () => {
-    PressPodsJobEntity.upsert(
-      job({ jobId: "active", url: URL_A, status: "processing" }),
+  beforeEach(async () => {
+    await runTest(
+      Effect.forEach(
+        ["active", "failed"],
+        (jobId) => PressPodsJobEntity.delete({ jobId }),
+        { discard: true },
+      ),
     );
-    expect(findActiveJobByNormalizedUrl(NORM)?.jobId).toBe("active");
-    expect(findFailedJobByNormalizedUrl(NORM)).toBeUndefined();
-    PressPodsJobEntity.delete({ jobId: "active" });
   });
 
-  it("finds a failed job by canonical URL", () => {
-    PressPodsJobEntity.upsert(job({ jobId: "failed", url: URL_A, status: "failed" }));
-    expect(findFailedJobByNormalizedUrl(NORM)?.jobId).toBe("failed");
-    expect(findActiveJobByNormalizedUrl(NORM)).toBeUndefined();
-    PressPodsJobEntity.delete({ jobId: "failed" });
+  it("finds a queued or processing job by canonical URL", async () => {
+    await runTest(
+      PressPodsJobEntity.upsert(
+        job({ jobId: "active", url: URL_A, status: "processing" }),
+      ),
+    );
+    expect((await runTest(findActiveJobByNormalizedUrl(NORM)))?.jobId).toBe("active");
+    expect(await runTest(findFailedJobByNormalizedUrl(NORM))).toBeUndefined();
+    await runTest(PressPodsJobEntity.delete({ jobId: "active" }));
+  });
+
+  it("finds a failed job by canonical URL", async () => {
+    await runTest(
+      PressPodsJobEntity.upsert(job({ jobId: "failed", url: URL_A, status: "failed" })),
+    );
+    expect((await runTest(findFailedJobByNormalizedUrl(NORM)))?.jobId).toBe("failed");
+    expect(await runTest(findActiveJobByNormalizedUrl(NORM))).toBeUndefined();
+    await runTest(PressPodsJobEntity.delete({ jobId: "failed" }));
   });
 });
 
 describe("reclaimProcessingJobsAtBoot", () => {
-  beforeEach(() => {
-    for (const jobId of ["p1", "q2"]) PressPodsJobEntity.delete({ jobId });
+  beforeEach(async () => {
+    await runTest(
+      Effect.forEach(["p1", "q2"], (jobId) => PressPodsJobEntity.delete({ jobId }), {
+        discard: true,
+      }),
+    );
   });
 
-  it("makes orphaned processing claims immediately reclaimable", () => {
-    PressPodsJobEntity.upsert(
-      job({ jobId: "p1", status: "processing", claimedAt: Date.now() }),
+  it("makes orphaned processing claims immediately reclaimable", async () => {
+    await runTest(
+      PressPodsJobEntity.upsert(
+        job({ jobId: "p1", status: "processing", claimedAt: Date.now() }),
+      ),
     );
-    PressPodsJobEntity.upsert(job({ jobId: "q2", status: "queued" }));
-    const count = reclaimProcessingJobsAtBoot();
+    await runTest(PressPodsJobEntity.upsert(job({ jobId: "q2", status: "queued" })));
+    const count = await runTest(reclaimProcessingJobsAtBoot());
     expect(count).toBe(1);
-    expect(PressPodsJobEntity.get({ jobId: "p1" })?.claimedAt).toBe(0);
+    expect(
+      Option.getOrUndefined(await runTest(PressPodsJobEntity.get({ jobId: "p1" })))
+        ?.claimedAt,
+    ).toBe(0);
     // A queued job is untouched.
-    expect(PressPodsJobEntity.get({ jobId: "q2" })?.status).toBe("queued");
+    expect(
+      Option.getOrUndefined(await runTest(PressPodsJobEntity.get({ jobId: "q2" })))
+        ?.status,
+    ).toBe("queued");
     // The reclaimed claim is now selectable as stale.
-    const p1 = PressPodsJobEntity.get({ jobId: "p1" });
+    const p1 = Option.getOrUndefined(
+      await runTest(PressPodsJobEntity.get({ jobId: "p1" })),
+    );
     if (p1) expect(selectDueJobs([p1])).toHaveLength(1);
-    for (const jobId of ["p1", "q2"]) PressPodsJobEntity.delete({ jobId });
+    await runTest(
+      Effect.forEach(["p1", "q2"], (jobId) => PressPodsJobEntity.delete({ jobId }), {
+        discard: true,
+      }),
+    );
   });
 });
 
@@ -369,7 +408,7 @@ describe("deleteEpisodesByNormalizedUrlExcept", () => {
     ...overrides,
   });
 
-  it("replaces older episodes sharing a canonical URL, keeping the newest", () => {
+  it("replaces older episodes sharing a canonical URL, keeping the newest", async () => {
     const older = ep({
       createdAt: NOW - 1000,
       articleUrl: "https://replace.example/x?utm_source=a",
@@ -378,15 +417,25 @@ describe("deleteEpisodesByNormalizedUrlExcept", () => {
       createdAt: NOW,
       articleUrl: "https://replace.example/x?ref=b",
     });
-    PressPodsEpisodeEntity.upsert(older);
-    PressPodsEpisodeEntity.upsert(newer);
+    await runTest(PressPodsEpisodeEntity.upsert(older));
+    await runTest(PressPodsEpisodeEntity.upsert(newer));
 
     const norm = "https://replace.example/x";
-    const removed = deleteEpisodesByNormalizedUrlExcept(norm, newer.episodeId);
+    const removed = await runTest(
+      deleteEpisodesByNormalizedUrlExcept(norm, newer.episodeId),
+    );
     expect(removed.map((r) => r.episodeId)).toEqual([older.episodeId]);
-    expect(PressPodsEpisodeEntity.get({ episodeId: older.episodeId })).toBeUndefined();
-    expect(PressPodsEpisodeEntity.get({ episodeId: newer.episodeId })).toBeDefined();
+    expect(
+      Option.getOrUndefined(
+        await runTest(PressPodsEpisodeEntity.get({ episodeId: older.episodeId })),
+      ),
+    ).toBeUndefined();
+    expect(
+      Option.getOrUndefined(
+        await runTest(PressPodsEpisodeEntity.get({ episodeId: newer.episodeId })),
+      ),
+    ).toBeDefined();
 
-    PressPodsEpisodeEntity.delete({ episodeId: newer.episodeId });
+    await runTest(PressPodsEpisodeEntity.delete({ episodeId: newer.episodeId }));
   });
 });

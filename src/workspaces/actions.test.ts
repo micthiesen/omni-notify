@@ -1,7 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
-import { it as effectIt } from "@effect/vitest";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect, Fiber } from "effect";
-import { beforeEach, describe, expect, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 import type { WorkspaceActionData } from "./persistence.js";
 
 const mocks = vi.hoisted(() => ({
@@ -20,17 +20,19 @@ vi.mock("../calendar-events/caldav/index.js", () => ({
 
 vi.mock("./persistence.js", () => ({
   getWorkspaceAction: (actionId: string) =>
-    mocks.action?.actionId === actionId ? mocks.action : undefined,
+    Effect.succeed(mocks.action?.actionId === actionId ? mocks.action : undefined),
   setWorkspaceActionResult: (
     actionId: string,
     status: WorkspaceActionData["status"],
     result: string,
-  ) => {
-    if (mocks.action?.actionId !== actionId) return undefined;
-    mocks.action = { ...mocks.action, status, result, resolvedAt: Date.now() };
-    return mocks.action;
-  },
-  upsertWorkspaceEmailScope: mocks.upsertWorkspaceEmailScope,
+  ) =>
+    Effect.sync(() => {
+      if (mocks.action?.actionId !== actionId) return undefined;
+      mocks.action = { ...mocks.action, status, result, resolvedAt: Date.now() };
+      return mocks.action;
+    }),
+  upsertWorkspaceEmailScope: (...args: unknown[]) =>
+    Effect.sync(() => mocks.upsertWorkspaceEmailScope(...args)),
 }));
 
 import {
@@ -38,7 +40,14 @@ import {
   rejectWorkspaceActionEffect,
 } from "./actions.js";
 
-const logger = {} as Logger;
+const logger = {
+  debug: vi.fn(() => Effect.void),
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+  error: vi.fn(() => Effect.void),
+} as unknown as NamedLogger;
+const runtime = createMitoolsTestRuntime();
+afterAll(() => runtime.dispose());
 
 function action(
   type: WorkspaceActionData["type"],
@@ -66,29 +75,29 @@ describe("workspace action approval", () => {
     });
   });
 
-  effectIt.effect("enables a validated email scope only after approval", () =>
-    Effect.gen(function* () {
-      mocks.action = action("email_scope", {
-        senders: ["orders@example.com"],
-        domains: [],
-        subjectKeywords: [],
-        bodyKeywords: [],
-      });
+  it("enables a validated email scope only after approval", async () =>
+    runtime.run(
+      Effect.gen(function* () {
+        mocks.action = action("email_scope", {
+          senders: ["orders@example.com"],
+          domains: [],
+          subjectKeywords: [],
+          bodyKeywords: [],
+        });
 
-      const approved = yield* approveWorkspaceActionEffect("action-1", logger);
+        const approved = yield* approveWorkspaceActionEffect("action-1", logger);
 
-      expect(approved.status).toBe("approved");
-      expect(mocks.upsertWorkspaceEmailScope).toHaveBeenCalledWith(
-        "purchase-research",
-        "subject-1",
-        expect.objectContaining({ senders: ["orders@example.com"] }),
-      );
-    }),
-  );
+        expect(approved.status).toBe("approved");
+        expect(mocks.upsertWorkspaceEmailScope).toHaveBeenCalledWith(
+          "purchase-research",
+          "subject-1",
+          expect.objectContaining({ senders: ["orders@example.com"] }),
+        );
+      }),
+    ));
 
-  effectIt.effect(
-    "uses a deterministic calendar UID and treats an existing PUT as success",
-    () =>
+  it("uses a deterministic calendar UID and treats an existing PUT as success", async () =>
+    runtime.run(
       Effect.gen(function* () {
         mocks.action = action("calendar_event", {
           title: "Return deadline",
@@ -112,56 +121,58 @@ describe("workspace action approval", () => {
           "workspace-action-1@omni-notify",
         );
       }),
-  );
+    ));
 
-  effectIt.effect("allows retrying a transiently failed calendar approval", () =>
-    Effect.gen(function* () {
-      mocks.action = action("calendar_event", {
-        title: "Return deadline",
-        startDate: "2026-09-01",
-        allDay: true,
-      });
-      mocks.createCalendarEvent
-        .mockResolvedValueOnce({ status: "error", code: 503, message: "Unavailable" })
-        .mockResolvedValueOnce({ status: "success", eventUid: "workspace-action-1" });
+  it("allows retrying a transiently failed calendar approval", async () =>
+    runtime.run(
+      Effect.gen(function* () {
+        mocks.action = action("calendar_event", {
+          title: "Return deadline",
+          startDate: "2026-09-01",
+          allDay: true,
+        });
+        mocks.createCalendarEvent
+          .mockResolvedValueOnce({ status: "error", code: 503, message: "Unavailable" })
+          .mockResolvedValueOnce({ status: "success", eventUid: "workspace-action-1" });
 
-      const failure = yield* Effect.flip(
-        approveWorkspaceActionEffect("action-1", logger),
-      );
-      expect(failure.message).toContain("Unavailable");
-      expect(mocks.action?.status).toBe("failed");
-      const approved = yield* approveWorkspaceActionEffect("action-1", logger);
-      expect(approved).toMatchObject({ status: "approved" });
-    }),
-  );
+        const failure = yield* Effect.flip(
+          approveWorkspaceActionEffect("action-1", logger),
+        );
+        expect(failure.message).toContain("Unavailable");
+        expect(mocks.action?.status).toBe("failed");
+        const approved = yield* approveWorkspaceActionEffect("action-1", logger);
+        expect(approved).toMatchObject({ status: "approved" });
+      }),
+    ));
 
-  effectIt.effect("blocks rejection while an approval side effect is in flight", () =>
-    Effect.gen(function* () {
-      mocks.action = action("calendar_event", {
-        title: "Return deadline",
-        startDate: "2026-09-01",
-        allDay: true,
-      });
-      let finishCreate:
-        | ((value: { status: "success"; eventUid: string }) => void)
-        | undefined;
-      mocks.createCalendarEvent.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            finishCreate = resolve;
-          }),
-      );
+  it("blocks rejection while an approval side effect is in flight", async () =>
+    runtime.run(
+      Effect.gen(function* () {
+        mocks.action = action("calendar_event", {
+          title: "Return deadline",
+          startDate: "2026-09-01",
+          allDay: true,
+        });
+        let finishCreate:
+          | ((value: { status: "success"; eventUid: string }) => void)
+          | undefined;
+        mocks.createCalendarEvent.mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              finishCreate = resolve;
+            }),
+        );
 
-      const approval = yield* Effect.forkChild(
-        approveWorkspaceActionEffect("action-1", logger),
-      );
-      yield* Effect.promise(() =>
-        vi.waitFor(() => expect(mocks.createCalendarEvent).toHaveBeenCalled()),
-      );
-      const rejection = yield* Effect.flip(rejectWorkspaceActionEffect("action-1"));
-      expect(rejection.message).toContain("already being resolved");
-      finishCreate?.({ status: "success", eventUid: "workspace-action-1" });
-      expect(yield* Fiber.join(approval)).toMatchObject({ status: "approved" });
-    }),
-  );
+        const approval = yield* Effect.forkChild(
+          approveWorkspaceActionEffect("action-1", logger),
+        );
+        yield* Effect.promise(() =>
+          vi.waitFor(() => expect(mocks.createCalendarEvent).toHaveBeenCalled()),
+        );
+        const rejection = yield* Effect.flip(rejectWorkspaceActionEffect("action-1"));
+        expect(rejection.message).toContain("already being resolved");
+        finishCreate?.({ status: "success", eventUid: "workspace-action-1" });
+        expect(yield* Fiber.join(approval)).toMatchObject({ status: "approved" });
+      }),
+    ));
 });

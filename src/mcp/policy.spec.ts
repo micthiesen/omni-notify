@@ -1,14 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { Logger } from "@micthiesen/mitools/logging";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 import type { TaskRegistry } from "../task-runs/registry.js";
 import { serializePolicyInventory } from "./policy.js";
 import type { McpRuntime } from "./runtime.js";
 import { createToolDefinitions } from "./tools/index.js";
 
+const testRuntime = createMitoolsTestRuntime();
+afterAll(() => testRuntime.dispose());
+
 function policyTools() {
   const runtime: McpRuntime = {
-    logger: new Logger("McpPolicySpec"),
+    logger: Logger.named("McpPolicySpec"),
+    effectRunner: testRuntime.runner,
     registry: { list: () => [] } as unknown as TaskRegistry,
     streamers: [],
     emailControls: {},

@@ -1,8 +1,9 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { formatDuration, getTitleFromUrl } from "@micthiesen/mitools/strings";
 import { Clock, Effect } from "effect";
 import config from "../utils/config.js";
+import type { TaskServices } from "../task-runs/registry.js";
 import { getCleanedArticle } from "./agents/cleaner.js";
 import { getDuration, tagEpisodeAudio } from "./audio.js";
 import CostCounter from "./costs.js";
@@ -22,7 +23,7 @@ import {
 } from "./storage.js";
 import { type Article, summarizeRetrieverAttempts } from "./types.js";
 import { normalizeUrl } from "./url.js";
-import { PressPodsError, tryPromise, trySync } from "./effect.js";
+import { trySync } from "./effect.js";
 
 /**
  * URL → article retrieval → narration cleaning → TTS → audio finalization →
@@ -49,7 +50,7 @@ export const createEpisodeFromUrl = Effect.fn("PressPods.createEpisode")(functio
     retrieverName,
     allResults,
   } = yield* getArticleFromUrl(url, costCounter, logger);
-  logger.info("Article retrieved", {
+  yield* logger.info("Article retrieved", {
     title: unvalidatedArticle.title,
     chars: unvalidatedArticle.text.length,
     retriever: retrieverName,
@@ -79,7 +80,7 @@ export const createEpisodeFromUrl = Effect.fn("PressPods.createEpisode")(functio
   const article = { ...articleNoText, text } satisfies Article;
 
   const { content } = yield* getCleanedArticle(article, costCounter);
-  logger.info("Narration text ready", { contentLength: content.length });
+  yield* logger.info("Narration text ready", { contentLength: content.length });
 
   const retrieverSeconds = ((yield* Clock.currentTimeMillis) - start) / 1000;
 
@@ -145,7 +146,7 @@ export const createEpisodeFromUrl = Effect.fn("PressPods.createEpisode")(functio
   // longer needed.
   yield* clearChunkCheckpoints(workId);
 
-  logger.info(`Episode created for "${episode.title}"`, costCounter.getCosts());
+  yield* logger.info(`Episode created for "${episode.title}"`, costCounter.getCosts());
   yield* notifyEpisodeAvailable(episode, logger);
   return episode;
 });
@@ -160,7 +161,7 @@ export const persistEpisodeWithAudio = Effect.fn("PressPods.persistEpisode")(fun
   audio: Buffer,
   persist: (
     episode: PressPodsEpisodeData,
-  ) => Effect.Effect<void, PressPodsError> = PressPodsPersistence.upsertEpisode,
+  ) => Effect.Effect<void, unknown, TaskServices> = PressPodsPersistence.upsertEpisode,
 ) {
   yield* saveEpisodeAudio(episode.audioFile, audio);
   yield* persist(episode).pipe(
@@ -186,36 +187,32 @@ export const replaceOlderEpisodes = Effect.fn("PressPods.replaceOlderEpisodes")(
       (old) =>
         Effect.gen(function* () {
           yield* deleteEpisodeAudio(old.audioFile);
-          logger.info(`Replaced older episode ${old.episodeId} for the same article`);
+          yield* logger.info(
+            `Replaced older episode ${old.episodeId} for the same article`,
+          );
         }),
       { discard: true },
     );
   },
 );
 
-function notifyEpisodeAvailable(
-  episode: PressPodsEpisodeData,
-  logger: Logger,
-): Effect.Effect<void> {
+function notifyEpisodeAvailable(episode: PressPodsEpisodeData, logger: Logger) {
   const costs = episode.costs;
   const totalCents = (costs?.llmCents ?? 0) + (costs?.ttsCents ?? 0);
   const parts = [
     `'${episode.title}' from '${episode.domain ?? "unknown"}' is now available.`,
     `${formatDuration(episode.durationSeconds)} · ${episode.voiceName} · US$${(totalCents / 100).toFixed(2)}`,
   ];
-  return tryPromise("notify for new PressPods episode", () =>
-    notify({
-      title: "Episode Now Available",
-      message: parts.join("\n"),
-      token: config.PUSHOVER_PRESSPODS_TOKEN,
-      url: `${config.RECS_PUBLIC_URL}/pods`,
-      url_title: "Open PressPods",
-    }),
-  ).pipe(
-    Effect.catch((error) => {
+  return notify({
+    title: "Episode Now Available",
+    message: parts.join("\n"),
+    token: config.PUSHOVER_PRESSPODS_TOKEN,
+    url: `${config.RECS_PUBLIC_URL}/pods`,
+    url_title: "Open PressPods",
+  }).pipe(
+    Effect.catch((error) =>
       // The episode exists and the feed will pick it up; delivery is best-effort.
-      logger.warn("Failed to send episode notification", { error });
-      return Effect.void;
-    }),
+      logger.warn("Failed to send episode notification", { error }),
+    ),
   );
 }

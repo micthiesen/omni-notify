@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { transaction } from "@micthiesen/mitools/docstore";
 import { Entity } from "@micthiesen/mitools/entities";
-import { Clock, Effect } from "effect";
+import { decodeDoc, Docstore } from "@micthiesen/mitools/docstore";
+import { Clock, Effect, Option } from "effect";
 import { toDateStamp } from "../utils/dates.js";
 import { calendarPersistenceEffect } from "./effect.js";
 
@@ -37,14 +37,17 @@ export const CreatedCalendarEventEntity = new Entity<
   ["eventHash"]
 >("calendar-created-event", ["eventHash"]);
 
-function hasCreatedEvent(eventHash: string): boolean {
-  const record = CreatedCalendarEventEntity.get({ eventHash });
+const hasCreatedEvent = Effect.fn("CalendarPersistence.hasCreatedRaw")(function* (
+  eventHash: string,
+) {
+  const record = Option.getOrUndefined(
+    yield* CreatedCalendarEventEntity.get({ eventHash }),
+  );
   return record !== undefined && record.status !== "cancelled";
-}
+});
 
-function recordCreatedEvent(data: CreatedCalendarEventData): void {
+const recordCreatedEvent = (data: CreatedCalendarEventData) =>
   CreatedCalendarEventEntity.upsert(data);
-}
 
 /**
  * Normalize a title for identity comparison. Strips emoji, arrows, and other
@@ -220,25 +223,49 @@ function recurrenceKey(recurrence: EventRecurrence | null | undefined): string {
  * Safe to run on every startup — once re-keyed, recomputed hashes match and it's a no-op.
  * Returns the number of rows re-keyed.
  */
-function reconcileEventHashes(): number {
-  let rekeyed = 0;
-  for (const row of CreatedCalendarEventEntity.getAll()) {
-    const expected = computeEventHash(row.title, row.startDate, row.startTime);
-    if (row.eventHash === expected) continue;
-    CreatedCalendarEventEntity.upsert({ ...row, eventHash: expected });
-    CreatedCalendarEventEntity.delete({ eventHash: row.eventHash });
-    rekeyed++;
-  }
-  return rekeyed;
-}
+const reconcileEventHashes = Effect.fn("CalendarPersistence.reconcileRaw")(
+  function* () {
+    const docstore = yield* Docstore;
+    const now = yield* Clock.currentTimeMillis;
+    return yield* docstore.transaction("reconcile calendar event hashes", (tx) => {
+      let rekeyed = 0;
+      for (const stored of tx.getRawRowsByPrefix(
+        `$${CreatedCalendarEventEntity.name}#`,
+      )) {
+        if (stored.expires_at !== null && stored.expires_at <= now) continue;
+        let row: CreatedCalendarEventData;
+        try {
+          row = decodeDoc<CreatedCalendarEventData>(stored.data);
+        } catch {
+          continue;
+        }
+        const expected = computeEventHash(row.title, row.startDate, row.startTime);
+        if (row.eventHash === expected) continue;
+        tx.upsertDoc(
+          CreatedCalendarEventEntity.getPk({ eventHash: expected }),
+          { ...row, eventHash: expected },
+          { entity: CreatedCalendarEventEntity.name },
+          now,
+        );
+        tx.deleteDoc(CreatedCalendarEventEntity.getPk({ eventHash: row.eventHash }));
+        rekeyed++;
+      }
+      return rekeyed;
+    });
+  },
+);
 
 /** Mark an existing event as cancelled (preserves record to prevent re-creation). */
-function markEventCancelled(eventHash: string): void {
-  const record = CreatedCalendarEventEntity.get({ eventHash });
+const markEventCancelled = Effect.fn("CalendarPersistence.markCancelledRaw")(function* (
+  eventHash: string,
+) {
+  const record = Option.getOrUndefined(
+    yield* CreatedCalendarEventEntity.get({ eventHash }),
+  );
   if (record) {
-    CreatedCalendarEventEntity.upsert({ ...record, status: "cancelled" });
+    yield* CreatedCalendarEventEntity.upsert({ ...record, status: "cancelled" });
   }
-}
+});
 
 export const getTrackedCalendarEventsEffect = Effect.fn("CalendarPersistence.getAll")(
   function* () {
@@ -250,8 +277,10 @@ export const getTrackedCalendarEventsEffect = Effect.fn("CalendarPersistence.get
 
 export const getTrackedCalendarEventEffect = Effect.fn("CalendarPersistence.get")(
   function* (eventHash: string) {
-    return yield* calendarPersistenceEffect("read tracked calendar event", () =>
-      CreatedCalendarEventEntity.get({ eventHash }),
+    return Option.getOrUndefined(
+      yield* calendarPersistenceEffect("read tracked calendar event", () =>
+        CreatedCalendarEventEntity.get({ eventHash }),
+      ),
     );
   },
 );
@@ -276,11 +305,30 @@ export const replaceCreatedEventEffect = Effect.fn(
   "CalendarPersistence.replaceCreated",
 )(function* (data: CreatedCalendarEventData, previousEventHash: string) {
   yield* calendarPersistenceEffect("replace tracked calendar event", () =>
-    transaction(() => {
-      recordCreatedEvent(data);
-      if (data.eventHash !== previousEventHash) {
-        markEventCancelled(previousEventHash);
-      }
+    Effect.gen(function* () {
+      const docstore = yield* Docstore;
+      const now = yield* Clock.currentTimeMillis;
+      yield* docstore.transaction("replace tracked calendar event", (tx) => {
+        tx.upsertDoc(
+          CreatedCalendarEventEntity.getPk({ eventHash: data.eventHash }),
+          data,
+          { entity: CreatedCalendarEventEntity.name },
+          now,
+        );
+        if (data.eventHash === previousEventHash) return;
+        const previousPk = CreatedCalendarEventEntity.getPk({
+          eventHash: previousEventHash,
+        });
+        const stored = tx.getRawRow(previousPk, now);
+        if (!stored) return;
+        const previous = decodeDoc<CreatedCalendarEventData>(stored.data);
+        tx.upsertDoc(
+          previousPk,
+          { ...previous, status: "cancelled" },
+          { entity: CreatedCalendarEventEntity.name },
+          now,
+        );
+      });
     }),
   );
 });
@@ -305,6 +353,6 @@ export const reconcileEventHashesEffect = Effect.fn(
   "CalendarPersistence.reconcileHashes",
 )(function* () {
   return yield* calendarPersistenceEffect("reconcile calendar event hashes", () =>
-    transaction(reconcileEventHashes),
+    reconcileEventHashes(),
   );
 });

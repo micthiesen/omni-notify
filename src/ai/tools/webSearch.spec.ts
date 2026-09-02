@@ -1,10 +1,23 @@
+import type { Docstore } from "@micthiesen/mitools/docstore";
+import type { Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import type {
   LimitedTextResponse,
   PublicTextRequest,
 } from "../../effect/publicHttp.js";
-import { searchWebEffect } from "./webSearch.js";
+import { runnerFromContext } from "../../effect/appRuntime.js";
+import { getCostEvents } from "../../costs/persistence.js";
+import {
+  runWithLogCaptureEffect,
+  startRunLogCapture,
+  takeRunLogCapture,
+} from "../../task-runs/logCapture.js";
+import { createMitoolsTestRuntime } from "../../test/mitools.js";
+import { makeWebSearchTool, searchWebEffect } from "./webSearch.js";
+
+const runtime = createMitoolsTestRuntime();
+afterAll(() => runtime.dispose());
 
 function response(chunks: string[]): LimitedTextResponse {
   return {
@@ -28,7 +41,7 @@ describe("searchWebEffect", () => {
     ) as PublicTextRequest;
 
     await expect(
-      Effect.runPromise(
+      runtime.run(
         searchWebEffect({ query: "test" }, { request, maxResponseBytes: 1024 }),
       ),
     ).resolves.toEqual({
@@ -45,9 +58,7 @@ describe("searchWebEffect", () => {
     const request = vi.fn(() => response(["12345", "67890"])) as PublicTextRequest;
 
     await expect(
-      Effect.runPromise(
-        searchWebEffect({ query: "test" }, { request, maxResponseBytes: 8 }),
-      ),
+      runtime.run(searchWebEffect({ query: "test" }, { request, maxResponseBytes: 8 })),
     ).rejects.toThrow("Response exceeds the 8-byte limit");
   });
 
@@ -57,7 +68,47 @@ describe("searchWebEffect", () => {
     ) as PublicTextRequest;
 
     await expect(
-      Effect.runPromise(searchWebEffect({ query: "test" }, { request })),
+      runtime.run(searchWebEffect({ query: "test" }, { request })),
     ).rejects.toThrow("Web search failed");
+  });
+
+  it("retains task attribution when the AI SDK invokes the captured tool later", async () => {
+    const runId = "web-search-tool-context";
+    startRunLogCapture(runId, "Recommendations");
+    const request = vi.fn(() =>
+      response([
+        JSON.stringify({
+          results: [],
+          response_time: 0.1,
+        }),
+      ]),
+    ) as PublicTextRequest;
+    try {
+      const searchTool = await runtime.run(
+        runWithLogCaptureEffect(
+          runId,
+          Effect.gen(function* () {
+            const context = yield* Effect.context<Logger | Docstore>();
+            return makeWebSearchTool(runnerFromContext(context), { request });
+          }),
+        ),
+      );
+
+      await searchTool.execute?.(
+        { query: "context test" },
+        { toolCallId: "tool-call", messages: [], context: {} },
+      );
+
+      const events = await runtime.run(getCostEvents());
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          runId,
+          feature: "media-recommendations",
+          service: "tavily",
+        }),
+      );
+    } finally {
+      takeRunLogCapture(runId);
+    }
   });
 });

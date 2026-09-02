@@ -172,50 +172,56 @@ function senderDomain(fromLower: string): string {
 export function filterCalendarCandidateEffect(
   email: EmailCandidate,
   triage: EmailTriageService,
-): Effect.Effect<FilterResult, never> {
-  const fromLower = email.from.toLowerCase();
+) {
+  return Effect.gen(function* () {
+    const fromLower = email.from.toLowerCase();
 
-  // User rules beat the built-in lists in both directions: an explicit allow
-  // overrides a shipped blacklist entry (block still beats allow among rules).
-  const rule = findSenderRule(email.from, "calendar");
-  if (rule?.verdict === "block") {
-    return Effect.succeed({ pass: false, reason: `blocked by rule ${rule.pattern}` });
-  }
-  if (rule?.verdict === "allow") {
-    return Effect.succeed({
-      pass: true,
-      reason: `allowed by rule ${rule.pattern}`,
-      admitTier: "rule",
-    });
-  }
+    // User rules beat the built-in lists in both directions: an explicit allow
+    // overrides a shipped blacklist entry (block still beats allow among rules).
+    const rule = yield* findSenderRule(email.from, "calendar");
+    if (rule?.verdict === "block") {
+      return { pass: false as const, reason: `blocked by rule ${rule.pattern}` };
+    }
+    if (rule?.verdict === "allow") {
+      return {
+        pass: true,
+        reason: `allowed by rule ${rule.pattern}`,
+        admitTier: "rule",
+      } as const;
+    }
 
-  // Blacklisted senders are always rejected
-  if (isBlacklistedSender(fromLower)) {
-    return Effect.succeed({ pass: false, reason: "blacklisted sender" });
-  }
+    // Blacklisted senders are always rejected
+    if (isBlacklistedSender(fromLower)) {
+      return { pass: false as const, reason: "blacklisted sender" };
+    }
 
-  // Known booking/travel/event domains auto-pass. Match on the sender's
-  // domain (incl. subdomains) so transactional subdomains like
-  // "noreply@reminder.eventbrite.com" still resolve to "eventbrite.com".
-  const domain = senderDomain(fromLower);
-  if (
-    AUTO_PASS_SENDERS.some((entry) => {
-      const bare = entry.replace(/^@/, "");
-      return domain === bare || domain.endsWith(`.${bare}`);
-    })
-  ) {
-    return Effect.succeed({ pass: true, reason: "known sender", admitTier: "builtin" });
-  }
+    // Known booking/travel/event domains auto-pass. Match on the sender's
+    // domain (incl. subdomains) so transactional subdomains like
+    // "noreply@reminder.eventbrite.com" still resolve to "eventbrite.com".
+    const domain = senderDomain(fromLower);
+    if (
+      AUTO_PASS_SENDERS.some((entry) => {
+        const bare = entry.replace(/^@/, "");
+        return domain === bare || domain.endsWith(`.${bare}`);
+      })
+    ) {
+      return {
+        pass: true as const,
+        reason: "known sender",
+        admitTier: "builtin" as const,
+      };
+    }
 
-  // Cheap-LLM triage decides everything else; keywords are only the fallback
-  return triage.classifyEffect(email).pipe(
-    Effect.map((verdict): FilterResult =>
-      verdict.calendar
-        ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
-        : { pass: false, reason: `triage: ${verdict.reason}` },
-    ),
-    Effect.catch(() => Effect.succeed(keywordFallback(email))),
-  );
+    // Cheap-LLM triage decides everything else; keywords are only the fallback
+    return yield* triage.classifyEffect(email).pipe(
+      Effect.map((verdict): FilterResult =>
+        verdict.calendar
+          ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
+          : { pass: false, reason: `triage: ${verdict.reason}` },
+      ),
+      Effect.catch(() => Effect.succeed(keywordFallback(email))),
+    );
+  });
 }
 
 function isBlacklistedSender(fromLower: string): boolean {

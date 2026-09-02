@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
@@ -7,7 +7,7 @@ import { Effect } from "effect";
 import { z } from "zod";
 import { getRecsShortlistModel } from "../ai/registry.js";
 import type { Candidate } from "./types.js";
-import { integrationEffect, RecommendationIntegrationError } from "./effect.js";
+import { integrationEffect } from "./effect.js";
 
 export const FINALIST_COUNT = 5;
 
@@ -56,7 +56,7 @@ export function shortlistCandidates(
   logger: Logger,
   logFile?: LogFile,
   finalistCount = FINALIST_COUNT,
-): Effect.Effect<ScoredCandidate[], RecommendationIntegrationError> {
+) {
   return Effect.gen(function* () {
     const { model, modelId } = getRecsShortlistModel();
 
@@ -64,15 +64,16 @@ export function shortlistCandidates(
     const ordered = [...candidates].sort((a, b) => a.tmdbId - b.tmdbId);
     const prompt = buildPrompt(ordered, historyDigest);
 
-    logFile?.log(
-      logger,
-      LogLevel.INFO,
-      `Shortlist Prompt (${modelId})`,
-      codeBlock(prompt),
-      {
-        consoleSummary: `Scoring ${ordered.length} candidates (${modelId})`,
-      },
-    );
+    if (logFile)
+      yield* logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Shortlist Prompt (${modelId})`,
+        codeBlock(prompt),
+        {
+          consoleSummary: `Scoring ${ordered.length} candidates (${modelId})`,
+        },
+      );
 
     const result = yield* integrationEffect("generate recommendation shortlist", () =>
       generateText({
@@ -81,7 +82,7 @@ export function shortlistCandidates(
         prompt,
       }),
     );
-    logger.info(
+    yield* logger.info(
       `Shortlist token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
@@ -90,7 +91,9 @@ export function shortlistCandidates(
     for (const score of result.output?.scores ?? []) {
       const candidate = byId.get(score.candidate_id);
       if (!candidate) {
-        logger.warn(`Shortlist returned unknown candidate_id: ${score.candidate_id}`);
+        yield* logger.warn(
+          `Shortlist returned unknown candidate_id: ${score.candidate_id}`,
+        );
         continue;
       }
       scored.push({
@@ -112,17 +115,18 @@ export function shortlistCandidates(
     scored.sort((a, b) => b.composite - a.composite);
     const finalists = scored.slice(0, finalistCount);
 
-    logFile?.section(
-      "Shortlist Result",
-      codeBlock(
-        finalists
-          .map(
-            (s) =>
-              `${s.composite.toFixed(1)} ${s.candidate.title} (taste=${s.tasteMatch} novelty=${s.novelty} effort=${s.effortFit} conf=${s.confidence})`,
-          )
-          .join("\n"),
-      ),
-    );
+    if (logFile)
+      yield* logFile.section(
+        "Shortlist Result",
+        codeBlock(
+          finalists
+            .map(
+              (s) =>
+                `${s.composite.toFixed(1)} ${s.candidate.title} (taste=${s.tasteMatch} novelty=${s.novelty} effort=${s.effortFit} conf=${s.confidence})`,
+            )
+            .join("\n"),
+        ),
+      );
 
     return finalists;
   });

@@ -1,9 +1,9 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import got, { HTTPError, RequestError } from "got";
 import { Duration, Effect, Schedule } from "effect";
 import { readBufferResponseWithLimit } from "../../../effect/publicHttp.js";
 import config from "../../../utils/config.js";
-import { PressPodsError, tryPromise } from "../../effect.js";
+import { tryPromise } from "../../effect.js";
 import type { AuthorGender, TtsProvider } from "./types.js";
 
 /** Higgs Audio v3 via a self-hosted mlx-audio server (OpenAI-shaped API). */
@@ -55,10 +55,7 @@ export class HiggsProvider implements TtsProvider {
     this.voiceName = this.refVoice ? "Higgs (cloned)" : `Higgs (${this.gender})`;
   }
 
-  public synthesizeChunk(
-    text: string,
-    logger: Logger,
-  ): Effect.Effect<Buffer, PressPodsError> {
+  public synthesizeChunk(text: string, logger: Logger) {
     // A reference clip defines the voice, so gender is omitted when cloning.
     const voiceParams = this.refVoice
       ? { ref_audio: this.refVoice.refAudio, ref_text: this.refVoice.refText }
@@ -85,9 +82,7 @@ export class HiggsProvider implements TtsProvider {
       ),
     );
     return request.pipe(
-      Effect.tapError((error) =>
-        Effect.sync(() => logger.warn("Higgs chunk request failed", { error })),
-      ),
+      Effect.tapError((error) => logger.warn("Higgs chunk request failed", { error })),
       Effect.retry({
         times: 1,
         schedule: Schedule.exponential(Duration.seconds(2)),

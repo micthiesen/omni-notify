@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
+import { withVirtualTime } from "@micthiesen/mitools/testing";
 import { Effect, Fiber } from "effect";
-import { TestClock } from "effect/testing";
 import type { OptionsInit } from "got";
 import { describe, expect, vi } from "vitest";
 import { CastroApi, type CastroHttpRequest } from "./api.js";
@@ -53,10 +53,7 @@ describe("CastroApi bounded requests", () => {
       const request = vi.fn(() =>
         response(["unavailable"], undefined, vi.fn(), 503),
       ) as CastroHttpRequest;
-      const fiber = yield* Effect.forkChild(api(request).getSyncStatus());
-
-      yield* TestClock.adjust("1 second");
-      yield* Fiber.await(fiber);
+      yield* Effect.exit(withVirtualTime(api(request).getSyncStatus(), "1 second"));
 
       expect(request).toHaveBeenCalledTimes(3);
     }),

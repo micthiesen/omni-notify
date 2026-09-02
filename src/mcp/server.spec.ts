@@ -3,7 +3,7 @@ import { Logger } from "@micthiesen/mitools/logging";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { Effect } from "effect";
 import { Hono } from "hono";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { EmailTransport, FetchedEmail } from "../email/types.js";
 import type { PodcastAccountClient } from "../podcast-recs/account.js";
 import type { PrinterService } from "../printer/service.js";
@@ -11,18 +11,22 @@ import type { TaskRegistry } from "../task-runs/registry.js";
 import { registerOmniMcpRoute } from "./route.js";
 import type { McpRuntime } from "./runtime.js";
 import { createOmniMcpHandler, MCP_SERVER_INSTRUCTIONS } from "./server.js";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 
 const TEST_TOKEN = "test-token-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const handlers: Array<ReturnType<typeof createOmniMcpHandler>> = [];
 const clients: Client[] = [];
 const httpServers: ServerType[] = [];
+const mitools = createMitoolsTestRuntime();
+afterAll(() => mitools.dispose());
 
 function runtime(overrides: Partial<McpRuntime> = {}): McpRuntime {
   return {
-    logger: new Logger("McpServerSpec"),
+    logger: Logger.named("McpServerSpec"),
+    effectRunner: mitools.runner,
     registry: {
-      list: () => [],
-      runNow: () => ({ runId: "test-run" }),
+      list: () => Effect.succeed([]),
+      runNow: () => Effect.succeed({ runId: "test-run" }),
     } as unknown as TaskRegistry,
     streamers: [],
     emailControls: {},
@@ -153,10 +157,10 @@ describe("Omni MCP streamable HTTP server", () => {
   });
 
   it("executes representative read and mocked mutation calls", async () => {
-    const runNow = vi.fn(() => ({ runId: "mock-run-123" }));
+    const runNow = vi.fn(() => Effect.succeed({ runId: "mock-run-123" }));
     const handler = createOmniMcpHandler(
       runtime({
-        registry: { list: () => [], runNow } as unknown as TaskRegistry,
+        registry: { list: () => Effect.succeed([]), runNow } as unknown as TaskRegistry,
       }),
       TEST_TOKEN,
     );
@@ -194,7 +198,9 @@ describe("Omni MCP streamable HTTP server", () => {
       lastRun: null,
     }));
     const handler = createOmniMcpHandler(
-      runtime({ registry: { list: () => tasks } as unknown as TaskRegistry }),
+      runtime({
+        registry: { list: () => Effect.succeed(tasks) } as unknown as TaskRegistry,
+      }),
       TEST_TOKEN,
     );
     handlers.push(handler);

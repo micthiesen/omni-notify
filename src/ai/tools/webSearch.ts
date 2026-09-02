@@ -1,8 +1,10 @@
+import type { EffectRunner } from "@micthiesen/mitools/boundary";
+import type { Docstore } from "@micthiesen/mitools/docstore";
+import type { Logger } from "@micthiesen/mitools/logging";
 import { tool } from "ai";
 import { Data, Effect, Schema } from "effect";
 import { z } from "zod";
 import { currentCostFeature, recordCostEventSafely } from "../../costs/persistence.js";
-import { runPromise } from "../../effect/interop.js";
 import {
   fetchPublicText,
   PUBLIC_HTTP_USER_AGENT,
@@ -50,7 +52,11 @@ export function searchWebEffect(
     readonly request?: PublicTextRequest;
     readonly maxResponseBytes?: number;
   } = {},
-): Effect.Effect<{ results: WebSearchResult[]; responseTime: number }, WebSearchError> {
+): Effect.Effect<
+  { results: WebSearchResult[]; responseTime: number },
+  WebSearchError,
+  Logger | Docstore
+> {
   return Effect.gen(function* () {
     const responseText = yield* fetchPublicText(
       TAVILY_SEARCH_URL,
@@ -78,7 +84,7 @@ export function searchWebEffect(
 
     // Default/basic search consumes one credit. Use Tavily's public pay-as-you-go
     // rate as an estimate; subscription/free-plan billing can make actual spend lower.
-    recordCostEventSafely({
+    yield* recordCostEventSafely({
       category: "search",
       feature: currentCostFeature("web-search"),
       operation: "search",
@@ -103,20 +109,30 @@ export function searchWebEffect(
   });
 }
 
-export const webSearch = tool({
-  description:
-    "Search the web for current information. Use topic 'news' for current events and breaking news.",
-  inputSchema: z.object({
-    query: z.string().describe("The search query"),
-    topic: z
-      .enum(["general", "news"])
-      .optional()
-      .describe("'general' for broad searches, 'news' for current events"),
-    time_range: z
-      .enum(["day", "week", "month", "year"])
-      .optional()
-      .describe("Filter results by recency"),
-  }),
-  execute: ({ query, topic, time_range }) =>
-    runPromise(searchWebEffect({ query, topic, timeRange: time_range })),
-});
+export function makeWebSearchTool(
+  runner: EffectRunner<Logger | Docstore>,
+  dependencies: {
+    readonly request?: PublicTextRequest;
+    readonly maxResponseBytes?: number;
+  } = {},
+) {
+  return tool({
+    description:
+      "Search the web for current information. Use topic 'news' for current events and breaking news.",
+    inputSchema: z.object({
+      query: z.string().describe("The search query"),
+      topic: z
+        .enum(["general", "news"])
+        .optional()
+        .describe("'general' for broad searches, 'news' for current events"),
+      time_range: z
+        .enum(["day", "week", "month", "year"])
+        .optional()
+        .describe("Filter results by recency"),
+    }),
+    execute: ({ query, topic, time_range }) =>
+      runner.runPromise(
+        searchWebEffect({ query, topic, timeRange: time_range }, dependencies),
+      ),
+  });
+}

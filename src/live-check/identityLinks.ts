@@ -1,7 +1,9 @@
 import type { Effect as EffectType } from "effect/Effect";
+import type { Docstore } from "@micthiesen/mitools/docstore";
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect, Option } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
-import { fromSync } from "../effect/interop.js";
+import { PersistenceError as PersistenceFailure } from "../effect/errors.js";
 import { Platform } from "./platforms/index.js";
 import type { PlatformBinding } from "./streamers.js";
 
@@ -35,42 +37,44 @@ export function canonicalBindingKey(binding: PlatformBinding): string {
   return `${binding.platform}:${username}`;
 }
 
-export function getProfileIdentityLink(
-  source: PlatformBinding,
-): ProfileIdentityLink | undefined {
-  return ProfileIdentityLinkEntity.get({
-    sourceBinding: canonicalBindingKey(source),
-  });
-}
-
 export function getProfileIdentityLinkEffect(
   source: PlatformBinding,
-): EffectType<ProfileIdentityLink | undefined, PersistenceError> {
-  return fromSync("read profile identity link", () => getProfileIdentityLink(source));
+): EffectType<ProfileIdentityLink | undefined, PersistenceError, Docstore> {
+  return ProfileIdentityLinkEntity.get({
+    sourceBinding: canonicalBindingKey(source),
+  }).pipe(
+    Effect.map(Option.getOrUndefined),
+    Effect.mapError(
+      (cause) =>
+        new PersistenceFailure({ operation: "read profile identity link", cause }),
+    ),
+  );
 }
 
 export function getAllProfileIdentityLinksEffect(): EffectType<
   ProfileIdentityLink[],
-  PersistenceError
+  PersistenceError,
+  Docstore
 > {
-  return fromSync("list profile identity links", () =>
-    ProfileIdentityLinkEntity.getAll(),
+  return ProfileIdentityLinkEntity.getAll().pipe(
+    Effect.mapError(
+      (cause) =>
+        new PersistenceFailure({ operation: "list profile identity links", cause }),
+    ),
   );
-}
-
-export function getProfileIdentityTarget(source: PlatformBinding): string | undefined {
-  return getProfileIdentityLink(source)?.targetBinding;
-}
-
-export function forgetProfileIdentityLink(source: PlatformBinding): void {
-  ProfileIdentityLinkEntity.delete({ sourceBinding: canonicalBindingKey(source) });
 }
 
 export function forgetProfileIdentityLinkEffect(
   source: PlatformBinding,
-): EffectType<void, PersistenceError> {
-  return fromSync("delete profile identity link", () =>
-    forgetProfileIdentityLink(source),
+): EffectType<void, PersistenceError, Docstore> {
+  return ProfileIdentityLinkEntity.delete({
+    sourceBinding: canonicalBindingKey(source),
+  }).pipe(
+    Effect.asVoid,
+    Effect.mapError(
+      (cause) =>
+        new PersistenceFailure({ operation: "delete profile identity link", cause }),
+    ),
   );
 }
 
@@ -82,25 +86,32 @@ export function rememberProfileIdentityLink({
   source: PlatformBinding;
   target: PlatformBinding;
   now?: number;
-}): ProfileIdentityLink {
+}): EffectType<ProfileIdentityLink, PersistenceError, Docstore> {
   const sourceBinding = canonicalBindingKey(source);
   const targetBinding = canonicalBindingKey(target);
-  const existing = ProfileIdentityLinkEntity.get({ sourceBinding });
-  const row: ProfileIdentityLink = {
-    sourceBinding,
-    targetBinding,
-    discoveredAt:
-      existing?.targetBinding === targetBinding ? existing.discoveredAt : now,
-    verifiedAt: now,
-  };
-  ProfileIdentityLinkEntity.upsert(row);
-  return row;
+  return Effect.gen(function* () {
+    const existing = Option.getOrUndefined(
+      yield* ProfileIdentityLinkEntity.get({ sourceBinding }),
+    );
+    const row: ProfileIdentityLink = {
+      sourceBinding,
+      targetBinding,
+      discoveredAt:
+        existing?.targetBinding === targetBinding ? existing.discoveredAt : now,
+      verifiedAt: now,
+    };
+    yield* ProfileIdentityLinkEntity.upsert(row);
+    return row;
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new PersistenceFailure({ operation: "upsert profile identity link", cause }),
+    ),
+  );
 }
 
 export function rememberProfileIdentityLinkEffect(
   input: Parameters<typeof rememberProfileIdentityLink>[0],
-): EffectType<ProfileIdentityLink, PersistenceError> {
-  return fromSync("upsert profile identity link", () =>
-    rememberProfileIdentityLink(input),
-  );
+): EffectType<ProfileIdentityLink, PersistenceError, Docstore> {
+  return rememberProfileIdentityLink(input);
 }

@@ -1,7 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
-import { it as effectIt } from "@effect/vitest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { Effect, Exit } from "effect";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 import type {
   WorkspaceActionData,
   WorkspaceMessageData,
@@ -29,7 +29,81 @@ vi.mock("./notifications.js", () => ({
 }));
 
 vi.mock("./persistence.js", () => ({
-  applyWorkspaceTransaction: <A>(apply: () => A) => apply(),
+  WorkspaceActionEntity: { name: "workspace-action" },
+  WorkspaceArtifactRevisionEntity: { name: "workspace-artifact-revision" },
+  WorkspaceMessageEntity: { name: "workspace-message" },
+  WorkspaceNotificationEntity: { name: "workspace-notification" },
+  WorkspaceSourceEntity: { name: "workspace-source" },
+  WorkspaceSubjectEntity: { name: "workspace-subject" },
+  applyWorkspaceTransaction: <A>(
+    apply: (
+      transaction: {
+        get: (entity: { name: string }, key: Record<string, string>) => unknown;
+        all: (entity: { name: string }) => unknown[];
+        upsert: (
+          entity: { name: string },
+          key: Record<string, string>,
+          data: Record<string, unknown>,
+        ) => void;
+        patch: (
+          entity: { name: string },
+          key: Record<string, string>,
+          partial: Record<string, unknown>,
+        ) => unknown;
+      },
+      now: number,
+    ) => A,
+  ) =>
+    Effect.sync(() => {
+      type StoredRow = Record<string, unknown>;
+      const rows = (name: string): StoredRow[] => {
+        if (name === "workspace-artifact-revision") return state.artifacts;
+        if (name === "workspace-action") return state.actions as unknown as StoredRow[];
+        if (name === "workspace-message")
+          return state.messages as unknown as StoredRow[];
+        if (name === "workspace-source") return state.sources as unknown as StoredRow[];
+        if (name === "workspace-notification") return state.notifications;
+        if (name === "workspace-subject")
+          return [...state.subjects.values()] as unknown as StoredRow[];
+        return [];
+      };
+      const transaction = {
+        get: (entity: { name: string }, key: Record<string, string>) =>
+          rows(entity.name).find((row) =>
+            Object.entries(key).every(([field, value]) => row[field] === value),
+          ),
+        all: (entity: { name: string }) => rows(entity.name),
+        upsert: (
+          entity: { name: string },
+          key: Record<string, string>,
+          data: Record<string, unknown>,
+        ) => {
+          if (entity.name === "workspace-subject") {
+            const subject = data as unknown as WorkspaceSubjectData;
+            state.subjects.set(`${subject.workspaceId}:${subject.subjectId}`, subject);
+            return;
+          }
+          const collection = rows(entity.name);
+          const index = collection.findIndex((row) =>
+            Object.entries(key).every(([field, value]) => row[field] === value),
+          );
+          if (index >= 0) collection[index] = data;
+          else collection.push(data);
+        },
+        patch: (
+          entity: { name: string },
+          key: Record<string, string>,
+          partial: Record<string, unknown>,
+        ) => {
+          const row = transaction.get(entity, key) as
+            | Record<string, unknown>
+            | undefined;
+          if (row) Object.assign(row, partial);
+          return row;
+        },
+      };
+      return apply(transaction, 1);
+    }),
   addWorkspaceAction: (
     input: Omit<WorkspaceActionData, "actionId" | "status" | "createdAt">,
   ) => {
@@ -70,21 +144,21 @@ vi.mock("./persistence.js", () => ({
     state.sources.push(source);
     return source;
   },
-  getLatestWorkspaceArtifacts: () => [],
+  getLatestWorkspaceArtifacts: () => Effect.succeed([]),
   getWorkspaceSubject: (workspaceId: string, subjectId: string) =>
-    state.subjects.get(`${workspaceId}:${subjectId}`),
-  listWorkspaceEmailScopes: () => [],
-  listWorkspaceMessages: () => [],
-  listWorkspaceSources: () => [],
-  listWorkspaceSubjects: () => [],
+    Effect.succeed(state.subjects.get(`${workspaceId}:${subjectId}`)),
+  listWorkspaceEmailScopes: () => Effect.succeed([]),
+  listWorkspaceMessages: () => Effect.succeed([]),
+  listWorkspaceSources: () => Effect.succeed([]),
+  listWorkspaceSubjects: () => Effect.succeed([...state.subjects.values()]),
   queueWorkspaceNotification: (input: Record<string, unknown>) => {
     const notification = { ...input, status: "pending", attempts: 0 };
     state.notifications.push(notification);
-    return { notification, created: true };
+    return Effect.succeed({ notification, created: true });
   },
   reportWorkspacePapercut: (input: Record<string, unknown>) => {
     state.papercuts.push(input);
-    return { ...input, papercutId: "papercut-1", occurrences: 1 };
+    return Effect.succeed({ ...input, papercutId: "papercut-1", occurrences: 1 });
   },
   upsertWorkspaceSubject: (input: WorkspaceSubjectData) => {
     const subject = { ...input, createdAt: input.createdAt ?? 1, updatedAt: 1 };
@@ -94,6 +168,9 @@ vi.mock("./persistence.js", () => ({
 }));
 
 import { applyWorkspaceOutputEffect, normalizeWorkspaceWebUrl } from "./engine.js";
+
+const runtime = createMitoolsTestRuntime();
+afterAll(() => runtime.dispose());
 
 const definition: WorkspaceDefinition = {
   id: "purchase-research",
@@ -106,7 +183,10 @@ const definition: WorkspaceDefinition = {
   instructions: "",
   artifacts: [{ key: "brief", title: "Brief", kind: "markdown", instructions: "" }],
 };
-const logger = { warn: vi.fn() } as unknown as Logger;
+const logger = {
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+} as unknown as NamedLogger;
 
 type Output = Parameters<typeof applyWorkspaceOutputEffect>[1];
 
@@ -163,7 +243,7 @@ describe("workspace output application", () => {
   });
 
   it("maps one new subject across artifacts, sources, messages, and actions", async () => {
-    const result = await Effect.runPromise(
+    const result = await runtime.run(
       applyWorkspaceOutputEffect(
         definition,
         output(),
@@ -196,7 +276,7 @@ describe("workspace output application", () => {
       runId: "run-1",
     });
 
-    await Effect.runPromise(
+    await runtime.run(
       applyWorkspaceOutputEffect(
         definition,
         output(),
@@ -216,7 +296,7 @@ describe("workspace output application", () => {
 
   it("rejects hallucinated subject IDs instead of allocating a dossier", async () => {
     await expect(
-      Effect.runPromise(
+      runtime.run(
         applyWorkspaceOutputEffect(
           definition,
           output("typo-subject"),
@@ -239,7 +319,7 @@ describe("workspace output application", () => {
       updatedAt: 1,
     });
     await expect(
-      Effect.runPromise(
+      runtime.run(
         applyWorkspaceOutputEffect(
           definition,
           output("new-1"),
@@ -250,9 +330,8 @@ describe("workspace output application", () => {
     ).rejects.toThrow("Subject-scoped run attempted to update");
   });
 
-  effectIt.effect(
-    "validates late references before writing any part of the output",
-    () =>
+  it("validates late references before writing any part of the output", async () =>
+    runtime.run(
       Effect.gen(function* () {
         const valid = output();
         const invalid: Output = {
@@ -287,15 +366,39 @@ describe("workspace output application", () => {
         expect(state.messages).toHaveLength(0);
         expect(state.notifications).toHaveLength(0);
       }),
-  );
+    ));
 
   it("does not renotify an existing pending action", async () => {
-    state.actionCreated = false;
-    await Effect.runPromise(
+    state.subjects.set("purchase-research:camera", {
+      workspaceId: "purchase-research",
+      subjectId: "camera",
+      title: "Camera",
+      status: "active",
+      summary: "Camera research",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    state.actions.push({
+      actionId: "existing-action",
+      workspaceId: "purchase-research",
+      subjectId: "camera",
+      type: "email_scope",
+      status: "pending",
+      title: "Watch Sale Emails",
+      description: "Watch one retailer.",
+      payload: JSON.stringify({
+        senders: ["alerts@example.com"],
+        domains: [],
+        subjectKeywords: [],
+        bodyKeywords: [],
+      }),
+      createdAt: 1,
+    });
+    await runtime.run(
       applyWorkspaceOutputEffect(
         definition,
-        output(),
-        { trigger: "message", message: "Check again" },
+        output("camera"),
+        { trigger: "message", message: "Check again", subjectId: "camera" },
         logger,
       ),
     );

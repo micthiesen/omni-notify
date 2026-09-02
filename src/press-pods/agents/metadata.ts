@@ -39,10 +39,7 @@ export interface Metadata {
   info: MetadataInfo;
 }
 
-export function getArticleMetadataEffect(
-  article: Article,
-  costCounter: CostCounter,
-): Effect.Effect<Metadata, PressPodsError> {
+export function getArticleMetadataEffect(article: Article, costCounter: CostCounter) {
   return Effect.gen(function* () {
     const { model, modelId } = getPressPodsMetadataModel();
     const result = yield* tryPromise("generate PressPods article metadata", () =>
@@ -110,7 +107,7 @@ ${article.text}`,
       completionTokens: result.usage.outputTokens || 0,
       totalTokens: result.usage.totalTokens || 0,
     };
-    costCounter.recordLlmUsage(modelId, "meta", completionUsage);
+    yield* costCounter.recordLlmUsage(modelId, "meta", completionUsage);
 
     return { info: transformMetadataInfo(object) };
   });

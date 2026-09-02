@@ -1,5 +1,6 @@
-import type { Logger } from "@micthiesen/mitools/logging";
-import { Effect } from "effect";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
+import { Clock, Effect, Option } from "effect";
+import type { TaskServices } from "../task-runs/registry.js";
 import {
   effectMessage,
   persistenceEffect,
@@ -55,17 +56,17 @@ export function resolveIdentity(
   item: MediaItem,
   logger: Logger,
   options: { allowNetwork?: boolean } = {},
-): Effect.Effect<Resolution, RecommendationPersistenceError> {
+): Effect.Effect<Resolution, RecommendationPersistenceError, TaskServices> {
   return Effect.gen(function* () {
     const allowNetwork = options.allowNetwork ?? true;
     const cached = yield* persistenceEffect("read identity alias", () =>
       IdentityAliasEntity.get({ guid: item.guid }),
     );
-    if (cached) {
+    if (Option.isSome(cached)) {
       return {
-        canonicalId: cached.canonicalId as CanonicalId | null,
-        confidence: cached.confidence,
-        resolutionPath: cached.resolutionPath,
+        canonicalId: cached.value.canonicalId as CanonicalId | null,
+        confidence: cached.value.confidence,
+        resolutionPath: cached.value.resolutionPath,
       };
     }
 
@@ -85,7 +86,11 @@ export function resolveIdentity(
     // Without network access, leave the item unresolved and UNcached so a
     // later full-resolution pass can still fill it in.
     if (!allowNetwork) {
-      return { canonicalId: null, confidence: 0, resolutionPath: "unresolved" };
+      return {
+        canonicalId: null,
+        confidence: 0,
+        resolutionPath: "unresolved",
+      } satisfies Resolution;
     }
 
     const resolution = yield* resolveViaNetworkEffect(item, external, logger);
@@ -95,23 +100,26 @@ export function resolveIdentity(
 }
 
 function cacheResolutionEffect(item: MediaItem, resolution: Resolution) {
-  return persistenceEffect("write identity alias", () =>
-    IdentityAliasEntity.upsert({
-      guid: item.guid,
-      canonicalId: resolution.canonicalId,
-      confidence: resolution.confidence,
-      resolutionPath: resolution.resolutionPath,
-      title: item.title,
-      resolvedAt: Date.now(),
-    }),
-  );
+  return Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    yield* persistenceEffect("write identity alias", () =>
+      IdentityAliasEntity.upsert({
+        guid: item.guid,
+        canonicalId: resolution.canonicalId,
+        confidence: resolution.confidence,
+        resolutionPath: resolution.resolutionPath,
+        title: item.title,
+        resolvedAt: now,
+      }),
+    );
+  });
 }
 
 function resolveViaNetworkEffect(
   item: MediaItem,
   external: ExternalIds,
   logger: Logger,
-): Effect.Effect<Resolution> {
+): Effect.Effect<Resolution, never, TaskServices> {
   return Effect.gen(function* () {
     // IMDb/TVDB id via TMDB /find.
     const findSource = external.imdb
@@ -122,13 +130,14 @@ function resolveViaNetworkEffect(
     if (findSource) {
       const matches = yield* findByExternalId(findSource.id, findSource.source).pipe(
         Effect.map((found) => found.filter((t) => t.mediaType === item.mediaType)),
-        Effect.catch((error) => {
-          logger.warn(
-            `TMDB find failed for "${item.title}" (${findSource.source}=${findSource.id})`,
-            effectMessage(error),
-          );
-          return Effect.succeed([]);
-        }),
+        Effect.catch((error) =>
+          logger
+            .warn(
+              `TMDB find failed for "${item.title}" (${findSource.source}=${findSource.id})`,
+              effectMessage(error),
+            )
+            .pipe(Effect.as([])),
+        ),
       );
       if (matches.length === 1) {
         return {
@@ -141,10 +150,11 @@ function resolveViaNetworkEffect(
 
     // Last resort: text search constrained by title/year.
     const results = yield* searchTitles(item.title, item.mediaType, item.year).pipe(
-      Effect.catch((error) => {
-        logger.warn(`TMDB search failed for "${item.title}"`, effectMessage(error));
-        return Effect.succeed([]);
-      }),
+      Effect.catch((error) =>
+        logger
+          .warn(`TMDB search failed for "${item.title}"`, effectMessage(error))
+          .pipe(Effect.as([])),
+      ),
     );
     const scored = scoreSearchResults(item, results);
     if (scored) return scored;

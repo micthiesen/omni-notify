@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { Clock, Data, Effect } from "effect";
 import config from "../utils/config.js";
@@ -80,7 +80,7 @@ export function runPodcastPipelineEffect(
   logger: Logger,
   logFile?: LogFile,
   options: PodcastPipelineOptions = {},
-): Effect.Effect<string, PodcastPipelineError> {
+) {
   return Effect.gen(function* () {
     const topicTargetMax = options.maxRecommendations ?? 2;
     if (
@@ -101,37 +101,38 @@ export function runPodcastPipelineEffect(
     const account = yield* resolvePodcastAccountEffect(logger);
     const subscriptions = yield* resolveSubscriptionsEffect(account, logger);
     if (subscriptions.status === "unavailable") {
-      logger.warn(`Podcast recommendation run skipped: ${subscriptions.reason}`);
+      yield* logger.warn(`Podcast recommendation run skipped: ${subscriptions.reason}`);
       return `skipped: ${subscriptions.reason}`;
     }
 
     // 2. Outcome sync + stale-pending reconciliation.
     yield* syncOutcomesEffect(account, logger, logFile);
     const filterNow = yield* Clock.currentTimeMillis;
-    reconcileStalePending(logger, filterNow);
+    yield* reconcileStalePending(logger, filterNow);
 
     // 3. Taste inputs: seed profile + subscribed shows + explicit feedback.
     const tasteSeed = yield* loadPipelineTasteSeedEffect();
-    const tasteDigest = buildTasteDigest(subscriptions.value, tasteSeed);
-    const recentDigest = formatRecentRecommendationsDigest();
+    const tasteDigest = yield* buildTasteDigest(subscriptions.value, tasteSeed);
+    const recentDigest = yield* formatRecentRecommendationsDigest();
+    const exclusions = yield* getPodcastExclusions(filterNow);
     const filterContext = (): PodcastFilterContext => ({
       now: filterNow,
       subscribedShowIds: subscriptions.value.showIds,
       subscribedShowTitles: subscriptions.value.normalizedTitles,
-      exclusions: getPodcastExclusions(filterNow),
+      exclusions,
     });
 
     // 4a. Tier 1 — guest appearances of followed voices (rotated batch/run).
     const allVoices = parseVoices(tasteSeed);
-    const voices = nextVoiceBatch(allVoices, config.PODCAST_VOICE_ROTATION_MAX);
+    const voices = yield* nextVoiceBatch(allVoices, config.PODCAST_VOICE_ROTATION_MAX);
     const guestPool = yield* discoverGuestAppearancesEffect(
       voices,
       account,
       logger,
       logFile,
     );
-    advanceVoiceCursor(allVoices, config.PODCAST_VOICE_ROTATION_MAX);
-    const guestEligible = logFiltered(
+    yield* advanceVoiceCursor(allVoices, config.PODCAST_VOICE_ROTATION_MAX);
+    const guestEligible = yield* logFiltered(
       filterEligibleEpisodes(guestPool, filterContext()),
       "Guest filtered out",
       logFile,
@@ -148,13 +149,13 @@ export function runPodcastPipelineEffect(
       ? yield* resolveCandidatesEffect(topicDiscovered, account, logger, logFile)
       : [];
     const guestIds = new Set(guestEligible.map((c) => c.episodeId));
-    const topicEligible = logFiltered(
+    const topicEligible = (yield* logFiltered(
       filterEligibleEpisodes(topicPool, filterContext()),
       "Topic filtered out",
       logFile,
-    ).filter((c) => !guestIds.has(c.episodeId));
+    )).filter((c) => !guestIds.has(c.episodeId));
 
-    logger.info(
+    yield* logger.info(
       `Eligible: ${guestEligible.length} guest, ${topicEligible.length} topic`,
     );
     if (guestEligible.length === 0 && topicEligible.length === 0) {
@@ -166,7 +167,7 @@ export function runPodcastPipelineEffect(
       candidate: EpisodeCandidate,
       pick: PodcastSelectionPick,
       scores: ShortlistScores | undefined,
-    ): Effect.Effect<void, unknown> =>
+    ) =>
       Effect.gen(function* () {
         if (dryRun) {
           recommended.push(candidate);
@@ -273,36 +274,34 @@ export function loadPipelineTasteSeedEffect(
 type ShortlistScores = NonNullable<PodcastRecommendationData["shortlistScores"]>;
 
 /** Filter, logging the dropped candidates, and return the kept list. */
-function logFiltered(
+const logFiltered = Effect.fn("PodcastRecommendations.logFiltered")(function* (
   result: ReturnType<typeof filterEligibleEpisodes>,
   section: string,
   logFile?: LogFile,
-): EpisodeCandidate[] {
+) {
   if (result.dropped.length > 0) {
-    logFile?.section(
-      section,
-      result.dropped
-        .map(
-          (d) =>
-            `- ${d.candidate.showTitle} — ${d.candidate.episodeTitle}: ${d.reason}`,
-        )
-        .join("\n"),
-    );
+    if (logFile)
+      yield* logFile.section(
+        section,
+        result.dropped
+          .map(
+            (d) =>
+              `- ${d.candidate.showTitle} — ${d.candidate.episodeTitle}: ${d.reason}`,
+          )
+          .join("\n"),
+      );
   }
   return result.kept;
-}
+});
 
 function syncOutcomesEffect(
   account: PodcastAccountClient | undefined,
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<void, unknown> {
+) {
   return Effect.gen(function* () {
     if (!account) return;
-    const open = yield* Effect.try({
-      try: getOpenPodcastRecommendations,
-      catch: (cause) => cause,
-    });
+    const open = yield* getOpenPodcastRecommendations();
     // Outcome labeling is the only consumer of listen history, and it only acts
     // on open recommendations. With none open, the (expensive) history read is
     // pure waste — skip it entirely.
@@ -311,26 +310,28 @@ function syncOutcomesEffect(
     const now = yield* Clock.currentTimeMillis;
     const history = yield* account.fetchListenHistory(listenHistorySince(open, now));
     if (history.status === "unavailable") {
-      logger.warn(`Listen history unavailable (${history.reason}); skipping outcomes`);
+      yield* logger.warn(
+        `Listen history unavailable (${history.reason}); skipping outcomes`,
+      );
       return;
     }
     const changes = decideEpisodeOutcomes(open, history.value, now);
     for (const change of changes) {
-      yield* Effect.try({
-        try: () =>
-          PodcastRecommendationEntity.patch(
-            { recommendationId: change.recommendationId },
-            { status: change.status, resolvedAt: now },
-          ),
-        catch: (cause) => cause,
-      });
-      logger.info(`Outcome: ${change.episodeId} → ${change.status} (${change.reason})`);
+      yield* PodcastRecommendationEntity.patch(
+        { recommendationId: change.recommendationId },
+        { status: change.status, resolvedAt: now },
+      );
+      yield* logger.info(
+        `Outcome: ${change.episodeId} → ${change.status} (${change.reason})`,
+      );
     }
     if (changes.length > 0) {
-      logFile?.section(
-        "Outcome Sync",
-        changes.map((c) => `- ${c.episodeId} → ${c.status} (${c.reason})`).join("\n"),
-      );
+      if (logFile) {
+        yield* logFile.section(
+          "Outcome Sync",
+          changes.map((c) => `- ${c.episodeId} → ${c.status} (${c.reason})`).join("\n"),
+        );
+      }
     }
   });
 }
@@ -364,22 +365,24 @@ export function listenHistorySince(
  * stale pending rows are marked failed (a 24h retry exclusion, then a retry
  * will observe already_exists if the enqueue landed).
  */
-function reconcileStalePending(logger: Logger, now: number): void {
-  const stale = PodcastRecommendationEntity.getAll().filter(
-    (r) =>
-      r.status === PodcastRecommendationStatus.Pending &&
-      now - r.recommendedAt > STALE_PENDING_MS,
-  );
-  for (const rec of stale) {
-    logger.warn(
-      `Marking stale pending podcast recommendation as failed: ${rec.showTitle} — ${rec.episodeTitle}`,
+const reconcileStalePending = Effect.fn("PodcastRecommendations.reconcileStale")(
+  function* (logger: Logger, now: number) {
+    const stale = (yield* PodcastRecommendationEntity.getAll()).filter(
+      (r) =>
+        r.status === PodcastRecommendationStatus.Pending &&
+        now - r.recommendedAt > STALE_PENDING_MS,
     );
-    PodcastRecommendationEntity.patch(
-      { recommendationId: rec.recommendationId },
-      { status: PodcastRecommendationStatus.Failed, resolvedAt: now },
-    );
-  }
-}
+    for (const rec of stale) {
+      yield* logger.warn(
+        `Marking stale pending podcast recommendation as failed: ${rec.showTitle} — ${rec.episodeTitle}`,
+      );
+      yield* PodcastRecommendationEntity.patch(
+        { recommendationId: rec.recommendationId },
+        { status: PodcastRecommendationStatus.Failed, resolvedAt: now },
+      );
+    }
+  },
+);
 
 function commitEffect(
   candidate: EpisodeCandidate,
@@ -387,39 +390,35 @@ function commitEffect(
   shortlistScores: ShortlistScores | undefined,
   account: PodcastAccountClient | undefined,
   logger: Logger,
-): Effect.Effect<boolean, unknown> {
+) {
   return Effect.gen(function* () {
     const recommendationId = yield* Effect.sync(() => crypto.randomUUID());
     const recommendedAt = yield* Clock.currentTimeMillis;
-    yield* Effect.try({
-      try: () =>
-        PodcastRecommendationEntity.upsert({
-          recommendationId,
-          episodeId: candidate.episodeId,
-          showId: candidate.showId,
-          showTitle: candidate.showTitle,
-          episodeTitle: candidate.episodeTitle,
-          feedUrl: candidate.feedUrl,
-          itunesId: candidate.itunesId,
-          artworkUrl: candidate.artworkUrl,
-          episodeGuid: candidate.episodeGuid,
-          mediaUrl: candidate.mediaUrl,
-          episodeUrl: candidate.episodeUrl,
-          publishedAt: candidate.publishedAt,
-          durationMinutes: candidate.durationMinutes,
-          status: PodcastRecommendationStatus.Pending,
-          whyForUser: pick.why_for_user,
-          caveats: pick.caveats,
-          confidence: pick.confidence,
-          showGenres: candidate.showGenres,
-          discoveredVia: candidate.discoveredVia,
-          sourceUrl: candidate.sourceUrl,
-          matchedVoices: candidate.matchedVoices,
-          shortlistScores,
-          runDate: toDateStamp(recommendedAt),
-          recommendedAt,
-        }),
-      catch: (cause) => cause,
+    yield* PodcastRecommendationEntity.upsert({
+      recommendationId,
+      episodeId: candidate.episodeId,
+      showId: candidate.showId,
+      showTitle: candidate.showTitle,
+      episodeTitle: candidate.episodeTitle,
+      feedUrl: candidate.feedUrl,
+      itunesId: candidate.itunesId,
+      artworkUrl: candidate.artworkUrl,
+      episodeGuid: candidate.episodeGuid,
+      mediaUrl: candidate.mediaUrl,
+      episodeUrl: candidate.episodeUrl,
+      publishedAt: candidate.publishedAt,
+      durationMinutes: candidate.durationMinutes,
+      status: PodcastRecommendationStatus.Pending,
+      whyForUser: pick.why_for_user,
+      caveats: pick.caveats,
+      confidence: pick.confidence,
+      showGenres: candidate.showGenres,
+      discoveredVia: candidate.discoveredVia,
+      sourceUrl: candidate.sourceUrl,
+      matchedVoices: candidate.matchedVoices,
+      shortlistScores,
+      runDate: toDateStamp(recommendedAt),
+      recommendedAt,
     });
 
     const enqueue = account
@@ -446,29 +445,25 @@ function commitEffect(
     );
     if (enqueueResult) {
       if (queueResult === "not_queued") {
-        logger.info(
+        yield* logger.info(
           `Castro enqueue ${enqueueResult}; continuing with recommendation deep link`,
         );
       } else {
-        logger.info(
+        yield* logger.info(
           `Castro queue ${queueResult === "queued" ? "added" : "already contained"}: ${candidate.showTitle} - ${candidate.episodeTitle}`,
         );
       }
     }
 
-    const notified = yield* Effect.tryPromise({
-      try: () =>
-        notify({
-          title: pick.notification.title,
-          message: appendQueueNote(pick.notification.message, queueResult),
-          url: feedbackUrl("podcasts", recommendationId),
-          url_title: "Rate this pick",
-          token: config.PUSHOVER_PODCAST_TOKEN,
-        }),
-      catch: (cause) => cause,
+    const notified = yield* notify({
+      title: pick.notification.title,
+      message: appendQueueNote(pick.notification.message, queueResult),
+      url: feedbackUrl("podcasts", recommendationId),
+      url_title: "Rate this pick",
+      token: config.PUSHOVER_PODCAST_TOKEN,
     }).pipe(Effect.result);
     if (notified._tag === "Failure") {
-      logger.error(
+      yield* logger.error(
         `Notification failed for ${candidate.episodeTitle}`,
         notified.failure instanceof Error
           ? notified.failure.message
@@ -478,19 +473,17 @@ function commitEffect(
     }
 
     const notifiedAt = yield* Clock.currentTimeMillis;
-    yield* Effect.try({
-      try: () =>
-        PodcastRecommendationEntity.patch(
-          { recommendationId },
-          {
-            status: PodcastRecommendationStatus.Notified,
-            notifiedAt,
-            queueResult,
-          },
-        ),
-      catch: (cause) => cause,
-    });
-    logger.info(`Recommended ${candidate.showTitle} — ${candidate.episodeTitle}`);
+    yield* PodcastRecommendationEntity.patch(
+      { recommendationId },
+      {
+        status: PodcastRecommendationStatus.Notified,
+        notifiedAt,
+        queueResult,
+      },
+    );
+    yield* logger.info(
+      `Recommended ${candidate.showTitle} — ${candidate.episodeTitle}`,
+    );
     return true;
   });
 }
@@ -501,12 +494,13 @@ class PodcastCommitError extends Data.TaggedError("PodcastCommitError")<{
 }> {}
 
 /** Enqueue, then durably record its result before notification is attempted. */
-export function enqueueAndPersistEffect(
-  enqueue: (() => Effect.Effect<PodcastWriteResult>) | undefined,
-  persist: (queueResult: PodcastQueueResult) => void,
+export function enqueueAndPersistEffect<E1, R1, E2, R2>(
+  enqueue: (() => Effect.Effect<PodcastWriteResult, E1, R1>) | undefined,
+  persist: (queueResult: PodcastQueueResult) => Effect.Effect<unknown, E2, R2>,
 ): Effect.Effect<
   { enqueueResult: PodcastWriteResult | undefined; queueResult: PodcastQueueResult },
-  PodcastCommitError
+  PodcastCommitError,
+  R1 | R2
 > {
   return Effect.gen(function* () {
     const enqueueResult = enqueue
@@ -517,11 +511,11 @@ export function enqueueAndPersistEffect(
         )
       : undefined;
     const queueResult = enqueueResult ? toQueueResult(enqueueResult) : "not_queued";
-    yield* Effect.try({
-      try: () => persist(queueResult),
-      catch: (cause) =>
-        new PodcastCommitError({ operation: "persist queue result", cause }),
-    });
+    yield* persist(queueResult).pipe(
+      Effect.mapError(
+        (cause) => new PodcastCommitError({ operation: "persist queue result", cause }),
+      ),
+    );
     return { enqueueResult, queueResult };
   });
 }

@@ -27,8 +27,8 @@ importers:
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.0)
       '@micthiesen/mitools':
-        specifier: ^3.0.4
-        version: 3.0.4
+        specifier: 4.1.0
+        version: 4.1.0(effect@4.0.0-rc.112)(react@19.2.8)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5))(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5)))
       '@mistralai/mistralai':
         specifier: ^2.5.0
         version: 2.5.0(@opentelemetry/api@1.9.0)
@@ -177,6 +177,9 @@ importers:
 
   frontend:
     dependencies:
+      '@micthiesen/mitools':
+        specifier: 4.1.0
+        version: 4.1.0(effect@4.0.0-rc.112)(react@19.2.8)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5))(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5)))
       effect:
         specifier: 4.0.0-rc.112
         version: 4.0.0-rc.112
@@ -450,9 +453,21 @@ packages:
   '@keyv/serialize@1.1.1':
     resolution: {integrity: sha512-dXn3FZhPv0US+7dtJsIi2R+c7qWYiReoEh5zUntWCf4oSpMNib8FDhSoed6m3QyZdx5hK7iLFkYk3rNxwt8vTA==}
 
-  '@micthiesen/mitools@3.0.4':
-    resolution: {integrity: sha512-5/GhG1blEzUmF8DT8mlqFiDa6XfVtBItANfwikZXuYGSsVVSFwa0xineu2aoR7OznhkNzrSUk86djST4V1dG2A==}
-    engines: {node: '>=20', pnpm: '>=10'}
+  '@micthiesen/mitools@4.1.0':
+    resolution: {integrity: sha512-MdoRgbDTw5NJ0Zj2gUUcyNuLFZ/xWLTvVnsqfVOrzBhgnaynNeIbvuY/0OHvPu2LWlqe6Kqi40B3SoraWhDjzw==}
+    engines: {node: '>=20', pnpm: '>=11'}
+    peerDependencies:
+      effect: '>=4.0.0-rc.112 <4.1'
+      react: '>=18'
+      vite: '>=8'
+      vitest: '>=4.1.0 <5'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      vite:
+        optional: true
+      vitest:
+        optional: true
 
   '@mistralai/mistralai@2.5.0':
     resolution: {integrity: sha512-S/r6tkiUHblaDJGsb84WS0ePTF2YHVta2EoTi1NJqHNt5mfRRS2uE4v7hCYV134+an+fk6WgG3+aFfinJbQBjQ==}
@@ -2164,14 +2179,6 @@ packages:
       vite-plus:
         optional: true
 
-  p-queue@9.3.3:
-    resolution: {integrity: sha512-NXAOdnEe5FsZJfT4oK84lE1Y5cFFdWlRuOo5tww8DyNMxyRXwn39fIkUtNLKppcPC+UYU/bXujNCUGDv01y7CA==}
-    engines: {node: '>=20'}
-
-  p-timeout@7.0.1:
-    resolution: {integrity: sha512-AxTM2wDGORHGEkPCt8yqxOTMgpfbEHqF51f/5fJCmwFC3C/zNcGT63SymH2ttOAaiIws2zVg4+izQCjrakcwHg==}
-    engines: {node: '>=20'}
-
   parse-srcset@1.0.2:
     resolution: {integrity: sha512-/2qh0lav6CmI15FzA3i/2Bzk2zCgQhGMkvhOhKNcBVQ1ldgpbfiNTVslmooUmWJcADi1f1kIeynbDRVzNlfR6Q==}
 
@@ -2434,6 +2441,10 @@ packages:
   smart-buffer@4.2.0:
     resolution: {integrity: sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==}
     engines: {node: '>= 6.0.0', npm: '>= 3.0.0'}
+
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
+    engines: {node: '>= 18'}
 
   socks-proxy-agent@8.0.5:
     resolution: {integrity: sha512-HehCEsotFqbPW9sJ8WVYB6UbmIMv7kUUORIF2Nncq4VQvBfNBLibW9YZR5dlYCSUhwcD628pRllm7n+E+YTzJw==}
@@ -2947,14 +2958,16 @@ snapshots:
 
   '@keyv/serialize@1.1.1': {}
 
-  '@micthiesen/mitools@3.0.4':
+  '@micthiesen/mitools@4.1.0(effect@4.0.0-rc.112)(react@19.2.8)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5))(vitest@4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5)))':
     dependencies:
       better-sqlite3: 12.11.1
       cbor: 10.0.12
-      got: 15.1.0
-      node-cron: 4.6.0
-      p-queue: 9.3.3
-      zod: 4.4.3
+      effect: 4.0.0-rc.112
+      smol-toml: 1.8.0
+    optionalDependencies:
+      react: 19.2.8
+      vite: 8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5)
+      vitest: 4.1.10(@opentelemetry/api@1.9.0)(@types/node@24.13.3)(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(tsx@4.23.5))
 
   '@mistralai/mistralai@2.5.0(@opentelemetry/api@1.9.0)':
     dependencies:
@@ -4420,13 +4433,6 @@ snapshots:
       '@oxlint/binding-win32-ia32-msvc': 1.80.0
       '@oxlint/binding-win32-x64-msvc': 1.80.0
 
-  p-queue@9.3.3:
-    dependencies:
-      eventemitter3: 5.0.4
-      p-timeout: 7.0.1
-
-  p-timeout@7.0.1: {}
-
   parse-srcset@1.0.2: {}
 
   parseley@0.13.1:
@@ -4740,6 +4746,8 @@ snapshots:
       simple-concat: 1.0.1
 
   smart-buffer@4.2.0: {}
+
+  smol-toml@1.8.0: {}
 
   socks-proxy-agent@8.0.5:
     dependencies:

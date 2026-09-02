@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { it as effectIt } from "@effect/vitest";
-import { Duration, Effect, Fiber } from "effect";
-import { TestClock } from "effect/testing";
+import { withVirtualTime } from "@micthiesen/mitools/testing";
+import { Effect } from "effect";
+import { runTest, TestLayer } from "../../live-check/testRuntime.js";
 import type { Metadata } from "../agents/metadata.js";
 import { PressPodsError } from "../effect.js";
 import type { Article } from "../types.js";
@@ -47,7 +48,7 @@ describe("rateRetrievedArticles", () => {
     const distinct = article("same text", "distinct");
     const rateArticle = vi.fn(() => Effect.succeed(metadata()));
 
-    const results = await Effect.runPromise(
+    const results = await runTest(
       rateRetrievedArticles(
         [
           { success: true, article: first, retrieverName: "first" },
@@ -79,7 +80,7 @@ describe("rateRetrievedArticles", () => {
     const second = article("same text", "second");
     const rateArticle = vi.fn(() => Effect.succeed(metadata()));
 
-    await Effect.runPromise(
+    await runTest(
       rateRetrievedArticles(
         [
           { success: true, article: first, retrieverName: "first" },
@@ -108,7 +109,7 @@ describe("rateRetrievedArticles", () => {
         : Effect.succeed(metadata(false)),
     );
 
-    const results = await Effect.runPromise(
+    const results = await runTest(
       rateRetrievedArticles(
         [
           { success: true, article: invalidA, retrieverName: "invalid-a" },
@@ -171,7 +172,7 @@ describe("runArticleRetrievers", () => {
       Effect.gen(function* () {
         let interrupted = false;
         const successful = article("complete", "successful");
-        const fiber = yield* Effect.forkChild(
+        const results = yield* withVirtualTime(
           runArticleRetrievers(
             "https://example.com/article",
             [
@@ -188,11 +189,9 @@ describe("runArticleRetrievers", () => {
               { name: "successful", retrieve: () => Effect.succeed(successful) },
             ],
             5,
-          ),
+          ).pipe(Effect.provide(TestLayer)),
+          5,
         );
-        yield* Effect.yieldNow;
-        yield* TestClock.adjust(Duration.millis(5));
-        const results = yield* Fiber.join(fiber);
 
         expect(interrupted).toBe(true);
         expect(results).toHaveLength(2);

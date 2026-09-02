@@ -1,5 +1,6 @@
+import { Docstore } from "@micthiesen/mitools/docstore";
 import { Logger } from "@micthiesen/mitools/logging";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from "effect";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ParcelExtractionError } from "./effect.js";
 
@@ -22,6 +23,9 @@ const mocks = vi.hoisted(() => ({
     | undefined,
 }));
 
+const runtime = ManagedRuntime.make(Layer.merge(Docstore.layerMemory, Logger.layer()));
+const runEffect = runtime.runPromise.bind(runtime);
+
 vi.mock("../email/retry.js", () => ({
   EmailRetryPersistence: {
     enqueue: (...args: unknown[]) => {
@@ -32,7 +36,10 @@ vi.mock("../email/retry.js", () => ({
 }));
 vi.mock("../email/activity.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  recordEmailActivity: mocks.record,
+  recordEmailActivity: (...args: unknown[]) => {
+    mocks.record(...args);
+    return Effect.void;
+  },
 }));
 vi.mock("../email/activityLogs.js", () => ({
   withEmailLogCaptureEffect: (
@@ -58,22 +65,26 @@ vi.mock("./parcel/parcelApi.js", () => ({
 }));
 vi.mock("./persistence.js", () => ({
   findNearDuplicateTracking: () => undefined,
-  getAllTrackingNumbers: () => new Set(),
-  getDeliverySubmission: () => mocks.reservation,
+  getAllTrackingNumbers: () => Effect.succeed(new Set()),
+  getDeliverySubmission: () => Effect.succeed(mocks.reservation),
   hasSubmittedDelivery: () =>
-    mocks.reservation !== undefined && mocks.reservation.status !== "pending",
-  reserveDeliverySubmission: (row: typeof mocks.reservation) => {
-    mocks.reservation = {
-      ...row!,
-      status: "pending",
-      attempts: (mocks.reservation?.attempts ?? 0) + 1,
-    };
-    return mocks.reservation;
-  },
-  recordSubmittedDelivery: (row: typeof mocks.reservation) => {
-    mocks.recordSubmission(row);
-    mocks.reservation = row;
-  },
+    Effect.succeed(
+      mocks.reservation !== undefined && mocks.reservation.status !== "pending",
+    ),
+  reserveDeliverySubmission: (row: typeof mocks.reservation) =>
+    Effect.sync(() => {
+      mocks.reservation = {
+        ...row!,
+        status: "pending",
+        attempts: (mocks.reservation?.attempts ?? 0) + 1,
+      };
+      return mocks.reservation;
+    }),
+  recordSubmittedDelivery: (row: typeof mocks.reservation) =>
+    Effect.sync(() => {
+      mocks.recordSubmission(row);
+      mocks.reservation = row;
+    }),
 }));
 
 describe("DeliveryPipeline reliability", () => {
@@ -94,11 +105,11 @@ describe("DeliveryPipeline reliability", () => {
     const { DeliveryPipeline } = await import("./pipeline.js");
     const pipeline = new DeliveryPipeline(
       "parcel-key",
-      new Logger("ParcelPipelineReliabilitySpec"),
+      Logger.named("ParcelPipelineReliabilitySpec"),
       { getTriageCostCents: () => undefined } as never,
     );
 
-    await Effect.runPromise(
+    await runEffect(
       pipeline.handleEmailsEffect([
         {
           id: "mail-2",
@@ -120,18 +131,18 @@ describe("DeliveryPipeline reliability", () => {
   });
 
   it("preserves interruption while delivery extraction is in progress", async () => {
-    const started = await Effect.runPromise(Deferred.make<void>());
+    const started = await runEffect(Deferred.make<void>());
     mocks.extract.mockReturnValueOnce(
       Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
     );
     const { DeliveryPipeline } = await import("./pipeline.js");
     const pipeline = new DeliveryPipeline(
       "parcel-key",
-      new Logger("ParcelPipelineReliabilitySpec"),
+      Logger.named("ParcelPipelineReliabilitySpec"),
       { getTriageCostCents: () => undefined } as never,
     );
 
-    const exit = await Effect.runPromise(
+    const exit = await runEffect(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
           pipeline.handleEmailsEffect([
@@ -176,7 +187,7 @@ describe("DeliveryPipeline reliability", () => {
     const { DeliveryPipeline } = await import("./pipeline.js");
     const pipeline = new DeliveryPipeline(
       "parcel-key",
-      new Logger("ParcelPipelineReliabilitySpec"),
+      Logger.named("ParcelPipelineReliabilitySpec"),
       { getTriageCostCents: () => undefined } as never,
     );
     const shipment = {
@@ -189,7 +200,7 @@ describe("DeliveryPipeline reliability", () => {
       attachments: [],
     };
 
-    await Effect.runPromise(pipeline.handleEmailsEffect([shipment]));
+    await runEffect(pipeline.handleEmailsEffect([shipment]));
     expect(mocks.reservation).toEqual(
       expect.objectContaining({
         trackingNumber: "1Z999AA10123456784",
@@ -200,7 +211,7 @@ describe("DeliveryPipeline reliability", () => {
     );
     expect(mocks.submit).toHaveBeenCalledTimes(1);
 
-    await Effect.runPromise(pipeline.handleEmailsEffect([shipment]));
+    await runEffect(pipeline.handleEmailsEffect([shipment]));
     expect(mocks.submit).toHaveBeenCalledTimes(2);
     expect(mocks.reservation).toEqual(
       expect.objectContaining({ status: "submitted", attempts: 2 }),

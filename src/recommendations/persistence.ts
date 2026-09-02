@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect, Option } from "effect";
 import type { CandidateSource, MediaType } from "./types.js";
 
 export enum RecommendationStatus {
@@ -98,17 +99,17 @@ export const IdentityAliasEntity = new Entity<IdentityAliasData, ["guid"]>(
   ["guid"],
 );
 
-export function getAllRecommendations(): RecommendationData[] {
-  return RecommendationEntity.getAll().sort(
+export const getAllRecommendations = Effect.fn("Recommendations.getAll")(function* () {
+  return (yield* RecommendationEntity.getAll()).sort(
     (a, b) => b.recommendedAt - a.recommendedAt,
   );
-}
+});
 
-export function getRecommendation(
+export const getRecommendation = Effect.fn("Recommendations.get")(function* (
   recommendationId: string,
-): RecommendationData | undefined {
-  return RecommendationEntity.get({ recommendationId });
-}
+) {
+  return Option.getOrUndefined(yield* RecommendationEntity.get({ recommendationId }));
+});
 
 const COOLDOWN_MS = 180 * 24 * 60 * 60 * 1000;
 const FAILED_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -118,9 +119,11 @@ const FAILED_RETRY_MS = 24 * 60 * 60 * 1000;
  * recommended within the cooldown window, plus terminal negative/positive
  * outcomes which are excluded permanently.
  */
-export function getExcludedCanonicalIds(now: number): Set<string> {
-  return computeExcludedCanonicalIds(RecommendationEntity.getAll(), now);
-}
+export const getExcludedCanonicalIds = Effect.fn("Recommendations.getExcluded")(
+  function* (now: number) {
+    return computeExcludedCanonicalIds(yield* RecommendationEntity.getAll(), now);
+  },
+);
 
 export function computeExcludedCanonicalIds(
   records: RecommendationData[],
@@ -171,15 +174,17 @@ export function selectOnDeck(open: RecommendationData[]): RecommendationData[] {
 }
 
 /** Recommendations still awaiting an outcome label. */
-export function getOpenRecommendations(): RecommendationData[] {
-  return RecommendationEntity.getAll().filter(
-    (r) =>
-      (r.status === RecommendationStatus.Notified ||
-        r.status === RecommendationStatus.Pending) &&
-      r.feedback !== "not_for_me" &&
-      r.feedback !== "already_watched",
-  );
-}
+export const getOpenRecommendations = Effect.fn("Recommendations.getOpen")(
+  function* () {
+    return (yield* RecommendationEntity.getAll()).filter(
+      (r) =>
+        (r.status === RecommendationStatus.Notified ||
+          r.status === RecommendationStatus.Pending) &&
+        r.feedback !== "not_for_me" &&
+        r.feedback !== "already_watched",
+    );
+  },
+);
 
 export type RecommendationFeedbackInput = {
   feedback?: RecommendationFeedback;
@@ -190,34 +195,32 @@ export type RecommendationFeedbackInput = {
  * Overloaded so existing callers passing a bare enum keep compiling: the note
  * is purely additive, and either input alone (or both) is a valid update.
  */
-export function setRecommendationFeedback(
-  recommendationId: string,
-  feedback: RecommendationFeedback,
-): RecommendationData | undefined;
-export function setRecommendationFeedback(
-  recommendationId: string,
-  input: RecommendationFeedbackInput,
-): RecommendationData | undefined;
-export function setRecommendationFeedback(
-  recommendationId: string,
-  input: RecommendationFeedback | RecommendationFeedbackInput,
-): RecommendationData | undefined {
-  const rec = RecommendationEntity.get({ recommendationId });
-  if (!rec) return undefined;
-  const { feedback, note } =
-    typeof input === "string" ? { feedback: input, note: undefined } : input;
-  const patch: Partial<Omit<RecommendationData, "recommendationId">> = {
-    feedbackAt: Date.now(),
-  };
-  if (feedback !== undefined) patch.feedback = feedback;
-  if (note !== undefined) patch.feedbackNote = note;
-  RecommendationEntity.patch({ recommendationId }, patch);
-  return RecommendationEntity.get({ recommendationId });
-}
+export const setRecommendationFeedback = Effect.fn("Recommendations.setFeedback")(
+  function* (
+    recommendationId: string,
+    input: RecommendationFeedback | RecommendationFeedbackInput,
+  ) {
+    const rec = Option.getOrUndefined(
+      yield* RecommendationEntity.get({ recommendationId }),
+    );
+    if (!rec) return undefined;
+    const { feedback, note } =
+      typeof input === "string" ? { feedback: input, note: undefined } : input;
+    const patch: Partial<Omit<RecommendationData, "recommendationId">> = {
+      feedbackAt: Date.now(),
+    };
+    if (feedback !== undefined) patch.feedback = feedback;
+    if (note !== undefined) patch.feedbackNote = note;
+    yield* RecommendationEntity.patch({ recommendationId }, patch);
+    return Option.getOrUndefined(yield* RecommendationEntity.get({ recommendationId }));
+  },
+);
 
-export function formatFeedbackDigest(): string {
-  return formatFeedbackDigestFrom(getAllRecommendations());
-}
+export const formatFeedbackDigest = Effect.fn("Recommendations.formatFeedbackDigest")(
+  function* () {
+    return formatFeedbackDigestFrom(yield* getAllRecommendations());
+  },
+);
 
 export function formatFeedbackDigestFrom(input: RecommendationData[]): string {
   const seen = new Set<string>();

@@ -1,6 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import { runTest } from "../../live-check/testRuntime.js";
 import type { InboxEpisode, PodcastAccountClient } from "../account.js";
 import {
   CastroInboxCleanupTask,
@@ -38,7 +39,7 @@ function accountWithInbox(inbox: InboxEpisode[]): PodcastAccountClient {
   };
 }
 
-const logger = { info: vi.fn() } as unknown as Logger;
+const logger = { info: vi.fn(() => Effect.void) } as unknown as Logger;
 
 describe("CastroInboxCleanupTask", () => {
   it("matches only descriptions that start with the Substack preview text", () => {
@@ -64,7 +65,7 @@ describe("CastroInboxCleanupTask", () => {
     ]);
     const task = new CastroInboxCleanupTask(logger, account);
 
-    await task.run();
+    await runTest(task.run);
 
     expect(account.clearInboxEpisode).toHaveBeenCalledOnce();
     expect(account.clearInboxEpisode).toHaveBeenCalledWith(
@@ -88,7 +89,7 @@ describe("CastroInboxCleanupTask", () => {
     );
     const task = new CastroInboxCleanupTask(logger, account);
 
-    await expect(task.run()).rejects.toThrow(
+    await expect(runTest(task.run)).rejects.toThrow(
       "Castro inbox unavailable: Castro timed out",
     );
     expect(account.clearInboxEpisode).not.toHaveBeenCalled();

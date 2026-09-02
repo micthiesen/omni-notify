@@ -1,10 +1,9 @@
 import { gunzipSync, gzipSync } from "node:zlib";
 import { randomUUID } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
-import { Logger, type LogLevel } from "@micthiesen/mitools/logging";
-import { transaction } from "@micthiesen/mitools/docstore";
-
-const logger = new Logger("TaskRuns");
+import { decodeDoc, Docstore } from "@micthiesen/mitools/docstore";
+import type { LogLevel, NamedLogger } from "@micthiesen/mitools/logging";
+import { Clock, Effect, Option } from "effect";
 
 export type TaskRunTrigger = "schedule" | "manual" | "startup" | "catchup";
 export type TaskRunStatus = "running" | "success" | "error";
@@ -76,103 +75,149 @@ export function makeRunId(taskName: string): string {
   return `${taskName}:${randomUUID()}`;
 }
 
-export function recordRunStart(
+export const recordRunStart = Effect.fn("TaskRuns.recordStart")(function* (
   taskName: string,
   trigger: TaskRunTrigger,
-  runId: string = makeRunId(taskName),
+  runId: string | undefined = undefined,
   scheduledFor?: number,
-  startedAt = Date.now(),
-): TaskRunData {
+  startedAt?: number,
+) {
+  const now = startedAt ?? (yield* Clock.currentTimeMillis);
   const run: TaskRunData = {
-    runId,
+    runId: runId ?? makeRunId(taskName),
     taskName,
     trigger,
     scheduledFor,
-    startedAt,
+    startedAt: now,
     status: "running",
   };
-  TaskRunEntity.upsert(run);
-  pruneRuns(taskName);
+  yield* TaskRunEntity.upsert(run);
+  yield* pruneRuns(taskName);
   return run;
-}
+});
 
-export function getTaskScheduleState(
+export const getTaskScheduleState = Effect.fn("TaskRuns.getScheduleState")(function* (
   taskName: string,
-): TaskScheduleStateData | undefined {
-  return TaskScheduleStateEntity.get({ taskName }) ?? undefined;
-}
+) {
+  return Option.getOrUndefined(yield* TaskScheduleStateEntity.get({ taskName }));
+});
 
-export function markScheduleEvaluated(
-  taskName: string,
-  schedule: string,
-  evaluatedThrough: number,
-): void {
-  TaskScheduleStateEntity.upsert({ taskName, schedule, evaluatedThrough });
-}
+export const markScheduleEvaluated = Effect.fn("TaskRuns.markScheduleEvaluated")(
+  function* (taskName: string, schedule: string, evaluatedThrough: number) {
+    yield* TaskScheduleStateEntity.upsert({ taskName, schedule, evaluatedThrough });
+  },
+);
 
 /** Atomically establish a durable run before advancing its catch-up cursor. */
-export function recordRunStartAndMarkSchedule(
+export const recordRunStartAndMarkSchedule = Effect.fn(
+  "TaskRuns.recordStartAndMarkSchedule",
+)(function* (
   taskName: string,
   trigger: TaskRunTrigger,
   schedule: string,
   evaluatedThrough: number,
   runId?: string,
   scheduledFor?: number,
-  startedAt = Date.now(),
-): TaskRunData {
-  return transaction(() => {
-    const run = recordRunStart(taskName, trigger, runId, scheduledFor, startedAt);
-    markScheduleEvaluated(taskName, schedule, evaluatedThrough);
+  startedAt?: number,
+) {
+  const now = startedAt ?? (yield* Clock.currentTimeMillis);
+  const actualRunId = runId ?? makeRunId(taskName);
+  const run: TaskRunData = {
+    runId: actualRunId,
+    taskName,
+    trigger,
+    scheduledFor,
+    startedAt: now,
+    status: "running",
+  };
+  const docstore = yield* Docstore;
+  yield* docstore.transaction("record task run start and schedule cursor", (tx) => {
+    tx.upsertDoc(
+      TaskRunEntity.getPk({ runId: actualRunId }),
+      run,
+      {
+        entity: TaskRunEntity.name,
+      },
+      now,
+    );
+    tx.upsertDoc(
+      TaskScheduleStateEntity.getPk({ taskName }),
+      { taskName, schedule, evaluatedThrough } satisfies TaskScheduleStateData,
+      { entity: TaskScheduleStateEntity.name },
+      now,
+    );
+    const runs: TaskRunData[] = [];
+    for (const row of tx.getRawRowsByPrefix(`$${TaskRunEntity.name}#`)) {
+      try {
+        runs.push(decodeDoc<TaskRunData>(row.data));
+      } catch {
+        // Entity collection reads skip corrupt rows, so pruning does too.
+      }
+    }
+    for (const stale of selectRunsToPrune(runs, taskName, KEEP_PER_TASK)) {
+      tx.deleteDoc(TaskRunEntity.getPk({ runId: stale.runId }));
+      tx.deleteDoc(TaskRunLogEntity.getPk({ runId: stale.runId }));
+    }
     return run;
   });
-}
+  return run;
+});
 
-export function recordRunEnd(
+export const recordRunEnd = Effect.fn("TaskRuns.recordEnd")(function* (
   runId: string,
   result: { status: "success" | "error"; error?: string; summary?: string },
-  finishedAt = Date.now(),
-): void {
-  TaskRunEntity.patch(
+  finishedAt?: number,
+) {
+  const now = finishedAt ?? (yield* Clock.currentTimeMillis);
+  yield* TaskRunEntity.patch(
     { runId },
     {
       status: result.status,
       error: result.error,
       summary: result.summary,
-      finishedAt,
+      finishedAt: now,
     },
   );
-}
+});
 
 /** Flip runs left in "running" by a crashed process to errors. Call at boot. */
-export function markInterruptedRuns(): number {
-  const interrupted = TaskRunEntity.getAll().filter((r) => r.status === "running");
+export const markInterruptedRuns = Effect.fn("TaskRuns.markInterrupted")(function* () {
+  const interrupted = (yield* TaskRunEntity.getAll()).filter(
+    (r) => r.status === "running",
+  );
+  const now = yield* Clock.currentTimeMillis;
   for (const run of interrupted) {
-    TaskRunEntity.patch(
+    yield* TaskRunEntity.patch(
       { runId: run.runId },
       {
         status: "error",
         error: "interrupted (process exited)",
-        finishedAt: Date.now(),
+        finishedAt: now,
       },
     );
   }
   return interrupted.length;
-}
+});
 
-export function getRuns(taskName?: string, limit = 50): TaskRunData[] {
-  const all = TaskRunEntity.getAll()
+export const getRuns = Effect.fn("TaskRuns.getRuns")(function* (
+  taskName?: string,
+  limit = 50,
+) {
+  const all = (yield* TaskRunEntity.getAll())
     .filter((r) => !taskName || r.taskName === taskName)
     .sort((a, b) => b.startedAt - a.startedAt);
   return all.slice(0, limit);
-}
+});
 
-export function getLastRun(taskName: string): TaskRunData | undefined {
-  return getRuns(taskName, 1)[0];
-}
+export const getLastRun = Effect.fn("TaskRuns.getLastRun")(function* (
+  taskName: string,
+) {
+  return (yield* getRuns(taskName, 1))[0];
+});
 
-export function getRun(runId: string): TaskRunData | undefined {
-  return TaskRunEntity.get({ runId });
-}
+export const getRun = Effect.fn("TaskRuns.getRun")(function* (runId: string) {
+  return Option.getOrUndefined(yield* TaskRunEntity.get({ runId }));
+});
 
 /** gzip(JSON.stringify(lines)) as base64, the stored form of captured logs. */
 export function compressLogLines(lines: TaskRunLogLine[]): string {
@@ -185,31 +230,56 @@ export function decompressLogLines(linesGz: string): TaskRunLogLine[] {
   ) as TaskRunLogLine[];
 }
 
-export function saveRunLogs(data: TaskRunLogData): void {
+export const saveRunLogs = Effect.fn("TaskRuns.saveLogs")(function* (
+  data: TaskRunLogData,
+) {
   if (data.lines.length === 0 && data.dropped === 0) return;
-  TaskRunLogEntity.upsert({
+  yield* TaskRunLogEntity.upsert({
     runId: data.runId,
     taskName: data.taskName,
     linesGz: compressLogLines(data.lines),
     dropped: data.dropped,
   });
-}
+});
 
-export function getRunLogs(runId: string): TaskRunLogData | undefined {
-  try {
-    const row = TaskRunLogEntity.get({ runId });
-    if (!row) return undefined;
-    const lines = row.linesGz ? decompressLogLines(row.linesGz) : (row.lines ?? []);
-    return { runId: row.runId, taskName: row.taskName, lines, dropped: row.dropped };
-  } catch (err) {
-    // A truncated/corrupt CBOR blob (e.g. a row half-written when the
-    // container was killed mid-deploy) would otherwise 500 the logs endpoint
-    // forever. Drop the unreadable row and treat the run as having no logs.
-    TaskRunLogEntity.delete({ runId });
-    logger.warn(`Dropped unreadable log row for run "${runId}": ${String(err)}`);
-    return undefined;
-  }
-}
+export const getRunLogs = Effect.fn("TaskRuns.getLogs")(function* (
+  runId: string,
+  logger: NamedLogger,
+) {
+  return yield* TaskRunLogEntity.get({ runId }).pipe(
+    Effect.flatMap((maybeRow) => {
+      const row = Option.getOrUndefined(maybeRow);
+      if (!row) return Effect.succeed(undefined);
+      return Effect.try({
+        try: () => {
+          const lines = row.linesGz
+            ? decompressLogLines(row.linesGz)
+            : (row.lines ?? []);
+          return {
+            runId: row.runId,
+            taskName: row.taskName,
+            lines,
+            dropped: row.dropped,
+          };
+        },
+        catch: (cause) => cause,
+      });
+    }),
+    Effect.catch((error) =>
+      // A truncated/corrupt CBOR blob (e.g. a row half-written when the
+      // container was killed mid-deploy) would otherwise 500 the logs endpoint
+      // forever. Drop the unreadable row and treat the run as having no logs.
+      TaskRunLogEntity.delete({ runId }).pipe(
+        Effect.andThen(
+          logger.warn(
+            `Dropped unreadable log row for run "${runId}": ${String(error)}`,
+          ),
+        ),
+        Effect.as(undefined),
+      ),
+    ),
+  );
+});
 
 /** Runs beyond the newest `keep` for their task, i.e. the ones to delete. */
 export function selectRunsToPrune(
@@ -223,10 +293,14 @@ export function selectRunsToPrune(
     .slice(keep);
 }
 
-function pruneRuns(taskName: string): void {
-  const stale = selectRunsToPrune(TaskRunEntity.getAll(), taskName, KEEP_PER_TASK);
+const pruneRuns = Effect.fn("TaskRuns.prune")(function* (taskName: string) {
+  const stale = selectRunsToPrune(
+    yield* TaskRunEntity.getAll(),
+    taskName,
+    KEEP_PER_TASK,
+  );
   for (const run of stale) {
-    TaskRunEntity.delete({ runId: run.runId });
-    TaskRunLogEntity.delete({ runId: run.runId });
+    yield* TaskRunEntity.delete({ runId: run.runId });
+    yield* TaskRunLogEntity.delete({ runId: run.runId });
   }
-}
+});

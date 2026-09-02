@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Deferred, Effect } from "effect";
 import { enrichCandidates, type PooledCandidate } from "./candidates.js";

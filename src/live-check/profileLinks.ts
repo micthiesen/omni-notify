@@ -2,11 +2,9 @@ import type { Effect as EffectType } from "effect/Effect";
 import { decode } from "html-entities";
 import { Clock, Data, Duration, Effect } from "effect";
 import { parseHTML } from "linkedom";
-import type { PersistenceError } from "../effect/errors.js";
 import {
   canonicalBindingKey,
   getProfileIdentityLinkEffect,
-  type ProfileIdentityLink,
   rememberProfileIdentityLinkEffect,
 } from "./identityLinks.js";
 import { Platform } from "./platforms/index.js";
@@ -335,7 +333,7 @@ export function learnProfileIdentityEffect({
   fetchImpl?: ProfilePageFetcher;
   now?: number;
   forceRefresh?: boolean;
-}): EffectType<ProfileIdentityLink | undefined, ProfileLinkError | PersistenceError> {
+}) {
   return Effect.gen(function* () {
     const observedAt = now ?? (yield* Clock.currentTimeMillis);
     const configuredByKey = new Map(

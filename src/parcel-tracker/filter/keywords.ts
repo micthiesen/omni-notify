@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import type { AdmitTier } from "../../email/activity.js";
 import { findSenderRule } from "../../email/senderRules.js";
@@ -106,53 +106,56 @@ export type FilterResult =
 
 export function filterTrackingCandidateEffect(
   email: EmailCandidate,
-  logger: Logger,
+  logger: NamedLogger,
   triage: EmailTriageService,
-): Effect.Effect<FilterResult, never> {
-  const fromLower = email.from.toLowerCase();
+) {
+  return Effect.gen(function* () {
+    const fromLower = email.from.toLowerCase();
 
-  // User rules beat the built-in lists in both directions: an explicit allow
-  // overrides a shipped blacklist entry (block still beats allow among rules).
-  const rule = findSenderRule(email.from, "parcel");
-  if (rule?.verdict === "block") {
-    return Effect.succeed({ pass: false, reason: `blocked by rule ${rule.pattern}` });
-  }
-  if (rule?.verdict === "allow") {
-    return Effect.succeed({
-      pass: true,
-      reason: `allowed by rule ${rule.pattern}`,
-      admitTier: "rule",
-    });
-  }
+    // User rules beat the built-in lists in both directions: an explicit allow
+    // overrides a shipped blacklist entry (block still beats allow among rules).
+    const rule = yield* findSenderRule(email.from, "parcel");
+    if (rule?.verdict === "block") {
+      return { pass: false as const, reason: `blocked by rule ${rule.pattern}` };
+    }
+    if (rule?.verdict === "allow") {
+      return {
+        pass: true,
+        reason: `allowed by rule ${rule.pattern}`,
+        admitTier: "rule",
+      };
+    }
 
-  // Blacklisted senders are always rejected
-  if (isBlacklistedSender(fromLower)) {
-    return Effect.succeed({ pass: false, reason: "blacklisted sender" });
-  }
+    // Blacklisted senders are always rejected
+    if (isBlacklistedSender(fromLower)) {
+      return { pass: false as const, reason: "blacklisted sender" };
+    }
 
-  // AliExpress order-status emails never carry tracking info
-  if (isAliexpressOrderStatus(fromLower, email.subject)) {
-    return Effect.succeed({ pass: false, reason: "aliexpress order-status" });
-  }
+    // AliExpress order-status emails never carry tracking info
+    if (isAliexpressOrderStatus(fromLower, email.subject)) {
+      return { pass: false as const, reason: "aliexpress order-status" };
+    }
 
-  // Known carrier/shipping sender domains auto-pass
-  if (CARRIER_SENDER_DOMAINS.some((domain) => fromLower.includes(domain))) {
-    return Effect.succeed({
-      pass: true,
-      reason: "carrier sender",
-      admitTier: "builtin",
-    });
-  }
+    // Known carrier/shipping sender domains auto-pass
+    if (CARRIER_SENDER_DOMAINS.some((domain) => fromLower.includes(domain))) {
+      return {
+        pass: true,
+        reason: "carrier sender",
+        admitTier: "builtin",
+      } as const;
+    }
 
-  // Cheap-LLM triage decides everything else; keywords are only the fallback
-  return triage.classifyEffect(email).pipe(
-    Effect.map((verdict): FilterResult =>
-      verdict.parcel
-        ? { pass: true, reason: `triage: ${verdict.reason}`, admitTier: "triage" }
-        : { pass: false, reason: `triage: ${verdict.reason}` },
-    ),
-    Effect.catch(() => keywordFallbackEffect(email, logger)),
-  );
+    // Cheap-LLM triage decides everything else; keywords are only the fallback
+    const verdict = yield* Effect.result(triage.classifyEffect(email));
+    if (verdict._tag === "Failure") return yield* keywordFallbackEffect(email, logger);
+    return verdict.success.parcel
+      ? {
+          pass: true as const,
+          reason: `triage: ${verdict.success.reason}`,
+          admitTier: "triage" as const,
+        }
+      : { pass: false as const, reason: `triage: ${verdict.success.reason}` };
+  });
 }
 
 function isBlacklistedSender(fromLower: string): boolean {
@@ -163,10 +166,7 @@ function isBlacklistedSender(fromLower: string): boolean {
 }
 
 /** Degraded path when the triage model is unavailable. */
-function keywordFallbackEffect(
-  email: EmailCandidate,
-  logger: Logger,
-): Effect.Effect<FilterResult, never> {
+function keywordFallbackEffect(email: EmailCandidate, logger: NamedLogger) {
   const searchText = `${email.subject} ${email.textBody}`.toLowerCase();
   const matchedKeyword = TRACKING_KEYWORDS.find((kw) => searchText.includes(kw));
   if (matchedKeyword) {

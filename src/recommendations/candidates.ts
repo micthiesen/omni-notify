@@ -1,4 +1,4 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import { effectMessage, RecommendationIntegrationError } from "./effect.js";
 import {
@@ -41,10 +41,7 @@ export interface SourceBucket {
  * completed watches, discover on the user's top genres, this week's trending,
  * and a novelty bucket outside the top genres.
  */
-export function fetchCandidateBuckets(
-  seeds: WatchSeed[],
-  logger: Logger,
-): Effect.Effect<SourceBucket[]> {
+export function fetchCandidateBuckets(seeds: WatchSeed[], logger: Logger) {
   return Effect.gen(function* () {
     const recentSeeds = seeds.slice(0, SEED_LIMIT);
     const topGenres = rankGenres(seeds).slice(0, 3);
@@ -53,10 +50,11 @@ export function fetchCandidateBuckets(
         fetchSimilarBucketEffect(recentSeeds, logger),
         fetchDiscoverBucketEffect(topGenres, logger),
         fetchTrending().pipe(
-          Effect.catch((error) => {
-            logger.warn("TMDB trending fetch failed", effectMessage(error));
-            return Effect.succeed([]);
-          }),
+          Effect.catch((error) =>
+            logger
+              .warn("TMDB trending fetch failed", effectMessage(error))
+              .pipe(Effect.as([])),
+          ),
         ),
         fetchNoveltyBucketEffect(topGenres, logger),
       ] as const,
@@ -71,21 +69,19 @@ export function fetchCandidateBuckets(
   });
 }
 
-function fetchSimilarBucketEffect(
-  seeds: WatchSeed[],
-  logger: Logger,
-): Effect.Effect<TmdbTitle[]> {
+function fetchSimilarBucketEffect(seeds: WatchSeed[], logger: Logger) {
   return Effect.forEach(
     seeds,
     (seed) =>
       fetchRecommendationsFor(seed.mediaType, seed.tmdbId).pipe(
-        Effect.catch((error) => {
-          logger.warn(
-            `TMDB recommendations fetch failed for ${seed.canonicalId}`,
-            effectMessage(error),
-          );
-          return Effect.succeed([]);
-        }),
+        Effect.catch((error) =>
+          logger
+            .warn(
+              `TMDB recommendations fetch failed for ${seed.canonicalId}`,
+              effectMessage(error),
+            )
+            .pipe(Effect.as([])),
+        ),
       ),
     { concurrency: 4 },
   ).pipe(
@@ -95,10 +91,7 @@ function fetchSimilarBucketEffect(
   );
 }
 
-function fetchDiscoverBucketEffect(
-  topGenres: number[],
-  logger: Logger,
-): Effect.Effect<TmdbTitle[]> {
+function fetchDiscoverBucketEffect(topGenres: number[], logger: Logger) {
   if (topGenres.length === 0) return Effect.succeed([]);
   return Effect.forEach(
     [MediaType.Movie, MediaType.Tv],
@@ -107,19 +100,17 @@ function fetchDiscoverBucketEffect(
         withGenres: topGenres,
         withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
       }).pipe(
-        Effect.catch((error) => {
-          logger.warn(`TMDB discover failed (${mediaType})`, effectMessage(error));
-          return Effect.succeed([]);
-        }),
+        Effect.catch((error) =>
+          logger
+            .warn(`TMDB discover failed (${mediaType})`, effectMessage(error))
+            .pipe(Effect.as([])),
+        ),
       ),
     { concurrency: "unbounded" },
   ).pipe(Effect.map(interleave));
 }
 
-function fetchNoveltyBucketEffect(
-  topGenres: number[],
-  logger: Logger,
-): Effect.Effect<TmdbTitle[]> {
+function fetchNoveltyBucketEffect(topGenres: number[], logger: Logger) {
   return Effect.forEach(
     [MediaType.Movie, MediaType.Tv],
     (mediaType) =>
@@ -128,13 +119,11 @@ function fetchNoveltyBucketEffect(
         withOriginalLanguage: REQUIRED_ORIGINAL_LANGUAGE,
         minVoteCount: 1000,
       }).pipe(
-        Effect.catch((error) => {
-          logger.warn(
-            `TMDB novelty discover failed (${mediaType})`,
-            effectMessage(error),
-          );
-          return Effect.succeed([]);
-        }),
+        Effect.catch((error) =>
+          logger
+            .warn(`TMDB novelty discover failed (${mediaType})`, effectMessage(error))
+            .pipe(Effect.as([])),
+        ),
       ),
     { concurrency: "unbounded" },
   ).pipe(Effect.map(interleave));

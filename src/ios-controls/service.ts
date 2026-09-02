@@ -1,13 +1,10 @@
-import type { Effect as EffectType } from "effect/Effect";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Clock, Data, Effect, Schedule } from "effect";
-import type { PersistenceError } from "../effect/errors.js";
 import type { Streamer } from "../live-check/streamers.js";
 import type { ApnsControlClient } from "./apns.js";
 import {
   buildLiveControlSlots,
   IOS_CONTROL_SLOT_COUNT,
-  type LiveControlSlot,
   liveControlSlotHash,
 } from "./liveSlots.js";
 import {
@@ -29,43 +26,43 @@ class TransientControlPushError extends Data.TaggedError("TransientControlPushEr
 
 export class IOSControlService {
   private permanentFailures = new Set<string>();
-  private readonly logger: Logger;
+  private readonly logger: NamedLogger;
   private lastReconciledAt: number | null = null;
 
   public constructor(
     private readonly streamers: Streamer[],
     private readonly homeUrl: string,
-    parentLogger: Logger,
+    parentLogger: NamedLogger,
     private readonly apns?: ApnsControlClient,
   ) {
     this.logger = parentLogger.extend("IOSControls");
   }
 
-  public getSlot(slot: number): LiveControlSlot | undefined {
-    if (!Number.isInteger(slot) || slot < 1 || slot > IOS_CONTROL_SLOT_COUNT) {
-      return undefined;
-    }
-    return buildLiveControlSlots(this.streamers, this.homeUrl)[slot - 1];
+  public getSlotEffect(slot: number) {
+    return Effect.gen({ self: this }, function* () {
+      if (!Number.isInteger(slot) || slot < 1 || slot > IOS_CONTROL_SLOT_COUNT)
+        return undefined;
+      return (yield* buildLiveControlSlots(this.streamers, this.homeUrl))[slot - 1];
+    });
   }
 
-  public diagnostics(): {
-    apnsEnabled: boolean;
-    registrationCount: number;
-    undeliveredCount: number;
-    lastReconciledAt: number | null;
-  } {
-    return {
-      apnsEnabled: this.apns !== undefined,
-      registrationCount: listIOSControlRegistrations().length,
-      undeliveredCount: this.undeliveredRegistrations().length,
-      lastReconciledAt: this.lastReconciledAt,
-    };
+  public diagnosticsEffect() {
+    return Effect.gen({ self: this }, function* () {
+      const registrations = yield* listIOSControlRegistrations();
+      const hashes = yield* this.desiredHashes();
+      return {
+        apnsEnabled: this.apns !== undefined,
+        registrationCount: registrations.length,
+        undeliveredCount: registrations.filter((row) => {
+          const hash = hashes.get(row.slot);
+          return hash !== undefined && row.lastDeliveredHash !== hash;
+        }).length,
+        lastReconciledAt: this.lastReconciledAt,
+      };
+    });
   }
 
-  public registerDeviceEffect(
-    deviceId: string,
-    controls: ControlRegistrationInput[],
-  ): EffectType<void, PersistenceError> {
+  public registerDeviceEffect(deviceId: string, controls: ControlRegistrationInput[]) {
     return Effect.gen({ self: this }, function* () {
       const previous = new Map(
         (yield* IOSControlPersistence.list())
@@ -89,9 +86,9 @@ export class IOSControlService {
     });
   }
 
-  public reconcileEffect(): EffectType<void, PersistenceError> {
+  public reconcileEffect() {
     return Effect.gen({ self: this }, function* () {
-      const slots = buildLiveControlSlots(this.streamers, this.homeUrl);
+      const slots = yield* buildLiveControlSlots(this.streamers, this.homeUrl);
       this.lastReconciledAt = yield* Clock.currentTimeMillis;
       if (!this.apns) return;
       const hashes = new Map(
@@ -105,40 +102,31 @@ export class IOSControlService {
     this.apns?.close();
   }
 
-  private desiredHashes(): Map<number, string> {
-    return new Map(
-      buildLiveControlSlots(this.streamers, this.homeUrl).map((slot) => [
-        slot.slot,
-        liveControlSlotHash(slot),
-      ]),
-    );
-  }
+  public readonly closeEffect = Effect.sync(() => this.close());
 
-  private undeliveredRegistrations(
-    hashes = this.desiredHashes(),
-  ): Array<{ registrationId: string; hash: string }> {
-    return listIOSControlRegistrations().flatMap((row) => {
-      const hash = hashes.get(row.slot);
-      if (!hash || row.lastDeliveredHash === hash) return [];
-      return [{ registrationId: row.registrationId, hash }];
-    });
-  }
-
-  private undeliveredRegistrationsEffect(hashes = this.desiredHashes()) {
-    return IOSControlPersistence.list().pipe(
-      Effect.map((registrations) =>
-        registrations.flatMap((row) => {
-          const hash = hashes.get(row.slot);
-          if (!hash || row.lastDeliveredHash === hash) return [];
-          return [{ registrationId: row.registrationId, hash }];
-        }),
+  private desiredHashes() {
+    return buildLiveControlSlots(this.streamers, this.homeUrl).pipe(
+      Effect.map(
+        (slots) => new Map(slots.map((slot) => [slot.slot, liveControlSlotHash(slot)])),
       ),
     );
   }
 
+  private undeliveredRegistrationsEffect(hashes?: Map<number, string>) {
+    return Effect.gen({ self: this }, function* () {
+      const desired = hashes ?? (yield* this.desiredHashes());
+      const registrations = yield* IOSControlPersistence.list();
+      return registrations.flatMap((row) => {
+        const hash = desired.get(row.slot);
+        if (!hash || row.lastDeliveredHash === hash) return [];
+        return [{ registrationId: row.registrationId, hash }];
+      });
+    });
+  }
+
   private deliverEffect(
     registrations: Array<{ registrationId: string; hash: string }>,
-  ): EffectType<void, PersistenceError> {
+  ) {
     return Effect.forEach(
       registrations,
       ({ registrationId, hash }) =>
@@ -161,10 +149,7 @@ export class IOSControlService {
     }
   }
 
-  private pushEffect(
-    registrationId: string,
-    desiredHash: string,
-  ): EffectType<"delivered" | "transient" | "permanent", PersistenceError> {
+  private pushEffect(registrationId: string, desiredHash: string) {
     return Effect.gen({ self: this }, function* () {
       const registration = (yield* IOSControlPersistence.list()).find(
         (row) => row.registrationId === registrationId,
@@ -193,7 +178,7 @@ export class IOSControlService {
             registration.registrationId,
             registration.pushToken,
           );
-          this.logger.info(`Removed stale control token: ${result.reason}`);
+          yield* this.logger.info(`Removed stale control token: ${result.reason}`);
           return "delivered" as const;
         }
         const transient =
@@ -203,16 +188,15 @@ export class IOSControlService {
             message: `Control push failed (${result.status}): ${result.reason}`,
           });
         }
-        this.logger.warn(`Control push failed (${result.status}): ${result.reason}`);
+        yield* this.logger.warn(
+          `Control push failed (${result.status}): ${result.reason}`,
+        );
         return "permanent" as const;
       });
       return yield* attempt.pipe(
         Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 1 }),
         Effect.catchTag("TransientControlPushError", (error) =>
-          Effect.sync(() => {
-            this.logger.warn(error.message);
-            return "transient" as const;
-          }),
+          this.logger.warn(error.message).pipe(Effect.as("transient" as const)),
         ),
       );
     });

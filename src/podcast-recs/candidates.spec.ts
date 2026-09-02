@@ -1,6 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import { runTest } from "../live-check/testRuntime.js";
 import type { PodcastAccountClient } from "./account.js";
 import {
   pickBestByTitle,
@@ -14,7 +15,10 @@ import type { DiscoveredEpisode } from "./types.js";
 vi.mock("./itunes.js");
 vi.mock("./rss.js");
 
-const logger = { info: vi.fn(), warn: vi.fn() } as unknown as Logger;
+const logger = {
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+} as unknown as Logger;
 
 function discovered(overrides: Partial<DiscoveredEpisode> = {}): DiscoveredEpisode {
   return { showTitle: "Show", episodeTitle: "Ep", context: "reddit", ...overrides };
@@ -55,7 +59,7 @@ describe("resolveCandidates", () => {
       ),
     } as unknown as PodcastAccountClient;
 
-    const result = await Effect.runPromise(
+    const result = await runTest(
       resolveCandidatesEffect([discovered()], account, logger),
     );
     expect(result).toHaveLength(1);
@@ -73,7 +77,7 @@ describe("resolveCandidates", () => {
     vi.mocked(searchItunesPodcastsEffect).mockReturnValue(Effect.succeed([]));
     vi.mocked(pickBestShowMatch).mockReturnValue(undefined);
 
-    const result = await Effect.runPromise(
+    const result = await runTest(
       resolveCandidatesEffect([discovered()], undefined, logger),
     );
     expect(result).toHaveLength(0);
@@ -98,7 +102,7 @@ describe("resolveCandidates", () => {
       .mockReturnValueOnce(Effect.succeed([feedEpisode()]));
     vi.mocked(findEpisodeByTitle).mockReturnValue(feedEpisode());
 
-    const result = await Effect.runPromise(
+    const result = await runTest(
       resolveCandidatesEffect(
         [discovered(), discovered({ episodeTitle: "Boom" }), discovered()],
         undefined,

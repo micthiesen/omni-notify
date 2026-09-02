@@ -1,25 +1,21 @@
 import fsAsync from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { Injector } from "@micthiesen/mitools/config";
-import { LogLevel } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // getAudioDir() derives from DB_NAME's directory when PRESSPODS_AUDIO_DIR is
 // unset, so point DB_NAME at an isolated temp dir and the audio (checkpoint)
 // dir lands beside it.
 const TMP_ROOT = path.join(os.tmpdir(), "presspods-storage-spec");
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.ERROR,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
+vi.mock("../utils/config.js", () => ({
+  default: {
+    PRESSPODS_AUDIO_DIR: path.join(TMP_ROOT, "press-pods-audio"),
     DOCKERIZED: false,
     DB_NAME: path.join(TMP_ROOT, "storage.spec.db"),
   },
-});
+}));
 
 const {
   checkpointKey,

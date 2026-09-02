@@ -5,7 +5,6 @@ import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 import { z } from "zod";
-import { runPromise } from "../../effect/interop.js";
 import { fetchPublicText, PUBLIC_HTTP_USER_AGENT } from "../../effect/publicHttp.js";
 
 const TIMEOUT_MS = 15_000;
@@ -45,14 +44,16 @@ export function fetchUrlEffect(
   );
 }
 
-export const fetchUrl = tool({
-  description:
-    "Fetch a web page and return its content as clean markdown. Use this to read full articles, documentation, or other pages found via web_search.",
-  inputSchema: z.object({
-    url: z.string().url().describe("The URL to fetch"),
-  }),
-  execute: ({ url }) => runPromise(fetchUrlEffect(url)),
-});
+export function makeFetchUrlTool(runner: EffectRunner<Logger | Docstore>) {
+  return tool({
+    description:
+      "Fetch a web page and return its content as clean markdown. Use this to read full articles, documentation, or other pages found via web_search.",
+    inputSchema: z.object({
+      url: z.string().url().describe("The URL to fetch"),
+    }),
+    execute: ({ url }) => runner.runPromise(fetchUrlEffect(url)),
+  });
+}
 
 export interface HtmlToMarkdownResult {
   title: string | null;
@@ -100,3 +101,6 @@ function fallbackExtract(html: string): string {
   const main = document.querySelector("main, article, [role='main']");
   return (main ?? document.body)?.innerHTML ?? html;
 }
+import type { EffectRunner } from "@micthiesen/mitools/boundary";
+import type { Docstore } from "@micthiesen/mitools/docstore";
+import type { Logger } from "@micthiesen/mitools/logging";

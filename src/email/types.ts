@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import type { PersistenceError } from "../effect/errors.js";
+import type { Docstore } from "@micthiesen/mitools/docstore";
 
 /** Transport-agnostic email pipeline types implemented by iCloud IMAP. */
 
@@ -46,9 +46,9 @@ export interface DownloadedAttachment {
   data: Buffer;
 }
 
-export interface EmailHandler<out E = unknown> {
+export interface EmailHandler<out E = unknown, out R = never> {
   name: string;
-  handleEmailsEffect(emails: FetchedEmail[]): Effect.Effect<void, E>;
+  handleEmailsEffect(emails: FetchedEmail[]): Effect.Effect<void, E, R>;
 }
 
 export interface EmailPoll {
@@ -58,7 +58,7 @@ export interface EmailPoll {
    * it after fan-out so a crash mid-dispatch re-delivers instead of dropping
    * (pipeline dedup gates make re-delivery safe).
    */
-  commit: Effect.Effect<void, PersistenceError>;
+  commit: Effect.Effect<void, unknown, Docstore>;
 }
 
 export interface EmailSearchOptions {
@@ -82,7 +82,7 @@ export interface EmailSearchOptions {
   limit: number;
 }
 
-export interface EmailTransport<out E = unknown> {
+export interface EmailTransport<out E = unknown, out R = never> {
   /** Short label for logs ("IMAP"). */
   readonly name: string;
   /**
@@ -92,19 +92,19 @@ export interface EmailTransport<out E = unknown> {
    * boot-retry loop can alert and try again. Later disconnects self-heal
    * with backoff inside the transport.
    */
-  startEffect(onMailEvent: () => void): Effect.Effect<void, E>;
-  readonly stopEffect: Effect.Effect<void, never>;
+  startEffect(onMailEvent: () => void): Effect.Effect<void, E, R>;
+  readonly stopEffect: Effect.Effect<void, never, R>;
   /** Fetch emails that arrived since the persisted cursor. */
-  readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, E>;
+  readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, E, R>;
   /** Re-fetch one email by its stable id (retry/reprocess); undefined when gone. */
-  fetchEmailByIdEffect(id: string): Effect.Effect<FetchedEmail | undefined, E>;
+  fetchEmailByIdEffect(id: string): Effect.Effect<FetchedEmail | undefined, E, R>;
   /**
    * Search the monitored mailbox without exposing transport credentials or raw
    * protocol access.
    */
-  searchEmailsEffect?(options: EmailSearchOptions): Effect.Effect<FetchedEmail[], E>;
+  searchEmailsEffect?(options: EmailSearchOptions): Effect.Effect<FetchedEmail[], E, R>;
   /** Download one attachment's bytes; undefined when unavailable. */
   downloadAttachmentEffect(
     attachment: EmailAttachment,
-  ): Effect.Effect<DownloadedAttachment | undefined, E>;
+  ): Effect.Effect<DownloadedAttachment | undefined, E, R>;
 }

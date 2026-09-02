@@ -1,7 +1,8 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import type { Effect } from "effect";
 import type { MetadataInfo } from "../../agents/metadata.js";
 import type { PressPodsError } from "../../effect.js";
+import type { TaskServices } from "../../../task-runs/registry.js";
 
 export type AuthorGender = MetadataInfo["authorGender"];
 
@@ -30,5 +31,8 @@ export interface TtsProvider {
    * endpoint (createSttClient) — degrades to the duration check without one.
    */
   readonly verifyChunkContent: boolean;
-  synthesizeChunk(text: string, logger: Logger): Effect.Effect<Buffer, PressPodsError>;
+  synthesizeChunk(
+    text: string,
+    logger: Logger,
+  ): Effect.Effect<Buffer, PressPodsError, TaskServices>;
 }

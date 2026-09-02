@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
 import { generateText, Output } from "ai";
@@ -98,19 +98,22 @@ export function selectGuestAppearancesEffect(
   logger: Logger,
   logFile: LogFile | undefined,
   max: number,
-): Effect.Effect<GuestPick[], GuestSelectionError> {
+) {
   return Effect.gen(function* () {
     if (candidates.length === 0) return [];
     const { model, modelId } = getRecsSelectionModel("select-guest-appearances");
     const prompt = buildPrompt(candidates, tasteDigest, max);
 
-    logFile?.log(
-      logger,
-      LogLevel.INFO,
-      `Guest Gate Prompt (${modelId})`,
-      codeBlock(prompt),
-      { consoleSummary: `Gating ${candidates.length} guest candidate(s) (${modelId})` },
-    );
+    if (logFile)
+      yield* logFile.log(
+        logger,
+        LogLevel.INFO,
+        `Guest Gate Prompt (${modelId})`,
+        codeBlock(prompt),
+        {
+          consoleSummary: `Gating ${candidates.length} guest candidate(s) (${modelId})`,
+        },
+      );
 
     const result = yield* Effect.tryPromise({
       try: () =>
@@ -121,7 +124,7 @@ export function selectGuestAppearancesEffect(
         }),
       catch: (cause) => new GuestSelectionError({ cause }),
     });
-    logger.info(
+    yield* logger.info(
       `Guest gate token usage: ${result.usage.inputTokens} prompt, ${result.usage.outputTokens} completion`,
     );
 
@@ -133,12 +136,13 @@ export function selectGuestAppearancesEffect(
       logger,
     );
 
-    logFile?.section(
-      "Guest Gate",
-      picks
-        .map((p) => `INCLUDE ${p.candidate.showTitle} — ${p.candidate.episodeTitle}`)
-        .join("\n") || "none included",
-    );
+    if (logFile)
+      yield* logFile.section(
+        "Guest Gate",
+        picks
+          .map((p) => `INCLUDE ${p.candidate.showTitle} — ${p.candidate.episodeTitle}`)
+          .join("\n") || "none included",
+      );
     return picks;
   });
 }

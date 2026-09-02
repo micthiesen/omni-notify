@@ -1,6 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 import type { WorkspaceDefinition } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
@@ -23,10 +24,13 @@ vi.mock("./engine.js", () => ({
     Effect.promise(() => mocks.runWorkspace(...args)),
 }));
 vi.mock("./persistence.js", () => ({
-  listWorkspaceSubjects: () => mocks.subjects,
+  listWorkspaceSubjects: () => Effect.succeed(mocks.subjects),
 }));
 
 import { WorkspaceTask } from "./task.js";
+
+const runtime = createMitoolsTestRuntime();
+afterAll(() => runtime.dispose());
 
 const definition: WorkspaceDefinition = {
   id: "marketplace-selling",
@@ -42,8 +46,8 @@ const definition: WorkspaceDefinition = {
 };
 
 const logger = {
-  extend: vi.fn().mockReturnValue({ warn: vi.fn() }),
-} as unknown as Logger;
+  extend: vi.fn().mockReturnValue({ warn: vi.fn(() => Effect.void) }),
+} as unknown as NamedLogger;
 
 describe("WorkspaceTask on-demand mode", () => {
   beforeEach(() => {
@@ -53,7 +57,7 @@ describe("WorkspaceTask on-demand mode", () => {
   it("skips scheduled work even when an active subject exists", async () => {
     const task = new WorkspaceTask(definition, logger);
 
-    await task.run();
+    await runtime.run(task.run);
 
     expect(mocks.runWorkspace).not.toHaveBeenCalled();
     expect(task.getLastRunSummary()).toBe(
@@ -69,7 +73,7 @@ describe("WorkspaceTask on-demand mode", () => {
     });
     const task = new WorkspaceTask(definition, logger);
 
-    await task.runManual({ message: "The desk is 60 inches wide" });
+    await runtime.run(task.runManual({ message: "The desk is 60 inches wide" }));
 
     expect(mocks.runWorkspace).toHaveBeenCalledWith(
       definition,

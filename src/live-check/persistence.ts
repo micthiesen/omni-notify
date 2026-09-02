@@ -1,7 +1,9 @@
 import type { Effect as EffectType } from "effect/Effect";
+import type { Docstore } from "@micthiesen/mitools/docstore";
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect, Option } from "effect";
 import type { PersistenceError } from "../effect/errors.js";
-import { fromSync } from "../effect/interop.js";
+import { PersistenceError as PersistenceFailure } from "../effect/errors.js";
 import type { PlatformBinding } from "./streamers.js";
 
 export type StreamerStatusLive = {
@@ -51,22 +53,23 @@ export const StreamerStatusEntity = new Entity<StreamerStatus, ["streamerId"]>(
   ["streamerId"],
 );
 
-export function getStreamerStatus(streamerId: string): StreamerStatus {
-  return StreamerStatusEntity.get({ streamerId }) ?? { streamerId, isLive: false };
-}
-
 export function getStreamerStatusEffect(
   streamerId: string,
-): EffectType<StreamerStatus, PersistenceError> {
-  return fromSync("read streamer status", () => getStreamerStatus(streamerId));
-}
-
-export function upsertStreamerStatus(status: StreamerStatus): void {
-  StreamerStatusEntity.upsert(status);
+): EffectType<StreamerStatus, PersistenceError, Docstore> {
+  return StreamerStatusEntity.get({ streamerId }).pipe(
+    Effect.map(Option.getOrElse((): StreamerStatus => ({ streamerId, isLive: false }))),
+    Effect.mapError(
+      (cause) => new PersistenceFailure({ operation: "read streamer status", cause }),
+    ),
+  );
 }
 
 export function upsertStreamerStatusEffect(
   status: StreamerStatus,
-): EffectType<void, PersistenceError> {
-  return fromSync("upsert streamer status", () => upsertStreamerStatus(status));
+): EffectType<void, PersistenceError, Docstore> {
+  return StreamerStatusEntity.upsert(status).pipe(
+    Effect.mapError(
+      (cause) => new PersistenceFailure({ operation: "upsert streamer status", cause }),
+    ),
+  );
 }

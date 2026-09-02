@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { sortLiveDisplay } from "../live-check/displayOrder.js";
-import { getStreamerStatus } from "../live-check/persistence.js";
+import { getStreamerStatusEffect } from "../live-check/persistence.js";
+import { Effect } from "effect";
 import { type Platform, platformConfigs } from "../live-check/platforms/index.js";
 import { type Streamer, streamerOrderingViewerCount } from "../live-check/streamers.js";
 
@@ -38,54 +39,56 @@ export function buildLiveControlSlots(
   streamers: Streamer[],
   homeUrl: string,
   now = Date.now(),
-): LiveControlSlot[] {
-  const ranked: RankedLiveSlot[] = [];
-  for (const streamer of streamers) {
-    const status = getStreamerStatus(streamer.id);
-    if (!status.isLive) continue;
-    const viewerCount = status.viewerCount ?? null;
-    ranked.push({
-      tier: streamer.tier,
-      maxViewerCount: status.maxViewerCount,
-      orderingViewerCount: streamerOrderingViewerCount(streamer),
-      isLive: true,
-      streamerId: streamer.id,
-      displayName: streamer.displayName,
-      title: status.primaryTitle,
-      platform: status.primary.platform,
-      url:
-        status.primary.urlOverride ??
-        platformConfigs[status.primary.platform].getLiveUrl(status.primary.username),
-      viewerCount,
-      startedAt: epoch(status.startedAt),
-    });
-  }
-
-  const ordered = sortLiveDisplay(ranked);
-
-  return Array.from({ length: IOS_CONTROL_SLOT_COUNT }, (_, index) => {
-    const live = ordered[index];
-    if (live) {
-      const {
-        tier: _tier,
-        maxViewerCount: _maxViewerCount,
-        orderingViewerCount: _orderingViewerCount,
-        ...slot
-      } = live;
-      return { ...slot, slot: index + 1, updatedAt: now };
+) {
+  return Effect.gen(function* () {
+    const ranked: RankedLiveSlot[] = [];
+    for (const streamer of streamers) {
+      const status = yield* getStreamerStatusEffect(streamer.id);
+      if (!status.isLive) continue;
+      const viewerCount = status.viewerCount ?? null;
+      ranked.push({
+        tier: streamer.tier,
+        maxViewerCount: status.maxViewerCount,
+        orderingViewerCount: streamerOrderingViewerCount(streamer),
+        isLive: true,
+        streamerId: streamer.id,
+        displayName: streamer.displayName,
+        title: status.primaryTitle,
+        platform: status.primary.platform,
+        url:
+          status.primary.urlOverride ??
+          platformConfigs[status.primary.platform].getLiveUrl(status.primary.username),
+        viewerCount,
+        startedAt: epoch(status.startedAt),
+      });
     }
-    return {
-      slot: index + 1,
-      isLive: false,
-      streamerId: null,
-      displayName: "Nobody Live",
-      title: null,
-      platform: null,
-      url: homeUrl,
-      viewerCount: null,
-      startedAt: null,
-      updatedAt: now,
-    };
+
+    const ordered = sortLiveDisplay(ranked);
+
+    return Array.from({ length: IOS_CONTROL_SLOT_COUNT }, (_, index) => {
+      const live = ordered[index];
+      if (live) {
+        const {
+          tier: _tier,
+          maxViewerCount: _maxViewerCount,
+          orderingViewerCount: _orderingViewerCount,
+          ...slot
+        } = live;
+        return { ...slot, slot: index + 1, updatedAt: now };
+      }
+      return {
+        slot: index + 1,
+        isLive: false,
+        streamerId: null,
+        displayName: "Nobody Live",
+        title: null,
+        platform: null,
+        url: homeUrl,
+        viewerCount: null,
+        startedAt: null,
+        updatedAt: now,
+      };
+    });
   });
 }
 

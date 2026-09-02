@@ -1,4 +1,6 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { Logger, NamedLogger } from "@micthiesen/mitools/logging";
+import type { Docstore } from "@micthiesen/mitools/docstore";
+import type { OperationError } from "@micthiesen/mitools/errors";
 import { generateText, Output } from "ai";
 import { Data, Deferred, Effect, Exit, Schema } from "effect";
 import { z } from "zod";
@@ -43,14 +45,16 @@ const MAX_BODY_CHARS = 1500;
 const MAX_LINKS = 5;
 export const MAX_TRIAGE_CACHE_ENTRIES = 500;
 
-export function buildTriagePrompt(email: TriageEmail): string {
+export const buildTriagePrompt = Effect.fn("EmailTriage.buildPrompt")(function* (
+  email: TriageEmail,
+) {
   const body = email.textBody.slice(0, MAX_BODY_CHARS);
   const links = (email.links ?? []).slice(0, MAX_LINKS);
   const linksSection = links.length > 0 ? `\nLinks:\n${links.join("\n")}` : "";
 
   const digests = [
-    ["Parcel pipeline", formatFeedbackDigest("parcel")],
-    ["Calendar pipeline", formatFeedbackDigest("calendar")],
+    ["Parcel pipeline", yield* formatFeedbackDigest("parcel")],
+    ["Calendar pipeline", yield* formatFeedbackDigest("calendar")],
   ].filter(([, digest]) => digest !== "");
   const correctionsSection =
     digests.length > 0
@@ -69,7 +73,7 @@ From: ${email.from}
 Subject: ${email.subject}
 
 ${body}${linksSection}${correctionsSection}`;
-}
+});
 
 /**
  * One cheap-model relevance call per email, shared by both pipelines. Results
@@ -80,34 +84,46 @@ ${body}${linksSection}${correctionsSection}`;
 export class EmailTriageService {
   private cache = new Map<
     string,
-    { readonly effect: Effect.Effect<TriageVerdict, TriageError>; settled: boolean }
+    {
+      readonly effect: Effect.Effect<
+        TriageVerdict,
+        TriageError | OperationError,
+        Logger | Docstore
+      >;
+      settled: boolean;
+    }
   >();
   // Keyed by email id, populated once `callModel` resolves. `null` means the
   // call ran but its model has no pricing entry (unpriced, not free) — a
   // missing key (checked via `getTriageCostCents`) means no call has
   // completed for that email yet.
   private costCache = new Map<string, number | null>();
-  private logger: Logger;
+  private logger: NamedLogger;
   private readonly classifyFn: (
     email: TriageEmail,
-  ) => Effect.Effect<TriageVerdict, TriageError>;
+  ) => Effect.Effect<TriageVerdict, TriageError | OperationError, Logger | Docstore>;
 
   constructor(
-    logger: Logger,
-    classifyFn?: (email: TriageEmail) => Effect.Effect<TriageVerdict, TriageError>,
+    logger: NamedLogger,
+    classifyFn?: (
+      email: TriageEmail,
+    ) => Effect.Effect<TriageVerdict, TriageError | OperationError, Logger | Docstore>,
   ) {
     this.logger = logger;
     this.classifyFn = classifyFn ?? ((email) => this.callModelEffect(email));
   }
 
-  public classifyEffect(email: TriageEmail): Effect.Effect<TriageVerdict, TriageError> {
+  public classifyEffect(email: TriageEmail) {
     return Effect.suspend(() => {
       const cached = this.cache.get(email.id);
       if (cached) return cached.effect;
 
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen({ self: this }, function* () {
-          const deferred = yield* Deferred.make<TriageVerdict, TriageError>();
+          const deferred = yield* Deferred.make<
+            TriageVerdict,
+            TriageError | OperationError
+          >();
           const entry = {
             effect: Deferred.await(deferred),
             settled: false,
@@ -127,9 +143,12 @@ export class EmailTriageService {
         }),
       ).pipe(
         Effect.tapError((error) =>
-          Effect.sync(() => {
+          Effect.gen({ self: this }, function* () {
             this.cache.delete(email.id);
-            this.logger.warn(`Triage failed for "${email.subject}"`, error.message);
+            yield* this.logger.warn(
+              `Triage failed for "${email.subject}"`,
+              error.message,
+            );
           }),
         ),
       );
@@ -162,17 +181,16 @@ export class EmailTriageService {
     return this.costCache.get(emailId) ?? null;
   }
 
-  private callModelEffect(
-    email: TriageEmail,
-  ): Effect.Effect<TriageVerdict, TriageError> {
+  private callModelEffect(email: TriageEmail) {
     return Effect.gen({ self: this }, function* () {
       const { model, modelId } = getTriageModel();
+      const prompt = yield* buildTriagePrompt(email);
       const result = yield* Effect.tryPromise({
         try: () =>
           generateText({
             model,
             output: Output.object({ schema: triageSchema }),
-            prompt: buildTriagePrompt(email),
+            prompt,
           }),
         catch: (cause) => new TriageError({ emailId: email.id, cause }),
       });
@@ -193,11 +211,11 @@ export class EmailTriageService {
           })
         : null;
       if (costCents === null) {
-        this.logger.debug(`No pricing data for triage model "${modelId}"`);
+        yield* this.logger.debug(`No pricing data for triage model "${modelId}"`);
       }
       this.costCache.set(email.id, costCents);
 
-      this.logger.info(
+      yield* this.logger.info(
         `Triage (${modelId}) "${email.subject}": parcel=${verdict.parcel} ` +
           `calendar=${verdict.calendar} — ${verdict.reason}`,
       );

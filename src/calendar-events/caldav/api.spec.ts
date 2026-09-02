@@ -1,7 +1,7 @@
 import { Logger } from "@micthiesen/mitools/logging";
-import { it as effectIt } from "@effect/vitest";
+import { layer } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
-import { afterEach, describe, expect, vi } from "vitest";
+import { afterEach, expect, vi } from "vitest";
 import {
   createCalendarEventEffect,
   deleteCalendarEventEffect,
@@ -20,7 +20,7 @@ const event = {
   startTime: "09:00",
   allDay: false,
 };
-const logger = new Logger("CalDavApiSpec");
+const logger = Logger.named("CalDavApiSpec");
 
 function abortableFetchMock(): {
   fetchMock: ReturnType<typeof vi.fn>;
@@ -43,7 +43,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("CalDAV writes", () => {
+layer(Logger.layer())("CalDAV writes", (effectIt) => {
   effectIt.effect("aborts an in-flight PUT when its Effect is interrupted", () =>
     Effect.gen(function* () {
       const { fetchMock, started } = abortableFetchMock();

@@ -1,6 +1,7 @@
-import { Logger, type LogNotification } from "@micthiesen/mitools/logging";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AlertThrottle, alertKey, installAlertThrottle } from "./throttle.js";
+import type { LogNotification } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
+import { describe, expect, it } from "vitest";
+import { AlertThrottle, alertKey, throttleLogHook } from "./throttle.js";
 
 const MINUTE = 60_000;
 
@@ -99,37 +100,24 @@ describe("AlertThrottle", () => {
   });
 });
 
-describe("installAlertThrottle", () => {
-  const originalOnError = Logger.onError;
-  const originalOnWarn = Logger.onWarn;
-  let delivered: LogNotification[];
+describe("throttleLogHook", () => {
+  it("chains the hook and drops immediate repeats", async () => {
+    const delivered: LogNotification[] = [];
+    const hook = throttleLogHook((notification) =>
+      Effect.sync(() => delivered.push(notification)),
+    );
+    const notification = (title: string, body: string): LogNotification => ({
+      level: "error" as LogNotification["level"],
+      loggerName: "Test",
+      title,
+      body,
+    });
 
-  beforeEach(() => {
-    delivered = [];
-    Logger.onError = (notification) => {
-      delivered.push(notification);
-    };
-    installAlertThrottle();
-  });
-
-  afterEach(() => {
-    Logger.onError = originalOnError;
-    Logger.onWarn = originalOnWarn;
-  });
-
-  it("chains the existing hook and drops immediate repeats", () => {
-    const logger = new Logger("Test");
-    logger.error("Boom", "first");
-    logger.error("Boom", "second");
-    logger.error("Different boom");
+    await Effect.runPromise(hook(notification("Boom", "first")));
+    await Effect.runPromise(hook(notification("Boom", "second")));
+    await Effect.runPromise(hook(notification("Different boom", "details")));
 
     expect(delivered.map((d) => d.title)).toEqual(["Boom", "Different boom"]);
     expect(delivered[0].body).toBe("first");
-  });
-
-  it("leaves onWarn unset while mitools has no warn hook", () => {
-    Logger.onWarn = null;
-    installAlertThrottle();
-    expect(Logger.onWarn).toBeNull();
   });
 });

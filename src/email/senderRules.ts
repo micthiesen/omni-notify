@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect, Option } from "effect";
 
 export type EmailRuleScope = "parcel" | "calendar" | "both";
 export type EmailRuleVerdict = "block" | "allow";
@@ -80,39 +81,39 @@ export function normalizeRulePattern(input: string): string {
  * The rule that decides this sender for a pipeline (scope matches the pipeline
  * or is "both"). When multiple rules match, block beats allow.
  */
-export function findSenderRule(
+export const findSenderRule = Effect.fn("EmailSenderRule.find")(function* (
   from: string,
   pipeline: "parcel" | "calendar",
-): EmailRuleData | undefined {
+) {
   const fromLower = from.toLowerCase();
-  const matches = EmailRuleEntity.getAll().filter(
+  const matches = (yield* EmailRuleEntity.getAll()).filter(
     (rule) =>
       (rule.scope === pipeline || rule.scope === "both") &&
       matchesSenderPattern(fromLower, rule.pattern),
   );
   return matches.find((rule) => rule.verdict === "block") ?? matches[0];
-}
+});
 
-export function getSenderRuleVerdict(
+export const getSenderRuleVerdict = Effect.fn("EmailSenderRule.verdict")(function* (
   from: string,
   pipeline: "parcel" | "calendar",
-): EmailRuleVerdict | undefined {
-  return findSenderRule(from, pipeline)?.verdict;
-}
+) {
+  return (yield* findSenderRule(from, pipeline))?.verdict;
+});
 
-export function listEmailRules(): EmailRuleData[] {
-  return EmailRuleEntity.getAll().sort((a, b) => b.createdAt - a.createdAt);
-}
+export const listEmailRules = Effect.fn("EmailSenderRule.list")(function* () {
+  return (yield* EmailRuleEntity.getAll()).sort((a, b) => b.createdAt - a.createdAt);
+});
 
-export function upsertEmailRule(entry: {
+export const upsertEmailRule = Effect.fn("EmailSenderRule.upsert")(function* (entry: {
   pattern: string;
   scope: EmailRuleScope;
   verdict: EmailRuleVerdict;
-}): EmailRuleData {
+}) {
   const pattern = entry.pattern.trim().toLowerCase();
   if (!pattern) throw new Error("Sender rule pattern must be non-empty");
   const ruleId = `${entry.scope}:${pattern}`;
-  const existing = EmailRuleEntity.get({ ruleId });
+  const existing = Option.getOrUndefined(yield* EmailRuleEntity.get({ ruleId }));
   const row: EmailRuleData = {
     ruleId,
     pattern,
@@ -120,15 +121,15 @@ export function upsertEmailRule(entry: {
     verdict: entry.verdict,
     createdAt: existing?.createdAt ?? Date.now(),
   };
-  EmailRuleEntity.upsert(row);
+  yield* EmailRuleEntity.upsert(row);
   return row;
-}
+});
 
-export function deleteEmailRule(ruleId: string): boolean {
-  if (EmailRuleEntity.get({ ruleId }) === undefined) return false;
-  EmailRuleEntity.delete({ ruleId });
-  return true;
-}
+export const deleteEmailRule = Effect.fn("EmailSenderRule.delete")(function* (
+  ruleId: string,
+) {
+  return yield* EmailRuleEntity.delete({ ruleId });
+});
 
 /**
  * Existing USER-rule coverage for a pattern (exact match only — this reports
@@ -147,9 +148,11 @@ export type EmailRuleCoverage = {
   matches: EmailRuleData[];
 };
 
-export function getSenderRuleCoverage(pattern: string): EmailRuleCoverage {
+export const getSenderRuleCoverage = Effect.fn("EmailSenderRule.coverage")(function* (
+  pattern: string,
+) {
   const normalized = pattern.trim().toLowerCase();
-  const matches = EmailRuleEntity.getAll().filter(
+  const matches = (yield* EmailRuleEntity.getAll()).filter(
     (rule) => rule.pattern === normalized,
   );
   const blockedScopes = new Set<"parcel" | "calendar">();
@@ -163,7 +166,7 @@ export function getSenderRuleCoverage(pattern: string): EmailRuleCoverage {
     for (const scope of scopes) target.add(scope);
   }
   return { pattern: normalized, blockedScopes, allowedScopes, hasBothRule, matches };
-}
+});
 
 /**
  * Pure decision for adding a rule, without writing anything. Determines
@@ -176,14 +179,14 @@ export type RuleAddPlan =
   | { action: "upgrade-to-both"; delete: EmailRuleData[]; row: EmailRuleData }
   | { action: "noop-exists"; existing: EmailRuleData };
 
-export function planRuleAdd(
+export const planRuleAdd = Effect.fn("EmailSenderRule.planAdd")(function* (
   pattern: string,
   scope: EmailRuleScope,
   verdict: EmailRuleVerdict,
-): RuleAddPlan {
+) {
   const normalized = pattern.trim().toLowerCase();
   if (!normalized) throw new Error("Sender rule pattern must be non-empty");
-  const coverage = getSenderRuleCoverage(normalized);
+  const coverage = yield* getSenderRuleCoverage(normalized);
 
   // A "both" rule is authoritative for a pattern: it supersedes any existing
   // single-scope rows, so fold them in (delete) rather than leaving a
@@ -194,7 +197,7 @@ export function planRuleAdd(
     );
     const existingBothRow = coverage.matches.find((rule) => rule.scope === "both");
     if (existingBothRow?.verdict === verdict && singles.length === 0) {
-      return { action: "noop-exists", existing: existingBothRow };
+      return { action: "noop-exists", existing: existingBothRow } as const;
     }
     const createdAt =
       existingBothRow?.verdict === verdict
@@ -210,9 +213,9 @@ export function planRuleAdd(
     // The existing `both:` row (if any) is replaced by the upsert at the same
     // ruleId; only the single-scope rows need explicit deletion.
     if (singles.length > 0) {
-      return { action: "upgrade-to-both", delete: singles, row };
+      return { action: "upgrade-to-both", delete: singles, row } as const;
     }
-    return { action: "create", row };
+    return { action: "create", row } as const;
   }
 
   // Already fully covered by an existing user rule of the same verdict?
@@ -221,13 +224,13 @@ export function planRuleAdd(
     (rule) => rule.scope === "both" && rule.verdict === verdict,
   );
   if (existingBoth) {
-    return { action: "noop-exists", existing: existingBoth };
+    return { action: "noop-exists", existing: existingBoth } as const;
   }
   const existingExact = coverage.matches.find(
     (rule) => rule.scope === scope && rule.verdict === verdict,
   );
   if (existingExact) {
-    return { action: "noop-exists", existing: existingExact };
+    return { action: "noop-exists", existing: existingExact } as const;
   }
 
   // Adding a single-scope rule while the opposite single scope already has
@@ -244,7 +247,7 @@ export function planRuleAdd(
       verdict,
       createdAt: opposite.createdAt,
     };
-    return { action: "upgrade-to-both", delete: [opposite], row: newRow };
+    return { action: "upgrade-to-both", delete: [opposite], row: newRow } as const;
   }
 
   return {
@@ -256,8 +259,8 @@ export function planRuleAdd(
       verdict,
       createdAt: Date.now(),
     },
-  };
-}
+  } as const;
+});
 
 export type UpsertEmailRuleCheckedResult = {
   rule: EmailRuleData;
@@ -272,23 +275,26 @@ export type UpsertEmailRuleCheckedResult = {
  * same-verdict parcel+calendar pair into a single "both" rule. Use this
  * instead of `upsertEmailRule` for user-facing rule creation.
  */
-export function upsertEmailRuleChecked(input: {
-  pattern: string;
-  scope: EmailRuleScope;
-  verdict: EmailRuleVerdict;
-}): UpsertEmailRuleCheckedResult {
-  const plan = planRuleAdd(input.pattern, input.scope, input.verdict);
-  switch (plan.action) {
-    case "noop-exists":
-      return { rule: plan.existing, merged: false, alreadyExists: true };
-    case "upgrade-to-both":
-      // Write the superseding "both" row first so a crash mid-op can never lose
-      // coverage — a leftover single-scope row is harmless and swept at boot.
-      EmailRuleEntity.upsert(plan.row);
-      for (const row of plan.delete) EmailRuleEntity.delete({ ruleId: row.ruleId });
-      return { rule: plan.row, merged: true, alreadyExists: false };
-    case "create":
-      EmailRuleEntity.upsert(plan.row);
-      return { rule: plan.row, merged: false, alreadyExists: false };
-  }
-}
+export const upsertEmailRuleChecked = Effect.fn("EmailSenderRule.upsertChecked")(
+  function* (input: {
+    pattern: string;
+    scope: EmailRuleScope;
+    verdict: EmailRuleVerdict;
+  }) {
+    const plan = yield* planRuleAdd(input.pattern, input.scope, input.verdict);
+    switch (plan.action) {
+      case "noop-exists":
+        return { rule: plan.existing, merged: false, alreadyExists: true };
+      case "upgrade-to-both":
+        // Write the superseding "both" row first so a crash mid-op can never lose
+        // coverage — a leftover single-scope row is harmless and swept at boot.
+        yield* EmailRuleEntity.upsert(plan.row);
+        for (const row of plan.delete)
+          yield* EmailRuleEntity.delete({ ruleId: row.ruleId });
+        return { rule: plan.row, merged: true, alreadyExists: false };
+      case "create":
+        yield* EmailRuleEntity.upsert(plan.row);
+        return { rule: plan.row, merged: false, alreadyExists: false };
+    }
+  },
+);

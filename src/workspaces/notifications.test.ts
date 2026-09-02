@@ -1,6 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMitoolsTestRuntime } from "../test/mitools.js";
 import type { WorkspaceNotificationData } from "./persistence.js";
 
 const mocks = vi.hoisted(() => ({
@@ -11,13 +12,27 @@ const mocks = vi.hoisted(() => ({
   markUnknown: vi.fn(),
 }));
 
-vi.mock("@micthiesen/mitools/pushover", () => ({ notify: mocks.notify }));
+vi.mock("@micthiesen/mitools/pushover", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@micthiesen/mitools/pushover")>()),
+  notify: (...args: unknown[]) =>
+    Effect.tryPromise({
+      try: () => mocks.notify(...args),
+      catch: (cause) => cause,
+    }),
+}));
 vi.mock("./persistence.js", () => ({
-  listDueWorkspaceNotifications: vi.fn().mockReturnValue([]),
-  markWorkspaceNotificationFailed: mocks.markFailed,
-  markWorkspaceNotificationSending: mocks.markSending,
-  markWorkspaceNotificationSent: mocks.markSent,
-  markWorkspaceNotificationUnknown: mocks.markUnknown,
+  listDueWorkspaceNotifications: vi.fn(() => Effect.succeed([])),
+  markWorkspaceNotificationFailed: (...args: unknown[]) =>
+    Effect.sync(() => mocks.markFailed(...args)),
+  markWorkspaceNotificationSending: (...args: unknown[]) =>
+    Effect.sync(() => mocks.markSending(...args)),
+  markWorkspaceNotificationSent: (...args: unknown[]) =>
+    Effect.try({
+      try: () => mocks.markSent(...args),
+      catch: (cause) => cause,
+    }),
+  markWorkspaceNotificationUnknown: (...args: unknown[]) =>
+    Effect.sync(() => mocks.markUnknown(...args)),
 }));
 
 import { deliverWorkspaceNotificationEffect } from "./notifications.js";
@@ -35,7 +50,9 @@ const notification: WorkspaceNotificationData = {
   createdAt: 1,
   nextAttemptAt: 1,
 };
-const logger = { warn: vi.fn() } as unknown as Logger;
+const logger = { warn: vi.fn(() => Effect.void) } as unknown as NamedLogger;
+const runtime = createMitoolsTestRuntime();
+afterAll(() => runtime.dispose());
 
 describe("deliverWorkspaceNotification", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -43,7 +60,7 @@ describe("deliverWorkspaceNotification", () => {
   it("records success after Pushover accepts the notification", async () => {
     mocks.notify.mockResolvedValue(undefined);
     await expect(
-      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+      runtime.run(deliverWorkspaceNotificationEffect(notification, logger)),
     ).resolves.toBe(true);
     expect(mocks.markSent).toHaveBeenCalledWith("notification-1");
     expect(mocks.markSending).toHaveBeenCalledWith("notification-1", 1);
@@ -59,12 +76,12 @@ describe("deliverWorkspaceNotification", () => {
     });
 
     await expect(
-      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+      runtime.run(deliverWorkspaceNotificationEffect(notification, logger)),
     ).rejects.toThrow("database unavailable");
     expect(mocks.notify).toHaveBeenCalledTimes(1);
 
     await expect(
-      Effect.runPromise(
+      runtime.run(
         deliverWorkspaceNotificationEffect(
           { ...notification, status: "sending", attempts: 1 },
           logger,
@@ -79,7 +96,7 @@ describe("deliverWorkspaceNotification", () => {
   it("keeps a failed delivery queued with its attempt count", async () => {
     mocks.notify.mockRejectedValue(new Error("Pushover unavailable"));
     await expect(
-      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+      runtime.run(deliverWorkspaceNotificationEffect(notification, logger)),
     ).resolves.toBe(false);
     expect(mocks.markFailed).toHaveBeenCalledWith(
       "notification-1",
@@ -96,12 +113,10 @@ describe("deliverWorkspaceNotification", () => {
           finish = resolve;
         }),
     );
-    const first = Effect.runPromise(
-      deliverWorkspaceNotificationEffect(notification, logger),
-    );
+    const first = runtime.run(deliverWorkspaceNotificationEffect(notification, logger));
     await vi.waitFor(() => expect(mocks.notify).toHaveBeenCalledTimes(1));
     await expect(
-      Effect.runPromise(deliverWorkspaceNotificationEffect(notification, logger)),
+      runtime.run(deliverWorkspaceNotificationEffect(notification, logger)),
     ).resolves.toBe(false);
     finish?.();
     await expect(first).resolves.toBe(true);

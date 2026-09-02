@@ -1,7 +1,8 @@
-import { extractHttpError } from "@micthiesen/mitools/http";
-import type { Logger } from "@micthiesen/mitools/logging";
+import { extractHttpError } from "../httpError.js";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Duration, Effect, Result } from "effect";
 import config from "../../utils/config.js";
+import type { TaskServices } from "../../task-runs/registry.js";
 import { getArticleMetadataEffect, type Metadata } from "../agents/metadata.js";
 import type CostCounter from "../costs.js";
 import { assertPublicHttpUrl } from "../publicHttp.js";
@@ -27,7 +28,7 @@ export function runArticleRetrievers(
   url: string,
   retrievers: ArticleRetriever[],
   timeoutMs = RETRIEVER_TIMEOUT_MS,
-): Effect.Effect<RetrievedArticleResult[]> {
+): Effect.Effect<RetrievedArticleResult[], never, TaskServices> {
   return Effect.forEach(
     retrievers,
     (retriever) =>
@@ -63,8 +64,10 @@ function articleRatingFingerprint(article: Article): string {
  */
 export function rateRetrievedArticles(
   retrieved: RetrievedArticleResult[],
-  rateArticle: (article: Article) => Effect.Effect<Metadata, PressPodsError>,
-): Effect.Effect<ArticleRetrieverResult[]> {
+  rateArticle: (
+    article: Article,
+  ) => Effect.Effect<Metadata, PressPodsError, TaskServices>,
+): Effect.Effect<ArticleRetrieverResult[], never, TaskServices> {
   return Effect.gen(function* () {
     const results = Array<ArticleRetrieverResult>(retrieved.length);
     const groups = new Map<string, Array<{ index: number; article: Article }>>();
@@ -159,15 +162,7 @@ export function getArticleFromUrl(
   url: string,
   costCounter: CostCounter,
   logger: Logger,
-): Effect.Effect<
-  {
-    article: Article;
-    metadata: Metadata;
-    retrieverName: string;
-    allResults: ArticleRetrieverResult[];
-  },
-  PressPodsError
-> {
+) {
   return Effect.gen(function* () {
     yield* assertPublicHttpUrl(url);
     const retrieved = yield* runArticleRetrievers(url, getArticleRetrievers(url));
@@ -188,7 +183,7 @@ export function getArticleFromUrl(
     if (successResults.length === 0) {
       for (const result of allResults) {
         if (result.success) continue;
-        logger.warn(
+        yield* logger.warn(
           `Retriever ${result.retrieverName} failed:`,
           extractHttpError(result.error),
           true,
@@ -203,7 +198,7 @@ export function getArticleFromUrl(
     const bestResult = successResults.sort(
       (a, b) => b.metadata.info.contentRating - a.metadata.info.contentRating,
     )[0];
-    logger.info(`Retriever ${bestResult.retrieverName} selected as best`);
+    yield* logger.info(`Retriever ${bestResult.retrieverName} selected as best`);
 
     return {
       article: bestResult.article,
@@ -217,7 +212,7 @@ export function getArticleFromUrl(
 function retrieveArticle(
   url: string,
   retriever: ArticleRetriever,
-): Effect.Effect<RetrievedArticleResult, PressPodsError> {
+): Effect.Effect<RetrievedArticleResult, PressPodsError, TaskServices> {
   return Effect.suspend(() => retriever.retrieve(url, USER_AGENT)).pipe(
     Effect.map((article) => ({
       success: true,

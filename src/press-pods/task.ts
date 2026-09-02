@@ -1,8 +1,8 @@
-import type { Logger } from "@micthiesen/mitools/logging";
-import { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
+import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Clock, Effect } from "effect";
-import { runPromise } from "../effect/interop.js";
 import { getCurrentRunId } from "../task-runs/logCapture.js";
+import type { TaskServices } from "../task-runs/registry.js";
 import config from "../utils/config.js";
 import { isRetryableError, summarizeError } from "./errors.js";
 import {
@@ -26,38 +26,39 @@ import {
  * the cron sweep is the safety net that picks up backoff retries and jobs
  * orphaned by a crash (stale `processing` claims).
  */
-export default class PressPodsTask extends ScheduledTask {
+export default class PressPodsTask implements ScheduledTask<unknown, TaskServices> {
   public readonly name = "PressPods";
   public readonly schedule = "0 */5 * * * *"; // Every 5 minutes
   // Run at boot so a restart immediately drains queued work and recovers jobs
   // orphaned mid-run, rather than waiting up to 5 minutes for the first sweep.
-  public override readonly runOnStartup = true;
+  public readonly runOnStartup = true;
 
   private logger: Logger;
   private lastRunSummary: string | undefined;
   private reclaimedOnBoot = false;
 
-  public static create(parentLogger: Logger): PressPodsTask | null {
-    if (!config.PRESSPODS_AUTH_TOKEN) {
-      parentLogger.info("PressPods disabled: missing PRESSPODS_AUTH_TOKEN");
-      return null;
-    }
-    const ttsCred: [string, unknown] =
-      config.PRESSPODS_TTS_PROVIDER === "elevenlabs"
-        ? ["ELEVENLABS_API_KEY", config.ELEVENLABS_API_KEY]
-        : ["PRESSPODS_TTS_URL", config.PRESSPODS_TTS_URL];
-    const missing = [ttsCred, ...requiredModelCredentials()]
-      .filter(([, value]) => !value)
-      .map(([name]) => name);
-    if (missing.length > 0) {
-      parentLogger.info(`PressPods disabled: missing ${missing.join(", ")}`);
-      return null;
-    }
-    return new PressPodsTask(parentLogger);
+  public static create(parentLogger: Logger) {
+    return Effect.gen(function* () {
+      if (!config.PRESSPODS_AUTH_TOKEN) {
+        yield* parentLogger.info("PressPods disabled: missing PRESSPODS_AUTH_TOKEN");
+        return null;
+      }
+      const ttsCred: [string, unknown] =
+        config.PRESSPODS_TTS_PROVIDER === "elevenlabs"
+          ? ["ELEVENLABS_API_KEY", config.ELEVENLABS_API_KEY]
+          : ["PRESSPODS_TTS_URL", config.PRESSPODS_TTS_URL];
+      const missing = [ttsCred, ...requiredModelCredentials()]
+        .filter(([, value]) => !value)
+        .map(([name]) => name);
+      if (missing.length > 0) {
+        yield* parentLogger.info(`PressPods disabled: missing ${missing.join(", ")}`);
+        return null;
+      }
+      return new PressPodsTask(parentLogger);
+    });
   }
 
   private constructor(parentLogger: Logger) {
-    super();
     this.logger = parentLogger.extend("PressPods");
   }
 
@@ -65,65 +66,57 @@ export default class PressPodsTask extends ScheduledTask {
     return this.lastRunSummary;
   }
 
-  public run(): Promise<void> {
-    return runPromise(this.runEffect());
-  }
-
-  public runEffect(): Effect.Effect<void, PressPodsError> {
-    return Effect.gen({ self: this }, function* () {
-      yield* ensureAudioDir().pipe(
-        Effect.mapError(
-          (cause) =>
-            new PressPodsError({
-              operation: `prepare audio directory ${getAudioDir()}`,
-              cause,
-            }),
-        ),
-      );
-      // First run of a fresh process: any `processing` job was orphaned by the
-      // restart (single-process deployment), so make its claim immediately
-      // reclaimable instead of waiting out the 30-minute stale window. The drain
-      // below then either completes it (episode already landed) or counts a
-      // crashed attempt and requeues.
-      if (!this.reclaimedOnBoot) {
-        this.reclaimedOnBoot = true;
-        const reclaimed = yield* PressPodsPersistence.reclaimProcessingJobsAtBoot();
-        if (reclaimed > 0) {
-          this.logger.warn(`Reclaiming ${reclaimed} job(s) orphaned by a restart`);
-        }
+  public readonly run = Effect.gen({ self: this }, function* () {
+    yield* ensureAudioDir().pipe(
+      Effect.mapError(
+        (cause) =>
+          new PressPodsError({
+            operation: `prepare audio directory ${getAudioDir()}`,
+            cause,
+          }),
+      ),
+    );
+    // First run of a fresh process: any `processing` job was orphaned by the
+    // restart (single-process deployment), so make its claim immediately
+    // reclaimable instead of waiting out the 30-minute stale window. The drain
+    // below then either completes it (episode already landed) or counts a
+    // crashed attempt and requeues.
+    if (!this.reclaimedOnBoot) {
+      this.reclaimedOnBoot = true;
+      const reclaimed = yield* PressPodsPersistence.reclaimProcessingJobsAtBoot();
+      if (reclaimed > 0) {
+        yield* this.logger.warn(`Reclaiming ${reclaimed} job(s) orphaned by a restart`);
       }
+    }
 
-      let processed = 0;
-      let requeued = 0;
-      let failed = 0;
+    let processed = 0;
+    let requeued = 0;
+    let failed = 0;
 
-      // Drain until nothing is due: jobs submitted while a run is in flight are
-      // picked up by the same run instead of waiting for the next sweep.
-      for (;;) {
-        const now = yield* Clock.currentTimeMillis;
-        const due = selectDueJobs(yield* PressPodsPersistence.getAllJobs(), now);
-        const job = due[0];
-        if (!job) break;
+    // Drain until nothing is due: jobs submitted while a run is in flight are
+    // picked up by the same run instead of waiting for the next sweep.
+    for (;;) {
+      const now = yield* Clock.currentTimeMillis;
+      const due = selectDueJobs(yield* PressPodsPersistence.getAllJobs(), now);
+      const job = due[0];
+      if (!job) break;
 
-        const outcome = yield* this.processJob(job);
-        if (outcome === "processed") processed++;
-        else if (outcome === "requeued") requeued++;
-        else failed++;
-      }
+      const outcome = yield* this.processJob(job);
+      if (outcome === "processed") processed++;
+      else if (outcome === "requeued") requeued++;
+      else failed++;
+    }
 
-      this.lastRunSummary =
-        processed + requeued + failed === 0
-          ? "No episode jobs due"
-          : `${processed} episode(s) created, ${requeued} requeued, ${failed} failed`;
-      if (processed + requeued + failed > 0) {
-        this.logger.info(`PressPods pass: ${this.lastRunSummary}`);
-      }
-    });
-  }
+    this.lastRunSummary =
+      processed + requeued + failed === 0
+        ? "No episode jobs due"
+        : `${processed} episode(s) created, ${requeued} requeued, ${failed} failed`;
+    if (processed + requeued + failed > 0) {
+      yield* this.logger.info(`PressPods pass: ${this.lastRunSummary}`);
+    }
+  });
 
-  private processJob(
-    job: PressPodsJobData,
-  ): Effect.Effect<"processed" | "requeued" | "failed", PressPodsError> {
+  private processJob(job: PressPodsJobData) {
     return Effect.gen({ self: this }, function* () {
       // A stale `processing` claim means a previous run died mid-job. Two cases:
       // the crash happened after the episode was durably written (job cleanup
@@ -133,7 +126,7 @@ export default class PressPodsTask extends ScheduledTask {
       if (job.status === "processing") {
         const existing = yield* PressPodsPersistence.findEpisodeForJob(job);
         if (existing) {
-          this.logger.info(
+          yield* this.logger.info(
             `Job for ${job.url} already produced episode ${existing.episodeId}; completing`,
           );
           // Finish the replace + checkpoint cleanup the crashed run never reached,
@@ -151,12 +144,12 @@ export default class PressPodsTask extends ScheduledTask {
           true,
         );
         if (updated.status === "queued") {
-          this.logger.warn(
+          yield* this.logger.warn(
             `Reclaimed crashed job for ${job.url}; will retry (attempt ${updated.attempts}/${MAX_JOB_ATTEMPTS})`,
           );
           return "requeued";
         }
-        this.logger.error(
+        yield* this.logger.error(
           `Giving up on ${job.url}: crashed ${updated.attempts} times mid-run`,
         );
         return "failed";
@@ -164,12 +157,12 @@ export default class PressPodsTask extends ScheduledTask {
 
       yield* PressPodsPersistence.claimJob(job.jobId, getCurrentRunId());
       if (job.attempts > 0) {
-        this.logger.info(
+        yield* this.logger.info(
           `Retrying episode creation (attempt ${job.attempts + 1}/${MAX_JOB_ATTEMPTS})`,
           { url: job.url, lastError: job.lastError },
         );
       } else {
-        this.logger.info(`Creating episode for ${job.url}`);
+        yield* this.logger.info(`Creating episode for ${job.url}`);
       }
 
       const result = yield* createEpisodeFromUrl(
@@ -190,13 +183,13 @@ export default class PressPodsTask extends ScheduledTask {
           retryable,
         );
         if (updated.status === "queued") {
-          this.logger.warn(
+          yield* this.logger.warn(
             `Episode creation failed, will retry (attempt ${updated.attempts}/${MAX_JOB_ATTEMPTS})`,
             { url: job.url, error: summary },
           );
           return "requeued";
         }
-        this.logger.error(
+        yield* this.logger.error(
           `Episode creation failed permanently for ${job.url}`,
           summary,
         );

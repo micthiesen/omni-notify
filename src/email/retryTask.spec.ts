@@ -1,20 +1,13 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { Logger, LogLevel } from "@micthiesen/mitools/logging";
-import { Effect } from "effect";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { Logger } from "@micthiesen/mitools/logging";
+import { Effect, Layer, ManagedRuntime, Option } from "effect";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { EmailRetryEntity, EmailRetryPersistence } from "./retry.js";
 import EmailRetryTask from "./retryTask.js";
 import type { EmailHandler, EmailTransport, FetchedEmail } from "./types.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.ERROR,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "retrytask.spec.db",
-  },
-});
+const runtime = ManagedRuntime.make(Layer.merge(Docstore.layerMemory, Logger.layer()));
+const runEffect = runtime.runPromise.bind(runtime);
 
 const fakeEmail: FetchedEmail = {
   id: "e1",
@@ -26,21 +19,23 @@ const fakeEmail: FetchedEmail = {
   attachments: [],
 };
 
-const logger = new Logger("Test");
+const logger = Logger.named("Test");
 const fakeTransport = {
   fetchEmailByIdEffect: (): Effect.Effect<FetchedEmail> => Effect.succeed(fakeEmail),
 } as unknown as EmailTransport;
 
-function dueRow(pipeline: string, emailId: string, attempts: number): void {
-  EmailRetryEntity.upsert({
-    retryKey: `${pipeline}#${emailId}`,
-    pipeline,
-    emailId,
-    reason: "test",
-    attempts,
-    nextAttemptAt: Date.now() - 1000,
-    createdAt: Date.now() - 60_000,
-  });
+function dueRow(pipeline: string, emailId: string, attempts: number) {
+  return runEffect(
+    EmailRetryEntity.upsert({
+      retryKey: `${pipeline}#${emailId}`,
+      pipeline,
+      emailId,
+      reason: "test",
+      attempts,
+      nextAttemptAt: Date.now() - 1000,
+      createdAt: Date.now() - 60_000,
+    }),
+  );
 }
 
 beforeAll(() => {
@@ -49,13 +44,13 @@ beforeAll(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
-afterEach(() => {
-  EmailRetryEntity.deleteAll();
+afterEach(async () => {
+  await runEffect(EmailRetryEntity.deleteAll());
 });
 
 describe("EmailRetryTask", () => {
   it("clears the row when the handler succeeds without re-enqueueing", async () => {
-    dueRow("ParcelTracker", "e1", 1);
+    await dueRow("ParcelTracker", "e1", 1);
     const handler: EmailHandler = {
       name: "ParcelTracker",
       handleEmailsEffect: () => Effect.void,
@@ -68,14 +63,18 @@ describe("EmailRetryTask", () => {
       logger,
     );
 
-    await task.run();
-    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })).toBeUndefined();
+    await runEffect(task.run);
+    expect(
+      Option.getOrUndefined(
+        await runEffect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })),
+      ),
+    ).toBeUndefined();
   });
 
   it("keeps the row when the handler re-enqueues without throwing", async () => {
-    dueRow("ParcelTracker", "e1", 1);
+    await dueRow("ParcelTracker", "e1", 1);
     // Mirrors the pipelines: transient failure is swallowed and re-enqueued
-    const handler: EmailHandler = {
+    const handler: EmailHandler<unknown, Docstore> = {
       name: "ParcelTracker",
       handleEmailsEffect: () =>
         EmailRetryPersistence.enqueue({
@@ -92,15 +91,17 @@ describe("EmailRetryTask", () => {
       logger,
     );
 
-    await task.run();
-    const row = EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" });
+    await runEffect(task.run);
+    const row = Option.getOrUndefined(
+      await runEffect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })),
+    );
     expect(row).toBeDefined();
     expect(row?.attempts).toBe(2);
   });
 
   it("drops the row once re-enqueueing exceeds the attempt cap", async () => {
-    dueRow("ParcelTracker", "e1", 5);
-    const handler: EmailHandler = {
+    await dueRow("ParcelTracker", "e1", 5);
+    const handler: EmailHandler<unknown, Docstore> = {
       name: "ParcelTracker",
       handleEmailsEffect: () =>
         EmailRetryPersistence.enqueue({
@@ -117,12 +118,16 @@ describe("EmailRetryTask", () => {
       logger,
     );
 
-    await task.run();
-    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })).toBeUndefined();
+    await runEffect(task.run);
+    expect(
+      Option.getOrUndefined(
+        await runEffect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })),
+      ),
+    ).toBeUndefined();
   });
 
   it("drops a permanent handler failure instead of retrying it", async () => {
-    dueRow("ParcelTracker", "e1", 1);
+    await dueRow("ParcelTracker", "e1", 1);
     const handler: EmailHandler = {
       name: "ParcelTracker",
       handleEmailsEffect: () => Effect.fail(new Error("boom")),
@@ -135,13 +140,17 @@ describe("EmailRetryTask", () => {
       logger,
     );
 
-    await task.run();
-    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })).toBeUndefined();
+    await runEffect(task.run);
+    expect(
+      Option.getOrUndefined(
+        await runEffect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })),
+      ),
+    ).toBeUndefined();
   });
 
   it("continues the pass when fetching one due email fails", async () => {
-    dueRow("ParcelTracker", "e1", 0);
-    dueRow("ParcelTracker", "e2", 0);
+    await dueRow("ParcelTracker", "e1", 0);
+    await dueRow("ParcelTracker", "e2", 0);
     const handled: string[] = [];
     const transport = {
       fetchEmailByIdEffect: (id: string) =>
@@ -164,10 +173,18 @@ describe("EmailRetryTask", () => {
       logger,
     );
 
-    await task.run();
+    await runEffect(task.run);
 
     expect(handled).toEqual(["e2"]);
-    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })?.attempts).toBe(1);
-    expect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e2" })).toBeUndefined();
+    expect(
+      Option.getOrUndefined(
+        await runEffect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e1" })),
+      )?.attempts,
+    ).toBe(1);
+    expect(
+      Option.getOrUndefined(
+        await runEffect(EmailRetryEntity.get({ retryKey: "ParcelTracker#e2" })),
+      ),
+    ).toBeUndefined();
   });
 });

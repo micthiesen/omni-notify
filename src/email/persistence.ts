@@ -1,6 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
-import { Effect, Schema } from "effect";
-import { fromSync } from "../effect/interop.js";
+import { Effect, Option, Schema } from "effect";
 
 type EmailDispatchData = {
   key: "singleton";
@@ -23,28 +22,26 @@ export const EmailDispatchEntity = new Entity<EmailDispatchData, ["key"]>(
   ["key"],
 );
 
-export function getLastDispatchedAt(): number | undefined {
-  return EmailDispatchEntity.get({ key: "singleton" })?.lastDispatchedAt;
-}
-
-export function saveLastDispatchedAt(timestamp: number = Date.now()): void {
-  EmailDispatchEntity.upsert({ key: "singleton", lastDispatchedAt: timestamp });
-}
-
-export const getLastDispatchedAtEffect = fromSync(
-  "read email dispatch watermark",
-  () => {
-    const row = EmailDispatchEntity.get({ key: "singleton" });
-    return row
-      ? Schema.decodeUnknownSync(EmailDispatchSchema)(row).lastDispatchedAt
-      : undefined;
+export const getLastDispatchedAt = Effect.fn("EmailDispatch.getLastDispatchedAt")(
+  function* () {
+    const row = yield* EmailDispatchEntity.get({ key: "singleton" });
+    return Option.match(row, {
+      onNone: () => undefined,
+      onSome: (value) =>
+        Schema.decodeUnknownSync(EmailDispatchSchema)(value).lastDispatchedAt,
+    });
   },
 );
 
-export function saveLastDispatchedAtEffect(
-  timestamp?: number,
-): Effect.Effect<void, import("../effect/errors.js").PersistenceError> {
-  return fromSync("save email dispatch watermark", () =>
-    saveLastDispatchedAt(timestamp),
-  );
-}
+export const getLastDispatchedAtEffect = getLastDispatchedAt();
+
+export const saveLastDispatchedAt = Effect.fn("EmailDispatch.saveLastDispatchedAt")(
+  function* (timestamp: number = Date.now()) {
+    yield* EmailDispatchEntity.upsert({
+      key: "singleton",
+      lastDispatchedAt: timestamp,
+    });
+  },
+);
+
+export const saveLastDispatchedAtEffect = saveLastDispatchedAt;

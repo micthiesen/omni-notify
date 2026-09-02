@@ -1,21 +1,25 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import type { EmailTriageService } from "../email/triage.js";
-import type { EmailHandler, EmailTransport } from "../email/types.js";
+import type { EmailTransport } from "../email/types.js";
+import type { TaskServices } from "../task-runs/registry.js";
 import { getCaldavProvider } from "./caldav/index.js";
 import { CalendarEventPipeline } from "./pipeline.js";
 
-export function createCalendarHandler(
-  transport: EmailTransport,
-  parentLogger: Logger,
-  triage: EmailTriageService,
-): EmailHandler | undefined {
-  const logger = parentLogger.extend("CalendarEvents");
+export const createCalendarHandler = Effect.fn("CalendarEvents.createHandler")(
+  function* (
+    transport: EmailTransport<unknown, TaskServices>,
+    parentLogger: NamedLogger,
+    triage: EmailTriageService,
+  ) {
+    const logger = parentLogger.extend("CalendarEvents");
 
-  if (!getCaldavProvider()) {
-    logger.info("Disabled: no iCloud CalDAV credentials configured");
-    return undefined;
-  }
+    if (!getCaldavProvider()) {
+      yield* logger.info("Disabled: no iCloud CalDAV credentials configured");
+      return undefined;
+    }
 
-  logger.info("Pipeline created");
-  return new CalendarEventPipeline(transport, logger, triage);
-}
+    yield* logger.info("Pipeline created");
+    return new CalendarEventPipeline(transport, logger, triage);
+  },
+);

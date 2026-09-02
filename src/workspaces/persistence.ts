@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
-import { transaction } from "@micthiesen/mitools/docstore";
+import { decodeDoc, Docstore, type DocstoreSync } from "@micthiesen/mitools/docstore";
+import { Clock, Effect, Option } from "effect";
 import type {
   WorkspaceActionStatus,
   WorkspaceActionType,
@@ -158,31 +159,101 @@ export const WorkspaceNotificationEntity = new Entity<
   ["notificationId"]
 >("workspace-notification", ["notificationId"]);
 
-/** Keep a complete workspace output commit in one SQLite transaction. */
-export function applyWorkspaceTransaction<A>(apply: () => A): A {
-  return transaction(apply);
+type WorkspaceEntity<Data, Key> = {
+  readonly name: string;
+  readonly _data?: (value: Data) => Data;
+  getPk(key: Key): string;
+};
+
+export interface WorkspaceTransaction {
+  get<Data, Key>(entity: WorkspaceEntity<Data, Key>, key: Key): Data | undefined;
+  all<Data, Key>(entity: WorkspaceEntity<Data, Key>): Data[];
+  upsert<Data, Key>(entity: WorkspaceEntity<Data, Key>, key: Key, data: Data): void;
+  patch<Data, Key>(
+    entity: WorkspaceEntity<Data, Key>,
+    key: Key,
+    partial: Partial<Data>,
+  ): Data | undefined;
 }
 
-export function listWorkspaceSubjects(workspaceId: string): WorkspaceSubjectData[] {
-  return WorkspaceSubjectEntity.getAll()
+/** Execute a complete workspace output commit in one SQLite transaction. */
+export const applyWorkspaceTransaction = Effect.fn("Workspace.transaction")(function* <
+  A,
+>(apply: (transaction: WorkspaceTransaction, now: number) => A) {
+  const docstore = yield* Docstore;
+  const now = yield* Clock.currentTimeMillis;
+  return yield* docstore.transaction("commit workspace output", (raw) => {
+    const transaction = makeWorkspaceTransaction(raw, now);
+    return apply(transaction, now);
+  });
+});
+
+function makeWorkspaceTransaction(
+  raw: DocstoreSync,
+  now: number,
+): WorkspaceTransaction {
+  const get = <Data, Key>(entity: WorkspaceEntity<Data, Key>, key: Key) => {
+    const row = raw.getRawRow(entity.getPk(key), now);
+    return row ? decodeDoc<Data>(row.data) : undefined;
+  };
+  const upsert = <Data, Key>(
+    entity: WorkspaceEntity<Data, Key>,
+    key: Key,
+    data: Data,
+  ) => {
+    raw.upsertDoc(
+      entity.getPk(key),
+      data,
+      { entity: entity.name, version: 0, expiresAt: null, updatedAt: now },
+      now,
+    );
+  };
+  return {
+    get,
+    all: <Data, Key>(entity: WorkspaceEntity<Data, Key>) =>
+      raw
+        .getRawRowsByPrefix(`$${entity.name}#`)
+        .filter((row) => row.expires_at === null || row.expires_at > now)
+        .map((row) => decodeDoc<Data>(row.data)),
+    upsert,
+    patch: <Data, Key>(
+      entity: WorkspaceEntity<Data, Key>,
+      key: Key,
+      partial: Partial<Data>,
+    ) => {
+      const current = get(entity, key);
+      if (!current) return undefined;
+      const next = { ...current, ...partial };
+      upsert(entity, key, next);
+      return next;
+    },
+  };
+}
+
+export const listWorkspaceSubjects = Effect.fn("Workspace.listSubjects")(function* (
+  workspaceId: string,
+) {
+  return (yield* WorkspaceSubjectEntity.getAll())
     .filter((subject) => subject.workspaceId === workspaceId)
     .sort((a, b) => b.updatedAt - a.updatedAt);
-}
+});
 
-export function getWorkspaceSubject(
+export const getWorkspaceSubject = Effect.fn("Workspace.getSubject")(function* (
   workspaceId: string,
   subjectId: string,
-): WorkspaceSubjectData | undefined {
-  return WorkspaceSubjectEntity.get({ workspaceId, subjectId });
-}
+) {
+  return Option.getOrUndefined(
+    yield* WorkspaceSubjectEntity.get({ workspaceId, subjectId }),
+  );
+});
 
-export function upsertWorkspaceSubject(
+export const upsertWorkspaceSubject = Effect.fn("Workspace.upsertSubject")(function* (
   input: Omit<WorkspaceSubjectData, "createdAt" | "updatedAt"> & {
     createdAt?: number;
     updatedAt?: number;
   },
-): WorkspaceSubjectData {
-  const prior = getWorkspaceSubject(input.workspaceId, input.subjectId);
+) {
+  const prior = yield* getWorkspaceSubject(input.workspaceId, input.subjectId);
   const now = input.updatedAt ?? Date.now();
   const row: WorkspaceSubjectData = {
     ...input,
@@ -190,49 +261,49 @@ export function upsertWorkspaceSubject(
     updatedAt: now,
     lastResearchedAt: input.lastResearchedAt ?? prior?.lastResearchedAt,
   };
-  WorkspaceSubjectEntity.upsert(row);
+  yield* WorkspaceSubjectEntity.upsert(row);
   return row;
-}
+});
 
-export function getLatestWorkspaceArtifacts(
-  workspaceId: string,
-  subjectId: string,
-): WorkspaceArtifactRevisionData[] {
-  const latest = new Map<string, WorkspaceArtifactRevisionData>();
-  for (const row of WorkspaceArtifactRevisionEntity.getAll()) {
-    if (row.workspaceId !== workspaceId || row.subjectId !== subjectId) continue;
-    const prior = latest.get(row.artifactKey);
-    if (!prior || row.createdAt > prior.createdAt) latest.set(row.artifactKey, row);
-  }
-  return [...latest.values()].sort((a, b) =>
-    a.artifactKey.localeCompare(b.artifactKey),
-  );
-}
-
-export function addWorkspaceArtifactRevision(
-  input: Omit<WorkspaceArtifactRevisionData, "revisionId" | "createdAt"> & {
-    createdAt?: number;
+export const getLatestWorkspaceArtifacts = Effect.fn("Workspace.latestArtifacts")(
+  function* (workspaceId: string, subjectId: string) {
+    const latest = new Map<string, WorkspaceArtifactRevisionData>();
+    for (const row of yield* WorkspaceArtifactRevisionEntity.getAll()) {
+      if (row.workspaceId !== workspaceId || row.subjectId !== subjectId) continue;
+      const prior = latest.get(row.artifactKey);
+      if (!prior || row.createdAt > prior.createdAt) latest.set(row.artifactKey, row);
+    }
+    return [...latest.values()].sort((a, b) =>
+      a.artifactKey.localeCompare(b.artifactKey),
+    );
   },
-): WorkspaceArtifactRevisionData | undefined {
-  const prior = getLatestWorkspaceArtifacts(input.workspaceId, input.subjectId).find(
-    (artifact) => artifact.artifactKey === input.artifactKey,
-  );
-  if (prior?.content === input.content) return undefined;
-  const row: WorkspaceArtifactRevisionData = {
-    ...input,
-    revisionId: randomUUID(),
-    createdAt: input.createdAt ?? Date.now(),
-  };
-  WorkspaceArtifactRevisionEntity.upsert(row);
-  return row;
-}
+);
 
-export function listWorkspaceArtifactRevisions(
-  workspaceId: string,
-  subjectId: string,
-  artifactKey?: string,
-): WorkspaceArtifactRevisionData[] {
-  return WorkspaceArtifactRevisionEntity.getAll()
+export const addWorkspaceArtifactRevision = Effect.fn("Workspace.addArtifactRevision")(
+  function* (
+    input: Omit<WorkspaceArtifactRevisionData, "revisionId" | "createdAt"> & {
+      createdAt?: number;
+    },
+  ) {
+    const prior = (yield* getLatestWorkspaceArtifacts(
+      input.workspaceId,
+      input.subjectId,
+    )).find((artifact) => artifact.artifactKey === input.artifactKey);
+    if (prior?.content === input.content) return undefined;
+    const row: WorkspaceArtifactRevisionData = {
+      ...input,
+      revisionId: randomUUID(),
+      createdAt: input.createdAt ?? Date.now(),
+    };
+    yield* WorkspaceArtifactRevisionEntity.upsert(row);
+    return row;
+  },
+);
+
+export const listWorkspaceArtifactRevisions = Effect.fn(
+  "Workspace.listArtifactRevisions",
+)(function* (workspaceId: string, subjectId: string, artifactKey?: string) {
+  return (yield* WorkspaceArtifactRevisionEntity.getAll())
     .filter(
       (row) =>
         row.workspaceId === workspaceId &&
@@ -240,35 +311,34 @@ export function listWorkspaceArtifactRevisions(
         (artifactKey === undefined || row.artifactKey === artifactKey),
     )
     .sort((a, b) => b.createdAt - a.createdAt);
-}
+});
 
-export function addWorkspaceMessage(
+export const addWorkspaceMessage = Effect.fn("Workspace.addMessage")(function* (
   input: Omit<WorkspaceMessageData, "messageId" | "createdAt"> & {
     createdAt?: number;
   },
-): WorkspaceMessageData {
+) {
   const row: WorkspaceMessageData = {
     ...input,
     messageId: randomUUID(),
     createdAt: input.createdAt ?? Date.now(),
   };
-  WorkspaceMessageEntity.upsert(row);
+  yield* WorkspaceMessageEntity.upsert(row);
   return row;
-}
+});
 
-export function assignWorkspaceMessageSubject(
-  messageId: string,
-  subjectId: string,
-): void {
-  WorkspaceMessageEntity.patch({ messageId }, { subjectId });
-}
+export const assignWorkspaceMessageSubject = Effect.fn(
+  "Workspace.assignMessageSubject",
+)(function* (messageId: string, subjectId: string) {
+  yield* WorkspaceMessageEntity.patch({ messageId }, { subjectId });
+});
 
-export function listWorkspaceMessages(
+export const listWorkspaceMessages = Effect.fn("Workspace.listMessages")(function* (
   workspaceId: string,
   subjectId?: string,
   limit = 100,
-): WorkspaceMessageData[] {
-  return WorkspaceMessageEntity.getAll()
+) {
+  return (yield* WorkspaceMessageEntity.getAll())
     .filter(
       (row) =>
         row.workspaceId === workspaceId &&
@@ -277,55 +347,61 @@ export function listWorkspaceMessages(
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit)
     .reverse();
-}
+});
 
-export function addWorkspaceSource(
+export const addWorkspaceSource = Effect.fn("Workspace.addSource")(function* (
   input: Omit<WorkspaceSourceData, "sourceId" | "createdAt"> & {
     sourceId?: string;
     createdAt?: number;
   },
-): WorkspaceSourceData {
+) {
   const row: WorkspaceSourceData = {
     ...input,
     sourceId: input.sourceId ?? randomUUID(),
     createdAt: input.createdAt ?? Date.now(),
   };
-  WorkspaceSourceEntity.upsert(row);
+  yield* WorkspaceSourceEntity.upsert(row);
   return row;
-}
+});
 
-export function getWorkspaceSource(sourceId: string): WorkspaceSourceData | undefined {
-  return WorkspaceSourceEntity.get({ sourceId });
-}
+export const getWorkspaceSource = Effect.fn("Workspace.getSource")(function* (
+  sourceId: string,
+) {
+  return Option.getOrUndefined(yield* WorkspaceSourceEntity.get({ sourceId }));
+});
 
-export function markWorkspaceSourceTriggered(sourceId: string): void {
-  WorkspaceSourceEntity.patch({ sourceId }, { triggeredAt: Date.now() });
-}
+export const markWorkspaceSourceTriggered = Effect.fn("Workspace.markSourceTriggered")(
+  function* (sourceId: string) {
+    yield* WorkspaceSourceEntity.patch({ sourceId }, { triggeredAt: Date.now() });
+  },
+);
 
-export function markWorkspaceSourcesTriggered(sourceIds: string[]): void {
+export const markWorkspaceSourcesTriggered = Effect.fn(
+  "Workspace.markSourcesTriggered",
+)(function* (sourceIds: string[]) {
   const triggeredAt = Date.now();
-  transaction(() => {
-    for (const sourceId of sourceIds) {
-      WorkspaceSourceEntity.patch({ sourceId }, { triggeredAt });
-    }
-  });
-}
+  yield* Effect.forEach(
+    sourceIds,
+    (sourceId) => WorkspaceSourceEntity.patch({ sourceId }, { triggeredAt }),
+    { discard: true },
+  );
+});
 
-export function listWorkspaceSources(
+export const listWorkspaceSources = Effect.fn("Workspace.listSources")(function* (
   workspaceId: string,
   subjectId: string,
   limit = 100,
-): WorkspaceSourceData[] {
-  return WorkspaceSourceEntity.getAll()
+) {
+  return (yield* WorkspaceSourceEntity.getAll())
     .filter((row) => row.workspaceId === workspaceId && row.subjectId === subjectId)
     .sort((a, b) => b.createdAt - a.createdAt)
     .slice(0, limit);
-}
+});
 
-export function addWorkspaceAction(
+export const addWorkspaceAction = Effect.fn("Workspace.addAction")(function* (
   input: Omit<WorkspaceActionData, "actionId" | "createdAt" | "status">,
-): { action: WorkspaceActionData; created: boolean } {
-  const duplicate = WorkspaceActionEntity.getAll().find(
+) {
+  const duplicate = (yield* WorkspaceActionEntity.getAll()).find(
     (row) =>
       row.workspaceId === input.workspaceId &&
       row.subjectId === input.subjectId &&
@@ -340,68 +416,82 @@ export function addWorkspaceAction(
     status: "pending",
     createdAt: Date.now(),
   };
-  WorkspaceActionEntity.upsert(row);
+  yield* WorkspaceActionEntity.upsert(row);
   return { action: row, created: true };
-}
+});
 
-export function listWorkspaceActions(
+export const listWorkspaceActions = Effect.fn("Workspace.listActions")(function* (
   workspaceId: string,
   subjectId?: string,
-): WorkspaceActionData[] {
-  return WorkspaceActionEntity.getAll()
+) {
+  return (yield* WorkspaceActionEntity.getAll())
     .filter(
       (row) =>
         row.workspaceId === workspaceId &&
         (subjectId === undefined || row.subjectId === subjectId),
     )
     .sort((a, b) => b.createdAt - a.createdAt);
-}
+});
 
-export function getWorkspaceAction(actionId: string): WorkspaceActionData | undefined {
-  return WorkspaceActionEntity.get({ actionId });
-}
-
-export function setWorkspaceActionResult(
+export const getWorkspaceAction = Effect.fn("Workspace.getAction")(function* (
   actionId: string,
-  status: Exclude<WorkspaceActionStatus, "pending">,
-  result: string,
-): WorkspaceActionData | undefined {
-  const action = getWorkspaceAction(actionId);
-  if (!action) return undefined;
-  WorkspaceActionEntity.patch({ actionId }, { status, result, resolvedAt: Date.now() });
-  return getWorkspaceAction(actionId);
-}
+) {
+  return Option.getOrUndefined(yield* WorkspaceActionEntity.get({ actionId }));
+});
 
-export function upsertWorkspaceEmailScope(
+export const setWorkspaceActionResult = Effect.fn("Workspace.setActionResult")(
+  function* (
+    actionId: string,
+    status: Exclude<WorkspaceActionStatus, "pending">,
+    result: string,
+  ) {
+    const action = yield* getWorkspaceAction(actionId);
+    if (!action) return undefined;
+    return Option.getOrUndefined(
+      yield* WorkspaceActionEntity.patch(
+        { actionId },
+        { status, result, resolvedAt: Date.now() },
+      ),
+    );
+  },
+);
+
+export const upsertWorkspaceEmailScope = Effect.fn("Workspace.upsertEmailScope")(
+  function* (
+    workspaceId: string,
+    subjectId: string,
+    payload: WorkspaceEmailScopePayload,
+  ) {
+    const row = { workspaceId, subjectId, ...payload, updatedAt: Date.now() };
+    yield* WorkspaceEmailScopeEntity.upsert(row);
+    return row;
+  },
+);
+
+export const getWorkspaceEmailScope = Effect.fn("Workspace.getEmailScope")(function* (
   workspaceId: string,
   subjectId: string,
-  payload: WorkspaceEmailScopePayload,
-): WorkspaceEmailScopeData {
-  const row = { workspaceId, subjectId, ...payload, updatedAt: Date.now() };
-  WorkspaceEmailScopeEntity.upsert(row);
-  return row;
-}
-
-export function getWorkspaceEmailScope(
-  workspaceId: string,
-  subjectId: string,
-): WorkspaceEmailScopeData | undefined {
-  return WorkspaceEmailScopeEntity.get({ workspaceId, subjectId });
-}
-
-export function listWorkspaceEmailScopes(
-  workspaceId: string,
-): WorkspaceEmailScopeData[] {
-  return WorkspaceEmailScopeEntity.getAll().filter(
-    (scope) => scope.workspaceId === workspaceId,
+) {
+  return Option.getOrUndefined(
+    yield* WorkspaceEmailScopeEntity.get({ workspaceId, subjectId }),
   );
-}
+});
 
-export function listAllWorkspaceEmailScopes(): WorkspaceEmailScopeData[] {
-  return WorkspaceEmailScopeEntity.getAll();
-}
+export const listWorkspaceEmailScopes = Effect.fn("Workspace.listEmailScopes")(
+  function* (workspaceId: string) {
+    return (yield* WorkspaceEmailScopeEntity.getAll()).filter(
+      (scope) => scope.workspaceId === workspaceId,
+    );
+  },
+);
 
-export function reportWorkspacePapercut(
+export const listAllWorkspaceEmailScopes = Effect.fn("Workspace.listAllEmailScopes")(
+  function* () {
+    return yield* WorkspaceEmailScopeEntity.getAll();
+  },
+);
+
+export const reportWorkspacePapercut = Effect.fn("Workspace.reportPapercut")(function* (
   input: Omit<
     WorkspacePapercutData,
     | "papercutId"
@@ -411,19 +501,19 @@ export function reportWorkspacePapercut(
     | "lastSeenAt"
     | "status"
   >,
-): WorkspacePapercutData {
+) {
   const fingerprint = [
     input.workspaceId,
     input.category,
     input.relatedTool ?? "",
     input.title.trim().toLowerCase(),
   ].join(":");
-  const prior = WorkspacePapercutEntity.getAll().find(
+  const prior = (yield* WorkspacePapercutEntity.getAll()).find(
     (row) => row.fingerprint === fingerprint && row.status === "open",
   );
   const now = Date.now();
   if (prior) {
-    WorkspacePapercutEntity.patch(
+    const updated = yield* WorkspacePapercutEntity.patch(
       { papercutId: prior.papercutId },
       {
         detail: input.detail,
@@ -433,7 +523,7 @@ export function reportWorkspacePapercut(
         lastSeenAt: now,
       },
     );
-    return WorkspacePapercutEntity.get({ papercutId: prior.papercutId })!;
+    return Option.getOrThrow(updated);
   }
   const row: WorkspacePapercutData = {
     ...input,
@@ -444,15 +534,15 @@ export function reportWorkspacePapercut(
     lastSeenAt: now,
     status: "open",
   };
-  WorkspacePapercutEntity.upsert(row);
+  yield* WorkspacePapercutEntity.upsert(row);
   return row;
-}
+});
 
-export function listWorkspacePapercuts(
+export const listWorkspacePapercuts = Effect.fn("Workspace.listPapercuts")(function* (
   workspaceId?: string,
   status?: WorkspacePapercutData["status"],
-): WorkspacePapercutData[] {
-  return WorkspacePapercutEntity.getAll()
+) {
+  return (yield* WorkspacePapercutEntity.getAll())
     .filter(
       (row) =>
         (workspaceId === undefined || row.workspaceId === workspaceId) &&
@@ -464,46 +554,50 @@ export function listWorkspacePapercuts(
         b.occurrences - a.occurrences ||
         b.lastSeenAt - a.lastSeenAt,
     );
-}
+});
 
-export function resolveWorkspacePapercut(
-  papercutId: string,
-  status: "addressed" | "dismissed",
-  resolution: string,
-): WorkspacePapercutData | undefined {
-  const prior = WorkspacePapercutEntity.get({ papercutId });
-  if (!prior) return undefined;
-  WorkspacePapercutEntity.patch({ papercutId }, { status, resolution });
-  return WorkspacePapercutEntity.get({ papercutId });
-}
+export const resolveWorkspacePapercut = Effect.fn("Workspace.resolvePapercut")(
+  function* (
+    papercutId: string,
+    status: "addressed" | "dismissed",
+    resolution: string,
+  ) {
+    return Option.getOrUndefined(
+      yield* WorkspacePapercutEntity.patch({ papercutId }, { status, resolution }),
+    );
+  },
+);
 
-export function queueWorkspaceNotification(
-  input: Omit<
-    WorkspaceNotificationData,
-    "status" | "attempts" | "createdAt" | "nextAttemptAt"
-  >,
-): { notification: WorkspaceNotificationData; created: boolean } {
-  const prior = WorkspaceNotificationEntity.get({
-    notificationId: input.notificationId,
-  });
-  if (prior) return { notification: prior, created: false };
-  const now = Date.now();
-  const notification: WorkspaceNotificationData = {
-    ...input,
-    status: "pending",
-    attempts: 0,
-    createdAt: now,
-    nextAttemptAt: now,
-  };
-  WorkspaceNotificationEntity.upsert(notification);
-  return { notification, created: true };
-}
+export const queueWorkspaceNotification = Effect.fn("Workspace.queueNotification")(
+  function* (
+    input: Omit<
+      WorkspaceNotificationData,
+      "status" | "attempts" | "createdAt" | "nextAttemptAt"
+    >,
+  ) {
+    const prior = Option.getOrUndefined(
+      yield* WorkspaceNotificationEntity.get({
+        notificationId: input.notificationId,
+      }),
+    );
+    if (prior) return { notification: prior, created: false };
+    const now = Date.now();
+    const notification: WorkspaceNotificationData = {
+      ...input,
+      status: "pending",
+      attempts: 0,
+      createdAt: now,
+      nextAttemptAt: now,
+    };
+    yield* WorkspaceNotificationEntity.upsert(notification);
+    return { notification, created: true };
+  },
+);
 
-export function listDueWorkspaceNotifications(
-  now = Date.now(),
-  limit = 20,
-): WorkspaceNotificationData[] {
-  return WorkspaceNotificationEntity.getAll()
+export const listDueWorkspaceNotifications = Effect.fn(
+  "Workspace.listDueNotifications",
+)(function* (now = Date.now(), limit = 20) {
+  return (yield* WorkspaceNotificationEntity.getAll())
     .filter(
       (notification) =>
         notification.status === "sending" ||
@@ -511,46 +605,47 @@ export function listDueWorkspaceNotifications(
     )
     .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)
     .slice(0, limit);
-}
+});
 
-export function markWorkspaceNotificationSent(notificationId: string): void {
-  WorkspaceNotificationEntity.patch(
+export const markWorkspaceNotificationSent = Effect.fn(
+  "Workspace.markNotificationSent",
+)(function* (notificationId: string) {
+  yield* WorkspaceNotificationEntity.patch(
     { notificationId },
     { status: "sent", sentAt: Date.now(), lastError: undefined },
   );
-}
+});
 
 /** Reserve one at-most-once provider attempt before leaving SQLite. */
-export function markWorkspaceNotificationSending(
-  notificationId: string,
-  attempts: number,
-): void {
-  WorkspaceNotificationEntity.patch(
+export const markWorkspaceNotificationSending = Effect.fn(
+  "Workspace.markNotificationSending",
+)(function* (notificationId: string, attempts: number) {
+  yield* WorkspaceNotificationEntity.patch(
     { notificationId },
     { status: "sending", attempts, lastError: undefined },
   );
-}
+});
 
-export function markWorkspaceNotificationUnknown(notificationId: string): void {
-  WorkspaceNotificationEntity.patch(
+export const markWorkspaceNotificationUnknown = Effect.fn(
+  "Workspace.markNotificationUnknown",
+)(function* (notificationId: string) {
+  yield* WorkspaceNotificationEntity.patch(
     { notificationId },
     {
       status: "unknown",
       lastError: "Provider attempt outcome is unknown; suppressed automatic resend",
     },
   );
-}
+});
 
-export function markWorkspaceNotificationFailed(
-  notificationId: string,
-  attempts: number,
-  error: string,
-): void {
+export const markWorkspaceNotificationFailed = Effect.fn(
+  "Workspace.markNotificationFailed",
+)(function* (notificationId: string, attempts: number, error: string) {
   const delayMs = Math.min(
     5 * 60_000 * 2 ** Math.min(Math.max(attempts - 1, 0), 6),
     6 * 60 * 60_000,
   );
-  WorkspaceNotificationEntity.patch(
+  yield* WorkspaceNotificationEntity.patch(
     { notificationId },
     {
       status: "pending",
@@ -559,4 +654,4 @@ export function markWorkspaceNotificationFailed(
       nextAttemptAt: Date.now() + delayMs,
     },
   );
-}
+});

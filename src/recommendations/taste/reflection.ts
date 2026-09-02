@@ -22,13 +22,10 @@ import type {
   TasteProfileContent,
   TasteProfileData,
   TasteReflectionInput,
-  TasteReflectionResult,
 } from "./types.js";
 import {
   integrationEffect,
   persistenceEffect,
-  RecommendationIntegrationError,
-  RecommendationPersistenceError,
   TasteReflectionOutputError,
 } from "../effect.js";
 
@@ -68,14 +65,7 @@ type RawProfile = z.infer<typeof profileSchema>;
  * draft and a skeptical revision. Model output is constrained and claims that
  * cite missing or inadequate evidence are removed before persistence.
  */
-export function runTasteReflection(
-  input: TasteReflectionInput,
-): Effect.Effect<
-  TasteReflectionResult,
-  | RecommendationIntegrationError
-  | RecommendationPersistenceError
-  | TasteReflectionOutputError
-> {
+export function runTasteReflection(input: TasteReflectionInput) {
   return Effect.gen(function* () {
     const incoming = [
       ...deriveWatchEvidence(input.watched),
@@ -305,9 +295,7 @@ function isTasteBearingEvidence(item: TasteEvidenceData): boolean {
     : item.completion >= 0.8;
 }
 
-export function formatTasteProfileDigest(
-  profile: TasteProfileData | undefined = getLatestTasteProfile(),
-): string {
+export function formatTasteProfileDigest(profile?: TasteProfileData): string {
   if (!profile) return "No reflective taste profile is available yet.";
   const claimLines = (label: string, claims: TasteClaim[]) =>
     claims.length > 0

@@ -1,5 +1,6 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
+import type { TaskServices } from "../task-runs/registry.js";
 import type { FetchResult } from "../utils/fetchResult.js";
 import type { PodcastAccountClient, PodcastSubscription } from "./account.js";
 import { normalizeTitle } from "./titles.js";
@@ -27,10 +28,10 @@ export interface SubscriptionState {
 export function resolveSubscriptionsEffect(
   account: PodcastAccountClient | undefined,
   logger: Logger,
-): Effect.Effect<FetchResult<SubscriptionState>> {
+): Effect.Effect<FetchResult<SubscriptionState>, never, TaskServices> {
   return Effect.gen(function* () {
     if (!account) {
-      logger.warn(
+      yield* logger.warn(
         "No podcast account configured; subscribed-show exclusion falls back to the taste profile only",
       );
       return { status: "ok", value: buildState([], "none") };

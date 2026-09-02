@@ -43,7 +43,6 @@ import {
   Schema,
 } from "effect";
 import got from "got";
-import { runPromise } from "../effect/interop.js";
 import { getPressPodsCleaningModel } from "../ai/registry.js";
 import { getCleanedArticle } from "../press-pods/agents/cleaner.js";
 import CostCounter from "../press-pods/costs.js";
@@ -51,6 +50,8 @@ import type { PressPodsError } from "../press-pods/effect.js";
 import { buildFinalText } from "../press-pods/formatting/index.js";
 import { getArticleFromUrl } from "../press-pods/retrievers/index.js";
 import config from "../utils/config.js";
+import { AppLayer } from "../effect/appRuntime.js";
+import type { TaskServices } from "../task-runs/registry.js";
 
 // Voxtral is retired from the production pipeline but kept here as the bake-off
 // baseline, so these are inlined rather than imported from the prod speech dir.
@@ -60,7 +61,7 @@ const VOXTRAL_VOICE = {
   name: "Paul - Neutral",
 };
 
-const logger = new Logger("Bakeoff");
+const logger = Logger.named("Bakeoff");
 
 // ---------------------------------------------------------------------------
 // Provider voice defaults (override via env)
@@ -377,7 +378,7 @@ function chunkText(text: string, target: number, max: number): string[] {
 function synthVoxtral(
   text: string,
   outDir: string,
-): Effect.Effect<SynthResult, ToolError> {
+): Effect.Effect<SynthResult, ToolError, Logger> {
   const ResponseSchema = Schema.Struct({ audioData: Schema.String });
   return Effect.gen(function* () {
     const start = yield* Clock.currentTimeMillis;
@@ -417,7 +418,7 @@ function synthEleven(
   text: string,
   outDir: string,
   variant: "eleven" | "eleven-tagged",
-): Effect.Effect<SynthResult, ToolError> {
+): Effect.Effect<SynthResult, ToolError, Logger> {
   return Effect.gen(function* () {
     const apiKey = process.env.ELEVENLABS_API_KEY;
     if (!apiKey) {
@@ -431,7 +432,7 @@ function synthEleven(
     }
     const start = yield* Clock.currentTimeMillis;
     const chunks = chunkText(text, ELEVEN_CHUNK_TARGET, ELEVEN_CHUNK_MAX);
-    logger.info(`[${variant}] synthesizing ${chunks.length} chunks`);
+    yield* logger.info(`[${variant}] synthesizing ${chunks.length} chunks`);
     const random = yield* Random.nextInt;
     const nonce = `${start}_${random}`;
     const gapWav = path.join(os.tmpdir(), `bakeoff_gap_${nonce}.wav`);
@@ -477,7 +478,9 @@ function synthEleven(
                 );
                 yield* prepareChunkWav(mp3, wav);
                 yield* removeIfPresent(mp3);
-                logger.info(`[${variant}] chunk ${index + 1}/${chunks.length} done`);
+                yield* logger.info(
+                  `[${variant}] chunk ${index + 1}/${chunks.length} done`,
+                );
                 return wav;
               }),
             { concurrency: 2 },
@@ -516,7 +519,7 @@ function synthEleven(
 function synthMinimaxEffect(
   text: string,
   outDir: string,
-): Effect.Effect<SynthResult, ToolError> {
+): Effect.Effect<SynthResult, ToolError, Logger> {
   const IdSchema = Schema.Union([Schema.String, Schema.Number]);
   const CreateSchema = Schema.Struct({
     base_resp: Schema.optional(
@@ -587,7 +590,7 @@ function synthMinimaxEffect(
       CreateSchema,
       createUnknown,
     );
-    logger.info("[minimax] task created", { createRes });
+    yield* logger.info("[minimax] task created", { createRes });
     const baseResp = createRes.base_resp;
     if (baseResp && baseResp.status_code !== 0) {
       return yield* Effect.fail(
@@ -630,11 +633,7 @@ function synthMinimaxEffect(
         return Ref.getAndUpdate(attempt, (count) => count + 1).pipe(
           Effect.tap((count) =>
             count % 6 === 0
-              ? Effect.sync(() =>
-                  logger.info(`[minimax] poll status=${status || "?"}`, {
-                    response,
-                  }),
-                )
+              ? logger.info(`[minimax] poll status=${status || "?"}`, { response })
               : Effect.void,
           ),
           Effect.flatMap(
@@ -851,7 +850,7 @@ function runProvidersEffect({
   url?: string;
   providers: ProviderName[];
   tagged: boolean;
-}): Effect.Effect<void, ToolError> {
+}): Effect.Effect<void, ToolError, Logger> {
   return Effect.gen(function* () {
     yield* fromPromise("create output directory", () =>
       fs.mkdir(outDir, { recursive: true }),
@@ -866,10 +865,10 @@ function runProvidersEffect({
       yield* fromPromise("write tagged narration", () =>
         fs.writeFile(path.join(outDir, "narration-tagged.md"), taggedContent!),
       );
-      logger.info("Tagged narration variant ready");
+      yield* logger.info("Tagged narration variant ready");
     }
 
-    const jobs: Array<Effect.Effect<SynthResult, ToolError>> = [];
+    const jobs: Array<Effect.Effect<SynthResult, ToolError, Logger>> = [];
     if (providers.includes("voxtral")) jobs.push(synthVoxtral(content, outDir));
     if (providers.includes("eleven")) jobs.push(synthEleven(content, outDir, "eleven"));
     if (taggedContent) {
@@ -885,7 +884,7 @@ function runProvidersEffect({
     const results: SynthResult[] = [];
     for (const s of settled) {
       if (Result.isSuccess(s)) results.push(s.success);
-      else logger.error(`Provider failed: ${s.failure.cause}`);
+      else yield* logger.error(`Provider failed: ${s.failure.cause}`);
     }
 
     // Loudness-match everything and summarize
@@ -909,7 +908,7 @@ function runProvidersEffect({
           `| ${r.provider} | ${(mastered.success / 60).toFixed(1)} min | ${r.seconds.toFixed(0)}s | ${r.notes.join("; ")} |`,
         );
       } else {
-        logger.error(
+        yield* logger.error(
           `Loudness match failed for ${r.provider}: ${mastered.failure.cause}`,
         );
         lines.push(
@@ -930,11 +929,11 @@ function runProvidersEffect({
           : summary,
       ),
     );
-    logger.info(`\n${summary}\n\nOutput: ${outDir}`);
+    yield* logger.info(`\n${summary}\n\nOutput: ${outDir}`);
   });
 }
 
-function mainEffect(): Effect.Effect<void, ToolError | PressPodsError> {
+function mainEffect(): Effect.Effect<void, ToolError | PressPodsError, TaskServices> {
   return Effect.gen(function* () {
     const args = process.argv.slice(2);
     const urls = args.filter((a) => !a.startsWith("--"));
@@ -972,7 +971,7 @@ function mainEffect(): Effect.Effect<void, ToolError | PressPodsError> {
       : detectProviders();
     const outRoot =
       outFlag?.split("=")[1] ?? path.join(os.homedir(), "Documents", "tts-bakeoff");
-    logger.info(
+    yield* logger.info(
       `Providers: ${providers.join(", ")}${tagged ? " + eleven-tagged" : ""}`,
     );
 
@@ -993,7 +992,7 @@ function mainEffect(): Effect.Effect<void, ToolError | PressPodsError> {
       urls,
       (url) =>
         Effect.gen(function* () {
-          logger.info(`=== Article: ${url}`);
+          yield* logger.info(`=== Article: ${url}`);
           const costCounter = new CostCounter();
           const { article, metadata } = yield* getArticleFromUrl(
             url,
@@ -1013,7 +1012,7 @@ function mainEffect(): Effect.Effect<void, ToolError | PressPodsError> {
             { ...article, text },
             costCounter,
           );
-          logger.info(`Narration ready: ${content.length} chars`);
+          yield* logger.info(`Narration ready: ${content.length} chars`);
 
           yield* runProvidersEffect({
             content,
@@ -1029,4 +1028,4 @@ function mainEffect(): Effect.Effect<void, ToolError | PressPodsError> {
   });
 }
 
-await runPromise(mainEffect());
+await Effect.runPromise(mainEffect().pipe(Effect.provide(AppLayer)));

@@ -302,11 +302,13 @@ function getActiveEmailRuntime(runtime: McpRuntime) {
   return transport;
 }
 
-function getActivityOrThrow(activityId: string): EmailActivityData {
-  const activity = getEmailActivity(activityId);
+const getActivityOrThrow = Effect.fn("McpEmail.getActivityOrThrow")(function* (
+  activityId: string,
+) {
+  const activity = yield* getEmailActivity(activityId);
   if (!activity) throw new Error(`Unknown email activity: ${activityId}`);
   return activity;
-}
+});
 
 const getTrackedEventOrFailEffect = Effect.fn("McpCalendar.getTrackedEvent")(function* (
   eventHash: string,
@@ -533,14 +535,12 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: (input) =>
-        Effect.sync(() => {
-          return paginate(
-            getRecentEmailActivity(input.pipeline, KEEP_PER_PIPELINE * 2).map(
-              serializeActivity,
-            ),
-            input.cursor,
-            input.limit,
+        Effect.gen(function* () {
+          const activities = yield* getRecentEmailActivity(
+            input.pipeline,
+            KEEP_PER_PIPELINE * 2,
           );
+          return paginate(activities.map(serializeActivity), input.cursor, input.limit);
         }),
     }),
 
@@ -571,9 +571,9 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: (input) =>
-        Effect.sync(() => {
-          const activity = getActivityOrThrow(input.activityId);
-          const stored = getEmailActivityLogs(input.activityId);
+        Effect.gen(function* () {
+          const activity = yield* getActivityOrThrow(input.activityId);
+          const stored = yield* getEmailActivityLogs(input.activityId);
           const lines = stored?.lines ?? [];
           const selected = input.logLimit === 0 ? [] : lines.slice(-input.logLimit);
           return {
@@ -608,7 +608,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       },
       execute: (input) =>
         Effect.gen(function* () {
-          const activity = getActivityOrThrow(input.activityId);
+          const activity = yield* getActivityOrThrow(input.activityId);
           const transport = getActiveEmailRuntime(runtime);
           const handler = runtime.emailControls.handlers?.get(activity.pipeline);
           if (!handler)
@@ -621,7 +621,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
           );
           return {
             activity: serializeActivity(
-              getEmailActivity(activity.activityId) ?? activity,
+              (yield* getEmailActivity(activity.activityId)) ?? activity,
             ),
           };
         }),
@@ -657,9 +657,9 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: () =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           return {
-            rules: listEmailRules(),
+            rules: yield* listEmailRules(),
             builtin: {
               parcel: {
                 blocked: [...PARCEL_BUILTIN_BLOCKED],
@@ -705,12 +705,12 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const pattern = normalizeRulePattern(input.pattern);
           if (input.verdict === "block" && matchesBuiltinBlock(pattern, input.scope)) {
             return { status: "builtin" as const, rule: null };
           }
-          const result = upsertEmailRuleChecked({ ...input, pattern });
+          const result = yield* upsertEmailRuleChecked({ ...input, pattern });
           return {
             status: result.alreadyExists
               ? ("exists" as const)
@@ -738,9 +738,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "require_approval",
       },
       execute: (input) =>
-        Effect.sync(() => {
-          return { deleted: deleteEmailRule(input.ruleId) };
-        }),
+        deleteEmailRule(input.ruleId).pipe(Effect.map((deleted) => ({ deleted }))),
     }),
 
     defineTool({
@@ -771,12 +769,11 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           return {
-            items: listEmailFeedback(input.pipeline, input.limit).map((feedback) => ({
-              ...feedback,
-              note: feedback.note ?? null,
-            })),
+            items: (yield* listEmailFeedback(input.pipeline, input.limit)).map(
+              (feedback) => ({ ...feedback, note: feedback.note ?? null }),
+            ),
           };
         }),
     }),
@@ -816,13 +813,13 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: (input) =>
-        Effect.sync(() => {
-          const activity = getActivityOrThrow(input.activityId);
+        Effect.gen(function* () {
+          const activity = yield* getActivityOrThrow(input.activityId);
           if (input.verdict === null) {
-            deleteEmailFeedback(activity.activityId);
+            yield* deleteEmailFeedback(activity.activityId);
             return { feedback: null };
           }
-          const feedback = recordEmailFeedback({
+          const feedback = yield* recordEmailFeedback({
             pipeline: activity.pipeline,
             emailId: activity.emailId,
             subject: activity.subject,

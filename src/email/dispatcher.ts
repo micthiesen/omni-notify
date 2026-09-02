@@ -1,6 +1,5 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { Cause, Data, Effect, Exit, Fiber, Queue, Scope, Semaphore } from "effect";
-import type { PersistenceError } from "../effect/errors.js";
 import { saveLastDispatchedAtEffect } from "./persistence.js";
 import type { EmailHandler, EmailTransport, FetchedEmail } from "./types.js";
 
@@ -20,19 +19,19 @@ export class EmailHandlerError extends Data.TaggedError("EmailHandlerError")<{
   }
 }
 
-export class EmailDispatcher {
-  private readonly handlers: EmailHandler[] = [];
+export class EmailDispatcher<R> {
+  private readonly handlers: EmailHandler<unknown, R>[] = [];
   private readonly lifecycleSemaphore = Semaphore.makeUnsafe(1);
   private triggerQueue: Queue.Queue<"trigger" | "stop"> | undefined;
   private supervisor: Fiber.Fiber<void, never> | undefined;
   private supervisorScope: Scope.Closeable | undefined;
 
   constructor(
-    private readonly transport: EmailTransport,
-    private readonly logger: Logger,
+    private readonly transport: EmailTransport<unknown, R>,
+    private readonly logger: NamedLogger,
   ) {}
 
-  register(handler: EmailHandler): void {
+  register(handler: EmailHandler<unknown, R>): void {
     this.handlers.push(handler);
   }
 
@@ -48,7 +47,7 @@ export class EmailDispatcher {
   }
 
   /** Start the owned trigger supervisor before push monitoring can emit. */
-  public get startEffect(): Effect.Effect<void, EmailHandlerError> {
+  public get startEffect() {
     return this.lifecycleSemaphore.withPermits(1)(
       Effect.uninterruptibleMask((restore) =>
         Effect.gen({ self: this }, function* () {
@@ -80,13 +79,13 @@ export class EmailDispatcher {
   }
 
   /** Stop notifications, drain the queued final poll, then join the supervisor. */
-  public get stopEffect(): Effect.Effect<void, never> {
+  public get stopEffect() {
     return this.lifecycleSemaphore.withPermits(1)(
       this.transport.stopEffect.pipe(Effect.ensuring(this.stopSupervisorEffect)),
     );
   }
 
-  private get stopSupervisorEffect(): Effect.Effect<void, never> {
+  private get stopSupervisorEffect() {
     return Effect.gen({ self: this }, function* () {
       const queue = this.triggerQueue;
       const supervisor = this.supervisor;
@@ -105,33 +104,26 @@ export class EmailDispatcher {
     });
   }
 
-  private superviseEffect(
-    queue: Queue.Queue<"trigger" | "stop">,
-  ): Effect.Effect<void, never> {
+  private superviseEffect(queue: Queue.Queue<"trigger" | "stop">) {
     return Effect.gen({ self: this }, function* () {
       while (true) {
         const message = yield* Queue.take(queue);
         if (message === "stop") return;
         yield* Effect.catchCause(this.processPassEffect, (cause) =>
-          Effect.sync(() => this.logger.error("Dispatcher error", Cause.pretty(cause))),
+          this.logger.error("Dispatcher error", Cause.pretty(cause)),
         );
       }
     });
   }
 
   /** Deterministic direct trigger for tests and manual polling. */
-  public get onMailEventEffect(): Effect.Effect<void, never> {
+  public get onMailEventEffect() {
     return this.processPassEffect.pipe(
-      Effect.catch((error) =>
-        Effect.sync(() => this.logger.error("Dispatcher error", error.message)),
-      ),
+      Effect.catch((error) => this.logger.error("Dispatcher error", error.message)),
     );
   }
 
-  private get processPassEffect(): Effect.Effect<
-    void,
-    EmailHandlerError | PersistenceError
-  > {
+  private get processPassEffect() {
     return Effect.gen({ self: this }, function* () {
       const poll = yield* this.transport.pollNewEmailsEffect.pipe(
         Effect.mapError(
@@ -166,7 +158,7 @@ export class EmailDispatcher {
       );
       const failures = results.filter((result) => result._tag === "Failure");
       for (const failure of failures) {
-        this.logger.error(failure.failure.message);
+        yield* this.logger.error(failure.failure.message);
       }
       if (failures[0]) yield* Effect.fail(failures[0].failure);
     });

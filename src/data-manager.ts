@@ -1,10 +1,12 @@
 import {
+  Docstore,
   deleteDoc,
-  getDb,
   getDoc,
   getKeysByPrefix,
 } from "@micthiesen/mitools/docstore";
 import type { Entity } from "@micthiesen/mitools/entities";
+import { Sqlite } from "@micthiesen/mitools/sqlite";
+import { Effect, Option } from "effect";
 import { BriefingHistoryEntity } from "./briefing-agent/persistence.js";
 import { CreatedCalendarEventEntity } from "./calendar-events/persistence.js";
 import { CostMigrationEntity } from "./costs/migrate.js";
@@ -89,14 +91,14 @@ interface EntityOptions<Data> {
   description: string;
   warning?: string;
   canDelete?: (row: Data) => string | undefined;
-  afterDelete?: (row: Data) => void;
+  afterDelete?: (row: Data) => Effect.Effect<unknown, unknown, Docstore>;
 }
 
 interface ManagedEntity extends Omit<ManagedEntitySummary, "count" | "storageBytes"> {
-  count(): number;
-  storageBytes(): number;
-  rows(): DataRow[];
-  delete(key: DataRowKey): DeleteResult;
+  count: Effect.Effect<number, unknown, Docstore>;
+  storageBytes(): Effect.Effect<number, unknown, Sqlite>;
+  rows(): Effect.Effect<DataRow[], unknown, Docstore>;
+  delete(key: DataRowKey): Effect.Effect<DeleteResult, unknown, Docstore>;
 }
 
 export type DeleteResult =
@@ -165,51 +167,58 @@ export function createManagedEntity<
     description: options.description,
     warning: options.warning,
     primaryKey,
-    count: () => entity.count(),
-    storageBytes: () => {
-      const row = getDb()
-        .prepare(
-          "SELECT COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM blobs WHERE pk LIKE ?",
-        )
-        .get(`$${entity.name}#%`) as { bytes: number };
-      return row.bytes;
-    },
-    rows: () => {
-      const rows: DataRow[] = [];
-      // Iterate raw storage keys (not entity.keys(), which decodes every row via
-      // getAll) so a single undecodable row surfaces as a malformed row instead
-      // of throwing the whole listing.
-      for (const rawKey of getKeysByPrefix(`$${entity.name}#`)) {
-        try {
-          const row = getDoc<Data>(rawKey);
-          if (row) rows.push(row as DataRow);
-        } catch (error) {
-          rows.push(malformedRow(rawKey, error));
+    count: entity.count(),
+    storageBytes: () =>
+      Effect.map(Sqlite, ({ db }) => {
+        const row = db
+          .prepare(
+            "SELECT COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM blobs WHERE pk LIKE ?",
+          )
+          .get(`$${entity.name}#%`) as { bytes: number };
+        return row.bytes;
+      }),
+    rows: () =>
+      Effect.gen(function* () {
+        const rows: DataRow[] = [];
+        // Iterate raw storage keys (not entity.keys(), which decodes every row via
+        // getAll) so a single undecodable row surfaces as a malformed row instead
+        // of throwing the whole listing.
+        for (const rawKey of yield* getKeysByPrefix(`$${entity.name}#`)) {
+          yield* getDoc<Data>(rawKey).pipe(
+            Effect.tap((row) =>
+              Effect.sync(() => {
+                if (Option.isSome(row)) rows.push(row.value as DataRow);
+              }),
+            ),
+            Effect.catch((error) =>
+              Effect.sync(() => rows.push(malformedRow(rawKey, error))),
+            ),
+          );
         }
-      }
-      return rows;
-    },
-    delete: (key) => {
-      const malformed = getMalformedMetadata(key);
-      if (malformed) {
-        if (!getKeysByPrefix(`$${entity.name}#`).includes(malformed.rawKey))
-          return { status: "not-found" };
-        if (!deleteDoc(malformed.rawKey)) return { status: "not-found" };
-        return {
-          status: "deleted",
-          row: malformedRow(malformed.rawKey, malformed.error),
-        };
-      }
-      const normalized = normalizeKey(key);
-      if (!normalized) return { status: "invalid-key" };
-      const row = entity.get(normalized);
-      if (!row) return { status: "not-found" };
-      const reason = options.canDelete?.(row);
-      if (reason) return { status: "blocked", reason };
-      if (!entity.delete(normalized)) return { status: "not-found" };
-      options.afterDelete?.(row);
-      return { status: "deleted", row: row as DataRow };
-    },
+        return rows;
+      }),
+    delete: (key) =>
+      Effect.gen(function* () {
+        const malformed = getMalformedMetadata(key);
+        if (malformed) {
+          if (!(yield* getKeysByPrefix(`$${entity.name}#`)).includes(malformed.rawKey))
+            return { status: "not-found" };
+          if (!(yield* deleteDoc(malformed.rawKey))) return { status: "not-found" };
+          return {
+            status: "deleted",
+            row: malformedRow(malformed.rawKey, malformed.error),
+          };
+        }
+        const normalized = normalizeKey(key);
+        if (!normalized) return { status: "invalid-key" };
+        const row = Option.getOrUndefined(yield* entity.get(normalized));
+        if (row === undefined) return { status: "not-found" };
+        const reason = options.canDelete?.(row);
+        if (reason) return { status: "blocked", reason };
+        if (!(yield* entity.delete(normalized))) return { status: "not-found" };
+        if (options.afterDelete) yield* options.afterDelete(row);
+        return { status: "deleted", row: row as DataRow };
+      }),
   };
 }
 
@@ -408,39 +417,47 @@ const MANAGED_ENTITIES: ManagedEntity[] = [
 
 const ENTITY_BY_SLUG = new Map(MANAGED_ENTITIES.map((entity) => [entity.slug, entity]));
 
-export function listManagedEntities(): ManagedEntitySummary[] {
-  return MANAGED_ENTITIES.map((entity) => ({
-    slug: entity.slug,
-    label: entity.label,
-    description: entity.description,
-    warning: entity.warning,
-    primaryKey: entity.primaryKey,
-    count: entity.count(),
-    storageBytes: entity.storageBytes(),
-  }));
-}
+export const listManagedEntities = Effect.fn("DataManager.listEntities")(function* () {
+  return yield* Effect.forEach(MANAGED_ENTITIES, (entity) =>
+    Effect.all({
+      count: entity.count,
+      storageBytes: entity.storageBytes(),
+    }).pipe(
+      Effect.map(({ count, storageBytes }) => ({
+        slug: entity.slug,
+        label: entity.label,
+        description: entity.description,
+        warning: entity.warning,
+        primaryKey: entity.primaryKey,
+        count,
+        storageBytes,
+      })),
+    ),
+  );
+});
 
-export function getManagedDataSummary(
-  entities: ManagedEntitySummary[] = listManagedEntities(),
-): ManagedDataSummary {
-  const db = getDb();
+export const getManagedDataSummary = Effect.fn("DataManager.getSummary")(function* (
+  entities?: ManagedEntitySummary[],
+) {
+  const resolvedEntities = entities ?? (yield* listManagedEntities());
+  const { db } = yield* Sqlite;
   const pageCount = db.pragma("page_count", { simple: true }) as number;
   const pageSize = db.pragma("page_size", { simple: true }) as number;
   return {
     databaseSizeBytes: pageCount * pageSize,
-    entityStorageBytes: entities.reduce(
+    entityStorageBytes: resolvedEntities.reduce(
       (total, entity) => total + entity.storageBytes,
       0,
     ),
   };
-}
+});
 
-export function getManagedEntity(
+export const getManagedEntity = Effect.fn("DataManager.getEntity")(function* (
   slug: string,
-): { summary: ManagedEntitySummary; rows: DataRow[] } | undefined {
+) {
   const entity = ENTITY_BY_SLUG.get(slug);
   if (!entity) return undefined;
-  const rows = entity.rows();
+  const rows = yield* entity.rows();
   return {
     summary: {
       slug: entity.slug,
@@ -449,15 +466,16 @@ export function getManagedEntity(
       warning: entity.warning,
       primaryKey: entity.primaryKey,
       count: rows.length,
-      storageBytes: entity.storageBytes(),
+      storageBytes: yield* entity.storageBytes(),
     },
     rows,
   };
-}
+});
 
-export function deleteManagedEntityRow(
+export const deleteManagedEntityRow = Effect.fn("DataManager.deleteRow")(function* (
   slug: string,
   key: DataRowKey,
-): DeleteResult | undefined {
-  return ENTITY_BY_SLUG.get(slug)?.delete(key);
-}
+) {
+  const entity = ENTITY_BY_SLUG.get(slug);
+  return entity ? yield* entity.delete(key) : undefined;
+});

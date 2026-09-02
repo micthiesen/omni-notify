@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Effect } from "effect";
 import { fetchTaskRuns } from "../api";
 import type { TaskRun } from "../api";
-import { forkUiEffect } from "../effect";
+import { useUiEffect } from "../effect";
 import { formatAbsolute, formatRelative } from "../utils/format";
 import { LogViewer } from "./LogViewer";
 
@@ -31,15 +31,15 @@ export function RecommendationRuns({
   const [runs, setRuns] = useState<TaskRun[]>([]);
   const [logRun, setLogRun] = useState<TaskRun | null>(null);
 
-  useEffect(() => {
-    return forkUiEffect(
+  useUiEffect(
+    () =>
       fetchTaskRuns({ task: taskName, limit: 6 }).pipe(
         Effect.tap((data) => Effect.sync(() => setRuns(data.runs))),
         // Recommendation cards remain useful if activity history is unavailable.
         Effect.catch(() => Effect.void),
       ),
-    );
-  }, [taskName, latestRunId]);
+    [taskName, latestRunId],
+  );
 
   return (
     <>

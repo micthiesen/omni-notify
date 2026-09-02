@@ -2,7 +2,7 @@ import { truncate } from "@micthiesen/mitools/strings";
 import { escapeXml } from "@micthiesen/mitools/xml";
 import { Podcast } from "podcast";
 import { Effect } from "effect";
-import { PressPodsError, trySync } from "./effect.js";
+import { trySync } from "./effect.js";
 import { PressPodsPersistence, type PressPodsEpisodeData } from "./persistence.js";
 import { prepareTextForRss } from "./rssText.js";
 
@@ -57,9 +57,7 @@ function buildPressPodsFeedFromEpisodes(
   return feed.buildXml();
 }
 
-export function buildPressPodsFeedEffect(
-  baseUrl: string,
-): Effect.Effect<string, PressPodsError> {
+export function buildPressPodsFeedEffect(baseUrl: string) {
   return PressPodsPersistence.getAllEpisodes().pipe(
     Effect.flatMap((episodes) =>
       trySync("build PressPods RSS feed", () =>
@@ -69,7 +67,7 @@ export function buildPressPodsFeedEffect(
   );
 }
 
-export const latestEpisodeIdEffect = (): Effect.Effect<string, PressPodsError> =>
+export const latestEpisodeIdEffect = () =>
   PressPodsPersistence.getAllEpisodes().pipe(
     Effect.map((episodes) => episodes[0]?.episodeId ?? "no-episodes"),
   );

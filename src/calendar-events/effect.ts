@@ -39,12 +39,11 @@ export class CalendarPersistenceError extends Data.TaggedError(
   }
 }
 
-export function calendarPersistenceEffect<A>(
+export function calendarPersistenceEffect<A, E, R>(
   operation: string,
-  evaluate: () => A,
-): Effect.Effect<A, CalendarPersistenceError> {
-  return Effect.try({
-    try: evaluate,
-    catch: (cause) => new CalendarPersistenceError({ operation, cause }),
-  });
+  evaluate: () => Effect.Effect<A, E, R>,
+): Effect.Effect<A, CalendarPersistenceError, R> {
+  return evaluate().pipe(
+    Effect.mapError((cause) => new CalendarPersistenceError({ operation, cause })),
+  );
 }

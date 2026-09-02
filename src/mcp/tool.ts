@@ -2,6 +2,7 @@ import type { Effect as EffectType } from "effect/Effect";
 import type { CallToolResult, ToolAnnotations } from "@modelcontextprotocol/server";
 import { Cause, Data, Effect } from "effect";
 import { z } from "zod";
+import type { AppServices } from "../effect/appRuntime.js";
 
 export type ExecutorPolicy = "allow" | "require_approval" | "block";
 
@@ -14,7 +15,7 @@ export interface ToolPolicy {
   recommendedPolicy: ExecutorPolicy;
 }
 
-export interface McpToolDefinition {
+export interface McpToolDefinition<R = AppServices> {
   name: string;
   title: string;
   description: string;
@@ -29,7 +30,7 @@ export interface McpToolDefinition {
   policy: ToolPolicy;
   execute: (
     input: Record<string, unknown>,
-  ) => EffectType<Record<string, unknown>, McpToolError>;
+  ) => EffectType<Record<string, unknown>, McpToolError, R>;
 }
 
 export class McpToolError extends Data.TaggedError("McpToolError")<{
@@ -57,15 +58,18 @@ function toolErrorMessage(cause: unknown): string {
 type ToolDefinitionInput<
   TInput extends z.ZodType<Record<string, unknown>>,
   TError,
-> = Omit<McpToolDefinition, "inputSchema" | "outputSchema" | "execute"> & {
+  R,
+> = Omit<McpToolDefinition<R>, "inputSchema" | "outputSchema" | "execute"> & {
   inputSchema: TInput;
   outputSchema: z.ZodType<Record<string, unknown>>;
-  execute: (input: z.output<TInput>) => EffectType<Record<string, unknown>, TError>;
+  execute: (input: z.output<TInput>) => EffectType<Record<string, unknown>, TError, R>;
 };
 
-export function defineTool<TInput extends z.ZodType<Record<string, unknown>>, TError>(
-  definition: ToolDefinitionInput<TInput, TError>,
-): McpToolDefinition {
+export function defineTool<
+  TInput extends z.ZodType<Record<string, unknown>>,
+  TError,
+  R,
+>(definition: ToolDefinitionInput<TInput, TError, R>): McpToolDefinition<R> {
   const execute = (input: Record<string, unknown>) =>
     Effect.gen(function* () {
       const decodedInput = yield* Effect.try({
@@ -91,7 +95,7 @@ export function defineTool<TInput extends z.ZodType<Record<string, unknown>>, TE
       });
     });
 
-  return { ...definition, execute } as McpToolDefinition;
+  return { ...definition, execute } as McpToolDefinition<R>;
 }
 
 export const annotations = (

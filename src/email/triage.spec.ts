@@ -1,9 +1,6 @@
-import { Injector } from "@micthiesen/mitools/config";
-import type { Logger } from "@micthiesen/mitools/logging";
-import { LogLevel } from "@micthiesen/mitools/logging";
-import { it as effectIt } from "@effect/vitest";
-import { Effect } from "effect";
-import { runPromise } from "../effect/interop.js";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmailFeedbackEntity, recordEmailFeedback } from "./feedback.js";
 import {
@@ -15,23 +12,16 @@ import {
   type TriageVerdict,
 } from "./triage.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "triage.spec.db",
-  },
-});
+const runtime = ManagedRuntime.make(Layer.merge(Docstore.layerMemory, Logger.layer()));
+const runPromise = runtime.runPromise.bind(runtime);
 
 const mockLogger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
+  debug: vi.fn(() => Effect.void),
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+  error: vi.fn(() => Effect.void),
   extend: vi.fn(),
-} as unknown as Logger;
+} as unknown as NamedLogger;
 
 const verdict: TriageVerdict = { parcel: true, calendar: false, reason: "tracking" };
 
@@ -46,20 +36,22 @@ function makeEmail(id: string, overrides: Partial<TriageEmail> = {}): TriageEmai
   };
 }
 
-afterEach(() => {
-  EmailFeedbackEntity.deleteAll();
+afterEach(async () => {
+  await runPromise(EmailFeedbackEntity.deleteAll());
   vi.clearAllMocks();
 });
 
 describe("EmailTriageService memoization", () => {
-  effectIt.effect("classifies through the typed Effect API", () => {
+  it("classifies through the typed Effect API", async () => {
     const classifyFn = vi.fn(() => Effect.succeed(verdict));
     const triage = new EmailTriageService(mockLogger, classifyFn);
-    return Effect.gen(function* () {
-      const result = yield* triage.classifyEffect(makeEmail("effect"));
-      expect(result).toEqual(verdict);
-      expect(classifyFn).toHaveBeenCalledOnce();
-    });
+    await runPromise(
+      Effect.gen(function* () {
+        const result = yield* triage.classifyEffect(makeEmail("effect"));
+        expect(result).toEqual(verdict);
+        expect(classifyFn).toHaveBeenCalledOnce();
+      }),
+    );
   });
 
   it("shares one in-flight call between concurrent classifies of the same email", async () => {
@@ -144,9 +136,9 @@ describe("EmailTriageService memoization", () => {
 });
 
 describe("buildTriagePrompt", () => {
-  it("includes sender, subject, and a truncated body", () => {
-    const prompt = buildTriagePrompt(
-      makeEmail("e1", { textBody: `${"x".repeat(1500)}TAIL` }),
+  it("includes sender, subject, and a truncated body", async () => {
+    const prompt = await runPromise(
+      buildTriagePrompt(makeEmail("e1", { textBody: `${"x".repeat(1500)}TAIL` })),
     );
     expect(prompt).toContain("From: orders@shop.com");
     expect(prompt).toContain("Subject: Subject e1");
@@ -154,26 +146,30 @@ describe("buildTriagePrompt", () => {
     expect(prompt).not.toContain("TAIL");
   });
 
-  it("caps links at five and omits the section when there are none", () => {
+  it("caps links at five and omits the section when there are none", async () => {
     const links = Array.from({ length: 7 }, (_, i) => `https://l.test/${i}`);
-    const prompt = buildTriagePrompt(makeEmail("e1", { links }));
+    const prompt = await runPromise(buildTriagePrompt(makeEmail("e1", { links })));
     expect(prompt).toContain("https://l.test/4");
     expect(prompt).not.toContain("https://l.test/5");
-    expect(buildTriagePrompt(makeEmail("e2"))).not.toContain("Links:");
+    expect(await runPromise(buildTriagePrompt(makeEmail("e2")))).not.toContain(
+      "Links:",
+    );
   });
 
-  it("appends user-correction digests only when feedback exists", () => {
+  it("appends user-correction digests only when feedback exists", async () => {
     const heading = "Recent user corrections — follow these";
-    expect(buildTriagePrompt(makeEmail("e1"))).not.toContain(heading);
+    expect(await runPromise(buildTriagePrompt(makeEmail("e1")))).not.toContain(heading);
 
-    recordEmailFeedback({
-      pipeline: "ParcelTracker",
-      emailId: "fb1",
-      subject: "npm package published",
-      from: "support@npmjs.com",
-      verdict: "not_relevant",
-    });
-    const prompt = buildTriagePrompt(makeEmail("e2"));
+    await runPromise(
+      recordEmailFeedback({
+        pipeline: "ParcelTracker",
+        emailId: "fb1",
+        subject: "npm package published",
+        from: "support@npmjs.com",
+        verdict: "not_relevant",
+      }),
+    );
+    const prompt = await runPromise(buildTriagePrompt(makeEmail("e2")));
     expect(prompt).toContain(heading);
     expect(prompt).toContain(
       '- "npm package published" from support@npmjs.com: user marked NOT relevant',

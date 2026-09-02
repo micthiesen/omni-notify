@@ -1,8 +1,9 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Duration, Effect, Schedule, Schema } from "effect";
 import { currentCostFeature, recordCostEventSafely } from "../../costs/persistence.js";
 import { readFetchResponseTextWithLimit } from "../../effect/publicHttp.js";
 import config from "../../utils/config.js";
+import type { TaskServices } from "../../task-runs/registry.js";
 import { InvalidPressPodsDataError, PressPodsError, tryPromise } from "../effect.js";
 
 /**
@@ -27,7 +28,7 @@ export interface SttClient {
   transcribe(
     mp3: Buffer,
     logger: Logger,
-  ): Effect.Effect<string, PressPodsError | InvalidPressPodsDataError>;
+  ): Effect.Effect<string, PressPodsError | InvalidPressPodsDataError, TaskServices>;
 }
 
 /** Retry network blips / 5xx / 429, but never a 4xx (bad request won't fix). */
@@ -117,7 +118,7 @@ export function createSttClient(apiKey?: string): SttClient | null {
         const selfHosted =
           config.PRESSPODS_STT_URL === undefined ||
           config.PRESSPODS_STT_URL === config.PRESSPODS_TTS_URL;
-        recordCostEventSafely({
+        yield* recordCostEventSafely({
           category: "transcription",
           feature: currentCostFeature("press-pods"),
           operation: "verify-audio",
@@ -131,7 +132,7 @@ export function createSttClient(apiKey?: string): SttClient | null {
       });
       return request.pipe(
         Effect.tapError((error) =>
-          Effect.sync(() => logger.debug(`STT request failed (${error.message})`)),
+          logger.debug(`STT request failed (${error.message})`),
         ),
         Effect.retry({
           times: MAX_ATTEMPTS - 1,

@@ -1,6 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
-import { Clock, Effect, Schema } from "effect";
-import { fromSync } from "../effect/interop.js";
+import { Clock, Effect, Option, Schema } from "effect";
 
 /**
  * Persisted retry queue for transiently-failed email processing (network/5xx
@@ -60,13 +59,12 @@ export function planEmailRetryEnqueue(
 }
 
 /** Mark one due row as attempted before doing any network or handler work. */
-function claimEmailRetry(row: EmailRetryData, now: number): EmailRetryData {
+function planEmailRetryClaim(row: EmailRetryData, now: number): EmailRetryData {
   const claimed = {
     ...row,
     attempts: row.attempts + 1,
     nextAttemptAt: now + retryDelayMs(row.attempts + 1),
   };
-  EmailRetryEntity.upsert(claimed);
   return claimed;
 }
 
@@ -84,23 +82,17 @@ export function selectDueRetries(
     .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt);
 }
 
-function clearEmailRetry(pipeline: string, emailId: string): void {
-  EmailRetryEntity.delete({ retryKey: `${pipeline}#${emailId}` });
-}
-
 const decodeRetry = (row: unknown) =>
-  fromSync("decode email retry", () => Schema.decodeUnknownSync(EmailRetrySchema)(row));
+  Effect.try(() => Schema.decodeUnknownSync(EmailRetrySchema)(row));
 
 export const EmailRetryPersistence = {
   getAll: Effect.fn("EmailRetry.getAll")(function* () {
-    const rows = yield* fromSync("read email retries", () => EmailRetryEntity.getAll());
+    const rows = yield* EmailRetryEntity.getAll();
     return yield* Effect.forEach(rows, decodeRetry);
   }),
   get: Effect.fn("EmailRetry.get")(function* (retryKey: string) {
-    const row = yield* fromSync("read email retry", () =>
-      EmailRetryEntity.get({ retryKey }),
-    );
-    return row ? yield* decodeRetry(row) : undefined;
+    const row = yield* EmailRetryEntity.get({ retryKey });
+    return Option.isSome(row) ? yield* decodeRetry(row.value) : undefined;
   }),
   enqueue: Effect.fn("EmailRetry.enqueue")(function* (entry: {
     pipeline: string;
@@ -108,17 +100,17 @@ export const EmailRetryPersistence = {
     reason: string;
   }) {
     const now = yield* Clock.currentTimeMillis;
-    yield* fromSync("enqueue email retry", () => {
-      const retryKey = `${entry.pipeline}#${entry.emailId}`;
-      const existing = EmailRetryEntity.get({ retryKey });
-      EmailRetryEntity.upsert(planEmailRetryEnqueue(existing, entry, now));
-    });
+    const retryKey = `${entry.pipeline}#${entry.emailId}`;
+    const existing = Option.getOrUndefined(yield* EmailRetryEntity.get({ retryKey }));
+    yield* EmailRetryEntity.upsert(planEmailRetryEnqueue(existing, entry, now));
   }),
   claim: Effect.fn("EmailRetry.claim")(function* (row: EmailRetryData) {
     const now = yield* Clock.currentTimeMillis;
-    return yield* fromSync("claim email retry", () => claimEmailRetry(row, now));
+    const claimed = planEmailRetryClaim(row, now);
+    yield* EmailRetryEntity.upsert(claimed);
+    return claimed;
   }),
   clear: Effect.fn("EmailRetry.clear")(function* (pipeline: string, emailId: string) {
-    yield* fromSync("clear email retry", () => clearEmailRetry(pipeline, emailId));
+    yield* EmailRetryEntity.delete({ retryKey: `${pipeline}#${emailId}` });
   }),
 } as const;

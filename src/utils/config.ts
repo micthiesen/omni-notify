@@ -178,6 +178,8 @@ const rawConfigSchema = Schema.Struct({
   ICLOUD_CALENDAR_URL: optionalString,
   EMAIL_SELF_ADDRESS: optionalString,
   PARCEL_API_KEY: optionalString,
+  KARAKEEP_URL: optionalString,
+  KARAKEEP_API_KEY: optionalString,
   EXTRACTION_MODEL: optionalString,
   CALENDAR_EXTRACTION_MODEL: optionalString,
   TRIAGE_MODEL: optionalString,
@@ -301,12 +303,10 @@ export const loadConfigEffect = (
     Effect.map(deriveConfig),
     Effect.tap((parsed) =>
       Effect.try({
-        try: () => {
-          validateMcpTokenConfiguration(parsed.OMNI_MCP_TOKEN, parsed.DOCKERIZED);
-          logConfig(parsed, [...privateConfigKeys]);
-        },
+        try: () =>
+          validateMcpTokenConfiguration(parsed.OMNI_MCP_TOKEN, parsed.DOCKERIZED),
         catch: (cause) => new ConfigLoadError({ cause }),
-      }),
+      }).pipe(Effect.andThen(logConfig(parsed, [...privateConfigKeys]))),
     ),
     Effect.mapError((cause) =>
       cause instanceof ConfigLoadError ? cause : new ConfigLoadError({ cause }),
@@ -319,7 +319,6 @@ function loadBootConfig(
   try {
     const parsed = deriveConfig(Schema.decodeUnknownSync(rawConfigSchema)(environment));
     validateMcpTokenConfiguration(parsed.OMNI_MCP_TOKEN, parsed.DOCKERIZED);
-    logConfig(parsed, [...privateConfigKeys]);
     return parsed;
   } catch (cause) {
     throw new ConfigLoadError({ cause });
@@ -329,5 +328,7 @@ function loadBootConfig(
 // Module initialization is the process bootstrap adapter. Runtime workflows
 // receive this immutable decoded value and never re-read process.env.
 const config = loadBootConfig(process.env);
+
+export const logLoadedConfig = logConfig(config, [...privateConfigKeys]);
 
 export default config;

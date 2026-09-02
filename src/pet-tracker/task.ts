@@ -1,8 +1,9 @@
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import type { Logger } from "@micthiesen/mitools/logging";
+import type { Sqlite } from "@micthiesen/mitools/sqlite";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Clock, Effect } from "effect";
 
-import { runPromise } from "../effect/interop.js";
 import type { Config } from "../utils/config.js";
 import { fetchPetsByUser } from "./api.js";
 import { authenticateWhisker } from "./auth.js";
@@ -28,22 +29,21 @@ interface PetSyncResult {
   currentWeight: number;
 }
 
-export default class PetTrackerTask extends ScheduledTask {
+export default class PetTrackerTask implements ScheduledTask<unknown, Logger | Sqlite> {
   public readonly name = "PetTracker";
   public readonly schedule = "0 */10 * * * *";
   public readonly runOnStartup = true;
 
-  private readonly logger: Logger;
+  private readonly logger: NamedLogger;
   private readonly credentials: Credentials;
 
-  constructor(credentials: Credentials, logger: Logger) {
-    super();
+  constructor(credentials: Credentials, logger: NamedLogger) {
     this.credentials = credentials;
     this.logger = logger.extend("PetTracker");
   }
 
-  public run(): Promise<void> {
-    return runPromise(this.runEffect());
+  public get run() {
+    return this.runEffect();
   }
 
   public runEffect() {
@@ -60,7 +60,7 @@ export default class PetTrackerTask extends ScheduledTask {
       const now = new Date(yield* Clock.currentTimeMillis).toISOString();
 
       for (const pet of pets) {
-        upsertPet({
+        yield* upsertPet({
           pet_id: pet.petId,
           name: pet.name,
           current_weight: pet.weight,
@@ -69,7 +69,7 @@ export default class PetTrackerTask extends ScheduledTask {
 
         let newReadings = 0;
         for (const reading of pet.weightHistory) {
-          const isNew = insertWeightReading({
+          const isNew = yield* insertWeightReading({
             pet_id: pet.petId,
             timestamp: reading.timestamp,
             weight: reading.weight,
@@ -88,33 +88,35 @@ export default class PetTrackerTask extends ScheduledTask {
       }
 
       const syncMsg = `Synced ${pets.length} pets, ${totalNew} new / ${pets.reduce((s, p) => s + p.weightHistory.length, 0)} total readings`;
-      this.logger[totalNew > 0 ? "info" : "debug"](syncMsg);
+      yield* this.logger[totalNew > 0 ? "info" : "debug"](syncMsg);
 
       if (affectedPets.length > 0) {
-        const lines = affectedPets.map((p) => formatPetLine(p));
-        this.logger.info(lines.join(", "));
+        const lines = yield* Effect.forEach(affectedPets, formatPetLine);
+        yield* this.logger.info(lines.join(", "));
       }
     });
   }
 }
 
-function formatPetLine(pet: PetSyncResult): string {
-  const history = getRecentWeightHistory(pet.petId, 30);
-  const weight = `${round(pet.currentWeight, 1)} lbs`;
+function formatPetLine(pet: PetSyncResult) {
+  return Effect.gen(function* () {
+    const history = yield* getRecentWeightHistory(pet.petId, 30);
+    const weight = `${round(pet.currentWeight, 1)} lbs`;
 
-  if (history.length < 2) return `${pet.name}: ${weight}`;
+    if (history.length < 2) return `${pet.name}: ${weight}`;
 
-  const t0 = new Date(history[0].timestamp).getTime();
-  const points = history.map((h) => ({
-    x: (new Date(h.timestamp).getTime() - t0) / MS_PER_DAY,
-    y: h.weight,
-  }));
-  const { slope, r2 } = linearRegression(points);
-  const perWeek = slope * 7;
+    const t0 = new Date(history[0].timestamp).getTime();
+    const points = history.map((h) => ({
+      x: (new Date(h.timestamp).getTime() - t0) / MS_PER_DAY,
+      y: h.weight,
+    }));
+    const { slope, r2 } = linearRegression(points);
+    const perWeek = slope * 7;
 
-  const sign = perWeek >= 0 ? "+" : "";
-  const trend = `${sign}${round(perWeek, 2)} lbs/wk`;
-  const qualifier = r2 < 0.3 ? ", weak trend" : "";
+    const sign = perWeek >= 0 ? "+" : "";
+    const trend = `${sign}${round(perWeek, 2)} lbs/wk`;
+    const qualifier = r2 < 0.3 ? ", weak trend" : "";
 
-  return `${pet.name}: ${weight} (${trend}${qualifier})`;
+    return `${pet.name}: ${weight} (${trend}${qualifier})`;
+  });
 }

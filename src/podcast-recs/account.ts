@@ -1,5 +1,6 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
+import type { TaskServices } from "../task-runs/registry.js";
 import type { FetchResult } from "../utils/fetchResult.js";
 import { createCastroClientEffect } from "./castro/client.js";
 
@@ -136,7 +137,11 @@ export interface PodcastAccountClient {
   /** Human-readable client name for logs (e.g. "Castro"). */
   readonly name: string;
 
-  fetchSubscriptions(): Effect.Effect<FetchResult<PodcastSubscription[]>>;
+  fetchSubscriptions(): Effect.Effect<
+    FetchResult<PodcastSubscription[]>,
+    never,
+    TaskServices
+  >;
   /**
    * Playback history, newest first. Completion fractions power outcome
    * labeling (listened ≥80% vs abandoned), so include them when available.
@@ -146,21 +151,33 @@ export interface PodcastAccountClient {
    * heaviest thing this client does, so a narrow window keeps us a
    * well-behaved API consumer. Omitted means the implementation's default.
    */
-  fetchListenHistory(sinceMs?: number): Effect.Effect<FetchResult<ListenedEpisode[]>>;
-  fetchQueue(): Effect.Effect<FetchResult<QueuedEpisode[]>>;
-  fetchInbox(): Effect.Effect<FetchResult<InboxEpisode[]>>;
-  searchPodcasts(query: string): Effect.Effect<FetchResult<PodcastSearchResult[]>>;
+  fetchListenHistory(
+    sinceMs?: number,
+  ): Effect.Effect<FetchResult<ListenedEpisode[]>, never, TaskServices>;
+  fetchQueue(): Effect.Effect<FetchResult<QueuedEpisode[]>, never, TaskServices>;
+  fetchInbox(): Effect.Effect<FetchResult<InboxEpisode[]>, never, TaskServices>;
+  searchPodcasts(
+    query: string,
+  ): Effect.Effect<FetchResult<PodcastSearchResult[]>, never, TaskServices>;
   searchEpisodes(
     query: string,
-  ): Effect.Effect<FetchResult<PodcastEpisodeSearchResult[]>>;
+  ): Effect.Effect<FetchResult<PodcastEpisodeSearchResult[]>, never, TaskServices>;
 
   /** Add one episode to the play queue. Idempotency: report already_exists. */
-  enqueueEpisode(request: EnqueueEpisodeRequest): Effect.Effect<PodcastWriteResult>;
+  enqueueEpisode(
+    request: EnqueueEpisodeRequest,
+  ): Effect.Effect<PodcastWriteResult, never, TaskServices>;
   /** Remove one episode from the play queue. Idempotency: report not_found. */
-  dequeueEpisode(episodeGuid: string): Effect.Effect<PodcastWriteResult>;
+  dequeueEpisode(
+    episodeGuid: string,
+  ): Effect.Effect<PodcastWriteResult, never, TaskServices>;
   /** Clear an episode's new state so it no longer appears in the Inbox. */
-  clearInboxEpisode(clientEpisodeId: string): Effect.Effect<PodcastWriteResult>;
-  subscribeToShow(request: SubscribeToShowRequest): Effect.Effect<PodcastWriteResult>;
+  clearInboxEpisode(
+    clientEpisodeId: string,
+  ): Effect.Effect<PodcastWriteResult, never, TaskServices>;
+  subscribeToShow(
+    request: SubscribeToShowRequest,
+  ): Effect.Effect<PodcastWriteResult, never, TaskServices>;
 }
 
 /** The configured podcast account client, or undefined when none is available. */

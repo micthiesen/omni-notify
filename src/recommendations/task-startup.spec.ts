@@ -1,5 +1,7 @@
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import { runTest } from "../live-check/testRuntime.js";
 
 vi.mock("../utils/config.js", () => ({
   default: {
@@ -26,14 +28,14 @@ import { MediaTasteReflectionTask } from "./taste/task.js";
 
 const logger = {
   extend: vi.fn(),
-  info: vi.fn(),
+  info: vi.fn(() => Effect.void),
 } as unknown as Logger;
 (logger.extend as ReturnType<typeof vi.fn>).mockReturnValue(logger);
 
 describe("recommendation task startup policy", () => {
-  it("does not run LLM-backed tasks on service startup", () => {
-    const recommendations = MediaRecommendationTask.create(logger);
-    const tasteReflection = MediaTasteReflectionTask.create(logger);
+  it("does not run LLM-backed tasks on service startup", async () => {
+    const recommendations = await runTest(MediaRecommendationTask.create(logger));
+    const tasteReflection = await runTest(MediaTasteReflectionTask.create(logger));
 
     expect(recommendations?.runOnStartup).toBe(false);
     expect(tasteReflection?.runOnStartup).toBe(false);

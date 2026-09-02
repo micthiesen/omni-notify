@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "@effect/vitest";
-import { Duration, Effect, Exit, Fiber } from "effect";
-import { TestClock } from "effect/testing";
+import { withVirtualTime } from "@micthiesen/mitools/testing";
+import { Effect, Exit } from "effect";
 import { assembleEpisode } from "./audioChain.js";
 
 const execFileAsync = promisify(execFile);
@@ -26,14 +26,12 @@ describe("audioChain resource cleanup", () => {
       yield* Effect.tryPromise(() => execFileAsync("mkfifo", [fifo]));
       const before = yield* Effect.tryPromise(pressPodsTemporaryFiles);
 
-      const fiber = yield* Effect.forkChild(
-        assembleEpisode([fifo], Buffer.from("unused intro")).pipe(
-          Effect.timeout(Duration.millis(50)),
+      const exit = yield* Effect.exit(
+        withVirtualTime(
+          assembleEpisode([fifo], Buffer.from("unused intro")).pipe(Effect.timeout(50)),
+          50,
         ),
       );
-      yield* Effect.yieldNow;
-      yield* TestClock.adjust(Duration.millis(50));
-      const exit = yield* Fiber.await(fiber);
       expect(Exit.isFailure(exit)).toBe(true);
       yield* Effect.tryPromise(() => fs.rm(fifo, { force: true }));
 

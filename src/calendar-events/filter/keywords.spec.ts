@@ -1,8 +1,7 @@
-import { Injector } from "@micthiesen/mitools/config";
-import type { Logger } from "@micthiesen/mitools/logging";
-import { LogLevel } from "@micthiesen/mitools/logging";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Effect } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { EmailRuleEntity, upsertEmailRule } from "../../email/senderRules.js";
 import {
   EmailTriageService,
@@ -12,27 +11,19 @@ import {
 import config from "../../utils/config.js";
 import { filterCalendarCandidateEffect } from "./keywords.js";
 
+const runtime = ManagedRuntime.make(Layer.merge(Docstore.layerMemory, Logger.layer()));
+const runEffect = runtime.runPromise.bind(runtime);
 const filterCalendarCandidate = (
   ...args: Parameters<typeof filterCalendarCandidateEffect>
-) => Effect.runPromise(filterCalendarCandidateEffect(...args));
-
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "calendar-filter.spec.db",
-  },
-});
+) => runEffect(filterCalendarCandidateEffect(...args));
 
 const mockLogger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
+  debug: vi.fn(() => Effect.void),
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+  error: vi.fn(() => Effect.void),
   extend: vi.fn(),
-} as unknown as Logger;
+} as unknown as NamedLogger;
 
 let nextId = 0;
 const make = (from: string, subject: string, textBody = "") => ({
@@ -70,13 +61,19 @@ const calendarNo: TriageVerdict = {
   reason: "not an event",
 };
 
-afterEach(() => {
-  EmailRuleEntity.deleteAll();
+afterEach(async () => {
+  await runEffect(EmailRuleEntity.deleteAll());
 });
 
 describe("filterCalendarCandidate — sender rules", () => {
   it("a block rule beats even a known auto-pass sender", async () => {
-    upsertEmailRule({ pattern: "eventbrite.com", scope: "calendar", verdict: "block" });
+    await runEffect(
+      upsertEmailRule({
+        pattern: "eventbrite.com",
+        scope: "calendar",
+        verdict: "block",
+      }),
+    );
     const result = await filterCalendarCandidate(
       make("noreply@eventbrite.com", "Your event is coming up"),
       stubTriage(calendarYes).triage,
@@ -85,7 +82,9 @@ describe("filterCalendarCandidate — sender rules", () => {
   });
 
   it("an allow rule passes without consulting triage", async () => {
-    upsertEmailRule({ pattern: "clinic.example", scope: "both", verdict: "allow" });
+    await runEffect(
+      upsertEmailRule({ pattern: "clinic.example", scope: "both", verdict: "allow" }),
+    );
     const { triage, classifyFn } = downTriage();
     const result = await filterCalendarCandidate(
       make("frontdesk@clinic.example", "Anything at all"),
@@ -100,7 +99,9 @@ describe("filterCalendarCandidate — sender rules", () => {
   });
 
   it("parcel-scoped rules do not affect the calendar filter", async () => {
-    upsertEmailRule({ pattern: "eventbrite.com", scope: "parcel", verdict: "block" });
+    await runEffect(
+      upsertEmailRule({ pattern: "eventbrite.com", scope: "parcel", verdict: "block" }),
+    );
     const result = await filterCalendarCandidate(
       make("noreply@eventbrite.com", "anything"),
       downTriage().triage,
@@ -113,11 +114,13 @@ describe("filterCalendarCandidate — sender rules", () => {
   });
 
   it("an allow rule overrides the built-in blacklist", async () => {
-    upsertEmailRule({
-      pattern: "steampowered.com",
-      scope: "calendar",
-      verdict: "allow",
-    });
+    await runEffect(
+      upsertEmailRule({
+        pattern: "steampowered.com",
+        scope: "calendar",
+        verdict: "allow",
+      }),
+    );
     const result = await filterCalendarCandidate(
       make("noreply@steampowered.com", "Purchase confirmation"),
       downTriage().triage,

@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { notify } from "@micthiesen/mitools/pushover";
 import { Clock, Effect } from "effect";
 import config from "../utils/config.js";
@@ -38,6 +38,7 @@ import {
   shortlistCandidates,
 } from "./shortlist.js";
 import { formatTasteProfileDigest } from "./taste/index.js";
+import { getLatestTasteProfile } from "./taste/persistence.js";
 import { fetchTitleGenreIdsEffect as fetchTitleGenreIds } from "./tmdb/client.js";
 import type {
   AddToWatchlistResult,
@@ -52,12 +53,10 @@ import {
 } from "./watchlist.js";
 import {
   effectMessage,
-  integrationEffect,
   persistenceEffect,
   RecommendationCommitError,
   RecommendationInputError,
   RecommendationIntegrationError,
-  RecommendationPersistenceError,
 } from "./effect.js";
 
 const RESOLVE_CONCURRENCY = 4;
@@ -105,19 +104,19 @@ export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
       { concurrency: "unbounded" },
     );
     if (history.status === "unavailable") {
-      logger.warn(`Recommendation run skipped: ${history.reason}`);
+      yield* logger.warn(`Recommendation run skipped: ${history.reason}`);
       return `skipped: ${history.reason}`;
     }
     if (watchlist.status === "unavailable") {
-      logger.warn(`Recommendation run skipped: ${watchlist.reason}`);
+      yield* logger.warn(`Recommendation run skipped: ${watchlist.reason}`);
       return `skipped: ${watchlist.reason}`;
     }
     if (inProgress.status === "unavailable") {
-      logger.warn(`Recommendation run skipped: ${inProgress.reason}`);
+      yield* logger.warn(`Recommendation run skipped: ${inProgress.reason}`);
       return `skipped: ${inProgress.reason}`;
     }
     if (library.status === "unavailable") {
-      logger.warn(`Recommendation run skipped: ${library.reason}`);
+      yield* logger.warn(`Recommendation run skipped: ${library.reason}`);
       return `skipped: ${library.reason}`;
     }
     const inProgressItems = inProgress.value;
@@ -145,10 +144,11 @@ export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
       fullResolutionGuids,
       logger,
     );
-    logFile?.section(
-      "Identity Resolution",
-      `${canonicalByGuid.size}/${allItems.length} items resolved`,
-    );
+    if (logFile)
+      yield* logFile.section(
+        "Identity Resolution",
+        `${canonicalByGuid.size}/${allItems.length} items resolved`,
+      );
 
     // 3. Outcome sync for open recommendations (bookkeeping only — outcome
     //    labels never feed taste inputs).
@@ -189,7 +189,7 @@ export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
     // Incomplete Arr identity resolution cannot safely reconcile pending writes.
     const watchlistComplete = watchlistUnresolved === 0;
     if (!watchlistComplete) {
-      logger.warn(
+      yield* logger.warn(
         `${watchlistUnresolved} watchlist item(s) unresolved; skipping absence-based outcome labels`,
       );
     }
@@ -211,9 +211,10 @@ export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
       "read recommendation feedback",
       () => formatFeedbackDigest(),
     );
-    const tasteDigest = yield* persistenceEffect("read media taste profile", () =>
-      formatTasteProfileDigest(),
+    const tasteProfile = yield* persistenceEffect("read media taste profile", () =>
+      getLatestTasteProfile(),
     );
+    const tasteDigest = formatTasteProfileDigest(tasteProfile);
     const historyDigest = `${formatHistoryDigest(watchedItems, inProgressItems)}\n\n${feedbackDigest}\n\n${tasteDigest}`;
     const seeds = yield* buildSeedsEffect(recentWatched, canonicalByGuid, logger);
 
@@ -246,12 +247,13 @@ export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
       watchlistIds,
       excludedRecommendationIds,
     });
-    logger.info(`Candidates: ${pool.length} pooled, ${kept.length} eligible`);
+    yield* logger.info(`Candidates: ${pool.length} pooled, ${kept.length} eligible`);
     if (dropped.length > 0) {
-      logFile?.section(
-        "Filtered Out",
-        dropped.map((d) => `- ${d.title}: ${d.reason}`).join("\n"),
-      );
+      if (logFile)
+        yield* logFile.section(
+          "Filtered Out",
+          dropped.map((d) => `- ${d.title}: ${d.reason}`).join("\n"),
+        );
     }
     if (kept.length === 0) return "no eligible candidates after filtering";
 
@@ -289,14 +291,14 @@ export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
       }
       if (decision.decision === "no_add" || !decision.selected) {
         const reason = decision.no_add_reason ?? "no reason given";
-        logger.info(`No further recommendation today: ${reason}`);
+        yield* logger.info(`No further recommendation today: ${reason}`);
         stopReason = `no_add: ${reason.slice(0, 120)}`;
         break;
       }
 
       const selected = remaining.get(decision.selected.candidate_id);
       if (!selected) {
-        logger.warn(
+        yield* logger.warn(
           `Selection returned unknown candidate id: ${decision.selected.candidate_id}`,
         );
         stopReason = "selection returned an unknown candidate id";
@@ -337,7 +339,7 @@ export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
         backup.candidate.canonicalId !== selected.candidate.canonicalId
       ) {
         remaining.delete(backup.candidate.canonicalId);
-        logger.info(
+        yield* logger.info(
           `Primary already on watchlist; promoting backup ${backup.candidate.title}`,
         );
         const backupCommitted = yield* commitRecommendationEffect(
@@ -375,7 +377,7 @@ function resolveManyEffect(
   items: MediaItem[],
   fullResolutionGuids: Set<string>,
   logger: Logger,
-): Effect.Effect<Map<string, CanonicalId>, RecommendationPersistenceError> {
+) {
   const resolved = new Map<string, CanonicalId>();
   const seen = new Set<string>();
   const unique = items.filter((item) => {
@@ -404,7 +406,7 @@ function resolveManyEffect(
   ).pipe(Effect.as(resolved));
 }
 
-function syncOutcomes(args: {
+const syncOutcomes = Effect.fn("Recommendations.syncOutcomes")(function* (args: {
   watchedById: Map<
     string,
     { completion?: number; viewCount: number; lastViewedAt?: number }
@@ -414,8 +416,8 @@ function syncOutcomes(args: {
   logger: Logger;
   logFile?: LogFile;
   now: number;
-}): void {
-  const open = getOpenRecommendations();
+}) {
+  const open = yield* getOpenRecommendations();
   const now = args.now;
   for (const rec of open) {
     const history = args.watchedById.get(rec.canonicalId);
@@ -433,7 +435,7 @@ function syncOutcomes(args: {
         : progressAfterDelivery
           ? progress.lastViewedAt
           : undefined;
-      RecommendationEntity.patch(
+      yield* RecommendationEntity.patch(
         { recommendationId: rec.recommendationId },
         { startedAt: Math.max(deliveredAt, observedAt ?? now) },
       );
@@ -447,21 +449,23 @@ function syncOutcomes(args: {
     now,
   });
   for (const change of changes) {
-    RecommendationEntity.patch(
+    yield* RecommendationEntity.patch(
       { recommendationId: change.recommendationId },
       { status: change.status, resolvedAt: now },
     );
-    args.logger.info(
+    yield* args.logger.info(
       `Outcome: ${change.canonicalId} → ${change.status} (${change.reason})`,
     );
   }
   if (changes.length > 0) {
-    args.logFile?.section(
-      "Outcome Sync",
-      changes.map((c) => `- ${c.canonicalId} → ${c.status} (${c.reason})`).join("\n"),
-    );
+    if (args.logFile) {
+      yield* args.logFile.section(
+        "Outcome Sync",
+        changes.map((c) => `- ${c.canonicalId} → ${c.status} (${c.reason})`).join("\n"),
+      );
+    }
   }
-}
+});
 
 /**
  * Repair rows left in pending by a crash between the entity write and the
@@ -472,17 +476,18 @@ function reconcileStalePendingEffect(
   watchlistIds: Set<string>,
   watchlistComplete: boolean,
   logger: Logger,
-): Effect.Effect<
-  void,
-  RecommendationIntegrationError | RecommendationPersistenceError
-> {
+) {
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const stale = yield* persistenceEffect("read stale recommendations", () =>
-      RecommendationEntity.getAll().filter(
-        (r) =>
-          r.status === RecommendationStatus.Pending &&
-          now - r.recommendedAt > STALE_PENDING_MS,
+      RecommendationEntity.getAll().pipe(
+        Effect.map((rows) =>
+          rows.filter(
+            (r) =>
+              r.status === RecommendationStatus.Pending &&
+              now - r.recommendedAt > STALE_PENDING_MS,
+          ),
+        ),
       ),
     );
     for (const rec of stale) {
@@ -490,7 +495,7 @@ function reconcileStalePendingEffect(
         rec.watchlistResult === "available" || watchlistIds.has(rec.canonicalId);
       if (acquisitionLanded && rec.whyForUser) {
         if (rec.notificationState === "reserved" || rec.notificationState === "sent") {
-          logger.warn(
+          yield* logger.warn(
             `Reconciling pending recommendation ${rec.canonicalId}: notification attempt already reserved`,
           );
           yield* persistenceEffect(
@@ -509,7 +514,7 @@ function reconcileStalePendingEffect(
           continue;
         }
         const message = rec.whyForUser;
-        logger.warn(
+        yield* logger.warn(
           `Reconciling pending recommendation ${rec.canonicalId}: re-notifying`,
         );
         const reservedAt = now;
@@ -520,14 +525,20 @@ function reconcileStalePendingEffect(
           ),
         );
         const notificationResult = yield* Effect.result(
-          integrationEffect("notify reconciled recommendation", () =>
-            notify({
-              title: `🎬 ${rec.title}${rec.year ? ` (${rec.year})` : ""}`,
-              message,
-              url: feedbackUrl("recommendations", rec.recommendationId),
-              url_title: "Rate this pick",
-              token: config.PUSHOVER_RECS_TOKEN,
-            }),
+          notify({
+            title: `🎬 ${rec.title}${rec.year ? ` (${rec.year})` : ""}`,
+            message,
+            url: feedbackUrl("recommendations", rec.recommendationId),
+            url_title: "Rate this pick",
+            token: config.PUSHOVER_RECS_TOKEN,
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new RecommendationIntegrationError({
+                  operation: "notify reconciled recommendation",
+                  cause,
+                }),
+            ),
           ),
         );
         if (notificationResult._tag === "Failure") {
@@ -539,7 +550,7 @@ function reconcileStalePendingEffect(
                 { notificationState: "failed" },
               ),
           );
-          logger.warn(
+          yield* logger.warn(
             `Reconciled notification failed for ${rec.canonicalId}`,
             effectMessage(notificationResult.failure),
           );
@@ -556,7 +567,7 @@ function reconcileStalePendingEffect(
           ),
         );
       } else if (watchlistComplete) {
-        logger.warn(
+        yield* logger.warn(
           `Marking stale pending recommendation ${rec.canonicalId} as failed`,
         );
         yield* persistenceEffect("mark stale recommendation failed", () =>
@@ -568,7 +579,7 @@ function reconcileStalePendingEffect(
       } else {
         // The watchlist view is incomplete, so absence proves nothing; leave
         // the row pending and try again next run.
-        logger.warn(
+        yield* logger.warn(
           `Leaving stale pending ${rec.canonicalId} unreconciled (watchlist incomplete)`,
         );
       }
@@ -580,7 +591,7 @@ function buildSeedsEffect(
   recentWatched: WatchedItem[],
   canonicalByGuid: Map<string, CanonicalId>,
   logger: Logger,
-): Effect.Effect<WatchSeed[]> {
+) {
   return Effect.gen(function* () {
     const seeds: WatchSeed[] = [];
     for (const item of recentWatched) {
@@ -589,8 +600,9 @@ function buildSeedsEffect(
       const tmdbId = Number(canonicalId.split(":")[2]);
       const genreIds = yield* fetchTitleGenreIds(item.mediaType, tmdbId).pipe(
         Effect.catch((error) => {
-          logger.warn(`Genre lookup failed for ${canonicalId}`, effectMessage(error));
-          return Effect.succeed([]);
+          return logger
+            .warn(`Genre lookup failed for ${canonicalId}`, effectMessage(error))
+            .pipe(Effect.as([]));
         }),
       );
       seeds.push({ canonicalId, tmdbId, mediaType: item.mediaType, genreIds });
@@ -605,10 +617,7 @@ function commitRecommendationEffect(
   pick: SelectionPick,
   logger: Logger,
   wasBackup = false,
-): Effect.Effect<
-  "committed" | "already_exists" | "failed",
-  RecommendationPersistenceError
-> {
+) {
   return Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const { candidate } = scored;
@@ -667,7 +676,7 @@ function commitRecommendationEffect(
     const managerSlug = addOutcome.titleSlug;
 
     if (addResult === "already_exists") {
-      logger.warn(`${candidate.title} is already tracked`);
+      yield* logger.warn(`${candidate.title} is already tracked`);
       yield* persistenceEffect("close already tracked recommendation", () =>
         RecommendationEntity.patch(
           { recommendationId },
@@ -683,7 +692,7 @@ function commitRecommendationEffect(
     }
 
     if (addResult !== "added" && addResult !== "available") {
-      logger.warn(`Acquisition failed for ${candidate.title} (${addResult})`);
+      yield* logger.warn(`Acquisition failed for ${candidate.title} (${addResult})`);
       yield* persistenceEffect("mark recommendation acquisition failed", () =>
         RecommendationEntity.patch(
           { recommendationId },
@@ -713,18 +722,24 @@ function commitRecommendationEffect(
       ),
     );
     const notificationResult = yield* Effect.result(
-      integrationEffect("send recommendation notification", () =>
-        notify({
-          title: pick.notification.title,
-          message: pick.notification.message,
-          url: feedbackUrl("recommendations", recommendationId),
-          url_title: "Rate this pick",
-          token: config.PUSHOVER_RECS_TOKEN,
-        }),
+      notify({
+        title: pick.notification.title,
+        message: pick.notification.message,
+        url: feedbackUrl("recommendations", recommendationId),
+        url_title: "Rate this pick",
+        token: config.PUSHOVER_RECS_TOKEN,
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new RecommendationIntegrationError({
+              operation: "send recommendation notification",
+              cause,
+            }),
+        ),
       ),
     );
     if (notificationResult._tag === "Failure") {
-      logger.error(
+      yield* logger.error(
         `Notification failed for ${candidate.title}`,
         effectMessage(notificationResult.failure),
       );
@@ -748,7 +763,9 @@ function commitRecommendationEffect(
         },
       ),
     );
-    logger.info(`Recommended ${candidate.title} (acquisition: ${watchlistResult})`);
+    yield* logger.info(
+      `Recommended ${candidate.title} (acquisition: ${watchlistResult})`,
+    );
     return "committed";
   });
 }

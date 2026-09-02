@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
+import { runTest } from "../live-check/testRuntime.js";
 import { CandidateSource, MediaType } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
@@ -21,10 +22,14 @@ const mocks = vi.hoisted(() => ({
   patch: vi.fn(),
   getAll: vi.fn(),
   getOpenRecommendations: vi.fn(),
+  getExcludedCanonicalIds: vi.fn(),
   fetchTitleGenreIds: vi.fn(),
 }));
 
-vi.mock("@micthiesen/mitools/pushover", () => ({ notify: mocks.notify }));
+vi.mock("@micthiesen/mitools/pushover", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@micthiesen/mitools/pushover")>()),
+  notify: (...args: unknown[]) => Effect.promise(() => mocks.notify(...args)),
+}));
 vi.mock("../utils/config.js", () => ({
   default: {
     PUSHOVER_RECS_TOKEN: "push-token",
@@ -75,13 +80,15 @@ vi.mock("./persistence.js", () => ({
     Failed: "failed",
   },
   RecommendationEntity: {
-    getAll: mocks.getAll,
-    upsert: mocks.upsert,
-    patch: mocks.patch,
+    getAll: (...args: unknown[]) => Effect.sync(() => mocks.getAll(...args)),
+    upsert: (...args: unknown[]) => Effect.sync(() => mocks.upsert(...args)),
+    patch: (...args: unknown[]) => Effect.sync(() => mocks.patch(...args)),
   },
-  formatFeedbackDigest: () => "feedback",
-  getExcludedCanonicalIds: () => new Set(),
-  getOpenRecommendations: mocks.getOpenRecommendations,
+  formatFeedbackDigest: () => Effect.succeed("feedback"),
+  getExcludedCanonicalIds: (...args: unknown[]) =>
+    Effect.sync(() => new Set(mocks.getExcludedCanonicalIds(...args))),
+  getOpenRecommendations: (...args: unknown[]) =>
+    Effect.sync(() => mocks.getOpenRecommendations(...args)),
 }));
 vi.mock("./shortlist.js", () => ({
   FINALIST_COUNT: 5,
@@ -109,7 +116,7 @@ const runRecommendationPipeline = (
   logger: never,
   logFile?: never,
   options?: Parameters<typeof runRecommendationPipelineEffect>[2],
-) => Effect.runPromise(runRecommendationPipelineEffect(logger, logFile, options));
+) => runTest(runRecommendationPipelineEffect(logger, logFile, options));
 
 const watched = {
   guid: "watched",
@@ -171,9 +178,9 @@ function selection(candidateId: string) {
 }
 
 const logger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+  error: vi.fn(() => Effect.void),
 } as never;
 
 describe("recommendation pipeline orchestration", () => {
@@ -191,6 +198,7 @@ describe("recommendation pipeline orchestration", () => {
     }));
     mocks.fetchTitleGenreIds.mockResolvedValue([]);
     mocks.getOpenRecommendations.mockReturnValue([]);
+    mocks.getExcludedCanonicalIds.mockReturnValue([]);
     mocks.getAll.mockReturnValue([]);
     mocks.fetchCandidateBuckets.mockResolvedValue([]);
     mocks.assemblePool.mockReturnValue([candidate]);

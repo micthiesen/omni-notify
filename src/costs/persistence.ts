@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger } from "@micthiesen/mitools/logging";
+import { Clock, Effect } from "effect";
 import { getCurrentRunContext } from "../task-runs/logCapture.js";
 
 export type CostCategory = "llm" | "search" | "tts" | "retrieval" | "transcription";
@@ -36,7 +37,7 @@ export const CostEventEntity = new Entity<CostEventData, ["eventId"]>("cost-even
   "eventId",
 ]);
 
-const logger = new Logger("Costs");
+const logger = Logger.named("Costs");
 
 export type RecordCostEventInput = Omit<
   CostEventData,
@@ -47,33 +48,35 @@ export type RecordCostEventInput = Omit<
   runId?: string;
 };
 
-export function recordCostEvent(input: RecordCostEventInput): CostEventData {
+export const recordCostEvent = Effect.fn("Costs.record")(function* (
+  input: RecordCostEventInput,
+) {
   const context = getCurrentRunContext();
+  const now = yield* Clock.currentTimeMillis;
   const event: CostEventData = {
     ...input,
     eventId: input.eventId ?? randomUUID(),
-    incurredAt: input.incurredAt ?? Date.now(),
+    incurredAt: input.incurredAt ?? now,
     runId: input.runId ?? context?.runId,
   };
-  CostEventEntity.upsert(event);
+  yield* CostEventEntity.upsert(event);
   return event;
-}
+});
 
 /** Cost telemetry must never turn a successful paid provider call into a retry. */
-export function recordCostEventSafely(
+export const recordCostEventSafely = Effect.fn("Costs.recordSafely")(function* (
   input: RecordCostEventInput,
-): CostEventData | undefined {
-  try {
-    return recordCostEvent(input);
-  } catch (error) {
-    logger.error("Failed to persist cost event", error);
-    return undefined;
-  }
-}
+) {
+  return yield* recordCostEvent(input).pipe(
+    Effect.catch((error) =>
+      logger.error("Failed to persist cost event", error).pipe(Effect.as(undefined)),
+    ),
+  );
+});
 
-export function getCostEvents(): CostEventData[] {
-  return CostEventEntity.getAll();
-}
+export const getCostEvents = Effect.fn("Costs.getAll")(function* () {
+  return yield* CostEventEntity.getAll();
+});
 
 /** Prefer runtime attribution, while stable hints cover calls outside task runs. */
 export function currentCostFeature(fallback: string): string {

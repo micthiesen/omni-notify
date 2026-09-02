@@ -1,6 +1,7 @@
 import { createHash, createHmac, randomUUID } from "node:crypto";
-import { Injector } from "@micthiesen/mitools/config";
-import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Logger } from "@micthiesen/mitools/logging";
+import { Effect } from "effect";
+import { runTest, testRuntime } from "../live-check/testRuntime.js";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IOSControlRegistrationEntity } from "./persistence.js";
@@ -10,22 +11,34 @@ import {
 } from "./routes.js";
 import { IOSControlService } from "./service.js";
 
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "ios-control-routes.spec.db",
-  },
+const persistenceFailure = vi.hoisted(() => ({ enabled: false }));
+
+vi.mock("./persistence.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./persistence.js")>();
+  return {
+    ...actual,
+    IOSControlPersistence: {
+      ...actual.IOSControlPersistence,
+      replaceDevice: (...args: Parameters<typeof actual.replaceDeviceRegistrations>) =>
+        persistenceFailure.enabled
+          ? Effect.fail(new Error("database unavailable"))
+          : actual.replaceDeviceRegistrations(...args),
+    },
+    replaceDeviceRegistrations: (
+      ...args: Parameters<typeof actual.replaceDeviceRegistrations>
+    ) =>
+      persistenceFailure.enabled
+        ? Effect.fail(new Error("database unavailable"))
+        : actual.replaceDeviceRegistrations(...args),
+  };
 });
 
 const token = "test-token-that-is-definitely-long-enough";
 
 function app(): Hono {
   const app = new Hono();
-  const service = new IOSControlService([], "http://omni.boris", new Logger("Test"));
-  registerIOSControlRoutes(app, service, token, new Logger("Test"));
+  const service = new IOSControlService([], "http://omni.boris", Logger.named("Test"));
+  registerIOSControlRoutes(testRuntime, app, service, token, Logger.named("Test"));
   return app;
 }
 
@@ -51,7 +64,10 @@ function authenticatedRequest(path: string, method = "GET", body = "") {
   };
 }
 
-afterEach(() => IOSControlRegistrationEntity.deleteAll());
+afterEach(() => {
+  persistenceFailure.enabled = false;
+  return runTest(IOSControlRegistrationEntity.deleteAll());
+});
 
 describe("iOS control routes", () => {
   it("requires signed authentication", async () => {
@@ -104,7 +120,7 @@ describe("iOS control routes", () => {
       authenticatedRequest("/api/ios-controls/registrations", "PUT", body),
     );
     expect(response.status).toBe(200);
-    expect(IOSControlRegistrationEntity.getAll()).toHaveLength(1);
+    expect(await runTest(IOSControlRegistrationEntity.getAll())).toHaveLength(1);
   });
 
   it("reports persistence failures as server errors", async () => {
@@ -119,11 +135,7 @@ describe("iOS control routes", () => {
         },
       ],
     });
-    const upsert = vi
-      .spyOn(IOSControlRegistrationEntity, "upsert")
-      .mockImplementationOnce(() => {
-        throw new Error("database unavailable");
-      });
+    persistenceFailure.enabled = true;
 
     const response = await app().request(
       "/api/ios-controls/registrations",
@@ -134,7 +146,6 @@ describe("iOS control routes", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Could not save control registration",
     });
-    upsert.mockRestore();
   });
 
   it("rejects replayed signed requests", async () => {

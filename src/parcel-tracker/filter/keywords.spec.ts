@@ -1,8 +1,7 @@
-import { Injector } from "@micthiesen/mitools/config";
-import type { Logger } from "@micthiesen/mitools/logging";
-import { LogLevel } from "@micthiesen/mitools/logging";
+import { Docstore } from "@micthiesen/mitools/docstore";
+import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Effect } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { EmailRuleEntity, upsertEmailRule } from "../../email/senderRules.js";
 import {
   EmailTriageService,
@@ -12,27 +11,19 @@ import {
 import config from "../../utils/config.js";
 import { filterTrackingCandidateEffect, isAliexpressOrderStatus } from "./keywords.js";
 
+const runtime = ManagedRuntime.make(Layer.merge(Docstore.layerMemory, Logger.layer()));
+const runEffect = runtime.runPromise.bind(runtime);
 const filterTrackingCandidate = (
   ...args: Parameters<typeof filterTrackingCandidateEffect>
-) => Effect.runPromise(filterTrackingCandidateEffect(...args));
-
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "parcel-filter.spec.db",
-  },
-});
+) => runEffect(filterTrackingCandidateEffect(...args));
 
 const mockLogger = {
-  debug: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
+  debug: vi.fn(() => Effect.void),
+  info: vi.fn(() => Effect.void),
+  warn: vi.fn(() => Effect.void),
+  error: vi.fn(() => Effect.void),
   extend: vi.fn(),
-} as unknown as Logger;
+} as unknown as NamedLogger;
 
 let nextId = 0;
 const make = (from: string, subject: string, textBody = "") => ({
@@ -68,13 +59,15 @@ const parcelNo: TriageVerdict = {
   reason: "no shipment",
 };
 
-afterEach(() => {
-  EmailRuleEntity.deleteAll();
+afterEach(async () => {
+  await runEffect(EmailRuleEntity.deleteAll());
 });
 
 describe("filterTrackingCandidate — sender rules", () => {
   it("a block rule beats even a carrier sender", async () => {
-    upsertEmailRule({ pattern: "ups.com", scope: "parcel", verdict: "block" });
+    await runEffect(
+      upsertEmailRule({ pattern: "ups.com", scope: "parcel", verdict: "block" }),
+    );
     const result = await filterTrackingCandidate(
       make("noreply@ups.com", "Delivery update"),
       mockLogger,
@@ -84,7 +77,9 @@ describe("filterTrackingCandidate — sender rules", () => {
   });
 
   it("an allow rule passes without consulting triage", async () => {
-    upsertEmailRule({ pattern: "somestore.com", scope: "both", verdict: "allow" });
+    await runEffect(
+      upsertEmailRule({ pattern: "somestore.com", scope: "both", verdict: "allow" }),
+    );
     const { triage, classifyFn } = downTriage();
     const result = await filterTrackingCandidate(
       make("orders@somestore.com", "Anything at all"),
@@ -100,7 +95,9 @@ describe("filterTrackingCandidate — sender rules", () => {
   });
 
   it("calendar-scoped rules do not affect the parcel filter", async () => {
-    upsertEmailRule({ pattern: "ups.com", scope: "calendar", verdict: "block" });
+    await runEffect(
+      upsertEmailRule({ pattern: "ups.com", scope: "calendar", verdict: "block" }),
+    );
     const result = await filterTrackingCandidate(
       make("noreply@ups.com", "Delivery update"),
       mockLogger,
@@ -114,7 +111,9 @@ describe("filterTrackingCandidate — sender rules", () => {
   });
 
   it("an allow rule overrides the built-in blacklist", async () => {
-    upsertEmailRule({ pattern: "npmjs.com", scope: "parcel", verdict: "allow" });
+    await runEffect(
+      upsertEmailRule({ pattern: "npmjs.com", scope: "parcel", verdict: "allow" }),
+    );
     const result = await filterTrackingCandidate(
       make("support@npmjs.com", "Successfully published a package"),
       mockLogger,

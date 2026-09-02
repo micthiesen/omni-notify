@@ -36,6 +36,9 @@ import {
   listWorkspaceSubjects,
   resolveWorkspacePapercut,
   upsertWorkspaceSubject,
+  type WorkspaceActionData,
+  type WorkspaceArtifactRevisionData,
+  type WorkspacePapercutData,
 } from "../../workspaces/persistence.js";
 import type { McpRuntime } from "../runtime.js";
 import {
@@ -477,38 +480,41 @@ function requireWorkspace(workspaceId: string) {
   return definition;
 }
 
-function requireSubject(workspaceId: string, subjectId: string) {
+const requireSubject = Effect.fn("Mcp.requireWorkspaceSubject")(function* (
+  workspaceId: string,
+  subjectId: string,
+) {
   requireWorkspace(workspaceId);
-  const subject = getWorkspaceSubject(workspaceId, subjectId);
+  const subject = yield* getWorkspaceSubject(workspaceId, subjectId);
   if (!subject) {
     throw new Error(`Unknown subject "${subjectId}" in workspace "${workspaceId}"`);
   }
   return subject;
-}
+});
 
-function serializeWorkspaceDefinition(
-  definition: (typeof workspaceDefinitions)[number],
-) {
-  const subjects = listWorkspaceSubjects(definition.id);
-  return {
-    id: definition.id,
-    title: definition.title,
-    description: definition.description,
-    subjectLabel: definition.subjectLabel,
-    subjectLabelPlural: definition.subjectLabelPlural,
-    scheduledRuns: definition.scheduledRuns !== false,
-    artifacts: definition.artifacts.map(({ key, title, kind }) => ({
-      key,
-      title,
-      kind,
-    })),
-    activeSubjectCount: subjects.filter(({ status }) => status === "active").length,
-    pendingActionCount: listWorkspaceActions(definition.id).filter(
-      ({ status }) => status === "pending",
-    ).length,
-    openPapercutCount: listWorkspacePapercuts(definition.id, "open").length,
-  };
-}
+const serializeWorkspaceDefinition = Effect.fn("Mcp.serializeWorkspaceDefinition")(
+  function* (definition: (typeof workspaceDefinitions)[number]) {
+    const subjects = yield* listWorkspaceSubjects(definition.id);
+    return {
+      id: definition.id,
+      title: definition.title,
+      description: definition.description,
+      subjectLabel: definition.subjectLabel,
+      subjectLabelPlural: definition.subjectLabelPlural,
+      scheduledRuns: definition.scheduledRuns !== false,
+      artifacts: definition.artifacts.map(({ key, title, kind }) => ({
+        key,
+        title,
+        kind,
+      })),
+      activeSubjectCount: subjects.filter(({ status }) => status === "active").length,
+      pendingActionCount: (yield* listWorkspaceActions(definition.id)).filter(
+        ({ status }) => status === "pending",
+      ).length,
+      openPapercutCount: (yield* listWorkspacePapercuts(definition.id, "open")).length,
+    };
+  },
+);
 
 function parseActionPayload(payload: string): unknown {
   const decoded = Schema.decodeUnknownExit(
@@ -528,7 +534,7 @@ function searchSnippet(value: string, query: string, maxChars: number): string {
   return `${start > 0 ? "…" : ""}${value.slice(start, end)}${end < value.length ? "…" : ""}`;
 }
 
-function serializeAction(action: ReturnType<typeof listWorkspaceActions>[number]) {
+function serializeAction(action: WorkspaceActionData) {
   return {
     ...action,
     payload: parseActionPayload(action.payload),
@@ -536,9 +542,7 @@ function serializeAction(action: ReturnType<typeof listWorkspaceActions>[number]
   };
 }
 
-function serializePapercut(
-  papercut: ReturnType<typeof listWorkspacePapercuts>[number],
-) {
+function serializePapercut(papercut: WorkspacePapercutData) {
   const { fingerprint: _fingerprint, ...safe } = papercut;
   return {
     ...safe,
@@ -616,103 +620,101 @@ function serializeStreamer(runtime: McpRuntime, streamerId: string) {
   });
 }
 
-function workspaceSearchMatches(input: {
-  workspaceId?: string;
-  query: string;
-  maxSnippetChars: number;
-}) {
-  const query = input.query.toLocaleLowerCase();
-  const matches: Array<{
-    workspaceId: string;
-    subjectId: string;
-    resourceType: "subject" | "artifact" | "message" | "source";
-    resourceId: string;
-    title: string;
-    snippet: string;
-    updatedAt: number;
-  }> = [];
-  const definitions = input.workspaceId
-    ? [requireWorkspace(input.workspaceId)]
-    : workspaceDefinitions;
-  const add = (value: (typeof matches)[number], haystack: string) => {
-    if (haystack.toLocaleLowerCase().includes(query)) {
-      matches.push({
-        ...value,
-        snippet: searchSnippet(haystack, input.query, input.maxSnippetChars),
-      });
-    }
-  };
-  for (const definition of definitions) {
-    for (const subject of listWorkspaceSubjects(definition.id)) {
-      add(
-        {
-          workspaceId: definition.id,
-          subjectId: subject.subjectId,
-          resourceType: "subject",
-          resourceId: subject.subjectId,
-          title: subject.title,
-          snippet: truncate(subject.summary, input.maxSnippetChars).text,
-          updatedAt: subject.updatedAt,
-        },
-        `${subject.title}\n${subject.summary}`,
-      );
-      for (const artifact of getLatestWorkspaceArtifacts(
-        definition.id,
-        subject.subjectId,
-      )) {
-        add(
-          {
-            workspaceId: definition.id,
-            subjectId: subject.subjectId,
-            resourceType: "artifact",
-            resourceId: artifact.revisionId,
-            title: artifact.artifactKey,
-            snippet: truncate(artifact.content, input.maxSnippetChars).text,
-            updatedAt: artifact.createdAt,
-          },
-          `${artifact.summary}\n${artifact.content}`,
-        );
+const workspaceSearchMatches = Effect.fn("Mcp.workspaceSearchMatches")(
+  function* (input: { workspaceId?: string; query: string; maxSnippetChars: number }) {
+    const query = input.query.toLocaleLowerCase();
+    const matches: Array<{
+      workspaceId: string;
+      subjectId: string;
+      resourceType: "subject" | "artifact" | "message" | "source";
+      resourceId: string;
+      title: string;
+      snippet: string;
+      updatedAt: number;
+    }> = [];
+    const definitions = input.workspaceId
+      ? [requireWorkspace(input.workspaceId)]
+      : workspaceDefinitions;
+    const add = (value: (typeof matches)[number], haystack: string) => {
+      if (haystack.toLocaleLowerCase().includes(query)) {
+        matches.push({
+          ...value,
+          snippet: searchSnippet(haystack, input.query, input.maxSnippetChars),
+        });
       }
-      for (const message of listWorkspaceMessages(
-        definition.id,
-        subject.subjectId,
-        100,
-      )) {
+    };
+    for (const definition of definitions) {
+      for (const subject of yield* listWorkspaceSubjects(definition.id)) {
         add(
           {
             workspaceId: definition.id,
             subjectId: subject.subjectId,
-            resourceType: "message",
-            resourceId: message.messageId,
-            title: `${message.role} message`,
-            snippet: truncate(message.text, input.maxSnippetChars).text,
-            updatedAt: message.createdAt,
+            resourceType: "subject",
+            resourceId: subject.subjectId,
+            title: subject.title,
+            snippet: truncate(subject.summary, input.maxSnippetChars).text,
+            updatedAt: subject.updatedAt,
           },
-          message.text,
+          `${subject.title}\n${subject.summary}`,
         );
-      }
-      for (const source of listWorkspaceSources(
-        definition.id,
-        subject.subjectId,
-        100,
-      )) {
-        add(
-          {
-            workspaceId: definition.id,
-            subjectId: subject.subjectId,
-            resourceType: "source",
-            resourceId: source.sourceId,
-            title: source.title,
-            snippet: truncate(source.excerpt, input.maxSnippetChars).text,
-            updatedAt: source.createdAt,
-          },
-          `${source.title}\n${source.excerpt}`,
-        );
+        for (const artifact of yield* getLatestWorkspaceArtifacts(
+          definition.id,
+          subject.subjectId,
+        )) {
+          add(
+            {
+              workspaceId: definition.id,
+              subjectId: subject.subjectId,
+              resourceType: "artifact",
+              resourceId: artifact.revisionId,
+              title: artifact.artifactKey,
+              snippet: truncate(artifact.content, input.maxSnippetChars).text,
+              updatedAt: artifact.createdAt,
+            },
+            `${artifact.summary}\n${artifact.content}`,
+          );
+        }
+        for (const message of yield* listWorkspaceMessages(
+          definition.id,
+          subject.subjectId,
+          100,
+        )) {
+          add(
+            {
+              workspaceId: definition.id,
+              subjectId: subject.subjectId,
+              resourceType: "message",
+              resourceId: message.messageId,
+              title: `${message.role} message`,
+              snippet: truncate(message.text, input.maxSnippetChars).text,
+              updatedAt: message.createdAt,
+            },
+            message.text,
+          );
+        }
+        for (const source of yield* listWorkspaceSources(
+          definition.id,
+          subject.subjectId,
+          100,
+        )) {
+          add(
+            {
+              workspaceId: definition.id,
+              subjectId: subject.subjectId,
+              resourceType: "source",
+              resourceId: source.sourceId,
+              title: source.title,
+              snippet: truncate(source.excerpt, input.maxSnippetChars).text,
+              updatedAt: source.createdAt,
+            },
+            `${source.title}\n${source.excerpt}`,
+          );
+        }
       }
     }
-  }
-  return matches.sort((a, b) => b.updatedAt - a.updatedAt);
-}
+    return matches.sort((a, b) => b.updatedAt - a.updatedAt);
+  },
+);
 
 export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition[] {
   return [
@@ -739,8 +741,10 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: () =>
-        Effect.sync(() => {
-          const taskNames = new Set(runtime.registry.list().map(({ name }) => name));
+        Effect.gen(function* () {
+          const taskNames = new Set(
+            (yield* runtime.registry.list()).map(({ name }) => name),
+          );
           const iCloudConfigured = Boolean(
             process.env.ICLOUD_USERNAME && process.env.ICLOUD_APP_PASSWORD,
           );
@@ -773,8 +777,8 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: ({ cursor, limit }) =>
-        Effect.sync(() => {
-          const page = paginate(runtime.registry.list(), cursor, limit);
+        Effect.gen(function* () {
+          const page = paginate(yield* runtime.registry.list(), cursor, limit);
           return {
             tasks: page.items.map((task) => ({
               ...task,
@@ -814,11 +818,13 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "require_approval",
       },
       execute: ({ taskName, input }) =>
-        Effect.sync(() => ({
-          ...runtime.registry.runNow(taskName, input),
-          taskName,
-          queued: true as const,
-        })),
+        runtime.registry.runNow(taskName, input).pipe(
+          Effect.map((run) => ({
+            ...run,
+            taskName,
+            queued: true as const,
+          })),
+        ),
     }),
     defineTool({
       name: "task_runs_list",
@@ -840,8 +846,8 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: ({ taskName, cursor, limit }) =>
-        Effect.sync(() => {
-          const runs = getRuns(taskName, 501);
+        Effect.gen(function* () {
+          const runs = yield* getRuns(taskName, 501);
           const truncatedWindow = runs.length > 500;
           const page = paginate(runs.slice(0, 500), cursor, limit);
           return {
@@ -883,10 +889,11 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: ({ runId, logCursor, logLimit, maxMessageChars }) =>
-        Effect.sync(() => {
-          const run = getRun(runId);
+        Effect.gen(function* () {
+          const run = yield* getRun(runId);
           if (!run) throw new Error(`Unknown task run "${runId}"`);
-          const stored = getActiveRunLogs(runId) ?? getRunLogs(runId);
+          const stored =
+            getActiveRunLogs(runId) ?? (yield* getRunLogs(runId, runtime.logger));
           const lines = stored?.lines ?? [];
           const page = paginate(lines, logCursor, logLimit);
           return {
@@ -980,9 +987,7 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
             ? yield* getViewerMetricsEffect(streamerId)
             : undefined;
           const platformMetrics = aggregate
-            ? yield* fromSync("read platform viewer metrics", () =>
-                getPlatformViewerMetrics(streamerId),
-              )
+            ? yield* getPlatformViewerMetrics(streamerId)
             : [];
           const metrics = aggregate
             ? {
@@ -1003,11 +1008,7 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
               }
             : null;
           const sessions = requested.has("sessions")
-            ? [
-                ...(yield* fromSync("read stream sessions", () =>
-                  getStreamSessions(streamerId),
-                )).sessions,
-              ]
+            ? [...(yield* getStreamSessions(streamerId)).sessions]
                 .sort((a, b) => b.endedAt - a.endedAt)
                 .slice(0, sessionLimit)
             : null;
@@ -1048,8 +1049,8 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: ({ briefingName, cursor, limit, maxMessageChars }) =>
-        Effect.sync(() => {
-          const histories = getAllBriefingHistories();
+        Effect.gen(function* () {
+          const histories = yield* getAllBriefingHistories();
           const names = histories.map(({ briefingName: name }) => name).sort();
           const notifications = histories
             .filter((history) => !briefingName || history.briefingName === briefingName)
@@ -1091,9 +1092,14 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: () =>
-        Effect.sync(() => ({
-          workspaces: workspaceDefinitions.map(serializeWorkspaceDefinition),
-        })),
+        Effect.gen(function* () {
+          return {
+            workspaces: yield* Effect.forEach(
+              workspaceDefinitions,
+              serializeWorkspaceDefinition,
+            ),
+          };
+        }),
     }),
     defineTool({
       name: "workspace_get",
@@ -1144,14 +1150,12 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         actionLimit,
         maxContentChars,
       }) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const definition = requireWorkspace(workspaceId);
           const subject = subjectId
-            ? requireSubject(workspaceId, subjectId)
+            ? yield* requireSubject(workspaceId, subjectId)
             : undefined;
-          const serializeArtifact = (
-            item: ReturnType<typeof getLatestWorkspaceArtifacts>[number],
-          ) => {
+          const serializeArtifact = (item: WorkspaceArtifactRevisionData) => {
             const content = truncate(item.content, maxContentChars);
             return {
               ...item,
@@ -1161,7 +1165,7 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
             };
           };
           const messages = subjectId
-            ? listWorkspaceMessages(workspaceId, subjectId, messageLimit).map(
+            ? (yield* listWorkspaceMessages(workspaceId, subjectId, messageLimit)).map(
                 (item) => {
                   const text = truncate(item.text, maxContentChars);
                   return {
@@ -1175,45 +1179,50 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
               )
             : [];
           const sources = subjectId
-            ? listWorkspaceSources(workspaceId, subjectId, sourceLimit).map((item) => {
-                const excerpt = truncate(item.excerpt, maxContentChars);
-                return {
-                  ...item,
-                  url: item.url ?? null,
-                  excerpt: excerpt.text,
-                  excerptTruncated: excerpt.truncated,
-                  emailId: item.emailId ?? null,
-                  runId: item.runId ?? null,
-                };
-              })
+            ? (yield* listWorkspaceSources(workspaceId, subjectId, sourceLimit)).map(
+                (item) => {
+                  const excerpt = truncate(item.excerpt, maxContentChars);
+                  return {
+                    ...item,
+                    url: item.url ?? null,
+                    excerpt: excerpt.text,
+                    excerptTruncated: excerpt.truncated,
+                    emailId: item.emailId ?? null,
+                    runId: item.runId ?? null,
+                  };
+                },
+              )
             : [];
           const scope = subjectId
-            ? getWorkspaceEmailScope(workspaceId, subjectId)
+            ? yield* getWorkspaceEmailScope(workspaceId, subjectId)
             : undefined;
-          const subjects = listWorkspaceSubjects(workspaceId);
-          const papercuts = listWorkspacePapercuts(workspaceId, "open").filter(
+          const subjects = yield* listWorkspaceSubjects(workspaceId);
+          const papercuts = (yield* listWorkspacePapercuts(workspaceId, "open")).filter(
             (item) => !subjectId || !item.subjectId || item.subjectId === subjectId,
           );
+          const artifacts = subjectId
+            ? (yield* getLatestWorkspaceArtifacts(workspaceId, subjectId)).map(
+                serializeArtifact,
+              )
+            : [];
+          const artifactRevisions = subjectId
+            ? (yield* listWorkspaceArtifactRevisions(workspaceId, subjectId))
+                .slice(0, revisionLimit)
+                .map(serializeArtifact)
+            : [];
+          const actions = (yield* listWorkspaceActions(workspaceId, subjectId))
+            .slice(0, actionLimit)
+            .map(serializeAction);
           return {
-            workspace: serializeWorkspaceDefinition(definition),
+            workspace: yield* serializeWorkspaceDefinition(definition),
             subjects: subjects.slice(0, 100),
             subjectsTruncated: subjects.length > 100,
             subject: subject ?? null,
-            artifacts: subjectId
-              ? getLatestWorkspaceArtifacts(workspaceId, subjectId).map(
-                  serializeArtifact,
-                )
-              : [],
-            artifactRevisions: subjectId
-              ? listWorkspaceArtifactRevisions(workspaceId, subjectId)
-                  .slice(0, revisionLimit)
-                  .map(serializeArtifact)
-              : [],
+            artifacts,
+            artifactRevisions,
             messages,
             sources,
-            actions: listWorkspaceActions(workspaceId, subjectId)
-              .slice(0, actionLimit)
-              .map(serializeAction),
+            actions,
             emailScope: scope
               ? {
                   senders: scope.senders,
@@ -1259,9 +1268,9 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: ({ query, workspaceId, cursor, limit, maxSnippetChars }) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const page = paginate(
-            workspaceSearchMatches({ workspaceId, query, maxSnippetChars }),
+            yield* workspaceSearchMatches({ workspaceId, query, maxSnippetChars }),
             cursor,
             limit,
           );
@@ -1300,10 +1309,10 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "require_approval",
       },
       execute: ({ workspaceId, subjectId, message }) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const definition = requireWorkspace(workspaceId);
-          if (subjectId) requireSubject(workspaceId, subjectId);
-          const run = runtime.registry.runNow(definition.taskName, {
+          if (subjectId) yield* requireSubject(workspaceId, subjectId);
+          const run = yield* runtime.registry.runNow(definition.taskName, {
             message,
             subjectId,
           });
@@ -1335,10 +1344,10 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ workspaceId, subjectId, status }) =>
-        Effect.sync(() => {
-          const subject = requireSubject(workspaceId, subjectId);
+        Effect.gen(function* () {
+          const subject = yield* requireSubject(workspaceId, subjectId);
           return {
-            subject: upsertWorkspaceSubject({
+            subject: yield* upsertWorkspaceSubject({
               ...subject,
               status,
             }),
@@ -1366,15 +1375,17 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: ({ workspaceId, subjectId, status, cursor, limit }) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (subjectId && !workspaceId) {
             throw new Error("workspaceId is required when subjectId is provided");
           }
           const definitions = workspaceId
             ? [requireWorkspace(workspaceId)]
             : workspaceDefinitions;
-          const values = definitions
-            .flatMap((definition) => listWorkspaceActions(definition.id, subjectId))
+          const values = (yield* Effect.forEach(definitions, (definition) =>
+            listWorkspaceActions(definition.id, subjectId),
+          ))
+            .flat()
             .filter((action) => !status || action.status === status)
             .sort((a, b) => b.createdAt - a.createdAt);
           const page = paginate(values, cursor, limit);
@@ -1444,10 +1455,10 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "none", recommendedPolicy: "allow" },
       execute: ({ workspaceId, status, cursor, limit }) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (workspaceId) requireWorkspace(workspaceId);
           const page = paginate(
-            listWorkspacePapercuts(workspaceId, status),
+            yield* listWorkspacePapercuts(workspaceId, status),
             cursor,
             limit,
           );
@@ -1478,8 +1489,12 @@ export function createCoreWorkspaceTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ papercutId, status, resolution }) =>
-        Effect.sync(() => {
-          const papercut = resolveWorkspacePapercut(papercutId, status, resolution);
+        Effect.gen(function* () {
+          const papercut = yield* resolveWorkspacePapercut(
+            papercutId,
+            status,
+            resolution,
+          );
           if (!papercut) throw new Error(`Unknown workspace papercut "${papercutId}"`);
           return { papercut: serializePapercut(papercut) };
         }),

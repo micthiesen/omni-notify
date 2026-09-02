@@ -1,4 +1,5 @@
 import { Entity } from "@micthiesen/mitools/entities";
+import { Effect, Option } from "effect";
 import { EmailActivityLogEntity } from "./activityLogs.js";
 import type { FetchedEmail } from "./types.js";
 
@@ -92,7 +93,7 @@ export function selectActivityToPrune(
     .slice(keep);
 }
 
-export function recordEmailActivity(entry: {
+export const recordEmailActivity = Effect.fn("EmailActivity.record")(function* (entry: {
   pipeline: EmailPipelineName;
   email: Pick<FetchedEmail, "id" | "subject" | "from" | "receivedAt">;
   outcome: EmailActivityOutcome;
@@ -101,9 +102,9 @@ export function recordEmailActivity(entry: {
   admitTier?: AdmitTier;
   costCents?: number | null;
   items?: string[];
-}): void {
+}) {
   const receivedAt = Date.parse(entry.email.receivedAt);
-  EmailActivityEntity.upsert({
+  yield* EmailActivityEntity.upsert({
     activityId: `${entry.pipeline}#${entry.email.id}`,
     pipeline: entry.pipeline,
     emailId: entry.email.id,
@@ -119,14 +120,14 @@ export function recordEmailActivity(entry: {
     items: entry.items,
   });
   for (const stale of selectActivityToPrune(
-    EmailActivityEntity.getAll(),
+    yield* EmailActivityEntity.getAll(),
     entry.pipeline,
     KEEP_PER_PIPELINE,
   )) {
-    EmailActivityEntity.delete({ activityId: stale.activityId });
-    EmailActivityLogEntity.delete({ activityId: stale.activityId });
+    yield* EmailActivityEntity.delete({ activityId: stale.activityId });
+    yield* EmailActivityLogEntity.delete({ activityId: stale.activityId });
   }
-}
+});
 
 /**
  * Combine per-call LLM costs into one activity row's `costCents`. `undefined`
@@ -145,16 +146,18 @@ export function sumCostCents(
   return known.reduce<number>((sum, p) => sum + (p ?? 0), 0);
 }
 
-export function getEmailActivity(activityId: string): EmailActivityData | undefined {
-  return EmailActivityEntity.get({ activityId });
-}
+export const getEmailActivity = Effect.fn("EmailActivity.get")(function* (
+  activityId: string,
+) {
+  return Option.getOrUndefined(yield* EmailActivityEntity.get({ activityId }));
+});
 
-export function getRecentEmailActivity(
+export const getRecentEmailActivity = Effect.fn("EmailActivity.recent")(function* (
   pipeline?: EmailPipelineName,
   limit = 100,
-): EmailActivityData[] {
-  return EmailActivityEntity.getAll()
+) {
+  return (yield* EmailActivityEntity.getAll())
     .filter((a) => pipeline === undefined || a.pipeline === pipeline)
     .sort((a, b) => b.processedAt - a.processedAt)
     .slice(0, limit);
-}
+});

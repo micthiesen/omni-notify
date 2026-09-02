@@ -1,8 +1,8 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Logger } from "@micthiesen/mitools/logging";
+import { runTest } from "../testRuntime.js";
 import { notify } from "@micthiesen/mitools/pushover";
 import { describe, expect, it } from "@effect/vitest";
-import { Deferred, Effect, Exit, Fiber } from "effect";
+import { Deferred, Effect, Exit, Fiber, Option } from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, vi } from "vitest";
 import { Platform } from "../platforms/index.js";
@@ -95,7 +95,7 @@ describe("EffectWorkQueue close", () => {
   );
 });
 
-const { capture, detectDestiny } = vi.hoisted(() => ({
+const { capture, detectDestiny, recordCostEvent } = vi.hoisted(() => ({
   capture: vi.fn(() =>
     Effect.succeed({
       samples: new Float32Array(18 * 16_000),
@@ -108,9 +108,18 @@ const { capture, detectDestiny } = vi.hoisted(() => ({
     matchedWindows: 1,
     checkedWindows: 4,
   })),
+  recordCostEvent: vi.fn(),
 }));
 
-vi.mock("@micthiesen/mitools/pushover", () => ({ notify: vi.fn() }));
+vi.mock("../../costs/persistence.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../costs/persistence.js")>()),
+  recordCostEventSafely: (input: unknown) => Effect.sync(() => recordCostEvent(input)),
+}));
+
+vi.mock("@micthiesen/mitools/pushover", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@micthiesen/mitools/pushover")>()),
+  notify: vi.fn(),
+}));
 vi.mock("../../utils/config.js", () => ({
   default: {
     LIVESTREAM_MODEL_DIR: "/unused/models",
@@ -142,7 +151,7 @@ vi.mock("./localSpeech.js", () => ({
 vi.mock("./classifier.js", () => ({
   isTranscriptAlertType: () => false,
   LivestreamClassifier: class {},
-  livestreamSpendCents: () => 0,
+  livestreamSpendCents: () => Effect.succeed(0),
 }));
 
 const speechDependency = {
@@ -152,16 +161,6 @@ const speechDependency = {
   ),
   transcribeEffect: vi.fn(() => Effect.succeed("unused transcript")),
 };
-
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.ERROR,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: `/tmp/omni-livestream-service-${process.pid}.db`,
-  },
-});
 
 const sessionStartedAt = 10_000;
 const streamer: Streamer = {
@@ -197,16 +196,17 @@ function candidateStreamer(overrides: Partial<Streamer>): Streamer {
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
   vi.mocked(notify).mockReset();
-  vi.mocked(notify).mockResolvedValue(undefined);
+  vi.mocked(notify).mockReturnValue(Effect.void as never);
   capture.mockClear();
   detectDestiny.mockClear();
-  LivestreamFeedbackEntity.deleteAll();
-  LivestreamDiagnosticsEntity.deleteAll();
-  LivestreamIntelligenceEventEntity.deleteAll();
-  LivestreamIntelligenceEntity.deleteAll();
+  recordCostEvent.mockClear();
+  await runTest(LivestreamFeedbackEntity.deleteAll());
+  await runTest(LivestreamDiagnosticsEntity.deleteAll());
+  await runTest(LivestreamIntelligenceEventEntity.deleteAll());
+  await runTest(LivestreamIntelligenceEntity.deleteAll());
 });
 
 describe("isDestinyOwnedStream", () => {
@@ -293,39 +293,43 @@ describe("viewerCountForAnomaly", () => {
 
 describe("LivestreamIntelligenceService Destiny alert recovery", () => {
   it("retries a previously confirmed alert once and persists durable dedup", async () => {
-    saveLivestreamIntelligence({
-      streamerId: streamer.id,
-      sessionStartedAt,
-      relevanceScore: 20,
-      relevanceReasons: [],
-      chapters: [],
-      destinyPresence: {
-        state: "possible",
-        confidence: 0.765,
-        detectedAt: 20_000,
-        reason: "Awaiting confirmation",
-      },
-      updatedAt: 20_000,
-    });
-    recordLivestreamEvent({
-      streamerId: streamer.id,
-      sessionStartedAt,
-      kind: "voice",
-      status: "success",
-      title: DESTINY_CONFIRMED_EVENT_TITLE,
-      detail: "Destiny is participating in the live conversation.",
-      metrics: {
-        speakerConfidence: 0.7059429831388251,
-        assessmentConfidence: 0.91,
-      },
-      createdAt: 21_000,
-    });
+    await runTest(
+      saveLivestreamIntelligence({
+        streamerId: streamer.id,
+        sessionStartedAt,
+        relevanceScore: 20,
+        relevanceReasons: [],
+        chapters: [],
+        destinyPresence: {
+          state: "possible",
+          confidence: 0.765,
+          detectedAt: 20_000,
+          reason: "Awaiting confirmation",
+        },
+        updatedAt: 20_000,
+      }),
+    );
+    await runTest(
+      recordLivestreamEvent({
+        streamerId: streamer.id,
+        sessionStartedAt,
+        kind: "voice",
+        status: "success",
+        title: DESTINY_CONFIRMED_EVENT_TITLE,
+        detail: "Destiny is participating in the live conversation.",
+        metrics: {
+          speakerConfidence: 0.7059429831388251,
+          assessmentConfidence: 0.91,
+        },
+        createdAt: 21_000,
+      }),
+    );
 
-    const first = new LivestreamIntelligenceService(new Logger("VoiceRetryTest"), {
+    const first = new LivestreamIntelligenceService(Logger.named("VoiceRetryTest"), {
       speech: speechDependency,
     });
-    await Effect.runPromise(first.observeLive(observation));
-    await Effect.runPromise(first.afterTick());
+    await runTest(first.observeLive(observation));
+    await runTest(first.afterTick());
     await Effect.runPromise(first.close());
 
     expect(notify).toHaveBeenCalledTimes(1);
@@ -333,30 +337,34 @@ describe("LivestreamIntelligenceService Destiny alert recovery", () => {
       title: "Destiny is on Darius",
       token: "fake-live-token",
     });
-    const delivered = LivestreamIntelligenceEntity.get({ streamerId: "darius" });
+    const delivered = Option.getOrUndefined(
+      await runTest(LivestreamIntelligenceEntity.get({ streamerId: "darius" })),
+    );
     expect(delivered).toMatchObject({
       destinyPresence: { state: "confirmed" },
       latestAlert: { type: "destiny_guest" },
       alertedAtByType: { destiny_guest: expect.any(Number) },
     });
 
-    saveLivestreamIntelligence({
-      ...delivered!,
-      latestAlert: {
-        alertId: "later-alert",
-        type: "debate",
-        title: "Debate",
-        message: "A debate started",
-        reason: "Transcript evidence",
-        confidence: 0.9,
-        createdAt: Date.now(),
-      },
-    });
-    const second = new LivestreamIntelligenceService(new Logger("VoiceDedupTest"), {
+    await runTest(
+      saveLivestreamIntelligence({
+        ...delivered!,
+        latestAlert: {
+          alertId: "later-alert",
+          type: "debate",
+          title: "Debate",
+          message: "A debate started",
+          reason: "Transcript evidence",
+          confidence: 0.9,
+          createdAt: Date.now(),
+        },
+      }),
+    );
+    const second = new LivestreamIntelligenceService(Logger.named("VoiceDedupTest"), {
       speech: speechDependency,
     });
-    await Effect.runPromise(second.observeLive(observation));
-    await Effect.runPromise(second.afterTick());
+    await runTest(second.observeLive(observation));
+    await runTest(second.afterTick());
     await Effect.runPromise(second.close());
 
     expect(notify).toHaveBeenCalledTimes(1);
@@ -364,6 +372,30 @@ describe("LivestreamIntelligenceService Destiny alert recovery", () => {
 });
 
 describe("LivestreamIntelligenceService viewer surge alerts", () => {
+  it("records local transcription usage when summary audio is processed", async () => {
+    const service = new LivestreamIntelligenceService(Logger.named("CostTest"), {
+      speech: speechDependency,
+    });
+
+    await runTest(
+      service.observeLive({
+        ...observation,
+        streamer: { ...streamer, tier: "primary" },
+      }),
+    );
+    await runTest(service.close());
+
+    expect(recordCostEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "transcription",
+        feature: "livestream-intelligence",
+        operation: "rolling-summary",
+        service: "self-hosted",
+        costCents: 0,
+      }),
+    );
+  });
+
   it("sends one durable alert for a sustained late primary-source surge", async () => {
     const primaryStreamer: Streamer = { ...streamer, tier: "primary" };
     const clockBase = 2_000_000_000_000;
@@ -397,10 +429,10 @@ describe("LivestreamIntelligenceService viewer surge alerts", () => {
       viewers: number,
     ) => {
       now = clockBase + minute * 60_000;
-      await Effect.runPromise(service.observeLive(makeObservation(viewers)));
+      await runTest(service.observeLive(makeObservation(viewers)));
     };
 
-    const first = new LivestreamIntelligenceService(new Logger("SurgeTest"), {
+    const first = new LivestreamIntelligenceService(Logger.named("SurgeTest"), {
       speech: speechDependency,
     });
     for (let minute = 0; minute < 15; minute += 1) {
@@ -409,7 +441,11 @@ describe("LivestreamIntelligenceService viewer surge alerts", () => {
     await observeAtMinute(first, 16, 430);
     expect(notify).not.toHaveBeenCalled();
     await observeAtMinute(first, 17, 440);
-    expect(LivestreamIntelligenceEntity.get({ streamerId: "darius" })).toMatchObject({
+    expect(
+      Option.getOrUndefined(
+        await runTest(LivestreamIntelligenceEntity.get({ streamerId: "darius" })),
+      ),
+    ).toMatchObject({
       relevanceScore: 79,
       trend: {
         anomalous: true,
@@ -422,12 +458,16 @@ describe("LivestreamIntelligenceService viewer surge alerts", () => {
       title: "Darius is surging",
       message: expect.stringContaining("440 vs 200 baseline"),
     });
-    expect(LivestreamIntelligenceEntity.get({ streamerId: "darius" })).toMatchObject({
+    expect(
+      Option.getOrUndefined(
+        await runTest(LivestreamIntelligenceEntity.get({ streamerId: "darius" })),
+      ),
+    ).toMatchObject({
       alertedAtByType: { viewer_surge: expect.any(Number) },
     });
 
     const restarted = new LivestreamIntelligenceService(
-      new Logger("SurgeRestartTest"),
+      Logger.named("SurgeRestartTest"),
       { speech: speechDependency },
     );
     for (let minute = 40; minute < 55; minute += 1) {

@@ -1,10 +1,11 @@
 import { statSync } from "node:fs";
 import { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
-import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { Effect } from "effect";
+import type { ScheduledTask } from "@micthiesen/mitools/scheduling";
+import { Clock, Effect } from "effect";
 import config from "../utils/config.js";
+import type { TaskServices } from "../task-runs/registry.js";
 import {
   MAX_PODCAST_RECOMMENDATIONS_PER_RUN,
   PodcastPipelineError,
@@ -15,67 +16,58 @@ export interface PodcastRecommendationManualRunInput {
   maxRecommendations: number;
 }
 
-export class PodcastRecommendationTask extends ScheduledTask {
+export class PodcastRecommendationTask implements ScheduledTask<unknown, TaskServices> {
   public readonly name = "PodcastRecs";
   public readonly displayName = "Podcast Recommendations";
   public readonly schedule = config.PODCAST_RECS_SCHEDULE;
-  public override readonly runOnStartup = false;
+  public readonly runOnStartup = false;
   // Fire a few minutes off the scheduled instant so we don't hit Castro at a
   // predictable round time.
-  public override readonly jitterMs = 5 * 60 * 1000;
+  public readonly jitterMs = 5 * 60 * 1000;
 
   private logger: Logger;
   private lastRunSummary?: string;
 
-  public static create(parentLogger: Logger): PodcastRecommendationTask | null {
-    const missing = [
-      // The taste seed doubles as the feature flag: the task stays disabled
-      // until a profile file is mounted (see CLAUDE.md / README).
-      ["PODCAST_TASTE_PATH", config.PODCAST_TASTE_PATH],
-      ["TAVILY_API_KEY", config.TAVILY_API_KEY],
-      ...requiredModelCredentials(),
-    ]
-      .filter(([, value]) => !value)
-      .map(([name]) => name);
-    if (missing.length > 0) {
-      parentLogger.info(
-        `Podcast recommendations disabled: missing ${missing.join(", ")}`,
-      );
-      return null;
-    }
-    // PODCAST_TASTE_PATH must point at a readable file, not a directory — a bad
-    // path would otherwise crash every run deep in the pipeline (EISDIR). Fail
-    // here with an actionable message and leave the feature disabled.
-    const tastePath = config.PODCAST_TASTE_PATH as string;
-    const tasteError = describeUnreadableFile(tastePath);
-    if (tasteError) {
-      parentLogger.info(
-        `Podcast recommendations disabled: PODCAST_TASTE_PATH (${tastePath}) ${tasteError}`,
-      );
-      return null;
-    }
-    return new PodcastRecommendationTask(parentLogger);
+  public static create(parentLogger: Logger) {
+    return Effect.gen(function* () {
+      const missing = [
+        // The taste seed doubles as the feature flag: the task stays disabled
+        // until a profile file is mounted (see CLAUDE.md / README).
+        ["PODCAST_TASTE_PATH", config.PODCAST_TASTE_PATH],
+        ["TAVILY_API_KEY", config.TAVILY_API_KEY],
+        ...requiredModelCredentials(),
+      ]
+        .filter(([, value]) => !value)
+        .map(([name]) => name);
+      if (missing.length > 0) {
+        yield* parentLogger.info(
+          `Podcast recommendations disabled: missing ${missing.join(", ")}`,
+        );
+        return null;
+      }
+      // PODCAST_TASTE_PATH must point at a readable file, not a directory — a bad
+      // path would otherwise crash every run deep in the pipeline (EISDIR). Fail
+      // here with an actionable message and leave the feature disabled.
+      const tastePath = config.PODCAST_TASTE_PATH as string;
+      const tasteError = describeUnreadableFile(tastePath);
+      if (tasteError) {
+        yield* parentLogger.info(
+          `Podcast recommendations disabled: PODCAST_TASTE_PATH (${tastePath}) ${tasteError}`,
+        );
+        return null;
+      }
+      return new PodcastRecommendationTask(parentLogger);
+    });
   }
 
   private constructor(parentLogger: Logger) {
-    super();
     this.logger = parentLogger.extend("PodcastRecsTask");
   }
 
-  public run(): Promise<void> {
-    // Topic-tier target per scheduled run; guest picks are on top of this.
-    return Effect.runPromise(this.runEffect());
-  }
+  // Topic-tier target per scheduled run; guest picks are on top of this.
+  public readonly run = this.runPipelineEffect(3);
 
-  public runEffect(): Effect.Effect<void, PodcastPipelineError> {
-    return this.runPipelineEffect(3);
-  }
-
-  public runManual(input: unknown): Promise<void> {
-    return Effect.runPromise(this.runManualEffect(input));
-  }
-
-  public runManualEffect(input: unknown): Effect.Effect<void, PodcastPipelineError> {
+  public runManual(input: unknown) {
     return Effect.try({
       try: () => parseMaxRecommendations(input),
       catch: (cause) => new PodcastPipelineError({ cause }),
@@ -86,25 +78,24 @@ export class PodcastRecommendationTask extends ScheduledTask {
     );
   }
 
-  private runPipelineEffect(
-    maxRecommendations: number,
-  ): Effect.Effect<void, PodcastPipelineError> {
+  private runPipelineEffect(maxRecommendations: number) {
     return Effect.gen({ self: this }, function* () {
+      const now = yield* Clock.currentTimeMillis;
       const logFile = config.LOGS_PATH
-        ? new LogFile(
-            `${config.LOGS_PATH}/podcast-recs/${logTimestamp()}.md`,
+        ? yield* LogFile.make(
+            `${config.LOGS_PATH}/podcast-recs/${logTimestamp(new Date(now))}.md`,
             "overwrite",
           )
         : undefined;
 
-      this.logger.info(
+      yield* this.logger.info(
         `Podcast recommendation run requested up to ${maxRecommendations} episode(s)`,
       );
       const summary = yield* runPodcastPipelineEffect(this.logger, logFile, {
         maxRecommendations,
       });
       this.lastRunSummary = summary;
-      this.logger.info(`Podcast recommendation run finished: ${summary}`);
+      yield* this.logger.info(`Podcast recommendation run finished: ${summary}`);
     });
   }
 

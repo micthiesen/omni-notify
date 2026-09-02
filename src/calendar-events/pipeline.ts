@@ -1,5 +1,5 @@
 import { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger } from "@micthiesen/mitools/logging";
 import { logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
 import { Effect } from "effect";
@@ -67,57 +67,71 @@ function isTransientCalDavCode(code: number): boolean {
   return code >= 500;
 }
 
-export class CalendarEventPipeline implements EmailHandler {
+export class CalendarEventPipeline<R = never> implements EmailHandler<
+  unknown,
+  | R
+  | import("@micthiesen/mitools/docstore").Docstore
+  | import("@micthiesen/mitools/logging").Logger
+  | import("@micthiesen/mitools/pushover").Pushover
+> {
   public readonly name = "CalendarEvents";
-  private logger: Logger;
-  private transport: EmailTransport;
+  private logger: NamedLogger;
+  private transport: EmailTransport<unknown, R>;
   private triage: EmailTriageService;
   private caldav?: CaldavSession;
   private persistenceInitialized = false;
 
-  constructor(transport: EmailTransport, logger: Logger, triage: EmailTriageService) {
+  constructor(
+    transport: EmailTransport<unknown, R>,
+    logger: NamedLogger,
+    triage: EmailTriageService,
+  ) {
     this.transport = transport;
     this.logger = logger;
     this.triage = triage;
   }
 
-  public handleEmailsEffect(
-    emails: FetchedEmail[],
-  ): Effect.Effect<void, CalendarPersistenceError> {
+  public handleEmailsEffect(emails: FetchedEmail[]) {
     return Effect.gen({ self: this }, function* () {
       if (!this.persistenceInitialized) {
         const rekeyed = yield* reconcileEventHashesEffect();
         this.persistenceInitialized = true;
         if (rekeyed > 0) {
-          this.logger.info(
+          yield* this.logger.info(
             `Reconciled ${rekeyed} calendar event hash(es) to new scheme`,
           );
         }
       }
       const candidates = yield* Effect.forEach(emails, (email) =>
         filterCalendarCandidateEffect(email, this.triage).pipe(
-          Effect.map((result) => {
-            if (result.pass) {
-              this.logger.info(
-                `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
-              );
-              return { email, admitReason: result.reason, admitTier: result.admitTier };
-            } else {
-              this.logger.info(
-                `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
-              );
-              recordEmailActivity({
-                pipeline: this.name,
-                email,
-                outcome: "filtered",
-                detail: result.reason,
-                // A triage-rejected email still incurred a paid LLM call; attribute
-                // it (null when a cheaper tier rejected before triage ran).
-                costCents: this.triage.getTriageCostCents(email.id),
-              });
-              return undefined;
-            }
-          }),
+          Effect.flatMap((result) =>
+            Effect.gen({ self: this }, function* () {
+              if (result.pass) {
+                yield* this.logger.info(
+                  `Candidate (${result.reason}): "${email.subject}" from ${email.from}`,
+                );
+                return {
+                  email,
+                  admitReason: result.reason,
+                  admitTier: result.admitTier,
+                };
+              } else {
+                yield* this.logger.info(
+                  `Skipped (${result.reason}): "${email.subject}" from ${email.from}`,
+                );
+                yield* recordEmailActivity({
+                  pipeline: this.name,
+                  email,
+                  outcome: "filtered",
+                  detail: result.reason,
+                  // A triage-rejected email still incurred a paid LLM call; attribute
+                  // it (null when a cheaper tier rejected before triage ran).
+                  costCents: this.triage.getTriageCostCents(email.id),
+                });
+                return undefined;
+              }
+            }),
+          ),
         ),
       ).pipe(Effect.map((items) => items.filter((item) => item !== undefined)));
 
@@ -130,7 +144,7 @@ export class CalendarEventPipeline implements EmailHandler {
           this.caldav = discovery.success;
         } else {
           const error = discovery.failure;
-          this.logger.error(
+          yield* this.logger.error(
             "Failed to discover calendar URL, skipping batch",
             (error as Error).message,
           );
@@ -149,7 +163,7 @@ export class CalendarEventPipeline implements EmailHandler {
                   }),
               ),
             );
-            recordEmailActivity({
+            yield* recordEmailActivity({
               pipeline: this.name,
               email,
               outcome: "error",
@@ -166,31 +180,32 @@ export class CalendarEventPipeline implements EmailHandler {
       // Process each candidate, capturing its log lines for the activity UI
       yield* Effect.forEach(
         candidates,
-        ({ email, admitReason, admitTier }) => {
-          const runLog = config.LOGS_PATH
-            ? new LogFile(
-                `${config.LOGS_PATH}/calendar-events/${logTimestamp()}.md`,
-                "overwrite",
-              )
-            : undefined;
-          // Triage cost only counts toward this row when triage is what admitted
-          // it; the shared EmailTriageService memoizes per email, so the same
-          // triage cost may also appear on ParcelTracker's row for this email —
-          // acceptable for per-email transparency (see EmailTriageService docs).
-          const triageCostCents = this.triageCostCentsFor(email.id, admitTier);
-          const program = this.processEmail(
-            email,
-            admitReason,
-            admitTier,
-            triageCostCents,
-            runLog,
-          );
-          return withEmailLogCaptureEffect(
-            `${this.name}#${email.id}`,
-            this.name,
-            () => program,
-          );
-        },
+        ({ email, admitReason, admitTier }) =>
+          Effect.gen({ self: this }, function* () {
+            const runLog = config.LOGS_PATH
+              ? yield* LogFile.make(
+                  `${config.LOGS_PATH}/calendar-events/${logTimestamp()}.md`,
+                  "overwrite",
+                )
+              : undefined;
+            // Triage cost only counts toward this row when triage is what admitted
+            // it; the shared EmailTriageService memoizes per email, so the same
+            // triage cost may also appear on ParcelTracker's row for this email —
+            // acceptable for per-email transparency (see EmailTriageService docs).
+            const triageCostCents = this.triageCostCentsFor(email.id, admitTier);
+            const program = this.processEmail(
+              email,
+              admitReason,
+              admitTier,
+              triageCostCents,
+              runLog,
+            );
+            return yield* withEmailLogCaptureEffect(
+              `${this.name}#${email.id}`,
+              this.name,
+              () => program,
+            );
+          }),
         { discard: true },
       );
     });
@@ -210,9 +225,9 @@ export class CalendarEventPipeline implements EmailHandler {
     admitTier: AdmitTier,
     triageCostCents: number | null | undefined,
     runLog?: LogFile,
-  ): Effect.Effect<void, CalendarPersistenceError> {
+  ) {
     return Effect.gen({ self: this }, function* () {
-      this.logger.info(
+      yield* this.logger.info(
         `Extracting events from: "${email.subject}" (from: ${email.from})`,
       );
 
@@ -267,7 +282,7 @@ export class CalendarEventPipeline implements EmailHandler {
         if (extracted._tag === "Failure") throw extracted.failure;
         extraction = extracted.success;
       } catch (error) {
-        this.logger.error(
+        yield* this.logger.error(
           `Extraction failed for "${email.subject}" from ${email.from}`,
           (error as Error).message,
         );
@@ -310,7 +325,7 @@ export class CalendarEventPipeline implements EmailHandler {
       const costCents = sumCostCents([triageCostCents, extractionCostCents]);
 
       if (events.length === 0) {
-        this.logger.info(`No calendar events found in "${email.subject}"`);
+        yield* this.logger.info(`No calendar events found in "${email.subject}"`);
         recordEmailActivity({
           pipeline: this.name,
           email,
@@ -323,7 +338,7 @@ export class CalendarEventPipeline implements EmailHandler {
         return;
       }
 
-      this.logger.info(`Found ${events.length} event(s) in "${email.subject}"`);
+      yield* this.logger.info(`Found ${events.length} event(s) in "${email.subject}"`);
 
       const items: string[] = [];
       const itemsOk: boolean[] = [];
@@ -348,7 +363,7 @@ export class CalendarEventPipeline implements EmailHandler {
           // CalDAV calls throw on transport failures (fetch network errors), which
           // are retryable; HTTP-level failures come back as result objects instead.
           const message = outcome.failure.message;
-          this.logger.error(
+          yield* this.logger.error(
             `Failed to process event "${event.title}" (${event.action})`,
             message,
           );
@@ -365,7 +380,7 @@ export class CalendarEventPipeline implements EmailHandler {
 
       if (transientFailures.length > 0) {
         const reason = transientFailures.join("; ");
-        this.logger.warn(
+        yield* this.logger.warn(
           `Transient CalDAV failure(s) for "${email.subject}"; queued for retry: ${reason}`,
         );
         yield* EmailRetryPersistence.enqueue({
@@ -395,26 +410,20 @@ export class CalendarEventPipeline implements EmailHandler {
     });
   }
 
-  private handleCreate(
-    event: ExtractedEvent,
-    emailId: string,
-  ): Effect.Effect<
-    ItemResult,
-    import("./effect.js").CaldavError | CalendarPersistenceError
-  > {
+  private handleCreate(event: ExtractedEvent, emailId: string) {
     return Effect.gen({ self: this }, function* () {
       const eventHash = computeEventHash(event.title, event.startDate, event.startTime);
       const label = `"${event.title}" on ${event.startDate}`;
 
       if (yield* hasCreatedEventEffect(eventHash)) {
-        this.logger.info(
+        yield* this.logger.info(
           `Duplicate event: "${event.title}" on ${event.startDate} (skipping)`,
         );
         return { line: `${label}: duplicate, skipped`, ok: true };
       }
 
       if (!this.caldav) {
-        this.logger.error("Calendar URL not discovered, cannot create event");
+        yield* this.logger.error("Calendar URL not discovered, cannot create event");
         return { line: `${label}: failed (calendar URL not discovered)`, ok: false };
       }
 
@@ -427,7 +436,7 @@ export class CalendarEventPipeline implements EmailHandler {
       );
 
       if (result.status === "error") {
-        this.logger.error(
+        yield* this.logger.error(
           `Failed to create calendar event "${event.title}": ${result.message}`,
         );
         return {
@@ -458,7 +467,7 @@ export class CalendarEventPipeline implements EmailHandler {
       });
 
       yield* this.sendNotification("Calendar Event Created", event);
-      this.logger.info(`Created: "${event.title}" on ${event.startDate}`);
+      yield* this.logger.info(`Created: "${event.title}" on ${event.startDate}`);
       return { line: `${label}: created`, ok: true };
     });
   }
@@ -466,10 +475,7 @@ export class CalendarEventPipeline implements EmailHandler {
   private handleCancel(
     event: ExtractedEvent,
     existingById: Map<string, CreatedCalendarEventData>,
-  ): Effect.Effect<
-    ItemResult,
-    import("./effect.js").CaldavError | CalendarPersistenceError
-  > {
+  ) {
     return Effect.gen({ self: this }, function* () {
       // Cancels are destructive, so they require the explicit evt_N handle — a
       // title-only match (e.g. a payment receipt echoing an upcoming appointment's
@@ -478,7 +484,7 @@ export class CalendarEventPipeline implements EmailHandler {
       const label = `"${event.title}"`;
 
       if (!record) {
-        this.logger.warn(
+        yield* this.logger.warn(
           `Cancel without explicit event reference: "${event.title}" (skipping)`,
         );
         return {
@@ -488,7 +494,7 @@ export class CalendarEventPipeline implements EmailHandler {
       }
 
       if (!this.caldav) {
-        this.logger.error("Calendar URL not discovered, cannot cancel event");
+        yield* this.logger.error("Calendar URL not discovered, cannot cancel event");
         return {
           line: `${label}: cancel failed (calendar URL not discovered)`,
           ok: false,
@@ -502,7 +508,7 @@ export class CalendarEventPipeline implements EmailHandler {
       );
 
       if (result.status === "error") {
-        this.logger.error(
+        yield* this.logger.error(
           `Failed to delete calendar event "${event.title}": ${result.message}`,
         );
         return {
@@ -515,7 +521,7 @@ export class CalendarEventPipeline implements EmailHandler {
       yield* markEventCancelledEffect(record.eventHash);
 
       yield* this.sendNotification("Calendar Event Cancelled", event);
-      this.logger.info(`Cancelled: "${event.title}" on ${record.startDate}`);
+      yield* this.logger.info(`Cancelled: "${event.title}" on ${record.startDate}`);
       return { line: `${label} on ${record.startDate}: cancelled`, ok: true };
     });
   }
@@ -524,16 +530,13 @@ export class CalendarEventPipeline implements EmailHandler {
     event: ExtractedEvent,
     existingById: Map<string, CreatedCalendarEventData>,
     emailId: string,
-  ): Effect.Effect<
-    ItemResult,
-    import("./effect.js").CaldavError | CalendarPersistenceError
-  > {
+  ) {
     return Effect.gen({ self: this }, function* () {
       const record = resolveEventReference(event, existingById);
       const label = `"${event.title}" on ${event.startDate}`;
 
       if (!record) {
-        this.logger.warn(
+        yield* this.logger.warn(
           `Update requested for unknown event: "${event.title}", treating as create`,
         );
         return yield* this.handleCreate(event, emailId);
@@ -553,14 +556,14 @@ export class CalendarEventPipeline implements EmailHandler {
 
       // Skip if nothing meaningful changed
       if (!hasEventChanged(record, merged)) {
-        this.logger.info(
+        yield* this.logger.info(
           `No changes detected for "${event.title}" on ${event.startDate} (skipping update)`,
         );
         return { line: `${label}: no changes, skipped`, ok: true };
       }
 
       if (!this.caldav) {
-        this.logger.error("Calendar URL not discovered, cannot update event");
+        yield* this.logger.error("Calendar URL not discovered, cannot update event");
         return {
           line: `${label}: update failed (calendar URL not discovered)`,
           ok: false,
@@ -575,7 +578,7 @@ export class CalendarEventPipeline implements EmailHandler {
       );
 
       if (result.status === "error") {
-        this.logger.error(
+        yield* this.logger.error(
           `Failed to update calendar event "${event.title}": ${result.message}`,
         );
         return {
@@ -596,7 +599,7 @@ export class CalendarEventPipeline implements EmailHandler {
       const collides =
         newHash !== record.eventHash && (yield* hasCreatedEventEffect(newHash));
       if (collides) {
-        this.logger.warn(
+        yield* this.logger.warn(
           `Update for "${merged.title}" collides with another tracked event's key; keeping existing key`,
         );
       }
@@ -623,35 +626,26 @@ export class CalendarEventPipeline implements EmailHandler {
       );
 
       yield* this.sendNotification("Calendar Event Updated", merged);
-      this.logger.info(`Updated: "${event.title}" on ${event.startDate}`);
+      yield* this.logger.info(`Updated: "${event.title}" on ${event.startDate}`);
       return { line: `${label}: updated`, ok: true };
     });
   }
 
-  private sendNotification(
-    title: string,
-    event: ExtractedEvent,
-  ): Effect.Effect<void, never> {
+  private sendNotification(title: string, event: ExtractedEvent) {
     const timePart = event.allDay
       ? "(all day)"
       : event.startTime
         ? `at ${event.startTime}`
         : "";
-    return Effect.tryPromise({
-      try: () =>
-        notify({
-          title,
-          message: `${event.title}\n${event.startDate}${timePart ? ` ${timePart}` : ""}${event.location ? `\n${event.location}` : ""}`,
-          token: config.PUSHOVER_CALENDAR_TOKEN,
-        }),
-      catch: (cause) => cause,
+    return notify({
+      title,
+      message: `${event.title}\n${event.startDate}${timePart ? ` ${timePart}` : ""}${event.location ? `\n${event.location}` : ""}`,
+      token: config.PUSHOVER_CALENDAR_TOKEN,
     }).pipe(
       Effect.catch((error) =>
-        Effect.sync(() =>
-          this.logger.warn(
-            "Failed to send notification",
-            error instanceof Error ? error.message : String(error),
-          ),
+        this.logger.warn(
+          "Failed to send notification",
+          error instanceof Error ? error.message : String(error),
         ),
       ),
     );

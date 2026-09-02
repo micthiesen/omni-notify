@@ -1,5 +1,5 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
-import type { Logger } from "@micthiesen/mitools/logging";
+import type { NamedLogger as Logger } from "@micthiesen/mitools/logging";
 import { Data, Effect } from "effect";
 import type { PodcastAccountClient } from "./account.js";
 import { pickBestShowMatch, searchItunesPodcastsEffect } from "./itunes.js";
@@ -38,7 +38,7 @@ export function resolveCandidatesEffect(
   account: PodcastAccountClient | undefined,
   logger: Logger,
   logFile?: LogFile,
-): Effect.Effect<EpisodeCandidate[]> {
+) {
   return Effect.gen(function* () {
     const resolved = yield* Effect.forEach(
       discovered,
@@ -63,11 +63,11 @@ export function resolveCandidatesEffect(
       candidates.push(candidate);
     }
 
-    logger.info(
+    yield* logger.info(
       `Resolved ${candidates.length}/${discovered.length} discovered episodes`,
     );
     if (dropped.length > 0) {
-      logFile?.section("Resolution Failures", dropped.join("\n"));
+      if (logFile) yield* logFile.section("Resolution Failures", dropped.join("\n"));
     }
     return candidates;
   });
@@ -76,7 +76,7 @@ export function resolveCandidatesEffect(
 function resolveOneEffect(
   item: DiscoveredEpisode,
   account: PodcastAccountClient | undefined,
-): Effect.Effect<EpisodeCandidate, CandidateResolutionError> {
+) {
   return Effect.gen(function* () {
     const show = yield* resolveShowEffect(item.showTitle, account);
     if (!show) {

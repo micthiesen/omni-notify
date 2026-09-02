@@ -1,5 +1,5 @@
 import { Logger } from "@micthiesen/mitools/logging";
-import { describe, expect, it } from "@effect/vitest";
+import { expect, layer } from "@effect/vitest";
 import { Effect } from "effect";
 import { vi } from "vitest";
 import type {
@@ -28,12 +28,12 @@ function response(
   };
 }
 
-describe("carrier map bounded Effect cache", () => {
+layer(Logger.layer())("carrier map bounded Effect cache", (it) => {
   it.effect("rejects fixed-length overflow before buffering", () =>
     Effect.gen(function* () {
       const destroy = vi.fn();
       const request = vi.fn(() => response([], 9, destroy)) as PublicTextRequest;
-      const logger = new Logger("CarrierMapEffectSpec");
+      const logger = Logger.named("CarrierMapEffectSpec");
 
       const prompt = yield* getCarrierCodesForPromptEffect(logger, {
         request,
@@ -51,7 +51,7 @@ describe("carrier map bounded Effect cache", () => {
       const request = vi.fn(() =>
         response(["12345", "67890"], undefined, destroy),
       ) as PublicTextRequest;
-      const logger = new Logger("CarrierMapEffectSpec");
+      const logger = Logger.named("CarrierMapEffectSpec");
 
       const prompt = yield* getCarrierCodesForPromptEffect(logger, {
         request,
@@ -73,7 +73,7 @@ describe("carrier map bounded Effect cache", () => {
           }),
         ]),
       ) as PublicTextRequest;
-      const logger = new Logger("CarrierMapEffectSpec");
+      const logger = Logger.named("CarrierMapEffectSpec");
       const dependencies = { request, maxResponseBytes: 1024 };
 
       const [prompt, codes] = yield* Effect.all(

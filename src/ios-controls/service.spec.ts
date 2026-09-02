@@ -1,10 +1,10 @@
-import { Injector } from "@micthiesen/mitools/config";
-import { Logger, LogLevel } from "@micthiesen/mitools/logging";
+import { Logger } from "@micthiesen/mitools/logging";
+import { runTest, testRuntime } from "../live-check/testRuntime.js";
 import { Deferred, Effect, Fiber } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   StreamerStatusEntity,
-  upsertStreamerStatus,
+  upsertStreamerStatusEffect,
 } from "../live-check/persistence.js";
 import { Platform } from "../live-check/platforms/index.js";
 import type { Streamer } from "../live-check/streamers.js";
@@ -20,16 +20,6 @@ import {
   replaceDeviceRegistrations,
 } from "./persistence.js";
 import { IOSControlService } from "./service.js";
-
-Injector.configure({
-  config: {
-    LOG_LEVEL: LogLevel.INFO,
-    PUSHOVER_TOKEN: "fake-token",
-    PUSHOVER_USER: "fake-user",
-    DOCKERIZED: false,
-    DB_NAME: "ios-control-service.spec.db",
-  },
-});
 
 const streamer: Streamer = {
   id: "alpha",
@@ -53,9 +43,9 @@ function mockApns(
   } as unknown as ApnsControlClient;
 }
 
-afterEach(() => {
-  StreamerStatusEntity.deleteAll();
-  IOSControlRegistrationEntity.deleteAll();
+afterEach(async () => {
+  await runTest(StreamerStatusEntity.deleteAll());
+  await runTest(IOSControlRegistrationEntity.deleteAll());
 });
 
 describe("IOSControlService", () => {
@@ -65,7 +55,7 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       apns,
     );
     const controls = [
@@ -77,8 +67,8 @@ describe("IOSControlService", () => {
       },
     ];
 
-    await Effect.runPromise(service.registerDeviceEffect("device-one", controls));
-    await Effect.runPromise(service.registerDeviceEffect("device-one", controls));
+    await runTest(service.registerDeviceEffect("device-one", controls));
+    await runTest(service.registerDeviceEffect("device-one", controls));
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
   });
@@ -88,10 +78,10 @@ describe("IOSControlService", () => {
     const first = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       mockApns(firstSend),
     );
-    await Effect.runPromise(
+    await runTest(
       first.registerDeviceEffect("device-one", [
         {
           controlId: "slot-one",
@@ -107,13 +97,13 @@ describe("IOSControlService", () => {
     const restarted = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       mockApns(restartedSend),
     );
-    await Effect.runPromise(restarted.reconcileEffect());
+    await runTest(restarted.reconcileEffect());
 
     expect(restartedSend).not.toHaveBeenCalled();
-    expect(restarted.diagnostics().undeliveredCount).toBe(0);
+    expect((await runTest(restarted.diagnosticsEffect())).undeliveredCount).toBe(0);
   });
 
   it("retries one transient APNs response", async () => {
@@ -125,11 +115,11 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       apns,
     );
 
-    await Effect.runPromise(
+    await runTest(
       service.registerDeviceEffect("device-one", [
         {
           controlId: "slot-one",
@@ -141,7 +131,7 @@ describe("IOSControlService", () => {
     );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
-    expect(service.diagnostics().undeliveredCount).toBe(0);
+    expect((await runTest(service.diagnosticsEffect())).undeliveredCount).toBe(0);
   });
 
   it("carries an exhausted transient push into later live-check ticks", async () => {
@@ -152,11 +142,11 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       apns,
     );
 
-    await Effect.runPromise(
+    await runTest(
       service.registerDeviceEffect("device-one", [
         {
           controlId: "slot-one",
@@ -167,16 +157,16 @@ describe("IOSControlService", () => {
       ]),
     );
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
-    expect(service.diagnostics().undeliveredCount).toBe(1);
+    expect((await runTest(service.diagnosticsEffect())).undeliveredCount).toBe(1);
 
-    await Effect.runPromise(service.reconcileEffect());
+    await runTest(service.reconcileEffect());
     expect(sendControlChanged).toHaveBeenCalledTimes(4);
-    expect(service.diagnostics().undeliveredCount).toBe(1);
+    expect((await runTest(service.diagnosticsEffect())).undeliveredCount).toBe(1);
 
     sendControlChanged.mockResolvedValue({ kind: "sent" });
-    await Effect.runPromise(service.reconcileEffect());
+    await runTest(service.reconcileEffect());
     expect(sendControlChanged).toHaveBeenCalledTimes(5);
-    expect(service.diagnostics().undeliveredCount).toBe(0);
+    expect((await runTest(service.diagnosticsEffect())).undeliveredCount).toBe(0);
   });
 
   it("retries one transport error", async () => {
@@ -188,11 +178,11 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       apns,
     );
 
-    await Effect.runPromise(
+    await runTest(
       service.registerDeviceEffect("device-one", [
         {
           controlId: "slot-one",
@@ -214,11 +204,11 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       apns,
     );
 
-    await Effect.runPromise(
+    await runTest(
       service.registerDeviceEffect("device-one", [
         {
           controlId: "slot-one",
@@ -230,7 +220,7 @@ describe("IOSControlService", () => {
     );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
-    expect(listIOSControlRegistrations()).toEqual([]);
+    expect(await runTest(listIOSControlRegistrations())).toEqual([]);
   });
 
   it("does not retry a permanent APNs rejection", async () => {
@@ -241,11 +231,11 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       apns,
     );
 
-    await Effect.runPromise(
+    await runTest(
       service.registerDeviceEffect("device-one", [
         {
           controlId: "slot-one",
@@ -257,7 +247,7 @@ describe("IOSControlService", () => {
     );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
-    expect(listIOSControlRegistrations()).toHaveLength(1);
+    expect(await runTest(listIOSControlRegistrations())).toHaveLength(1);
   });
 
   it("retries a missing APNs status as a transient transport failure", async () => {
@@ -268,11 +258,11 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       mockApns(sendControlChanged),
     );
 
-    await Effect.runPromise(
+    await runTest(
       service.registerDeviceEffect("device-one", [
         {
           controlId: "slot-one",
@@ -284,48 +274,52 @@ describe("IOSControlService", () => {
     );
 
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
-    expect(service.diagnostics().undeliveredCount).toBe(0);
+    expect((await runTest(service.diagnosticsEffect())).undeliveredCount).toBe(0);
   });
 
   it("pushes only registered slots whose displayed state changed", async () => {
     const sendControlChanged = vi.fn().mockResolvedValue({ kind: "sent" });
     const apns = mockApns(sendControlChanged);
-    replaceDeviceRegistrations("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-      {
-        controlId: "slot-four",
-        slot: 4,
-        pushToken: "cd".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await runTest(
+      replaceDeviceRegistrations("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+        {
+          controlId: "slot-four",
+          slot: 4,
+          pushToken: "cd".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       apns,
     );
-    await Effect.runPromise(service.reconcileEffect());
+    await runTest(service.reconcileEffect());
     // Rows restored after a process restart are reconciled once even before a
     // new state transition, then their delivered hashes suppress duplicates.
     expect(sendControlChanged).toHaveBeenCalledTimes(2);
     sendControlChanged.mockClear();
 
-    upsertStreamerStatus({
-      streamerId: "alpha",
-      isLive: true,
-      primary: { platform: Platform.Twitch, username: "alpha" },
-      primaryTitle: "Alpha is live",
-      startedAt: new Date(),
-      maxViewerCount: 12,
-      viewerCount: 10,
-    });
-    await Effect.runPromise(service.reconcileEffect());
+    await runTest(
+      upsertStreamerStatusEffect({
+        streamerId: "alpha",
+        isLive: true,
+        primary: { platform: Platform.Twitch, username: "alpha" },
+        primaryTitle: "Alpha is live",
+        startedAt: new Date(),
+        maxViewerCount: 12,
+        viewerCount: 10,
+      }),
+    );
+    await runTest(service.reconcileEffect());
 
     expect(sendControlChanged).toHaveBeenCalledTimes(1);
     expect(sendControlChanged.mock.calls[0][0]).toMatchObject({ slot: 1 });
@@ -337,7 +331,7 @@ describe("IOSControlService", () => {
     const service = new IOSControlService(
       [streamer],
       "http://omni.boris",
-      new Logger("Test"),
+      Logger.named("Test"),
       {
         sendControlChangedEffect: () =>
           Deferred.succeed(started, undefined).pipe(
@@ -347,20 +341,22 @@ describe("IOSControlService", () => {
         close: vi.fn(),
       } as unknown as ApnsControlClient,
     );
-    replaceDeviceRegistrations("device-one", [
-      {
-        controlId: "slot-one",
-        slot: 1,
-        pushToken: "ab".repeat(32),
-        environment: "sandbox",
-      },
-    ]);
+    await runTest(
+      replaceDeviceRegistrations("device-one", [
+        {
+          controlId: "slot-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ]),
+    );
 
-    const fiber = Effect.runFork(service.reconcileEffect());
+    const fiber = testRuntime.runFork(service.reconcileEffect());
     await Effect.runPromise(Deferred.await(started));
     await Effect.runPromise(Fiber.interrupt(fiber));
 
     await Effect.runPromise(Deferred.await(cancelled));
-    expect(service.diagnostics().undeliveredCount).toBe(1);
+    expect((await runTest(service.diagnosticsEffect())).undeliveredCount).toBe(1);
   });
 });
