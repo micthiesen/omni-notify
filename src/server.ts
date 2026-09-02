@@ -87,7 +87,7 @@ import {
 } from "./effect/http.js";
 import { IntegrationError } from "./effect/errors.js";
 import { fromPromise, fromSync, runPromise } from "./effect/interop.js";
-import { awaitSseWriter } from "./effect/sse.js";
+import { awaitSseWriter, enqueueInitialSnapshotFrame } from "./effect/sse.js";
 import {
   CARRIER_SENDER_DOMAINS as PARCEL_BUILTIN_AUTO_PASS,
   BLACKLISTED_SENDERS as PARCEL_BUILTIN_BLOCKED,
@@ -831,7 +831,6 @@ export function startServer(
             const frames = yield* Queue.unbounded<SseFrame>();
             const changes = yield* Queue.unbounded<void>();
             const client: SseClient = { frames };
-            clients.add(client);
             const unsubscribeClient = taskRunBus.subscribe(() => {
               Queue.offerUnsafe(changes, undefined);
             });
@@ -873,15 +872,18 @@ export function startServer(
               ),
             ).pipe(Effect.forkScoped);
 
-            if (lastBroadcast) {
-              Queue.offerUnsafe(frames, {
-                event: "snapshot",
-                data: lastBroadcast,
-                id: String(snapshotEventId++),
-              });
-            } else {
-              yield* broadcastEffect;
-            }
+            // A new connection races the frontend's current REST snapshot. Do not
+            // replay lastBroadcast here: it may describe the previous live-check
+            // run and overwrite newer REST data until the next task event.
+            yield* enqueueInitialSnapshotFrame(
+              broadcastSemaphore,
+              buildSnapshot,
+              () => String(snapshotEventId++),
+              (frame) => {
+                clients.add(client);
+                Queue.offerUnsafe(frames, frame);
+              },
+            );
             yield* awaitSseWriter(
               writer,
               Effect.callback<void>((resume) => {
