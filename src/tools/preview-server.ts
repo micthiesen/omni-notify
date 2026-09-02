@@ -974,6 +974,7 @@ for (let day = 90; day >= 0; day--) {
 // --- Registry + server ---------------------------------------------------------
 
 const registry = new TaskRegistry(logger);
+await runPromise(registry.initializeEffect());
 registry.track(new FakeTask("LiveCheckTask", "*/20 * * * * *", 1_500));
 registry.track(
   new FakeTask(

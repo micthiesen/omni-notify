@@ -19,7 +19,9 @@ describe("manual email reprocessing", () => {
     const handleEmailsEffect = vi.fn(() => Effect.void);
 
     await Effect.runPromise(
-      handleEmailThenClearRetryEffect({ handleEmailsEffect }, email, clearRetry),
+      handleEmailThenClearRetryEffect({ handleEmailsEffect }, email, () =>
+        Effect.sync(clearRetry),
+      ),
     );
 
     expect(handleEmailsEffect).toHaveBeenCalledWith([email]);
@@ -34,7 +36,9 @@ describe("manual email reprocessing", () => {
     const handleEmailsEffect = vi.fn(() => Effect.fail(new Error("pipeline failed")));
 
     const exit = await Effect.runPromiseExit(
-      handleEmailThenClearRetryEffect({ handleEmailsEffect }, email, clearRetry),
+      handleEmailThenClearRetryEffect({ handleEmailsEffect }, email, () =>
+        Effect.sync(clearRetry),
+      ),
     );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(clearRetry).not.toHaveBeenCalled();

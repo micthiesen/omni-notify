@@ -131,7 +131,7 @@ export function researchFinalistsEffect(
             summary || "No research results available.",
           ] as const;
         }),
-      { concurrency: "unbounded" },
+      { concurrency: 3 },
     );
     return new Map(entries);
   });

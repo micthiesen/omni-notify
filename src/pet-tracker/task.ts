@@ -1,6 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 
 import { runPromise } from "../effect/interop.js";
 import type { Config } from "../utils/config.js";
@@ -57,7 +57,7 @@ export default class PetTrackerTask extends ScheduledTask {
 
       const affectedPets: PetSyncResult[] = [];
       let totalNew = 0;
-      const now = new Date().toISOString();
+      const now = new Date(yield* Clock.currentTimeMillis).toISOString();
 
       for (const pet of pets) {
         upsertPet({

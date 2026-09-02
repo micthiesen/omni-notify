@@ -8,7 +8,7 @@ import {
   sumCostCents,
 } from "../email/activity.js";
 import { withEmailLogCaptureEffect } from "../email/activityLogs.js";
-import { enqueueEmailRetry } from "../email/retry.js";
+import { EmailRetryPersistence } from "../email/retry.js";
 import type { EmailTriageService } from "../email/triage.js";
 import type { EmailHandler, FetchedEmail } from "../email/types.js";
 import config from "../utils/config.js";
@@ -20,7 +20,7 @@ import {
 } from "./extraction/extractDeliveries.js";
 import { filterTrackingCandidateEffect } from "./filter/keywords.js";
 import { shouldTryNextCandidate, submitDeliveryEffect } from "./parcel/parcelApi.js";
-import { parcelPersistenceEffect, type ParcelPersistenceError } from "./effect.js";
+import { ParcelPersistenceError, parcelPersistenceEffect } from "./effect.js";
 import {
   findNearDuplicateTracking,
   getDeliverySubmission,
@@ -113,7 +113,7 @@ export class DeliveryPipeline implements EmailHandler {
               }),
             ),
             Effect.catch((error) =>
-              Effect.sync(() => {
+              Effect.gen({ self: this }, function* () {
                 this.logger.error(
                   `Failed to process email "${email.subject}"`,
                   error.message,
@@ -128,11 +128,19 @@ export class DeliveryPipeline implements EmailHandler {
                   costCents: sumCostCents([triageCostCents]),
                 });
                 if (error.transient) {
-                  enqueueEmailRetry({
+                  yield* EmailRetryPersistence.enqueue({
                     pipeline: this.name,
                     emailId: email.id,
                     reason: error.message,
-                  });
+                  }).pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new ParcelPersistenceError({
+                          operation: "enqueue parcel email retry",
+                          cause,
+                        }),
+                    ),
+                  );
                 }
               }),
             ),
@@ -326,11 +334,19 @@ export class DeliveryPipeline implements EmailHandler {
           // Transient (network/5xx): don't burn remaining candidates or record
           // dedup; enqueue the email for a retry pass instead
           this.logger.warn(`Failed to submit ${label}, will retry later`);
-          enqueueEmailRetry({
+          yield* EmailRetryPersistence.enqueue({
             pipeline: this.name,
             emailId,
             reason: `Parcel submission network/5xx for ${trackingNumber}`,
-          });
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ParcelPersistenceError({
+                  operation: "enqueue parcel email retry",
+                  cause,
+                }),
+            ),
+          );
           return { line: `${label}: submission failed, will retry`, ok: false };
         }
 

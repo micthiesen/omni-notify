@@ -44,7 +44,9 @@ const searchByPersonResponseSchema = Schema.Struct({
   items: Schema.optional(Schema.NullOr(Schema.Array(rawEpisodeSchema))),
 });
 
-class PodcastIndexRequestError extends Data.TaggedError("PodcastIndexRequestError")<{
+export class PodcastIndexRequestError extends Data.TaggedError(
+  "PodcastIndexRequestError",
+)<{
   readonly name: string;
   readonly cause: unknown;
 }> {}
@@ -111,7 +113,9 @@ export function mapEpisode(
 }
 
 export interface PodcastIndexClient {
-  searchByPerson(name: string): Effect.Effect<PodcastIndexEpisode[], unknown>;
+  searchByPerson(
+    name: string,
+  ): Effect.Effect<PodcastIndexEpisode[], PodcastIndexRequestError>;
 }
 
 class PodcastIndexApiClient implements PodcastIndexClient {
@@ -120,7 +124,9 @@ class PodcastIndexApiClient implements PodcastIndexClient {
     private readonly logger: Logger,
   ) {}
 
-  public searchByPerson(name: string): Effect.Effect<PodcastIndexEpisode[], unknown> {
+  public searchByPerson(
+    name: string,
+  ): Effect.Effect<PodcastIndexEpisode[], PodcastIndexRequestError> {
     return this.searchByPersonEffect(name);
   }
 
@@ -155,7 +161,9 @@ class PodcastIndexApiClient implements PodcastIndexClient {
 
       const parsed = yield* Schema.decodeUnknownEffect(
         Schema.fromJsonString(searchByPersonResponseSchema),
-      )(responseText);
+      )(responseText).pipe(
+        Effect.mapError((cause) => new PodcastIndexRequestError({ name, cause })),
+      );
       const episodes: PodcastIndexEpisode[] = [];
       for (const raw of parsed.items ?? []) {
         const episode = mapEpisode(raw);

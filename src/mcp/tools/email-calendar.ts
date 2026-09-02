@@ -38,7 +38,7 @@ import {
   listEmailFeedback,
   recordEmailFeedback,
 } from "../../email/feedback.js";
-import { clearEmailRetry, EmailRetryEntity } from "../../email/retry.js";
+import { EmailRetryPersistence } from "../../email/retry.js";
 import {
   deleteEmailRule,
   listEmailRules,
@@ -617,7 +617,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
           if (!email)
             throw new Error("Email no longer exists in the monitored mailbox");
           yield* handleEmailThenClearRetryEffect(handler, email, () =>
-            clearEmailRetry(activity.pipeline, activity.emailId),
+            EmailRetryPersistence.clear(activity.pipeline, activity.emailId),
           );
           return {
             activity: serializeActivity(
@@ -860,8 +860,8 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "None", recommendedPolicy: "allow" },
       execute: (input) =>
-        Effect.sync(() => {
-          const retries = EmailRetryEntity.getAll()
+        Effect.gen(function* () {
+          const retries = (yield* EmailRetryPersistence.getAll())
             .filter((retry) => !input.pipeline || retry.pipeline === input.pipeline)
             .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)
             .map((retry) => ({ ...retry, reason: truncate(retry.reason, 1_000).text }));
@@ -885,10 +885,10 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "require_approval",
       },
       execute: (input) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           const retryKey = `${input.pipeline}#${input.emailId}`;
-          const existed = Boolean(EmailRetryEntity.get({ retryKey }));
-          clearEmailRetry(input.pipeline, input.emailId);
+          const existed = Boolean(yield* EmailRetryPersistence.get(retryKey));
+          yield* EmailRetryPersistence.clear(input.pipeline, input.emailId);
           return { cleared: existed };
         }),
     }),

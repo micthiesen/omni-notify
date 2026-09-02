@@ -40,7 +40,7 @@ export function runArticleRetrievers(
             : { success: false, error: result.failure, retrieverName: retriever.name },
         ),
       ),
-    { concurrency: "unbounded" },
+    { concurrency: 7 },
   );
 }
 

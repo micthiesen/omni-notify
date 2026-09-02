@@ -92,87 +92,83 @@ const EmailQuerySchema = Schema.Struct({
   ids: Schema.Array(Schema.String),
 });
 
-export function fetchNewEmailsEffect(
+export const fetchNewEmailsEffect = Effect.fn("JmapEmail.fetchNew")(function* (
   ctx: JmapContext,
   sinceState: string,
   logger: Logger,
-): Effect.Effect<FetchResult, JmapFetchError> {
-  return Effect.gen(function* () {
-    const roles = yield* getMailboxRolesEffect(ctx, logger);
+) {
+  const roles = yield* getMailboxRolesEffect(ctx, logger);
 
-    const emails: FetchedEmail[] = [];
-    let state = sinceState;
-    let totalFetched = 0;
+  const emails: FetchedEmail[] = [];
+  let state = sinceState;
+  let totalFetched = 0;
 
-    for (;;) {
-      const page = yield* fetchChangesPageEffect(ctx, state, logger);
-      totalFetched += page.rawEmails.length;
-      for (const raw of page.rawEmails) {
-        const mapped = yield* Effect.try({
-          try: () => mapAndFilterEmail(raw, roles, logger),
-          catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
-        });
-        if (mapped) emails.push(mapped);
-      }
-
-      const stale = page.newState === state;
-      state = page.newState;
-      if (!page.hasMoreChanges) break;
-      if (stale) {
-        logger.warn(
-          "Email/changes reported more changes without advancing state; stopping pass",
-        );
-        break;
-      }
-      if (totalFetched >= MAX_EMAILS_PER_PASS) {
-        logger.warn(
-          `Email fetch pass hit the ${MAX_EMAILS_PER_PASS}-email cap with changes ` +
-            "remaining; they will be picked up on the next pass",
-        );
-        break;
-      }
+  for (;;) {
+    const page = yield* fetchChangesPageEffect(ctx, state, logger);
+    totalFetched += page.rawEmails.length;
+    for (const raw of page.rawEmails) {
+      const mapped = yield* Effect.try({
+        try: () => mapAndFilterEmail(raw, roles, logger),
+        catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
+      });
+      if (mapped) emails.push(mapped);
     }
 
-    logger.debug(`Fetched ${emails.length} new email(s)`);
-    return { emails, newState: state };
-  });
-}
+    const stale = page.newState === state;
+    state = page.newState;
+    if (!page.hasMoreChanges) break;
+    if (stale) {
+      logger.warn(
+        "Email/changes reported more changes without advancing state; stopping pass",
+      );
+      break;
+    }
+    if (totalFetched >= MAX_EMAILS_PER_PASS) {
+      logger.warn(
+        `Email fetch pass hit the ${MAX_EMAILS_PER_PASS}-email cap with changes ` +
+          "remaining; they will be picked up on the next pass",
+      );
+      break;
+    }
+  }
+
+  logger.debug(`Fetched ${emails.length} new email(s)`);
+  return { emails, newState: state };
+});
 
 /**
  * Fetch a single email by id (same properties/mapping as fetchNewEmails).
  * Returns undefined when the email no longer exists.
  */
-export function fetchEmailByIdEffect(
+export const fetchEmailByIdEffect = Effect.fn("JmapEmail.fetchById")(function* (
   ctx: JmapContext,
   emailId: string,
   logger: Logger,
-): Effect.Effect<FetchedEmail | undefined, JmapFetchError> {
-  return Effect.gen(function* () {
-    const { jam, accountId } = ctx;
-    const [result] = yield* Effect.tryPromise({
-      try: () =>
-        jam.request([
-          "Email/get",
-          {
-            accountId,
-            ids: [emailId],
-            properties: EMAIL_PROPERTIES,
-            fetchTextBodyValues: true,
-            fetchHTMLBodyValues: true,
-          },
-        ]),
-      catch: (cause) => new JmapFetchError({ operation: "Email/get", cause }),
-    });
-
-    const response = yield* decodeEmailGetEffect(result, "decode Email/get");
-    const raw = response.list[0];
-    if (!raw) return undefined;
-    return yield* Effect.try({
-      try: () => mapEmail(raw, logger),
-      catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
-    });
+) {
+  const { jam, accountId } = ctx;
+  const [result] = yield* Effect.tryPromise({
+    try: () =>
+      jam.request([
+        "Email/get",
+        {
+          accountId,
+          ids: [emailId],
+          properties: EMAIL_PROPERTIES,
+          fetchTextBodyValues: true,
+          fetchHTMLBodyValues: true,
+        },
+      ]),
+    catch: (cause) => new JmapFetchError({ operation: "Email/get", cause }),
   });
-}
+
+  const response = yield* decodeEmailGetEffect(result, "decode Email/get");
+  const raw = response.list[0];
+  if (!raw) return undefined;
+  return yield* Effect.try({
+    try: () => mapEmail(raw, logger),
+    catch: (cause) => new JmapFetchError({ operation: "decode email", cause }),
+  });
+});
 
 export interface QueryFetchResult {
   emails: FetchedEmail[];
@@ -186,12 +182,8 @@ export interface QueryFetchResult {
  * the Email state captured before the drain. Mail arriving during recovery is
  * therefore picked up by the next normal Email/changes pass.
  */
-export function fetchEmailsReceivedSinceEffect(
-  ctx: JmapContext,
-  sinceMs: number,
-  logger: Logger,
-): Effect.Effect<QueryFetchResult, JmapFetchError> {
-  return Effect.gen(function* () {
+export const fetchEmailsReceivedSinceEffect = Effect.fn("JmapEmail.fetchReceivedSince")(
+  function* (ctx: JmapContext, sinceMs: number, logger: Logger) {
     const roles = yield* getMailboxRolesEffect(ctx, logger);
     const { jam, accountId } = ctx;
 
@@ -249,8 +241,8 @@ export function fetchEmailsReceivedSinceEffect(
       position += ids.length;
     }
     return { emails: fetched, state: recoveryState };
-  });
-}
+  },
+);
 
 interface ChangesPage {
   rawEmails: readonly JmapEmail[];

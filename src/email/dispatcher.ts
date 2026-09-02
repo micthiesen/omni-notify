@@ -48,7 +48,7 @@ export class EmailDispatcher {
   }
 
   /** Start the owned trigger supervisor before push monitoring can emit. */
-  public get startEffect(): Effect.Effect<void, unknown> {
+  public get startEffect(): Effect.Effect<void, EmailHandlerError> {
     return this.lifecycleSemaphore.withPermits(1)(
       Effect.uninterruptibleMask((restore) =>
         Effect.gen({ self: this }, function* () {
@@ -63,6 +63,9 @@ export class EmailDispatcher {
           this.supervisor = supervisor;
           this.supervisorScope = scope;
           yield* restore(this.transport.startEffect(() => this.onMailEvent())).pipe(
+            Effect.mapError(
+              (cause) => new EmailHandlerError({ handler: this.transport.name, cause }),
+            ),
             Effect.onExit((exit) =>
               Exit.isSuccess(exit)
                 ? Effect.void

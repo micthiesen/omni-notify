@@ -13,6 +13,7 @@ import {
   Scope,
   Semaphore,
 } from "effect";
+import type { PersistenceError } from "../../effect/errors.js";
 import { getLastDispatchedAtEffect } from "../persistence.js";
 import type {
   DownloadedAttachment,
@@ -373,7 +374,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     client: ImapFlow,
     folder: string,
   ): Effect.Effect<
-    { emails: FetchedEmail[]; commit?: Effect.Effect<void, unknown> },
+    { emails: FetchedEmail[]; commit?: Effect.Effect<void, PersistenceError> },
     ImapOperationError
   > {
     return Effect.gen({ self: this }, function* () {
@@ -504,7 +505,7 @@ export class ImapTransport implements EmailTransport<ImapOperationError> {
     uidValidity: string,
     uidNext: number,
   ): Effect.Effect<
-    { emails: FetchedEmail[]; commit?: Effect.Effect<void, unknown> },
+    { emails: FetchedEmail[]; commit?: Effect.Effect<void, PersistenceError> },
     ImapOperationError
   > {
     return Effect.gen({ self: this }, function* () {

@@ -11,15 +11,6 @@ import { makeEpisodeId, makeShowId } from "./types.js";
 
 const RESOLVE_CONCURRENCY = 3;
 
-/** A show resolved to a feed URL and identity, ready for RSS episode lookup. */
-interface ResolvedShow {
-  title: string;
-  feedUrl: string;
-  itunesId?: number;
-  artworkUrl?: string;
-  genres: string[];
-}
-
 /**
  * Resolve discovered episodes into verified candidates: show identity via the
  * iTunes Search API (falling back to Castro's podcast search when iTunes can't
@@ -34,6 +25,14 @@ class CandidateResolutionError extends Data.TaggedError("CandidateResolutionErro
   readonly cause: unknown;
 }> {}
 
+class CandidateLookupError extends Data.TaggedError("CandidateLookupError")<{
+  readonly reason: string;
+}> {
+  public override get message(): string {
+    return this.reason;
+  }
+}
+
 export function resolveCandidatesEffect(
   discovered: DiscoveredEpisode[],
   account: PodcastAccountClient | undefined,
@@ -43,11 +42,7 @@ export function resolveCandidatesEffect(
   return Effect.gen(function* () {
     const resolved = yield* Effect.forEach(
       discovered,
-      (item) =>
-        resolveOneEffect(item, account).pipe(
-          Effect.mapError((cause) => new CandidateResolutionError({ item, cause })),
-          Effect.result,
-        ),
+      (item) => resolveOneEffect(item, account).pipe(Effect.result),
       { concurrency: RESOLVE_CONCURRENCY },
     );
 
@@ -81,17 +76,29 @@ export function resolveCandidatesEffect(
 function resolveOneEffect(
   item: DiscoveredEpisode,
   account: PodcastAccountClient | undefined,
-): Effect.Effect<EpisodeCandidate, unknown> {
+): Effect.Effect<EpisodeCandidate, CandidateResolutionError> {
   return Effect.gen(function* () {
     const show = yield* resolveShowEffect(item.showTitle, account);
-    if (!show) return yield* Effect.fail("show not found on iTunes or Castro");
+    if (!show) {
+      return yield* new CandidateLookupError({
+        reason: "show not found on iTunes or Castro",
+      });
+    }
 
     const episodes = yield* fetchFeedEpisodesEffect(show.feedUrl, { maxEpisodes: 30 });
     const episode = findEpisodeByTitle(episodes, item.episodeTitle);
-    if (!episode) return yield* Effect.fail("episode not found in RSS feed");
+    if (!episode) {
+      return yield* new CandidateLookupError({
+        reason: "episode not found in RSS feed",
+      });
+    }
 
     const showId = makeShowId({ itunesId: show.itunesId, feedUrl: show.feedUrl });
-    if (!showId) return yield* Effect.fail("could not build canonical show id");
+    if (!showId) {
+      return yield* new CandidateLookupError({
+        reason: "could not build canonical show id",
+      });
+    }
 
     return {
       episodeId: makeEpisodeId(showId, episode.guid),
@@ -112,7 +119,7 @@ function resolveOneEffect(
       sourceUrl: item.sourceUrl,
       matchedVoices: item.matchedVoices,
     };
-  });
+  }).pipe(Effect.mapError((cause) => new CandidateResolutionError({ item, cause })));
 }
 
 /**
@@ -123,7 +130,7 @@ function resolveOneEffect(
 function resolveShowEffect(
   showTitle: string,
   account: PodcastAccountClient | undefined,
-): Effect.Effect<ResolvedShow | undefined, unknown> {
+) {
   return Effect.gen(function* () {
     const itunes = pickBestShowMatch(
       yield* searchItunesPodcastsEffect(showTitle),

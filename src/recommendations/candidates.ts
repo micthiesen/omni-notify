@@ -87,7 +87,7 @@ function fetchSimilarBucketEffect(
           return Effect.succeed([]);
         }),
       ),
-    { concurrency: "unbounded" },
+    { concurrency: 4 },
   ).pipe(
     Effect.map((results) =>
       interleave(results.map((r) => r.filter(isEligibleOriginalLanguage).slice(0, 12))),

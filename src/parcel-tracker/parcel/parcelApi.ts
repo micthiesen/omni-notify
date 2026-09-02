@@ -1,8 +1,8 @@
 import type { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { codeBlock } from "@micthiesen/mitools/markdown";
-import { Effect } from "effect";
-import got, { type HTTPError } from "got";
+import { Clock, Effect } from "effect";
+import got from "got";
 import { ParcelSubmissionError } from "../effect.js";
 
 const API_URL = "https://api.parcel.app/external/add-delivery/";
@@ -26,6 +26,24 @@ export function shouldTryNextCandidate(result: SubmitResult): boolean {
   return (
     result.status === "rejected" && !NON_CARRIER_REJECTION_CODES.has(result.statusCode)
   );
+}
+
+function httpFailureDetails(cause: unknown): {
+  statusCode?: number;
+  body: unknown;
+} {
+  if (typeof cause !== "object" || cause === null) {
+    return { body: "no response body" };
+  }
+  const response = (cause as { response?: unknown }).response;
+  if (typeof response !== "object" || response === null) {
+    return { body: "no response body" };
+  }
+  const value = response as { statusCode?: unknown; body?: unknown };
+  return {
+    statusCode: typeof value.statusCode === "number" ? value.statusCode : undefined,
+    body: value.body ?? "no response body",
+  };
 }
 
 export function submitDeliveryEffect(
@@ -62,22 +80,23 @@ export function submitDeliveryEffect(
       );
       return { status: "success" } satisfies SubmitResult;
     }),
-    Effect.catch((error) => {
-      const cause = error.cause as HTTPError;
-      const statusCode = cause.response?.statusCode;
-      const body = cause.response?.body ?? "no response body";
-      logger.error(
-        `Failed to submit delivery ${params.trackingNumber}`,
-        `${error.message}\nResponse: ${body}`,
-      );
-      if (statusCode && statusCode >= 400 && statusCode < 500) {
-        rejectionLog?.section(
-          `Rejected: ${params.trackingNumber} (${statusCode}) — ${new Date().toISOString()}`,
-          `**Request:**\n${codeBlock(JSON.stringify(payload, null, 2), "json")}\n\n**Response:**\n${codeBlock(String(body))}`,
+    Effect.catch((error) =>
+      Effect.gen(function* () {
+        const { statusCode, body } = httpFailureDetails(error.cause);
+        logger.error(
+          `Failed to submit delivery ${params.trackingNumber}`,
+          `${error.message}\nResponse: ${body}`,
         );
-        return Effect.succeed<SubmitResult>({ status: "rejected", statusCode });
-      }
-      return Effect.succeed<SubmitResult>({ status: "error" });
-    }),
+        if (statusCode && statusCode >= 400 && statusCode < 500) {
+          const now = yield* Clock.currentTimeMillis;
+          rejectionLog?.section(
+            `Rejected: ${params.trackingNumber} (${statusCode}) — ${new Date(now).toISOString()}`,
+            `**Request:**\n${codeBlock(JSON.stringify(payload, null, 2), "json")}\n\n**Response:**\n${codeBlock(String(body))}`,
+          );
+          return { status: "rejected", statusCode } satisfies SubmitResult;
+        }
+        return { status: "error" } satisfies SubmitResult;
+      }),
+    ),
   );
 }

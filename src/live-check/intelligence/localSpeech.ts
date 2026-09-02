@@ -72,7 +72,7 @@ function requireFilesEffect(
         catch: (cause) =>
           new SpeechRecognitionError({ operation: `access ${path}`, cause }),
       }).pipe(Effect.as(path)),
-    { concurrency: "unbounded" },
+    { concurrency: 4 },
   ).pipe(
     Effect.asVoid,
     Effect.mapError(

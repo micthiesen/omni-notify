@@ -10,7 +10,7 @@ import {
   sumCostCents,
 } from "../email/activity.js";
 import { withEmailLogCaptureEffect } from "../email/activityLogs.js";
-import { enqueueEmailRetry } from "../email/retry.js";
+import { EmailRetryPersistence } from "../email/retry.js";
 import type { EmailTriageService } from "../email/triage.js";
 import type { EmailHandler, EmailTransport, FetchedEmail } from "../email/types.js";
 import config from "../utils/config.js";
@@ -136,11 +136,19 @@ export class CalendarEventPipeline implements EmailHandler {
           );
           // The email cursor still advances, so these candidates won't be retried.
           for (const { email, admitReason, admitTier } of candidates) {
-            enqueueEmailRetry({
+            yield* EmailRetryPersistence.enqueue({
               pipeline: this.name,
               emailId: email.id,
               reason: `calendar discovery failed: ${(error as Error).message}`,
-            });
+            }).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new CalendarPersistenceError({
+                    operation: "enqueue calendar email retry",
+                    cause,
+                  }),
+              ),
+            );
             recordEmailActivity({
               pipeline: this.name,
               email,
@@ -281,11 +289,19 @@ export class CalendarEventPipeline implements EmailHandler {
           "transient" in error &&
           error.transient === true
         ) {
-          enqueueEmailRetry({
+          yield* EmailRetryPersistence.enqueue({
             pipeline: this.name,
             emailId: email.id,
             reason: "message" in error ? String(error.message) : String(error),
-          });
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new CalendarPersistenceError({
+                  operation: "enqueue calendar email retry",
+                  cause,
+                }),
+            ),
+          );
         }
         return;
       }
@@ -352,7 +368,19 @@ export class CalendarEventPipeline implements EmailHandler {
         this.logger.warn(
           `Transient CalDAV failure(s) for "${email.subject}"; queued for retry: ${reason}`,
         );
-        enqueueEmailRetry({ pipeline: this.name, emailId: email.id, reason });
+        yield* EmailRetryPersistence.enqueue({
+          pipeline: this.name,
+          emailId: email.id,
+          reason,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new CalendarPersistenceError({
+                operation: "enqueue calendar email retry",
+                cause,
+              }),
+          ),
+        );
       }
 
       recordEmailActivity({

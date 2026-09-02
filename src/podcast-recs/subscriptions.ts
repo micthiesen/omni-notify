@@ -27,7 +27,7 @@ export interface SubscriptionState {
 export function resolveSubscriptionsEffect(
   account: PodcastAccountClient | undefined,
   logger: Logger,
-): Effect.Effect<FetchResult<SubscriptionState>, unknown> {
+): Effect.Effect<FetchResult<SubscriptionState>> {
   return Effect.gen(function* () {
     if (!account) {
       logger.warn(

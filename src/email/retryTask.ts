@@ -3,9 +3,7 @@ import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Data, Effect } from "effect";
 import { runPromise } from "../effect/interop.js";
 import {
-  clearEmailRetry,
-  claimEmailRetry,
-  EmailRetryEntity,
+  EmailRetryPersistence,
   MAX_RETRY_ATTEMPTS,
   selectDueRetries,
 } from "./retry.js";
@@ -13,7 +11,7 @@ import type { EmailHandler, EmailTransport } from "./types.js";
 
 /**
  * Replays transiently-failed email processing: pipelines enqueue retries via
- * enqueueEmailRetry, this task re-fetches each email and reruns the owning
+ * EmailRetryPersistence, this task re-fetches each email and reruns the owning
  * pipeline's handler (pipeline dedup gates make that idempotent).
  */
 /** Live transport handles, filled in once the pipelines connect (possibly late). */
@@ -57,12 +55,15 @@ export default class EmailRetryTask extends ScheduledTask {
 
   public readonly runEffect = () =>
     Effect.gen({ self: this }, function* () {
-      const rows = EmailRetryEntity.getAll();
+      const rows = yield* EmailRetryPersistence.getAll();
       const staleExhausted = rows.filter((row) => row.attempts >= MAX_RETRY_ATTEMPTS);
       for (const row of staleExhausted) {
-        clearEmailRetry(row.pipeline, row.emailId);
+        yield* EmailRetryPersistence.clear(row.pipeline, row.emailId);
       }
-      const due = selectDueRetries(rows);
+      const due = selectDueRetries(
+        rows,
+        yield* Effect.clockWith((clock) => clock.currentTimeMillis),
+      );
       if (due.length === 0) {
         this.logger.debug("No email retries due");
         this.lastRunSummary = "No retries due";
@@ -89,14 +90,14 @@ export default class EmailRetryTask extends ScheduledTask {
         due,
         (row) =>
           Effect.gen({ self: this }, function* () {
-            const claimed = claimEmailRetry(row);
+            const claimed = yield* EmailRetryPersistence.claim(row);
             const handler = handlers.get(row.pipeline);
             if (!handler) {
               this.logger.warn(
                 `No handler registered for pipeline "${row.pipeline}"; ` +
                   `dropping retry for email ${row.emailId}`,
               );
-              clearEmailRetry(row.pipeline, row.emailId);
+              yield* EmailRetryPersistence.clear(row.pipeline, row.emailId);
               orphaned++;
               return;
             }
@@ -109,7 +110,7 @@ export default class EmailRetryTask extends ScheduledTask {
             );
             if (fetched._tag === "Failure") {
               if (claimed.attempts >= MAX_RETRY_ATTEMPTS) {
-                clearEmailRetry(row.pipeline, row.emailId);
+                yield* EmailRetryPersistence.clear(row.pipeline, row.emailId);
                 exhausted++;
               } else {
                 requeued++;
@@ -125,7 +126,7 @@ export default class EmailRetryTask extends ScheduledTask {
               this.logger.info(
                 `Email ${row.emailId} no longer exists; dropping ${row.pipeline} retry`,
               );
-              clearEmailRetry(row.pipeline, row.emailId);
+              yield* EmailRetryPersistence.clear(row.pipeline, row.emailId);
               missing++;
               return;
             }
@@ -136,14 +137,14 @@ export default class EmailRetryTask extends ScheduledTask {
               ),
               Effect.matchEffect({
                 onSuccess: () =>
-                  Effect.sync(() => {
+                  Effect.gen({ self: this }, function* () {
                     // Pipelines swallow transient failures and re-enqueue instead of
                     // throwing, so a resolved handler is NOT proof of success: only clear
                     // the row if the run didn't just bump it again.
-                    const after = EmailRetryEntity.get({ retryKey: row.retryKey });
+                    const after = yield* EmailRetryPersistence.get(row.retryKey);
                     if (after && (after.enqueueCount ?? 0) > (row.enqueueCount ?? 0)) {
                       if (claimed.attempts >= MAX_RETRY_ATTEMPTS) {
-                        clearEmailRetry(row.pipeline, row.emailId);
+                        yield* EmailRetryPersistence.clear(row.pipeline, row.emailId);
                         exhausted++;
                         this.logger.warn(
                           `Giving up on ${row.pipeline} email "${email.subject}" after ` +
@@ -158,7 +159,7 @@ export default class EmailRetryTask extends ScheduledTask {
                       }
                       return;
                     }
-                    clearEmailRetry(row.pipeline, row.emailId);
+                    yield* EmailRetryPersistence.clear(row.pipeline, row.emailId);
                     succeeded++;
                     this.logger.info(
                       `Retry succeeded for ${row.pipeline} email "${email.subject}" ` +
@@ -166,8 +167,8 @@ export default class EmailRetryTask extends ScheduledTask {
                     );
                   }),
                 onFailure: (error) =>
-                  Effect.sync(() => {
-                    clearEmailRetry(row.pipeline, row.emailId);
+                  Effect.gen({ self: this }, function* () {
+                    yield* EmailRetryPersistence.clear(row.pipeline, row.emailId);
                     permanent++;
                     this.logger.warn(
                       `Dropping permanent ${row.pipeline} retry for email ` +

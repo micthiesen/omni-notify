@@ -7,6 +7,7 @@ import { Effect } from "effect";
 import config from "../utils/config.js";
 import {
   MAX_PODCAST_RECOMMENDATIONS_PER_RUN,
+  PodcastPipelineError,
   runPodcastPipelineEffect,
 } from "./pipeline.js";
 
@@ -66,7 +67,7 @@ export class PodcastRecommendationTask extends ScheduledTask {
     return Effect.runPromise(this.runEffect());
   }
 
-  public runEffect(): Effect.Effect<void, unknown> {
+  public runEffect(): Effect.Effect<void, PodcastPipelineError> {
     return this.runPipelineEffect(3);
   }
 
@@ -74,15 +75,20 @@ export class PodcastRecommendationTask extends ScheduledTask {
     return Effect.runPromise(this.runManualEffect(input));
   }
 
-  public runManualEffect(input: unknown): Effect.Effect<void, unknown> {
-    return Effect.try(() => parseMaxRecommendations(input)).pipe(
+  public runManualEffect(input: unknown): Effect.Effect<void, PodcastPipelineError> {
+    return Effect.try({
+      try: () => parseMaxRecommendations(input),
+      catch: (cause) => new PodcastPipelineError({ cause }),
+    }).pipe(
       Effect.flatMap((maxRecommendations) =>
         this.runPipelineEffect(maxRecommendations),
       ),
     );
   }
 
-  private runPipelineEffect(maxRecommendations: number): Effect.Effect<void, unknown> {
+  private runPipelineEffect(
+    maxRecommendations: number,
+  ): Effect.Effect<void, PodcastPipelineError> {
     return Effect.gen({ self: this }, function* () {
       const logFile = config.LOGS_PATH
         ? new LogFile(

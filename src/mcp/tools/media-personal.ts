@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { z } from "zod";
 import { CostEventEntity, getCostEvents } from "../../costs/persistence.js";
 import { summarizeCosts } from "../../costs/summary.js";
@@ -24,17 +24,12 @@ import {
   getLatestPodcastTasteProfile,
 } from "../../podcast-recs/reflection/persistence.js";
 import {
-  deleteEpisode,
-  getAllEpisodes,
-  getAllJobs,
-  getEpisode,
-  getJob,
   jobNormalizedUrl,
+  PressPodsPersistence,
+  type PressPodsEpisodeData,
   type PressPodsJobData,
-  PressPodsJobEntity,
-  requeueJobNow,
 } from "../../press-pods/persistence.js";
-import { assertPublicHttpUrlEffect } from "../../press-pods/publicHttp.js";
+import { assertPublicHttpUrl } from "../../press-pods/publicHttp.js";
 import {
   checkpointWorkId,
   clearChunkCheckpoints,
@@ -464,7 +459,7 @@ function serializePodcastRecommendation(
   };
 }
 
-function serializeEpisode(episode: ReturnType<typeof getAllEpisodes>[number]) {
+function serializeEpisode(episode: PressPodsEpisodeData) {
   return {
     episodeId: episode.episodeId,
     title: episode.title,
@@ -488,7 +483,7 @@ function serializeEpisode(episode: ReturnType<typeof getAllEpisodes>[number]) {
   };
 }
 
-function serializeJob(job: ReturnType<typeof getAllJobs>[number]) {
+function serializeJob(job: PressPodsJobData) {
   return {
     jobId: job.jobId,
     url: job.url,
@@ -1036,7 +1031,9 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
           }
           const values = matchesQuery(
             requireAvailable(
-              yield* account.fetchListenHistory(Date.now() - sinceDays * 86_400_000),
+              yield* account.fetchListenHistory(
+                (yield* Clock.currentTimeMillis) - sinceDays * 86_400_000,
+              ),
             ),
             query,
           );
@@ -1369,9 +1366,9 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ resource, status, query, cursor, limit }) =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           if (resource === "episodes") {
-            let values = getAllEpisodes();
+            let values = yield* PressPodsPersistence.getAllEpisodes();
             if (query) {
               const needle = query.toLocaleLowerCase();
               values = values.filter((item) =>
@@ -1385,7 +1382,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
               ...paginate(values.map(serializeEpisode), cursor, limit),
             };
           }
-          let values = getAllJobs();
+          let values = yield* PressPodsPersistence.getAllJobs();
           if (status) values = values.filter((item) => item.status === status);
           if (query) {
             const needle = query.toLocaleLowerCase();
@@ -1410,9 +1407,10 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ episodeId }) =>
-        Effect.sync(() => {
-          const episode = getEpisode(episodeId);
-          if (!episode) throw new Error("PressPods episode not found");
+        Effect.gen(function* () {
+          const episode = yield* PressPodsPersistence.getEpisode(episodeId);
+          if (!episode)
+            return yield* Effect.fail(new Error("PressPods episode not found"));
           return { episode: serializeEpisode(episode) };
         }),
     }),
@@ -1444,11 +1442,14 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         recommendedPolicy: "allow",
       },
       execute: ({ episodeId, offset, maxChars }) =>
-        Effect.sync(() => {
-          const episode = getEpisode(episodeId);
-          if (!episode) throw new Error("PressPods episode not found");
+        Effect.gen(function* () {
+          const episode = yield* PressPodsPersistence.getEpisode(episodeId);
+          if (!episode)
+            return yield* Effect.fail(new Error("PressPods episode not found"));
           if (offset > episode.content.length)
-            throw new Error("Transcript offset is beyond the end of the episode");
+            return yield* Effect.fail(
+              new Error("Transcript offset is beyond the end of the episode"),
+            );
           const page = truncate(episode.content.slice(offset), maxChars);
           return {
             episodeId,
@@ -1483,7 +1484,7 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
       },
       execute: ({ url }) =>
         Effect.gen(function* () {
-          yield* assertPublicHttpUrlEffect(url);
+          yield* assertPublicHttpUrl(url);
           const job = yield* submitEpisodeUrlEffect(
             url,
             () => kickPressPods(runtime),
@@ -1518,20 +1519,27 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
         Effect.gen(function* () {
           let job: PressPodsJobData;
           if (input.resource === "episode") {
-            const episode = getEpisode(input.episodeId);
-            if (!episode) throw new Error("PressPods episode not found");
+            const episode = yield* PressPodsPersistence.getEpisode(input.episodeId);
+            if (!episode)
+              return yield* Effect.fail(new Error("PressPods episode not found"));
             job = yield* submitEpisodeUrlEffect(
               episode.articleUrl,
               () => kickPressPods(runtime),
               runtime.logger.extend("MCP:PressPods"),
             );
           } else {
-            const existing = getJob(input.jobId);
-            if (!existing) throw new Error("PressPods job not found");
+            const existing = yield* PressPodsPersistence.getJob(input.jobId);
+            if (!existing)
+              return yield* Effect.fail(new Error("PressPods job not found"));
             if (existing.status !== "failed")
-              throw new Error("Only failed PressPods jobs can be retried");
-            const requeued = requeueJobNow(input.jobId);
-            if (!requeued) throw new Error("PressPods job could not be retried");
+              return yield* Effect.fail(
+                new Error("Only failed PressPods jobs can be retried"),
+              );
+            const requeued = yield* PressPodsPersistence.requeueJobNow(input.jobId);
+            if (!requeued)
+              return yield* Effect.fail(
+                new Error("PressPods job could not be retried"),
+              );
             job = requeued;
             kickPressPods(runtime);
           }
@@ -1565,15 +1573,18 @@ export function createMediaPersonalTools(runtime: McpRuntime): McpToolDefinition
       execute: (input) =>
         Effect.gen(function* () {
           if (input.resource === "episode") {
-            const episode = deleteEpisode(input.episodeId);
-            if (!episode) throw new Error("PressPods episode not found");
+            const episode = yield* PressPodsPersistence.deleteEpisode(input.episodeId);
+            if (!episode)
+              return yield* Effect.fail(new Error("PressPods episode not found"));
             yield* deleteEpisodeAudio(episode.audioFile);
           } else {
-            const job = getJob(input.jobId);
-            if (!job) throw new Error("PressPods job not found");
+            const job = yield* PressPodsPersistence.getJob(input.jobId);
+            if (!job) return yield* Effect.fail(new Error("PressPods job not found"));
             if (job.status === "processing")
-              throw new Error("A processing PressPods job cannot be dismissed");
-            PressPodsJobEntity.delete({ jobId: job.jobId });
+              return yield* Effect.fail(
+                new Error("A processing PressPods job cannot be dismissed"),
+              );
+            yield* PressPodsPersistence.deleteJob(job.jobId);
             yield* clearChunkCheckpoints(checkpointWorkId(jobNormalizedUrl(job)));
           }
           return { resource: input.resource, deleted: true };

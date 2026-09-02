@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { Hono } from "hono";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { IOSControlRegistrationEntity } from "./persistence.js";
 import {
   IOS_CONTROL_MAX_SIGNED_BODY_BYTES,
@@ -105,6 +105,36 @@ describe("iOS control routes", () => {
     );
     expect(response.status).toBe(200);
     expect(IOSControlRegistrationEntity.getAll()).toHaveLength(1);
+  });
+
+  it("reports persistence failures as server errors", async () => {
+    const body = JSON.stringify({
+      deviceId: "device-12345",
+      controls: [
+        {
+          controlId: "control-one",
+          slot: 1,
+          pushToken: "ab".repeat(32),
+          environment: "sandbox",
+        },
+      ],
+    });
+    const upsert = vi
+      .spyOn(IOSControlRegistrationEntity, "upsert")
+      .mockImplementationOnce(() => {
+        throw new Error("database unavailable");
+      });
+
+    const response = await app().request(
+      "/api/ios-controls/registrations",
+      authenticatedRequest("/api/ios-controls/registrations", "PUT", body),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Could not save control registration",
+    });
+    upsert.mockRestore();
   });
 
   it("rejects replayed signed requests", async () => {

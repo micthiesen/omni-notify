@@ -22,7 +22,14 @@ const mocks = vi.hoisted(() => ({
     | undefined,
 }));
 
-vi.mock("../email/retry.js", () => ({ enqueueEmailRetry: mocks.enqueue }));
+vi.mock("../email/retry.js", () => ({
+  EmailRetryPersistence: {
+    enqueue: (...args: unknown[]) => {
+      mocks.enqueue(...args);
+      return Effect.void;
+    },
+  },
+}));
 vi.mock("../email/activity.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   recordEmailActivity: mocks.record,

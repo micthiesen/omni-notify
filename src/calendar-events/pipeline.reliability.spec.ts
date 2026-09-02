@@ -13,7 +13,14 @@ const mocks = vi.hoisted(() => ({
   notify: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("../email/retry.js", () => ({ enqueueEmailRetry: mocks.enqueue }));
+vi.mock("../email/retry.js", () => ({
+  EmailRetryPersistence: {
+    enqueue: (...args: unknown[]) => {
+      mocks.enqueue(...args);
+      return Effect.void;
+    },
+  },
+}));
 vi.mock("@micthiesen/mitools/pushover", () => ({ notify: mocks.notify }));
 vi.mock("../email/activity.js", async (importOriginal) => ({
   ...(await importOriginal<object>()),

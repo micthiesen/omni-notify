@@ -422,10 +422,8 @@ const decodeJob = (value: unknown): Effect.Effect<PressPodsJobData, PressPodsErr
     ),
   );
 
-/** Canonical Effect API. The synchronous exports above remain compatibility
- * facades for Hono, RSS serialization, data export, and legacy cross-tree
- * consumers; application workflows use this object so persistence failures
- * stay typed in the Effect error channel. */
+/** Canonical application API. The synchronous helpers above are the private
+ * store implementation and remain exported only for focused persistence tests. */
 export const PressPodsPersistence = {
   getAllEpisodes: (): Effect.Effect<PressPodsEpisodeData[], PressPodsError> =>
     trySync("read PressPods episodes", getAllEpisodes).pipe(
@@ -512,6 +510,10 @@ export const PressPodsPersistence = {
     episodeId: string,
   ): Effect.Effect<PressPodsEpisodeData | undefined, PressPodsError> =>
     trySync("delete PressPods episode", () => deleteEpisode(episodeId)),
+  deleteJob: (jobId: string): Effect.Effect<void, PressPodsError> =>
+    trySync("delete PressPods job", () => {
+      PressPodsJobEntity.delete({ jobId });
+    }),
   deleteEpisodesByNormalizedUrlExcept: (
     normalizedUrl: string,
     keepEpisodeId: string,

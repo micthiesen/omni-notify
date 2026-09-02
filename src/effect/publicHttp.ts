@@ -1,4 +1,4 @@
-import { lookup } from "node:dns";
+import { promises as dns, lookup } from "node:dns";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Data, Effect } from "effect";
 import got, { type OptionsInit } from "got";
@@ -106,6 +106,36 @@ export function assertPublicHttpUrlSyntax(value: string | URL): URL {
   }
   return url;
 }
+
+/** Validate both the URL syntax and its current DNS answers before work is
+ * accepted. Connection-time DNS is still gated by `publicGot`, which closes
+ * the rebinding and redirect window. */
+export const assertPublicHttpUrl = Effect.fn("PublicHttp.assertUrl")(function* (
+  value: string | URL,
+) {
+  const url = yield* Effect.try({
+    try: () => assertPublicHttpUrlSyntax(value),
+    catch: (cause) =>
+      new PublicHttpError({ operation: "validate public HTTP URL", cause }),
+  });
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  if (isIP(hostname)) return url;
+  const addresses = yield* Effect.tryPromise({
+    try: () => dns.lookup(hostname, { all: true, verbatim: true }),
+    catch: (cause) =>
+      new PublicHttpError({ operation: "resolve public HTTP URL", cause }),
+  });
+  if (
+    addresses.length === 0 ||
+    addresses.some(({ address }) => !isPublicAddress(address))
+  ) {
+    return yield* new PublicHttpError({
+      operation: "validate public HTTP URL",
+      cause: new Error("URL host must resolve only to public addresses"),
+    });
+  }
+  return url;
+});
 
 export function createPublicDnsLookup(
   resolve: LookupFunction = lookup,

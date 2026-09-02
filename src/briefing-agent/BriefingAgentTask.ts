@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { LogFile } from "@micthiesen/mitools/logfile";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { LogLevel } from "@micthiesen/mitools/logging";
@@ -6,7 +6,7 @@ import { codeBlock, logTimestamp } from "@micthiesen/mitools/markdown";
 import { notify } from "@micthiesen/mitools/pushover";
 import { ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { generateText, isStepCount, tool } from "ai";
-import { Effect } from "effect";
+import { Clock, Effect } from "effect";
 import { z } from "zod";
 import { hasPrice, llmCostCents } from "../ai/cost.js";
 import { getBriefingModel } from "../ai/registry.js";
@@ -115,7 +115,7 @@ export class BriefingAgentTask extends ScheduledTask {
                   .update(JSON.stringify({ title, message, url }))
                   .digest("hex")
                   .slice(0, 24);
-                const deliveryId = `${runId ?? Date.now()}:${contentHash}`;
+                const deliveryId = `${runId ?? randomUUID()}:${contentHash}`;
                 const reserved = reserveBriefingDelivery(this.name, deliveryId);
                 if (!reserved) return { success: true, duplicate: true };
                 this.logger.info(`Sending notification: ${title}`);
@@ -140,7 +140,7 @@ export class BriefingAgentTask extends ScheduledTask {
                   title,
                   message,
                   url,
-                  timestamp: Date.now(),
+                  timestamp: yield* Clock.currentTimeMillis,
                   runId,
                 });
                 notificationSent = true;

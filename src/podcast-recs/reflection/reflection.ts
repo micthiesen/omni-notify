@@ -50,7 +50,7 @@ type RawProfile = z.infer<typeof profileSchema>;
  * draft and a skeptical revision. Model output is constrained and claims that
  * cite missing or inadequate evidence are removed before persistence.
  */
-class PodcastReflectionError extends Data.TaggedError("PodcastReflectionError")<{
+export class PodcastReflectionError extends Data.TaggedError("PodcastReflectionError")<{
   readonly operation: string;
   readonly cause: unknown;
 }> {

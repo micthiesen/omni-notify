@@ -1,5 +1,5 @@
 import type { Effect as EffectType } from "effect/Effect";
-import { Data, Effect, Schema, SynchronizedRef } from "effect";
+import { Clock, Data, Effect, Schema, SynchronizedRef } from "effect";
 import type { OptionsInit } from "got";
 import {
   type LimitedTextResponse,
@@ -137,10 +137,14 @@ function fetchAccessToken(
             }),
           ),
     ),
-    Effect.map((parsed) => ({
-      accessToken: parsed.access_token,
-      expiresAt: Date.now() + parsed.expires_in * 1_000 - TOKEN_REFRESH_LEEWAY_MS,
-    })),
+    Effect.flatMap((parsed) =>
+      Clock.currentTimeMillis.pipe(
+        Effect.map((now) => ({
+          accessToken: parsed.access_token,
+          expiresAt: now + parsed.expires_in * 1_000 - TOKEN_REFRESH_LEEWAY_MS,
+        })),
+      ),
+    ),
   );
 }
 
@@ -148,17 +152,19 @@ function getAccessToken(
   staleToken: string | undefined,
   dependencies: KickDependencies,
 ): EffectType<string, KickApiError> {
-  return SynchronizedRef.modifyEffect(tokenState, (cached) => {
-    // On a 401, reuse a token that another caller already refreshed while this
-    // caller was in flight. Only the caller still holding the stale generation
-    // performs the exchange.
-    if (cached && cached.expiresAt > Date.now() && cached.accessToken !== staleToken) {
-      return Effect.succeed([cached.accessToken, cached] as const);
-    }
-    return fetchAccessToken(dependencies).pipe(
-      Effect.map((fresh) => [fresh.accessToken, fresh] as const),
-    );
-  });
+  return SynchronizedRef.modifyEffect(tokenState, (cached) =>
+    Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      // On a 401, reuse a token that another caller already refreshed while this
+      // caller was in flight. Only the caller still holding the stale generation
+      // performs the exchange.
+      if (cached && cached.expiresAt > now && cached.accessToken !== staleToken) {
+        return [cached.accessToken, cached] as const;
+      }
+      const fresh = yield* fetchAccessToken(dependencies);
+      return [fresh.accessToken, fresh] as const;
+    }),
+  );
 }
 
 const categorySchema = Schema.NullOr(

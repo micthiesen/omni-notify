@@ -204,8 +204,17 @@ export function registerIOSControlRoutes(
               Effect.as(c.json({ registered: input.controls.length })),
             ),
         ),
-        Effect.catch(() =>
+        Effect.catchTag("HttpBodyTooLargeError", () =>
+          Effect.succeed(c.json({ error: "Request body too large" }, 413)),
+        ),
+        Effect.catchTag("HttpBodyError", () =>
           Effect.succeed(c.json({ error: "Invalid control registration" }, 400)),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            logger.error("Failed to register iOS controls", cause);
+            return c.json({ error: "Could not save control registration" }, 500);
+          }),
         ),
       ),
     ),

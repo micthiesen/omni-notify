@@ -7,6 +7,7 @@ import {
   getLastRun,
   getTaskScheduleState,
   markScheduleEvaluated,
+  recordRunStart,
   TaskRunEntity,
   TaskRunLogEntity,
   TaskScheduleStateEntity,
@@ -94,13 +95,25 @@ describe("TaskRegistry missed-run recovery", () => {
     vi.restoreAllMocks();
   });
 
+  it("repairs interrupted runs through explicit initialization", async () => {
+    const running = recordRunStart("Interrupted", "schedule");
+    const registry = new TaskRegistry(logger);
+
+    await Effect.runPromise(registry.initializeEffect());
+
+    expect(TaskRunEntity.get({ runId: running.runId })).toMatchObject({
+      status: "error",
+      error: "interrupted (process exited)",
+    });
+  });
+
   it("establishes a baseline without running a never-seen task", async () => {
     const now = localTime(15, 10);
     const task = new FakeTask("Daily", "0 0 5 * * *");
     const registry = new TaskRegistry(logger);
     registry.track(task);
 
-    await registry.recoverMissedTasks(now);
+    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
 
     expect(task.runs).toBe(0);
     expect(getTaskScheduleState(task.name)).toEqual({
@@ -117,7 +130,7 @@ describe("TaskRegistry missed-run recovery", () => {
     registry.track(task);
     markScheduleEvaluated(task.name, task.schedule, localTime(14, 6));
 
-    await registry.recoverMissedTasks(now);
+    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
 
     expect(task.runs).toBe(1);
     expect(getLastRun(task.name)).toMatchObject({
@@ -136,7 +149,7 @@ describe("TaskRegistry missed-run recovery", () => {
     registry.track(task);
     markScheduleEvaluated(task.name, task.schedule, localTime(14, 6));
 
-    await registry.recoverMissedTasks(now);
+    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
 
     expect(task.runs).toBe(0);
     expect(getTaskScheduleState(task.name)?.evaluatedThrough).toBe(now);
@@ -149,7 +162,7 @@ describe("TaskRegistry missed-run recovery", () => {
     registry.track(task);
     markScheduleEvaluated(task.name, "0 0 5 * * *", localTime(14, 6));
 
-    await registry.recoverMissedTasks(now);
+    await Effect.runPromise(registry.recoverMissedTasksEffect(now));
 
     expect(task.runs).toBe(0);
     expect(getTaskScheduleState(task.name)).toEqual({

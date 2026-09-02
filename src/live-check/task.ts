@@ -151,7 +151,7 @@ export default class LiveCheckTask extends ScheduledTask {
       }
       const due = this.streamers.filter((s) => isStreamerDue(s.tier, tick));
       yield* Effect.forEach(due, (streamer) => this.tickStreamer(streamer), {
-        concurrency: "unbounded",
+        concurrency: 6,
         discard: true,
       });
       if (this.intelligence) yield* this.intelligence.afterTick();
@@ -277,7 +277,7 @@ export default class LiveCheckTask extends ScheduledTask {
             }
             return link !== undefined;
           }),
-        { concurrency: "unbounded" },
+        { concurrency: 4 },
       );
       if (identityChanged.some(Boolean)) {
         identityLinks = yield* getAllProfileIdentityLinksEffect();
@@ -450,7 +450,7 @@ export default class LiveCheckTask extends ScheduledTask {
             Effect.map((status): BindingFetchResult => ({ binding, status })),
           );
         },
-        { concurrency: "unbounded" },
+        { concurrency: 4 },
       );
 
       for (const r of results) this.logBindingStatus(streamer.displayName, r);

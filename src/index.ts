@@ -262,6 +262,7 @@ if (runTaskIndex !== -1) {
 const serverOnly = process.argv.includes("--server-only");
 
 const registry = new TaskRegistry(logger);
+await runPromise(registry.initializeEffect());
 const loadedLiveCheck = loadStreamers();
 const streamers = loadedLiveCheck.streamers;
 const iosControls = await runPromise(createIOSControlServiceEffect(streamers));

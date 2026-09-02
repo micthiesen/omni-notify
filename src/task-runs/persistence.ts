@@ -1,4 +1,5 @@
 import { gunzipSync, gzipSync } from "node:zlib";
+import { randomUUID } from "node:crypto";
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger, type LogLevel } from "@micthiesen/mitools/logging";
 import { transaction } from "@micthiesen/mitools/docstore";
@@ -72,7 +73,7 @@ export const TaskRunLogEntity = new Entity<StoredTaskRunLog, ["runId"]>(
 const KEEP_PER_TASK = 50;
 
 export function makeRunId(taskName: string): string {
-  return `${taskName}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  return `${taskName}:${randomUUID()}`;
 }
 
 export function recordRunStart(
@@ -80,13 +81,14 @@ export function recordRunStart(
   trigger: TaskRunTrigger,
   runId: string = makeRunId(taskName),
   scheduledFor?: number,
+  startedAt = Date.now(),
 ): TaskRunData {
   const run: TaskRunData = {
     runId,
     taskName,
     trigger,
     scheduledFor,
-    startedAt: Date.now(),
+    startedAt,
     status: "running",
   };
   TaskRunEntity.upsert(run);
@@ -116,9 +118,10 @@ export function recordRunStartAndMarkSchedule(
   evaluatedThrough: number,
   runId?: string,
   scheduledFor?: number,
+  startedAt = Date.now(),
 ): TaskRunData {
   return transaction(() => {
-    const run = recordRunStart(taskName, trigger, runId, scheduledFor);
+    const run = recordRunStart(taskName, trigger, runId, scheduledFor, startedAt);
     markScheduleEvaluated(taskName, schedule, evaluatedThrough);
     return run;
   });
@@ -127,6 +130,7 @@ export function recordRunStartAndMarkSchedule(
 export function recordRunEnd(
   runId: string,
   result: { status: "success" | "error"; error?: string; summary?: string },
+  finishedAt = Date.now(),
 ): void {
   TaskRunEntity.patch(
     { runId },
@@ -134,7 +138,7 @@ export function recordRunEnd(
       status: result.status,
       error: result.error,
       summary: result.summary,
-      finishedAt: Date.now(),
+      finishedAt,
     },
   );
 }

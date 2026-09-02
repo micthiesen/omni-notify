@@ -4,7 +4,7 @@ import {
   CognitoUser,
   CognitoUserPool,
 } from "amazon-cognito-identity-js";
-import { Data, Effect, Ref, Schema } from "effect";
+import { Clock, Data, Effect, Ref, Schema } from "effect";
 
 const USER_POOL_ID = "us-east-1_rjhNnZVAm";
 const CLIENT_ID = "4552ujeu3aic90nf8qn53levmn";
@@ -43,7 +43,7 @@ export function authenticateWhisker(
 ): Effect.Effect<{ idToken: string; userId: string }, WhiskerAuthenticationError> {
   return Effect.gen(function* () {
     const cached = yield* Ref.get(cachedAuth);
-    const now = yield* Effect.sync(() => Date.now());
+    const now = yield* Clock.currentTimeMillis;
     if (cached && now < cached.expiresAt - TOKEN_EXPIRY_BUFFER_MS) {
       logger.debug("Using cached credentials");
       return { idToken: cached.idToken, userId: cached.userId };

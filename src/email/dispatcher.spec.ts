@@ -1,5 +1,6 @@
 import type { Logger } from "@micthiesen/mitools/logging";
 import { Deferred, Effect } from "effect";
+import { PersistenceError } from "../effect/errors.js";
 import { runPromise } from "../effect/interop.js";
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,7 +48,12 @@ describe("EmailDispatcher durability", () => {
       transport(
         Effect.succeed({
           emails: [email],
-          commit: Effect.fail(new Error("cursor unavailable")),
+          commit: Effect.fail(
+            new PersistenceError({
+              operation: "save test cursor",
+              cause: new Error("cursor unavailable"),
+            }),
+          ),
         }),
       ),
       logger,

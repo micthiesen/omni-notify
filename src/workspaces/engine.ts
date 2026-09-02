@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@micthiesen/mitools/logging";
 import { generateText, isStepCount, Output, tool } from "ai";
-import { Effect, Schema } from "effect";
+import { Clock, Effect, Schema } from "effect";
 import { z } from "zod";
 import { getWorkspaceModel } from "../ai/registry.js";
 import { fetchUrl } from "../ai/tools/fetchUrl.js";
@@ -30,11 +30,7 @@ import {
   upsertWorkspaceSubject,
 } from "./persistence.js";
 import { workspaceRepositoryEffect } from "./repository.js";
-import type {
-  WorkspaceDefinition,
-  WorkspaceRunRequest,
-  WorkspaceRunResult,
-} from "./types.js";
+import type { WorkspaceDefinition, WorkspaceRunRequest } from "./types.js";
 
 const nullableString = z.string().nullable();
 const artifactUpdateSchema = z.object({
@@ -156,113 +152,106 @@ const workspaceAgentOutputSchema = Schema.Struct({
 });
 type WorkspaceOutput = typeof workspaceAgentOutputSchema.Type;
 
-export function runWorkspaceEffect(
+export const runWorkspaceEffect = Effect.fn("Workspace.run")(function* (
   definition: WorkspaceDefinition,
   request: WorkspaceRunRequest,
   logger: Logger,
-): Effect.Effect<
-  WorkspaceRunResult,
-  WorkspaceOperationError | WorkspaceValidationError
-> {
-  return Effect.gen(function* () {
-    const { model, modelId } = getWorkspaceModel(request.trigger);
-    logger.info(
-      `Running ${definition.title} workspace (${modelId}, ${request.trigger})`,
-    );
-    const prompt = yield* workspaceRepositoryEffect("build workspace prompt", () =>
-      buildWorkspacePrompt(definition, request),
-    );
-    const runId = getCurrentRunId();
-    const persistedUserMessage = request.message
-      ? yield* workspaceRepositoryEffect("persist workspace user message", () =>
-          addWorkspaceMessage({
-            workspaceId: definition.id,
-            subjectId: request.subjectId,
-            role: "user",
-            text: request.message!,
-            runId,
-          }),
-        )
-      : undefined;
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        generateText({
-          model,
-          output: Output.object({ schema: workspaceOutputSchema }),
-          tools: {
-            web_search: webSearch,
-            fetch_url: fetchUrl,
-            report_papercut: tool({
-              description:
-                "Report a reusable capability, data, integration, prompt, workflow, or UI problem that made this run harder. Do not report ordinary uncertainty about the purchase.",
-              inputSchema: z.object({
-                category: z.enum([
-                  "missing-capability",
-                  "poor-source-data",
-                  "integration-friction",
-                  "workflow-gap",
-                  "prompt-problem",
-                  "ui-gap",
-                ]),
-                title: z.string(),
-                detail: z.string(),
-                related_tool: z.string().nullable(),
-                subject_id: z.string().nullable(),
-              }),
-              execute: (input) =>
-                runPromise(
-                  workspaceRepositoryEffect("report workspace papercut", () => {
-                    const papercut = reportWorkspacePapercut({
-                      workspaceId: definition.id,
-                      subjectId: input.subject_id ?? request.subjectId,
-                      runId: getCurrentRunId(),
-                      category: input.category,
-                      title: input.title,
-                      detail: input.detail,
-                      relatedTool: input.related_tool ?? undefined,
-                    });
-                    return {
-                      papercutId: papercut.papercutId,
-                      occurrences: papercut.occurrences,
-                    };
-                  }),
-                ),
-            }),
-          },
-          stopWhen: isStepCount(12),
-          prompt,
+) {
+  const { model, modelId } = getWorkspaceModel(request.trigger);
+  logger.info(`Running ${definition.title} workspace (${modelId}, ${request.trigger})`);
+  const prompt = yield* workspaceRepositoryEffect("build workspace prompt", () =>
+    buildWorkspacePrompt(definition, request),
+  );
+  const runId = getCurrentRunId();
+  const persistedUserMessage = request.message
+    ? yield* workspaceRepositoryEffect("persist workspace user message", () =>
+        addWorkspaceMessage({
+          workspaceId: definition.id,
+          subjectId: request.subjectId,
+          role: "user",
+          text: request.message!,
+          runId,
         }),
-      catch: (cause) =>
-        new WorkspaceOperationError({ operation: "generate workspace output", cause }),
-    });
-    if (!result.output)
-      return yield* new WorkspaceValidationError({
-        message: "Workspace agent returned no structured output",
-      });
-    const output = yield* Schema.decodeUnknownEffect(workspaceAgentOutputSchema)(
-      result.output,
-    ).pipe(
-      Effect.mapError(
-        (cause) =>
-          new WorkspaceValidationError({
-            message: "Workspace agent returned invalid structured output",
-            cause,
+      )
+    : undefined;
+  const result = yield* Effect.tryPromise({
+    try: () =>
+      generateText({
+        model,
+        output: Output.object({ schema: workspaceOutputSchema }),
+        tools: {
+          web_search: webSearch,
+          fetch_url: fetchUrl,
+          report_papercut: tool({
+            description:
+              "Report a reusable capability, data, integration, prompt, workflow, or UI problem that made this run harder. Do not report ordinary uncertainty about the purchase.",
+            inputSchema: z.object({
+              category: z.enum([
+                "missing-capability",
+                "poor-source-data",
+                "integration-friction",
+                "workflow-gap",
+                "prompt-problem",
+                "ui-gap",
+              ]),
+              title: z.string(),
+              detail: z.string(),
+              related_tool: z.string().nullable(),
+              subject_id: z.string().nullable(),
+            }),
+            execute: (input) =>
+              runPromise(
+                workspaceRepositoryEffect("report workspace papercut", () => {
+                  const papercut = reportWorkspacePapercut({
+                    workspaceId: definition.id,
+                    subjectId: input.subject_id ?? request.subjectId,
+                    runId: getCurrentRunId(),
+                    category: input.category,
+                    title: input.title,
+                    detail: input.detail,
+                    relatedTool: input.related_tool ?? undefined,
+                  });
+                  return {
+                    papercutId: papercut.papercutId,
+                    occurrences: papercut.occurrences,
+                  };
+                }),
+              ),
           }),
-      ),
-    );
-    const applied = yield* applyWorkspaceOutputEffect(
-      definition,
-      output,
-      request,
-      logger,
-      persistedUserMessage?.messageId,
-    );
-    logger.info(
-      `Workspace updated ${applied.updatedSubjects} subject(s) and proposed ${applied.createdActions} action(s)`,
-    );
-    return applied;
+        },
+        stopWhen: isStepCount(12),
+        prompt,
+      }),
+    catch: (cause) =>
+      new WorkspaceOperationError({ operation: "generate workspace output", cause }),
   });
-}
+  if (!result.output)
+    return yield* new WorkspaceValidationError({
+      message: "Workspace agent returned no structured output",
+    });
+  const output = yield* Schema.decodeUnknownEffect(workspaceAgentOutputSchema)(
+    result.output,
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new WorkspaceValidationError({
+          message: "Workspace agent returned invalid structured output",
+          cause,
+        }),
+    ),
+  );
+  const applied = yield* applyWorkspaceOutputEffect(
+    definition,
+    output,
+    request,
+    logger,
+    persistedUserMessage?.messageId,
+  );
+  logger.info(
+    `Workspace updated ${applied.updatedSubjects} subject(s) and proposed ${applied.createdActions} action(s)`,
+  );
+  return applied;
+});
 
 interface WorkspaceOutputPlan {
   readonly ids: ReadonlyMap<string, string>;
@@ -362,179 +351,173 @@ function planWorkspaceOutput(
   return { ids, artifactKeys, notificationSubjectId };
 }
 
-export function applyWorkspaceOutputEffect(
+export const applyWorkspaceOutputEffect = Effect.fn("Workspace.applyOutput")(function* (
   definition: WorkspaceDefinition,
   output: WorkspaceOutput,
   request: WorkspaceRunRequest,
   logger: Logger,
   persistedUserMessageId?: string,
 ) {
-  return Effect.gen(function* () {
-    const decoded = yield* Schema.decodeUnknownEffect(workspaceAgentOutputSchema)(
-      output,
-    ).pipe(
-      Effect.mapError(
-        (cause) =>
-          new WorkspaceValidationError({ message: "Invalid workspace output", cause }),
-      ),
-    );
-    const plan = yield* Effect.try({
-      try: () => planWorkspaceOutput(definition, decoded, request),
-      catch: (cause) =>
-        cause instanceof Error
-          ? new WorkspaceValidationError({ message: cause.message, cause })
-          : new WorkspaceValidationError({
-              message: "Workspace output planning failed",
-              cause,
-            }),
-    });
-    const runId = getCurrentRunId();
-    const committed = yield* workspaceRepositoryEffect("commit workspace output", () =>
-      applyWorkspaceTransaction(() => {
-        const updatedSubjectIds = new Set<string>();
-        const actions: WorkspaceActionData[] = [];
-        const notifications: import("./persistence.js").WorkspaceNotificationData[] =
-          [];
-        for (const update of decoded.subjects) {
-          const subjectId = resolveSubjectId(
-            definition.id,
-            update.subject_id,
-            new Map(plan.ids),
-            request.subjectId,
-          );
-          updatedSubjectIds.add(subjectId);
-          upsertWorkspaceSubject({
+  const decoded = yield* Schema.decodeUnknownEffect(workspaceAgentOutputSchema)(
+    output,
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new WorkspaceValidationError({ message: "Invalid workspace output", cause }),
+    ),
+  );
+  const plan = yield* Effect.try({
+    try: () => planWorkspaceOutput(definition, decoded, request),
+    catch: (cause) =>
+      cause instanceof Error
+        ? new WorkspaceValidationError({ message: cause.message, cause })
+        : new WorkspaceValidationError({
+            message: "Workspace output planning failed",
+            cause,
+          }),
+  });
+  const runId = getCurrentRunId();
+  const appliedAt = yield* Clock.currentTimeMillis;
+  const committed = yield* workspaceRepositoryEffect("commit workspace output", () =>
+    applyWorkspaceTransaction(() => {
+      const updatedSubjectIds = new Set<string>();
+      const actions: WorkspaceActionData[] = [];
+      const notifications: import("./persistence.js").WorkspaceNotificationData[] = [];
+      for (const update of decoded.subjects) {
+        const subjectId = resolveSubjectId(
+          definition.id,
+          update.subject_id,
+          new Map(plan.ids),
+          request.subjectId,
+        );
+        updatedSubjectIds.add(subjectId);
+        upsertWorkspaceSubject({
+          workspaceId: definition.id,
+          subjectId,
+          title: update.title.trim(),
+          status: update.status,
+          summary: update.summary.trim(),
+          lastResearchedAt: request.trigger === "scheduled" ? appliedAt : undefined,
+        });
+        for (const artifact of update.artifact_updates) {
+          const artifactDefinition = plan.artifactKeys.get(artifact.key)!;
+          addWorkspaceArtifactRevision({
             workspaceId: definition.id,
             subjectId,
-            title: update.title.trim(),
-            status: update.status,
-            summary: update.summary.trim(),
-            lastResearchedAt: request.trigger === "scheduled" ? Date.now() : undefined,
-          });
-          for (const artifact of update.artifact_updates) {
-            const artifactDefinition = plan.artifactKeys.get(artifact.key)!;
-            addWorkspaceArtifactRevision({
-              workspaceId: definition.id,
-              subjectId,
-              artifactKey: artifact.key,
-              kind: artifactDefinition.kind,
-              content: artifact.content.trim(),
-              summary: artifact.summary.trim(),
-              runId,
-            });
-          }
-        }
-        for (const source of decoded.sources) {
-          const subjectId = resolveSubjectId(
-            definition.id,
-            source.subject_id,
-            new Map(plan.ids),
-            request.subjectId,
-          );
-          addWorkspaceSource({
-            workspaceId: definition.id,
-            subjectId,
-            kind: "web",
-            title: source.title,
-            url: normalizeWorkspaceWebUrl(source.url),
-            excerpt: source.excerpt.slice(0, 4_000),
+            artifactKey: artifact.key,
+            kind: artifactDefinition.kind,
+            content: artifact.content.trim(),
+            summary: artifact.summary.trim(),
             runId,
           });
         }
-        for (const proposal of decoded.proposals) {
-          const subjectId = resolveSubjectId(
-            definition.id,
-            proposal.subject_id,
-            new Map(plan.ids),
-            request.subjectId,
-          );
-          const payload =
-            proposal.type === "email_scope"
-              ? {
-                  senders: proposal.senders,
-                  domains: proposal.domains,
-                  subjectKeywords: proposal.subject_keywords,
-                  bodyKeywords: proposal.body_keywords,
-                }
-              : {
-                  title: proposal.event!.title,
-                  startDate: proposal.event!.start_date,
-                  endDate: proposal.event!.end_date ?? undefined,
-                  startTime: proposal.event!.start_time ?? undefined,
-                  endTime: proposal.event!.end_time ?? undefined,
-                  location: proposal.event!.location ?? undefined,
-                  description: proposal.event!.description ?? undefined,
-                  timeZone: proposal.event!.time_zone ?? undefined,
-                  allDay: proposal.event!.all_day,
-                  reminderMinutes: proposal.event!.reminder_minutes ?? undefined,
-                };
-          const added = addWorkspaceAction({
-            workspaceId: definition.id,
-            subjectId,
-            type: proposal.type,
-            title: proposal.title,
-            description: proposal.description,
-            payload: JSON.stringify(payload),
-            runId,
-          });
-          if (added.created) {
-            actions.push(added.action);
-            notifications.push(queueActionNotification(added.action).notification);
-          }
+      }
+      for (const source of decoded.sources) {
+        const subjectId = resolveSubjectId(
+          definition.id,
+          source.subject_id,
+          new Map(plan.ids),
+          request.subjectId,
+        );
+        addWorkspaceSource({
+          workspaceId: definition.id,
+          subjectId,
+          kind: "web",
+          title: source.title,
+          url: normalizeWorkspaceWebUrl(source.url),
+          excerpt: source.excerpt.slice(0, 4_000),
+          runId,
+        });
+      }
+      for (const proposal of decoded.proposals) {
+        const subjectId = resolveSubjectId(
+          definition.id,
+          proposal.subject_id,
+          new Map(plan.ids),
+          request.subjectId,
+        );
+        const payload =
+          proposal.type === "email_scope"
+            ? {
+                senders: proposal.senders,
+                domains: proposal.domains,
+                subjectKeywords: proposal.subject_keywords,
+                bodyKeywords: proposal.body_keywords,
+              }
+            : {
+                title: proposal.event!.title,
+                startDate: proposal.event!.start_date,
+                endDate: proposal.event!.end_date ?? undefined,
+                startTime: proposal.event!.start_time ?? undefined,
+                endTime: proposal.event!.end_time ?? undefined,
+                location: proposal.event!.location ?? undefined,
+                description: proposal.event!.description ?? undefined,
+                timeZone: proposal.event!.time_zone ?? undefined,
+                allDay: proposal.event!.all_day,
+                reminderMinutes: proposal.event!.reminder_minutes ?? undefined,
+              };
+        const added = addWorkspaceAction({
+          workspaceId: definition.id,
+          subjectId,
+          type: proposal.type,
+          title: proposal.title,
+          description: proposal.description,
+          payload: JSON.stringify(payload),
+          runId,
+        });
+        if (added.created) {
+          actions.push(added.action);
+          notifications.push(queueActionNotification(added.action).notification);
         }
-        const messageSubjectIds = request.subjectId
-          ? [request.subjectId]
-          : updatedSubjectIds.size
-            ? [...updatedSubjectIds]
-            : [undefined];
-        if (persistedUserMessageId && messageSubjectIds[0])
-          assignWorkspaceMessageSubject(persistedUserMessageId, messageSubjectIds[0]);
-        for (const [index, subjectId] of messageSubjectIds.entries()) {
-          if (request.message && (!persistedUserMessageId || index > 0))
-            addWorkspaceMessage({
-              workspaceId: definition.id,
-              subjectId,
-              role: "user",
-              text: request.message,
-              runId,
-            });
+      }
+      const messageSubjectIds = request.subjectId
+        ? [request.subjectId]
+        : updatedSubjectIds.size
+          ? [...updatedSubjectIds]
+          : [undefined];
+      if (persistedUserMessageId && messageSubjectIds[0])
+        assignWorkspaceMessageSubject(persistedUserMessageId, messageSubjectIds[0]);
+      for (const [index, subjectId] of messageSubjectIds.entries()) {
+        if (request.message && (!persistedUserMessageId || index > 0))
           addWorkspaceMessage({
             workspaceId: definition.id,
             subjectId,
-            role: "assistant",
-            text: decoded.response,
+            role: "user",
+            text: request.message,
             runId,
           });
-        }
-        if (
-          decoded.notification &&
-          actions.length === 0 &&
-          plan.notificationSubjectId
-        ) {
-          notifications.push(
-            queueUpdateNotification(
-              definition,
-              plan.notificationSubjectId,
-              decoded.notification,
-              runId,
-            ).notification,
-          );
-        }
-        return { actions, notifications };
-      }),
-    );
-    yield* Effect.forEach(
-      committed.notifications,
-      (notification) => deliverWorkspaceNotificationEffect(notification, logger),
-      { concurrency: 4 },
-    );
-    return {
-      summary: decoded.response.slice(0, 240),
-      updatedSubjects: decoded.subjects.length,
-      createdActions: committed.actions.length,
-    };
-  });
-}
+        addWorkspaceMessage({
+          workspaceId: definition.id,
+          subjectId,
+          role: "assistant",
+          text: decoded.response,
+          runId,
+        });
+      }
+      if (decoded.notification && actions.length === 0 && plan.notificationSubjectId) {
+        notifications.push(
+          queueUpdateNotification(
+            definition,
+            plan.notificationSubjectId,
+            decoded.notification,
+            runId,
+          ).notification,
+        );
+      }
+      return { actions, notifications };
+    }),
+  );
+  yield* Effect.forEach(
+    committed.notifications,
+    (notification) => deliverWorkspaceNotificationEffect(notification, logger),
+    { concurrency: 4 },
+  );
+  return {
+    summary: decoded.response.slice(0, 240),
+    updatedSubjects: decoded.subjects.length,
+    createdActions: committed.actions.length,
+  };
+});
 
 function resolveSubjectId(
   workspaceId: string,

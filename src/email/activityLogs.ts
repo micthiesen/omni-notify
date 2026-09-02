@@ -1,5 +1,6 @@
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger } from "@micthiesen/mitools/logging";
+import { randomUUID } from "node:crypto";
 import { Data, Effect } from "effect";
 import {
   runWithLogCaptureEffect,
@@ -58,13 +59,14 @@ export function withEmailLogCaptureEffect<T, E>(
 ): Effect.Effect<T, E> {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
-      startRunLogCapture(activityId, pipeline);
+      const captureId = `${activityId}:${randomUUID()}`;
+      startRunLogCapture(captureId, pipeline);
       const result = yield* Effect.exit(
-        restore(runWithLogCaptureEffect(activityId, effect())),
+        restore(runWithLogCaptureEffect(captureId, effect())),
       );
       yield* Effect.try({
         try: () => {
-          const buffer = takeRunLogCapture(activityId);
+          const buffer = takeRunLogCapture(captureId);
           if (buffer) {
             saveEmailActivityLogs({
               activityId,

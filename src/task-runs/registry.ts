@@ -103,14 +103,25 @@ export class TaskRegistry {
   private hasRun = new Set<string>();
   private backgroundFibers = new Set<Fiber.Fiber<void, unknown>>();
   private logger: Logger;
+  private initialized = false;
 
   constructor(parentLogger: Logger) {
     this.logger = parentLogger.extend("TaskRegistry");
-    const interrupted = markInterruptedRuns();
-    if (interrupted > 0) {
-      this.logger.warn(`Marked ${interrupted} interrupted task run(s) as errors`);
-    }
   }
+
+  public readonly initializeEffect = Effect.fn("TaskRegistry.initialize")(
+    function* (this: TaskRegistry) {
+      if (this.initialized) return;
+      const interrupted = yield* fromSync(
+        "repair interrupted task runs",
+        markInterruptedRuns,
+      );
+      this.initialized = true;
+      if (interrupted > 0) {
+        this.logger.warn(`Marked ${interrupted} interrupted task run(s) as errors`);
+      }
+    },
+  );
 
   /**
    * Wrap a task for the Scheduler. The wrapper funnels scheduled executions
@@ -278,10 +289,6 @@ export class TaskRegistry {
     });
   }
 
-  public recoverMissedTasks(now = Date.now()): Promise<void> {
-    return runPromise(this.recoverMissedTasksEffect(now));
-  }
-
   private execute(
     name: string,
     trigger: TaskRunTrigger,
@@ -334,14 +341,16 @@ export class TaskRegistry {
         // Establish the durable run and catch-up cursor atomically. A crash can
         // leave an interrupted run, but can never advance the cursor without a
         // corresponding run row.
+        const startedAt = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
         const run = yield* fromSync("record task run start", () =>
           recordRunStartAndMarkSchedule(
             name,
             actualTrigger,
             entry.task.schedule,
-            scheduledFor ?? Date.now(),
+            scheduledFor ?? startedAt,
             runId,
             scheduledFor,
+            startedAt,
           ),
         );
         this.hasRun.add(name);
@@ -376,18 +385,28 @@ export class TaskRegistry {
 
         yield* taskEffect.pipe(
           Effect.onExit((exit) =>
-            fromSync(
-              Exit.isSuccess(exit)
-                ? "record successful task run"
-                : "record failed task run",
-              () =>
-                recordRunEnd(run.runId, {
-                  status: Exit.isSuccess(exit) ? "success" : "error",
-                  error: Exit.isFailure(exit) ? Cause.pretty(exit.cause) : undefined,
-                  summary: providesRunSummary(entry.task)
-                    ? entry.task.getLastRunSummary()
-                    : undefined,
-                }),
+            Effect.clockWith((clock) => clock.currentTimeMillis).pipe(
+              Effect.flatMap((finishedAt) =>
+                fromSync(
+                  Exit.isSuccess(exit)
+                    ? "record successful task run"
+                    : "record failed task run",
+                  () =>
+                    recordRunEnd(
+                      run.runId,
+                      {
+                        status: Exit.isSuccess(exit) ? "success" : "error",
+                        error: Exit.isFailure(exit)
+                          ? Cause.pretty(exit.cause)
+                          : undefined,
+                        summary: providesRunSummary(entry.task)
+                          ? entry.task.getLastRunSummary()
+                          : undefined,
+                      },
+                      finishedAt,
+                    ),
+                ),
+              ),
             ),
           ),
           Effect.ensuring(this.finishRunEffect(run.runId, name)),

@@ -105,7 +105,10 @@ export class CastroClient implements PodcastAccountClient {
   // Subscriptions are read by fetchSubscriptions, fetchListenHistory, and
   // subscribeToShow; memoize for the client's (per-run) lifetime so a single
   // run makes one GET /profile/subscriptions instead of several.
-  private getSubscriptions(): Effect.Effect<CastroProfileSubscription[], unknown> {
+  private getSubscriptions(): Effect.Effect<
+    CastroProfileSubscription[],
+    CastroRequestError
+  > {
     return Cache.get(this.subscriptionsCache, "subscriptions");
   }
 
@@ -461,24 +464,28 @@ export class CastroClient implements PodcastAccountClient {
     );
   }
 
-  private fetchPodcast(publicId: string): Effect.Effect<CastroPodcast, unknown> {
+  private fetchPodcast(
+    publicId: string,
+  ): Effect.Effect<CastroPodcast, CastroRequestError> {
     return Cache.get(this.podcastCache, publicId);
   }
 
-  private fetchEpisode(publicId: string): Effect.Effect<CastroEpisode, unknown> {
+  private fetchEpisode(
+    publicId: string,
+  ): Effect.Effect<CastroEpisode, CastroRequestError> {
     return Cache.get(this.episodeCache, publicId);
   }
 
   private searchPodcastMetadata(
     query: string,
-  ): Effect.Effect<CastroPodcastSearchResult[], unknown> {
+  ): Effect.Effect<CastroPodcastSearchResult[], CastroRequestError> {
     return Cache.get(this.searchCache, query);
   }
 
   private findPodcastSearchResult(
     query: string,
     predicate: (result: CastroPodcastSearchResult) => boolean,
-  ): Effect.Effect<CastroPodcastSearchResult | undefined, unknown> {
+  ): Effect.Effect<CastroPodcastSearchResult | undefined, CastroRequestError> {
     return this.searchPodcastMetadata(query).pipe(
       Effect.map((results) => results.find(predicate)),
     );
@@ -487,7 +494,7 @@ export class CastroClient implements PodcastAccountClient {
   private resolvePodcast(request: {
     feedUrl: string;
     itunesId?: number;
-  }): Effect.Effect<CastroPodcastSearchResult | undefined, unknown> {
+  }): Effect.Effect<CastroPodcastSearchResult | undefined, CastroRequestError> {
     const normalizedFeedUrl = normalizeFeedUrl(request.feedUrl);
     return this.findPodcastSearchResult(
       request.feedUrl,

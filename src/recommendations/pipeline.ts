@@ -74,18 +74,12 @@ export interface RecommendationPipelineOptions {
 }
 
 /** Runs the full recommendation pipeline. Returns a one-line summary. */
-export function runRecommendationPipelineEffect(
-  logger: Logger,
-  logFile?: LogFile,
-  options: RecommendationPipelineOptions = {},
-): Effect.Effect<
-  string,
-  | RecommendationInputError
-  | RecommendationIntegrationError
-  | RecommendationPersistenceError
-  | RecommendationCommitError
-> {
-  return Effect.gen(function* () {
+export const runRecommendationPipelineEffect = Effect.fn("Recommendations.run")(
+  function* (
+    logger: Logger,
+    logFile?: LogFile,
+    options: RecommendationPipelineOptions = {},
+  ) {
     const maxRecommendations = options.maxRecommendations ?? 1;
     if (
       !Number.isInteger(maxRecommendations) ||
@@ -244,7 +238,7 @@ export function runRecommendationPipelineEffect(
     }
     const excludedRecommendationIds = yield* persistenceEffect(
       "read recommendation exclusions",
-      () => getExcludedCanonicalIds(Date.now()),
+      () => getExcludedCanonicalIds(outcomeSyncNow),
     );
     const { kept, dropped } = filterEligible(pool, {
       watchedIds,
@@ -374,8 +368,8 @@ export function runRecommendationPipelineEffect(
       options.dryRun ?? false,
       stopReason,
     );
-  });
-}
+  },
+);
 
 function resolveManyEffect(
   items: MediaItem[],

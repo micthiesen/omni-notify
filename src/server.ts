@@ -41,7 +41,7 @@ import {
   listEmailFeedback,
   recordEmailFeedback,
 } from "./email/feedback.js";
-import { clearEmailRetry } from "./email/retry.js";
+import { EmailRetryPersistence } from "./email/retry.js";
 import {
   deleteEmailRule,
   type EmailRuleScope,
@@ -1293,7 +1293,7 @@ export function startServer(
         logger.info(`Reprocessing "${activity.subject}" through ${activity.pipeline}`);
         // Clear only after the handler succeeds, preserving durable retries on failure.
         yield* handler.handleEmailsEffect([email]);
-        yield* Effect.sync(() => clearEmailRetry(activity.pipeline, activity.emailId));
+        yield* EmailRetryPersistence.clear(activity.pipeline, activity.emailId);
         const updated = getEmailActivity(activityId) ?? activity;
         return c.json({ activity: serializeEmailActivity(updated) }) as Response;
       }),

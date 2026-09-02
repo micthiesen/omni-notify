@@ -2,7 +2,7 @@ import { Injector } from "@micthiesen/mitools/config";
 import { Logger, LogLevel } from "@micthiesen/mitools/logging";
 import { Effect } from "effect";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { EmailRetryEntity, enqueueEmailRetry } from "./retry.js";
+import { EmailRetryEntity, EmailRetryPersistence } from "./retry.js";
 import EmailRetryTask from "./retryTask.js";
 import type { EmailHandler, EmailTransport, FetchedEmail } from "./types.js";
 
@@ -78,12 +78,10 @@ describe("EmailRetryTask", () => {
     const handler: EmailHandler = {
       name: "ParcelTracker",
       handleEmailsEffect: () =>
-        Effect.sync(() => {
-          enqueueEmailRetry({
-            pipeline: "ParcelTracker",
-            emailId: "e1",
-            reason: "still down",
-          });
+        EmailRetryPersistence.enqueue({
+          pipeline: "ParcelTracker",
+          emailId: "e1",
+          reason: "still down",
         }),
     };
     const task = new EmailRetryTask(
@@ -105,12 +103,10 @@ describe("EmailRetryTask", () => {
     const handler: EmailHandler = {
       name: "ParcelTracker",
       handleEmailsEffect: () =>
-        Effect.sync(() => {
-          enqueueEmailRetry({
-            pipeline: "ParcelTracker",
-            emailId: "e1",
-            reason: "still down",
-          });
+        EmailRetryPersistence.enqueue({
+          pipeline: "ParcelTracker",
+          emailId: "e1",
+          reason: "still down",
         }),
     };
     const task = new EmailRetryTask(

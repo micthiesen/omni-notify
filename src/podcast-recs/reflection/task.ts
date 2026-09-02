@@ -5,7 +5,10 @@ import { getPodcastTasteReflectionModel } from "../../ai/registry.js";
 import config from "../../utils/config.js";
 import { resolvePodcastAccountEffect } from "../account.js";
 import { getAllPodcastRecommendations } from "../persistence.js";
-import { runPodcastTasteReflectionEffect } from "./reflection.js";
+import {
+  PodcastReflectionError,
+  runPodcastTasteReflectionEffect,
+} from "./reflection.js";
 
 export class PodcastTasteReflectionTask extends ScheduledTask {
   public readonly name = "PodcastTasteReflection";
@@ -54,7 +57,7 @@ export class PodcastTasteReflectionTask extends ScheduledTask {
     await Effect.runPromise(this.runEffect());
   }
 
-  public runEffect(): Effect.Effect<void, unknown> {
+  public runEffect(): Effect.Effect<void, PodcastReflectionError> {
     return Effect.gen({ self: this }, function* () {
       const account = yield* resolvePodcastAccountEffect(this.logger);
       if (!account) {

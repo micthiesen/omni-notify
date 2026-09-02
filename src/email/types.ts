@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect";
+import type { PersistenceError } from "../effect/errors.js";
 
 /**
  * Transport-agnostic email pipeline types. Two transports implement
@@ -62,7 +63,7 @@ export interface EmailPoll {
    * it after fan-out so a crash mid-dispatch re-delivers instead of dropping
    * (pipeline dedup gates make re-delivery safe).
    */
-  commit: Effect.Effect<void, unknown>;
+  commit: Effect.Effect<void, PersistenceError>;
 }
 
 export interface EmailSearchOptions {

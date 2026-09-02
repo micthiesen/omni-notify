@@ -85,7 +85,7 @@ export function discoverEpisodesEffect(
             return Effect.succeed({ query, results: [] as WebSearchResult[] });
           }),
         ),
-      { concurrency: "unbounded" },
+      { concurrency: 3 },
     );
 
     const resultCount = searches.reduce((sum, s) => sum + s.results.length, 0);
