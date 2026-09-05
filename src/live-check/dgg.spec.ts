@@ -236,6 +236,85 @@ describe("selectDggStreams", () => {
     });
   });
 
+  it.each(["imreallyimportant", "@ImReallyImportant"])(
+    "merges a YouTube video named %s into its configured handle",
+    (displayName) => {
+      const resolution = resolveDggStreams({
+        feed: {
+          destinyLive: false,
+          hosting: null,
+          embeds: [
+            embed({ platform: "youtube", id: "p0oUwXqr0ds", displayName, count: 24 }),
+            embed({ platform: "kick", id: "imreallyimportant", count: 34 }),
+            embed({ platform: "twitch", id: "another-streamer", count: 5 }),
+          ],
+        },
+        limit: 1,
+        configuredStreamers: [
+          {
+            id: "iri",
+            displayName: "IRI",
+            bindings: [{ platform: Platform.YouTube, username: "@imreallyimportant" }],
+            tier: "background",
+          },
+        ],
+        availablePlatforms: new Set(Object.values(Platform)),
+        identityAliases: new Map([
+          ["kick:imreallyimportant", "youtube:@imreallyimportant"],
+        ]),
+      });
+      expect(resolution.discovered.map((entry) => entry.streamer.id)).toEqual([
+        "dgg:twitch:another-streamer",
+      ]);
+      expect(resolution.configuredPresence.get("iri")).toEqual({
+        hosted: false,
+        viewers: 58,
+      });
+      expect(
+        resolution.configuredSources
+          .get("iri")
+          ?.map((entry) => entry.streamer.bindings[0].platform),
+      ).toEqual([Platform.Kick]);
+    },
+  );
+
+  it.each([Platform.Kick, Platform.YouTube])(
+    "does not match a YouTube handle across platforms or an ambiguous name (%s)",
+    (platform) => {
+      const resolution = resolveDggStreams({
+        feed: {
+          destinyLive: false,
+          hosting: null,
+          embeds: [
+            embed({ platform, id: "video-id", displayName: "imreallyimportant" }),
+          ],
+        },
+        limit: 1,
+        configuredStreamers: [
+          {
+            id: "iri",
+            displayName: "IRI",
+            bindings: [{ platform: Platform.YouTube, username: "@imreallyimportant" }],
+            tier: "background",
+          },
+          ...(platform === Platform.YouTube
+            ? [
+                {
+                  id: "other",
+                  displayName: "imreallyimportant",
+                  bindings: [{ platform: Platform.YouTube, username: "@other" }],
+                  tier: "background" as const,
+                },
+              ]
+            : []),
+        ],
+        availablePlatforms: new Set(Object.values(Platform)),
+      });
+      expect(resolution.discovered).toHaveLength(1);
+      expect(resolution.configuredPresence.size).toBe(0);
+    },
+  );
+
   it("attaches a profile-linked platform source to its configured identity", () => {
     const resolution = resolveDggStreams({
       feed: {

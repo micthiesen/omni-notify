@@ -285,9 +285,20 @@ export function resolveDggStreams({
 
   const configuredByBinding = new Map<string, Streamer>();
   const configuredByName = new Map<string, Streamer>();
+  const configuredByYouTubeName = new Map<string, Set<Streamer>>();
+  const addYouTubeName = (name: string, streamer: Streamer) => {
+    const key = normalizeId(name).replace(/^@/, "");
+    const matches = configuredByYouTubeName.get(key) ?? new Set<Streamer>();
+    matches.add(streamer);
+    configuredByYouTubeName.set(key, matches);
+  };
   for (const streamer of configuredStreamers) {
     configuredByName.set(normalizeId(streamer.displayName), streamer);
+    addYouTubeName(streamer.displayName, streamer);
     for (const binding of streamer.bindings) {
+      if (binding.platform === Platform.YouTube && binding.username.startsWith("@")) {
+        addYouTubeName(binding.username, streamer);
+      }
       configuredByBinding.set(
         canonicalBinding(binding.platform, binding.username),
         streamer,
@@ -366,10 +377,20 @@ export function resolveDggStreams({
     const configuredAlias = aliasTarget
       ? configuredByBinding.get(aliasTarget)
       : undefined;
-    const configured =
-      configuredExact ??
-      configuredAlias ??
-      configuredByName.get(normalizeId(candidate.displayName));
+    // DGG identifies YouTube streams by video ID, but may name their owner
+    // with the channel handle instead of our configured display name.
+    // Match only an unambiguous name, and keep polling the configured account
+    // so the same YouTube audience is not counted again as a linked source.
+    const youtubeMatches = configuredByYouTubeName.get(
+      normalizeId(candidate.displayName).replace(/^@/, ""),
+    );
+    const configuredName =
+      candidate.platform === Platform.YouTube
+        ? youtubeMatches?.size === 1
+          ? [...youtubeMatches][0]
+          : undefined
+        : configuredByName.get(normalizeId(candidate.displayName));
+    const configured = configuredExact ?? configuredAlias ?? configuredName;
     const url = streamUrl(candidate.platform, candidate.id);
     const selected: SelectedDggStream = {
       streamer: {
