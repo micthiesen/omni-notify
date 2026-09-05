@@ -1,703 +1,174 @@
-# CLAUDE.md
+# omni-notify
 
-> This is a living document. Update it when you learn new preferences, patterns, or project conventions. Don't ask—just update it if something is missing or outdated.
+Personal automation service for livestream monitoring, email processing, AI
+briefings, recommendations, PressPods, and durable Omni workspaces.
 
-## Project Overview
+Update this file when work establishes or changes a durable project convention.
 
-**omni-notify** monitors livestream platforms (YouTube, Twitch), email through iCloud IMAP, and more — sending Pushover notifications and taking automated actions. Features include live-check notifications, AI briefing agents, parcel tracking from emails, and automatic calendar event creation through CalDAV.
+## Work and delivery
 
-## Quick Reference
+Use `pnpm` from the repository root. After code changes, run:
 
 ```bash
-pnpm dev      # Development with hot reload
-pnpm build    # TypeScript compilation (run after changes)
-pnpm test     # Run tests (vitest)
-pnpm check    # Oxlint linting + Oxfmt formatting check
+pnpm check:write
+pnpm test
+pnpm build
 ```
 
-**Always run `pnpm check:write && pnpm test && pnpm build` after making changes.**
-
-## Effect-First Development
-
-Effect is the application runtime and the default API for all effectful TypeScript.
-
-- Production functions that perform I/O, mutate state, use time or randomness,
-  retry, sleep, acquire resources, or can fail must return `Effect`. Keep
-  deterministic transformations as ordinary pure functions.
-- `Promise` and `async` are allowed only in the smallest adapter required by an
-  external framework or library, such as Hono, MCP, AI SDK callbacks, Node
-  callbacks, or `ScheduledTask.run()`. Interpret the Effect once at that edge
-  with the shared helpers in `src/effect/`; do not run nested Effects inside
-  application code.
-- Model expected failures with domain-specific `Data.TaggedError` types. Do not
-  throw strings, collapse failures to `unknown`, or use defects for recoverable
-  conditions. Wrap third-party Promise and throwing APIs with `Effect.tryPromise`
-  or `Effect.try` at the leaf boundary.
-- Define reusable named effectful functions with `Effect.fn`. Add a
-  `Context.Service` and `Layer` only when a real runtime or test seam appears,
-  such as multiple implementations or shared scoped construction. Do not
-  layerify modules speculatively. Use `Clock`, `Random`, and injected adapters
-  instead of reading ambient time, randomness, or globals inside workflows.
-- Decode every untrusted external, persisted, environment, AI, and protocol
-  value with `Schema`. Zod may remain only at a protocol edge that requires its
-  Standard Schema implementation; convert to Effect data immediately afterward.
-- Use `Schedule` for retries and repetition, `Effect.forEach`/fibers/semaphores
-  for bounded structured concurrency, `Cache`/`Ref` for coordinated state, and
-  `Scope`/`acquireRelease` for resources. Do not introduce raw timers,
-  `Promise.all`, fire-and-forget Promises, `p-queue`, or manual cleanup chains.
-- Tests for Effects use `@effect/vitest` and `TestClock`. Assert expected typed
-  failures through `Result`; reserve `Exit` for interruption and defects. Test
-  Layers when the production code has a real Layer seam. Avoid real sleeps,
-  ad hoc interpreter chains, and ambient service state.
-- Preserve failure semantics deliberately at side-effect ordering boundaries.
-  Durable state or an outbox must make notifications, enqueue operations,
-  external writes, and retries idempotent before the workflow reports success.
-
-Authoritative Effect 4 references:
-
-- [Effect 4 migration guide](https://github.com/Effect-TS/effect/blob/main/MIGRATION.md)
-  and its linked core guides define renamed APIs and changed semantics.
-- [Effect 4 source and API documentation](https://github.com/Effect-TS/effect/tree/main/packages/effect/src)
-  is authoritative for the installed release candidate, including `Effect.fn`,
-  `Scope`, `Schedule`, `Result`, and testing services.
-- Match all Effect ecosystem package versions to the installed `effect` version;
-  Effect 4 releases them as one versioned set.
-
-## Deployment & Ops (boris)
-
-Production runs as the `omni-notify` Docker container on **boris** (`10.10.1.100`),
-under `/home/michael/compose` (compose project) with the data volume at
-`/home/michael/compose/volumes/omni-notify` (mounted to `/data` in the container:
-`docstore.db`, `channels.json`, `briefings/`, `press-pods-audio/`). Deploys are
-**auto**: pushing to `main` here rebuilds/publishes `ghcr.io/micthiesen/omni-notify:latest`
-and the host pulls it — so a code fix is a valid way to ship anything, including a
-DB migration written in code.
-
-**Agents are always authorized to ship completed work in this repository.** Once the
-requested change is reviewed and the required verification passes, commit the scoped
-changes and push them directly to `main` without asking for separate confirmation,
-even though that push triggers the production auto-deploy. Preserve and exclude any
-unrelated working-tree changes.
-
-- **App is reachable on the LAN** at `http://omni.boris/` directly from this machine.
-  Use it to hit the frontend/API and to **download anything the frontend exposes**
-  (episode MP3s, data exports, etc.) without SSH. Direct DB access on boris is also fine.
-- **Logs**: `ssh michael@10.10.1.100` (the `boris` alias) then
-  `docker logs omni-notify` (add `--since`/`| tail`/`| grep`). This is the fastest
-  way to get a real stack trace for a 500.
-- **Ad-hoc DB inspection/repair**: no `sqlite3` on the host, but the container ships
-  `better-sqlite3` + `cbor`. Write a `.mjs` script that imports them by absolute
-  `.pnpm` path (e.g.
-  `/app/node_modules/.pnpm/better-sqlite3@<ver>/node_modules/better-sqlite3/lib/index.js`),
-  `docker cp` it into `/app`, and `docker exec -w /app omni-notify node script.mjs`
-  (a script under `/tmp` can't resolve `/app/node_modules`). Root-owned files from
-  `docker cp` need `docker exec -u root … rm` to clean up. **Back up before mutating**
-  (`db.backup('/data/docstore.pre-repair.db')` — WAL-safe). Destructive DB writes may
-  trip the auto-mode permission classifier; get explicit user OK first.
-- **Two valid ways to run a one-off DB migration/repair**: (a) directly on boris
-  (`stop` container → run the migration script against `/data/docstore.db` → `start`),
-  or (b) in code that runs at boot, which auto-deploys on push. Prefer (b) for anything
-  that should be reproducible/committed; (a) for one-shot surgery.
-
-## Architecture
-
-```
-src/
-├── index.ts                 # Entry point, registers scheduled tasks
-│                            # NOTE: generic scheduling infra lives in
-│                            #   @micthiesen/mitools/scheduling (NOT this repo):
-│                            #   Scheduler (cron mgmt + graceful shutdown) and
-│                            #   ScheduledTask (abstract task base class)
-├── live-check/              # Livestream monitoring feature
-│   ├── task.ts              # LiveCheckTask: aggregate per-streamer loop
-│   │                        #   (background-tier streamers tick every 3rd run)
-│   ├── transitions.ts       # Pure state machine: decides live/offline/title edges
-│   ├── titleDebounce.ts     # Eager title-change debounce: first change fires
-│   │                        #   immediately, then 10min cooldown, last one wins
-│   ├── notificationPolicy.ts# Pure per-streamer notification permissions
-│   │                        #   (tier/liveNotifications → what may notify)
-│   ├── outage.ts            # Pure fleet-level outage alerter (one alert per
-│   │                        #   outage + escalating reminders + recovery note)
-│   ├── sessions.ts          # Completed live-session history (start/end/peak/title)
-│   ├── streamers.ts         # Streamer model: builds streamers from channels.json
-│   ├── channelsConfig.ts    # channels.json: THE channel config (bindings +
-│   │                        #   overrides); invalid file fails boot
-│   ├── persistence.ts       # Streamer live/offline state (SQLite)
-│   ├── platforms/           # Platform implementations
-│   │   ├── index.ts         # Platform enum, types, config registry
-│   │   ├── common.ts        # Shared fetch utilities
-│   │   ├── youtube.ts       # YouTube HTML scraping
-│   │   ├── twitch.ts        # Twitch GQL API
-│   │   └── kick.ts          # Kick official public API (OAuth client credentials)
-│   └── metrics/             # Viewer metrics with rolling windows (per streamer)
-│       ├── ViewerMetricsService.ts  # Peak confirmation state machine
-│       ├── persistence.ts   # ViewerMetricsEntity (daily buckets, keyed on streamerId)
-│       └── windows.ts       # Rolling window calculation helpers
-├── alerts/                  # Notification hygiene
-│   └── throttle.ts          # AlertThrottle: wraps Logger.onError/onWarn at boot,
-│                            #   dedups a repeating alert into one delivery plus
-│                            #   backing-off reminders ("Repeated N times in…")
-├── ai/                      # AI model configuration and shared tools
-│   ├── registry.ts          # Provider registry (Google, Anthropic, OpenAI)
-│   └── tools/               # Shared AI agent tools (reusable across any agent)
-│       ├── webSearch.ts     # Tavily web search tool
-│       └── fetchUrl.ts      # URL fetcher: HTML → clean markdown via Readability + Turndown
-├── mcp/                     # Authenticated streamable-HTTP MCP endpoint for Executor
-│   ├── server.ts            # /mcp transport, instructions, and tool registration
-│   ├── auth.ts              # Strong bearer-token validation and constant-time comparison
-│   ├── policy.ts            # Generated Executor policy inventory serialization
-│   └── tools/               # Bounded adapters over Omni's existing personal services
-├── printer/                 # Fixed Brother IPP printer integration for MCP
-│   └── service.ts           # Public PDF guard → inspect → CUPS/brlaser duplex → IPP + final state
-├── briefing-agent/          # AI-powered briefing tasks (web search → notify)
-│   ├── BriefingAgentTask.ts # Config-driven task class
-│   └── configs.ts           # Loads briefing configs from BRIEFINGS_PATH .md files
-├── email/                   # Shared email-pipeline infrastructure (transport-agnostic)
-│   ├── types.ts             # FetchedEmail/EmailAttachment/EmailHandler + EmailTransport contract
-│   ├── dispatcher.ts        # EmailDispatcher: no-drop fan-out to EmailHandlers via the transport
-│   ├── activity.ts          # Per-email outcome records (filtered/processed/partial/failed/…)
-│   ├── activityLogs.ts      # Per-email captured log lines (withEmailLogCapture, gzip rows)
-│   ├── triage.ts            # EmailTriageService: one shared cheap-LLM relevance call/email
-│   ├── senderRules.ts       # User-editable block/allow sender rules (merged into filters)
-│   ├── feedback.ts          # Explicit outcome corrections → triage prompt digests
-│   ├── retry.ts             # Persisted retry queue for transient pipeline failures
-│   ├── retryTask.ts         # EmailRetryTask: drains due retries (15min cadence)
-│   ├── watchdogTask.ts      # EmailWatchdogTask: warns when no email dispatched >72h
-│   ├── persistence.ts       # Last-dispatched watermark (SQLite)
-│   ├── htmlToText.ts        # HTML email body → text + shipment-shaped link extraction
-│   └── imap/                # iCloud IMAP transport
-│       ├── transport.ts     # ImapTransport: IDLE push + reconnect backoff + folder sweeps
-│       ├── sync.ts          # Pure per-folder UID-cursor sync planning
-│       ├── mapMessage.ts    # mailparser output → FetchedEmail (Message-ID ids, blob handles)
-│       └── persistence.ts   # Per-folder UID cursors (SQLite)
-├── parcel-tracker/          # Auto-submit tracking numbers from emails to Parcel.app
-│   ├── index.ts             # Pipeline factory (takes the shared EmailTriageService)
-│   ├── pipeline.ts          # Email → filter → LLM extract → validate → Parcel API
-│   ├── persistence.ts       # Dedup gate incl. near-duplicate matching (SQLite)
-│   ├── extraction/          # LLM extraction: ranked carrier candidates, links, order-# rules
-│   ├── filter/              # Tiered filter: rules → blacklist → auto-pass → triage
-│   ├── carriers/            # Parcel API carrier list + blacklist + candidate validation
-│   └── parcel/              # Parcel.app API client (wrong-carrier fallback signals)
-├── calendar-events/         # Auto-create calendar events from emails via CalDAV
-│   ├── index.ts             # Pipeline factory (takes the shared EmailTriageService)
-│   ├── pipeline.ts          # Email → filter → LLM extract → sanitize → CalDAV
-│   ├── persistence.ts       # Dedup gate, 365d context window, evt_N resolution (SQLite)
-│   ├── extraction/          # LLM event extraction + output sanitization + retry
-│   ├── filter/              # Tiered filter: rules → blacklist → auto-pass → triage
-│   └── caldav/              # iCloud CalDAV API and RFC 6764 discovery
-│                            #   principal → home-set → collection discovery, pXX shards
-├── press-pods/              # PressPods: article URL → TTS podcast episode + RSS feed
-│   ├── task.ts              # PressPodsTask: drains the job queue (5min sweep; submissions
-│   │                        #   kick a manual run immediately via TaskRegistry.runNow)
-│   ├── pipeline.ts          # URL → retrieve → clean → synthesize → store → notify
-│   ├── persistence.ts       # PressPodsEpisodeEntity + durable job queue (backoff retries,
-│   │                        #   stale-claim reclaim after crashes, manual retry from UI)
-│   ├── retrievers/          # 7 parallel article extractors (postlight, readability,
-│   │                        #   extractus, wayback, removepaywall, fetch, jina if keyed);
-│   │                        #   metadata model rates each 0-10, best wins
-│   ├── agents/              # metadata rating/extraction + narration cleaning prompts
-│   ├── speech/              # TTS: chunk → per-chunk synth+verify → mastering
-│   │                        #   synthesize.ts (chunked synth + STT/length verify + chapters),
-│   │                        #   providers/ (higgs | elevenlabs, swappable via config),
-│   │                        #   stt.ts + coverage.ts (STT round-trip truncation check),
-│   │                        #   textChunking.ts (section/paragraph chunking, pure),
-│   │                        #   audioChain.ts (ffmpeg: +10% atempo, denoise, per-chunk
-│   │                        #   leveling, 2-pass linear loudnorm, click-free intro concat), voices.ts
-│   ├── audio.ts             # duration probe (music-metadata) + ID3 album art (node-id3)
-│   ├── storage.ts           # episode MP3s on disk (press-pods-audio next to the DB)
-│   ├── rss.ts               # podcast RSS feed (podcast pkg), 50 newest episodes
-│   ├── routes.ts            # public /pods/* (token-gated) + internal /api/press-pods/*
-│   ├── submit.ts            # shared submission path (zod schema, Karakeep bookmark, kick)
-│   ├── errors.ts            # retryable-vs-permanent failure classification
-│   └── costs.ts             # per-episode LLM/TTS cost tracking
-├── recommendations/         # AI media recommendations → watchlist + Pushover
-│   ├── task.ts              # RecommendationTask (cron, default Mon/Wed/Fri 5pm)
-│   ├── pipeline.ts          # Poll state → outcomes → candidates → filter → shortlist → select → commit
-│   ├── mediaLibrary.ts      # Plex history/in-progress/library bridge
-│   ├── watchlist.ts         # Combined Radarr/Sonarr tracked-state + acquisition bridge
-│   ├── tmdb/                # TMDB client (canonical identity + candidate sources)
-│   ├── identity.ts          # GUID → tmdb:{type}:{id} resolution, cached in SQLite
-│   ├── outcomes.ts          # Pure outcome labeling (watched ≥80% / abandoned / ignored 30d)
-│   ├── candidates.ts        # Pool assembly with source quotas + novelty bucket
-│   ├── filters.ts           # Pure hard filters (pre-model)
-│   ├── shortlist.ts         # Cheap-model scoring, composite computed in code
-│   └── selection.ts         # Strong-model research (Tavily tools) + structured decision
-├── podcast-recs/            # AI podcast-episode recommendations → Pushover
-│   ├── task.ts              # PodcastRecommendationTask (cron, default Mon/Wed/Fri 11am;
-│   │                        #   PODCAST_TASTE_PATH doubles as the feature flag)
-│   ├── pipeline.ts          # Two-tier: guest appearances (Tier 1) + topic/drama (Tier 2)
-│   │                        #   → verify → filter → gate/select → commit (pending→enqueue→notify)
-│   ├── account.ts           # PodcastAccountClient bridge contract
-│   ├── castro/              # Castro private-sync client + hourly Inbox cleanup
-│   ├── voices.ts            # Parse ## Voices (followed people) from the taste md
-│   ├── guests.ts            # Tier-1 discovery: PI byperson + Tavily person-search fallback
-│   ├── guestSelection.ts    # Tier-1 default-include gate (capped, for press-tour weeks)
-│   ├── podcastindex/        # Podcast Index API client (byperson guest search)
-│   ├── discovery.ts         # Tier-2 Tavily multi-angle (topic/drama) → candidate extraction
-│   ├── candidates.ts        # iTunes (Castro fallback) + RSS resolution; PI→candidate mapping
-│   ├── itunes.ts            # Keyless iTunes Search API client
-│   ├── rss.ts               # RSS episode parsing (linkedom)
-│   ├── subscriptions.ts     # Castro-account subscription resolution (three-state)
-│   ├── filters.ts           # Pure hard filters (7d recency, subscribed/cooldown/excluded)
-│   ├── shortlist.ts         # Tier-2 cheap-model scoring, composite computed in code
-│   ├── selection.ts         # Tier-2 strong-model research + structured one-pick decision
-│   ├── outcomes.ts          # Pure listen-history outcome labeling
-│   ├── taste.ts             # Seed profile + subscriptions + feedback + reflection digest
-│   ├── reflection/          # Versioned podcast taste reflection (weekly task):
-│   │                        #   Castro listen history + rec outcomes → evidence ledger
-│   │                        #   → draft/critic LLM passes → validated profile checkpoints
-│   └── persistence.ts       # PodcastRecommendationEntity, exclusions, feedback
-├── task-runs/               # Generic task-run tracking (powers the web UI)
-│   ├── persistence.ts       # TaskRunEntity + TaskRunLogEntity (last 50 runs/task), interrupted-run repair
-│   ├── events.ts            # taskRunBus (run start/finish) + runLogBus (per-line log events)
-│   ├── logCapture.ts        # Logger.onLog tap + AsyncLocalStorage run attribution
-│   └── registry.ts          # TaskRegistry: tracked wrapper, manual runs, next-run times
-├── workspaces/              # Durable, conversational project workspaces
-│   ├── definitions.ts       # Code-first registry; Purchase Research + Marketplace Selling
-│   ├── engine.ts            # Bounded agent context → subjects/artifacts/sources/proposals
-│   ├── task.ts              # Scheduled or on-demand per-subject + manual/email runs
-│   ├── email.ts             # Deterministic ingestion through approved sender/keyword scopes
-│   ├── actions.ts           # Human approval coordinator (email scopes + idempotent CalDAV)
-│   ├── notifications.ts     # Durable Pushover outbox with specific dossier/action deep links
-│   └── persistence.ts       # Subjects, revisions, messages, sources, actions, scopes, papercuts
-├── emails/                  # Email utilities (general purpose)
-├── tools/
-│   └── preview-server.ts    # Dev harness: real server + fake data for frontend work
-├── server.ts                # Hono API (/api/tasks, /api/task-runs, /api/recommendations,
-│                            #   /api/pets, /api/streamers, /api/snapshot, /pods/* (PressPods),
-│                            #   /api/trigger-channels for homebridge-stream-triggers) + SSE (/api/events,
-│                            #   /api/task-runs/:runId/logs/stream) + SPA
-└── utils/
-    └── config.ts            # Environment config with zod validation
-```
-
-Frontend (`frontend/`): React SPA ("Omni Notify") with client-side path routing — `/` dashboard optimized for the "bored, what should I watch" glance — order: Live Now hero (live cards whose whole-card tap opens the stream itself via a stretched-link overlay, with a smaller "Details ›" chip to the streamer page; title, uptime, current viewers, category; primary tier sorts before background), On Deck strip (newest still-open media recs from the snapshot's `onDeck`, hidden when empty, tiles link to `/media/:id`), then stat strip, task cards with countdowns + run history, activity feed), `/pets` weight tracker (lazy-loaded recharts chunk), `/recommendations` recommendation list with status filters, `/podcasts` podcast picks + taste brain, `/pods` PressPods episodes (lazy; submit-URL form, inline audio player, job status with retry/dismiss for failures, per-episode logs via the task-run LogViewer), `/briefings` briefing-notification archive, `/emails` per-email pipeline activity (lazy; outcome/pipeline filter chips, per-email processing-log modal with reprocess / sender block / not-relevant-missed feedback / forget-tracking-number actions, and a sender-rules management section), `/media/:id` + `/podcasts/:id` recommendation detail pages, `/feedback/{recommendations|podcasts}/:id` mobile one-tap rating page (Pushover notifications deep-link here), `/streamers/:id` streamer detail (live status, 7/30/90-day + all-time viewer highs, peak-viewers-by-day bar chart from `ViewerMetricsEntity` daily buckets, recent-streams session list from `StreamSessionsEntity`; streamer cards/pills link here). StreamerPage shares the lazy recharts chunk with PetsPage. All dashboard state flows through one SSE connection (`LiveDataProvider` in `frontend/src/live.tsx`): the server serializes a full snapshot (tasks + streamers + recent runs + on-deck recs) once per task-run start/finish and broadcasts it to all connected clients (byte-identical pushes skipped, `X-Accel-Buffering: no` so proxies don't buffer); the client fetches `/api/snapshot` immediately on mount in parallel with opening the stream and polls until the first SSE snapshot lands (first paint never waits on the stream), then falls back to polling whenever the stream is down, showing the connection state in the nav bar. Hashed `/assets/*` are served with immutable cache headers; HTML revalidates. To preview the UI with fake data: `DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts`.
-
-Navigation is intent-grouped rather than feature-flat: desktop uses a persistent
-sidebar; screens up to 820px use a compact top header plus fixed bottom navigation
-for Home, Watch, Listen, Research, and More. Listen groups Podcast Picks +
-PressPods, Research groups Workspaces + Briefings, and More holds Operations,
-Email, Pets, Costs, and Data. Detailed task controls and activity live on
-`/operations`; Home only shows actionable attention, live/watch content, active
-research, and compact system health.
-
-### Frontend Style Guide
-
-All styling lives in `frontend/src/index.css` (plain CSS, design tokens as CSS variables in `:root`). Conventions:
-
-- **Label casing**: static UI labels (buttons, chips, tabs/nav, section headers, column headers, short status labels, menu items) are Title Case ("Run Now", "Not for Me", "Show More") — capitalize the first/last word and all principal words; lowercase articles, coordinating conjunctions, and short (<5-letter) prepositions unless they're the first or last word. Single-word labels are just capitalized ("Pending", "Notified", "Refresh"). Full sentences and prose — descriptions, subtitles, help text, empty-state messages, toasts/errors/confirmations, tooltip sentences — stay sentence case; never Title-Case those. Dynamic identifiers (task names, data entity labels, briefing names) render through `toTitleCase()` from `utils/format.ts` ("CastroInboxCleanup" → "Castro Inbox Cleanup"); keep raw values for keys/API calls. Tiny badges may be CSS-uppercased (`.trigger-badge`, `.section-title`).
-- **Tokens, not literals**: colors via `--bg-*`/`--text-*`/`--accent`/`--success`/`--danger`/`--warn`/`--live`; radii via `--radius` (cards/modals), `--radius-sm` (buttons, inputs, tiles, tags that wrap long text), `--radius-xs` (tiny badges, code chips); `999px` only for true pills with short single-line text. Header controls (buttons, selects) share `--control-height`.
-- **Metadata rows** ("Jul 16, 8:20 PM · 12s · Manual"): use `.meta-row` with each part as its own child element. Separator dots are generated by CSS (`::after`), never literal `·`/`&middot;` in JSX — this keeps wrapping clean on mobile (no line ever starts with a dot).
-- **Date/time formatting**: only via `utils/format.ts` (`formatAbsolute`, `formatAbsoluteWithYear`, `formatDateOnly`, `formatRelative`, …). No per-page `toLocaleString` helpers.
-- **Task output is log-like** → `.run-summary`/`.run-error` render in `--font-mono` wherever they appear (task cards, history, activity, run lists).
-- **Cards in grids** stretch to equal row height (no `align-items: start`); interactive rows inside padded cards bleed hover highlights to the card edge (negative `margin-inline` + matching `padding-inline`).
-- **Pages are full width**: no per-list `max-width`; page headers use `.page-header` with `.page-header-stack` (title + `.page-subtitle` stacked left), actions on the right.
-- **Repeated-column lists** (e.g. `.rec-run-list`) align columns across rows via parent grid + `grid-template-columns: subgrid` on rows; free-form feeds (dashboard Activity) stay flex.
-- **Filter chips**: always `.chip-btn` (+`.chip-btn-count` for counts); status indicators always reserve their space (`.status-dot.status-none` when idle) so labels don't shift.
-- **Shared components** live in `frontend/src/components/`: `TasteBrain` (both rec pages, always rendered at the top of the page), `StatusFilterChips`, `ImageWithFallback`, `badges.tsx`. Extend these rather than copy-pasting between the Recommendations and Podcasts pages.
-
-### Recommendations Design Invariants
-
-- Taste inputs use ground-truth Plex watch history plus explicit good-pick/not-for-me feedback. Passive outcome labels remain bookkeeping only.
-- "Watched" requires ≥80% completion (`WATCHED_COMPLETION_THRESHOLD`); partial starts that stall become "abandoned" (a negative signal for exclusions, not prompts).
-- Each recommendation attempt has a unique `recommendationId`; `canonicalId` remains content identity for cooldowns and exclusions.
-- The RecommendationEntity row is written as `pending` before acquisition, then flipped to `notified` after Pushover. Stale pending rows are reconciled only when acquisition demonstrably landed or the title was already available in Plex.
-- Plex availability, Radarr/Sonarr tracked state, and explicit user feedback are separate concepts. Unavailable service reads abort the run rather than being treated as empty state.
-- Cooldown: 180 days for re-recommendation; watched, abandoned, not-for-me, and already-watched titles are excluded permanently unless newer explicit feedback corrects the choice.
-
-### Podcast Recommendations Design Invariants
-
-Deliberately a sibling system to media recommendations (same architecture, separate implementation — the domains differ too much for shared types): episode-level, freshness-critical, and centered on shows the user does NOT already follow.
-
-- **People-first, two-tier** (see `docs/podcast-recs.md`). Tier 1 is the point: episodes where a followed **voice** (from the taste md's `## Voices` section, parsed by `voices.ts`) guests somewhere new. Discovery (`guests.ts`) is Podcast Index `byperson` first (free, structured, pre-resolved) then a Tavily person-search fallback for voices it missed (covers non-podcasters). Voices rotate `PODCAST_VOICE_ROTATION_MAX`/run via a persisted cursor (`nextVoiceBatch`). Tier 1 uses a default-include gate (`guestSelection.ts`) capped at `PODCAST_MAX_GUEST_PICKS` (bursts like book tours). Tier 2 is the original topic/drama shortlist→select, conservative and suppressed once Tier 1 delivers ≥3.
-- Drama/debate is a positive (Blocked-and-Reported anchor), handled prompt-side, not by filters. The line is bad-faith grift/rage-farming = out, gossip/beef/debate from sharp people = in.
-- Identity: shows are `itunes:{id}` (fallback `feed:{normalized url}`), episodes are `{showId}#{rss guid}` (`types.ts`).
-- Release dates are verified from the show's actual RSS feed in code — never trusted from search snippets or model output. Unverifiable candidates are dropped.
-- Hard recency window: episodes older than 7 days are ineligible (`filters.ts`).
-- Episodes are excluded permanently once delivered; shows get a 30-day cooldown; not-for-me feedback excludes the show permanently unless newer feedback corrects it.
-- Subscribed shows are excluded (hard-filtered from the Castro account when configured, prompt-excluded via the seed profile otherwise) and double as the main taste evidence. **The exclusion is load-bearing**: a failed Castro subscription read aborts the run rather than risk recommending a followed show (three-state rule in `subscriptions.ts`).
-- Taste has a fourth input beyond seed profile/subscriptions/feedback: `PodcastTasteReflectionTask` (weekly, Sunday 5am ±5min jitter) distills the full 180-day Castro listen history plus recommendation outcomes into a versioned profile (`reflection/`, mirroring `recommendations/taste/`): append-only evidence ledger, fingerprint no-op guard, draft + skeptical-critic LLM passes, and code-level claim validation (stable/conditional/saturation claims need ≥2 independent shows; one explicit not-for-me can support an aversion). The latest profile digest is appended to every pipeline prompt via `buildTasteDigest` and surfaced at `GET /api/podcast-recommendations/taste-profile` + the Podcasts page "Taste brain".
-- Castro is behind the `PodcastAccountClient` bridge (`account.ts`), implemented against its captured private sync protocol (`castro/`, credentials `CASTRO_ACCESS_ID`/`CASTRO_SECRET_KEY`); see `docs/castro-sync.md`. It provides subscriptions, 180 days of listen history, general podcast/episode search, direct RSS resolution, subscription writes, and queue writes. Selected recommendations are resolved by exact RSS URL or iTunes ID and auto-enqueued at Queue Next (inserted after the current top item, matching the app) before notification; resolution or enqueue failure keeps the deep-link fallback. Episode matching against Castro uses the enclosure/media URL, not the RSS guid, which hosting platforms rewrite (see `docs/castro-sync.md`). When unconfigured the pipeline degrades to the seed profile + explicit feedback.
-- `CastroInboxCleanup` runs hourly with up to five minutes of jitter. It scans `is_new` episode state and posts only `clear_episode_new` for descriptions beginning exactly with `This is a free preview`; it never dequeues the episode.
-- Commit protocol mirrors media recs: write `pending` before Castro enqueue and Pushover, then flip to `notified`; stale pending rows become failed with a 24h retry exclusion. Enqueue is idempotent, so a retry observes `already_exists` if that effect landed before a crash, while notification delivery remains unverifiable.
-- Well-behaved-client controls (Castro is a private, reverse-engineered API): every request funnels through ONE process-wide rate-limit queue in `CastroApi` (concurrency 4, ≤8 req/s) — `createCastroClient` shares a singleton `CastroApi` so overlapping task runs can't double the ceiling; each request is signed at send time. Scheduled tasks jitter ±5min off their cron instant. Listen-history reads for outcome sync (the heaviest fan-out) are skipped entirely when no recommendation is open, and otherwise bounded to just before the oldest open delivery — never the full 180-day window, but always wide enough to cover every open rec (a shorter cutoff would mislabel a listened episode as ignored). The weekly taste-reflection read is the deliberate exception: one full-window read per week, through the same rate-limited singleton.
-- The old `PodcastPicks` briefing (`briefings/PodcastPicks.md` on the deploy host) is superseded by this feature and should be disabled when `PODCAST_TASTE_PATH` is configured.
-
-### PressPods Design Invariants
-
-Migrated from the standalone serverless `presspods` project (2026-07); the AWS pieces (SQS, DynamoDB, S3, Lambda, API Gateway) were replaced with omni-notify infrastructure:
-
-- **Durable job queue replaces SQS**: every submission writes a `PressPodsJobEntity` row before anything else. The `PressPods` task drains due jobs; submissions kick an immediate manual run via `TaskRegistry.runNow` (already-running is fine — the drain loop picks the new row up). Crash mid-processing leaves a `processing` row whose stale claim (>30min) the next sweep reclaims — but a reclaim never reprocesses blindly: if an episode for the job's URL already exists (crash landed after the episode write), the job just completes; otherwise the crash counts as an attempt (so a job that kills the process every time still converges to `failed` instead of reclaim-looping forever). Transient failures (TTS 429/5xx, network) requeue with doubling backoff up to 6 attempts; everything else fails permanently but stays visible on `/pods` with a manual Retry (failed jobs only — the guard prevents clobbering in-flight attempts, and `recordJobFailure` respects concurrent deletes instead of resurrecting dismissed jobs).
-- **Best-of-N retrieval**: all retrievers run in parallel, each result is rated 0-10 by the metadata model, best wins. One broken retriever can never hurt an episode; per-retriever outcomes are persisted compactly (`RetrieverAttempt[]`, never the full article texts) for the UI.
-- **Public surface is deliberately tiny**: `/pods/episodes` (POST, token), `/pods/rss` (token), `/pods/audio/:file` (unguessable content-addressed names from a CSPRNG (`secureId`) — podcast apps can't send auth headers on enclosure fetches, so unguessability IS the auth; never switch these ids to `Math.random`-based generation), `/pods/logo.jpeg`. Token compare is constant-time; enclosure URLs use `PRESSPODS_PUBLIC_URL` or the request's `X-Forwarded-*` headers. The audio route supports byte ranges. Feed descriptions are HTML rendered by podcast clients: dynamic text (content, excerpt, article URL) is entity-escaped so article-controlled content can't inject markup. Expose ONLY `/pods/*` through the reverse proxy — `/api/*` has no auth of its own.
-- **Audio lives on disk, not in the DB**: MP3s go to `press-pods-audio/` next to the SQLite file (same Docker volume, same backups). ffmpeg comes from the runtime image (apt), not bundled binaries; the intro jingle + logo live in `assets/press-pods/`. Episode rows/files are deliberately never pruned (personal-scale volume; the feed caps itself at the newest 50).
-- Episode processing runs inside tracked task runs, so per-episode logs are viewable from `/pods` via the standard LogViewer (`runId` is stored on jobs and episodes).
-- **TTS is provider-swappable** (`speech/providers/`, chosen via `PRESSPODS_TTS_PROVIDER`): `higgs` (default — self-hosted Higgs Audio v3 on an mlx-audio server at `PRESSPODS_TTS_URL`, e.g. the M5, $0/char) or `elevenlabs` (Eleven v3, `$0.10/1k chars`). ElevenLabs won a blind bake-off outright (`src/tools/tts-bakeoff.ts`, still runs Voxtral/MiniMax/Fish for future comparisons) and the LLM "audio tag" director pass was tried and rejected; the switch to Higgs is a deliberate cost trade (self-hosted, close-but-not-equal quality). Both providers stay live — flip the env var to switch back.
-- **Higgs is unreliable on length** (autoregressive: it truncates or runs away — minutes of looping — for the same text, non-deterministically). Two verifiers in `synthesize.ts` drive a retry loop (up to 3×, best take kept and surfaced in the `/pods` UI): (1) the **primary** `verifyChunkContent` (true for Higgs) STT round-trips each take through `speech/stt.ts` (OpenAI-compatible `/v1/audio/transcriptions`, defaulting to the same mlx host at `PRESSPODS_STT_URL`→`PRESSPODS_TTS_URL`, model `parakeet-tdt-0.6b-v3`, ~0.3s/chunk, $0) and rejects on word `coverage` < 0.75 or `wordRatio` > 1.8 (`speech/coverage.ts`, pure + tested) — this catches the mid-chunk truncation a duration check can't (a truncated read and a fast read overlap in seconds/char); (2) the **fallback** `verifyChunkLength` duration band ([0.03, 0.15] s/char ÷ speed) used only when no STT endpoint is configured. See `docs/presspods-audio.md`. Higgs also gets a **denoise pass** (`needsDenoise`: highpass + `afftdn` before leveling) for its noise floor; EL output is clean and skips it.
-- **Narration is sped +10%** via a pitch-preserving `atempo` (`SPEED_MULTIPLIER=1.1` in `audioChain.ts`), applied first in `prepareChunk` so returned durations and all chapter/chunk offsets reflect the sped audio. Decoupled from the model's own speed handling (Higgs stays at quality-tuned `speed=0.9`); the intro jingle is not sped. STT coverage is speed-invariant; the duration-band fallback constants are scaled by `SPEED_MULTIPLIER`.
-- **We own the chunking** (neither provider stitches server-side; EL v3 dropped v2's request-stitching): `textChunking.ts` splits narration into sections (on `## ` markers the cleaner emits), then into ~900-char paragraph/sentence chunks (never mid-sentence). Each chunk is synthesized separately, denoised (Higgs), trimmed, edge-faded, and **per-chunk loudness-normalized to -19 LUFS** before concat (kills chunk-to-chunk level jumps), then mastered with **two-pass linear loudnorm to -16 LUFS / -1.5 dBTP** and the intro joined click-free in one filtergraph with a single 96k-mono MP3 encode (replaces the old three-generation MP3 chain).
-- Voice selection is gender-aware (male → male voice, female/unknown → female). EL defaults are premade voices Brian / Matilda (override by id via `ELEVENLABS_VOICE_MALE` / `_FEMALE`); Higgs has no preset voice, so `speed=0.9` tames its fast pace. **Higgs otherwise picks a random speaker per request (different voice, even gender, every chunk)** — to pin one voice set `PRESSPODS_HIGGS_REF_AUDIO` (a reference clip path resolved ON THE MLX HOST, not this box) + `PRESSPODS_HIGGS_REF_TEXT` (its transcript); the provider then clones that clip and drops the `gender` hint. Without a reference, the `gender` hint alone does NOT give consistency.
-- Higgs denoise uses **RNNoise** (`arnndn` with `assets/press-pods/denoise.rnnn`), not `afftdn` — spectral subtraction leaves a metallic "musical noise" tang on voice; the RNN model cleans the floor without it. The model file ships in `assets/` (copied into the Docker image); the runtime ffmpeg must include the `arnndn` filter (standard in apt ffmpeg). Two audible-artifact fixes live in `audioChain.ts` and must not regress: every `aresample` carries `RESAMPLE_HQ` (swr defaults image Higgs's 24kHz output into a ~13kHz sibilance ring — any new rate conversion, incl. auto-inserted ones, needs it too), and the Higgs denoise path ends with `FIZZ_SHELF` (steep FIR at ~9.6–10.3kHz killing exposed comb-sibilance fizz below the 11kHz band edge). Diagnosis method + measurements in `docs/presspods-audio.md`.
-- **Chapters**: the cleaner marks major sections with `## Title` lines (consumed, not spoken); synthesis records each section's start offset and embeds them as ID3 CHAP/CTOC frames (via node-id3, alongside album art) so podcast apps show a scrubbable chapter list — no new public route, no RSS change. Only emitted when the article has ≥2 sections.
-- The narration cleaner (`agents/cleaner.ts`) is a **broadcast-style rewrite**, not just junk removal: one-idea sentences, attribution-before-quote, number rounding, contractions, a cold-open hook before the byline read-in, and a one-line spoken outro. Deliberately not NotebookLM-style conversational rewriting (faithful body, ear-friendly phrasing).
-- `@postlight/parser` needs a pnpm override mapping its git-pinned `difflib` fork back to the npm package (supply-chain policy blocks git subdeps); see pnpm-workspace.yaml.
-
-## Key Patterns
-
-### Three-State Status System
-
-Providers return one of three statuses to prevent false notifications:
-
-```typescript
-enum LiveStatus {
-  Live = "live",       // Confirmed live → can trigger "went live" notification
-  Offline = "offline", // Confirmed offline → can trigger "went offline" notification
-  Unknown = "unknown", // Network error, bad response, etc. → NO state change
-}
-```
-
-**Why**: Network errors or API changes shouldn't trigger false "offline" notifications mid-stream.
-
-### Adding a New Platform
-
-1. Create `src/live-check/platforms/{platform}.ts` with:
-   - `fetch{Platform}LiveStatus({ username })` → `Promise<FetchedStatus>`
-   - `get{Platform}LiveUrl(username)` → `string`
-   - `extractLiveStatus(data)` → `FetchedStatus` (for testing)
-
-2. Update `src/live-check/platforms/index.ts`:
-   - Add to `Platform` enum
-   - Add to `platformConfigs` record
-
-3. Update `src/live-check/channelsConfig.ts`:
-   - Add the platform field to the channel entry schema (channels.json is the
-     single source of channel config; there are no channel env vars)
-
-4. Update `src/live-check/streamers.ts`:
-   - Map the new field in `buildStreamers`
-   - Add to `PLATFORM_PRIORITY` (decides tiebreak order when multiple platforms go live in the same tick)
-
-5. Update `README.md`
-
-6. Create `src/live-check/platforms/{platform}.spec.ts`
-
-### Adding a New Scheduled Task
-
-1. Create a new feature folder `src/{feature-name}/`
-
-2. Create `src/{feature-name}/task.ts`:
-   ```typescript
-   import { ScheduledTask } from "@micthiesen/mitools/scheduling";
-
-   export default class MyTask extends ScheduledTask {
-     public readonly name = "MyTask";              // stable key: run history, lookups
-     public readonly displayName = "My Task";      // optional: UI label (falls back to toTitleCase(name))
-     public readonly schedule = "0 17 * * *";  // 5pm daily
-     // Optional: public override readonly jitterMs = 5000;
-
-     public async run(): Promise<void> {
-       // Task logic
-     }
-   }
-   ```
-
-3. Register in `src/index.ts`:
-   ```typescript
-   import MyTask from "./{feature-name}/task.js";
-   scheduler.register(new MyTask());
-   ```
-
-The `Scheduler` handles cron management, prevents overlapping runs (per-task queue), and graceful shutdown.
-
-### Adding a New Briefing Task
-
-Briefing tasks use AI to search the web and send notification summaries. Configs are loaded from `.md` files in the folder specified by `BRIEFINGS_PATH`. To add a new topic, create a markdown file:
-
-```markdown
----
-schedule: "0 0 9 * * *"
----
-You are a tech news assistant...
-```
-
-- **Filename** becomes the config name (e.g. `TechNews.md` → name `"TechNews"`)
-- **Frontmatter** must contain a valid `schedule` (node-cron expression)
-- **Body** is the prompt sent to the AI agent
-
-The loop in `index.ts` auto-registers all valid configs. Invalid files are skipped with a warning. For custom behavior, subclass `BriefingAgentTask` and override `run()`.
-
-**Prompt Placeholders:** Use placeholders in the prompt body to inject dynamic content at runtime:
-
-- `{{date}}` → current date, e.g. `Thursday, February 6, 2026` (local timezone)
-- `{{time}}` → current time, e.g. `9:00 AM EST` (local timezone)
-- `{{history:N}}` → last N notifications sent by this briefing (avoids duplicate coverage)
-
-Placeholder resolution lives in `src/briefing-agent/placeholders.ts` which chains all placeholder types via `resolveAllPlaceholders()`.
-
-```markdown
----
-schedule: "0 0 9 * * *"
----
-You are a tech news assistant. Today is {{date}}, {{time}}.
-
-{{history:10}}
-
-Do not cover topics that appear in past notifications above.
-```
-
-History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
-
-### Error Handling
-
-- Providers catch their own errors and return `LiveStatus.Unknown`
-- Logger `error` goes to Pushover via @micthiesen/mitools' `Logger.onError` hook.
-  `warn` does not (mitools leaves `onWarn` unset), so warn is the right level for
-  "visible in the logs and the run-log UI, but don't push me".
-- **Every notification path is throttled at exactly one layer.** `installAlertThrottle()`
-  (boot, `src/alerts/throttle.ts`) wraps the Logger hooks and collapses a repeating
-  alert — same logger + same message text — into one delivery plus backing-off
-  reminders (15min → 30min → 1h → 3h), annotated with the suppressed count; a key
-  goes quiet for 6h and the next occurrence reads as a fresh incident. The key
-  deliberately does NOT normalize digits: messages differing only by an embedded
-  tracking number, URL, or subject are distinct incidents and must not merge.
-- A caller whose message carries its own counter therefore throttles at the source
-  and sends via `notify()` directly, bypassing the generic layer (double-gating can
-  only swallow alerts the source deliberately chose to send). `LiveCheckTask` is the
-  worked example: per-streamer all-unknown streaks stay at debug/info, and
-  `OutageAlerter` (`src/live-check/outage.ts`) emits one fleet-level "degraded" alert
-  after 3 consecutive all-unknown ticks (~1 min), escalating reminders at 30min → 2h
-  → 6h → 24h, and one "recovered" note after 3 consecutive clean ticks (the clean-tick
-  requirement is what stops a flapping streamer from pumping degraded/recovered pairs).
-
-### Task Run Logs
-
-Every log line emitted during a task run is captured and viewable in the web UI (click a task card's last-run line, a history row, or an activity row). How it works:
-
-- `installLogCapture()` (called at boot) sets the global `Logger.onLog` tap from mitools ≥2.4.0. The tap fires for **every** log call regardless of `LOG_LEVEL`, so DEBUG lines reach the UI while console/compose output still respects the threshold.
-- `TaskRegistry.execute` wraps `task.run()` in an `AsyncLocalStorage` context carrying the `runId`; the tap attributes lines to the active run (across awaits, sub-loggers, and concurrent tasks). Lines logged outside any run (server, email pipelines) are ignored.
-- In-flight lines live in a per-run memory buffer (capped at 2000 lines / 4KB per line, oldest dropped) and are broadcast on `runLogBus`. On run end the buffer is persisted as one `TaskRunLogEntity` row, pruned alongside `TaskRunEntity`'s 50-runs-per-task retention.
-- API: `GET /api/task-runs/:runId/logs` (buffer if running, else stored row); `GET /api/task-runs/:runId/logs/stream` (SSE live tail: `init` replays the buffer, `line` frames follow, `done` carries the settled run). Logs never ride the dashboard snapshot stream.
-- Frontend: `LogViewer.tsx` modal — level filter chips (debug hidden by default), stick-to-bottom tailing, LIVE badge while streaming.
-
-### Persistence
-
-Uses `@micthiesen/mitools` Entity system with SQLite (`docstore.db`). mitools 3.x keys rows by a length-prefixed, type-tagged codec and scopes reads by an `entity` metadata column. The pre-3.x rows were upgraded in place by a one-shot `Entity.migrateAll()` at boot, since removed now that the sole deployment has migrated (git history has it if a future in-place format bump needs the pattern again).
-- `StreamerStatusEntity`: Aggregate live/offline state per streamer (one row per merged identity, keyed on `streamerId`). Holds the sticky primary binding, summed max viewer count, and the per-binding titles for the current live session.
-- `ViewerMetricsEntity`: Daily viewer buckets + all-time max, keyed on `streamerId`. Recorded viewer count is the **sum across currently-live bindings**.
-
-### Streamer Model
-
-A `Streamer` is the identity unit: display name (normalized, case-insensitive) collapses multiple `(platform, username)` bindings into one. Notifications fire on the aggregate edges:
-- **went-live**: offline everywhere → live somewhere (one notification)
-- **went-offline**: live somewhere → offline everywhere (one notification)
-- **title change**: only when the primary binding is unchanged AND its title changed
-- **primary switch** (e.g., original primary drops but another is still live): silent
-
-Primary election is **first-to-go-live wins**, sticky for the session. Priority tiebreak when multiple go live simultaneously: YouTube → Twitch → Kick (see `PLATFORM_PRIORITY` in `src/live-check/streamers.ts`).
-
-The pure transition logic lives in `src/live-check/transitions.ts` (`decideTransition`) for easy testing.
-
-All channel config lives in `channels.json` (`CHANNELS_CONFIG_PATH`, default `./channels.json`), keyed by display name (case-insensitive). Each entry holds platform usernames (`youtube` / `twitch` / `kick`, `string | string[]`) plus options: `pushoverToken`, `tier: "background"` (second-tier streamers: mutes live/offline/title-change notifications, restricts viewer records to all-time only, polls every 3rd tick ≈ 60s), and `liveNotifications: false` (mute only, full-rate polling — for integrations needing fast state). `tier: "background"` combined with an explicit `liveNotifications` is a validation error, and any invalid file fails boot (ENOENT = empty config) — never silently degrade, since dropped overrides would un-mute muted streamers. The legacy `*_CHANNEL_NAMES` env vars are no longer read (boot warns if still set).
-
-Title-change notifications are eagerly debounced (`titleDebounce.ts`): the first change fires immediately; further changes within a 10-minute cooldown are held, last one wins, and the held title is sent when the cooldown expires (which restarts it). Going live seeds the debouncer (the go-live notification carries the title, so immediate post-live fiddling is held); went-offline and primary switches clear pending state. In-memory only — a restart makes the next change immediate.
-
-### Viewer Metrics System
-
-Tracks viewer records across rolling time windows (7d, 30d, 90d, all-time) using **peak confirmation**:
-- Records are only confirmed when viewer count drops 5% below peak (prevents spam during climbs)
-- Pending peaks are flushed when stream goes offline
-- Only sends one notification for the highest-priority window when multiple records are broken
-- Recorded value is the **sum of viewer counts across a streamer's currently-live bindings**, so multistream metrics reflect total reach
-
-## Code Style
-
-- **Oxfmt** for formatting (88 char line width, 2-space indent) and **Oxlint** with its
-  high-signal correctness rules for linting
-- **2 spaces** for indentation (not tabs)
-- **Strong types**: Use enums, discriminated unions, explicit return types
-- **No over-engineering**: Simple solutions, no unnecessary abstractions
-- **Clean code**: No debug leftovers, no `console.log`, no commented code
-
-## Testing
-
-Uses **vitest** for testing. Run with pnpm:
+Completed, reviewed work is authorized to ship directly to `main`: preserve
+unrelated changes, commit the scoped result, pull with rebase if the remote moved,
+and push. A push deploys production automatically. Do not ask for another
+confirmation already supplied by this rule or the current request.
+
+Production runs as the `omni-notify` container on `boris` (`10.10.1.100`) from
+`/home/michael/compose`; persistent data is under
+`/home/michael/compose/volumes/omni-notify`. The LAN UI is
+`http://omni.boris/`. Inspect failures with `docker logs omni-notify` over SSH.
+
+Prefer a committed boot migration for reproducible data changes. For one-off
+database surgery, stop the container and make a WAL-safe backup first. Direct
+destructive production data changes require authorization specific to that
+change; reuse authorization already given in the conversation.
+
+## Effect-first TypeScript
+
+Effect is the application runtime for I/O, failure, concurrency, resources,
+time, and randomness. Keep deterministic transformations as ordinary functions.
+
+- Return `Effect` from production functions that perform I/O, mutate state,
+  retry, sleep, acquire resources, or can fail.
+- Keep `Promise` and `async` inside the smallest adapter required by an external
+  framework or library. Interpret an Effect once at that edge using `src/effect/`.
+- Model expected failures with domain-specific `Data.TaggedError` types. Wrap
+  Promise and throwing APIs with `Effect.tryPromise` or `Effect.try` at the leaf.
+- Use `Effect.fn` for reusable workflows. Add a `Context.Service` and `Layer`
+  only for a real runtime or test seam.
+- Decode untrusted external, persisted, environment, AI, and protocol values
+  with `Schema`. Zod may remain at a protocol edge that requires Standard Schema.
+- Use Effect scheduling, structured concurrency, state, cache, and scoped
+  resource APIs instead of raw timers, `Promise.all`, fire-and-forget work, or
+  manual cleanup chains.
+- Test Effects with `@effect/vitest` and `TestClock`. Assert expected typed
+  failures through `Result`; use `Exit` for interruption and defects.
+- Make notifications, queue operations, external writes, and retries idempotent
+  before reporting success.
+
+For Effect 4 API details, use the installed package source and the upstream
+Effect 4 migration guide. Keep ecosystem package versions aligned with `effect`.
+
+## Architecture seams
+
+- `src/index.ts`: entrypoint and scheduled-task registration.
+- `src/effect/`: shared Effect adapters and runtime seams.
+- `src/live-check/`: aggregate streamer state and viewer metrics.
+- `src/email/`: transport, dispatch, activity, triage, retry, and watchdog.
+- `src/parcel-tracker/` and `src/calendar-events/`: email handlers.
+- `src/press-pods/`: article retrieval, narration, speech, storage, and RSS.
+- `src/recommendations/` and `src/podcast-recs/`: media recommendations.
+- `src/task-runs/`: durable run history and captured logs.
+- `src/workspaces/`: durable conversational project workspaces.
+- `src/mcp/`: authenticated, bounded adapters over personal services.
+- `frontend/`: Vite and React UI.
+
+Generic scheduling lives in `@micthiesen/mitools/scheduling`. Extend mitools
+when a primitive is genuinely shared; keep project-specific behavior here.
+
+## Failure-sensitive invariants
+
+### Livestreams
+
+A streamer is an aggregate identity over platform bindings. Notify only on the
+aggregate offline-to-live and live-to-offline edges. The first live binding is
+the sticky primary for the session; a primary switch is silent. Viewer counts
+sum currently live bindings. `channels.json` is the source of truth and invalid
+configuration must fail boot rather than silently unmute a streamer.
+
+`tier: "background"` mutes live, offline, and title notifications, records only
+all-time viewer highs, and polls every third tick. It cannot be combined with an
+explicit `liveNotifications` value. Title changes use an eager debounce: the
+first change sends immediately, later changes within ten minutes collapse to the
+last title, and offline or primary-switch transitions clear pending state. A
+viewer peak becomes a record only after count falls 5 percent below it; flush a
+pending peak when the stream goes offline.
+
+### Email
+
+- Dispatch is no-drop: events received during processing schedule another pass,
+  and transport cursors commit only after dispatch. Message-ID is the stable
+  identity across folder moves.
+- iCloud IMAP uses per-folder UID cursors without CONDSTORE/QRESYNC. Re-read
+  capabilities after authentication. Keep the seven-day INTERNALDATE guard that
+  cursor-skips bulk imports, and on UIDVALIDITY change replay only from the
+  last-dispatch watermark before reseating the cursor.
+- Filter in this order: user block, user allow, static blacklist, static
+  auto-pass, then shared LLM triage. Explicit user rules override built-ins.
+- Activity outcomes must reflect per-item success. A fully rejected submission
+  cannot be recorded as processed.
+- Parcel extraction separates order numbers from tracking numbers, validates
+  ranked carrier candidates against the live list, and uses durable dedup.
+- Calendar output is sanitized before persistence. Cancellations require an
+  explicit event reference; receipts and bills never imply cancellation.
+- CalDAV discovery follows RFC 6764 from principal to home set to a VEVENT
+  collection. Never hardcode an iCloud `pXX` shard. Cross-calendar moves can
+  return 403 and require delete plus recreate.
+- Network and 5xx failures enter the durable retry queue. Re-fetch by email id;
+  handler dedup makes replay safe.
+
+### Notifications and runs
+
+Throttle each notification path at exactly one layer. Preserve distinct incident
+keys for distinct users, URLs, subjects, or tracking numbers. Logs emitted during
+a tracked task run remain attributable through async work and are bounded before
+persistence.
+
+### PressPods
+
+Retrievers run independently and the metadata model selects the best usable
+article. Speech is chunked and verified before the finished episode is exposed.
+Every sample-rate conversion in `audioChain.ts` must retain `RESAMPLE_HQ`; the
+Higgs denoise path retains `FIZZ_SHELF`. See `docs/presspods-audio.md` before
+changing the audio chain.
+
+Higgs denoise uses the `arnndn` filter with
+`assets/press-pods/denoise.rnnn`; the model must remain in the Docker image and
+runtime FFmpeg must include that filter. Keep the pnpm override that maps
+`@postlight/parser`'s git-pinned `difflib` dependency to the npm package because
+the supply-chain policy blocks git dependencies.
+
+### Workspaces and MCP
+
+Workspace rows are changed through their service/API, not direct database edits.
+Pending actions, Marketplace publishing, buyer messages, offers, address
+disclosure, and meetup arrangements require user authorization. Research and
+drafting do not authorize those actions. Keep MCP tools bounded adapters over
+existing services and preserve strong bearer-token validation.
+
+## Code and tests
+
+- Oxfmt, 88 columns, two-space indentation; Oxlint for correctness checks.
+- Prefer strong types, discriminated unions, small modules, and explicit returns.
+- Do not leave debug logs, commented-out code, or unnecessary abstractions.
+- Use Vitest and `@effect/vitest`. Test pure decisions separately from network
+  adapters. Use temporary scripts for real integrations and delete them afterward.
+
+For ad-hoc scripts that need configured credentials:
 
 ```bash
-pnpm test              # Run all tests
-pnpm test -- --watch   # Watch mode
+npx dotenvx run -- bun /tmp/omni-notify-<subject>.ts
 ```
 
-- YouTube tests are skipped (marked `.skip`) - they need real HTML fixtures
-- Twitch tests run against `extractLiveStatus` with mock data
-- Test the pure extraction functions, not the network fetchers
+## Secret files
 
-### Ad-hoc integration scripts
+`.env` contains unrecoverable secrets.
 
-For testing things that hit real APIs or URLs (e.g. verifying Tavily search, testing HTML-to-markdown on real pages), write a temporary `.ts` script and run it with `dotenvx` + `bun` so it picks up `.env` credentials:
+- Never print or read secret values into the conversation. List key names with
+  `cut -d= -f1 .env`; test presence with an opaque `grep -qE` check.
+- Never rewrite, delete, or edit existing `.env` lines. If an existing value must
+  change, ask Michael to edit it.
+- New placeholders may be appended. `.env.example` is version controlled and can
+  be edited normally.
+- Consume secrets through `dotenvx`; do not export or interpolate them into shell
+  commands.
 
-```bash
-npx dotenvx run -- bun src/tools/my-test-script.ts
-```
-
-Delete the script when done—these are throwaway, not committed.
-
-## .env Hygiene
-
-`.env` holds real secrets and is gitignored — a bad write is unrecoverable (this has happened). Hard rules:
-
-- **Never read values.** Don't open `.env` with the Read tool, `cat` it, or print values any other way (`dotenvx get`, `echo $SOME_KEY`, `console.log(process.env…)`). Secret values must never enter the conversation, logs, scripts, or commits.
-- **Key names only.** To see what's configured: `cut -d= -f1 .env`. To check one key opaquely: `grep -qE '^SOME_KEY=.+' .env && echo set || echo missing` (the `.+` makes empty placeholders read as missing).
-- **Append-only.** Add keys with `echo 'SOME_KEY=value' >> .env`. Never use the Write/Edit tools on `.env`, never `>`, `sed -i`, `tee`, or any full-file rewrite.
-- **Need a value only Michael has?** Append a value-less placeholder (`echo 'SOME_KEY=' >> .env`), tell him which keys to fill in, and re-check later with the opaque grep.
-- **Never change or delete existing lines.** Duplicate-key precedence is parser-dependent, so appending a replacement is unreliable — if an existing value must change, ask Michael to edit it himself.
-- Scripts consume the env via `npx dotenvx run -- …`; don't export secrets into the shell or inline them in commands.
-- Applies to every `.env*` file except `.env.example`, which is version-controlled, holds placeholders only, and is edited normally.
-
-## Environment Variables
-
-```bash
-LOG_LEVEL=info|debug|warn|error
-PUSHOVER_USER=xxx
-PUSHOVER_TOKEN=xxx                      # Fallback for all notification types
-PUSHOVER_LIVE_TOKEN=xxx                 # Optional: override for live-check notifications
-PUSHOVER_BRIEFING_TOKEN=xxx             # Optional: override for briefing notifications
-PUSHOVER_PARCEL_TOKEN=xxx               # Optional: override for parcel notifications
-PUSHOVER_CALENDAR_TOKEN=xxx             # Optional: override for calendar notifications
-CHANNELS_CONFIG_PATH=./channels.json    # Channel config file (single source of truth; no channel env vars)
-KICK_CLIENT_ID=xxx                      # OAuth client (dev.kick.com) — required if channels.json has kick channels
-KICK_CLIENT_SECRET=xxx
-OFFLINE_NOTIFICATIONS=true|false
-BRIEFING_MODEL=openai:gpt-5.6-luna      # Model for briefing agents (provider:model)
-EXTRACTION_MODEL=openai:gpt-5.6-luna    # Model for parcel email extraction
-CALENDAR_EXTRACTION_MODEL=openai:gpt-5.6-terra  # Model for calendar email extraction (stronger)
-TRIAGE_MODEL=openai:gpt-5.6-luna        # Model for shared email relevance triage
-GOOGLE_GENERATIVE_AI_API_KEY=xxx        # Required for google: models
-ANTHROPIC_API_KEY=xxx                   # Required for anthropic: models
-OPENAI_API_KEY=xxx                      # Required for openai: models
-TAVILY_API_KEY=tvly-xxx                 # Tavily web search (briefings + recommendations)
-BRIEFINGS_PATH=/path/to/briefings       # Folder with .md briefing configs
-EMAIL_SELF_ADDRESS=user@example.com     # Optional: own receiving address for self-sent filters (default: ICLOUD_USERNAME)
-ICLOUD_USERNAME=user@icloud.com         # iCloud primary username (IMAP + CalDAV; NOT the custom-domain address)
-ICLOUD_APP_PASSWORD=xxx                 # iCloud app-specific password (IMAP + CalDAV)
-ICLOUD_CALENDAR_NAME=Personal           # Optional: display name of the iCloud calendar to write to
-ICLOUD_CALENDAR_URL=xxx                 # Optional: pinned collection URL (skips RFC 6764 discovery)
-PARCEL_API_KEY=xxx                      # Parcel.app API key (enables parcel tracking)
-TMDB_API_KEY=xxx                        # TMDB (enables recommendations; v3 key or v4 read token)
-RECS_SHORTLIST_MODEL=openai:gpt-5.6-luna # Model for recommendation shortlist scoring
-RECS_SELECTION_MODEL=openai:gpt-5.6      # Model for recommendation research + final pick
-TASTE_REFLECTION_MODEL=openai:gpt-5.6-luna # Model for versioned taste reflection
-TASTE_REFLECTION_SCHEDULE=0 0 4 * * 0    # Weekly taste reflection (Sunday 4am)
-RECS_SCHEDULE=0 0 17 * * 1,3,5          # Recommendation cron (default Mon/Wed/Fri 5pm)
-PUSHOVER_RECS_TOKEN=xxx                 # Optional: override for recommendation notifications
-PODCAST_TASTE_PATH=/path/to/taste.md    # Podcast listener profile (enables podcast recs)
-PODCAST_RECS_SCHEDULE=0 0 11 * * 1,3,5  # Podcast recs cron (default Mon/Wed/Fri 11am)
-PUSHOVER_PODCAST_TOKEN=xxx              # Optional: override for podcast notifications
-CASTRO_ACCESS_ID=xxx                    # Optional: Castro device credential UUID (subscriptions + history)
-CASTRO_SECRET_KEY=xxx                   # Optional: Castro device HMAC secret
-PODCASTINDEX_KEY=xxx                    # Optional: Podcast Index API key (guest-appearance discovery)
-PODCASTINDEX_SECRET=xxx                 # Optional: Podcast Index secret (QUOTE in .env — contains #)
-PODCAST_VOICE_ROTATION_MAX=12           # Optional: voices person-searched per run (rotates)
-PODCAST_MAX_GUEST_PICKS=6               # Optional: Tier-1 guest picks cap per run
-PODCAST_TASTE_REFLECTION_MODEL=openai:gpt-5.6-luna # Model for podcast taste reflection
-PODCAST_TASTE_REFLECTION_SCHEDULE=0 0 5 * * 0      # Weekly podcast taste reflection (Sunday 5am)
-PRESSPODS_AUTH_TOKEN=xxx                # Enables PressPods; authenticates /pods/episodes + /pods/rss
-PRESSPODS_TTS_PROVIDER=higgs            # TTS backend: higgs (self-hosted, default) or elevenlabs
-PRESSPODS_TTS_URL=http://10.10.1.90:8000 # mlx-audio server URL (required when provider=higgs)
-PRESSPODS_TTS_MODEL=xxx                 # Optional: Higgs model repo (default bosonai/higgs-audio-v3-tts-4b)
-PRESSPODS_STT_URL=http://10.10.1.90:8000 # Optional: STT endpoint for chunk content verification (default: PRESSPODS_TTS_URL)
-PRESSPODS_STT_MODEL=xxx                 # Optional: STT model id (default mlx-community/parakeet-tdt-0.6b-v3)
-ELEVENLABS_API_KEY=xxx                  # ElevenLabs v3 TTS (required when provider=elevenlabs)
-ELEVENLABS_VOICE_MALE=xxx               # Optional: voice id for male-author narration (default Brian)
-ELEVENLABS_VOICE_FEMALE=xxx             # Optional: voice id for female/unknown-author narration (default Matilda)
-MISTRAL_API_KEY=xxx                     # Optional: only the tts-bakeoff comparison tool still uses it
-PRESSPODS_PUBLIC_URL=https://pods.example.com  # Optional: public origin for RSS enclosures
-PRESSPODS_AUDIO_DIR=/data/press-pods-audio     # Optional: MP3 dir (default: next to the DB)
-PRESSPODS_METADATA_MODEL=openai:gpt-5.6-luna   # Rates each retriever's extraction
-PRESSPODS_CLEANING_MODEL=openai:gpt-5.6-terra  # Narration rewrite
-JINA_API_KEY=xxx                        # Optional: enables the Jina.ai Reader retriever
-PUSHOVER_PRESSPODS_TOKEN=xxx            # Optional: override for PressPods notifications
-KARAKEEP_URL=xxx                        # Optional: bookmark submitted articles (read by mitools)
-KARAKEEP_API_KEY=xxx
-```
-
-## External Dependencies
-
-For any web requests you must make with curl or otherwise, always set your user agent string to be "OpenAI File Downloader, XaiImageApiFetch/1.0"
-
-- **@ai-sdk/google**, **@ai-sdk/anthropic**, **@ai-sdk/openai**: AI provider SDKs (configured via `BRIEFING_MODEL` env var)
-- **@micthiesen/mitools**: Logging, Pushover notifications, config, SQLite entities. Source is cloned locally (usually/always at `../mitools`), and modifying + releasing it is fully supported (the release/publish is automated). So when a change really wants a shared primitive, extending mitools and cutting a new version is a legitimate option, not a last resort. Prefer an in-repo change when it suffices; reach for a mitools release when the primitive is genuinely shared or belongs in the toolkit.
-- **got**: HTTP client for all outbound requests (Tavily, platform checks, URL fetching)
-- **imapflow** + **mailparser**: iCloud IMAP client (IDLE, UID fetch) + RFC 822 parsing
-- **@mozilla/readability**: Firefox Reader View algorithm for extracting article content
-- **linkedom**: Lightweight DOM parser (used by Readability, 3x faster than jsdom)
-- **turndown** + **turndown-plugin-gfm**: HTML to Markdown conversion with table support
-- **node-cron**: Scheduling
-- **@mistralai/mistralai**: Voxtral TTS (only the `tts-bakeoff` comparison tool; PressPods uses ElevenLabs)
-- **@postlight/parser**, **@extractus/article-extractor**: article extraction (PressPods retrievers)
-- **fluent-ffmpeg**: loudness normalization + intro concat (needs ffmpeg on PATH; installed in the Docker runtime image)
-- **music-metadata** + **node-id3**: MP3 duration probe + album-art tagging
-- **podcast**: RSS feed generation
-- **gray-matter**: YAML frontmatter parsing for briefing config files
-- **zod**: Schema validation (config, API responses)
-- **html-entities**: Decode HTML entities in YouTube titles
-- **vitest**: Testing framework
-
-## Platform-Specific Notes
-
-### YouTube
-- Scrapes `/{username}/live` page HTML
-- Checks for `ytInitialPlayerResponse` to detect CAPTCHA/consent pages
-- Regex matches `"isLive":true` or `"isLiveNow":true`
-- Title from `<meta name="title">` tag
-- Could break if YouTube changes HTML structure (rare)
-
-### Twitch
-- Uses public GQL API: `https://gql.twitch.tv/gql`
-- Public client ID: `kimne78kx3ncx6brgo4mv6wki5h1ko` (no auth needed)
-- Query: `user(login:"xxx"){stream{title viewersCount}}`
-- Zod validates response schema
-- More stable than YouTube scraping
-
-### Email Integration (iCloud IMAP + CalDAV)
-
-Both parcel-tracker and calendar-events share the same iCloud email infrastructure (`src/email/`) behind the `EmailTransport` interface (`src/email/types.ts`).
-
-- **EmailDispatcher** (transport-agnostic): on every mail event, polls the transport for new emails and fans out to registered `EmailHandler`s (parcel-tracker, calendar-events). Events arriving mid-processing set a pending flag and re-run (never dropped). Transport cursors commit only after dispatch, so a crash re-delivers instead of dropping (pipeline dedup gates absorb it).
-- **iCloud transport** (`src/email/imap/`, via `imapflow` + `mailparser`): IMAP IDLE on INBOX (re-issued every 13 min, well under the RFC 2177 29-min limit) plus a 5-min sweep of INBOX + Archive (server-side rules can file mail straight into Archive, which IDLE on INBOX won't see). Delta sync is plain UID-cursor per folder (`uidNext`), deliberately NOT CONDSTORE/QRESYNC — iCloud rejects parameterized `SELECT (CONDSTORE)` (MailKit #970), and the pipelines only consume new messages anyway. Pre-login CAPABILITY lies (Bugzilla #1611624); imapflow re-reads post-auth. Email ids are RFC Message-IDs (stable across INBOX→Archive moves; UIDs aren't), with folder-coordinate fallback. A 7-day age guard cursor-skips bulk imports (an imapsync sweep copies old mail in with new UIDs but preserved INTERNALDATEs) so they can't flood the pipelines/triage. UIDVALIDITY change re-dispatches since the last-dispatch watermark, then reseats the cursor. Auth: `ICLOUD_USERNAME` (the @icloud.com primary, NOT the custom-domain address) + `ICLOUD_APP_PASSWORD` (app-specific password) against imap.mail.me.com:993.
-- **CalDAV** (raw HTTP): event creation is `PUT` iCalendar. Discovery follows RFC 6764 (PROPFIND `current-user-principal` at caldav.icloud.com → redirects to a per-account `pXX-caldav.icloud.com/<dsid>/` shard → `calendar-home-set` → collections, filtered to VEVENT-capable, picked by `ICLOUD_CALENDAR_NAME`); never hardcode the shard, and `ICLOUD_CALENDAR_URL` pins a known collection to skip discovery. iCloud quirk: cross-calendar event moves return 403 (delete + recreate) — not currently exercised since we always write to one calendar.
-- Each pipeline implements `EmailHandler` with a `handleEmails(emails)` method for filtering and processing; retry/reprocess re-fetch emails by id through the transport (`fetchEmailById`), and calendar attachments download through it too (`downloadAttachment`).
-
-### Email Pipeline Design Invariants
-
-Grounded in a full audit of production history (all submissions, events, and extraction logs) — keep these properties when changing the email system:
-
-- **Tiered filtering, LLM-triage last**: per pipeline the order is user sender rules (block, then allow — explicit user rules beat every built-in list, so an Allow rule is the escape hatch from a shipped block) → static blacklist (incl. AliExpress order-status subject skip for parcels; Amazon is intentionally excluded from parcels because Parcel has a dedicated Amazon integration) → static auto-pass senders → shared `EmailTriageService` verdict. Built-in lists live in code (version-controlled, survive DB resets) and are deliberately NOT seeded into `EmailRuleEntity`; they're exposed read-only via `GET /api/email-rules`. The old keyword lists survive only as the degraded fallback when triage errors. One triage model call is shared per email across both pipelines (memoized by email id).
-- **Honest outcomes**: activity rows derive `processed`/`partial`/`failed` from per-item success (`deriveItemsOutcome`) — an email whose every submission was rejected must never read as processed. The admitting tier/reason is recorded as `admitReason` on every non-filtered row.
-- **Parcel extraction**: model returns up to 3 ranked carrier candidates (Canada-first for multi-country brands, e.g. `dicom` GLS Canada over `gls`); candidates are validated against the live carrier list and tried in order with wrong-carrier fallback on 4xx (except auth/rate-limit). Order numbers are never tracking numbers (prompt rule — the historical iHerb failure). Dedup is per-delivery with near-duplicate containment matching (merchant-truncated copies of one number), read live so batches can't double-submit.
-- **Calendar extraction**: runs on the stronger `CALENDAR_EXTRACTION_MODEL`; model output passes `sanitize.ts` (IANA timeZone validation, identical-object collapse, no timed events without startTime, length caps) with one retry on degenerate output — and the existing-events prompt context is re-sanitized so a bad persisted row can't poison later prompts. The context window covers 365 future days (far-future events must be visible to dedupe), and `findEvent`'s fallback only searches that same window. Cancels require an explicit `evt_N` reference; receipts/bills never cancel.
-- **Transient failures retry for real**: network/5xx failures enqueue into `EmailRetryEntity`; `EmailRetryTask` re-fetches the email by id and reruns the owning pipeline (dedup gates make it idempotent). `EmailWatchdogTask` warns when nothing has been dispatched for >72h (a 16-day silent outage motivated it).
-- **Feedback loop**: `/emails` UI actions write sender rules (scoped parcel/calendar/both, block beats allow) and explicit `not_relevant`/`missed` feedback; recent feedback is injected into the triage prompt as corrections. Reprocess (re-fetch by id + rerun) and forget-tracking-number endpoints close the loop.
-- Per-email processing logs are captured via `withEmailLogCapture` and viewable from the `/emails` page (same modal machinery as task-run logs).
-
-## Common Tasks
-
-### Debug a channel status
-```bash
-# Check Twitch manually
-curl -s -X POST 'https://gql.twitch.tv/gql' \
-  -H 'Client-Id: kimne78kx3ncx6brgo4mv6wki5h1ko' \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"query{user(login:\"USERNAME\"){stream{title viewersCount}}}"}'
-```
-
-### Reset local state
-Delete `docstore.db*` files to clear all channel status/metrics.
-
-## Owner Preferences
-
-- Prefers clean, strongly-typed code
-- Likes discriminated unions over boolean flags
-- Values robustness (the three-state system was specifically requested)
-- Prefers analysis before implementation
-- Appreciates GitHub code search for researching approaches
-- Wants tests and build to pass before considering work complete
+For web requests made with curl or an equivalent raw client, set the user agent
+to `OpenAI File Downloader, XaiImageApiFetch/1.0`.

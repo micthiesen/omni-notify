@@ -32,7 +32,7 @@ From `$ARGUMENTS`, extract:
 
 ### 2. Choose an app name
 
-Derive a short name (20 char max) from the description. This appears as the notification source when no title is set. Confirm with the user before proceeding.
+Derive a clear name of at most 20 characters from the description. This appears as the notification source when no title is set. Continue without a separate confirmation unless several names would communicate materially different purposes.
 
 ### 3. Find an icon
 
@@ -49,7 +49,7 @@ node .claude/skills/pushover/scripts/search-icons.mjs "<search terms>" 6
 
 This downloads 128x128 PNGs to `.pushover-icons/`. Show each image to the user using the Read tool (it can display images).
 
-The user will either:
+If the user did not provide an icon, present the candidates and wait for this visual preference:
 - **Pick one** - proceed with that icon
 - **Reject all** - search again with different terms (script clears old results)
 - **Provide a URL** - download it with `download-icon.mjs`

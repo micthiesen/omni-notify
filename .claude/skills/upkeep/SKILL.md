@@ -21,7 +21,7 @@ Upgrade everything in this repo that has drifted, verify it all works, then comm
 
 ## 2. Research majors before bumping
 
-For each **major** bump (and for pnpm/Node majors), spawn parallel research agents to read the official migration guide/changelog and report only the breaking changes that hit *this codebase's actual usage* (have the agent grep usage sites first). Minors/patches need no research — `pnpm update -r` handles in-range ones.
+For each **major** bump (and for pnpm/Node majors), inspect actual usage and read the official migration guide or changelog. Use bounded parallel research only when several independent major migrations make it worthwhile. Minors and patches need no separate research; `pnpm update -r` handles in-range ones.
 
 Model IDs: pick the newest **generally-available** model from the *same provider and tier* (flash-class stays flash-class). Ground truth for what's valid: the typed model-ID unions in the installed provider package d.ts files (e.g. `grep -oE "'gemini-[a-z0-9.-]+'" node_modules/@ai-sdk/google/dist/index.d.ts`). Preview-model IDs get replaced by their GA successor.
 
