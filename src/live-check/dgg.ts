@@ -286,8 +286,14 @@ export function resolveDggStreams({
   const configuredByBinding = new Map<string, Streamer>();
   const configuredByName = new Map<string, Streamer>();
   const configuredByYouTubeName = new Map<string, Set<Streamer>>();
+  // Channel display names often use spaces where their handles use hyphens.
+  // Keep word boundaries and require a unique owner after normalization.
+  const youtubeNameKey = (name: string) =>
+    normalizeId(name)
+      .replace(/^@/, "")
+      .replace(/[\s-]+/g, "-");
   const addYouTubeName = (name: string, streamer: Streamer) => {
-    const key = normalizeId(name).replace(/^@/, "");
+    const key = youtubeNameKey(name);
     const matches = configuredByYouTubeName.get(key) ?? new Set<Streamer>();
     matches.add(streamer);
     configuredByYouTubeName.set(key, matches);
@@ -382,7 +388,7 @@ export function resolveDggStreams({
     // Match only an unambiguous name, and keep polling the configured account
     // so the same YouTube audience is not counted again as a linked source.
     const youtubeMatches = configuredByYouTubeName.get(
-      normalizeId(candidate.displayName).replace(/^@/, ""),
+      youtubeNameKey(candidate.displayName),
     );
     const configuredName =
       candidate.platform === Platform.YouTube

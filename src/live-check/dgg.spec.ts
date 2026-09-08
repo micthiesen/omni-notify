@@ -278,6 +278,52 @@ describe("selectDggStreams", () => {
     },
   );
 
+  it.each([false, true])(
+    "matches spaced YouTube names only when the normalized owner is unique (ambiguous=%s)",
+    (ambiguous) => {
+      const resolution = resolveDggStreams({
+        feed: {
+          destinyLive: false,
+          hosting: null,
+          embeds: [
+            embed({
+              platform: "youtube",
+              id: "vcTFGmR6Yns",
+              displayName: "Whick TV",
+              count: 50,
+            }),
+          ],
+        },
+        limit: 1,
+        configuredStreamers: [
+          {
+            id: "whick",
+            displayName: "Whick",
+            bindings: [{ platform: Platform.YouTube, username: "@Whick-TV" }],
+            tier: "background",
+          },
+          ...(ambiguous
+            ? [
+                {
+                  id: "other",
+                  displayName: "Whick TV",
+                  bindings: [{ platform: Platform.YouTube, username: "@other" }],
+                  tier: "background" as const,
+                },
+              ]
+            : []),
+        ],
+        availablePlatforms: new Set(Object.values(Platform)),
+      });
+      expect(resolution.discovered).toHaveLength(ambiguous ? 1 : 0);
+      expect(resolution.configuredPresence.get("whick")).toEqual(
+        ambiguous ? undefined : { hosted: false, viewers: 50 },
+      );
+      // Continue polling the configured channel; the video is the same audience.
+      expect(resolution.configuredSources.size).toBe(0);
+    },
+  );
+
   it.each([Platform.Kick, Platform.YouTube])(
     "does not match a YouTube handle across platforms or an ambiguous name (%s)",
     (platform) => {
