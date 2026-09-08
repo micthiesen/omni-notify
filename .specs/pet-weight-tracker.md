@@ -282,7 +282,7 @@ FRONTEND_PORT=3000
 2. **Pet tracker backend** - auth, API client, persistence, scheduled task
 3. **HTTP server** - API endpoint + static serving, wire into index.ts
 4. **Frontend** - Vite scaffold, pet weight chart page
-5. **Integration** - build pipeline, env config, CLAUDE.md updates
+5. **Integration** - build pipeline, env config, AGENTS.md updates
 
 ---
 
