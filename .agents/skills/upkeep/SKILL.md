@@ -1,6 +1,6 @@
 ---
 name: upkeep
-description: Full maintenance pass on this repo - upgrade Node/pnpm, all dependencies (including majors, researched via changelogs), GitHub Actions, Dockerfile, and LLM model IDs, then verify everything and auto commit/push. Use when the user invokes /upkeep or asks to update/upgrade dependencies, tooling, or "outdated stuff".
+description: Full maintenance pass on this repo - upgrade Node/pnpm, all dependencies (including majors, researched via changelogs), GitHub Actions, Dockerfile, and LLM model IDs, then verify everything and auto commit/push. Use when the user invokes $upkeep or asks to update/upgrade dependencies, tooling, or "outdated stuff".
 ---
 
 # Upkeep: full maintenance pass

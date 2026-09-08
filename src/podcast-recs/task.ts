@@ -32,7 +32,7 @@ export class PodcastRecommendationTask implements ScheduledTask<unknown, TaskSer
     return Effect.gen(function* () {
       const missing = [
         // The taste seed doubles as the feature flag: the task stays disabled
-        // until a profile file is mounted (see CLAUDE.md / README).
+        // until a profile file is mounted (see AGENTS.md / README).
         ["PODCAST_TASTE_PATH", config.PODCAST_TASTE_PATH],
         ["TAVILY_API_KEY", config.TAVILY_API_KEY],
         ...requiredModelCredentials(),
