@@ -1,7 +1,7 @@
 # omni-notify
 
-Edit `AGENTS.md` and `.agents/skills/` directly. Codex is the primary harness;
-`CLAUDE.md` and `.claude/skills` link to these sources for Claude compatibility.
+Edit `AGENTS.md` and `.agents/skills/` directly. These are native Codex files;
+no generated copies or compatibility links are needed.
 
 Personal automation service for livestream monitoring, email processing, AI
 briefings, recommendations, PressPods, and durable Omni workspaces.

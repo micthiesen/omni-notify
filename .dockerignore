@@ -8,9 +8,7 @@ frontend/tsconfig.tsbuildinfo
 **/*.spec.ts
 README.md
 AGENTS.md
-CLAUDE.md
 .agents
-.claude
 .codex
 *.db
 *.db-shm
