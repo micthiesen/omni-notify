@@ -88,6 +88,8 @@ function RecommendationCard({
             {rec.title}
             {rec.year !== null && <span className="rec-year"> ({rec.year})</span>}
           </Link>
+        </div>
+        <div className="rec-badges">
           <span className={`media-badge media-${rec.mediaType}`}>
             {rec.mediaType === "tv" ? "TV" : "Movie"}
           </span>
@@ -102,30 +104,30 @@ function RecommendationCard({
         </div>
         {rec.whyForUser && <p className="rec-why">{rec.whyForUser}</p>}
         {rec.caveats.length > 0 && (
-          <ul className="rec-caveats">
-            {rec.caveats.map((caveat) => (
-              <li key={caveat}>{caveat}</li>
-            ))}
-          </ul>
+          <details className="content-disclosure rec-caveat-disclosure">
+            <summary>Before You Watch</summary>
+            <ul className="rec-caveats">
+              {rec.caveats.map((caveat) => (
+                <li key={caveat}>{caveat}</li>
+              ))}
+            </ul>
+          </details>
         )}
         <div className="rec-meta meta-row">
           <span>Recommended {formatDateOnly(rec.recommendedAt)}</span>
-          {rec.confidence !== null && (
-            <span className="muted">
-              Confidence {Math.round(rec.confidence * 100)}%
-            </span>
-          )}
         </div>
         <div className="rec-links">
-          <a href={rec.links.tmdb} target="_blank" rel="noreferrer">
-            TMDB
+          <a
+            className="content-primary-link"
+            href={rec.links.plex}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open in Plex <span aria-hidden="true">↗</span>
           </a>
-          <a href={rec.links.plex} target="_blank" rel="noreferrer">
-            Plex
-          </a>
-          <a href={rec.links.manager} target="_blank" rel="noreferrer">
-            {rec.mediaType === "movie" ? "Radarr" : "Sonarr"}
-          </a>
+          <Link to={`/media/${encodeURIComponent(rec.recommendationId)}`}>
+            Details <span aria-hidden="true">→</span>
+          </Link>
         </div>
         {canRate && (
           <div className="rec-feedback" aria-label="Recommendation feedback">
@@ -181,7 +183,7 @@ function MediaTasteBrain({
       profile={profile}
       loading={loading}
       error={error}
-      subtitle="Watching and feedback are reflected into a versioned taste profile."
+      subtitle="What your watching and feedback say about your taste."
       emptyText="No profile yet. The reflection task will build one from Plex watching and recommendation feedback."
       stats={stats}
       collapsible
@@ -329,10 +331,15 @@ export default function RecommendationsPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Media</h1>
+        <div className="page-header-stack">
+          <h1>Watch</h1>
+          <p className="page-subtitle">
+            Films and series picked for your next night in.
+          </p>
+        </div>
         <div className="rec-run-controls">
           <label className="rec-run-limit">
-            <span>Up To</span>
+            <span>Picks</span>
             <select
               aria-label="Maximum recommendations"
               value={maxRecommendations}
@@ -362,7 +369,7 @@ export default function RecommendationsPage() {
                 <span className="running-pulse" /> Running…
               </>
             ) : taskAvailable ? (
-              "Run Now"
+              "Find Picks"
             ) : (
               "Task Disabled"
             )}
@@ -391,7 +398,7 @@ export default function RecommendationsPage() {
       )}
 
       {recs === null && recsError === null && <div className="loading">Loading…</div>}
-      {recsError && recs === null && (
+      {recsError && (
         <div className="error">
           <div>Failed to load recommendations</div>
           <div className="error-detail">{recsError}</div>
@@ -407,9 +414,14 @@ export default function RecommendationsPage() {
           </div>
         </div>
       )}
+      {visible !== null && visible.length === 0 && recs !== null && recs.length > 0 && (
+        <div className="rec-empty">
+          No picks match this filter. Choose another status to see more.
+        </div>
+      )}
       {visible !== null && visible.length > 0 && (
         <>
-          <div className="rec-list">
+          <div className="rec-list" aria-label="Recommendations">
             {shown.map((rec) => (
               <RecommendationCard
                 key={rec.recommendationId}

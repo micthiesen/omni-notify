@@ -6,6 +6,7 @@ import { StatStrip } from "../components/StatStrip";
 import { TaskCard } from "../components/TaskCard";
 import { Toast, useToast } from "../components/Toast";
 import { useLiveData } from "../live";
+import { taskLabel } from "../utils/format";
 
 function nextRunMs(task: TaskInfo): number {
   const iso = task.nextRuns[0];
@@ -17,11 +18,32 @@ function nextRunMs(task: TaskInfo): number {
 export default function OperationsPage() {
   const { snapshot, error, runTask } = useLiveData();
   const { toast, showToast } = useToast();
+  const [query, setQuery] = useState("");
+  const [taskFilter, setTaskFilter] = useState<"all" | "attention" | "running">("all");
   const [logRun, setLogRun] = useState<TaskRun | null>(null);
   const sortedTasks = useMemo(
     () =>
-      snapshot ? [...snapshot.tasks].sort((a, b) => nextRunMs(a) - nextRunMs(b)) : [],
-    [snapshot],
+      snapshot
+        ? [...snapshot.tasks]
+            .filter((task) => {
+              const matchesQuery = `${taskLabel(task)} ${task.name}`
+                .toLowerCase()
+                .includes(query.toLowerCase().trim());
+              return (
+                matchesQuery &&
+                (taskFilter === "all" ||
+                  (taskFilter === "running"
+                    ? task.running
+                    : task.lastRun?.status === "error"))
+              );
+            })
+            .sort((a, b) => {
+              const rank = (task: TaskInfo) =>
+                task.running ? 0 : task.lastRun?.status === "error" ? 1 : 2;
+              return rank(a) - rank(b) || nextRunMs(a) - nextRunMs(b);
+            })
+        : [],
+    [snapshot, query, taskFilter],
   );
 
   if (!snapshot) {
@@ -58,9 +80,42 @@ export default function OperationsPage() {
       )}
       <StatStrip snapshot={snapshot} />
       <section className="page-section">
-        <h2 className="section-title">Tasks</h2>
+        <div className="section-heading-row">
+          <h2 className="section-title">
+            Tasks <span className="section-count">{snapshot.tasks.length}</span>
+          </h2>
+        </div>
+        <div className="task-toolbar">
+          <input
+            className="task-search"
+            type="search"
+            aria-label="Search tasks"
+            placeholder="Search tasks…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <div className="task-filters" aria-label="Task status">
+            {(
+              [
+                ["all", "All"],
+                ["attention", "Needs Attention"],
+                ["running", "Running"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`chip-btn ${taskFilter === value ? "active" : ""}`}
+                aria-pressed={taskFilter === value}
+                onClick={() => setTaskFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         {sortedTasks.length === 0 ? (
-          <div className="muted">No scheduled tasks registered.</div>
+          <div className="muted">No tasks match this view.</div>
         ) : (
           <div className="task-grid">
             {sortedTasks.map((task) => (

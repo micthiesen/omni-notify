@@ -141,6 +141,7 @@ export function ActivityFeed({
       <div className="activity-controls">
         <select
           className="activity-filter"
+          aria-label="Filter activity by task"
           value={filterTask}
           onChange={(e) => setFilterTask(e.target.value)}
         >
@@ -154,6 +155,7 @@ export function ActivityFeed({
         <button
           type="button"
           className={`chip-btn ${errorsOnly ? "active" : ""}`}
+          aria-pressed={errorsOnly}
           onClick={() => setErrorsOnly((v) => !v)}
         >
           Errors Only

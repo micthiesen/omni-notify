@@ -15,6 +15,7 @@ import {
 } from "../api";
 import { forkUiRequest, runUiEffect } from "../effect";
 import { Link } from "../router";
+import { WorkspaceMarkdown } from "../components/WorkspaceMarkdown";
 import { formatAbsolute, formatRelative } from "../utils/format";
 
 interface Props {
@@ -99,8 +100,7 @@ function WorkspaceList({ workspaceId }: { workspaceId?: string }) {
             {workspaceId ? (workspaces?.[0]?.title ?? "Workspace") : "Workspaces"}
           </h1>
           <p className="page-subtitle">
-            Ongoing projects with durable context, practical artifacts, and
-            human-approved actions.
+            Research, decisions, and next steps for your ongoing projects.
           </p>
         </div>
       </div>
@@ -326,7 +326,13 @@ function SubjectPage({
                     {action.status}
                   </span>
                 </div>
-                <pre>{formatActionPayload(action.payload)}</pre>
+                <details
+                  className="content-disclosure"
+                  open={action.status === "pending" || action.status === "failed"}
+                >
+                  <summary>Action Details</summary>
+                  <pre>{formatActionPayload(action.payload)}</pre>
+                </details>
                 {action.result && (
                   <p className="workspace-action-result">{action.result}</p>
                 )}
@@ -378,6 +384,11 @@ function SubjectPage({
         </button>
       </form>
 
+      <nav className="workspace-section-nav" aria-label="Project sections">
+        <a href="#artifacts">Research</a>
+        <a href="#conversation">Conversation</a>
+        <a href="#sources">Sources</a>
+      </nav>
       <section className="workspace-section" id="artifacts">
         <h2>Artifacts</h2>
         <div className="workspace-artifact-grid">
@@ -402,7 +413,7 @@ function SubjectPage({
                 </div>
                 {artifact ? (
                   <>
-                    <div className="workspace-artifact-content">{artifact.content}</div>
+                    <WorkspaceMarkdown content={artifact.content} />
                     <small>Updated {formatRelative(artifact.createdAt)}</small>
                   </>
                 ) : (

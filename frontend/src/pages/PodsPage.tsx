@@ -181,15 +181,19 @@ export default function PodsPage() {
       <div className="page-header">
         <div className="page-header-stack">
           <h1>PressPods</h1>
-          <p className="page-subtitle">
-            Articles converted to podcast episodes, read aloud by a robot.
-          </p>
+          <p className="page-subtitle">Your reading list, ready to listen to.</p>
         </div>
       </div>
 
+      <label className="pods-submit-label" htmlFor="article-url">
+        Turn an Article Into an Episode
+      </label>
       <form className="pods-submit" onSubmit={onSubmit}>
         <input
           type="url"
+          id="article-url"
+          aria-describedby={submitError ? "article-url-error" : undefined}
+          aria-invalid={submitError ? true : undefined}
           className="pods-submit-input"
           placeholder="https://example.com/article"
           value={url}
@@ -204,11 +208,15 @@ export default function PodsPage() {
           {submitting ? "Submitting…" : "Create Episode"}
         </button>
       </form>
-      {submitError && <div className="pods-submit-error">{submitError}</div>}
+      {submitError && (
+        <div id="article-url-error" role="alert" className="pods-submit-error">
+          {submitError}
+        </div>
+      )}
 
       {jobs.length > 0 && (
         <section className="pods-jobs">
-          <h2 className="section-title">In Progress</h2>
+          <h2 className="section-title">Episode Queue</h2>
           {jobs.map((job) => (
             <div key={job.jobId} className={`pods-job pods-job-${job.status}`}>
               <div className="pods-job-main">
@@ -315,6 +323,7 @@ export default function PodsPage() {
                   )}
                   <audio
                     className="pods-card-audio"
+                    aria-label={`Listen to ${episode.title}`}
                     controls
                     preload="none"
                     src={episode.audioUrl}
@@ -334,39 +343,44 @@ export default function PodsPage() {
                     {formatAudioDuration(episode.durationSeconds) && (
                       <span>{formatAudioDuration(episode.durationSeconds)}</span>
                     )}
-                    {episode.voiceName && <span>{episode.voiceName}</span>}
-                    {formatCents(episode.costCents) && (
-                      <span>{formatCents(episode.costCents)}</span>
-                    )}
-                    {retrieverSummary(episode) && (
-                      <span title="Winning retriever">{retrieverSummary(episode)}</span>
-                    )}
                   </div>
-                  <div className="pods-card-links pods-card-admin-actions">
-                    {episode.runId && (
+                  <details className="content-disclosure pods-card-options">
+                    <summary>Episode Options</summary>
+                    <div className="meta-row pods-card-meta">
+                      {episode.voiceName && <span>{episode.voiceName}</span>}
+                      {formatCents(episode.costCents) && (
+                        <span>{formatCents(episode.costCents)}</span>
+                      )}
+                      {retrieverSummary(episode) && (
+                        <span>{retrieverSummary(episode)}</span>
+                      )}
+                    </div>
+                    <div className="pods-card-links pods-card-admin-actions">
+                      {episode.runId && (
+                        <button
+                          type="button"
+                          className="pods-card-logs"
+                          onClick={() => episode.runId && openLogs(episode.runId)}
+                        >
+                          Logs
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="pods-card-logs"
-                        onClick={() => episode.runId && openLogs(episode.runId)}
+                        onClick={() => onRetryEpisode(episode)}
                       >
-                        Logs
+                        Retry
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      className="pods-card-logs"
-                      onClick={() => onRetryEpisode(episode)}
-                    >
-                      Retry
-                    </button>
-                    <button
-                      type="button"
-                      className="pods-card-logs pods-card-delete"
-                      onClick={() => onDeleteEpisode(episode)}
-                    >
-                      Delete
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        className="pods-card-logs pods-card-delete"
+                        onClick={() => onDeleteEpisode(episode)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </div>
             </article>

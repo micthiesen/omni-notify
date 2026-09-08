@@ -25,7 +25,7 @@ interface NavItem {
 
 const PRIMARY_LINKS: NavItem[] = [
   { to: "/", label: "Home", icon: "home" },
-  { to: "/media", label: "Watch", icon: "watch" },
+  { to: "/media", label: "Watch", icon: "watch", paths: ["/media", "/streamers"] },
   {
     to: "/podcasts",
     label: "Listen",
@@ -236,6 +236,8 @@ export function NavBar({ path }: { path: string }) {
   useEffect(() => {
     if (!moreOpen) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const sheet = moreSheetRef.current;
     const closeButton = sheet?.querySelector<HTMLButtonElement>(".mobile-more-close");
     closeButton?.focus();
@@ -263,7 +265,14 @@ export function NavBar({ path }: { path: string }) {
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      previouslyFocused?.focus();
+      document.body.style.overflow = previousOverflow;
+      if (
+        !document.activeElement ||
+        document.activeElement === document.body ||
+        sheet?.contains(document.activeElement)
+      ) {
+        previouslyFocused?.focus();
+      }
     };
   }, [moreOpen]);
 

@@ -96,7 +96,7 @@ function LiveStreamerCard({ streamer }: { streamer: LiveStreamer }) {
         href={streamer.primary.url}
         target="_blank"
         rel="noopener"
-        aria-label={`Open stream on ${platformLabel(streamer.primary.platform)}`}
+        aria-label={`Watch ${streamer.displayName} on ${platformLabel(streamer.primary.platform)} (opens in a new tab)`}
       />
       <Link
         className="live-card-details"
@@ -161,11 +161,16 @@ export function LiveNow({ streamers }: { streamers: StreamerView[] }) {
         </div>
       )}
       {offline.length > 0 && (
-        <div className="offline-strip">
-          {offline.map((s) => (
-            <OfflinePill key={s.id} streamer={s} />
-          ))}
-        </div>
+        <details className="offline-disclosure">
+          <summary>
+            Following <span className="muted">{offline.length} Offline</span>
+          </summary>
+          <div className="offline-strip">
+            {offline.map((s) => (
+              <OfflinePill key={s.id} streamer={s} />
+            ))}
+          </div>
+        </details>
       )}
     </section>
   );

@@ -18,13 +18,14 @@ export function StatusFilterChips<S extends string>({
   onChange: (status: S | "") => void;
 }) {
   return (
-    <div className="rec-filters">
+    <div className="rec-filters" role="group" aria-label="Filter by Status">
       <button
         type="button"
         className={`chip-btn ${active === "" ? "active" : ""}`}
+        aria-pressed={active === ""}
         onClick={() => onChange("")}
       >
-        All ({total})
+        All <span className="chip-btn-count">{total}</span>
       </button>
       {order
         .filter((status) => counts.has(status))
@@ -33,9 +34,11 @@ export function StatusFilterChips<S extends string>({
             key={status}
             type="button"
             className={`chip-btn ${active === status ? "active" : ""}`}
+            aria-pressed={active === status}
             onClick={() => onChange(active === status ? "" : status)}
           >
-            {labels[status]} ({counts.get(status)})
+            {labels[status]}{" "}
+            <span className="chip-btn-count">{counts.get(status)}</span>
           </button>
         ))}
     </div>

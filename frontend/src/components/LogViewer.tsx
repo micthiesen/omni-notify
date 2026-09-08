@@ -9,6 +9,7 @@ import {
 } from "../api";
 import type { RunLogLevel, RunLogLine, TaskRun } from "../api";
 import { forkUiEffect, makeUiCallbackRuntime, runUiEffect } from "../effect";
+import { useModal } from "../hooks/useModal";
 import { useNow } from "../hooks/useNow";
 import { downloadFile } from "../utils/download";
 import { formatAbsolute, toTitleCase } from "../utils/format";
@@ -181,17 +182,7 @@ export function LogViewer({
     return forkUiEffect(lifecycle);
   }, [runId, startedRunning]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
-    };
-  }, [onClose]);
+  const modalRef = useModal(onClose);
 
   const lineCount = lines?.length ?? 0;
   // Follow the tail only while the user hasn't scrolled up.
@@ -241,10 +232,18 @@ export function LogViewer({
       <button
         type="button"
         className="modal-backdrop"
+        tabIndex={-1}
         onClick={onClose}
         aria-label="Close log viewer"
       />
-      <div className="log-modal" role="dialog" aria-label={`Logs for ${run.taskName}`}>
+      <div
+        className="log-modal"
+        ref={modalRef}
+        tabIndex={-1}
+        aria-modal="true"
+        role="dialog"
+        aria-label={`Logs for ${run.taskName}`}
+      >
         <div className="log-modal-header">
           <div className="log-modal-title">
             <StatusDot status={run.status} />

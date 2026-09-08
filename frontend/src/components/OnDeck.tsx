@@ -5,7 +5,7 @@ import { ImageWithFallback } from "./ImageWithFallback";
 function OnDeckPoster({ item }: { item: OnDeckItem }) {
   return (
     <ImageWithFallback
-      src={item.posterPath ? `https://image.tmdb.org/t/p/w185${item.posterPath}` : null}
+      src={item.posterPath ? `https://image.tmdb.org/t/p/w500${item.posterPath}` : null}
       alt={`${item.title} poster`}
       className="ondeck-poster"
       placeholderClassName="ondeck-poster-placeholder"
@@ -58,7 +58,12 @@ export function OnDeck({ items }: { items: OnDeckItem[] }) {
 
   return (
     <section className="page-section ondeck-section">
-      <h2 className="section-title">On Deck</h2>
+      <div className="section-heading-row">
+        <h2 className="section-title">On Deck</h2>
+        <Link to="/media" className="section-view-all">
+          View All Picks ›
+        </Link>
+      </div>
       <div className="ondeck-row">
         {items.map((item) => (
           <OnDeckCard key={item.recommendationId} item={item} />

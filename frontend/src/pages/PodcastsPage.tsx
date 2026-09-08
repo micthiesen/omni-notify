@@ -93,6 +93,8 @@ function PodcastCard({
           >
             {rec.episodeTitle}
           </Link>
+        </div>
+        <div className="rec-badges">
           <span className={`status-chip status-chip-${rec.status}`}>
             {STATUS_LABELS[rec.status]}
           </span>
@@ -101,23 +103,26 @@ function PodcastCard({
               className="podrec-queued"
               title="This episode is waiting in your Castro queue"
             >
-              🎧 In Castro Queue
+              In Castro Queue
             </span>
           )}
         </div>
         <div className="podrec-show">{rec.showTitle}</div>
         {rec.matchedVoices && rec.matchedVoices.length > 0 && (
           <div className="podrec-featuring">
-            🎙️ Featuring {rec.matchedVoices.join(", ")}
+            Featuring {rec.matchedVoices.join(", ")}
           </div>
         )}
         {rec.whyForUser && <p className="rec-why">{rec.whyForUser}</p>}
         {rec.caveats && rec.caveats.length > 0 && (
-          <ul className="rec-caveats">
-            {rec.caveats.map((caveat) => (
-              <li key={caveat}>{caveat}</li>
-            ))}
-          </ul>
+          <details className="content-disclosure rec-caveat-disclosure">
+            <summary>Before You Listen</summary>
+            <ul className="rec-caveats">
+              {rec.caveats.map((caveat) => (
+                <li key={caveat}>{caveat}</li>
+              ))}
+            </ul>
+          </details>
         )}
         <div className="rec-meta meta-row">
           <span>Released {formatDateOnly(rec.publishedAt)}</span>
@@ -131,8 +136,13 @@ function PodcastCard({
         {(rec.episodeUrl || rec.sourceUrl) && (
           <div className="rec-links">
             {rec.episodeUrl && (
-              <a href={rec.episodeUrl} target="_blank" rel="noreferrer">
-                Episode Page
+              <a
+                className="content-primary-link"
+                href={rec.episodeUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open Episode ↗
               </a>
             )}
             {rec.sourceUrl && (
@@ -191,7 +201,7 @@ function PodcastTasteBrain({
       profile={profile}
       loading={loading}
       error={error}
-      subtitle="Castro listening and feedback are reflected into a versioned taste profile."
+      subtitle="What your listening and feedback say about your taste."
       emptyText="No profile yet. The reflection task will build one from Castro listen history and recommendation feedback."
       stats={stats}
       collapsible
@@ -328,10 +338,15 @@ export default function PodcastsPage() {
   return (
     <>
       <div className="page-header">
-        <h1>Podcasts</h1>
+        <div className="page-header-stack">
+          <h1>Podcast Picks</h1>
+          <p className="page-subtitle">
+            Fresh voices and worthwhile conversations, picked for you.
+          </p>
+        </div>
         <div className="rec-run-controls">
           <label className="rec-run-limit">
-            <span>Up To</span>
+            <span>Picks</span>
             <select
               aria-label="Maximum podcast recommendations"
               value={maxRecommendations}
@@ -361,7 +376,7 @@ export default function PodcastsPage() {
                 <span className="running-pulse" /> Running…
               </>
             ) : taskAvailable ? (
-              "Run Now"
+              "Find Picks"
             ) : (
               "Task Disabled"
             )}
@@ -388,7 +403,7 @@ export default function PodcastsPage() {
       )}
 
       {recs === null && recsError === null && <div className="loading">Loading…</div>}
-      {recsError && recs === null && (
+      {recsError && (
         <div className="error">
           <div>Failed to load podcast recommendations</div>
           <div className="error-detail">{recsError}</div>
@@ -402,9 +417,14 @@ export default function PodcastsPage() {
           </div>
         </div>
       )}
+      {visible !== null && visible.length === 0 && recs !== null && recs.length > 0 && (
+        <div className="rec-empty">
+          No picks match this filter. Choose another status to see more.
+        </div>
+      )}
       {visible !== null && visible.length > 0 && (
         <>
-          <div className="rec-list">
+          <div className="rec-list" aria-label="Recommendations">
             {shown.map((rec) => (
               <PodcastCard
                 key={rec.recommendationId}

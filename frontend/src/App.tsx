@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { NavBar } from "./components/NavBar";
 import { SectionNav } from "./components/SectionNav";
@@ -10,7 +10,7 @@ import PodcastDetailPage from "./pages/PodcastDetailPage";
 import PodcastsPage from "./pages/PodcastsPage";
 import RecommendationDetailPage from "./pages/RecommendationDetailPage";
 import RecommendationsPage from "./pages/RecommendationsPage";
-import { usePath } from "./router";
+import { Link, usePath } from "./router";
 
 // These pages pull in recharts (~500kB minified); keep it out of the main chunk.
 const PetsPage = lazy(() => import("./pages/PetsPage"));
@@ -27,7 +27,7 @@ const WorkspacesPage = lazy(() => import("./pages/WorkspacesPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
 
 function normalizePath(path: string): string {
-  if (path.length > 1 && path.endsWith("/")) return path.slice(0, -1);
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
   // Legacy alias: old Pushover notifications and bookmarks link here.
   if (path === "/recommendations") return "/media";
   return path;
@@ -48,6 +48,13 @@ const PAGE_TITLES: Record<string, string> = {
 
 export default function App() {
   const path = normalizePath(usePath());
+  const previousPath = useRef(path);
+
+  useEffect(() => {
+    if (previousPath.current === path) return;
+    previousPath.current = path;
+    document.getElementById("main-content")?.focus({ preventScroll: true });
+  }, [path]);
 
   useEffect(() => {
     const section = path.startsWith("/workspaces") ? "Workspaces" : PAGE_TITLES[path];
@@ -55,14 +62,33 @@ export default function App() {
   }, [path]);
 
   let page: ReactNode;
+  let malformedPath = false;
+  try {
+    decodeURIComponent(path);
+  } catch {
+    malformedPath = true;
+  }
+  const notFound = (
+    <div className="not-found-page">
+      <span className="home-eyebrow">404</span>
+      <h1>Page Not Found</h1>
+      <p className="page-subtitle">This link does not lead to a page in Omni Notify.</p>
+      <Link to="/" className="section-view-all">
+        Back to Home ›
+      </Link>
+    </div>
+  );
   const feedbackMatch = path.match(/^\/feedback\/(recommendations|podcasts)\/([^/]+)$/);
   const mediaDetailMatch = path.match(/^\/media\/([^/]+)$/);
   const podcastDetailMatch = path.match(/^\/podcasts\/([^/]+)$/);
   const podsDetailMatch = path.match(/^\/pods\/([^/]+)$/);
   const workspaceSubjectMatch = path.match(/^\/workspaces\/([^/]+)\/([^/]+)$/);
   const workspaceMatch = path.match(/^\/workspaces\/([^/]+)$/);
+  const streamerMatch = path.match(/^\/streamers\/([^/]+)$/);
   const streamerIntelligenceMatch = path.match(/^\/streamers\/([^/]+)\/intelligence$/);
-  if (workspaceSubjectMatch) {
+  if (malformedPath) {
+    page = notFound;
+  } else if (workspaceSubjectMatch) {
     page = (
       <Suspense fallback={<div className="loading">Loading…</div>}>
         <WorkspacesPage
@@ -101,8 +127,8 @@ export default function App() {
         <LivestreamIntelligencePage key={streamerId} streamerId={streamerId} />
       </Suspense>
     );
-  } else if (path.startsWith("/streamers/")) {
-    const streamerId = decodeURIComponent(path.slice("/streamers/".length));
+  } else if (streamerMatch) {
+    const streamerId = decodeURIComponent(streamerMatch[1]);
     page = (
       <Suspense fallback={<div className="loading">Loading…</div>}>
         <StreamerPage key={streamerId} streamerId={streamerId} />
@@ -168,8 +194,11 @@ export default function App() {
           </Suspense>
         );
         break;
-      default:
+      case "/":
         page = <HomePage />;
+        break;
+      default:
+        page = notFound;
         break;
     }
   }
@@ -177,8 +206,15 @@ export default function App() {
   return (
     <LiveDataProvider>
       <div className="app-shell">
+        <a href="#main-content" className="skip-link">
+          Skip to Content
+        </a>
         <NavBar path={path} />
-        <main className={`page ${path === "/data" ? "page-data" : ""}`}>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          className={`page ${path === "/data" ? "page-data" : ""}`}
+        >
           <SectionNav path={path} />
           {page}
         </main>

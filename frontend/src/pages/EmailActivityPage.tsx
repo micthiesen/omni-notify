@@ -20,16 +20,7 @@ import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { StatusFilterChips } from "../components/StatusFilterChips";
 import { Toast, useToast } from "../components/Toast";
 import { OUTCOME_LABELS, PIPELINE_LABELS } from "../utils/emailLabels";
-import { formatAbsolute, formatCents } from "../utils/format";
-
-/** admitTier → short human label; unrecognized tiers fall back to the raw value. */
-const ADMIT_TIER_LABELS: Record<string, string> = {
-  rule: "Rule",
-  builtin: "Built-in",
-  triage: "Triage",
-  "keyword-fallback": "Keyword Fallback",
-  "carrier-name": "Carrier Name",
-};
+import { formatAbsolute } from "../utils/format";
 
 const OUTCOME_FILTER_ORDER: readonly EmailActivityOutcome[] = [
   "processed",
@@ -379,6 +370,7 @@ export default function EmailActivityPage() {
         <button
           type="button"
           className={`chip-btn ${pipeline === null ? "active" : ""}`}
+          aria-pressed={pipeline === null}
           onClick={() => setPipeline(null)}
         >
           All
@@ -388,6 +380,7 @@ export default function EmailActivityPage() {
             key={p}
             type="button"
             className={`chip-btn ${pipeline === p ? "active" : ""}`}
+            aria-pressed={pipeline === p}
             onClick={() => setPipeline(pipeline === p ? null : p)}
           >
             {PIPELINE_LABELS[p]}
@@ -448,26 +441,6 @@ export default function EmailActivityPage() {
                   <span className="mail-from" title={activity.from}>
                     {activity.from}
                   </span>
-                  {activity.admitReason && (
-                    <span className="mail-admit" title={activity.admitReason}>
-                      Admitted: {activity.admitReason}
-                    </span>
-                  )}
-                  {activity.admitTier && (
-                    <span
-                      className={`email-tier email-tier-${activity.admitTier}`}
-                      title={`Admitted via ${
-                        ADMIT_TIER_LABELS[activity.admitTier] ?? activity.admitTier
-                      }`}
-                    >
-                      {ADMIT_TIER_LABELS[activity.admitTier] ?? activity.admitTier}
-                    </span>
-                  )}
-                  {activity.costCents != null && activity.costCents > 0 && (
-                    <span className="email-cost" title="LLM cost for this email">
-                      {formatCents(activity.costCents)}
-                    </span>
-                  )}
                   {feedback.has(activity.activityId) && (
                     <span className="mail-feedback-tag">Feedback</span>
                   )}

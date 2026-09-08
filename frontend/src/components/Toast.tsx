@@ -34,5 +34,12 @@ export function useToast(): {
 
 export function Toast({ toast }: { toast: ToastState | null }) {
   if (!toast) return null;
-  return <div className={`toast toast-${toast.kind}`}>{toast.message}</div>;
+  return (
+    <div
+      role={toast.kind === "error" ? "alert" : "status"}
+      className={`toast toast-${toast.kind}`}
+    >
+      {toast.message}
+    </div>
+  );
 }

@@ -28,24 +28,42 @@ export function RecommendationRuns({
   taskName: string;
   latestRunId: string | null;
 }) {
+  const [loadError, setLoadError] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [runs, setRuns] = useState<TaskRun[]>([]);
   const [logRun, setLogRun] = useState<TaskRun | null>(null);
 
   useUiEffect(
     () =>
       fetchTaskRuns({ task: taskName, limit: 6 }).pipe(
-        Effect.tap((data) => Effect.sync(() => setRuns(data.runs))),
+        Effect.tap((data) =>
+          Effect.sync(() => {
+            setRuns(data.runs);
+            setLoaded(true);
+            setLoadError(false);
+          }),
+        ),
         // Recommendation cards remain useful if activity history is unavailable.
-        Effect.catch(() => Effect.void),
+        Effect.catch(() =>
+          Effect.sync(() => {
+            setLoadError(true);
+            setLoaded(true);
+          }),
+        ),
       ),
     [taskName, latestRunId],
   );
 
   return (
     <>
-      <section className="page-section rec-activity-section">
-        <h2 className="section-title">Recent Recommendation Runs</h2>
-        {runs.length === 0 ? (
+      <details className="page-section rec-activity-section content-disclosure">
+        <summary>Recent Activity</summary>
+        {loadError && (
+          <div className="error-inline">Activity could not be refreshed.</div>
+        )}
+        {!loaded ? (
+          <div className="muted">Loading activity…</div>
+        ) : runs.length === 0 && !loadError ? (
           <div className="muted">No recommendation runs recorded yet.</div>
         ) : (
           <div className="rec-run-list">
@@ -76,7 +94,7 @@ export function RecommendationRuns({
             })}
           </div>
         )}
-      </section>
+      </details>
       {logRun && <LogViewer run={logRun} onClose={() => setLogRun(null)} />}
     </>
   );

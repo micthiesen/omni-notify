@@ -35,6 +35,7 @@ export default function BriefingsPage() {
   const [logsError, setLogsError] = useState<string | null>(null);
 
   const openLogs = async (runId: string) => {
+    setLogsError(null);
     try {
       const { run } = await runUiEffect(fetchRunLogs(runId));
       setLogRun(run);
@@ -63,7 +64,7 @@ export default function BriefingsPage() {
         <div className="page-header-stack">
           <h1>Briefings</h1>
           <p className="page-subtitle">
-            Archive of AI briefing notifications (last 50 per briefing).
+            Updates worth knowing, collected from your briefings.
           </p>
         </div>
       </div>
@@ -82,10 +83,11 @@ export default function BriefingsPage() {
 
       {briefings !== null && briefings.length > 0 && (
         <>
-          <div className="rec-filters">
+          <div className="rec-filters" role="group" aria-label="Filter by Briefing">
             <button
               type="button"
               className={`chip-btn ${filter === null ? "active" : ""}`}
+              aria-pressed={filter === null}
               onClick={() => setFilter(null)}
             >
               All
@@ -95,6 +97,7 @@ export default function BriefingsPage() {
                 key={b.name}
                 type="button"
                 className={`chip-btn ${filter === b.name ? "active" : ""}`}
+                aria-pressed={filter === b.name}
                 onClick={() => setFilter(filter === b.name ? null : b.name)}
               >
                 {toTitleCase(b.name)}

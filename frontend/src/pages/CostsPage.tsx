@@ -74,14 +74,22 @@ export default function CostsPage() {
   const [range, setRange] = useState<CostRange>(30);
   const [data, setData] = useState<CostsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [displayedRange, setDisplayedRange] = useState<CostRange>(30);
 
   useEffect(() => {
-    setData(null);
+    setLoading(true);
     setError(null);
     return forkUiRequest(fetchCosts(range), {
-      onSuccess: setData,
-      onFailure: (err) =>
-        setError(err instanceof Error ? err.message : "Failed to load costs"),
+      onSuccess: (next) => {
+        setData(next);
+        setDisplayedRange(range);
+        setLoading(false);
+      },
+      onFailure: (err) => {
+        setError(err instanceof Error ? err.message : "Failed to load costs");
+        setLoading(false);
+      },
     });
   }, [range]);
 
@@ -133,7 +141,18 @@ export default function CostsPage() {
           <div className="error-detail">{error}</div>
         </div>
       )}
-      {error && data !== null && <div className="error-inline">{error}</div>}
+      {error && data !== null && (
+        <div role="alert" className="error-inline">
+          {error}. Showing{" "}
+          {displayedRange === "all" ? "all-time" : `${displayedRange}-day`} data.
+        </div>
+      )}
+      {loading && data !== null && (
+        <div className="stale-note muted" role="status">
+          Updating… Showing{" "}
+          {displayedRange === "all" ? "all-time" : `${displayedRange}-day`} data.
+        </div>
+      )}
 
       {data && (
         <>
@@ -236,23 +255,23 @@ export default function CostsPage() {
                     >
                       <XAxis
                         dataKey="date"
-                        tick={{ fill: "#8888a8", fontSize: 12 }}
-                        tickLine={{ stroke: "#3a3a5a" }}
-                        axisLine={{ stroke: "#3a3a5a" }}
+                        tick={{ fill: "var(--text-muted)", fontSize: 12 }}
+                        tickLine={{ stroke: "var(--border)" }}
+                        axisLine={{ stroke: "var(--border)" }}
                         tickFormatter={(date: string) =>
                           formatCalendarDate(date, false)
                         }
                         minTickGap={40}
                       />
                       <YAxis
-                        tick={{ fill: "#8888a8", fontSize: 12 }}
-                        tickLine={{ stroke: "#3a3a5a" }}
-                        axisLine={{ stroke: "#3a3a5a" }}
+                        tick={{ fill: "var(--text-muted)", fontSize: 12 }}
+                        tickLine={{ stroke: "var(--border)" }}
+                        axisLine={{ stroke: "var(--border)" }}
                         tickFormatter={(value: number) => formatCents(value) ?? ""}
                         width={62}
                       />
                       <Tooltip
-                        cursor={{ fill: "rgba(56, 189, 248, 0.08)" }}
+                        cursor={{ fill: "var(--accent-soft)" }}
                         content={({ active, payload, label }) => {
                           if (!active || !payload?.length) return null;
                           return (

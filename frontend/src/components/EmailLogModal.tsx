@@ -9,6 +9,7 @@ import {
   sendEmailActivityFeedback,
 } from "../api";
 import { forkUiEffect, runUiEffect } from "../effect";
+import { useModal } from "../hooks/useModal";
 import type {
   EmailActivity,
   EmailBuiltinRules,
@@ -113,6 +114,7 @@ export function EmailLogModal({
 
   useEffect(() => {
     setLines(null);
+    setError(null);
     return forkUiEffect(
       fetchEmailActivityLogs(current.activityId).pipe(
         Effect.tap((data) =>
@@ -130,17 +132,7 @@ export function EmailLogModal({
     );
   }, [current.activityId, logsVersion]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
-    };
-  }, [onClose]);
+  const modalRef = useModal(onClose);
 
   useEffect(() => {
     return forkUiEffect(
@@ -299,11 +291,15 @@ export function EmailLogModal({
       <button
         type="button"
         className="modal-backdrop"
+        tabIndex={-1}
         onClick={onClose}
         aria-label="Close log viewer"
       />
       <div
         className="log-modal"
+        ref={modalRef}
+        tabIndex={-1}
+        aria-modal="true"
         role="dialog"
         aria-label={`Logs for ${current.subject || "email"}`}
       >

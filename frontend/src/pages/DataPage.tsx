@@ -9,6 +9,7 @@ import {
   type DataValue,
 } from "../api";
 import { forkUiRequest, runUiEffect } from "../effect";
+import { useModal } from "../hooks/useModal";
 import { ShowMoreButton, useShowMore } from "../components/ShowMore";
 import { Toast, useToast } from "../components/Toast";
 import { downloadFile } from "../utils/download";
@@ -173,23 +174,25 @@ function RowDetail({
   onClose: () => void;
   onDelete: () => void;
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  const modalRef = useModal(onClose);
 
   return (
-    <div className="modal-root" role="dialog" aria-modal="true" aria-label="Row detail">
+    <div className="modal-root">
       <button
         className="modal-backdrop"
+        tabIndex={-1}
         type="button"
         onClick={onClose}
         aria-label="Close"
       />
-      <div className="data-detail-modal">
+      <div
+        className="data-detail-modal"
+        ref={modalRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Row detail"
+      >
         <div className="data-detail-header">
           <div>
             <div className="data-detail-label">{toTitleCase(entity.label)}</div>
@@ -537,6 +540,13 @@ export default function DataPage() {
                         {columns.map((column) => (
                           <th
                             key={column}
+                            aria-sort={
+                              sort?.column === column
+                                ? sort.direction === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : "none"
+                            }
                             className={`data-col-${columnWidths.get(column) ?? "medium"} ${
                               selected.primaryKey.includes(column)
                                 ? "data-pk-column"
@@ -592,6 +602,16 @@ export default function DataPage() {
                               );
                             })}
                             <td className="data-actions-column">
+                              <button
+                                className="data-view-btn"
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDetailRow(row);
+                                }}
+                              >
+                                View
+                              </button>
                               <button
                                 className="data-trash-btn"
                                 type="button"

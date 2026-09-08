@@ -107,32 +107,64 @@ export default function HomePage() {
     pendingActions +
     openPapercuts +
     (research.recentEmailProblems ?? 0);
-  const attentionUnavailable = research.workspaceError || research.emailError;
+  const attentionUnavailable =
+    research.workspaceError || research.emailError || error !== null;
+  const attentionLoading =
+    (research.workspaces === null && !research.workspaceError) ||
+    (research.recentEmailProblems === null && !research.emailError);
 
   return (
     <>
+      <div className="page-header home-header">
+        <div className="page-header-stack">
+          <span className="home-eyebrow">Overview</span>
+          <h1>Home</h1>
+          <p className="page-subtitle">
+            Live streams, fresh picks, and ongoing research.
+          </p>
+        </div>
+      </div>
       {error && (
         <div className="error-inline stale-note">
           Refresh failed ({error}), showing last known state.
         </div>
       )}
 
-      <section className="attention-panel">
+      <section
+        className={`attention-panel ${attentionCount === 0 ? "attention-compact" : "attention-actionable"} ${attentionUnavailable ? "attention-unknown" : attentionLoading ? "attention-loading" : ""}`}
+        aria-label="System attention"
+      >
         <div className="attention-heading">
           <div>
-            <span className="section-title">Needs Attention</span>
+            <span className="section-title">
+              {attentionCount > 0
+                ? "Needs Attention"
+                : attentionUnavailable
+                  ? "Status Unavailable"
+                  : attentionLoading
+                    ? "Checking In"
+                    : "All Clear"}
+            </span>
             <p>
               {attentionUnavailable
                 ? `${attentionCount} known item${attentionCount === 1 ? "" : "s"}; some status is unavailable.`
-                : attentionCount === 0
-                  ? "Everything is running cleanly."
-                  : `${attentionCount} item${attentionCount === 1 ? "" : "s"} need a look.`}
+                : attentionLoading
+                  ? "Checking research and email activity…"
+                  : attentionCount === 0
+                    ? "Everything is running cleanly."
+                    : `${attentionCount} item${attentionCount === 1 ? "" : "s"} need a look.`}
             </p>
           </div>
           <span
             className={`attention-total ${attentionCount > 0 || attentionUnavailable ? "has-items" : ""}`}
           >
-            {attentionUnavailable ? "!" : attentionCount}
+            {attentionUnavailable
+              ? "!"
+              : attentionLoading
+                ? "…"
+                : attentionCount === 0
+                  ? "✓"
+                  : attentionCount}
           </span>
         </div>
         {attentionCount > 0 && (
@@ -198,6 +230,13 @@ export default function HomePage() {
               </Link>
             ))}
           </div>
+        ) : research.workspaceError ? (
+          <p className="error-inline">
+            Research could not be refreshed.{" "}
+            <Link to="/workspaces">Open Workspaces</Link>
+          </p>
+        ) : research.workspaces === null ? (
+          <p className="loading-inline">Loading your research…</p>
         ) : (
           <Link to="/workspaces" className="home-research-empty">
             Start an ongoing workspace ›

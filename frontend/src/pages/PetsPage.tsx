@@ -241,7 +241,7 @@ function buildChartConfig(
         },
         {
           dataKey: "smoothed",
-          stroke: "#ffffff",
+          stroke: "var(--text)",
           strokeWidth: 2,
           type: "monotoneX",
           opacity: 0.6,
@@ -261,7 +261,7 @@ function buildChartConfig(
         { dataKey: input.dataKey, stroke: color, width: 2, label: input.label },
         {
           dataKey: "smoothed",
-          stroke: "#ffffff",
+          stroke: "var(--text)",
           width: 2,
           opacity: 0.6,
           label: "Smoothed",
@@ -390,12 +390,14 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
           <div className="mode-toggle">
             <button
               className={`range-btn ${mode === "weight" ? "active" : ""}`}
+              aria-pressed={mode === "weight"}
               onClick={() => setMode("weight")}
             >
               Weight
             </button>
             <button
               className={`range-btn ${mode === "visits" ? "active" : ""}`}
+              aria-pressed={mode === "visits"}
               onClick={() => setMode("visits")}
             >
               Visits
@@ -426,6 +428,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
               <button
                 key={r}
                 className={`range-btn ${range === r ? "active" : ""}`}
+                aria-pressed={range === r}
                 onClick={() => setRange(r)}
               >
                 {r === "all" ? "All" : r}
@@ -458,17 +461,17 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                 type="number"
                 scale="time"
                 domain={["dataMin", "dataMax"]}
-                tick={{ fill: "#8888a8", fontSize: 12 }}
-                tickLine={{ stroke: "#3a3a5a" }}
-                axisLine={{ stroke: "#3a3a5a" }}
+                tick={{ fill: "var(--text-muted)", fontSize: 12 }}
+                tickLine={{ stroke: "var(--border)" }}
+                axisLine={{ stroke: "var(--border)" }}
                 tickFormatter={(v: number) => formatDate(new Date(v).toISOString())}
                 minTickGap={50}
               />
               <YAxis
                 domain={chartConfig.yDomain}
-                tick={{ fill: "#8888a8", fontSize: 12 }}
-                tickLine={{ stroke: "#3a3a5a" }}
-                axisLine={{ stroke: "#3a3a5a" }}
+                tick={{ fill: "var(--text-muted)", fontSize: 12 }}
+                tickLine={{ stroke: "var(--border)" }}
+                axisLine={{ stroke: "var(--border)" }}
                 tickFormatter={chartConfig.yFormatter}
                 width={40}
               />
@@ -532,7 +535,7 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                       ? {
                           r: 5,
                           fill: line.stroke,
-                          stroke: "#1a1a2e",
+                          stroke: "var(--bg-card)",
                           strokeWidth: 2,
                         }
                       : false
@@ -543,8 +546,8 @@ function PetCard({ pet, colorIndex }: { pet: Pet; colorIndex: number }) {
                 <Brush
                   dataKey="epoch"
                   height={24}
-                  stroke="#4a6fa5"
-                  fill="#16213e"
+                  stroke="var(--border-strong)"
+                  fill="var(--bg-inset)"
                   travellerWidth={8}
                   tickFormatter={() => ""}
                 />
@@ -595,6 +598,9 @@ export default function PetsPage() {
           <div>Failed to load pet data</div>
           <div className="error-detail">{error}</div>
         </div>
+      )}
+      {!loading && !error && pets.length === 0 && (
+        <div className="no-data">No pets are being tracked yet.</div>
       )}
       {!loading &&
         !error &&

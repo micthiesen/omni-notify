@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Effect } from "effect";
 import { fetchTaskRuns } from "../api";
 import type { TaskInfo, TaskRun } from "../api";
@@ -103,6 +103,7 @@ export function TaskCard({
 }) {
   const now = useNow(1000);
   const [expanded, setExpanded] = useState(false);
+  const historyId = useId();
   const [history, setHistory] = useState<TaskRun[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
@@ -177,7 +178,7 @@ export function TaskCard({
       </div>
       <LastRunSummary run={task.lastRun} onViewLogs={onViewLogs} />
       {expanded && (
-        <div className="task-history">
+        <div className="task-history" id={historyId}>
           {history === null && historyError === null && (
             <div className="muted history-empty">Loading…</div>
           )}
@@ -197,6 +198,8 @@ export function TaskCard({
       <button
         type="button"
         className="history-toggle"
+        aria-expanded={expanded}
+        aria-controls={expanded ? historyId : undefined}
         onClick={() => setExpanded((v) => !v)}
       >
         {expanded ? "Hide History" : "History"}

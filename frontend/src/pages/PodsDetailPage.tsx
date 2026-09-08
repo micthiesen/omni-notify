@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   deletePressPodsEpisode,
   fetchPressPodsEpisode,
@@ -272,6 +272,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
   const [episode, setEpisode] = useState<PressPodsEpisodeDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [retrying, setRetrying] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { toast, showToast } = useToast();
@@ -402,6 +403,8 @@ export default function PodsDetailPage({ id }: { id: string }) {
           </div>
           <audio
             className="pods-detail-audio"
+            ref={audioRef}
+            aria-label={`Listen to ${episode.title}`}
             controls
             preload="metadata"
             src={episode.audioUrl}
@@ -438,14 +441,23 @@ export default function PodsDetailPage({ id }: { id: string }) {
               <h2 className="section-title">Chapters</h2>
               <ul className="pods-chapter-list">
                 {episode.chapters.map((chapter) => (
-                  <li
-                    key={`${chapter.startTimeSeconds}-${chapter.title}`}
-                    className="pods-chapter-row"
-                  >
-                    <span className="pods-chapter-time">
-                      {formatAudioDuration(chapter.startTimeSeconds)}
-                    </span>
-                    <span className="pods-chapter-title">{chapter.title}</span>
+                  <li key={`${chapter.startTimeSeconds}-${chapter.title}`}>
+                    <button
+                      type="button"
+                      className="pods-chapter-row pods-chapter-button"
+                      aria-label={`Jump to ${chapter.title} at ${formatAudioDuration(chapter.startTimeSeconds)}`}
+                      onClick={() => {
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = chapter.startTimeSeconds;
+                          audioRef.current.focus();
+                        }
+                      }}
+                    >
+                      <span className="pods-chapter-time">
+                        {formatAudioDuration(chapter.startTimeSeconds)}
+                      </span>
+                      <span className="pods-chapter-title">{chapter.title}</span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -455,6 +467,7 @@ export default function PodsDetailPage({ id }: { id: string }) {
           <section className="page-section">
             <h2 className="section-title">Transcript</h2>
             <div
+              id="episode-transcript"
               className={`pods-transcript ${transcriptExpanded ? "pods-transcript-expanded" : ""}`}
             >
               <TranscriptBody content={episode.content} />
@@ -462,6 +475,8 @@ export default function PodsDetailPage({ id }: { id: string }) {
             <button
               type="button"
               className="pods-transcript-toggle"
+              aria-expanded={transcriptExpanded}
+              aria-controls="episode-transcript"
               onClick={() => setTranscriptExpanded((v) => !v)}
             >
               {transcriptExpanded ? "Collapse Transcript" : "Show Full Transcript"}
@@ -496,52 +511,62 @@ export default function PodsDetailPage({ id }: { id: string }) {
           </section>
         </div>
 
-        <section className="page-section">
-          <h2 className="section-title">
-            Audio Chunks
-            {episode.chunks && (
-              <span className="section-count">{episode.chunks.length}</span>
-            )}
+        <details className="content-disclosure processing-disclosure">
+          <summary>
+            Processing Details
             {problemChunkCount > 0 && (
-              <span className="pods-chunk-warn-count">{problemChunkCount} flagged</span>
+              <span className="section-count">{problemChunkCount} Flagged</span>
             )}
-          </h2>
-          {episode.chunks === null && (
-            <div className="muted">
-              This episode was synthesized before per-chunk stats were recorded.
-            </div>
-          )}
-          {episode.chunks && episode.chunks.length === 0 && (
-            <div className="muted">No chunk data recorded.</div>
-          )}
-          {episode.chunks && episode.chunks.length > 0 && (
-            <div className="pods-chunk-list">
-              {episode.chunks.map((chunk) => (
-                <ChunkCard key={chunk.index} chunk={chunk} />
-              ))}
-            </div>
-          )}
-        </section>
-
-        {episode.retrieverAttempts && episode.retrieverAttempts.length > 0 && (
+          </summary>
           <section className="page-section">
-            <h2 className="section-title">Retriever Attempts</h2>
-            <div className="pods-retriever-list">
-              {episode.retrieverAttempts.map((attempt) => (
-                <RetrieverRow
-                  key={attempt.name}
-                  attempt={attempt}
-                  isWinner={attempt.name === episode.retrieverName}
-                />
-              ))}
-            </div>
+            <h2 className="section-title">
+              Audio Chunks
+              {episode.chunks && (
+                <span className="section-count">{episode.chunks.length}</span>
+              )}
+              {problemChunkCount > 0 && (
+                <span className="pods-chunk-warn-count">
+                  {problemChunkCount} flagged
+                </span>
+              )}
+            </h2>
+            {episode.chunks === null && (
+              <div className="muted">
+                This episode was synthesized before per-chunk stats were recorded.
+              </div>
+            )}
+            {episode.chunks && episode.chunks.length === 0 && (
+              <div className="muted">No chunk data recorded.</div>
+            )}
+            {episode.chunks && episode.chunks.length > 0 && (
+              <div className="pods-chunk-list">
+                {episode.chunks.map((chunk) => (
+                  <ChunkCard key={chunk.index} chunk={chunk} />
+                ))}
+              </div>
+            )}
           </section>
-        )}
 
-        <section className="page-section">
-          <h2 className="section-title">Cost Breakdown</h2>
-          <CostTable episode={episode} />
-        </section>
+          {episode.retrieverAttempts && episode.retrieverAttempts.length > 0 && (
+            <section className="page-section">
+              <h2 className="section-title">Retriever Attempts</h2>
+              <div className="pods-retriever-list">
+                {episode.retrieverAttempts.map((attempt) => (
+                  <RetrieverRow
+                    key={attempt.name}
+                    attempt={attempt}
+                    isWinner={attempt.name === episode.retrieverName}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          <section className="page-section">
+            <h2 className="section-title">Cost Breakdown</h2>
+            <CostTable episode={episode} />
+          </section>
+        </details>
 
         <section className="page-section pods-detail-admin">
           <h2 className="section-title">Episode Administration</h2>
