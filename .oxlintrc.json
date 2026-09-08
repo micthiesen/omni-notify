@@ -8,7 +8,7 @@
     "no-control-regex": "off",
     "no-shadow-restricted-names": "off"
   },
-  "ignorePatterns": [".agents/**", ".claude/**", ".codex/**"],
+  "ignorePatterns": [".agents/**", ".codex/**"],
   "env": {
     "builtin": true
   }
