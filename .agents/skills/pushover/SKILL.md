@@ -4,17 +4,18 @@ description: >-
   Create a new Pushover application with a custom icon. Searches for icons,
   lets the user pick one, then creates the app via Pushover's web interface
   using 1Password credentials.
-user_invocable: true
-argument-hint: <description of what the new app/token is for> [image:<path>]
 ---
 
 # Create Pushover Application
 
 Create a new Pushover application (API token) with a custom icon.
 
+Invoke `$pushover` with a description of what the app/token is for and an optional
+`image:<path>` for an existing icon.
+
 ## Scripts
 
-Located at `.claude/skills/pushover/scripts/`:
+Located at `.agents/skills/pushover/scripts/`:
 
 - **pushover-session.mjs** - Logs into Pushover via 1Password (email + password + TOTP). Prints session cookie to stdout.
 - **pushover-create-app.mjs** - Creates a Pushover app. Args: `<cookie> <name> [icon-path] [description]`. Prints JSON `{ "token": "...", "url": "..." }`.
@@ -26,7 +27,7 @@ Located at `.claude/skills/pushover/scripts/`:
 
 ### 1. Parse arguments
 
-From `$ARGUMENTS`, extract:
+From the user’s request and any text supplied with `$pushover`, extract:
 - The **description/purpose** of the new app (e.g. "live stream notifications")
 - Optional explicit image path if the user provided one (e.g. `image:/path/to/icon.png` or just a file path)
 
@@ -38,16 +39,16 @@ Derive a clear name of at most 20 characters from the description. This appears 
 
 **If the user provided an image path or URL:** use it directly. If it's a URL, download with:
 ```bash
-node .claude/skills/pushover/scripts/download-icon.mjs "<url>" "chosen"
+node .agents/skills/pushover/scripts/download-icon.mjs "<url>" "chosen"
 ```
 If it's a local file that isn't 128x128 PNG, resize with `sips --resampleWidth 128 --resampleHeight 128`.
 
 **Otherwise:** Search Iconify for candidates:
 ```bash
-node .claude/skills/pushover/scripts/search-icons.mjs "<search terms>" 6
+node .agents/skills/pushover/scripts/search-icons.mjs "<search terms>" 6
 ```
 
-This downloads 128x128 PNGs to `.pushover-icons/`. Show each image to the user using the Read tool (it can display images).
+This downloads 128x128 PNGs to `.pushover-icons/`. Show each image to the user using the image-viewing tool.
 
 If the user did not provide an icon, present the candidates and wait for this visual preference:
 - **Pick one** - proceed with that icon
@@ -59,10 +60,10 @@ If the user did not provide an icon, present the candidates and wait for this vi
 
 ```bash
 # Get session cookie (requires 1Password CLI + biometric/auth)
-COOKIE="$(node .claude/skills/pushover/scripts/pushover-session.mjs)"
+COOKIE="$(node .agents/skills/pushover/scripts/pushover-session.mjs)"
 
 # Create app
-node .claude/skills/pushover/scripts/pushover-create-app.mjs "$COOKIE" "AppName" ".pushover-icons/chosen.png" "Description of the app"
+node .agents/skills/pushover/scripts/pushover-create-app.mjs "$COOKIE" "AppName" ".pushover-icons/chosen.png" "Description of the app"
 ```
 
 The create script prints JSON: `{ "token": "abc123...", "url": "https://pushover.net/apps/..." }`
@@ -74,7 +75,7 @@ Show the user:
 - The **Pushover app URL** (for managing the icon/settings later)
 - Suggest which **env var** to update if relevant to this project
 
-Clean up: `bash .claude/skills/pushover/scripts/clear-icons.sh`
+Clean up: `bash .agents/skills/pushover/scripts/clear-icons.sh`
 
 ## User Instructions
 
