@@ -1,6 +1,6 @@
 import type { Effect as EffectType } from "effect/Effect";
 import { decode } from "html-entities";
-import { Clock, Data, Duration, Effect } from "effect";
+import { Clock, Data, Duration, Effect, Schema } from "effect";
 import { parseHTML } from "linkedom";
 import {
   canonicalBindingKey,
@@ -13,6 +13,10 @@ import type { PlatformBinding } from "./streamers.js";
 const USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MAX_BYTES = 2_000_000;
+const YouTubeVideoOwnerSchema = Schema.Struct({
+  type: Schema.Literal("video"),
+  author_url: Schema.String,
+});
 
 const RESERVED_KICK_PATHS = new Set([
   "api",
@@ -287,6 +291,46 @@ function normalizedHandle(binding: PlatformBinding): string | undefined {
   return username.includes("/") ? undefined : username;
 }
 
+/** YouTube's video metadata identifies the owner without interpreting display names. */
+export function fetchYouTubeVideoOwnerEffect(
+  videoId: string,
+  {
+    fetchImpl = fetch,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    maxBytes = DEFAULT_MAX_BYTES,
+  }: {
+    fetchImpl?: ProfilePageFetcher;
+    timeoutMs?: number;
+    maxBytes?: number;
+  } = {},
+): EffectType<PlatformBinding | undefined, ProfileLinkError> {
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return Effect.succeed(undefined);
+  const url = new URL("https://www.youtube.com/oembed");
+  url.searchParams.set("url", `https://www.youtube.com/watch?v=${videoId}`);
+  url.searchParams.set("format", "json");
+  const operation = `fetch YouTube video owner ${videoId}`;
+  return Effect.tryPromise({
+    try: (signal) =>
+      fetchImpl(url, {
+        headers: { Accept: "application/json", "User-Agent": USER_AGENT },
+        redirect: "error",
+        signal,
+      }),
+    catch: (cause) => new ProfileLinkError({ operation, cause }),
+  }).pipe(
+    Effect.flatMap((response) => readBoundedText(response, maxBytes)),
+    Effect.flatMap(
+      Schema.decodeUnknownEffect(Schema.fromJsonString(YouTubeVideoOwnerSchema)),
+    ),
+    Effect.map(({ author_url }) => {
+      const owner = bindingFromProfileUrl(author_url);
+      return owner?.platform === Platform.YouTube ? owner : undefined;
+    }),
+    Effect.timeout(Duration.millis(timeoutMs)),
+    Effect.mapError((cause) => new ProfileLinkError({ operation, cause })),
+  );
+}
+
 export type ProfileIdentityEvidence = "equal-handle" | "reciprocal";
 
 /** Pure confidence gate used before any durable alias is written. */
@@ -319,7 +363,8 @@ export function profileIdentityEvidence({
 
 /**
  * Learns a durable source -> configured-binding alias from deterministic profile
- * evidence: a direct link with equal handles, or reciprocal direct profile links.
+ * evidence: YouTube's video owner, a direct link with equal handles, or reciprocal
+ * direct profile links.
  */
 export function learnProfileIdentityEffect({
   source,
@@ -344,6 +389,21 @@ export function learnProfileIdentityEffect({
       return existing;
     }
     const sourceKey = canonicalBindingKey(source);
+    if (
+      source.platform === Platform.YouTube &&
+      /^[A-Za-z0-9_-]{11}$/.test(source.username)
+    ) {
+      const owner = yield* fetchYouTubeVideoOwnerEffect(source.username, { fetchImpl });
+      const target = owner && configuredByKey.get(canonicalBindingKey(owner));
+      if (target && canonicalBindingKey(target) !== sourceKey) {
+        return yield* rememberProfileIdentityLinkEffect({
+          source,
+          target,
+          now: observedAt,
+        });
+      }
+      return undefined;
+    }
     const directLinks = yield* fetchProfileLinksEffect(source, { fetchImpl });
     for (const directTarget of directLinks) {
       const configuredTarget = configuredByKey.get(canonicalBindingKey(directTarget));

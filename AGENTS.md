@@ -80,6 +80,11 @@ when a primitive is genuinely shared; keep project-specific behavior here.
 
 ### Livestreams
 
+YouTube discoveries resolve video ownership through YouTube metadata and durable
+identity links. Never infer YouTube ownership from display names. A video linked
+to its configured YouTube account enriches DGG presence without adding a second
+viewer-count source. Failed identity revalidation preserves the last verified link.
+
 A streamer is an aggregate identity over platform bindings. Notify only on the
 aggregate offline-to-live and live-to-offline edges. The first live binding is
 the sticky primary for the session; a primary switch is silent. Viewer counts
