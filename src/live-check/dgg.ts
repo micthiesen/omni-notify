@@ -285,26 +285,9 @@ export function resolveDggStreams({
 
   const configuredByBinding = new Map<string, Streamer>();
   const configuredByName = new Map<string, Streamer>();
-  const configuredByYouTubeName = new Map<string, Set<Streamer>>();
-  // Channel display names often use spaces where their handles use hyphens.
-  // Keep word boundaries and require a unique owner after normalization.
-  const youtubeNameKey = (name: string) =>
-    normalizeId(name)
-      .replace(/^@/, "")
-      .replace(/[\s-]+/g, "-");
-  const addYouTubeName = (name: string, streamer: Streamer) => {
-    const key = youtubeNameKey(name);
-    const matches = configuredByYouTubeName.get(key) ?? new Set<Streamer>();
-    matches.add(streamer);
-    configuredByYouTubeName.set(key, matches);
-  };
   for (const streamer of configuredStreamers) {
     configuredByName.set(normalizeId(streamer.displayName), streamer);
-    addYouTubeName(streamer.displayName, streamer);
     for (const binding of streamer.bindings) {
-      if (binding.platform === Platform.YouTube && binding.username.startsWith("@")) {
-        addYouTubeName(binding.username, streamer);
-      }
       configuredByBinding.set(
         canonicalBinding(binding.platform, binding.username),
         streamer,
@@ -383,18 +366,11 @@ export function resolveDggStreams({
     const configuredAlias = aliasTarget
       ? configuredByBinding.get(aliasTarget)
       : undefined;
-    // DGG identifies YouTube streams by video ID, but may name their owner
-    // with the channel handle instead of our configured display name.
-    // Match only an unambiguous name, and keep polling the configured account
-    // so the same YouTube audience is not counted again as a linked source.
-    const youtubeMatches = configuredByYouTubeName.get(
-      youtubeNameKey(candidate.displayName),
-    );
+    // YouTube display names are mutable and non-unique. Video ownership must
+    // come from verified platform metadata, never a display-name guess.
     const configuredName =
       candidate.platform === Platform.YouTube
-        ? youtubeMatches?.size === 1
-          ? [...youtubeMatches][0]
-          : undefined
+        ? undefined
         : configuredByName.get(normalizeId(candidate.displayName));
     const configured = configuredExact ?? configuredAlias ?? configuredName;
     const url = streamUrl(candidate.platform, candidate.id);

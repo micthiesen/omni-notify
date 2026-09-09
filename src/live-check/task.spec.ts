@@ -17,6 +17,7 @@ import {
 } from "./persistence.js";
 import { LiveStatus, Platform, platformConfigs } from "./platforms/index.js";
 import type { Streamer } from "./streamers.js";
+import { learnProfileIdentityEffect, ProfileLinkError } from "./profileLinks.js";
 import LiveCheckTask from "./task.js";
 import { provideTest, runTest, testRuntime } from "./testRuntime.js";
 import { getStreamSessions, StreamSessionsEntity } from "./sessions.js";
@@ -344,26 +345,32 @@ describe("LiveCheckTask DGG discovery", () => {
     }
   });
 
-  it("removes a stale profile identity when direct ownership evidence disappears", async () => {
-    const youtube = { platform: Platform.YouTube, username: "@iri" };
-    const kick = { platform: Platform.Kick, username: "iri" };
-    await runTest(
-      rememberProfileIdentityLinkEffect({ source: kick, target: youtube, now: 0 }),
-    );
-    const sharedStreamers: Streamer[] = [
+  it("resolves successive YouTube video owners without duplicate rows or viewers", async () => {
+    const youtube = { platform: Platform.YouTube, username: "@lonerboxlive" };
+    const streamers: Streamer[] = [
       {
-        id: "iri",
-        displayName: "IRI",
+        id: "lonerbox",
+        displayName: "LonerBox",
         bindings: [youtube],
         tier: "background",
       },
     ];
-    const youtubeFetch = vi
+    let videoId = "GqP2KP9_Blo";
+    const fetchOwner = vi.fn(async () =>
+      Response.json({
+        type: "video",
+        author_name: "An unrelated display name",
+        author_url: "https://www.youtube.com/@lonerboxlive",
+      }),
+    );
+    const poll = vi
       .spyOn(platformConfigs[Platform.YouTube], "fetchLiveStatus")
-      .mockReturnValue(Effect.succeed({ status: LiveStatus.Offline }));
+      .mockReturnValue(
+        Effect.succeed({ status: LiveStatus.Live, title: "Live", viewerCount: 100 }),
+      );
     const task = new LiveCheckTask(
-      sharedStreamers,
-      Logger.named("DggStaleProfileIdentityTest"),
+      streamers,
+      Logger.named("YouTubeOwnerTest"),
       undefined,
       {
         topEmbeds: 1,
@@ -373,36 +380,123 @@ describe("LiveCheckTask DGG discovery", () => {
           hosting: null,
           embeds: [
             {
-              platform: "kick",
-              id: "iri",
-              count: 10,
+              platform: "youtube",
+              id: videoId,
+              count: 15,
               mediaItem: {
-                identifier: { platform: "kick", mediaId: "iri" },
+                identifier: { platform: "youtube", mediaId: videoId },
                 metadata: {
-                  displayName: "Different Display Name",
-                  title: "No longer linked",
+                  displayName: "LonerBox Live",
+                  title: "Live",
                   live: true,
-                  viewers: 20,
+                  viewers: 100,
                 },
               },
             },
           ],
         }),
-        learnIdentity: async () => undefined,
+        learnIdentity: (input) =>
+          learnProfileIdentityEffect({ ...input, fetchImpl: fetchOwner }),
       },
     );
-
     try {
       await runTest(task.run);
-      expect(await runTest(ProfileIdentityLinkEntity.getAll())).toEqual([]);
-      expect(sharedStreamers.map((streamer) => streamer.id)).toEqual([
-        "iri",
-        "dgg:kick:iri",
-      ]);
+      expect(streamers).toHaveLength(1);
+      expect(streamers[0].bindings).toEqual([youtube]);
+      expect(streamers[0].dgg?.viewers).toBe(15);
+      expect(await runTest(getStreamerStatusEffect("lonerbox"))).toMatchObject({
+        isLive: true,
+        viewerCount: 100,
+        sources: [
+          { platform: Platform.YouTube, username: "@lonerboxlive", viewerCount: 100 },
+        ],
+      });
+      // Repeated snapshots use the durable alias; a new broadcast learns its own owner.
+      for (let i = 0; i < 3; i++) await runTest(task.run);
+      expect(fetchOwner).toHaveBeenCalledTimes(1);
+      videoId = "vcTFGmR6Yns";
+      for (let i = 0; i < 3; i++) await runTest(task.run);
+      expect(fetchOwner).toHaveBeenCalledTimes(2);
+      expect(streamers).toHaveLength(1);
+      expect(streamers[0].bindings).toEqual([youtube]);
+      expect(poll).toHaveBeenCalledTimes(3);
+      expect(await runTest(ProfileIdentityLinkEntity.getAll())).toHaveLength(2);
     } finally {
-      youtubeFetch.mockRestore();
+      poll.mockRestore();
     }
   });
+
+  it.each([false, true])(
+    "revalidates ownership without deleting aliases on lookup failure (failed=%s)",
+    async (failed) => {
+      const youtube = { platform: Platform.YouTube, username: "@iri" };
+      const kick = { platform: Platform.Kick, username: "iri" };
+      await runTest(
+        rememberProfileIdentityLinkEffect({ source: kick, target: youtube, now: 0 }),
+      );
+      const sharedStreamers: Streamer[] = [
+        {
+          id: "iri",
+          displayName: "IRI",
+          bindings: [youtube],
+          tier: "background",
+        },
+      ];
+      const youtubeFetch = vi
+        .spyOn(platformConfigs[Platform.YouTube], "fetchLiveStatus")
+        .mockReturnValue(Effect.succeed({ status: LiveStatus.Offline }));
+      const task = new LiveCheckTask(
+        sharedStreamers,
+        Logger.named("DggStaleProfileIdentityTest"),
+        undefined,
+        {
+          topEmbeds: 1,
+          availablePlatforms: new Set(Object.values(Platform)),
+          fetchFeed: async () => ({
+            destinyLive: false,
+            hosting: null,
+            embeds: [
+              {
+                platform: "kick",
+                id: "iri",
+                count: 10,
+                mediaItem: {
+                  identifier: { platform: "kick", mediaId: "iri" },
+                  metadata: {
+                    displayName: "Different Display Name",
+                    title: "No longer linked",
+                    live: true,
+                    viewers: 20,
+                  },
+                },
+              },
+            ],
+          }),
+          learnIdentity: () =>
+            failed
+              ? Effect.fail(
+                  new ProfileLinkError({
+                    operation: "fetch owner",
+                    cause: new Error("HTTP 503"),
+                  }),
+                )
+              : Effect.succeed(undefined),
+        },
+      );
+
+      try {
+        await runTest(task.run);
+        expect(await runTest(ProfileIdentityLinkEntity.getAll())).toHaveLength(
+          failed ? 1 : 0,
+        );
+        expect(sharedStreamers.map((streamer) => streamer.id)).toEqual(
+          failed ? ["iri"] : ["iri", "dgg:kick:iri"],
+        );
+      } finally {
+        youtubeFetch.mockRestore();
+      }
+    },
+  );
 
   it("persists a live edge before notification failure so the alert is not repeated", async () => {
     const streamer: Streamer = {

@@ -60,6 +60,7 @@ import {
 } from "./transitions.js";
 
 const PROFILE_IDENTITY_RETRY_MS = 24 * 60 * 60 * 1000;
+const PROFILE_IDENTITY_FAILURE_RETRY_MS = 5 * 60 * 1000;
 const PROFILE_IDENTITY_VERIFICATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export default class LiveCheckTask implements ScheduledTask<
@@ -79,7 +80,7 @@ export default class LiveCheckTask implements ScheduledTask<
   private metricsService: ViewerMetricsService;
   private titleDebouncer = new TitleChangeDebouncer();
   private tickCount = 0;
-  private readonly profileIdentityAttempts = new Map<string, number>();
+  private readonly profileIdentityRetryAt = new Map<string, number>();
   private readonly configuredStreamers: Streamer[];
   private readonly dggStatuses = new Map<string, FetchedStatus>();
   private loggedStreamers = false;
@@ -241,14 +242,11 @@ export default class LiveCheckTask implements ScheduledTask<
             const source = entry.streamer.bindings[0];
             if (!source) return false;
             const sourceKey = canonicalBinding(source.platform, source.username);
-            const lastAttempt = this.profileIdentityAttempts.get(sourceKey);
-            if (
-              lastAttempt !== undefined &&
-              now - lastAttempt < PROFILE_IDENTITY_RETRY_MS
-            ) {
+            const retryAt = this.profileIdentityRetryAt.get(sourceKey);
+            if (retryAt !== undefined && now < retryAt) {
               return false;
             }
-            this.profileIdentityAttempts.set(sourceKey, now);
+            this.profileIdentityRetryAt.set(sourceKey, now + PROFILE_IDENTITY_RETRY_MS);
             const identityValue = (
               this.dggDiscovery?.learnIdentity ?? learnProfileIdentityEffect
             )({
@@ -263,16 +261,22 @@ export default class LiveCheckTask implements ScheduledTask<
                     unknown
                   >)
                 : fromPromise("learn profile identity", () => identityValue);
+            let lookupFailed = false;
             const link = yield* identityEffect.pipe(
-              Effect.catch((error) =>
-                this.logger
+              Effect.catch((error) => {
+                lookupFailed = true;
+                this.profileIdentityRetryAt.set(
+                  sourceKey,
+                  now + PROFILE_IDENTITY_FAILURE_RETRY_MS,
+                );
+                return this.logger
                   .debug(
                     `Could not resolve profile identity for ${source.platform}:${source.username}: ${String(error)}`,
                   )
-                  .pipe(Effect.as(undefined)),
-              ),
+                  .pipe(Effect.as(undefined));
+              }),
             );
-            if (verify && link === undefined) {
+            if (verify && !lookupFailed && link === undefined) {
               yield* forgetProfileIdentityLinkEffect(source);
               yield* this.logger.info(
                 `Removed stale profile identity for ${source.platform}:${source.username}`,
@@ -344,6 +348,20 @@ export default class LiveCheckTask implements ScheduledTask<
           .flatMap((entry) => entry.streamer.bindings)
           .filter(
             (binding) =>
+              // An alias to an existing account on this platform identifies
+              // the same audience (e.g. a YouTube video and its owner handle).
+              // Keep it for identity revalidation, but do not poll/count it twice.
+              !identityLinks.some(
+                (link) =>
+                  link.sourceBinding ===
+                    canonicalBinding(binding.platform, binding.username) &&
+                  streamer.bindings.some(
+                    (existing) =>
+                      existing.platform === binding.platform &&
+                      canonicalBinding(existing.platform, existing.username) ===
+                        link.targetBinding,
+                  ),
+              ) &&
               !streamer.bindings.some(
                 (existing) =>
                   canonicalBinding(existing.platform, existing.username) ===

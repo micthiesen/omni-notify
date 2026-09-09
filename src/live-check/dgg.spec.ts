@@ -215,6 +215,7 @@ describe("selectDggStreams", () => {
           }),
         ],
       },
+      identityAliases: new Map([["youtube:video-id", "youtube:@configured"]]),
       limit: 1,
       configuredStreamers: [
         {
@@ -237,7 +238,7 @@ describe("selectDggStreams", () => {
   });
 
   it.each(["imreallyimportant", "@ImReallyImportant"])(
-    "merges a YouTube video named %s into its configured handle",
+    "merges a verified YouTube owner regardless of display name %s",
     (displayName) => {
       const resolution = resolveDggStreams({
         feed: {
@@ -261,6 +262,7 @@ describe("selectDggStreams", () => {
         availablePlatforms: new Set(Object.values(Platform)),
         identityAliases: new Map([
           ["kick:imreallyimportant", "youtube:@imreallyimportant"],
+          ["youtube:p0oUwXqr0ds", "youtube:@imreallyimportant"],
         ]),
       });
       expect(resolution.discovered.map((entry) => entry.streamer.id)).toEqual([
@@ -274,12 +276,12 @@ describe("selectDggStreams", () => {
         resolution.configuredSources
           .get("iri")
           ?.map((entry) => entry.streamer.bindings[0].platform),
-      ).toEqual([Platform.Kick]);
+      ).toEqual([Platform.Kick, Platform.YouTube]);
     },
   );
 
   it.each([false, true])(
-    "matches spaced YouTube names only when the normalized owner is unique (ambiguous=%s)",
+    "does not guess YouTube ownership from spaced names (ambiguous=%s)",
     (ambiguous) => {
       const resolution = resolveDggStreams({
         feed: {
@@ -315,10 +317,8 @@ describe("selectDggStreams", () => {
         ],
         availablePlatforms: new Set(Object.values(Platform)),
       });
-      expect(resolution.discovered).toHaveLength(ambiguous ? 1 : 0);
-      expect(resolution.configuredPresence.get("whick")).toEqual(
-        ambiguous ? undefined : { hosted: false, viewers: 50 },
-      );
+      expect(resolution.discovered).toHaveLength(1);
+      expect(resolution.configuredPresence.get("whick")).toBeUndefined();
       // Continue polling the configured channel; the video is the same audience.
       expect(resolution.configuredSources.size).toBe(0);
     },

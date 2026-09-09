@@ -6,9 +6,136 @@ import {
   bindingFromProfileUrl,
   extractProfileLinks,
   fetchProfileLinksEffect,
+  fetchYouTubeVideoOwnerEffect,
+  learnProfileIdentityEffect,
   profileIdentityEvidence,
   profilePageUrl,
 } from "./profileLinks.js";
+import { provideTest } from "./testRuntime.js";
+
+describe("YouTube video ownership", () => {
+  const source = { platform: Platform.YouTube, username: "aBcdEFgh_12" };
+  const target = { platform: Platform.YouTube, username: "@LonerBoxLive" };
+  const metadata = {
+    type: "video",
+    author_name: "LonerBox Live",
+    author_url: "https://www.youtube.com/@lonerboxlive",
+  };
+
+  it("learns the configured owner from oEmbed and revalidates only when requested", async () => {
+    const fetchImpl = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      Response.json(metadata),
+    );
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const input = { source, configuredBindings: [target], fetchImpl };
+        const first = yield* learnProfileIdentityEffect({ ...input, now: 100 });
+        const cached = yield* learnProfileIdentityEffect({ ...input, now: 200 });
+        const refreshed = yield* learnProfileIdentityEffect({
+          ...input,
+          now: 300,
+          forceRefresh: true,
+        });
+        return { first, cached, refreshed };
+      }).pipe(provideTest),
+    );
+    expect(result.first).toEqual({
+      sourceBinding: "youtube:aBcdEFgh_12",
+      targetBinding: "youtube:@lonerboxlive",
+      discoveredAt: 100,
+      verifiedAt: 100,
+    });
+    expect(result.cached).toEqual(result.first);
+    expect(result.refreshed).toEqual({ ...result.first, verifiedAt: 300 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const [input, init] = fetchImpl.mock.calls[0]!;
+    const url = new URL(input);
+    expect(url.origin + url.pathname).toBe("https://www.youtube.com/oembed");
+    expect(url.searchParams.get("url")).toBe(
+      "https://www.youtube.com/watch?v=aBcdEFgh_12",
+    );
+    expect(url.searchParams.get("format")).toBe("json");
+    expect(init?.redirect).toBe("error");
+    expect(new Headers(init?.headers).get("User-Agent")).toBe(
+      "OpenAI File Downloader, XaiImageApiFetch/1.0",
+    );
+  });
+
+  it("returns confirmed no match when a cached owner no longer matches on refresh", async () => {
+    const fetchImpl = vi
+      .fn(async () => Response.json(metadata))
+      .mockImplementationOnce(async () => Response.json(metadata))
+      .mockImplementationOnce(async () =>
+        Response.json({ ...metadata, author_url: "https://youtube.com/@different" }),
+      );
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        const input = { source, configuredBindings: [target], fetchImpl };
+        yield* learnProfileIdentityEffect(input);
+        return yield* learnProfileIdentityEffect({ ...input, forceRefresh: true });
+      }).pipe(provideTest),
+    );
+    expect(result).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "https://www.youtube.com/@someoneelse",
+    "https://twitch.tv/lonerboxlive",
+    "https://example.com/@lonerboxlive",
+    "https://www.youtube.com/watch?v=aBcdEFgh_12",
+  ])(
+    "ignores matching names and unconfigured or non-owner URL %s",
+    async (authorUrl) => {
+      const fetchImpl = vi.fn(async () =>
+        Response.json({ ...metadata, author_url: authorUrl }),
+      );
+      expect(
+        await Effect.runPromise(
+          learnProfileIdentityEffect({
+            source,
+            configuredBindings: [target],
+            fetchImpl,
+          }).pipe(provideTest),
+        ),
+      ).toBeUndefined();
+      expect(fetchImpl).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([
+    () => new Response("unavailable", { status: 500 }),
+    () => new Response("not JSON"),
+    () => Response.json({ type: "video", author_name: "LonerBox Live" }),
+    () => Response.json({ ...metadata, type: "link" }),
+  ])("propagates HTTP and metadata failures", async (response) => {
+    await expect(
+      Effect.runPromise(
+        learnProfileIdentityEffect({
+          source,
+          configuredBindings: [target],
+          fetchImpl: async () => response(),
+        }).pipe(provideTest),
+      ),
+    ).rejects.toThrow("fetch YouTube video owner");
+  });
+
+  it("bounds owner responses and rejects malformed video identifiers before fetching", async () => {
+    const fetchImpl = vi.fn(async () => Response.json(metadata));
+    await expect(
+      Effect.runPromise(
+        fetchYouTubeVideoOwnerEffect(source.username, { fetchImpl, maxBytes: 10 }),
+      ),
+    ).rejects.toThrow("10 byte limit");
+    fetchImpl.mockClear();
+    for (const id of ["@lonerboxlive", "abc", "abcdefghij/", "abcdefghijk?url=x"]) {
+      expect(
+        await Effect.runPromise(fetchYouTubeVideoOwnerEffect(id, { fetchImpl })),
+      ).toBeUndefined();
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
 
 describe("profile link parsing", () => {
   it("extracts direct supported profiles from anchors and structured JSON", () => {
