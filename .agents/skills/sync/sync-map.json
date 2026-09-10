@@ -28,6 +28,10 @@
     "presspods": {
       "path": "../presspods",
       "notes": "Shares Oxc lint and formatting policy; project-specific file exclusions remain local."
+    },
+    "homebridge-elgato-key-lights": {
+      "path": "../homebridge-elgato-key-lights",
+      "notes": "Shared Oxc lint and 88-column formatting policy. Preserve project-specific ignores, plugins, and deliberate lint exceptions."
     }
   },
   "resources": [
@@ -48,7 +52,8 @@
         "homebridge-stream-triggers",
         "presspods",
         "mitools",
-        "stillair"
+        "stillair",
+        "homebridge-elgato-key-lights"
       ],
       "mode": "judgment",
       "notes": "Shared Oxc lint and 88-column formatting policy. Preserve project-specific ignores, plugins, and deliberate lint exceptions.",
@@ -65,7 +70,8 @@
         "homebridge-stream-triggers",
         "presspods",
         "mitools",
-        "stillair"
+        "stillair",
+        "homebridge-elgato-key-lights"
       ],
       "mode": "judgment",
       "notes": "Shared Oxc lint and 88-column formatting policy. Preserve project-specific ignores, plugins, and deliberate lint exceptions.",
