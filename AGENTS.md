@@ -143,6 +143,13 @@ runtime FFmpeg must include that filter. Keep the pnpm override that maps
 `@postlight/parser`'s git-pinned `difflib` dependency to the npm package because
 the supply-chain policy blocks git dependencies.
 
+### Castro
+
+Inbox preview cleanup runs every six hours. Keep failed runs visible, but gate
+Pushover on at least three consecutive failures spanning twelve hours (allowing
+five minutes of schedule jitter), using durable run history. Success resets the
+incident; isolated HTTP 500 and socket failures must not notify.
+
 ### Workspaces and MCP
 
 Workspace rows are changed through their service/API, not direct database edits.

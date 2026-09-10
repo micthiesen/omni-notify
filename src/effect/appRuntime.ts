@@ -7,6 +7,7 @@ import { Scheduler } from "@micthiesen/mitools/scheduling";
 import { Sqlite } from "@micthiesen/mitools/sqlite";
 import { Context, Effect, Layer } from "effect";
 import { FetchHttpClient } from "effect/unstable/http";
+import { persistentCastroFailureHook } from "../alerts/castro.js";
 import { throttleLogHook } from "../alerts/throttle.js";
 import { taskLogTap } from "../task-runs/logCapture.js";
 import type { TaskServices } from "../task-runs/registry.js";
@@ -49,15 +50,14 @@ const infrastructureLayer = Layer.mergeAll(
   Scheduler.layer,
 );
 
-const servicesLayer = Layer.mergeAll(
-  Docstore.layer,
-  Logger.layer({
-    level: config.LOG_LEVEL,
-    sinks: loggerSinks,
-    onLog: taskLogTap,
-    onError: throttleLogHook(Pushover.logHook),
-  }),
-).pipe(Layer.provideMerge(infrastructureLayer));
+const servicesLayer = Logger.layer({
+  level: config.LOG_LEVEL,
+  sinks: loggerSinks,
+  onLog: taskLogTap,
+  onError: persistentCastroFailureHook(throttleLogHook(Pushover.logHook)),
+}).pipe(
+  Layer.provideMerge(Docstore.layer.pipe(Layer.provideMerge(infrastructureLayer))),
+);
 
 export const AppLayer = Logger.layerAdapter.pipe(Layer.provideMerge(servicesLayer));
 

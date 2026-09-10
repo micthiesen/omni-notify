@@ -28,7 +28,7 @@ class CastroInboxCleanupError extends Data.TaggedError("CastroInboxCleanupError"
 
 export class CastroInboxCleanupTask implements ScheduledTask<unknown, TaskServices> {
   public readonly name = "CastroInboxCleanup";
-  public readonly schedule = "0 * * * *";
+  public readonly schedule = "0 */6 * * *";
   public readonly runOnStartup = false;
   // Drift off the exact top of the hour to avoid an obvious automated pattern.
   public readonly jitterMs = 5 * 60 * 1000;
@@ -54,6 +54,7 @@ export class CastroInboxCleanupTask implements ScheduledTask<unknown, TaskServic
   ) {}
 
   public readonly run = Effect.gen({ self: this }, function* () {
+    this.lastRunSummary = undefined;
     const account =
       this.accountOverride ?? (yield* resolvePodcastAccountEffect(this.logger));
     if (!account) {
