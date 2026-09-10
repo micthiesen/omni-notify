@@ -76,7 +76,7 @@ describe("CastroInboxCleanupTask", () => {
     expect(task.getLastRunSummary()).toBe(
       "cleared 1 free preview episode(s) from inbox",
     );
-    expect(task.schedule).toBe("0 * * * *");
+    expect(task.schedule).toBe("0 */6 * * *");
   });
 
   it("fails rather than treating an unavailable Inbox as empty", async () => {
