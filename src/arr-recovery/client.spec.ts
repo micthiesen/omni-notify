@@ -396,6 +396,49 @@ describe("HttpArrClient", () => {
     ).resolves.toBe(false);
   });
 
+  it("verifies obfuscated imports against the release folder and exact byte size", async () => {
+    let size = 1234;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) =>
+      new URL(String(input)).pathname.endsWith("/episode")
+        ? json([
+            {
+              id: 101,
+              seasonNumber: 1,
+              episodeNumber: 1,
+              title: "Pilot",
+              hasFile: true,
+              monitored: true,
+              episodeFileId: 51,
+            },
+          ])
+        : json([
+            {
+              id: 51,
+              path: "/tv/Show/Season 01/01 - Pilot.mkv",
+              relativePath: "Season 01/01 - Pilot.mkv",
+              sceneName: "Show.S01E01.1080p-GROUP",
+              size,
+            },
+          ]),
+    );
+    const client = new HttpArrClient({
+      kind: "sonarr",
+      url: "http://sonarr.local",
+      apiKey: "secret",
+      fetchImpl,
+    });
+    const file = importFile({
+      name: "NqFGW2VSR2C49AkyiFgnB6G",
+      folderName: "Show.S01E01.1080p-GROUP",
+      size: 1234,
+    });
+    expect(await Effect.runPromise(client.verifyImported(target(), [file]))).toBe(true);
+    size = 4321;
+    expect(await Effect.runPromise(client.verifyImported(target(), [file]))).toBe(
+      false,
+    );
+  });
+
   it("ties every Sonarr source to the file id of its own episodes", async () => {
     const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname;
