@@ -150,6 +150,15 @@ Pushover on at least three consecutive failures spanning twelve hours (allowing
 five minutes of schedule jitter), using durable run history. Success resets the
 incident; isolated HTTP 500 and socket failures must not notify.
 
+### Arr recovery
+
+`ArrRecovery` requires an unchanged explicit import failure across observations
+spanning 15 minutes; never bypass that gate for manual runs. Luna may interpret
+names but cannot override exact target mappings or unsafe import rejections.
+Reserve mutations durably and verify imports/deletions before reporting success.
+Search only missing monitored targets, with durable retry limits. See
+`docs/arr-recovery.md` for NZBGet health checks and shared temporary-path mounts.
+
 ### Workspaces and MCP
 
 Workspace rows are changed through their service/API, not direct database edits.

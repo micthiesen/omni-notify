@@ -217,6 +217,13 @@ const rawConfigSchema = Schema.Struct({
   SONARR_API_KEY: optionalString,
   SONARR_ROOT_FOLDER_PATH: optionalString,
   SONARR_QUALITY_PROFILE_ID: optionalPositiveInteger,
+  ARR_RECOVERY_ENABLED: booleanFromString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(true)),
+  ),
+  NZBGET_URL: optionalString,
+  ARR_RECOVERY_LOCAL_FILES: booleanFromString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(false)),
+  ),
   TZ: defaultString("America/Vancouver"),
   SMTP_HOST: optionalString,
   SMTP_PORT: coercedFiniteNumber.pipe(

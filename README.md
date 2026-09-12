@@ -134,6 +134,13 @@ A separate weekly `TasteReflection` task maintains a versioned taste profile. It
 
 See [the recommendation review checkpoint](docs/recommendations-review.md) for the decisions intentionally deferred until enough real recommendations have outcomes.
 
+## Arr Download Recovery
+
+Sonarr and Radarr download recovery runs independently every five minutes. It
+waits for persistent import failures, imports verified matches with a guarded Luna
+fallback, removes redundant/bad downloads, and batches actions through Pushover.
+See [Arr recovery](docs/arr-recovery.md) for safeguards and deployment settings.
+
 ## Podcast Recommendations
 
 A sibling pipeline (default: Mon/Wed/Fri at 11am, enabled by setting `PODCAST_TASTE_PATH`) that recommends fresh podcast **episodes** from shows you don't already follow, and sends a Pushover notification per pick. It's **people-first**: the main goal is surfacing episodes where a voice you follow guests somewhere new (see [docs/podcast-recs.md](docs/podcast-recs.md)).
