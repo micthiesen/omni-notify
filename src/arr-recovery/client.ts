@@ -137,6 +137,7 @@ const CommandSchema = Schema.Struct({
 
 const EpisodeFileSchema = Schema.Struct({
   id: Schema.Number,
+  size: Schema.optional(Schema.Number),
   path: Schema.String,
   relativePath: Schema.String,
   sceneName: OptionalString,
@@ -144,6 +145,7 @@ const EpisodeFileSchema = Schema.Struct({
 
 const MovieFileSchema = Schema.Struct({
   id: Schema.Number,
+  size: Schema.optional(Schema.Number),
   movieId: Schema.Number,
   path: Schema.String,
   relativePath: Schema.String,
@@ -202,6 +204,7 @@ function sourceMatchesFile(
     readonly relativePath: string;
     readonly sceneName?: string | null;
     readonly originalFilePath?: string | null;
+    readonly size?: number;
   },
 ): boolean {
   const sourcePath = normalizedPath(source.path);
@@ -218,7 +221,15 @@ function sourceMatchesFile(
   return (
     normalizedPath(imported.path) === sourcePath ||
     normalizedPath(imported.originalFilePath ?? "") === sourcePath ||
-    importedNames.includes(sourceName)
+    importedNames.includes(sourceName) ||
+    // For obfuscated files Arr records the release folder as sceneName. Require
+    // the exact byte size as well as the already-verified target file link.
+    (source.folderName !== undefined &&
+      imported.sceneName !== undefined &&
+      imported.sceneName !== null &&
+      source.size > 0 &&
+      imported.size === source.size &&
+      normalizedPath(imported.sceneName) === normalizedPath(source.folderName))
   );
 }
 
