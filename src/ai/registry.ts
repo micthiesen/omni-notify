@@ -102,6 +102,15 @@ export function getTriageModel(): { model: LanguageModel; modelId: string } {
   );
 }
 
+export function getArrRecoveryModel(): { model: LanguageModel; modelId: string } {
+  return resolveModel(
+    undefined,
+    "openai:gpt-5.6-luna",
+    "arr-recovery",
+    "assess-import",
+  );
+}
+
 export function getRecsShortlistModel(operation = "shortlist"): {
   model: LanguageModel;
   modelId: string;
