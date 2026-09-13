@@ -159,6 +159,15 @@ Reserve mutations durably and verify imports/deletions before reporting success.
 Search only missing monitored targets, with durable retry limits. See
 `docs/arr-recovery.md` for NZBGet health checks and shared temporary-path mounts.
 
+### Observer issue repair
+
+`ObserverRepair` uses Luna to interpret reports and deterministic Arr tools to
+replace scoped media or search missing files. Preserve exact TMDB/TVDB identity,
+file-to-import-to-grab provenance, and the report scope ceiling. Reserve mutations
+durably; never repeat uncertain deletions/searches automatically. Resolve only
+after search acceptance and a verified explanatory comment, then Pushover notify.
+Unsupported issues stay open and notify once. See `docs/observer-repair.md`.
+
 ### Workspaces and MCP
 
 Workspace rows are changed through their service/API, not direct database edits.
