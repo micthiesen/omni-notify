@@ -38,6 +38,7 @@ import { PodcastRecommendationTask } from "./podcast-recs/task.js";
 import PressPodsTask from "./press-pods/task.js";
 import { MediaRecommendationTask } from "./recommendations/task.js";
 import { ArrRecoveryTask } from "./arr-recovery/task.js";
+import { ObserverRepairTask } from "./observer-repair/task.js";
 import { MediaTasteReflectionTask } from "./recommendations/taste/task.js";
 import { type EmailControls, startServer } from "./server.js";
 import { TaskRegistry, type TaskServices } from "./task-runs/registry.js";
@@ -189,6 +190,7 @@ const buildTasks = Effect.fn("Main.buildTasks")(function* (
     PressPodsTask.create(logger),
     MediaRecommendationTask.create(logger),
     ArrRecoveryTask.create(logger),
+    ObserverRepairTask.create(logger),
     PodcastRecommendationTask.create(logger),
     CastroInboxCleanupTask.create(logger),
     MediaTasteReflectionTask.create(logger),

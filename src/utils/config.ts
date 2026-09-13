@@ -217,6 +217,11 @@ const rawConfigSchema = Schema.Struct({
   SONARR_API_KEY: optionalString,
   SONARR_ROOT_FOLDER_PATH: optionalString,
   SONARR_QUALITY_PROFILE_ID: optionalPositiveInteger,
+  OBSERVER_URL: optionalString,
+  OBSERVER_API_KEY: optionalString,
+  OBSERVER_REPAIR_ENABLED: booleanFromString.pipe(
+    Schema.withDecodingDefaultType(Effect.succeed(true)),
+  ),
   ARR_RECOVERY_ENABLED: booleanFromString.pipe(
     Schema.withDecodingDefaultType(Effect.succeed(true)),
   ),

@@ -102,6 +102,15 @@ export function getTriageModel(): { model: LanguageModel; modelId: string } {
   );
 }
 
+export function getObserverRepairModel(): { model: LanguageModel; modelId: string } {
+  return resolveModel(
+    undefined,
+    "openai:gpt-5.6-luna",
+    "observer-repair",
+    "repair-issue",
+  );
+}
+
 export function getArrRecoveryModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     undefined,
