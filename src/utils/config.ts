@@ -243,6 +243,28 @@ const rawConfigSchema = Schema.Struct({
     Schema.withDecodingDefaultType(Effect.succeed(3000)),
   ),
   OMNI_MCP_TOKEN: optionalString,
+  HISTER_URL: trimmedUrlString.pipe(
+    Schema.check(
+      Schema.makeFilter(
+        (value) => {
+          const url = new URL(value);
+          return (
+            ["http:", "https:"].includes(url.protocol) &&
+            !url.username &&
+            !url.password &&
+            !url.search &&
+            !url.hash
+          );
+        },
+        {
+          message:
+            "HISTER_URL must be an HTTP(S) URL without credentials, query, or fragment",
+        },
+      ),
+    ),
+    Schema.withDecodingDefaultType(Effect.succeed("https://hister.syas.ca")),
+  ),
+  HISTER_ACCESS_TOKEN: optionalString,
   PRINTER_IPP_URL: Schema.optional(ippUrlString),
   PRESSPODS_AUTH_TOKEN: optionalString,
   PRESSPODS_PUBLIC_URL: Schema.optional(trimmedOrigin),

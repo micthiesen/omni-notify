@@ -8,6 +8,7 @@ import type { PrinterService } from "../printer/service.js";
 import type { EmailControls } from "../server.js";
 import type { TaskRegistry } from "../task-runs/registry.js";
 import type { AppServices } from "../effect/appRuntime.js";
+import type { HisterService } from "../hister/service.js";
 
 export interface McpRuntime {
   logger: NamedLogger;
@@ -19,4 +20,5 @@ export interface McpRuntime {
   iosControls?: IOSControlService;
   livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider;
   printer?: PrinterService;
+  hister?: HisterService;
 }

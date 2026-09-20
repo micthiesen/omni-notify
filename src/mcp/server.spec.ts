@@ -12,6 +12,7 @@ import { registerOmniMcpRoute } from "./route.js";
 import type { McpRuntime } from "./runtime.js";
 import { createOmniMcpHandler, MCP_SERVER_INSTRUCTIONS } from "./server.js";
 import { createMitoolsTestRuntime } from "../test/mitools.js";
+import { createHisterService } from "../hister/service.js";
 
 const TEST_TOKEN = "test-token-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const handlers: Array<ReturnType<typeof createOmniMcpHandler>> = [];
@@ -92,6 +93,57 @@ afterEach(async () => {
 });
 
 describe("Omni MCP streamable HTTP server", () => {
+  it("serves bounded Hister reads and rejects invalid tool input over MCP", async () => {
+    let requests = 0;
+    const hister = createHisterService(
+      "https://hister.test",
+      "fake-hister-token",
+      async () => {
+        requests += 1;
+        return Response.json({
+          url: "https://example.test/article",
+          title: "Article",
+          text: "saved page content",
+        });
+      },
+    );
+    const handler = createOmniMcpHandler(runtime({ hister }), TEST_TOKEN);
+    handlers.push(handler);
+    const client = await connectClient(handler);
+    const result = await client.callTool({
+      name: "get_browser_page",
+      arguments: { url: "https://example.test/article", maxChars: 5 },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      text: "saved",
+      nextOffset: 5,
+      totalChars: 18,
+    });
+    const invalid = await client.callTool({
+      name: "get_browser_page",
+      arguments: { url: "https://example.test/article", maxChars: 50_001 },
+    });
+    expect(invalid.isError).toBe(true);
+    expect(requests).toBe(1);
+    const tools = (await client.listTools()).tools;
+    expect(
+      tools.find((tool) => tool.name === "set_browser_page_label")?.annotations,
+    ).toMatchObject({ readOnlyHint: false, idempotentHint: true });
+  });
+
+  it("reports an unconfigured Hister integration as a tool error", async () => {
+    const handler = createOmniMcpHandler(runtime(), TEST_TOKEN);
+    handlers.push(handler);
+    const client = await connectClient(handler);
+    const result = await client.callTool({
+      name: "search_browser_history",
+      arguments: { query: "router" },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain("not configured");
+  });
+
   it("returns 401 before MCP handling for missing and invalid credentials", async () => {
     const handler = createOmniMcpHandler(runtime(), TEST_TOKEN);
     handlers.push(handler);

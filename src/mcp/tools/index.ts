@@ -4,6 +4,7 @@ import { createCoreWorkspaceTools } from "./core-workspaces.js";
 import { createEmailCalendarTools } from "./email-calendar.js";
 import { createMediaPersonalTools } from "./media-personal.js";
 import { createPrinterTools } from "./printer.js";
+import { createBrowserHistoryTools } from "./browser-history.js";
 
 export function createToolDefinitions(runtime: McpRuntime): McpToolDefinition[] {
   return [
@@ -11,5 +12,6 @@ export function createToolDefinitions(runtime: McpRuntime): McpToolDefinition[] 
     ...createEmailCalendarTools(runtime),
     ...createMediaPersonalTools(runtime),
     ...createPrinterTools(runtime),
+    ...createBrowserHistoryTools(runtime),
   ];
 }

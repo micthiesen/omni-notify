@@ -40,6 +40,7 @@ describe("Effect application configuration", () => {
       PRESSPODS_TTS_PROVIDER: "higgs",
       IOS_CONTROL_HOME_URL: "http://omni.boris",
       IOS_CONTROL_BUNDLE_ID: "com.micthiesen.OmniLive",
+      HISTER_URL: "https://hister.syas.ca",
     });
     expect(config.EMAIL_SELF_ADDRESS).toBeUndefined();
   });
@@ -55,6 +56,7 @@ describe("Effect application configuration", () => {
       WORKSPACES_PUBLIC_URL: "https://omni.example///",
       IOS_CONTROL_HOME_URL: "https://omni.example///",
       PRINTER_IPP_URL: "ipps://printer.example/ipp/print",
+      HISTER_URL: "http://hister:4433/",
       CASTRO_ACCESS_ID: "550e8400-e29b-41d4-a716-446655440000",
       WHISKER_CREDENTIALS: "person@example.com:pass:with:colons",
     });
@@ -67,10 +69,22 @@ describe("Effect application configuration", () => {
     expect(config.FRONTEND_PORT).toBe(4100);
     expect(config.WORKSPACES_PUBLIC_URL).toBe("https://omni.example");
     expect(config.IOS_CONTROL_HOME_URL).toBe("https://omni.example");
+    expect(config.HISTER_URL).toBe("http://hister:4433");
     expect(config.WHISKER_CREDENTIALS).toEqual({
       email: "person@example.com",
       password: "pass:with:colons",
     });
+  });
+
+  it("rejects credential-bearing and non-HTTP Hister URLs", () => {
+    for (const HISTER_URL of [
+      "file:///tmp/index",
+      "https://user:password@hister.test",
+      "https://hister.test?token=secret",
+      "https://hister.test/#fragment",
+    ]) {
+      expect(() => load({ HISTER_URL })).toThrow();
+    }
   });
 
   it("preserves legacy empty-string coercion and default behavior", () => {

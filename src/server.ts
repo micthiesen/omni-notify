@@ -110,6 +110,7 @@ import { MAX_PODCAST_RECOMMENDATIONS_PER_RUN } from "./podcast-recs/pipeline.js"
 import { getLatestPodcastTasteProfile } from "./podcast-recs/reflection/index.js";
 import { registerPressPodsRoutes } from "./press-pods/routes.js";
 import { createPrinterService } from "./printer/service.js";
+import { createHisterService } from "./hister/service.js";
 import {
   getAllRecommendations,
   getOpenRecommendations,
@@ -595,6 +596,9 @@ export function startServer(
       emailControls,
       iosControls,
       livestreamDiagnostics,
+      hister: config.HISTER_ACCESS_TOKEN
+        ? createHisterService(config.HISTER_URL, config.HISTER_ACCESS_TOKEN)
+        : undefined,
       printer: config.PRINTER_IPP_URL
         ? createPrinterService(config.PRINTER_IPP_URL)
         : undefined,
