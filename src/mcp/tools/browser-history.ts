@@ -80,11 +80,11 @@ export function createBrowserHistoryTools(runtime: McpRuntime): McpToolDefinitio
         ),
       outputSchema: z.object({
         results: z.array(searchResultSchema).max(50),
+        // The service enforces 20; maxItems makes Executor expand a tuple union.
         priorSelections: z
           .array(searchResultSchema)
-          .max(20)
           .describe(
-            "Previously selected pages for this query, including matching hits Hister moves out of results; may fall outside current filters",
+            "At most 20 previously selected pages for this query, including matching hits Hister moves out of results; may fall outside current filters",
           ),
         priorSelectionsNote: z.string(),
         total: z.number().nonnegative(),
