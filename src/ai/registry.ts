@@ -35,7 +35,7 @@ export const callLanguageModelEffect = Effect.fn("AiRegistry.generate")(function
 export function getBriefingModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.BRIEFING_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "briefings",
     "generate",
   );
@@ -47,7 +47,7 @@ export function getLivestreamIntelligenceModel(operation: string): {
 } {
   return resolveModel(
     config.LIVESTREAM_INTELLIGENCE_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "livestream-intelligence",
     operation,
   );
@@ -59,7 +59,7 @@ export function getWorkspaceModel(operation = "run"): {
 } {
   return resolveModel(
     config.WORKSPACE_MODEL,
-    "openai:gpt-5.6-terra",
+    "openai:gpt-6-sol",
     "workspaces",
     operation,
   );
@@ -68,7 +68,7 @@ export function getWorkspaceModel(operation = "run"): {
 export function getExtractionModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.EXTRACTION_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "parcel-tracker",
     "extract-deliveries",
   );
@@ -86,7 +86,7 @@ export function getCalendarExtractionModel(): {
 } {
   return resolveModel(
     config.CALENDAR_EXTRACTION_MODEL,
-    "openai:gpt-5.6-terra",
+    "openai:gpt-6-sol",
     "calendar-events",
     "extract-events",
   );
@@ -96,7 +96,7 @@ export function getCalendarExtractionModel(): {
 export function getTriageModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.TRIAGE_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "email-triage",
     "classify",
   );
@@ -105,19 +105,14 @@ export function getTriageModel(): { model: LanguageModel; modelId: string } {
 export function getObserverRepairModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     undefined,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "observer-repair",
     "repair-issue",
   );
 }
 
 export function getArrRecoveryModel(): { model: LanguageModel; modelId: string } {
-  return resolveModel(
-    undefined,
-    "openai:gpt-5.6-luna",
-    "arr-recovery",
-    "assess-import",
-  );
+  return resolveModel(undefined, "openai:gpt-6-luna", "arr-recovery", "assess-import");
 }
 
 export function getRecsShortlistModel(operation = "shortlist"): {
@@ -126,7 +121,7 @@ export function getRecsShortlistModel(operation = "shortlist"): {
 } {
   return resolveModel(
     config.RECS_SHORTLIST_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "media-recommendations",
     operation,
   );
@@ -138,7 +133,7 @@ export function getRecsSelectionModel(operation = "select"): {
 } {
   return resolveModel(
     config.RECS_SELECTION_MODEL,
-    "openai:gpt-5.6",
+    "openai:gpt-6-sol",
     "media-recommendations",
     operation,
   );
@@ -147,7 +142,7 @@ export function getRecsSelectionModel(operation = "select"): {
 export function getTasteReflectionModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.TASTE_REFLECTION_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "media-recommendations",
     "taste-reflection",
   );
@@ -159,7 +154,7 @@ export function getPodcastTasteReflectionModel(): {
 } {
   return resolveModel(
     config.PODCAST_TASTE_REFLECTION_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "podcast-recommendations",
     "taste-reflection",
   );
@@ -172,7 +167,7 @@ export function getPodcastTasteReflectionModel(): {
 export function getPressPodsMetadataModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.PRESSPODS_METADATA_MODEL,
-    "openai:gpt-5.6-luna",
+    "openai:gpt-6-luna",
     "press-pods",
     "rate-retrieval",
   );
@@ -181,7 +176,7 @@ export function getPressPodsMetadataModel(): { model: LanguageModel; modelId: st
 export function getPressPodsCleaningModel(): { model: LanguageModel; modelId: string } {
   return resolveModel(
     config.PRESSPODS_CLEANING_MODEL,
-    "openai:gpt-5.6-terra",
+    "openai:gpt-6-sol",
     "press-pods",
     "clean-narration",
   );

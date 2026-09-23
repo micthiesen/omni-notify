@@ -548,7 +548,7 @@ const previewProgram = Effect.scoped(
       generatedAt: now - 2 * 24 * HOUR,
       evidenceFingerprint: "preview",
       evidenceCount: 84,
-      modelId: "openai:gpt-5.6-luna",
+      modelId: "openai:gpt-6-luna",
       promptVersion: "taste-reflection-v1",
       summary:
         "Strong preference for tightly constructed speculative stories and character-driven mysteries, with less patience for long, repetitive seasons.",
@@ -689,7 +689,7 @@ const previewProgram = Effect.scoped(
       generatedAt: now - 3 * 24 * HOUR,
       evidenceFingerprint: "preview-pod",
       evidenceCount: 57,
-      modelId: "openai:gpt-5.6-luna",
+      modelId: "openai:gpt-6-luna",
       promptVersion: "podcast-taste-reflection-v1",
       summary:
         "Gravitates to sharp conversational shows: media gossip argued in good faith, systems deep-dives, and hosts who push back on their guests.",

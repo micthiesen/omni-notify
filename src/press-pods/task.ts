@@ -201,8 +201,8 @@ export default class PressPodsTask implements ScheduledTask<unknown, TaskService
 
 function requiredModelCredentials(): [string, unknown][] {
   const modelIds = [
-    config.PRESSPODS_METADATA_MODEL ?? "openai:gpt-5.6-luna",
-    config.PRESSPODS_CLEANING_MODEL ?? "openai:gpt-5.6-terra",
+    config.PRESSPODS_METADATA_MODEL ?? "openai:gpt-6-luna",
+    config.PRESSPODS_CLEANING_MODEL ?? "openai:gpt-6-sol",
   ];
   const providers = new Set(modelIds.map((id) => id.split(":", 1)[0]));
   const credentials: [string, unknown][] = [];

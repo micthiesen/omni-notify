@@ -130,7 +130,7 @@ const rawConfigSchema = Schema.Struct({
   LIVESTREAM_INTELLIGENCE_ENABLED: booleanFromString.pipe(
     Schema.withDecodingDefaultType(Effect.succeed(false)),
   ),
-  LIVESTREAM_INTELLIGENCE_MODEL: Schema.optional(Schema.Literal("openai:gpt-5.6-luna")),
+  LIVESTREAM_INTELLIGENCE_MODEL: Schema.optional(Schema.Literal("openai:gpt-6-luna")),
   LIVESTREAM_MONTHLY_BUDGET_USD: nonNegativeNumberWithDefault(3).pipe(
     Schema.check(Schema.isLessThanOrEqualTo(10)),
     Schema.withDecodingDefaultType(Effect.succeed(3)),

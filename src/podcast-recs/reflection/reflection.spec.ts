@@ -239,7 +239,7 @@ describe("formatPodcastTasteProfileDigest", () => {
       generatedAt: 1_000,
       evidenceFingerprint: "abc",
       evidenceCount: 10,
-      modelId: "openai:gpt-5.6-luna",
+      modelId: "openai:gpt-6-luna",
       promptVersion: "podcast-taste-reflection-v1",
       summary: "Likes sharp interview shows.",
       stablePreferences: [

@@ -53,7 +53,7 @@ Set `LIVESTREAM_INTELLIGENCE_ENABLED=true` to add a Boris-local semantic layer t
 
 Destiny guest detection runs only on third-party DGG streams. It requires two multi-window speaker matches within five minutes, followed by transcript confirmation that he is participating live rather than appearing in a clip. His own configured or DGG-discovered streams are always excluded. Alerts cover confirmed guest appearances, viewer surges, substantive debates, breaking news, major announcements, and notable guests. Feedback on the streamer detail page raises the confidence threshold when an alert type accumulates negative corrections.
 
-Metered calls are restricted to `openai:gpt-5.6-luna` and capped at $3 per calendar month. Local audio inference records zero-cost usage events on the Costs page. Generate the persistent Destiny voiceprint inside the production container from at least two public clips where he is the only common speaker:
+Metered calls are restricted to `openai:gpt-6-luna` and capped at $3 per calendar month. Local audio inference records zero-cost usage events on the Costs page. Generate the persistent Destiny voiceprint inside the production container from at least two public clips where he is the only common speaker:
 
 ```bash
 docker exec omni-notify node dist/tools/enroll-destiny-voice.js \
@@ -229,20 +229,20 @@ Models are configured via environment variables using `provider:model` format. S
 
 | Variable | Default | Used for |
 |---|---|---|
-| `BRIEFING_MODEL` | `openai:gpt-5.6-luna` | Briefing agents |
-| `EXTRACTION_MODEL` | `openai:gpt-5.6-luna` | Parcel email extraction |
-| `CALENDAR_EXTRACTION_MODEL` | `openai:gpt-5.6-terra` | Calendar email extraction |
-| `TRIAGE_MODEL` | `openai:gpt-5.6-luna` | Shared email relevance triage |
-| `RECS_SHORTLIST_MODEL` | `openai:gpt-5.6-luna` | Recommendation shortlist scoring |
-| `RECS_SELECTION_MODEL` | `openai:gpt-5.6` | Recommendation research + final pick |
-| `TASTE_REFLECTION_MODEL` | `openai:gpt-5.6-luna` | Weekly evidence-backed taste reflection |
-| `PRESSPODS_METADATA_MODEL` | `openai:gpt-5.6-luna` | PressPods per-retriever metadata + rating |
-| `PRESSPODS_CLEANING_MODEL` | `openai:gpt-5.6-terra` | PressPods narration rewrite |
+| `BRIEFING_MODEL` | `openai:gpt-6-luna` | Briefing agents |
+| `EXTRACTION_MODEL` | `openai:gpt-6-luna` | Parcel email extraction |
+| `CALENDAR_EXTRACTION_MODEL` | `openai:gpt-6-sol` | Calendar email extraction |
+| `TRIAGE_MODEL` | `openai:gpt-6-luna` | Shared email relevance triage |
+| `RECS_SHORTLIST_MODEL` | `openai:gpt-6-luna` | Recommendation shortlist scoring |
+| `RECS_SELECTION_MODEL` | `openai:gpt-6-sol` | Recommendation research + final pick |
+| `TASTE_REFLECTION_MODEL` | `openai:gpt-6-luna` | Weekly evidence-backed taste reflection |
+| `PRESSPODS_METADATA_MODEL` | `openai:gpt-6-luna` | PressPods per-retriever metadata + rating |
+| `PRESSPODS_CLEANING_MODEL` | `openai:gpt-6-sol` | PressPods narration rewrite |
 
 Examples:
 
 ```bash
-BRIEFING_MODEL=openai:gpt-5.6-luna
+BRIEFING_MODEL=openai:gpt-6-luna
 BRIEFING_MODEL=anthropic:claude-sonnet-5
 BRIEFING_MODEL=google:gemini-3.5-flash
 ```
@@ -265,10 +265,10 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `LIVESTREAM_MAX_VOICE_TARGETS` | No | Maximum concurrent DGG voice targets (default: `3`) |
 | `LIVESTREAM_VOICE_SAMPLE_SECONDS` / `LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS` | No | Voice sample length / cadence (defaults: `18` / `45`) |
 | `LIVESTREAM_SUMMARY_SAMPLE_SECONDS` / `LIVESTREAM_SUMMARY_INTERVAL_SECONDS` | No | Summary sample length / cadence (defaults: `75` / `480`) |
-| `BRIEFING_MODEL` | No | AI model for briefings (default: `openai:gpt-5.6-luna`) |
-| `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `openai:gpt-5.6-luna`) |
-| `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `openai:gpt-5.6-terra`) |
-| `TRIAGE_MODEL` | No | AI model for shared email triage (default: `openai:gpt-5.6-luna`) |
+| `BRIEFING_MODEL` | No | AI model for briefings (default: `openai:gpt-6-luna`) |
+| `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `openai:gpt-6-luna`) |
+| `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `openai:gpt-6-sol`) |
+| `TRIAGE_MODEL` | No | AI model for shared email triage (default: `openai:gpt-6-luna`) |
 | `EMAIL_SELF_ADDRESS` | No | Own receiving address for self-sent-mail filtering (default: `ICLOUD_USERNAME`) |
 | `ICLOUD_USERNAME` | No | iCloud primary username (`user@icloud.com`, not the custom-domain address); IMAP + CalDAV |
 | `ICLOUD_APP_PASSWORD` | No | iCloud app-specific password (IMAP + CalDAV) |
@@ -282,7 +282,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` (default: `./channels.json`) |
 | `TMDB_API_KEY` | No | TMDB API key (required for recommendations; v3 key or v4 read token) |
 | `RECS_SCHEDULE` | No | Recommendation cron (default: `0 0 17 * * 1,3,5`) |
-| `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-5.6-luna`) |
+| `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-6-luna`) |
 | `TASTE_REFLECTION_SCHEDULE` | No | Taste-profile reflection cron (default: `0 0 4 * * 0`, Sunday 4am) |
 | `RECS_PUBLIC_URL` | No | Public/LAN Omni base URL used by notification links (default: `http://omni.boris`) |
 | `PUSHOVER_RECS_TOKEN` | No | Pushover token for recommendations (falls back to `PUSHOVER_TOKEN`) |
@@ -292,7 +292,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and hourly Inbox cleanup) |
 | `PODCASTINDEX_KEY` / `PODCASTINDEX_SECRET` | No | Podcast Index API (guest-appearance discovery; quote the secret — it contains `#`) |
 | `PODCAST_VOICE_ROTATION_MAX` / `PODCAST_MAX_GUEST_PICKS` | No | Voices searched per run (default 12) / Tier-1 guest cap (default 6) |
-| `PODCAST_TASTE_REFLECTION_MODEL` | No | Model for weekly podcast taste reflection (default: `openai:gpt-5.6-luna`) |
+| `PODCAST_TASTE_REFLECTION_MODEL` | No | Model for weekly podcast taste reflection (default: `openai:gpt-6-luna`) |
 | `PODCAST_TASTE_REFLECTION_SCHEDULE` | No | Podcast taste reflection cron (default: `0 0 5 * * 0`, Sunday 5am) |
 | `PRESSPODS_AUTH_TOKEN` | No | Long random secret; enables PressPods and authenticates `/pods/episodes` + `/pods/rss` |
 | `PRESSPODS_TTS_PROVIDER` | No | TTS backend: `higgs` (self-hosted, default) or `elevenlabs` |

@@ -6,7 +6,7 @@ Set `OBSERVER_URL` and `OBSERVER_API_KEY` to register the task. It uses the exis
 Sonarr/Radarr, OpenAI, and recommendations Pushover credentials. Set
 `OBSERVER_REPAIR_ENABLED=false` to disable it.
 
-Luna (`openai:gpt-5.6-luna`) gets current Arr availability plus read tools for the
+Luna (`openai:gpt-6-luna`) gets current Arr availability plus read tools for the
 reported title and ten recent resolved issues. Its standard loop has at most
 16 steps and returns validated JSON. Code executes the chosen action:
 

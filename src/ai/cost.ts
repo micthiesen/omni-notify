@@ -55,23 +55,18 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
     outputCentsPerToken: 0.00025, // $2.50 / 1M tokens (estimated)
   },
 
-  // --- OpenAI --- (developers.openai.com model pages, post 2026-07-30 cuts;
-  // the bare "gpt-5.6" alias routes to Sol, so both ids carry the Sol rate)
-  "gpt-5.6": {
-    inputCentsPerToken: 0.0005, // $5.00 / 1M tokens
-    outputCentsPerToken: 0.003, // $30.00 / 1M tokens
+  // --- OpenAI --- (developers.openai.com/api/docs/pricing, standard short context)
+  "gpt-6-astra": {
+    inputCentsPerToken: 0.001, // $10.00 / 1M tokens
+    outputCentsPerToken: 0.005, // $50.00 / 1M tokens
   },
-  "gpt-5.6-sol": {
-    inputCentsPerToken: 0.0005, // $5.00 / 1M tokens
-    outputCentsPerToken: 0.003, // $30.00 / 1M tokens
-  },
-  "gpt-5.6-terra": {
+  "gpt-6-sol": {
     inputCentsPerToken: 0.0002, // $2.00 / 1M tokens
-    outputCentsPerToken: 0.0012, // $12.00 / 1M tokens
+    outputCentsPerToken: 0.001, // $10.00 / 1M tokens
   },
-  "gpt-5.6-luna": {
-    inputCentsPerToken: 0.00002, // $0.20 / 1M tokens
-    outputCentsPerToken: 0.00012, // $1.20 / 1M tokens
+  "gpt-6-luna": {
+    inputCentsPerToken: 0.00001, // $0.10 / 1M tokens
+    outputCentsPerToken: 0.00005, // $0.50 / 1M tokens
   },
 };
 

@@ -23,7 +23,7 @@ reported download directory, disjoint from the target library directory.
 
 - Exact title/episode mappings with matching grab history and rejection-free
   previews are imported through Arr's `ManualImport` command.
-- Luna (`openai:gpt-5.6-luna`) assesses ambiguous names, aliases, and obfuscated
+- Luna (`openai:gpt-6-luna`) assesses ambiguous names, aliases, and obfuscated
   filenames using only the supplied metadata. Its output is schema-validated;
   it cannot invent IDs, change paths, override media/permission errors, or bypass
   the exact Arr mapping. Unmapped/contradictory cases remain for inspection.

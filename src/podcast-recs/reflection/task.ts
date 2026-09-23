@@ -25,7 +25,7 @@ export class PodcastTasteReflectionTask implements ScheduledTask<
 
   public static create(parentLogger: Logger) {
     return Effect.gen(function* () {
-      const modelId = config.PODCAST_TASTE_REFLECTION_MODEL ?? "openai:gpt-5.6-luna";
+      const modelId = config.PODCAST_TASTE_REFLECTION_MODEL ?? "openai:gpt-6-luna";
       const provider = modelId.split(":", 1)[0];
       const credential =
         provider === "openai"

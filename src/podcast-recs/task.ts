@@ -136,8 +136,8 @@ function parseMaxRecommendations(input: unknown): number {
 
 function requiredModelCredentials(): [string, unknown][] {
   const modelIds = [
-    config.RECS_SHORTLIST_MODEL ?? "openai:gpt-5.6-luna",
-    config.RECS_SELECTION_MODEL ?? "openai:gpt-5.6",
+    config.RECS_SHORTLIST_MODEL ?? "openai:gpt-6-luna",
+    config.RECS_SELECTION_MODEL ?? "openai:gpt-6-sol",
   ];
   const providers = new Set(modelIds.map((id) => id.split(":", 1)[0]));
   const credentials: [string, unknown][] = [];
