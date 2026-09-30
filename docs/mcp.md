@@ -24,7 +24,8 @@ this repository.
 The registered tools are bounded adapters over existing Omni services. The
 families cover:
 
-- email search, retrieval, activity, rules, feedback, retries, reprocessing, and SMTP sending
+- email search, retrieval, iCloud draft creation, SMTP sending, activity, rules,
+  feedback, retries, and reprocessing
 - CalDAV event inspection, preview, creation, update, and deletion
 - task status, task runs, livestreams, briefings, workspaces, actions, and papercuts
 - media library, watchlist, recommendations, podcast accounts, and podcast recommendations
@@ -40,6 +41,38 @@ truncated with explicit metadata. Cost summaries are limited to 7, 30, or 90
 days and refuse to scan more than 100,000 stored events.
 
 Production email uses iCloud IMAP, SMTP, and iCloud CalDAV discovery.
+
+### Email reads and composition
+
+`email_search` searches Inbox, Archive, or both and can browse recent messages
+without a search criterion. Results are newest first, with bounded excerpts and
+attachment metadata. Sender, subject, and date filters avoid expensive full-text
+scans on iCloud. Identical searches reuse recent results for up to 30 seconds;
+`fresh: true` bypasses read caches. `email_get` accepts the same freshness option.
+Mailbox events invalidate cached searches, and cached messages have bounded
+lifetimes and memory use. Cold searches fetch selected messages in a batch.
+Timing logs contain counts and durations, without search terms or message bodies.
+
+Read results include recipient, Reply-To, Message-ID, and References fields so a
+reply can preserve the original thread. Use the actual `messageId` for
+`inReplyTo`; a transport fallback `id` is not an RFC Message-ID.
+
+`email_draft_create` saves a real draft in the mailbox marked `\\Drafts` by the
+IMAP server, rather than assuming a localized folder name. `email_send` supports
+To, Cc, Bcc, plain text, and reply threading. Both require an `idempotencyKey`:
+use a new key for a new operation and reuse the same key and content on a retry.
+Completed operations return their recorded result. Conflicting content or an
+uncertain prior operation cannot silently trigger another write or delivery.
+Sending always requires explicit owner approval.
+
+Explicit SMTP settings take precedence. Without SMTP settings, composed email
+uses the existing iCloud credentials with authenticated STARTTLS on port 587,
+following [Apple's mail server settings](https://support.apple.com/en-us/102525).
+`EMAIL_FROM` can select the configured sender; otherwise the account address is
+used. Partial SMTP configuration is treated as unavailable rather than silently
+switching accounts. `email_health` reports the selected provider and draft
+support without exposing addresses or credentials. It checks configuration;
+it does not authenticate to the provider or send a message.
 
 ### Browser history
 

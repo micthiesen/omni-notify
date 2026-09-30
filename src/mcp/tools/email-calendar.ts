@@ -46,12 +46,11 @@ import {
   upsertEmailRuleChecked,
 } from "../../email/senderRules.js";
 import type { FetchedEmail } from "../../email/types.js";
-import { sendEmailEffect } from "../../emails/send.js";
+import { getComposeEmailConfiguration } from "../../emails/client.js";
 import {
   CARRIER_SENDER_DOMAINS as PARCEL_BUILTIN_AUTO_PASS,
   BLACKLISTED_SENDERS as PARCEL_BUILTIN_BLOCKED,
 } from "../../parcel-tracker/filter/keywords.js";
-import config from "../../utils/config.js";
 import type { McpRuntime } from "../runtime.js";
 import {
   annotations,
@@ -183,6 +182,11 @@ const emailSummarySchema = z.object({
   id: z.string(),
   subject: z.string(),
   from: z.string(),
+  to: z.array(z.string()),
+  cc: z.array(z.string()),
+  replyTo: z.array(z.string()),
+  messageId: z.string().nullable(),
+  references: z.array(z.string()),
   receivedAt: z.string(),
   excerpt: z.string(),
   excerptTruncated: z.boolean(),
@@ -255,6 +259,15 @@ function serializeEmail(email: FetchedEmail, maxExcerptChars: number) {
     id: email.id,
     subject: truncate(email.subject, 500).text,
     from: truncate(email.from, 500).text,
+    to: (email.to ?? []).slice(0, 50).map((value) => truncate(value, 320).text),
+    cc: (email.cc ?? []).slice(0, 50).map((value) => truncate(value, 320).text),
+    replyTo: (email.replyTo ?? [])
+      .slice(0, 50)
+      .map((value) => truncate(value, 320).text),
+    messageId: email.messageId ? truncate(email.messageId, 1_000).text : null,
+    references: (email.references ?? [])
+      .slice(-50)
+      .map((value) => truncate(value, 1_000).text),
     receivedAt: email.receivedAt,
     excerpt: excerpt.text,
     excerptTruncated: excerpt.truncated,
@@ -329,14 +342,6 @@ function parseDateTime(value: string | undefined): Date | undefined {
   return parsed;
 }
 
-function htmlFromPlainText(text: string): string {
-  return `<p>${text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br>")}</p>`;
-}
-
 function matchesBuiltinBlock(
   pattern: string,
   scope: "parcel" | "calendar" | "both",
@@ -367,7 +372,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       name: "email_search",
       title: "Search Email",
       description:
-        "Search the active iCloud IMAP Inbox and Archive with bounded server-side criteria. Returns compact excerpts and attachment metadata, never attachment bytes.",
+        "Search or browse the active iCloud IMAP Inbox and Archive, newest first. Use folder=inbox without criteria to browse recent Inbox mail. Recent identical searches are reused for up to 30 seconds; fresh=true bypasses caches. Prefer sender, subject, and date filters over full-text query for speed. Returns compact excerpts and attachment metadata, never attachment bytes.",
       inputSchema: z
         .object({
           query: z.string().trim().min(1).max(500).optional(),
@@ -387,22 +392,10 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             .optional(),
           folder: z.enum(["inbox", "archive", "all"]).default("all"),
           limit: z.number().int().min(1).max(50).default(20),
+          fresh: z.boolean().default(false),
           excerptChars: z.number().int().min(0).max(2_000).default(500),
         })
         .strict()
-        .refine(
-          (value) =>
-            Boolean(
-              value.query ||
-              value.from ||
-              value.to ||
-              value.subject ||
-              value.since ||
-              value.before ||
-              value.unread !== undefined,
-            ),
-          "Provide at least one search criterion",
-        )
         .refine(
           (value) =>
             !value.since ||
@@ -435,6 +428,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             before: parseDateTime(input.before),
             folder: input.folder,
             limit: input.limit,
+            fresh: input.fresh,
           });
           return {
             items: emails.map((email) => serializeEmail(email, input.excerptChars)),
@@ -447,11 +441,12 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
       name: "email_get",
       title: "Get Email",
       description:
-        "Fetch one email by the stable identifier returned by email_search or email activity. Body text and attachment metadata are bounded; attachment bytes and credentials are never returned.",
+        "Fetch one email by the stable identifier returned by email_search or email activity. Recently fetched messages are reused; fresh=true bypasses caches to confirm current existence. Body text and attachment metadata are bounded; attachment bytes and credentials are never returned.",
       inputSchema: z
         .object({
           emailId: z.string().min(1).max(1_000),
           bodyChars: z.number().int().min(0).max(20_000).default(8_000),
+          fresh: z.boolean().default(false),
         })
         .strict(),
       outputSchema: z.object({ email: emailSummarySchema }),
@@ -465,6 +460,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         Effect.gen(function* () {
           const email = yield* getActiveEmailRuntime(runtime).fetchEmailByIdEffect(
             input.emailId,
+            { fresh: input.fresh },
           );
           if (!email)
             throw new Error("Email no longer exists in the monitored mailbox");
@@ -485,7 +481,12 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
           pipelines: z.array(z.string()),
           searchAvailable: z.boolean(),
         }),
-        smtp: z.object({ configured: z.boolean(), configuredFrom: z.boolean() }),
+        smtp: z.object({
+          configured: z.boolean(),
+          configuredFrom: z.boolean(),
+          provider: z.enum(["smtp", "icloud"]).nullable(),
+        }),
+        drafts: z.object({ available: z.boolean() }),
         caldav: z.object({ configured: z.boolean(), provider: z.string().nullable() }),
       }),
       annotations: annotations(true, false, true, false),
@@ -498,6 +499,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
         Effect.sync(() => {
           const transport = runtime.emailControls.transport;
           const provider = getCaldavProvider();
+          const compose = getComposeEmailConfiguration();
           return {
             monitoring: {
               active: Boolean(transport),
@@ -506,11 +508,11 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
               searchAvailable: Boolean(transport?.searchEmailsEffect),
             },
             smtp: {
-              configured: Boolean(
-                config.SMTP_HOST && config.SMTP_USER && config.SMTP_PASS,
-              ),
-              configuredFrom: Boolean(config.EMAIL_FROM),
+              configured: Boolean(compose),
+              configuredFrom: Boolean(compose?.from),
+              provider: compose?.source ?? null,
             },
+            drafts: { available: Boolean(transport?.createDraftEffect) },
             caldav: { configured: Boolean(provider), provider: provider ?? null },
           };
         }),
@@ -887,48 +889,6 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
           const existed = Boolean(yield* EmailRetryPersistence.get(retryKey));
           yield* EmailRetryPersistence.clear(input.pipeline, input.emailId);
           return { cleared: existed };
-        }),
-    }),
-
-    defineTool({
-      name: "email_send",
-      title: "Send Email",
-      description:
-        "Send one plain-text email through Omni's configured SMTP account and configured sender address. This is an external communication and always requires Executor approval.",
-      inputSchema: z
-        .object({
-          to: z.string().trim().email().max(320),
-          subject: z.string().trim().min(1).max(200),
-          text: z.string().min(1).max(20_000),
-        })
-        .strict(),
-      outputSchema: z.object({
-        sent: z.boolean(),
-        to: z.string(),
-        subject: z.string(),
-      }),
-      annotations: annotations(false, false, false, true),
-      policy: {
-        sideEffects: ["Sends an external email to the specified recipient"],
-        cost: "No per-call paid API expected; consumes SMTP provider quota",
-        recommendedPolicy: "require_approval",
-      },
-      execute: (input) =>
-        Effect.gen(function* () {
-          if (!config.EMAIL_FROM)
-            throw new Error("SMTP sender address is not configured");
-          if (!config.SMTP_HOST || !config.SMTP_USER || !config.SMTP_PASS) {
-            throw new Error("SMTP is not configured");
-          }
-          const sent = yield* sendEmailEffect({
-            to: input.to,
-            from: config.EMAIL_FROM,
-            subject: input.subject,
-            text: input.text,
-            html: htmlFromPlainText(input.text),
-          });
-          if (!sent) throw new Error("SMTP delivery failed");
-          return { sent: true, to: input.to, subject: input.subject };
         }),
     }),
 

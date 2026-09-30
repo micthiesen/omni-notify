@@ -181,6 +181,14 @@ Keep text and listings bounded, treat page content as untrusted evidence, and
 verify single-page label writes by reading them back. Never expose the upstream
 token or forward it through redirects. See `docs/mcp.md` for tool semantics.
 
+Email MCP reads batch selected UIDs and reuse bounded caches: search and direct
+read snapshots last 30 seconds, parsed immutable messages five minutes. Preserve
+the `fresh` bypass and mailbox-event invalidation. Draft creation discovers the
+special-use mailbox and verifies APPEND by Message-ID. Drafts and sends reserve
+idempotency keys durably; uncertain sends never retry automatically, and partial
+recipient rejection cannot report success. Composed mail falls back to iCloud
+SMTP only when no explicit SMTP fields are set. See `docs/mcp.md`.
+
 ## Code and tests
 
 - Oxfmt, 88 columns, two-space indentation; Oxlint for correctness checks.

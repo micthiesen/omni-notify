@@ -1,12 +1,17 @@
 import type { LogItem } from "@micthiesen/mitools/logging";
 import { Logger } from "@micthiesen/mitools/logging";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
+import type { SentMessageInfo, Transporter } from "nodemailer";
 
 import config from "../utils/config.js";
 import { getTransporter } from "./client.js";
 import { type EmailContent, renderLogEmail } from "./templates.js";
 
 const logger = Logger.named("Email");
+const DeliveryResultSchema = Schema.Struct({
+  accepted: Schema.Array(Schema.String),
+  rejected: Schema.Array(Schema.String),
+});
 
 interface SendEmailParams {
   to: string;
@@ -14,6 +19,18 @@ interface SendEmailParams {
   subject: string;
   html: string;
   text: string;
+}
+
+export interface ComposedEmailParams {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  from: string;
+  subject: string;
+  text: string;
+  inReplyTo?: string;
+  references?: string[];
+  messageId?: string;
 }
 
 export function sendEmailEffect(
@@ -35,6 +52,58 @@ export function sendEmailEffect(
         logger
           .error(`Failed to send email "${subject}" to ${to}`, error)
           .pipe(Effect.as(false)),
+      ),
+    );
+  });
+}
+
+/** Send user-composed mail; the caller must reserve its idempotency key first. */
+export function sendComposedEmailEffect(
+  params: ComposedEmailParams,
+  transport: Pick<Transporter<SentMessageInfo>, "sendMail"> | null = getTransporter(),
+): Effect.Effect<boolean, never, Logger> {
+  return Effect.gen(function* () {
+    if (!transport) {
+      yield* logger.error("SMTP is not configured for composed email");
+      return false;
+    }
+    return yield* Effect.tryPromise({
+      try: () =>
+        transport.sendMail({
+          from: params.from,
+          to: params.to,
+          cc: params.cc,
+          bcc: params.bcc,
+          subject: params.subject,
+          text: params.text,
+          inReplyTo: params.inReplyTo,
+          references: params.references,
+          messageId: params.messageId,
+        }),
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.flatMap((result) =>
+        Schema.decodeUnknownEffect(DeliveryResultSchema)(result),
+      ),
+      Effect.map((result) => {
+        const expected = new Set([
+          ...params.to,
+          ...(params.cc ?? []),
+          ...(params.bcc ?? []),
+        ]);
+        const accepted = new Set(result.accepted);
+        return (
+          result.rejected.length === 0 &&
+          [...expected].every((address) => accepted.has(address))
+        );
+      }),
+      Effect.tap((sent) =>
+        sent
+          ? Effect.void
+          : logger.warn("SMTP rejected one or more composed email recipients"),
+      ),
+      Effect.catch((error) =>
+        logger.error("Failed to send composed email", error).pipe(Effect.as(false)),
       ),
     );
   });

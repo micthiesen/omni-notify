@@ -182,6 +182,22 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
+      "name": "email_draft_create",
+      "title": "Create Email Draft",
+      "description": "Save a plain-text draft in the server-designated Drafts mailbox. Reusing an idempotency key with different content is rejected.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Creates a draft in the configured email account"
+      ],
+      "cost": "No per-call paid API expected",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
       "name": "email_feedback_list",
       "title": "List Email Feedback",
       "description": "List explicit corrections used by the email relevance triage prompts, newest first.",
@@ -214,7 +230,7 @@
     {
       "name": "email_get",
       "title": "Get Email",
-      "description": "Fetch one email by the stable identifier returned by email_search or email activity. Body text and attachment metadata are bounded; attachment bytes and credentials are never returned.",
+      "description": "Fetch one email by the stable identifier returned by email_search or email activity. Recently fetched messages are reused; fresh=true bypasses caches to confirm current existence. Body text and attachment metadata are bounded; attachment bytes and credentials are never returned.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -337,7 +353,7 @@
     {
       "name": "email_search",
       "title": "Search Email",
-      "description": "Search the active iCloud IMAP Inbox and Archive with bounded server-side criteria. Returns compact excerpts and attachment metadata, never attachment bytes.",
+      "description": "Search or browse the active iCloud IMAP Inbox and Archive, newest first. Use folder=inbox without criteria to browse recent Inbox mail. Recent identical searches are reused for up to 30 seconds; fresh=true bypasses caches. Prefer sender, subject, and date filters over full-text query for speed. Returns compact excerpts and attachment metadata, never attachment bytes.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -353,17 +369,17 @@
     {
       "name": "email_send",
       "title": "Send Email",
-      "description": "Send one plain-text email through Omni's configured SMTP account and configured sender address. This is an external communication and always requires Executor approval.",
+      "description": "Send a plain-text email through Omni's configured SMTP account. A required idempotency key prevents automatic resends after uncertain outcomes.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
-        "idempotentHint": false,
+        "idempotentHint": true,
         "openWorldHint": true
       },
       "sideEffects": [
-        "Sends an external email to the specified recipient"
+        "Sends an external email to the specified recipients"
       ],
-      "cost": "No per-call paid API expected; consumes SMTP provider quota",
+      "cost": "Consumes SMTP provider quota",
       "recommendedExecutorPolicy": "require_approval"
     },
     {

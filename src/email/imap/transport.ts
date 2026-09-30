@@ -16,10 +16,12 @@ import {
   Schedule,
   Scope,
   Semaphore,
+  Stream,
 } from "effect";
 import { getLastDispatchedAtEffect } from "../persistence.js";
 import type {
   EmailAttachment,
+  EmailDraftInput,
   EmailSearchOptions,
   EmailTransport,
   FetchedEmail,
@@ -36,6 +38,9 @@ import {
 } from "./mapMessage.js";
 import { getFolderCursorEffect, saveFolderCursorEffect } from "./persistence.js";
 import { planFolderSync } from "./sync.js";
+import { BoundedReadCache } from "./readCache.js";
+import { createDraftEffect as appendDraftEffect } from "./actions.js";
+import { getComposeEmailConfiguration } from "../../emails/client.js";
 
 const IMAP_HOST = "imap.mail.me.com";
 const IMAP_PORT = 993;
@@ -69,6 +74,8 @@ const MAX_EMAILS_PER_PASS = 200;
  * copies years of mail in with brand-new UIDs but preserved INTERNALDATEs.
  */
 const MAX_EMAIL_AGE_MS = 7 * 24 * 60 * 60_000;
+const PARSED_CACHE_TTL_MS = 5 * 60_000;
+const SEARCH_CACHE_TTL_MS = 30_000;
 
 interface ImapAuth {
   user: string;
@@ -93,8 +100,8 @@ export class ImapOperationError extends Data.TaggedError("ImapOperationError")<{
  * Bugzilla #1611624): the pre-login CAPABILITY response is minimal, so
  * capabilities are only trusted post-login (imapflow re-reads them);
  * parameterized `SELECT (CONDSTORE)` is rejected, so QRESYNC stays off and
- * sync is plain-UID based; there is no MOVE, and the only mailbox mutation is
- * adding the \Seen flag for the small auto-read cleanup pass.
+ * sync is plain-UID based; drafts are appended to the discovered special-use
+ * mailbox, and the auto-read cleanup adds the \Seen flag.
  */
 export class ImapTransport implements EmailTransport<
   ImapOperationError,
@@ -118,6 +125,33 @@ export class ImapTransport implements EmailTransport<
    * select/use/restore sequence and lifecycle transition shares one permit. */
   private readonly operationSemaphore = Semaphore.makeUnsafe(1);
   private connectFiber: Fiber.Fiber<void, ImapOperationError> | null = null;
+  private readonly parsedMessageCache = new BoundedReadCache<FetchedEmail>(
+    128,
+    24 * 1024 * 1024,
+    PARSED_CACHE_TTL_MS,
+  );
+  private readonly searchResultCache = new BoundedReadCache<FetchedEmail[]>(
+    32,
+    8 * 1024 * 1024,
+    SEARCH_CACHE_TTL_MS,
+  );
+  private readonly messageLocationCache = new BoundedReadCache<MessageCoords>(
+    256,
+    128 * 1024,
+    SEARCH_CACHE_TTL_MS,
+  );
+  private readonly directGetCache = new BoundedReadCache<FetchedEmail>(
+    128,
+    24 * 1024 * 1024,
+    SEARCH_CACHE_TTL_MS,
+  );
+
+  private clearReadCaches(): void {
+    this.parsedMessageCache.clear();
+    this.searchResultCache.clear();
+    this.messageLocationCache.clear();
+    this.directGetCache.clear();
+  }
 
   constructor(auth: ImapAuth, logger: NamedLogger) {
     this.auth = auth;
@@ -165,6 +199,7 @@ export class ImapTransport implements EmailTransport<
 
   readonly stopEffect = Effect.gen({ self: this }, function* () {
     this.stopped = true;
+    this.clearReadCaches();
     const scope = this.runtimeScope;
     this.runtimeScope = null;
     if (scope) yield* Scope.close(scope, Exit.succeed(undefined));
@@ -228,11 +263,19 @@ export class ImapTransport implements EmailTransport<
       });
       client.on("close", () => {
         const wasCurrent = this.client === client;
-        if (wasCurrent) this.client = null;
+        if (wasCurrent) {
+          this.client = null;
+          this.clearReadCaches();
+        }
         if (wasCurrent && !this.stopped) this.scheduleReconnect();
       });
       // New message in the selected mailbox (INBOX) while idling.
-      client.on("exists", () => this.onMailEvent?.());
+      client.on("exists", () => {
+        this.searchResultCache.clear();
+        this.onMailEvent?.();
+      });
+      client.on("flags", () => this.searchResultCache.clear());
+      client.on("expunge", () => this.clearReadCaches());
       return client;
     }),
     (client) =>
@@ -251,6 +294,7 @@ export class ImapTransport implements EmailTransport<
         );
 
         this.autoReadFolders = undefined;
+        this.clearReadCaches();
         const caps = ["IDLE", "CONDSTORE", "QRESYNC", "UIDPLUS"]
           .map((c) => `${c}=${client.capabilities.has(c) ? "y" : "n"}`)
           .join(" ");
@@ -549,16 +593,59 @@ export class ImapTransport implements EmailTransport<
     });
   }
 
-  fetchEmailByIdEffect(id: string) {
+  fetchEmailByIdEffect(id: string, options: { fresh?: boolean } = {}) {
+    return Effect.gen({ self: this }, function* () {
+      const startedAt = yield* Clock.currentTimeMillis;
+      const cached = options.fresh ? undefined : this.directGetCache.get(id, startedAt);
+      const email =
+        cached ??
+        (yield* this.fetchEmailByIdSerializedEffect(id, options.fresh ?? false));
+      const endedAt = yield* Clock.currentTimeMillis;
+      yield* this.logger.info(
+        `Email read completed source=${cached ? "cache" : "imap"} results=${email ? 1 : 0} elapsedMs=${endedAt - startedAt}`,
+      );
+      return email;
+    });
+  }
+
+  createDraftEffect(input: EmailDraftInput, options: { allowAppend?: boolean } = {}) {
+    return this.runSerializedEffect(
+      "IMAP create draft",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        const from = getComposeEmailConfiguration()?.from ?? this.auth.user;
+        return yield* appendDraftEffect(client, input, from, options);
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  private fetchEmailByIdSerializedEffect(id: string, fresh: boolean) {
     return this.runSerializedEffect(
       "IMAP fetch by id",
       Effect.gen({ self: this }, function* () {
+        const now = yield* Clock.currentTimeMillis;
+        const cached = fresh ? undefined : this.directGetCache.get(id, now);
+        if (cached) return cached;
         const client = yield* this.requireClientEffect;
         const coords = decodeMessageId(id);
         for (const folder of FOLDERS) {
           if (coords && coords.folder !== folder) continue;
-          const email = yield* this.findInFolderEffect(client, folder, id, coords);
-          if (email) return email;
+          const email = yield* this.findInFolderEffect(
+            client,
+            folder,
+            id,
+            coords,
+            fresh,
+          );
+          if (email) {
+            this.directGetCache.set(
+              id,
+              email,
+              estimateEmailBytes(email),
+              yield* Clock.currentTimeMillis,
+            );
+            return email;
+          }
         }
         return undefined;
       }).pipe(Effect.ensuring(this.restoreInboxEffect())),
@@ -566,9 +653,31 @@ export class ImapTransport implements EmailTransport<
   }
 
   searchEmailsEffect(options: EmailSearchOptions) {
+    return Effect.gen({ self: this }, function* () {
+      const startedAt = yield* Clock.currentTimeMillis;
+      if (options.fresh) this.searchResultCache.delete(searchCacheKey(options));
+      const cached = options.fresh
+        ? undefined
+        : this.searchResultCache.get(searchCacheKey(options), startedAt);
+      const emails = cached ?? (yield* this.searchSerializedEffect(options));
+      const endedAt = yield* Clock.currentTimeMillis;
+      yield* this.logger.info(
+        `Email search completed source=${cached ? "cache" : "imap"} results=${emails.length} elapsedMs=${endedAt - startedAt}`,
+      );
+      return emails;
+    });
+  }
+
+  private searchSerializedEffect(options: EmailSearchOptions) {
     return this.runSerializedEffect(
       "IMAP search",
       Effect.gen({ self: this }, function* () {
+        const cacheKey = searchCacheKey(options);
+        const cacheNow = yield* Clock.currentTimeMillis;
+        const cached = options.fresh
+          ? undefined
+          : this.searchResultCache.get(cacheKey, cacheNow);
+        if (cached) return cached;
         const client = yield* this.requireClientEffect;
         const folderNames =
           options.folder === "inbox"
@@ -587,6 +696,15 @@ export class ImapTransport implements EmailTransport<
               () =>
                 Effect.gen({ self: this }, function* () {
                   const criteria = {
+                    ...(options.query ||
+                    options.from ||
+                    options.to ||
+                    options.subject ||
+                    options.unread !== undefined ||
+                    options.since ||
+                    options.before
+                      ? {}
+                      : { all: true }),
                     ...(options.query ? { text: options.query } : {}),
                     ...(options.from ? { from: options.from } : {}),
                     ...(options.to ? { to: options.to } : {}),
@@ -606,33 +724,84 @@ export class ImapTransport implements EmailTransport<
                   const mailboxValidity = String(
                     orUndefined(client.mailbox)?.uidValidity,
                   );
-                  return yield* Effect.forEach(
-                    uids,
-                    (uid) =>
-                      this.fetchMappedMessageEffect(
-                        client,
-                        folder,
-                        mailboxValidity,
-                        uid,
+                  const readNow = yield* Clock.currentTimeMillis;
+                  // Keep selected snapshots alive even if the subsequent batch
+                  // evicts them from the bounded shared cache.
+                  const cachedByUid = new Map<number, FetchedEmail>();
+                  if (!options.fresh) {
+                    for (const uid of uids) {
+                      const cached = this.parsedMessageCache.get(
+                        messageCacheKey(folder, mailboxValidity, uid),
+                        readNow,
+                      );
+                      if (cached) cachedByUid.set(uid, cached);
+                    }
+                  }
+                  const uncached = uids.filter((uid) => !cachedByUid.has(uid));
+                  const fetchedByUid = new Map<number, FetchedEmail>();
+                  if (uncached.length > 0) {
+                    // One FETCH command streams the selected UIDs. Parse each
+                    // source before reading the next so attachment buffers do
+                    // not accumulate for the whole result set.
+                    yield* Stream.fromAsyncIterable(
+                      client.fetch(
+                        uncached,
+                        { source: true, internalDate: true },
+                        { uid: true },
                       ),
-                    { concurrency: 1 },
-                  ).pipe(
-                    Effect.map((values) =>
-                      values.filter(
-                        (email): email is FetchedEmail => email !== undefined,
+                      (cause) =>
+                        new ImapOperationError({
+                          operation: `fetch ${uncached.length} messages`,
+                          cause,
+                        }),
+                    ).pipe(
+                      Stream.runForEach((full) =>
+                        Effect.gen({ self: this }, function* () {
+                          if (!full.source) return;
+                          const parsed = yield* this.promiseEffect(
+                            "parse message",
+                            () => simpleParser(full.source!),
+                          );
+                          const email = mapParsedMessage(
+                            parsed,
+                            { folder, uidValidity: mailboxValidity, uid: full.uid },
+                            toDate(full.internalDate),
+                          );
+                          fetchedByUid.set(full.uid, email);
+                          this.parsedMessageCache.set(
+                            messageCacheKey(folder, mailboxValidity, full.uid),
+                            email,
+                            estimateEmailBytes(email),
+                            yield* Clock.currentTimeMillis,
+                          );
+                          yield* this.logger.debug(
+                            `Email read parsed uid=${full.uid} folder=${folder} bytes=${full.source.length}`,
+                          );
+                        }),
                       ),
-                    ),
-                  );
+                    );
+                  }
+                  return uids
+                    .map((uid) => fetchedByUid.get(uid) ?? cachedByUid.get(uid))
+                    .filter((email): email is FetchedEmail => email !== undefined);
                 }),
               (lock) => Effect.sync(() => lock.release()),
             ),
           { concurrency: 1 },
         );
 
-        return byFolder
+        const result = byFolder
           .flat()
           .sort((a, b) => Date.parse(b.receivedAt) - Date.parse(a.receivedAt))
           .slice(0, options.limit);
+        const completedAt = yield* Clock.currentTimeMillis;
+        this.searchResultCache.set(
+          cacheKey,
+          result,
+          estimateEmailBytes(result),
+          completedAt,
+        );
+        return result;
       }).pipe(Effect.ensuring(this.restoreInboxEffect())),
     );
   }
@@ -642,6 +811,7 @@ export class ImapTransport implements EmailTransport<
     folder: string,
     id: string,
     coords: (MessageCoords & { index?: number }) | undefined,
+    fresh: boolean,
   ) {
     return Effect.acquireUseRelease(
       this.promiseEffect(`lock ${folder}`, () =>
@@ -656,18 +826,60 @@ export class ImapTransport implements EmailTransport<
             if (coords.uidValidity !== mailboxValidity) return undefined;
             uid = coords.uid;
           } else {
-            const found = yield* this.promiseEffect(`find message ${id}`, () =>
-              client.search({ header: { "message-id": id } }, { uid: true }),
-            );
-            if (Array.isArray(found) && found.length > 0) uid = found[found.length - 1];
+            const now = yield* Clock.currentTimeMillis;
+            const located = fresh ? undefined : this.messageLocationCache.get(id, now);
+            if (located?.folder === folder && located.uidValidity === mailboxValidity) {
+              const exists = orUndefined(
+                yield* this.promiseEffect(`check uid ${located.uid}`, () =>
+                  client.fetchOne(String(located.uid), { uid: true }, { uid: true }),
+                ),
+              );
+              if (exists) uid = located.uid;
+              else this.messageLocationCache.delete(id);
+            } else if (located) {
+              this.messageLocationCache.delete(id);
+            }
+            if (uid === undefined) {
+              const found = yield* this.promiseEffect(`find message ${id}`, () =>
+                client.search({ header: { "message-id": id } }, { uid: true }),
+              );
+              if (Array.isArray(found) && found.length > 0) {
+                uid = found[found.length - 1];
+                if (!fresh) {
+                  this.messageLocationCache.set(
+                    id,
+                    { folder, uidValidity: mailboxValidity, uid },
+                    id.length + folder.length + mailboxValidity.length + 16,
+                    yield* Clock.currentTimeMillis,
+                  );
+                }
+              }
+            }
           }
           if (uid === undefined) return undefined;
 
+          const cacheKey = messageCacheKey(folder, mailboxValidity, uid);
+          const cacheNow = yield* Clock.currentTimeMillis;
+          const cached = fresh
+            ? undefined
+            : this.parsedMessageCache.get(cacheKey, cacheNow);
+          if (cached) {
+            const exists = orUndefined(
+              yield* this.promiseEffect(`check uid ${uid}`, () =>
+                client.fetchOne(String(uid), { uid: true }, { uid: true }),
+              ),
+            );
+            if (exists) return cached;
+            this.parsedMessageCache.delete(cacheKey);
+            return undefined;
+          }
           return yield* this.fetchMappedMessageEffect(
             client,
             folder,
             mailboxValidity,
             uid,
+            undefined,
+            fresh,
           );
         }),
       (lock) => Effect.sync(() => lock.release()),
@@ -770,8 +982,15 @@ export class ImapTransport implements EmailTransport<
     uidValidity: string,
     uid: number,
     fallbackDate?: Date,
+    fresh = false,
   ) {
     return Effect.gen({ self: this }, function* () {
+      const cacheKey = messageCacheKey(folder, uidValidity, uid);
+      const cacheNow = yield* Clock.currentTimeMillis;
+      const cached = fresh
+        ? undefined
+        : this.parsedMessageCache.get(cacheKey, cacheNow);
+      if (cached) return cached;
       const full = orUndefined(
         yield* this.promiseEffect(`fetch uid ${uid}`, () =>
           client.fetchOne(
@@ -791,8 +1010,15 @@ export class ImapTransport implements EmailTransport<
         { folder, uidValidity, uid },
         toDate(full.internalDate) ?? fallbackDate,
       );
+      const parsedNow = yield* Clock.currentTimeMillis;
+      this.parsedMessageCache.set(
+        cacheKey,
+        email,
+        estimateEmailBytes(email),
+        parsedNow,
+      );
       yield* this.logger.debug(
-        `Email: "${email.subject}" from=${email.from} uid=${uid} folder=${folder} attachments=${email.attachments.length}`,
+        `Email read parsed uid=${uid} folder=${folder} attachments=${email.attachments.length}`,
       );
       return email;
     });
@@ -811,7 +1037,7 @@ export class ImapTransport implements EmailTransport<
   private runSerializedEffect<A, E, R>(
     operation: string,
     effect: Effect.Effect<A, E, R>,
-  ): Effect.Effect<A, E | ImapOperationError, R> {
+  ): Effect.Effect<A, ImapOperationError, R> {
     return this.operationSemaphore
       .withPermits(1)(effect)
       .pipe(
@@ -892,4 +1118,30 @@ function decodeMessageId(id: string): MessageCoords | undefined {
   const uid = Number(parts[3]);
   if (!Number.isInteger(uid)) return undefined;
   return { folder: parts[1], uidValidity: parts[2], uid };
+}
+
+function messageCacheKey(folder: string, validity: string, uid: number): string {
+  return `${folder}\0${validity}\0${uid}`;
+}
+
+function searchCacheKey(options: EmailSearchOptions): string {
+  return JSON.stringify({
+    query: options.query?.trim() ?? "",
+    from: options.from?.trim() ?? "",
+    to: options.to?.trim() ?? "",
+    subject: options.subject?.trim() ?? "",
+    unread: options.unread ?? null,
+    since: options.since?.toISOString() ?? null,
+    before: options.before?.toISOString() ?? null,
+    folder: options.folder ?? "all",
+    limit: options.limit,
+  });
+}
+
+function estimateEmailBytes(value: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(value));
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }

@@ -15,6 +15,11 @@ export interface FetchedEmail {
   id: string;
   subject: string;
   from: string;
+  to?: string[];
+  cc?: string[];
+  replyTo?: string[];
+  messageId?: string;
+  references?: string[];
   textBody: string;
   /** Shipment/booking-shaped URLs pulled from the HTML body (hrefs are
    * stripped from textBody, but tracking numbers often live only in them). */
@@ -34,6 +39,11 @@ export const FetchedEmailSchema = Schema.Struct({
   id: Schema.String,
   subject: Schema.String,
   from: Schema.String,
+  to: Schema.optional(Schema.Array(Schema.String)),
+  cc: Schema.optional(Schema.Array(Schema.String)),
+  replyTo: Schema.optional(Schema.Array(Schema.String)),
+  messageId: Schema.optional(Schema.String),
+  references: Schema.optional(Schema.Array(Schema.String)),
   textBody: Schema.String,
   links: Schema.Array(Schema.String),
   receivedAt: Schema.String,
@@ -80,6 +90,25 @@ export interface EmailSearchOptions {
   folder?: "inbox" | "archive" | "all";
   /** Maximum number of messages to return across all folders. */
   limit: number;
+  /** Bypass recent search and parsed-message caches. */
+  fresh?: boolean;
+}
+
+export interface EmailDraftInput {
+  idempotencyKey: string;
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  text: string;
+  inReplyTo?: string;
+  references?: string[];
+}
+
+export interface EmailDraftResult {
+  /** Stable Message-ID used to reconcile an uncertain IMAP APPEND. */
+  draftId: string;
+  alreadyExisted: boolean;
 }
 
 export interface EmailTransport<out E = unknown, out R = never> {
@@ -97,12 +126,20 @@ export interface EmailTransport<out E = unknown, out R = never> {
   /** Fetch emails that arrived since the persisted cursor. */
   readonly pollNewEmailsEffect: Effect.Effect<EmailPoll, E, R>;
   /** Re-fetch one email by its stable id (retry/reprocess); undefined when gone. */
-  fetchEmailByIdEffect(id: string): Effect.Effect<FetchedEmail | undefined, E, R>;
+  fetchEmailByIdEffect(
+    id: string,
+    options?: { fresh?: boolean },
+  ): Effect.Effect<FetchedEmail | undefined, E, R>;
   /**
    * Search the monitored mailbox without exposing transport credentials or raw
    * protocol access.
    */
   searchEmailsEffect?(options: EmailSearchOptions): Effect.Effect<FetchedEmail[], E, R>;
+  /** Save a draft in the server-designated Drafts mailbox. */
+  createDraftEffect?(
+    input: EmailDraftInput,
+    options?: { allowAppend?: boolean },
+  ): Effect.Effect<EmailDraftResult, E, R>;
   /** Download one attachment's bytes; undefined when unavailable. */
   downloadAttachmentEffect(
     attachment: EmailAttachment,

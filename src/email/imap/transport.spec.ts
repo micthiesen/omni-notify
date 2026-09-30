@@ -6,6 +6,7 @@ const imapFlowMock = vi.hoisted(() => vi.fn());
 vi.mock("imapflow", () => ({ ImapFlow: imapFlowMock }));
 
 import { ImapTransport } from "./transport.js";
+import { BoundedReadCache } from "./readCache.js";
 
 const runtime = ManagedRuntime.make(Logger.layer());
 const runPromise = runtime.runPromise.bind(runtime);
@@ -20,6 +21,114 @@ const logger = {
 } as unknown as NamedLogger;
 
 describe("ImapTransport mailbox serialization", () => {
+  it("batches UID downloads and reuses bounded parsed/search results", async () => {
+    const mailbox = { path: "INBOX", uidValidity: 12 };
+    const source = (subject: string) =>
+      Buffer.from(
+        `Message-ID: <${subject}@example.test>\r\nSubject: ${subject}\r\nFrom: sender@example.test\r\nDate: Tue, 01 Sep 2026 10:00:00 +0000\r\n\r\nbody`,
+      );
+    const client = {
+      usable: true,
+      mailbox,
+      getMailboxLock: vi.fn(async (folder: string) => {
+        mailbox.path = folder;
+        return { release: vi.fn() };
+      }),
+      search: vi.fn(async () => [1, 2]),
+      fetch: vi.fn(async function* (uids: number[]) {
+        for (const uid of uids)
+          yield {
+            uid,
+            source: source(`message-${uid}`),
+            internalDate: new Date(`2026-09-01T10:00:0${uid}Z`),
+          };
+      }),
+      mailboxOpen: vi.fn(async (folder: string) => {
+        mailbox.path = folder;
+      }),
+    };
+    const transport = new ImapTransport({ user: "u", pass: "p" }, logger);
+    Object.assign(transport as object, {
+      client,
+      parsedMessageCache: new BoundedReadCache(1, 1_000_000, 300_000),
+    });
+
+    const options = { folder: "archive" as const, limit: 2 };
+    const first = await runPromise(transport.searchEmailsEffect(options));
+    const second = await runPromise(transport.searchEmailsEffect(options));
+    const fresh = await runPromise(
+      transport.searchEmailsEffect({ ...options, fresh: true }),
+    );
+
+    expect(first.map((email) => email.subject)).toEqual(["message-2", "message-1"]);
+    expect(second).toEqual(first);
+    expect(fresh).toEqual(first);
+    expect(client.fetch).toHaveBeenCalledTimes(2);
+    expect(client.fetch).toHaveBeenCalledWith(
+      [2, 1],
+      { source: true, internalDate: true },
+      { uid: true },
+    );
+    expect(client.search).toHaveBeenCalledTimes(2);
+
+    await runPromise(transport.searchEmailsEffect({ ...options, limit: 1 }));
+    const mixed = await runPromise(
+      transport.searchEmailsEffect({ ...options, query: "body" }),
+    );
+    expect(mixed.map((email) => email.subject)).toEqual(["message-2", "message-1"]);
+    expect(client.fetch).toHaveBeenLastCalledWith(
+      [1],
+      { source: true, internalDate: true },
+      { uid: true },
+    );
+  });
+
+  it("serves repeated direct reads from a short cache and honors fresh", async () => {
+    const mailbox = { path: "INBOX", uidValidity: 12 };
+    const client = {
+      usable: true,
+      mailbox,
+      getMailboxLock: vi.fn(async (folder: string) => {
+        mailbox.path = folder;
+        return { release: vi.fn() };
+      }),
+      search: vi.fn(async () => [7]),
+      fetchOne: vi.fn(
+        async (_range: string, query: { uid?: boolean; source?: boolean }) =>
+          query.source
+            ? {
+                uid: 7,
+                source: Buffer.from(
+                  "Message-ID: <direct@example.test>\r\nSubject: direct\r\nFrom: sender@example.test\r\n\r\nbody",
+                ),
+                internalDate: new Date("2026-09-01T10:00:00Z"),
+              }
+            : { uid: 7 },
+      ),
+      mailboxOpen: vi.fn(async (folder: string) => {
+        mailbox.path = folder;
+      }),
+    };
+    const transport = new ImapTransport({ user: "u", pass: "p" }, logger);
+    Object.assign(transport as object, { client });
+
+    const first = await runPromise(
+      transport.fetchEmailByIdEffect("<direct@example.test>"),
+    );
+    const second = await runPromise(
+      transport.fetchEmailByIdEffect("<direct@example.test>"),
+    );
+    const fresh = await runPromise(
+      transport.fetchEmailByIdEffect("<direct@example.test>", { fresh: true }),
+    );
+
+    expect(first?.subject).toBe("direct");
+    expect(second).toEqual(first);
+    expect(fresh).toEqual(first);
+    expect(client.search).toHaveBeenCalledTimes(2);
+    expect(client.fetchOne).toHaveBeenCalledTimes(2);
+  });
+
   it("serializes complete select/use/restore operations", async () => {
     const firstLockRequested = await Effect.runPromise(Deferred.make<void>());
     const releaseFirstLock = await Effect.runPromise(Deferred.make<void>());
@@ -63,7 +172,7 @@ describe("ImapTransport mailbox serialization", () => {
 
     expect(maxActive).toBe(1);
     expect(mailbox.path).toBe("INBOX");
-    expect(client.mailboxOpen).toHaveBeenCalledTimes(2);
+    expect(client.mailboxOpen).toHaveBeenCalledOnce();
   });
 
   it("shares concurrent connect attempts", async () => {

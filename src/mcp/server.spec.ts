@@ -196,6 +196,8 @@ describe("Omni MCP streamable HTTP server", () => {
     const { tools } = await client.listTools();
     expect(tools.length).toBe(handler.tools.length);
     expect(tools.map(({ name }) => name)).toContain("email_search");
+    expect(tools.map(({ name }) => name)).toContain("email_draft_create");
+    expect(tools.map(({ name }) => name)).toContain("email_send");
     for (const tool of tools) {
       expect(tool.inputSchema.type).toBe("object");
       expect(tool.outputSchema?.type).toBe("object");
@@ -463,6 +465,17 @@ describe("Omni MCP streamable HTTP server", () => {
     };
     expect(output.email.excerpt).toHaveLength(1_000);
     expect(output.email.excerptTruncated).toBe(true);
+    expect(transport.fetchEmailByIdEffect).toHaveBeenCalledWith(email.id, {
+      fresh: false,
+    });
+
+    await client.callTool({
+      name: "email_get",
+      arguments: { emailId: email.id, fresh: true },
+    });
+    expect(transport.fetchEmailByIdEffect).toHaveBeenLastCalledWith(email.id, {
+      fresh: true,
+    });
 
     const missing = await client.callTool({
       name: "email_get",
@@ -473,6 +486,29 @@ describe("Omni MCP streamable HTTP server", () => {
       type: "text",
       text: "Email no longer exists in the monitored mailbox",
     });
+  });
+
+  it("browses recent Inbox mail without invented criteria and forwards freshness", async () => {
+    const searchEmailsEffect = vi.fn(() => Effect.succeed([]));
+    const transport = {
+      name: "IMAP",
+      searchEmailsEffect,
+    } as unknown as EmailTransport;
+    const handler = createOmniMcpHandler(
+      runtime({ emailControls: { transport } }),
+      TEST_TOKEN,
+    );
+    handlers.push(handler);
+    const client = await connectClient(handler);
+    const result = await client.callTool({
+      name: "email_search",
+      arguments: { folder: "inbox", fresh: true, limit: 5 },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({ items: [], count: 0 });
+    expect(searchEmailsEffect).toHaveBeenCalledWith(
+      expect.objectContaining({ folder: "inbox", fresh: true, limit: 5 }),
+    );
   });
 
   it("closes cleanly after initialization", async () => {

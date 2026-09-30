@@ -1,4 +1,4 @@
-import type { ParsedMail } from "mailparser";
+import type { AddressObject, ParsedMail } from "mailparser";
 import { extractInterestingLinks, htmlToText } from "../htmlToText.js";
 import type { EmailAttachment, FetchedEmail } from "../types.js";
 
@@ -59,6 +59,15 @@ export function mapParsedMessage(
       [BLOB_PREFIX, coords.folder, coords.uidValidity, coords.uid].join("|"),
     subject: parsed.subject ?? "",
     from: from?.address ?? from?.name ?? "",
+    to: parsedAddresses(parsed.to),
+    cc: parsedAddresses(parsed.cc),
+    replyTo: parsedAddresses(parsed.replyTo),
+    messageId: parsed.messageId,
+    references: parsed.references
+      ? Array.isArray(parsed.references)
+        ? parsed.references
+        : [parsed.references]
+      : [],
     textBody,
     links: html ? extractInterestingLinks(html) : [],
     // INTERNALDATE is the server's receive time;
@@ -66,4 +75,10 @@ export function mapParsedMessage(
     receivedAt: (internalDate ?? parsed.date)?.toISOString() ?? "",
     attachments,
   };
+}
+
+function parsedAddresses(value: AddressObject | AddressObject[] | undefined): string[] {
+  return (value ? (Array.isArray(value) ? value : [value]) : [])
+    .flatMap((group) => group.value)
+    .flatMap((address) => (address.address ? [address.address] : []));
 }
