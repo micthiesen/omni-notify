@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import { Data, Effect, Schema } from "effect";
 import { decodeCrdtDocument, encodeCrdtDocument } from "./codec.js";
 import { RemindersCloudKitExtras } from "./cloudkitExtras.js";
+import {
+  completeRecurringOccurrence,
+  type RecurringCompletionTarget,
+} from "./recurringCompletion.js";
 
 // CloudKit Reminders record layout adapted from the MIT-licensed iobroker.icloud
 // implementation at 07a91933e3f05a36d9c8918ece7f3de295aef805.
@@ -66,6 +70,7 @@ export class RemindersError extends Data.TaggedError("RemindersError")<{
     | "not_found"
     | "unsupported"
     | "awaiting-device-approval"
+    | "uncertain"
     | "transport";
 }> {
   public override get message(): string {
@@ -398,6 +403,18 @@ export class RemindersCloudKitClient {
 
   public hasSnapshot(): boolean {
     return this.snapshotIndex !== undefined;
+  }
+
+  public completeRecurring(target: RecurringCompletionTarget) {
+    return completeRecurringOccurrence(
+      {
+        post: this.ckPost,
+        getReminder: (id) => this.getReminder(id),
+        getRecurrences: (id) => this.extras.getRecurrences(id),
+        invalidate: () => this.invalidateSnapshot(),
+      },
+      target,
+    );
   }
 
   public invalidateSnapshot(): Effect.Effect<void> {

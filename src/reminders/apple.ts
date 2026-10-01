@@ -980,7 +980,14 @@ export class AppleRemindersClient {
           path === "/records/query" ? (this.deps.timeoutMs ?? 60_000) : this.timeoutMs,
         );
       let response = yield* call();
-      if (response.status === 401 && path !== "/records/modify") {
+      // CloudKit queries are not inherently reads: CompleteRecurringReminder and
+      // createTreeDeletion mutate state. Only known read operations may replay.
+      const replaySafe =
+        path === "/changes/zone" ||
+        path === "/records/lookup" ||
+        (path === "/records/query" &&
+          asRecord(asRecord(body).query).recordType === "reminderList");
+      if (response.status === 401 && replaySafe) {
         if (!(yield* this.accountLogin()))
           return yield* this.fail("CloudKit", "session requires verification", 401);
         response = yield* call();

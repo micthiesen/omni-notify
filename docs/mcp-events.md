@@ -81,7 +81,12 @@ outbox retry policy owns retries; HTTP 410 and 413 are terminal.
 A healthy deployment and successful raw MCP calls do not prove an idle dot wakes.
 The parent must use the existing Executor connection to:
 
-1. Rescan and confirm `email.received` is listed alongside the Executor tools.
+1. Open the existing Executor connection in ChatGPT Plugins and select **Refresh**.
+   Confirm `email.received` is listed alongside the Executor tools, then start a
+   new Work conversation. This is the documented developer-mode
+   [metadata refresh procedure](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata).
+   Refreshing Omni's tool inventory inside Executor does not refresh ChatGPT's
+   native event-source catalog. Published plugins follow continuous review.
 2. Create an explicit Inbox or Archive subscription in the intended Work chat
    or dot. Confirm `events/subscribe`, successful challenge verification and
    durable subscription acceptance.
@@ -94,3 +99,10 @@ The parent must use the existing Executor connection to:
 
 Native automation setup belongs to the parent. Do not archive real mail to test
 this integration without selecting and authorizing the exact test messages.
+
+On 2026-10-01 the public authenticated protocol checks passed: modern discovery,
+event definitions, the six native Executor tools, legacy client tools, OAuth
+challenge preservation, and callback rejection before unsafe network access.
+ChatGPT still listed only GitHub as a native event source; its connection refresh
+was not completed. No native subscription or idle-dot delivery is proven. Keep
+the parent's hourly fallback until that complete lifecycle succeeds.

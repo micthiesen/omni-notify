@@ -552,6 +552,23 @@ export class RemindersService implements RemindersControl {
     );
   }
 
+  completeRecurring(
+    key: string,
+    id: string,
+    changeTag: string,
+    ruleId: string,
+    ruleChangeTag: string,
+    timeZone: string,
+  ) {
+    const target = { id, changeTag, ruleId, ruleChangeTag, timeZone };
+    return this.mutation(
+      key,
+      { operation: "complete-recurring", ...target },
+      id,
+      Effect.suspend(() => this.cloud!.completeRecurring(target)),
+    );
+  }
+
   private mutation<A>(
     key: string,
     input: unknown,

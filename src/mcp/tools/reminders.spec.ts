@@ -109,6 +109,7 @@ describe("server Reminders MCP boundary", () => {
       "create_reminder_recurrence",
       "update_reminder_recurrence",
       "remove_reminder_recurrence",
+      "complete_recurring_reminder",
     ]) {
       expect(tool(name).policy.recommendedPolicy).toBe("require_approval");
       expect(tool(name).annotations.readOnlyHint).toBe(false);

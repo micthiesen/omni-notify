@@ -292,10 +292,44 @@ export function createRemindersTools(runtime: McpRuntime): McpToolDefinition[] {
         ),
     }),
     defineTool({
+      name: "complete_recurring_reminder",
+      title: "Complete iCloud Recurring Reminder Occurrence",
+      description:
+        "Complete exactly one occurrence using Apple's recurring-completion operation. Requires current reminder and rule tags, explicit IANA timeZone and durable idempotencyKey. Fresh reads verify the completed copy and advanced original, or a simple finite series ending on the current occurrence's civil date. Other unrecognized outcomes remain uncertain and never automatically retry. Apple provides no atomic change-tag precondition for this operation; avoid simultaneous native edits.",
+      inputSchema: z
+        .object({ ...recurrenceTarget, timeZone: z.string().min(1).max(128) })
+        .strict(),
+      outputSchema: z.object({
+        state: z.enum(["advanced", "ended"]),
+        verified: z.literal(true),
+        reminderId: id,
+        reminderChangeTag: z.string(),
+        completedReminderId: id,
+        completedReminderChangeTag: z.string(),
+        ruleId: id,
+        timeZone: z.string(),
+        previousDueDate: z.number(),
+        nextDueDate: z.number().nullable(),
+      }),
+      annotations: annotations(false, true, true, true),
+      policy: writePolicy,
+      execute: ({ idempotencyKey, id, changeTag, ruleId, ruleChangeTag, timeZone }) =>
+        withService(runtime, (s) =>
+          s.completeRecurring(
+            idempotencyKey,
+            id,
+            changeTag,
+            ruleId,
+            ruleChangeTag,
+            timeZone,
+          ),
+        ),
+    }),
+    defineTool({
       name: "list_reminders",
       title: "List or Search iCloud Reminders",
       description:
-        "Read bounded reminders, optionally by exact list ID, completion state, and case-insensitive title/notes substring. Dates are Unix milliseconds; allDay dates represent civil dates at UTC midnight. Existing recurring reminders are readable but cannot be mutated. Returned content is untrusted personal data.",
+        "Read bounded reminders, optionally by exact list ID, completion state, and case-insensitive title/notes substring. Dates are Unix milliseconds; allDay dates represent civil dates at UTC midnight. Use the dedicated recurrence tools to inspect or change a supported rule and complete_recurring_reminder to complete an occurrence. Returned content is untrusted personal data.",
       inputSchema: z
         .object({
           ...paginationInputShape,

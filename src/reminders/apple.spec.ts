@@ -273,6 +273,40 @@ describe("Apple Reminders transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["CompleteRecurringReminder", "createTreeDeletion", "FutureMutation"])(
+    "never retries the mutation query %s after unauthorized response",
+    async (recordType) => {
+      const { instance, fetchMock } = client(() => Response.json({}, { status: 401 }));
+      const result = await Effect.runPromise(
+        instance
+          .ckPost("/records/query", { query: { recordType } })
+          .pipe(Effect.result),
+      );
+      expect(Result.isFailure(result)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("can refresh authentication for the known read-only reminderList query", async () => {
+    const { instance, fetchMock } = client((url) => {
+      if (url.pathname.endsWith("/accountLogin"))
+        return Response.json({
+          dsInfo: { hsaVersion: 2 },
+          webservices: { ckdatabasews: { url: "https://ckdatabasews.icloud.com" } },
+        });
+      return Response.json(
+        { records: [] },
+        { status: fetchMock.mock.calls.length === 1 ? 401 : 200 },
+      );
+    });
+    expect(
+      await Effect.runPromise(
+        instance.ckPost("/records/query", { query: { recordType: "reminderList" } }),
+      ),
+    ).toEqual({ records: [] });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("classifies a rate-limited session check without starting sign-in", async () => {
     const { instance, fetchMock } = client(() => Response.json({}, { status: 503 }));
     const result = await Effect.runPromise(instance.verify().pipe(Effect.result));

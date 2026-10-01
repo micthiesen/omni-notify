@@ -170,11 +170,31 @@ Protocol references: [Apple Reminders web build 2636Build17](https://www.icloud.
 and [RFC 5545 recurrence values](https://www.rfc-editor.org/rfc/rfc5545.html#section-3.3.10).
 
 Ordinary reminder edits, completion, reopening and deletion still reject recurring
-reminders. Apple's web client completes recurring reminders through the special
-`CompleteRecurringReminder` query; setting `Completed` directly would not safely
-generate the next occurrence. That workflow is not implemented here. No existing
-user reminder is mutated during tests. Live validation of newly supported writes
-must use only separately identified disposable test reminders.
+reminders. Use `complete_recurring_reminder` for one recurring occurrence. It
+requires an idempotency key, current reminder and rule change tags, and explicit
+IANA `timeZone`. It reserves before the special `CompleteRecurringReminder` query
+and never retries that query, including authentication failures. CloudKit does
+not offer a change-tag precondition for this operation: avoid simultaneous native
+edits. Preflight tags and subsequent fresh verification detect conflicting states.
+
+A verified `advanced` receipt identifies both the original reminder and the
+completed copy, with previous and next due dates. The original stays incomplete,
+retains its identity, content, flags and rule, and advances its due date; the
+completed copy must match the prior occurrence and exact returned change tag.
+There is no fixed 24-hour increment: the observed Vancouver DST transition moved
+the due instant by 25 hours while preserving the intended local time.
+
+A verified `ended` receipt has `nextDueDate: null` and identifies the completed
+original. This requires a simple daily/weekly/monthly/yearly rule without date
+selectors, an inclusive end date on this occurrence's civil date, the original
+due date unchanged, and the rule unchanged. Other exhaustion shapes, including
+count-only termination, are not inferred. Unknown or conflicting responses remain
+durably reserved with an `uncertain` error; reusing the same key returns
+`uncertain-write` without repeating the mutation. Do not issue a new key to retry
+an uncertain occurrence. Reconcile its exact returned/current records first.
+
+No existing user reminder is mutated during tests. Live validation uses only
+separately identified disposable reminders, with exact-record cleanup.
 
 ## Upstream attribution
 

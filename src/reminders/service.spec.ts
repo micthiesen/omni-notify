@@ -3,6 +3,7 @@ import { Deferred, Effect, Fiber, Result } from "effect";
 import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 import { AppleRemindersError, type AppleRemindersClient } from "./apple.js";
+import { encodeCrdtDocument } from "./codec.js";
 import type { RemindersConfiguration } from "./config.js";
 import { RemindersService } from "./service.js";
 import type { RemindersDiagnostic } from "./routes.js";
@@ -587,6 +588,86 @@ describe("Reminders service", () => {
         ([path]) => path === "/records/modify",
       );
       expect(modifies).toHaveLength(1);
+    }),
+  );
+
+  it.effect("never replays uncertain recurring completion after service restart", () =>
+    Effect.gen(function* () {
+      const reminderId = "Reminder/12345678";
+      const ruleId = "RecurrenceRule/ABCDEFGH";
+      const reminder = {
+        recordName: reminderId,
+        recordType: "Reminder",
+        recordChangeTag: "reminder-tag",
+        fields: {
+          TitleDocument: {
+            type: "STRING",
+            value: encodeCrdtDocument("Disposable fixture"),
+          },
+          List: { type: "REFERENCE", value: { recordName: "List/fixture" } },
+          DueDate: { type: "TIMESTAMP", value: 1793466000000 },
+          RecurrenceRuleIDs: { type: "STRING_LIST", value: ["ABCDEFGH"] },
+        },
+      };
+      const rule = {
+        recordName: ruleId,
+        recordType: "RecurrenceRule",
+        recordChangeTag: "rule-tag",
+        fields: {
+          Reminder: { type: "REFERENCE", value: { recordName: reminderId } },
+          Frequency: { type: "INT64", value: 0 },
+          Interval: { type: "INT64", value: 1 },
+        },
+      };
+      const x = fixture({
+        verify: () => Effect.succeed(true),
+        ckPost: (path, body) => {
+          if (path === "/records/lookup")
+            return Effect.succeed({
+              records: [
+                (body as { records: { recordName: string }[] }).records[0]
+                  .recordName === reminderId
+                  ? reminder
+                  : rule,
+              ],
+            });
+          if (path === "/records/query")
+            return (body as { query: { recordType: string } }).query.recordType ===
+              "CompleteRecurringReminder"
+              ? Effect.fail(authError("transient-outage"))
+              : Effect.succeed({ records: [reminder, rule] });
+          return Effect.succeed({ zones: [{ records: [] }] });
+        },
+      });
+      yield* x.service.verifyAccess();
+      const run = (service: RemindersService) =>
+        service.completeRecurring(
+          "completion-key-123456",
+          reminderId,
+          "reminder-tag",
+          ruleId,
+          "rule-tag",
+          "America/Vancouver",
+        );
+      const first = yield* run(x.service).pipe(Effect.result);
+      expect(Result.isFailure(first) && first.failure.code).toBe("uncertain");
+      expect(Object.values(x.getState().operations)[0].state).toBe("reserved");
+      const restarted = new RemindersService(config, {
+        store: x.store,
+        apple: x.apple,
+        notify: Effect.void,
+      });
+      yield* restarted.verifyAccess();
+      const second = yield* run(restarted).pipe(Effect.result);
+      expect(Result.isFailure(second) && second.failure.code).toBe("uncertain-write");
+      expect(
+        x.ckPost.mock.calls.filter(
+          ([path, body]) =>
+            path === "/records/query" &&
+            (body as { query: { recordType: string } }).query.recordType ===
+              "CompleteRecurringReminder",
+        ),
+      ).toHaveLength(1);
     }),
   );
 
