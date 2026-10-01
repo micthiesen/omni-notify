@@ -50,10 +50,12 @@ jobs:
           PY
           # Read-only observations, without credentials, response bodies, or redirects.
           # Legacy HTTPS is also checked without bypassing its mismatched certificate.
-          for origin in http://omni.boris https://omni.boris https://pods.syas.ca; do
+          for origin in http://omni.boris https://omni.boris http://pods.syas.ca https://pods.syas.ca; do
             resolve=()
             if [[ "$origin" == *omni.boris ]]; then
               resolve=(--resolve "omni.boris:80:${ORIGIN_IPV4}" --resolve "omni.boris:443:${ORIGIN_IPV4}")
+            elif [[ "$origin" == http://pods.syas.ca ]]; then
+              resolve=(--resolve "pods.syas.ca:80:${ORIGIN_IPV4}")
             fi
             for path in /api/health /reminders /api/reminders/status /mcp /pods/rss /pods/logo.jpeg; do
               result=0
@@ -62,5 +64,17 @@ jobs:
                 "${resolve[@]}" --output /dev/null --write-out '%{http_code}' \
                 "${origin}${path}?omni_probe=github_${GITHUB_RUN_ID}_aliases") || result=$?
               echo "$origin$path: HTTP $status; curl exit $result"
+              case "$origin" in
+                http://omni.boris) test "$result:$status" = 0:403 ;;
+                https://omni.boris)
+                  # This legacy private suffix still has a hostname mismatch.
+                  # Do not bypass TLS to probe it; use omni.syas.ca for HTTPS.
+                  test "$result:$status" = 60:000 ;;
+                *)
+                  expected=404
+                  [[ "$path" == /pods/rss ]] && expected=401
+                  [[ "$path" == /pods/logo.jpeg ]] && expected=200
+                  test "$result:$status" = "0:$expected" ;;
+              esac
             done
           done

@@ -38,6 +38,28 @@ body, account identifier, cookie, token, password, or code is included. An NPM
 502 without this structured status is a separate proxy/application reachability
 problem. Do not retry sign-in automatically while investigating either failure.
 
+### Boris routing
+
+Use `https://omni.syas.ca/reminders` on the home LAN. Its unproxied DNS A record
+points to `10.10.1.100`. NPM manages a matching Let's Encrypt certificate through
+Cloudflare DNS validation, including renewal. No public application access is
+needed for certificate issuance.
+
+Both the new hostname and the legacy `omni.boris` proxy allow `10.10.1.0/24`
+and deny other TCP peers. Their server-level real-IP configuration trusts only
+Unix sockets, overriding inherited CDN/private-network header trust. Forwarded
+headers cannot turn an external TCP peer into an allowed LAN client. The legacy
+`.boris` HTTPS certificate still does not match; use the new hostname for HTTPS.
+
+Keep `pods.syas.ca`'s existing public `/pods/*` routes and its deny filter for other
+paths. Do not apply the LAN ACL to those podcast integrations. Preserve Executor's
+existing authenticated Omni connection and verify it after proxy changes.
+
+The manual **Verify Reminders LAN boundary** GitHub workflow probes the existing
+public ingress from a hosted runner, including forged LAN headers, legacy aliases,
+and the podcast exceptions. Supply Boris's current public IPv4 as `origin_ipv4`.
+It sends no credentials, discards response bodies, and never bypasses TLS errors.
+
 After the configured container is running:
 
 1. Open `https://<your-existing-omni-host>/reminders`.
