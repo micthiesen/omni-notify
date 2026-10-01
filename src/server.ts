@@ -1,5 +1,7 @@
 import type { Effect as EffectType } from "effect/Effect";
 import { serve } from "@hono/node-server";
+import { registerRemindersRoutes } from "./reminders/routes.js";
+import type { RemindersService } from "./reminders/service.js";
 import { serveStatic } from "@hono/node-server/serve-static";
 import type { EffectRunner } from "@micthiesen/mitools/boundary";
 import type { NamedLogger } from "@micthiesen/mitools/logging";
@@ -583,6 +585,7 @@ export function startServer(
   emailControls: EmailControls = {},
   iosControls?: IOSControlService,
   livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider,
+  reminders?: RemindersService,
 ): EffectType<void, IntegrationError> {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
@@ -596,6 +599,7 @@ export function startServer(
       emailControls,
       iosControls,
       livestreamDiagnostics,
+      reminders,
       hister: config.HISTER_ACCESS_TOKEN
         ? createHisterService(config.HISTER_URL, config.HISTER_ACCESS_TOKEN)
         : undefined,
@@ -639,6 +643,28 @@ export function startServer(
       parentLogger,
     );
   }
+
+  if (reminders)
+    registerRemindersRoutes(
+      effectRunner,
+      app,
+      reminders,
+      config.ICLOUD_REMINDERS_PUBLIC_ORIGIN,
+    );
+  app.use(
+    "/reminders",
+    effectMiddleware(effectRunner, (c, next) =>
+      Effect.gen(function* () {
+        c.header("Cache-Control", "no-store");
+        c.header("Referrer-Policy", "no-referrer");
+        c.header(
+          "Content-Security-Policy",
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        );
+        yield* next;
+      }),
+    ),
+  );
 
   const buildSnapshot = () =>
     Effect.gen(function* () {

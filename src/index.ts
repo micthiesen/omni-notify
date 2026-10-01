@@ -4,6 +4,8 @@ import { Entity } from "@micthiesen/mitools/entities";
 import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
 import { Scheduler, type ScheduledTask } from "@micthiesen/mitools/scheduling";
 import { Effect } from "effect";
+import { notify } from "@micthiesen/mitools/pushover";
+import { RemindersService } from "./reminders/service.js";
 import { BriefingAgentTask } from "./briefing-agent/BriefingAgentTask.js";
 import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { createCalendarHandler } from "./calendar-events/index.js";
@@ -296,6 +298,28 @@ const program = Effect.scoped(
 
     const context = yield* Effect.context<AppServices>();
     const effectRunner = runnerFromContext(context);
+    const reminders = new RemindersService(
+      {
+        enabled: config.ICLOUD_REMINDERS_ENABLED,
+        account: config.ICLOUD_REMINDERS_ACCOUNT,
+        password: config.ICLOUD_REMINDERS_PASSWORD,
+        storageKey: config.ICLOUD_REMINDERS_STORAGE_KEY,
+        publicOrigin: config.ICLOUD_REMINDERS_PUBLIC_ORIGIN,
+        directory: config.DOCKERIZED
+          ? "/data/reminders-private"
+          : ".local/reminders-private",
+      },
+      {
+        notify: notify({
+          title: "iCloud Reminders needs attention",
+          message:
+            "Open Omni to restore Reminders access. Apple may require a verification code or trusted-device approval.",
+          url: `${config.ICLOUD_REMINDERS_PUBLIC_ORIGIN}/reminders`,
+          url_title: "Open Reminders",
+        }).pipe(Effect.provide(context)),
+      },
+    );
+    yield* logger.info(`Server iCloud Reminders: ${(yield* reminders.status()).phase}`);
     const registry = new TaskRegistry(logger);
     yield* registry.initializeEffect();
     yield* Effect.addFinalizer(() => registry.shutdownEffect());
@@ -342,6 +366,7 @@ const program = Effect.scoped(
       emailControls,
       iosControls,
       intelligence,
+      reminders,
     );
     yield* Effect.addFinalizer(() =>
       closeServer.pipe(
@@ -354,6 +379,14 @@ const program = Effect.scoped(
       return yield* Effect.never;
     }
     const scheduler = yield* Scheduler;
+    yield* reminders.healthCheck().pipe(Effect.forkScoped);
+    yield* scheduler.register(
+      registry.track({
+        name: "RemindersSession",
+        schedule: "*/15 * * * *",
+        run: reminders.healthCheck(),
+      }),
+    );
     for (const task of tasks) yield* scheduler.register(registry.track(task));
     let emailCleanup: Effect.Effect<void, never, TaskServices> = Effect.void;
     if (config.ICLOUD_USERNAME && config.ICLOUD_APP_PASSWORD) {

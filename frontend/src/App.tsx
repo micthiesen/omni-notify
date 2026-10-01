@@ -25,6 +25,7 @@ const EmailActivityPage = lazy(() => import("./pages/EmailActivityPage"));
 const CostsPage = lazy(() => import("./pages/CostsPage"));
 const WorkspacesPage = lazy(() => import("./pages/WorkspacesPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
+const RemindersPage = lazy(() => import("./pages/RemindersPage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
@@ -34,6 +35,7 @@ function normalizePath(path: string): string {
 }
 
 const PAGE_TITLES: Record<string, string> = {
+  "/reminders": "iCloud Reminders",
   "/pets": "Pets",
   "/media": "Watch",
   "/podcasts": "Podcasts",
@@ -136,6 +138,13 @@ export default function App() {
     );
   } else {
     switch (path) {
+      case "/reminders":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <RemindersPage />
+          </Suspense>
+        );
+        break;
       case "/pets":
         page = (
           <Suspense fallback={<div className="loading">Loading…</div>}>

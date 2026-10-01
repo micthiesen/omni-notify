@@ -41,6 +41,7 @@ const PRIMARY_LINKS: NavItem[] = [
 ];
 
 const MORE_LINKS: NavItem[] = [
+  { to: "/reminders", label: "Reminders", icon: "operations" },
   { to: "/operations", label: "Operations", icon: "operations" },
   { to: "/emails", label: "Email", icon: "email" },
   { to: "/pets", label: "Pets", icon: "pets" },

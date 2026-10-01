@@ -77,6 +77,7 @@ COPY --from=build --chown=node:node /app/assets ./assets
 COPY --from=livestream-assets --chown=node:node /models ./assets/livestream-intelligence/models
 COPY --from=livestream-assets /yt-dlp /usr/local/bin/yt-dlp
 COPY --from=build --chown=node:node /app/package.json ./package.json
+COPY --from=build --chown=node:node /app/docs/licenses ./licenses
 
 RUN mkdir -p /data && chown node:node /data
 

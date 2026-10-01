@@ -9,8 +9,10 @@ import type { EmailControls } from "../server.js";
 import type { TaskRegistry } from "../task-runs/registry.js";
 import type { AppServices } from "../effect/appRuntime.js";
 import type { HisterService } from "../hister/service.js";
+import type { RemindersService } from "../reminders/service.js";
 
 export interface McpRuntime {
+  reminders?: RemindersService;
   logger: NamedLogger;
   effectRunner: EffectRunner<AppServices>;
   registry: TaskRegistry;

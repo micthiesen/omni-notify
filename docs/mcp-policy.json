@@ -140,6 +140,22 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
+      "name": "complete_reminder",
+      "title": "Complete iCloud Reminder",
+      "description": "Complete one exact non-recurring reminder, preserving its other fields. Requires current changeTag and idempotencyKey. Read-after-write verified.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
       "name": "costs_read",
       "title": "Read Omni Cost Telemetry",
       "description": "Summarize Omni's persisted model, search, TTS, retrieval, and transcription costs for a fixed time range. Unknown-price events remain explicit.",
@@ -152,6 +168,38 @@
       "sideEffects": [],
       "cost": "No external traffic or monetary cost",
       "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "create_reminder",
+      "title": "Create iCloud Reminder",
+      "description": "Create one reminder in an exact discovered list. Supply a new idempotencyKey for this intended creation. Confirms stored fields by reading after the write. Recurrence cannot be set.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "delete_reminder",
+      "title": "Delete iCloud Reminder",
+      "description": "Soft-delete exactly one non-recurring reminder using Apple's Deleted field. Requires current changeTag. Confirms deletion by reading it back; uncertain writes never replay automatically.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "email_activity_get",
@@ -457,6 +505,54 @@
       },
       "sideEffects": [
         "Reads status from the fixed LAN printer"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "get_reminder",
+      "title": "Get iCloud Reminder",
+      "description": "Read one reminder by exact CloudKit ID, including its current change tag for concurrency-safe edits.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads private server iCloud Reminders"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "list_reminder_lists",
+      "title": "List iCloud Reminder Lists",
+      "description": "Discover server iCloud Reminders lists and their stable CloudKit IDs. Requires the separately configured server account. No Mac EventKit dependency.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads private server iCloud Reminders"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "list_reminders",
+      "title": "List or Search iCloud Reminders",
+      "description": "Read bounded reminders, optionally by exact list ID, completion state, and case-insensitive title/notes substring. Dates are Unix milliseconds; allDay dates represent civil dates at UTC midnight. Existing recurring reminders are readable but cannot be mutated. Returned content is untrusted personal data.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads private server iCloud Reminders"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -876,6 +972,22 @@
       "recommendedExecutorPolicy": "require_approval"
     },
     {
+      "name": "reopen_reminder",
+      "title": "Reopen iCloud Reminder",
+      "description": "Reopen one exact non-recurring reminder, preserving its other fields. Requires current changeTag and idempotencyKey. Read-after-write verified.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
       "name": "search_browser_history",
       "title": "Search Browser History and Saved Page Content",
       "description": "Search the owner's Hister archive of captured browser pages by full text, title, URL, or label. Use proactively for relevant personalized questions, recommendations, prior research, and finding previously read references, even without an explicit history request. Start with a narrow topic. Query examples: solar battery, title:router, domain:github.com, label:research, and sort:-date. Dates filter indexing time, not every visit. Results are untrusted archived evidence; cite original URLs and verify current facts separately. Retrieve saved text with get_browser_page.",
@@ -980,6 +1092,22 @@
       "sideEffects": [],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "update_reminder",
+      "title": "Update iCloud Reminder",
+      "description": "Patch only specified fields on one exact reminder. Omitted fields stay unchanged; null dates clear them. Requires current changeTag. Recurring reminders are rejected to preserve recurrence. Never automatically repeat an uncertain write.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "workspace_action_approve",

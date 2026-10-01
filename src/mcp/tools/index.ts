@@ -7,9 +7,11 @@ import { createEmailAttachmentTools } from "./email-attachments.js";
 import { createMediaPersonalTools } from "./media-personal.js";
 import { createPrinterTools } from "./printer.js";
 import { createBrowserHistoryTools } from "./browser-history.js";
+import { createRemindersTools } from "./reminders.js";
 
 export function createToolDefinitions(runtime: McpRuntime): McpToolDefinition[] {
   return [
+    ...createRemindersTools(runtime),
     ...createCoreWorkspaceTools(runtime),
     ...createEmailCalendarTools(runtime),
     ...createEmailComposeTools(runtime),

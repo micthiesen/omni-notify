@@ -6627,3 +6627,46 @@ textarea::placeholder {
     font-size: 0.9rem;
   }
 }
+/* The code-only iCloud recovery page shares the application's control palette. */
+.reminders-panel {
+  max-width: 640px;
+}
+
+.reminders-panel p {
+  margin: 16px 0;
+  line-height: 1.6;
+}
+
+.reminders-panel form {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  margin: 24px 0;
+}
+
+.reminders-panel input {
+  width: 12ch;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 20px;
+  letter-spacing: 0.15em;
+}
+
+.reminders-panel button {
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg-card);
+  font: inherit;
+  cursor: pointer;
+}
+
+.reminders-panel button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}

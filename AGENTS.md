@@ -170,6 +170,15 @@ Unsupported issues stay open and notify once. See `docs/observer-repair.md`.
 
 ### Workspaces and MCP
 
+Server iCloud Reminders is independent of Mac EventKit and IMAP/CalDAV. It stays
+disabled without its complete `ICLOUD_REMINDERS_*` configuration. Its HTTPS code
+page intentionally has no additional login; only bounded authentication controls
+and public status are exposed there. Reminders data and CRUD remain behind MCP
+bearer authentication. Preserve strict Origin checks, serialized challenges, private
+encrypted session storage, durable mutation reservations, and read-after-write
+verification. Never accept Apple terms or disable ADP automatically. Recurring
+reminders are read-only. See `docs/server-reminders.md` and its upstream notice.
+
 Workspace rows are changed through their service/API, not direct database edits.
 Pending actions, Marketplace publishing, buyer messages, offers, address
 disclosure, and meetup arrangements require user authorization. Research and
@@ -226,3 +235,6 @@ npx dotenvx run -- bun /tmp/omni-notify-<subject>.ts
 
 For web requests made with curl or an equivalent raw client, set the user agent
 to `OpenAI File Downloader, XaiImageApiFetch/1.0`.
+Exception approved by Michael: the server Reminders Apple client retains ioBroker's
+endpoint-specific Apple-compatible User-Agent and Referer headers. This exception
+does not apply to other HTTP clients.

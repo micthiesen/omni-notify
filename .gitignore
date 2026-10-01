@@ -1,6 +1,7 @@
 node_modules
 dist
 .env
+.local/reminders-private/
 .pnpm-debug.log
 *.db
 *.db-shm
