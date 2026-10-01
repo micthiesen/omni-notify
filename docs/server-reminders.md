@@ -181,3 +181,10 @@ List discovery exhausts Apple's paginated zone history before exposing results;
 the client retains the completed list index and cursor for incremental refreshes.
 Reminders use each list's compound query, including recurrence relationships.
 Incomplete pagination or malformed recurrence records fail closed.
+
+The initial complete snapshot runs in the application's Effect scope after access
+is verified. Large accounts can take several minutes; tools return a bounded
+"synchronizing" error during that initial load instead of waiting past the MCP
+transport deadline. The index stays in server memory and subsequent reads apply
+CloudKit changes from its completed cursor. Failed or interrupted refreshes never
+publish a partial index. A container restart rebuilds it without another sign-in.

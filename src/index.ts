@@ -303,6 +303,7 @@ const program = Effect.scoped(
 
     const context = yield* Effect.context<AppServices>();
     const effectRunner = runnerFromContext(context);
+    const remindersScope = yield* Effect.scope;
     const reminders = new RemindersService(
       {
         enabled: config.ICLOUD_REMINDERS_ENABLED,
@@ -315,6 +316,10 @@ const program = Effect.scoped(
           : ".local/reminders-private",
       },
       {
+        background: (effect) =>
+          Effect.forkIn(effect, remindersScope, { uninterruptible: false }).pipe(
+            Effect.asVoid,
+          ),
         logFailure: (diagnostic) =>
           logger
             .warn("iCloud Reminders request failed", diagnostic)

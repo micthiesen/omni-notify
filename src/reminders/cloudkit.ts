@@ -47,6 +47,12 @@ interface ReadBudget {
   records: number;
 }
 
+interface SnapshotIndex {
+  lists: Map<string, RemindersList>;
+  records: Map<string, CkRecord>;
+  syncToken: string;
+}
+
 type CkRecord = Schema.Schema.Type<typeof RecordSchema>;
 type CkField = Schema.Schema.Type<typeof FieldSchema>;
 
@@ -365,7 +371,19 @@ function patchFields(patch: ReminderPatch, now: number, replica: string) {
 
 export class RemindersCloudKitClient {
   private listCache?: { lists: Map<string, RemindersList>; syncToken: string };
+  private snapshotIndex?: SnapshotIndex;
   public constructor(private readonly ckPost: CkPost) {}
+
+  public hasSnapshot(): boolean {
+    return this.snapshotIndex !== undefined;
+  }
+
+  public invalidateSnapshot(): Effect.Effect<void> {
+    return Effect.sync(() => {
+      this.snapshotIndex = undefined;
+      this.listCache = undefined;
+    });
+  }
 
   private post<A, I>(path: string, body: unknown, schema: Schema.Codec<A, I>) {
     return this.ckPost(path, body).pipe(
@@ -388,10 +406,19 @@ export class RemindersCloudKitClient {
   }
 
   public readSnapshot(): Effect.Effect<RemindersSnapshot, RemindersError> {
+    return Effect.suspend(() =>
+      this.snapshotIndex
+        ? this.refreshSnapshot(this.snapshotIndex)
+        : this.readFullSnapshot(),
+    );
+  }
+
+  private readFullSnapshot(): Effect.Effect<RemindersSnapshot, RemindersError> {
     return Effect.gen({ self: this }, function* () {
       const lists = new Map(this.listCache?.lists);
       const reminders = new Map<string, Reminder>();
       const recurringIds = new Set<string>();
+      const indexedRecords = new Map<string, CkRecord>();
       let token = this.listCache?.syncToken;
       let latestToken: string | undefined;
       let complete = false;
@@ -468,23 +495,126 @@ export class RemindersCloudKitClient {
                   ? cause
                   : fail("decode reminder", "protocol"),
             });
-            if (reminder.listId === listId && !reminder.deleted)
+            if (reminder.listId === listId && !reminder.deleted) {
               reminders.set(reminder.id, reminder);
+              indexedRecords.set(record.recordName, record);
+            }
           } else {
             const references = yield* Effect.try({
               try: () => recurrenceReferences(record),
               catch: () => fail("recurrence reference", "protocol"),
             });
             for (const id of references) recurringIds.add(id);
+            if (references.length) indexedRecords.set(record.recordName, record);
           }
         }
       }
+      if (lists.size + indexedRecords.size > MAX_RECORDS)
+        return yield* Effect.fail(fail("snapshot index limit", "protocol"));
+      this.snapshotIndex = latestToken
+        ? { lists: new Map(lists), records: indexedRecords, syncToken: latestToken }
+        : undefined;
       return {
         lists: [...lists.values()],
         reminders: [...reminders.values()].map((reminder) =>
           recurringIds.has(reminder.id) ? { ...reminder, recurring: true } : reminder,
         ),
       };
+    });
+  }
+
+  private refreshSnapshot(
+    index: SnapshotIndex,
+  ): Effect.Effect<RemindersSnapshot, RemindersError> {
+    return Effect.gen({ self: this }, function* () {
+      const lists = new Map(index.lists);
+      const records = new Map(index.records);
+      let token = index.syncToken;
+      let seen = 0;
+      const cursors = new Set([token]);
+      for (let page = 0; page < MAX_LIST_PAGES; page++) {
+        const response = yield* this.post(
+          "/changes/zone",
+          {
+            zones: [{ zoneID: ZONE, syncToken: token }],
+          },
+          ChangesSchema,
+        );
+        if (
+          response.zones.length !== 1 ||
+          response.zones[0].error ||
+          !response.zones[0].records
+        )
+          return yield* Effect.fail(fail("snapshot refresh", "protocol"));
+        const zone = response.zones[0];
+        for (const record of zone.records!) {
+          if (++seen > MAX_RECORDS || record.serverErrorCode || record.errorCode)
+            return yield* Effect.fail(fail("snapshot refresh", "protocol"));
+          if (
+            record.deleted ||
+            (record.fields?.Deleted?.type === "INT64" &&
+              record.fields.Deleted.value === 1)
+          ) {
+            lists.delete(record.recordName);
+            records.delete(record.recordName);
+          } else if (record.recordType === "List") {
+            const list = yield* Effect.try({
+              try: () => listFromRecord(record),
+              catch: () => fail("decode list", "protocol"),
+            });
+            lists.set(record.recordName, list);
+          } else if (
+            record.recordType === "Reminder" ||
+            /recurr|repeat/i.test(record.recordType ?? "")
+          ) {
+            records.set(record.recordName, record);
+          } else if (!record.recordType) {
+            return yield* Effect.fail(fail("snapshot refresh record", "protocol"));
+          }
+          if (lists.size + records.size > MAX_RECORDS)
+            return yield* Effect.fail(fail("snapshot index limit", "protocol"));
+        }
+        if (!zone.moreComing) {
+          if (!zone.syncToken)
+            return yield* Effect.fail(fail("snapshot refresh cursor", "protocol"));
+          const reminders = new Map<string, Reminder>();
+          const recurringIds = new Set<string>();
+          for (const record of records.values()) {
+            if (record.recordType === "Reminder") {
+              const reminder = yield* Effect.try({
+                try: () => reminderFromRecord(record),
+                catch: (cause) =>
+                  cause instanceof RemindersError
+                    ? cause
+                    : fail("decode reminder", "protocol"),
+              });
+              if (lists.has(reminder.listId)) reminders.set(reminder.id, reminder);
+              else records.delete(record.recordName);
+            } else {
+              const references = yield* Effect.try({
+                try: () => recurrenceReferences(record),
+                catch: () => fail("recurrence reference", "protocol"),
+              });
+              for (const id of references) recurringIds.add(id);
+            }
+          }
+          this.snapshotIndex = { lists, records, syncToken: zone.syncToken };
+          this.listCache = { lists: new Map(lists), syncToken: zone.syncToken };
+          return {
+            lists: [...lists.values()],
+            reminders: [...reminders.values()].map((reminder) =>
+              recurringIds.has(reminder.id)
+                ? { ...reminder, recurring: true }
+                : reminder,
+            ),
+          };
+        }
+        if (!zone.syncToken || cursors.has(zone.syncToken))
+          return yield* Effect.fail(fail("snapshot refresh cursor", "protocol"));
+        token = zone.syncToken;
+        cursors.add(token);
+      }
+      return yield* Effect.fail(fail("snapshot refresh limit", "protocol"));
     });
   }
 
@@ -642,6 +772,13 @@ export class RemindersCloudKitClient {
     listId: string,
   ): Effect.Effect<boolean, RemindersError> {
     return Effect.gen({ self: this }, function* () {
+      if (this.snapshotIndex) {
+        const snapshot = yield* this.readSnapshot();
+        const reminder = snapshot.reminders.find((reminder) => reminder.id === id);
+        if (!reminder)
+          return yield* Effect.fail(fail("recurrence snapshot", "protocol"));
+        return reminder.recurring;
+      }
       const records = yield* this.queryList(listId, { pages: 0, records: 0 });
       return yield* Effect.try({
         try: () => records.some((record) => recurrenceReferences(record).includes(id)),

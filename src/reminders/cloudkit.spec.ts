@@ -41,6 +41,355 @@ function snapshotClient(
 }
 
 describe("Reminders CloudKit codec", () => {
+  it("explicitly invalidates both snapshot and list cursors before a fresh full read", async () => {
+    const cursors: unknown[] = [];
+    let queries = 0;
+    let scans = 0;
+    const client = new RemindersCloudKitClient((path, body) => {
+      if (path === "/records/query") {
+        queries++;
+        return Effect.succeed({ records: [record()] });
+      }
+      cursors.push((body as { zones: { syncToken?: string }[] }).zones[0].syncToken);
+      return Effect.succeed({
+        zones: [{ records: [list], syncToken: `complete-${++scans}` }],
+      });
+    });
+    await Effect.runPromise(client.readSnapshot());
+    expect(client.hasSnapshot()).toBe(true);
+    const invalidate = client.invalidateSnapshot();
+    expect(client.hasSnapshot()).toBe(true);
+    await Effect.runPromise(invalidate);
+    expect(client.hasSnapshot()).toBe(false);
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toHaveLength(1);
+    expect(client.hasSnapshot()).toBe(true);
+    expect(cursors).toEqual([undefined, undefined]);
+    expect(queries).toBe(2);
+  });
+
+  it("bounds incremental page traversal without advancing the prior cursor", async () => {
+    let pages = 0;
+    const cursors: unknown[] = [];
+    const client = new RemindersCloudKitClient((_path, body) => {
+      cursors.push((body as { zones: { syncToken?: string }[] }).zones[0].syncToken);
+      return Effect.succeed({
+        zones: [
+          {
+            records: [],
+            syncToken: `cursor-${++pages}`,
+            moreComing: pages > 1 && pages <= 201,
+          },
+        ],
+      });
+    });
+    await Effect.runPromise(client.readSnapshot());
+    await expect(Effect.runPromise(client.readSnapshot())).rejects.toThrow("protocol");
+    expect(pages).toBe(201);
+    await Effect.runPromise(client.readSnapshot());
+    expect(cursors.at(-1)).toBe("cursor-1");
+  });
+
+  it("bounds incremental processed records and keeps the prior index", async () => {
+    let calls = 0;
+    const client = new RemindersCloudKitClient(() =>
+      Effect.succeed({
+        zones: [
+          {
+            records:
+              ++calls === 2
+                ? Array.from({ length: 10_001 }, (_, index) => ({
+                    recordName: `deleted-${index}`,
+                    deleted: true,
+                  }))
+                : [],
+            syncToken: `cursor-${calls}`,
+          },
+        ],
+      }),
+    );
+    await Effect.runPromise(client.readSnapshot());
+    await expect(Effect.runPromise(client.readSnapshot())).rejects.toThrow("protocol");
+    expect(client.hasSnapshot()).toBe(true);
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toEqual([]);
+  });
+
+  it("bounds retained index records across otherwise small incremental reads", async () => {
+    let changes = 0;
+    const client = new RemindersCloudKitClient((path) => {
+      if (path === "/records/query")
+        return Effect.succeed({
+          records: Array.from({ length: 9_999 }, (_, index) =>
+            record({ recordName: `Reminder/${index}` }),
+          ),
+        });
+      return Effect.succeed({
+        zones: [
+          {
+            records:
+              ++changes === 1
+                ? [list]
+                : changes === 2
+                  ? [record({ recordName: "Reminder/new" })]
+                  : [],
+            syncToken: `cursor-${changes}`,
+          },
+        ],
+      });
+    });
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toHaveLength(
+      9_999,
+    );
+    await expect(Effect.runPromise(client.readSnapshot())).rejects.toThrow("protocol");
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toHaveLength(
+      9_999,
+    );
+  });
+
+  it("uses atomic deltas after a complete snapshot, including new lists and removals", async () => {
+    const calls: { path: string; body: unknown }[] = [];
+    let changes = 0;
+    const added = record({
+      recordName: "Reminder/new",
+      fields: {
+        ...record().fields,
+        List: { type: "REFERENCE", value: { recordName: "List/new" } },
+      },
+    });
+    const client = new RemindersCloudKitClient((path, body) => {
+      calls.push({ path, body });
+      if (path === "/records/query") return Effect.succeed({ records: [record()] });
+      const pages = [
+        { records: [list], syncToken: "before-queries" },
+        {
+          records: [{ ...list, recordName: "List/new" }, added],
+          moreComing: true,
+          syncToken: "delta-page",
+        },
+        {
+          records: [{ recordName: "List/1", deleted: true }],
+          syncToken: "delta-complete",
+        },
+        {
+          records: [
+            {
+              recordName: "Reminder/new",
+              fields: { Deleted: { type: "INT64", value: 1 } },
+            },
+          ],
+          syncToken: "deleted",
+        },
+      ];
+      return Effect.succeed({ zones: [pages[changes++]] });
+    });
+    expect(client.hasSnapshot()).toBe(false);
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toHaveLength(1);
+    expect(client.hasSnapshot()).toBe(true);
+    const refreshed = await Effect.runPromise(client.readSnapshot());
+    expect(refreshed.lists.map((value) => value.id)).toEqual(["List/new"]);
+    expect(refreshed.reminders.map((value) => value.id)).toEqual(["Reminder/new"]);
+    expect(calls[2]).toMatchObject({
+      path: "/changes/zone",
+      body: { zones: [{ syncToken: "before-queries" }] },
+    });
+    expect((calls[2].body as { zones: object[] }).zones[0]).not.toHaveProperty(
+      "desiredRecordTypes",
+    );
+    expect(calls[3]).toMatchObject({ body: { zones: [{ syncToken: "delta-page" }] } });
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toEqual([]);
+    expect(calls.filter((call) => call.path === "/records/query")).toHaveLength(1);
+  });
+
+  it("applies recurrence additions and tombstones without querying lists again", async () => {
+    let changes = 0;
+    const rule = {
+      recordName: "RecurrenceRule/1",
+      recordType: "RecurrenceRule",
+      fields: {
+        Reminder: { type: "REFERENCE", value: { recordName: "Reminder/12345678" } },
+      },
+    };
+    const client = new RemindersCloudKitClient((path) => {
+      if (path === "/records/query") return Effect.succeed({ records: [record()] });
+      const pages = [
+        { records: [list], syncToken: "start" },
+        { records: [rule], syncToken: "recurring" },
+        {
+          records: [{ recordName: rule.recordName, deleted: true }],
+          syncToken: "ordinary",
+        },
+      ];
+      return Effect.succeed({ zones: [pages[changes++]] });
+    });
+    expect(
+      (await Effect.runPromise(client.readSnapshot())).reminders[0].recurring,
+    ).toBe(false);
+    expect(
+      (await Effect.runPromise(client.readSnapshot())).reminders[0].recurring,
+    ).toBe(true);
+    expect(
+      (await Effect.runPromise(client.readSnapshot())).reminders[0].recurring,
+    ).toBe(false);
+  });
+
+  it("retains snapshot records and cursor after a malformed delta", async () => {
+    const cursors: unknown[] = [];
+    let changes = 0;
+    const client = new RemindersCloudKitClient((path, body) => {
+      if (path === "/records/query") return Effect.succeed({ records: [record()] });
+      cursors.push((body as { zones: { syncToken?: string }[] }).zones[0].syncToken);
+      const pages = [
+        { records: [list], syncToken: "stable" },
+        {
+          records: [
+            { recordName: "Reminder/12345678", deleted: true },
+            { recordName: "RecurrenceRule/bad", recordType: "RecurrenceRule" },
+          ],
+          syncToken: "bad",
+        },
+        { records: [], syncToken: "recovered" },
+      ];
+      return Effect.succeed({ zones: [pages[changes++]] });
+    });
+    await Effect.runPromise(client.readSnapshot());
+    await expect(Effect.runPromise(client.readSnapshot())).rejects.toThrow("protocol");
+    expect(client.hasSnapshot()).toBe(true);
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toHaveLength(1);
+    expect(cursors).toEqual([undefined, "stable", "stable"]);
+  });
+
+  it("refreshes recurrence protection from the index before a mutation", async () => {
+    const calls: string[] = [];
+    let changes = 0;
+    const client = new RemindersCloudKitClient((path) => {
+      calls.push(path);
+      if (path === "/records/query" || path === "/records/lookup")
+        return Effect.succeed({ records: [record()] });
+      return Effect.succeed({
+        zones: [
+          {
+            records:
+              ++changes === 1
+                ? [list]
+                : [
+                    {
+                      recordName: "RecurrenceRule/1",
+                      recordType: "RecurrenceRule",
+                      fields: {
+                        Reminder: {
+                          type: "REFERENCE",
+                          value: { recordName: "Reminder/12345678" },
+                        },
+                      },
+                    },
+                  ],
+            syncToken: `cursor-${changes}`,
+          },
+        ],
+      });
+    });
+    const current = (await Effect.runPromise(client.readSnapshot())).reminders[0];
+    await expect(
+      Effect.runPromise(client.updateReminder(current, { flagged: false })),
+    ).rejects.toThrow("unsupported");
+    expect(calls).toEqual([
+      "/changes/zone",
+      "/records/query",
+      "/records/lookup",
+      "/changes/zone",
+    ]);
+  });
+
+  it("fails closed when indexed recurrence refresh cannot confirm a looked-up reminder", async () => {
+    const calls: string[] = [];
+    let changes = 0;
+    const client = new RemindersCloudKitClient((path) => {
+      calls.push(path);
+      if (path === "/records/query" || path === "/records/lookup")
+        return Effect.succeed({ records: [record()] });
+      return Effect.succeed({
+        zones: [
+          {
+            records:
+              ++changes === 1
+                ? [list]
+                : [{ recordName: "Reminder/12345678", deleted: true }],
+            syncToken: `cursor-${changes}`,
+          },
+        ],
+      });
+    });
+    const current = (await Effect.runPromise(client.readSnapshot())).reminders[0];
+    await expect(Effect.runPromise(client.deleteReminder(current))).rejects.toThrow(
+      "protocol",
+    );
+    expect(calls).not.toContain("/records/modify");
+  });
+
+  it("does not expose an index from an incomplete initial query", async () => {
+    const client = new RemindersCloudKitClient((path) =>
+      Effect.succeed(
+        path === "/changes/zone"
+          ? { zones: [{ records: [list], syncToken: "start" }] }
+          : { records: [{ recordName: "error", serverErrorCode: "FAILED" }] },
+      ),
+    );
+    await expect(Effect.runPromise(client.readSnapshot())).rejects.toThrow("protocol");
+    expect(client.hasSnapshot()).toBe(false);
+  });
+
+  it("retains the prior index without rescanning when an incremental response has no cursor", async () => {
+    let changes = 0;
+    let queries = 0;
+    const client = new RemindersCloudKitClient((path) => {
+      if (path === "/records/query") {
+        queries++;
+        return Effect.succeed({ records: [record()] });
+      }
+      return Effect.succeed({
+        zones: [
+          ++changes === 1
+            ? { records: [list], syncToken: "start" }
+            : changes === 2
+              ? { records: [] }
+              : { records: [], syncToken: "rebuilt" },
+        ],
+      });
+    });
+    await Effect.runPromise(client.readSnapshot());
+    await expect(Effect.runPromise(client.readSnapshot())).rejects.toThrow("protocol");
+    expect((await Effect.runPromise(client.readSnapshot())).reminders).toHaveLength(1);
+    expect(queries).toBe(1);
+    expect(client.hasSnapshot()).toBe(true);
+  });
+
+  it("does not cache a full snapshot without a usable sync token", async () => {
+    const client = new RemindersCloudKitClient(() =>
+      Effect.succeed({ zones: [{ records: [] }] }),
+    );
+    await Effect.runPromise(client.readSnapshot());
+    expect(client.hasSnapshot()).toBe(false);
+  });
+
+  it("rejects cycling incremental cursors without advancing the saved index", async () => {
+    let changes = 0;
+    const cursors: unknown[] = [];
+    const client = new RemindersCloudKitClient((path, body) => {
+      if (path === "/records/query") return Effect.succeed({ records: [record()] });
+      cursors.push((body as { zones: { syncToken?: string }[] }).zones[0].syncToken);
+      const pages = [
+        { records: [list], syncToken: "start" },
+        { records: [], moreComing: true, syncToken: "next" },
+        { records: [], moreComing: true, syncToken: "start" },
+        { records: [], syncToken: "done" },
+      ];
+      return Effect.succeed({ zones: [pages[changes++]] });
+    });
+    await Effect.runPromise(client.readSnapshot());
+    await expect(Effect.runPromise(client.readSnapshot())).rejects.toThrow("protocol");
+    await Effect.runPromise(client.readSnapshot());
+    expect(cursors).toEqual([undefined, "start", "next", "start"]);
+  });
+
   it.each([
     ["RecurrenceRuleIDs", "STRING_LIST", ["RecurrenceRule/1"]],
     ["RecurrenceRuleIDs", "UNKNOWN_LIST", ["RecurrenceRule/1"]],

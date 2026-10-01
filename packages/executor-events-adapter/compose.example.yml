@@ -1,7 +1,7 @@
-# Merge into /home/michael/compose/docker-compose.yml after setting a tested image tag.
+# Generic example. Boris uses the separate project in deploy/executor-events/.
 services:
   executor-events-adapter:
-    image: ghcr.io/micthiesen/omni-executor-events-adapter:${ADAPTER_IMAGE_TAG}
+    image: ghcr.io/micthiesen/executor-events-adapter:${ADAPTER_IMAGE_TAG}
     restart: unless-stopped
     environment:
       PORT: "4789"

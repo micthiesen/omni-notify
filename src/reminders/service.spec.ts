@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { Effect, Fiber, Result } from "effect";
+import { Deferred, Effect, Fiber, Result } from "effect";
 import { TestClock } from "effect/testing";
 import { vi } from "vitest";
 import { AppleRemindersError, type AppleRemindersClient } from "./apple.js";
@@ -28,6 +28,7 @@ function fixture(options?: {
   ckPost?: (path: string, body: unknown) => Effect.Effect<unknown, AppleRemindersError>;
   state?: RemindersStoredState;
   logFailure?: (diagnostic: RemindersDiagnostic) => Effect.Effect<void>;
+  background?: (effect: Effect.Effect<void>) => Effect.Effect<void>;
 }) {
   let state = options?.state ?? emptyRemindersState();
   const read = vi.fn(() => Effect.sync(() => structuredClone(state)));
@@ -61,6 +62,7 @@ function fixture(options?: {
     "begin" | "verify" | "submit2fa" | "requestPcsAccess" | "ckPost"
   >;
   const service = new RemindersService(config, {
+    background: options?.background,
     logFailure: options?.logFailure,
     store,
     apple,
@@ -140,6 +142,182 @@ const encryptedSnapshot = (encrypted: () => boolean) => (path: string, body: unk
   );
 
 describe("Reminders service", () => {
+  it.effect("reports a missing completed cursor instead of synchronizing forever", () =>
+    Effect.gen(function* () {
+      const jobs: Effect.Effect<void>[] = [];
+      const x = fixture({
+        verify: () => Effect.succeed(true),
+        background: (effect) =>
+          Effect.sync(() => {
+            jobs.push(effect);
+          }),
+      });
+      yield* x.service.verifyAccess();
+      yield* jobs.shift()!;
+      expect((yield* x.service.status()).phase).toBe("unsupported-protocol");
+      expect(Result.isFailure(yield* x.service.snapshot().pipe(Effect.result))).toBe(
+        true,
+      );
+      expect(jobs).toHaveLength(0);
+    }),
+  );
+
+  it.effect(
+    "rebuilds an unusable cursor on the next access check without signing in",
+    () =>
+      Effect.gen(function* () {
+        const jobs: Effect.Effect<void>[] = [];
+        let failRefresh = false;
+        let fullScans = 0;
+        const x = fixture({
+          verify: () => Effect.succeed(true),
+          background: (effect) =>
+            Effect.sync(() => {
+              jobs.push(effect);
+            }),
+          ckPost: (_path, body) => {
+            const zone = (
+              body as { zones: { reverse?: boolean; syncToken?: string }[] }
+            ).zones[0];
+            if (zone.reverse) return Effect.succeed({ zones: [{ records: [] }] });
+            if (!zone.syncToken) fullScans++;
+            return Effect.succeed({
+              zones: [
+                failRefresh && zone.syncToken
+                  ? { error: { serverErrorCode: "UNKNOWN_CURSOR_FAILURE" } }
+                  : { records: [], syncToken: "complete" },
+              ],
+            });
+          },
+        });
+        yield* x.service.verifyAccess();
+        yield* jobs.shift()!;
+        failRefresh = true;
+        expect(Result.isFailure(yield* x.service.snapshot().pipe(Effect.result))).toBe(
+          true,
+        );
+        expect((yield* x.service.status()).phase).toBe("unsupported-protocol");
+        failRefresh = false;
+        yield* x.service.verifyAccess();
+        expect(jobs).toHaveLength(1);
+        yield* jobs.shift()!;
+        expect(yield* x.service.snapshot()).toEqual({ lists: [], reminders: [] });
+        expect(fullScans).toBe(2);
+        expect(x.begin).not.toHaveBeenCalled();
+      }),
+  );
+
+  it.effect(
+    "rechecks initialization for reads queued before authentication completes",
+    () =>
+      Effect.gen(function* () {
+        const jobs: Effect.Effect<void>[] = [];
+        const x = fixture({
+          verify: () => Effect.sleep("1 second").pipe(Effect.as(true)),
+          background: (effect) =>
+            Effect.sync(() => {
+              jobs.push(effect);
+            }),
+        });
+        const auth = yield* Effect.forkChild(x.service.verifyAccess());
+        yield* TestClock.adjust("500 millis");
+        const read = yield* Effect.forkChild(x.service.snapshot().pipe(Effect.result));
+        yield* TestClock.adjust("500 millis");
+        expect((yield* Fiber.join(auth)).phase).toBe("authenticated");
+        const result = yield* Fiber.join(read);
+        expect(Result.isFailure(result) && result.failure).toMatchObject({
+          code: "synchronizing",
+        });
+        expect(jobs).toHaveLength(1);
+        expect(x.ckPost).toHaveBeenCalledTimes(1);
+      }),
+  );
+
+  it.effect(
+    "registers the background task even if the initiating request is interrupted",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const scope = yield* Effect.scope;
+          const entered = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+          const completed = yield* Deferred.make<void>();
+          const x = fixture({
+            verify: () => Effect.succeed(true),
+            background: (effect) =>
+              Deferred.succeed(entered, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.andThen(
+                  Effect.forkIn(
+                    effect.pipe(
+                      Effect.ensuring(Deferred.succeed(completed, undefined)),
+                    ),
+                    scope,
+                    { uninterruptible: false },
+                  ),
+                ),
+                Effect.asVoid,
+              ),
+            ckPost: () =>
+              Effect.succeed({ zones: [{ records: [], syncToken: "complete" }] }),
+          });
+          const request = yield* Effect.forkChild(x.service.verifyAccess());
+          yield* Deferred.await(entered);
+          const interrupted = yield* Effect.forkChild(Fiber.interrupt(request));
+          yield* Effect.yieldNow;
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(interrupted);
+          yield* Deferred.await(completed);
+          expect(yield* x.service.snapshot()).toEqual({ lists: [], reminders: [] });
+        }),
+      ),
+  );
+
+  it.effect(
+    "keeps initial synchronization in the application scope and fails fast while loading",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const scope = yield* Effect.scope;
+          const background = vi.fn((effect: Effect.Effect<void>) =>
+            Effect.forkIn(effect, scope).pipe(Effect.asVoid),
+          );
+          const x = fixture({
+            verify: () => Effect.succeed(true),
+            background,
+            ckPost: (_path, body) => {
+              const zone = (
+                body as { zones: { reverse?: boolean; syncToken?: string }[] }
+              ).zones[0];
+              if (zone.reverse) return Effect.succeed({ zones: [{ records: [] }] });
+              const response = Effect.succeed({
+                zones: [{ records: [], syncToken: "complete" }],
+              });
+              return zone.syncToken
+                ? response
+                : Effect.sleep("2 minutes").pipe(Effect.andThen(response));
+            },
+          });
+          expect((yield* Effect.scoped(x.service.verifyAccess())).phase).toBe(
+            "authenticated",
+          );
+          const loading = yield* x.service.snapshot().pipe(Effect.result);
+          expect(Result.isFailure(loading) && loading.failure).toMatchObject({
+            code: "synchronizing",
+          });
+          const lookup = yield* x.service.get("Reminder/test").pipe(Effect.result);
+          expect(Result.isFailure(lookup) && lookup.failure).toMatchObject({
+            code: "synchronizing",
+          });
+          expect((yield* x.service.verifyAccess()).phase).toBe("authenticated");
+          expect(background).toHaveBeenCalledTimes(1);
+          yield* TestClock.adjust("2 minutes");
+          expect(yield* x.service.snapshot()).toEqual({ lists: [], reminders: [] });
+          expect(background).toHaveBeenCalledTimes(1);
+        }),
+      ),
+  );
+
   it.effect("reports accepted code separately from protected-data access", () =>
     Effect.gen(function* () {
       const x = fixture({

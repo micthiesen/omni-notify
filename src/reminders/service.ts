@@ -31,9 +31,12 @@ export class RemindersServiceError extends Data.TaggedError("RemindersServiceErr
     | "idempotency-conflict"
     | "conflict"
     | "not-found"
+    | "synchronizing"
     | "storage";
 }> {
   override get message() {
+    if (this.code === "synchronizing")
+      return "Reminders are synchronizing. Retry shortly.";
     return `Reminders: ${this.code}`;
   }
 }
@@ -55,6 +58,8 @@ const fingerprint = (value: unknown) =>
     .digest("hex");
 
 interface Dependencies {
+  /** Fork into the application's lifetime, never the HTTP request's lifetime. */
+  background?: (effect: Effect.Effect<void>) => Effect.Effect<void>;
   logFailure?: (diagnostic: RemindersDiagnostic) => Effect.Effect<void>;
   store?: RemindersStore;
   apple?: Pick<
@@ -137,6 +142,7 @@ export class RemindersService implements RemindersControl {
   private current: RemindersPublicStatus;
   private challenge?: { id: string; expires: number; attempts: number };
   private nextAuthAt = 0;
+  private indexing = false;
 
   constructor(
     config: RemindersConfiguration,
@@ -274,11 +280,14 @@ export class RemindersService implements RemindersControl {
 
   private authenticated() {
     return Effect.gen({ self: this }, function* () {
+      if (this.current.phase === "unsupported-protocol")
+        yield* this.cloud!.invalidateSnapshot();
       yield* this.cloud!.verifyReadAccess(); // Decode protected content before claiming access.
       this.challenge = undefined;
       this.current = { enabled: true, phase: "authenticated" };
       this.stored = { ...this.stored, notified: false };
       yield* this.save();
+      yield* this.startIndexing();
       return yield* this.status();
     });
   }
@@ -312,11 +321,15 @@ export class RemindersService implements RemindersControl {
   }
 
   verifyAccess() {
-    return this.lock.withPermits(1)(
-      this.checkAccess(true).pipe(
-        Effect.tapError((error) => this.recordFailure(error)),
-        Effect.catch(() => this.status()),
-      ),
+    return Effect.suspend(() =>
+      this.indexing && this.current.phase === "authenticated"
+        ? this.status()
+        : this.lock.withPermits(1)(
+            this.checkAccess(true).pipe(
+              Effect.tapError((error) => this.recordFailure(error)),
+              Effect.catch(() => this.status()),
+            ),
+          ),
     );
   }
 
@@ -400,8 +413,60 @@ export class RemindersService implements RemindersControl {
     });
   }
 
+  private startIndexing(): Effect.Effect<void> {
+    return Effect.gen({ self: this }, function* () {
+      if (!this.deps.background || this.indexing || this.cloud!.hasSnapshot()) return;
+      this.indexing = true;
+      yield* this.deps.background(
+        this.lock
+          .withPermits(1)(
+            this.ready().pipe(
+              Effect.andThen(() => this.cloud!.readSnapshot()),
+              Effect.andThen(() =>
+                this.cloud!.hasSnapshot()
+                  ? Effect.void
+                  : Effect.fail(
+                      new RemindersError({
+                        operation: "snapshot cursor",
+                        code: "protocol",
+                      }),
+                    ),
+              ),
+            ),
+          )
+          .pipe(
+            Effect.tapError((error) => this.recordFailure(error)),
+            Effect.catch(() => Effect.void),
+            Effect.asVoid,
+            Effect.ensuring(
+              Effect.sync(() => {
+                this.indexing = false;
+              }),
+            ),
+          ),
+      );
+    }).pipe(Effect.uninterruptible);
+  }
+
+  private withDataLock<A, E>(effect: Effect.Effect<A, E>) {
+    const synchronizing = () =>
+      this.current.phase === "authenticated" &&
+      this.deps.background &&
+      (this.indexing || !this.cloud!.hasSnapshot());
+    const pending = () =>
+      this.startIndexing().pipe(Effect.andThen(Effect.fail(failure("synchronizing"))));
+    return Effect.suspend((): Effect.Effect<A, E | RemindersServiceError> => {
+      if (synchronizing()) return pending();
+      return this.lock.withPermits(1)(
+        Effect.suspend((): Effect.Effect<A, E | RemindersServiceError> =>
+          synchronizing() ? pending() : effect,
+        ),
+      );
+    });
+  }
+
   snapshot() {
-    return this.lock.withPermits(1)(
+    return this.withDataLock(
       this.ready().pipe(
         Effect.andThen(() => this.cloud!.readSnapshot()),
         Effect.tapError((error) => this.recordFailure(error)),
@@ -409,7 +474,7 @@ export class RemindersService implements RemindersControl {
     );
   }
   get(id: string) {
-    return this.lock.withPermits(1)(
+    return this.withDataLock(
       this.ready().pipe(
         Effect.andThen(() => this.cloud!.getReminder(id)),
         Effect.tapError((error) => this.recordFailure(error)),
@@ -423,7 +488,7 @@ export class RemindersService implements RemindersControl {
     recordId: string,
     run: Effect.Effect<A, RemindersError | RemindersServiceError>,
   ) {
-    return this.lock.withPermits(1)(
+    return this.withDataLock(
       Effect.gen({ self: this }, function* () {
         yield* this.ready();
         if (!/^[A-Za-z0-9_-]{16,128}$/.test(key))
