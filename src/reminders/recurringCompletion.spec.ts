@@ -4,7 +4,8 @@ import {
   requestRecurringCompletion,
   completeRecurringOccurrence,
 } from "./recurringCompletion.js";
-import { RemindersError } from "./cloudkit.js";
+import { RemindersCloudKitClient, RemindersError } from "./cloudkit.js";
+import { encodeCrdtDocument } from "./codec.js";
 const input = {
   reminderId: "Reminder/fixture",
   ruleId: "RecurrenceRule/fixture",
@@ -173,16 +174,25 @@ function completionFixture() {
     ...afterRule,
     reminderChangeTag: before.recordChangeTag,
   });
+  const previewFields = (reminder: typeof before) => ({
+    Completed: { type: "INT64", value: reminder.completed ? 1 : 0 },
+    DueDate: { type: "TIMESTAMP", value: reminder.dueDate },
+    ...(reminder.completedDate !== null
+      ? { CompletionDate: { type: "TIMESTAMP", value: reminder.completedDate } }
+      : {}),
+  });
   const returned = [
     {
       recordName: current.id,
       recordType: "Reminder",
-      recordChangeTag: current.recordChangeTag,
+      recordChangeTag: before.recordChangeTag,
+      fields: previewFields(current),
     },
     {
       recordName: completed.id,
       recordType: "Reminder",
-      recordChangeTag: completed.recordChangeTag,
+      recordChangeTag: before.recordChangeTag,
+      fields: previewFields(completed),
     },
     { recordName: before.listId, recordType: "List", recordChangeTag: "list" },
   ];
@@ -205,7 +215,6 @@ function completionFixture() {
             : null,
       ),
     getRecurrences: () => Effect.succeed(called ? afterRule : related),
-    invalidate: vi.fn(() => Effect.void),
   };
   return {
     before,
@@ -214,6 +223,7 @@ function completionFixture() {
     afterRule,
     related,
     returned,
+    previewFields,
     deps,
     target: {
       id: before.id,
@@ -226,6 +236,156 @@ function completionFixture() {
 }
 
 describe("verified recurring occurrence advancement", () => {
+  it.each([
+    "wrong-completed-type",
+    "wrong-due-preview",
+    "missing-copy-completion",
+    "unchanged-root-tag",
+    "clone-raced",
+  ])("keeps %s uncertain without trusting preview change tags", async (kind) => {
+    const x = completionFixture();
+    if (kind === "wrong-completed-type")
+      x.returned[0].fields!.Completed.type = "STRING";
+    if (kind === "wrong-due-preview") x.returned[0].fields!.DueDate.value = 1;
+    if (kind === "missing-copy-completion") delete x.returned[1].fields!.CompletionDate;
+    if (kind === "unchanged-root-tag") {
+      x.current.recordChangeTag = x.before.recordChangeTag;
+      Object.assign(x.afterRule, { reminderChangeTag: x.before.recordChangeTag });
+    }
+    if (kind === "clone-raced") {
+      const get = x.deps.getReminder;
+      let cloneReads = 0;
+      x.deps.getReminder = (id) =>
+        id === x.completed.id && ++cloneReads > 1
+          ? Effect.succeed({ ...x.completed, recordChangeTag: "raced" })
+          : get(id);
+    }
+    const result = await Effect.runPromise(
+      completeRecurringOccurrence(x.deps, x.target).pipe(Effect.result),
+    );
+    expect(Result.isFailure(result) && result.failure.code).toBe("uncertain");
+    expect(x.deps.post).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains the indexed snapshot and discovers the completed clone through incremental refresh", async () => {
+    const int = (value: number) => ({ type: "INT64", value });
+    const stamp = (value: number) => ({ type: "TIMESTAMP", value });
+    const ref = (recordName: string) => ({
+      type: "REFERENCE",
+      value: { recordName, action: "VALIDATE" },
+    });
+    const listId = "List/fixture";
+    const oldDue = 1793466000000;
+    const list = {
+      recordName: listId,
+      recordType: "List",
+      fields: { Name: { type: "STRING", value: "Synthetic" } },
+    };
+    const original = {
+      recordName: input.reminderId,
+      recordType: "Reminder",
+      recordChangeTag: "before",
+      fields: {
+        TitleDocument: {
+          type: "STRING",
+          value: encodeCrdtDocument("Own synthetic reminder"),
+        },
+        List: ref(listId),
+        Completed: int(0),
+        DueDate: stamp(oldDue),
+        RecurrenceRuleIDs: { type: "STRING_LIST", value: ["ABCDEFGH"] },
+      },
+    };
+    const ruleId = "RecurrenceRule/ABCDEFGH";
+    const rule = {
+      recordName: ruleId,
+      recordType: "RecurrenceRule",
+      recordChangeTag: "rule-tag",
+      fields: { Reminder: ref(input.reminderId), Frequency: int(0), Interval: int(1) },
+    };
+    const root = {
+      ...original,
+      recordChangeTag: "advanced",
+      fields: { ...original.fields, DueDate: stamp(oldDue + 25 * 3600000) },
+    };
+    const clone = {
+      ...original,
+      recordName: "Reminder/completed-copy",
+      recordChangeTag: "clone",
+      fields: {
+        ...original.fields,
+        Completed: int(1),
+        CompletionDate: stamp(Date.now()),
+        RecurrenceRuleIDs: { type: "STRING_LIST", value: [] },
+      },
+    };
+    let mutated = false;
+    let mutationCalls = 0;
+    let zoneCalls = 0;
+    const client = new RemindersCloudKitClient((path, body) =>
+      Effect.sync(() => {
+        if (path === "/changes/zone")
+          return {
+            zones: [
+              {
+                records: ++zoneCalls === 1 ? [list] : mutated ? [root, clone] : [],
+                syncToken: `token-${zoneCalls}`,
+              },
+            ],
+          };
+        if (path === "/records/lookup") {
+          const id = (body as { records: { recordName: string }[] }).records[0]
+            .recordName;
+          return {
+            records: [
+              id === ruleId
+                ? rule
+                : id === clone.recordName
+                  ? clone
+                  : mutated
+                    ? root
+                    : original,
+            ],
+          };
+        }
+        if (
+          (body as { query: { recordType: string } }).query.recordType ===
+          "CompleteRecurringReminder"
+        ) {
+          mutated = true;
+          mutationCalls++;
+          return {
+            records: [
+              { ...root, recordChangeTag: "before" },
+              { ...clone, recordChangeTag: "before" },
+              list,
+            ],
+          };
+        }
+        return { records: mutated ? [root, clone, rule] : [original, rule] };
+      }),
+    );
+    await Effect.runPromise(client.readSnapshot());
+    expect(client.hasSnapshot()).toBe(true);
+    const receipt = await Effect.runPromise(
+      client.completeRecurring({
+        id: input.reminderId,
+        changeTag: "before",
+        ruleId,
+        ruleChangeTag: "rule-tag",
+        timeZone: input.timeZone,
+      }),
+    );
+    expect(receipt).toMatchObject({
+      state: "advanced",
+      reminderChangeTag: "advanced",
+      completedReminderChangeTag: "clone",
+    });
+    expect(client.hasSnapshot()).toBe(true);
+    expect(zoneCalls).toBeGreaterThan(1);
+    expect(mutationCalls).toBe(1);
+  });
+
   it.each([
     ["advanced", "tag"],
     ["ended", "tag"],
@@ -252,6 +412,7 @@ describe("verified recurring occurrence advancement", () => {
         };
         Object.assign(x.related.rules[0], { recurrence });
         Object.assign(x.afterRule.rules[0], { recurrence });
+        x.returned[0].fields = x.previewFields(x.current);
       }
       Object.assign(
         x.afterRule.rules[0],
@@ -281,6 +442,7 @@ describe("verified recurring occurrence advancement", () => {
     };
     Object.assign(x.related.rules[0], { recurrence });
     Object.assign(x.afterRule.rules[0], { recurrence });
+    x.returned[0].fields = x.previewFields(x.current);
     expect(
       await Effect.runPromise(completeRecurringOccurrence(x.deps, x.target)),
     ).toMatchObject({
@@ -315,6 +477,7 @@ describe("verified recurring occurrence advancement", () => {
       if (kind === "selectors") rule.daysOfMonth = [1];
       Object.assign(x.related.rules[0], { recurrence: { supported: true, rule } });
       Object.assign(x.afterRule.rules[0], { recurrence: { supported: true, rule } });
+      x.returned[0].fields = x.previewFields(x.current);
       const result = await Effect.runPromise(
         completeRecurringOccurrence(x.deps, x.target).pipe(Effect.result),
       );
@@ -337,7 +500,8 @@ describe("verified recurring occurrence advancement", () => {
       nextDueDate: x.current.dueDate,
     });
     expect(x.deps.post).toHaveBeenCalledTimes(1);
-    expect(x.deps.invalidate).toHaveBeenCalledTimes(1);
+    expect(x.returned[0].recordChangeTag).toBe(x.before.recordChangeTag);
+    expect(x.returned[1].recordChangeTag).toBe(x.before.recordChangeTag);
   });
 
   it.each([

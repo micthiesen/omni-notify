@@ -411,7 +411,6 @@ export class RemindersCloudKitClient {
         post: this.ckPost,
         getReminder: (id) => this.getReminder(id),
         getRecurrences: (id) => this.extras.getRecurrences(id),
-        invalidate: () => this.invalidateSnapshot(),
       },
       target,
     );

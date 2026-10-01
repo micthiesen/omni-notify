@@ -180,9 +180,18 @@ edits. Preflight tags and subsequent fresh verification detect conflicting state
 A verified `advanced` receipt identifies both the original reminder and the
 completed copy, with previous and next due dates. The original stays incomplete,
 retains its identity, content, flags and rule, and advances its due date; the
-completed copy must match the prior occurrence and exact returned change tag.
+completed copy must match the prior occurrence. Query records are previews whose
+change tags may both inherit the old root tag; they are not authoritative write
+acknowledgments. Exact returned IDs and typed completion/due-date values must
+match fresh lookups. The root must have a new tag, the rule must retain its
+original tag and writable state, and a final clone lookup must retain the verified
+clone tag. Receipt tags always come from these fresh reads.
 There is no fixed 24-hour increment: the observed Vancouver DST transition moved
 the due instant by 25 hours while preserving the intended local time.
+
+Completion retains the account snapshot index. The existing incremental
+`changes/zone` refresh discovers the new clone and rechecks recurrence, avoiding
+an unnecessary full-account rebuild after each occurrence.
 
 A verified `ended` receipt has `nextDueDate: null` and identifies the completed
 original. This requires a simple daily/weekly/monthly/yearly rule without date

@@ -138,7 +138,6 @@ type CompletionDependencies = {
   readonly getRecurrences: (
     id: string,
   ) => Effect.Effect<ReminderRecurrences, RemindersError>;
-  readonly invalidate: () => Effect.Effect<void>;
 };
 const unchangedContent = (before: Reminder, after: Reminder) =>
   ["title", "description", "listId", "priority", "flagged", "allDay"].every(
@@ -146,6 +145,26 @@ const unchangedContent = (before: Reminder, after: Reminder) =>
   );
 const outcomeUncertain = () =>
   new RemindersError({ operation: "recurring completion outcome", code: "uncertain" });
+
+function previewMatches(
+  record: RecurringCompletionRecord,
+  reminder: Reminder,
+): boolean {
+  const fields = record.fields;
+  if (
+    fields?.Completed?.type !== "INT64" ||
+    fields.Completed.value !== (reminder.completed ? 1 : 0) ||
+    fields.DueDate?.type !== "TIMESTAMP" ||
+    fields.DueDate.value !== reminder.dueDate
+  )
+    return false;
+  const completion = fields.CompletionDate;
+  // Apple's advanced-root preview omits a null CompletionDate. Completed
+  // occurrences must provide their explicit timestamp; missing is not success.
+  return !completion
+    ? !reminder.completed && reminder.completedDate === null
+    : completion.type === "TIMESTAMP" && completion.value === reminder.completedDate;
+}
 
 /** Call only inside the durable mutation reservation and account serialization. */
 export function completeRecurringOccurrence(
@@ -200,13 +219,16 @@ export function completeRecurringOccurrence(
         reminderId: target.id,
         ruleId: target.ruleId,
         timeZone: target.timeZone,
-      }).pipe(Effect.ensuring(deps.invalidate()));
+      });
       const returnedReminders = response.records.filter(
         (record) => record.recordType === "Reminder",
       );
       const root = returnedReminders.find((record) => record.recordName === target.id);
       const clone = returnedReminders.find((record) => record.recordName !== target.id);
-      if (returnedReminders.length === 1 && root?.recordChangeTag && !root.deleted) {
+      // Query records are previews: live responses inherited the old root tag on
+      // both root and clone. Bind their exact IDs and typed completion/date values
+      // to fresh lookups, never their non-authoritative recordChangeTag fields.
+      if (returnedReminders.length === 1 && root && !root.deleted) {
         const current = yield* deps.getReminder(target.id);
         const finished = yield* Clock.currentTimeMillis;
         const rule = originalRule.recurrence;
@@ -246,7 +268,8 @@ export function completeRecurringOccurrence(
           !current.recurring ||
           current.dueDate !== originalDueDate ||
           current.startDate !== before.startDate ||
-          current.recordChangeTag !== root.recordChangeTag ||
+          current.recordChangeTag === target.changeTag ||
+          !previewMatches(root, current) ||
           !unchangedContent(before, current) ||
           current.completedDate === null ||
           current.completedDate < started - 120_000 ||
@@ -279,8 +302,8 @@ export function completeRecurringOccurrence(
       }
       if (
         returnedReminders.length !== 2 ||
-        !root?.recordChangeTag ||
-        !clone?.recordChangeTag ||
+        !root ||
+        !clone ||
         root.deleted ||
         clone.deleted
       )
@@ -293,8 +316,9 @@ export function completeRecurringOccurrence(
         !completed ||
         current.id !== target.id ||
         completed.id !== clone.recordName ||
-        current.recordChangeTag !== root.recordChangeTag ||
-        completed.recordChangeTag !== clone.recordChangeTag ||
+        current.recordChangeTag === target.changeTag ||
+        !previewMatches(root, current) ||
+        !previewMatches(clone, completed) ||
         current.deleted ||
         completed.deleted ||
         current.completed ||
@@ -325,6 +349,19 @@ export function completeRecurringOccurrence(
         !afterRule.rules[0].recurrence.supported ||
         JSON.stringify(afterRule.rules[0].recurrence) !==
           JSON.stringify(originalRule.recurrence)
+      )
+        return yield* Effect.fail(outcomeUncertain());
+      const stableCompleted = yield* deps.getReminder(completed.id);
+      if (
+        !stableCompleted ||
+        stableCompleted.recordChangeTag !== completed.recordChangeTag ||
+        !unchangedContent(completed, stableCompleted) ||
+        stableCompleted.deleted ||
+        stableCompleted.recurring ||
+        !stableCompleted.completed ||
+        stableCompleted.dueDate !== completed.dueDate ||
+        stableCompleted.startDate !== completed.startDate ||
+        stableCompleted.completedDate !== completed.completedDate
       )
         return yield* Effect.fail(outcomeUncertain());
       return {
