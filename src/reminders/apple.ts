@@ -640,7 +640,7 @@ export class AppleRemindersClient {
         null,
       );
       this.captureAuth(response.response, session);
-      if (response.status === 401 || response.status === 403) return false;
+      if ([401, 403, 421].includes(response.status)) return false;
       if (response.status !== 200) {
         return yield* this.fail(
           "validate session",

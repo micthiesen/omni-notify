@@ -125,6 +125,25 @@ describe("Apple Reminders transport", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("treats Apple's 421 as an expired session without starting sign-in", async () => {
+    const { instance, fetchMock } = client(() => Response.json({}, { status: 421 }));
+    expect(await Effect.runPromise(instance.verify())).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0].pathname).toBe("/setup/ws/1/validate");
+  });
+
+  it("allows an explicit sign-in after saved-session validation returns 421", async () => {
+    const { instance, fetchMock } = client((url) =>
+      Response.json({}, { status: url.pathname.endsWith("/validate") ? 421 : 429 }),
+    );
+    const result = await Effect.runPromise(instance.begin().pipe(Effect.result));
+    expect(Result.isFailure(result) && result.failure.status).toBe(429);
+    expect(fetchMock.mock.calls.map(([url]) => url.pathname)).toEqual([
+      "/setup/ws/1/validate",
+      "/appleauth/auth/signin/init",
+    ]);
+  });
+
   it.each([200, 503])(
     "handles device push status %s with fresh SRP headers",
     async (pushStatus) => {
