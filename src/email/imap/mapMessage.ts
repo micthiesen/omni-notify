@@ -1,5 +1,6 @@
 import type { AddressObject, ParsedMail } from "mailparser";
 import { extractInterestingLinks, htmlToText } from "../htmlToText.js";
+import { extractEmailLinkMetadata } from "../linkMetadata.js";
 import type { EmailAttachment, FetchedEmail } from "../types.js";
 import { attachmentPartId, encodeStableAttachmentId } from "./attachments.js";
 
@@ -82,6 +83,7 @@ export function mapParsedMessage(
       : [],
     textBody,
     links: html ? extractInterestingLinks(html) : [],
+    linkMetadata: extractEmailLinkMetadata(parsed),
     // INTERNALDATE is the server's receive time;
     // the Date header is sender-controlled and only a fallback.
     receivedAt: (internalDate ?? parsed.date)?.toISOString() ?? "",

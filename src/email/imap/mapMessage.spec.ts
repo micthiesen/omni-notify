@@ -13,6 +13,9 @@ describe("IMAP message mapping", () => {
         "Message-ID: <message@example.test>",
         "References: <root@example.test> <parent@example.test>",
         "Subject: A message",
+        "List-Unsubscribe: <https://example.test/unsubscribe?token=private-test>",
+        "List-Unsubscribe-Post: List-Unsubscribe=One-Click",
+        "X-Private: must-not-leak",
         "",
         "Body",
       ].join("\r\n"),
@@ -29,7 +32,16 @@ describe("IMAP message mapping", () => {
       cc: ["copy@example.test"],
       replyTo: ["replies@example.test"],
       references: ["<root@example.test>", "<parent@example.test>"],
+      linkMetadata: {
+        listUnsubscribe: {
+          urls: ["https://example.test/unsubscribe?token=private-test"],
+          post: "List-Unsubscribe=One-Click",
+          present: true,
+          truncated: false,
+        },
+      },
     });
+    expect(JSON.stringify(email)).not.toContain("must-not-leak");
     const fallback = mapParsedMessage(
       await simpleParser("Subject: No ID\r\n\r\nBody"),
       { folder: "INBOX", uidValidity: "1", uid: 3 },

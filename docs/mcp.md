@@ -58,6 +58,54 @@ Read results include recipient, Reply-To, Message-ID, and References fields so a
 reply can preserve the original thread. Use the actual `messageId` for
 `inReplyTo`; a transport fallback `id` is not an RFC Message-ID.
 
+`email_get` additionally returns `email.linkMetadata` (search output is unchanged):
+
+```ts
+linkMetadata: null | {
+  links: Array<{ url: string; label: string; source: "html" | "text" }>;
+  linksTruncated: boolean;
+  listUnsubscribe: {
+    urls: string[];
+    post: "List-Unsubscribe=One-Click" | null;
+    present: boolean;
+    truncated: boolean;
+  };
+}
+```
+
+Metadata belongs to the enclosing `id`, `messageId`, `from`, and `receivedAt`.
+These are message attribution, not authenticated sender identity. `null` means
+metadata was unavailable from the transport; empty arrays mean no usable targets
+were extracted. `present` records a List-Unsubscribe header even if no target is
+usable. `post` recognizes only the one-click directive; it does not establish
+DKIM validity, endpoint safety, or authorization to unsubscribe.
+
+Only absolute HTTP, HTTPS, and mailto URLs are returned. Credentials, control
+characters, relative URLs, and active schemes are rejected. URL strings are
+limited to 4,096 characters and omitted whole when overlong, never shortened.
+Body metadata has at most 50 deduplicated links, with labels capped at 200
+characters and unsubscribe/preferences candidates prioritized. HTML messages use
+anchor targets; plain-text-only messages use literal URLs with empty labels.
+Separate text alternatives are skipped because Mailparser may synthesize text
+containing image URLs. Body scanning is bounded at 1,048,576 characters; header
+extraction examines at most 1,000 header lines, 16,384 relevant header characters,
+and ten targets. Truncation flags indicate bounds were reached; `present: false`
+with truncated headers cannot establish absence. Only
+List-Unsubscribe and List-Unsubscribe-Post are inspected for this metadata;
+unrelated headers are never returned. Existing shipment URL extraction is unchanged.
+
+HTML is parsed inertly: no scripts, images, links, or other remote content are
+loaded. Every label, URL, and header is untrusted data, including apparent
+unsubscribe links. Reads use the existing read-only/PEEK path and never mark mail
+read. Returning metadata does not visit links, POST, send mail, or unsubscribe.
+Use full targets only for explicitly authorized private browser work. Personalized
+tokens may occur in paths, queries, fragments, or mailto addresses; do not put URLs
+or labels in logs, reports, screenshots, or public artifacts. Report only counts,
+schemes, and verified non-sensitive hostnames. Omni does not log these fields.
+
+The current email MCP surface has no Inbox-to-Archive move or reverse move tool.
+Archive search/read support does not imply mailbox mutation support.
+
 Attachment metadata includes `attachmentId`, `partId`, `disposition`, and `contentId`.
 The stable ID binds the exact Message-ID to the actual MIME part identifier, not a
 filename or attachment array position, and survives folder moves. Missing stable

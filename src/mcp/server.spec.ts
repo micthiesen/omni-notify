@@ -475,6 +475,23 @@ describe("Omni MCP streamable HTTP server", () => {
       id: "message-1",
       subject: "Bounded message",
       from: "sender@example.test",
+      messageId: "<bounded@example.test>",
+      linkMetadata: {
+        links: [
+          {
+            url: "https://example.test/unsubscribe?token=private-test",
+            label: "Unsubscribe",
+            source: "html",
+          },
+        ],
+        linksTruncated: false,
+        listUnsubscribe: {
+          urls: ["mailto:leave@example.test"],
+          post: null,
+          present: true,
+          truncated: false,
+        },
+      },
       textBody: "x".repeat(50_000),
       links: [],
       receivedAt: "2026-08-26T12:00:00.000Z",
@@ -502,6 +519,14 @@ describe("Omni MCP streamable HTTP server", () => {
     };
     expect(output.email.excerpt).toHaveLength(1_000);
     expect(output.email.excerptTruncated).toBe(true);
+    expect(output.email).toMatchObject({
+      from: email.from,
+      messageId: email.messageId,
+      linkMetadata: email.linkMetadata,
+    });
+    expect(JSON.stringify(await mitools.run(Logger.captured))).not.toContain(
+      "private-test",
+    );
     expect(transport.fetchEmailByIdEffect).toHaveBeenCalledWith(email.id, {
       fresh: false,
     });

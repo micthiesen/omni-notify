@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import type { Docstore } from "@micthiesen/mitools/docstore";
+import { EmailLinkMetadataSchema, type EmailLinkMetadata } from "./linkMetadata.js";
 
 /** Transport-agnostic email pipeline types implemented by iCloud IMAP. */
 
@@ -30,6 +31,8 @@ export interface FetchedEmail {
   /** Shipment/booking-shaped URLs pulled from the HTML body (hrefs are
    * stripped from textBody, but tracking numbers often live only in them). */
   links: string[];
+  /** Untrusted private link targets. Never log or include in routine reports. */
+  linkMetadata?: EmailLinkMetadata;
   receivedAt: string;
   attachments: EmailAttachment[];
 }
@@ -56,6 +59,7 @@ export const FetchedEmailSchema = Schema.Struct({
   references: Schema.optional(Schema.Array(Schema.String)),
   textBody: Schema.String,
   links: Schema.Array(Schema.String),
+  linkMetadata: Schema.optional(EmailLinkMetadataSchema),
   receivedAt: Schema.String,
   attachments: Schema.Array(EmailAttachmentSchema),
 });
