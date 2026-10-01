@@ -193,6 +193,31 @@ export interface EmailTransport<out E = unknown, out R = never> {
     destination: import("./imap/archive.js").ArchiveLocation,
     sourceHash: string,
   ): Effect.Effect<import("./imap/archive.js").ArchiveReconcileResult, E, R>;
+  copyExactArchiveMessageEffect?(
+    source: import("./imap/archive.js").ArchiveIdentity,
+    targetFolder: string,
+    snapshot: import("./imap/archive.js").ArchiveSnapshot,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveLocation, E, R>;
+  reconcileExactCopyEffect?(
+    source: import("./imap/archive.js").ArchiveIdentity,
+    targetFolder: string,
+    snapshot: import("./imap/archive.js").ArchiveSnapshot,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveReconcileResult, E, R>;
+  markExactArchiveSourceDeletedEffect?(
+    source: import("./imap/archive.js").ArchiveIdentity,
+    destination: import("./imap/archive.js").ArchiveLocation,
+    snapshot: import("./imap/archive.js").ArchiveSnapshot,
+  ): Effect.Effect<boolean, E, R>;
+  inspectExactDeletedSourceEffect?(
+    source: import("./imap/archive.js").ArchiveIdentity,
+    destination: import("./imap/archive.js").ArchiveLocation,
+    snapshot: import("./imap/archive.js").ArchiveSnapshot,
+  ): Effect.Effect<"marked" | "unmarked" | "absent" | "uncertain", E, R>;
+  expungeExactArchiveSourceEffect?(
+    source: import("./imap/archive.js").ArchiveIdentity,
+    destination: import("./imap/archive.js").ArchiveLocation,
+    snapshot: import("./imap/archive.js").ArchiveSnapshot,
+  ): Effect.Effect<boolean, E, R>;
   /** Save or reconcile a private Sent copy; never submits SMTP. */
   saveSentCopyEffect?(
     input: import("./imap/sent.js").SentCopyInput,

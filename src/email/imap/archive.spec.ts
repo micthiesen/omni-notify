@@ -6,6 +6,11 @@ import {
   reconcileArchiveMessageEffect,
   restoreArchiveMessageEffect,
   verifyArchiveLocationEffect,
+  copyExactArchiveMessageEffect,
+  reconcileExactCopyEffect,
+  markExactArchiveSourceDeletedEffect,
+  inspectExactDeletedSourceEffect,
+  expungeExactArchiveSourceEffect,
   type ArchiveClient,
 } from "./archive.js";
 
@@ -16,7 +21,7 @@ const identity = {
   messageId: "<one@example.test>",
 };
 
-function fixture(moveSupported = true) {
+function fixture(moveSupported = true, uidPlus = false) {
   const source = Buffer.from("Message-ID: <one@example.test>\r\n\r\nprivate body");
   const message = {
     source,
@@ -29,7 +34,10 @@ function fixture(moveSupported = true) {
   };
   let selected: keyof typeof folders = "INBOX";
   const client = {
-    capabilities: new Map(moveSupported ? [["MOVE", true]] : []),
+    capabilities: new Map([
+      ...(moveSupported ? [["MOVE", true] as const] : []),
+      ...(uidPlus ? [["UIDPLUS", true] as const] : []),
+    ]),
     mailbox: { path: selected as string, uidValidity: 10n },
     list: vi.fn(async () => [
       { path: "INBOX" },
@@ -56,6 +64,31 @@ function fixture(moveSupported = true) {
         uidMap: new Map([[uids[0], newUid]]),
       };
     }),
+    messageCopy: vi.fn(async (uids: number[], destination: keyof typeof folders) => {
+      const item = folders[selected].get(uids[0]);
+      if (!item) return false;
+      const newUid = destination === "INBOX" ? 8 : 12;
+      folders[destination].set(newUid, {
+        ...item,
+        flags: new Set(item.flags),
+      });
+      return {
+        uidValidity: destination === "INBOX" ? 10n : 20n,
+        uidMap: new Map([[uids[0], newUid]]),
+      };
+    }),
+    messageFlagsAdd: vi.fn(async (uids: number[], flags: string[]) => {
+      const item = folders[selected].get(uids[0]);
+      if (!item) return false;
+      for (const flag of flags) item.flags.add(flag);
+      return true;
+    }),
+    uidExpungeExact: vi.fn(async (uid: number) => {
+      const item = folders[selected].get(uid);
+      if (!item?.flags.has("\\Deleted")) return false;
+      folders[selected].delete(uid);
+      return true;
+    }),
   };
   return { client: client as ArchiveClient, spies: client, folders, message };
 }
@@ -65,10 +98,10 @@ describe("exact native IMAP archive", () => {
     const { client, spies } = fixture(false);
     await expect(
       Effect.runPromise(inspectArchiveSourceEffect(client, identity)),
-    ).rejects.toThrow(/does not advertise MOVE/);
+    ).rejects.toThrow(/neither MOVE nor UIDPLUS/);
     await expect(
       Effect.runPromise(moveArchiveMessageEffect(client, identity, "unknown")),
-    ).rejects.toThrow(/does not advertise MOVE/);
+    ).rejects.toThrow(/neither MOVE nor UIDPLUS/);
     expect(spies.messageMove).not.toHaveBeenCalled();
   });
 
@@ -206,5 +239,102 @@ describe("exact native IMAP archive", () => {
     );
     expect(restored.destination.folder).toBe("INBOX");
     expect(folders.INBOX.has(8)).toBe(true);
+  });
+});
+
+describe("verified UIDPLUS fallback", () => {
+  it("copies and verifies before marking or expunging the exact source UID", async () => {
+    const { client, spies, folders } = fixture(false, true);
+    const snapshot = await Effect.runPromise(
+      inspectArchiveSourceEffect(client, identity),
+    );
+    expect(snapshot.strategy).toBe("uidplus_copy");
+    const destination = await Effect.runPromise(
+      copyExactArchiveMessageEffect(client, identity, snapshot.targetFolder!, snapshot),
+    );
+    expect(folders.INBOX.has(7)).toBe(true);
+    expect(spies.messageFlagsAdd).not.toHaveBeenCalled();
+    expect(
+      await Effect.runPromise(
+        reconcileExactCopyEffect(client, identity, destination.folder, snapshot),
+      ),
+    ).toMatchObject({ state: "moved", destination });
+    await Effect.runPromise(
+      markExactArchiveSourceDeletedEffect(client, identity, destination, snapshot),
+    );
+    expect(spies.messageFlagsAdd).toHaveBeenCalledWith([7], ["\\Deleted"], {
+      uid: true,
+    });
+    expect(
+      await Effect.runPromise(
+        inspectExactDeletedSourceEffect(client, identity, destination, snapshot),
+      ),
+    ).toBe("marked");
+    await Effect.runPromise(
+      expungeExactArchiveSourceEffect(client, identity, destination, snapshot),
+    );
+    expect(spies.uidExpungeExact).toHaveBeenCalledWith(7);
+    expect(folders.INBOX.has(7)).toBe(false);
+    expect(folders["iCloud Archive"].has(12)).toBe(true);
+  });
+
+  it("never marks source when COPY fails or its UID mapping cannot verify", async () => {
+    const { client, spies, folders } = fixture(false, true);
+    const snapshot = await Effect.runPromise(
+      inspectArchiveSourceEffect(client, identity),
+    );
+    spies.messageCopy.mockResolvedValueOnce(false);
+    await expect(
+      Effect.runPromise(
+        copyExactArchiveMessageEffect(
+          client,
+          identity,
+          snapshot.targetFolder!,
+          snapshot,
+        ),
+      ),
+    ).rejects.toThrow(/did not confirm COPY/);
+    expect(folders.INBOX.has(7)).toBe(true);
+    expect(spies.messageFlagsAdd).not.toHaveBeenCalled();
+    spies.messageCopy.mockResolvedValueOnce({ uidValidity: 20n, uidMap: new Map() });
+    await expect(
+      Effect.runPromise(
+        copyExactArchiveMessageEffect(
+          client,
+          identity,
+          snapshot.targetFolder!,
+          snapshot,
+        ),
+      ),
+    ).rejects.toThrow(/COPYUID mapping/);
+    expect(spies.messageFlagsAdd).not.toHaveBeenCalled();
+  });
+
+  it("rejects source UID reuse or changed destination before deletion", async () => {
+    const { client, spies, folders, message } = fixture(false, true);
+    const snapshot = await Effect.runPromise(
+      inspectArchiveSourceEffect(client, identity),
+    );
+    const destination = await Effect.runPromise(
+      copyExactArchiveMessageEffect(client, identity, snapshot.targetFolder!, snapshot),
+    );
+    folders["iCloud Archive"].get(12)!.source = Buffer.from("changed");
+    await expect(
+      Effect.runPromise(
+        markExactArchiveSourceDeletedEffect(client, identity, destination, snapshot),
+      ),
+    ).rejects.toThrow(/destination changed/);
+    expect(spies.messageFlagsAdd).not.toHaveBeenCalled();
+    folders["iCloud Archive"].set(12, { ...message, flags: new Set(message.flags) });
+    folders.INBOX.set(7, {
+      ...message,
+      envelope: { messageId: "<other@example.test>" },
+    });
+    await expect(
+      Effect.runPromise(
+        markExactArchiveSourceDeletedEffect(client, identity, destination, snapshot),
+      ),
+    ).rejects.toThrow(/different Message-ID/);
+    expect(spies.messageFlagsAdd).not.toHaveBeenCalled();
   });
 });

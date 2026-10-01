@@ -1,6 +1,7 @@
-import { Clock, Effect } from "effect";
+import { Clock, Effect, Semaphore } from "effect";
 import type { TaskServices } from "../../task-runs/registry.js";
 import type { EmailTransport } from "../types.js";
+import type { ArchiveLocation } from "../imap/archive.js";
 import { ArchiveActionError, type ArchiveAction } from "./persistence.js";
 import {
   getArchiveActionEffect,
@@ -9,6 +10,12 @@ import {
 } from "./persistence.js";
 
 type Transport = EmailTransport<unknown, TaskServices>;
+const archiveWorkflowSemaphore = Semaphore.makeUnsafe(1);
+
+/** Serialize a whole archive workflow, including the receipt write after IMAP COPY. */
+export const withArchiveActionWorkflowEffect = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+) => archiveWorkflowSemaphore.withPermits(1)(effect);
 
 function archiveTransport(transport: Transport) {
   if (
@@ -32,11 +39,31 @@ function archiveTransport(transport: Transport) {
   };
 }
 
+function copyTransport(transport: Transport) {
+  if (
+    !transport.copyExactArchiveMessageEffect ||
+    !transport.reconcileExactCopyEffect ||
+    !transport.markExactArchiveSourceDeletedEffect ||
+    !transport.inspectExactDeletedSourceEffect ||
+    !transport.expungeExactArchiveSourceEffect
+  )
+    return undefined;
+  return {
+    copy: transport.copyExactArchiveMessageEffect.bind(transport),
+    reconcileCopy: transport.reconcileExactCopyEffect.bind(transport),
+    mark: transport.markExactArchiveSourceDeletedEffect.bind(transport),
+    inspect: transport.inspectExactDeletedSourceEffect.bind(transport),
+    expunge: transport.expungeExactArchiveSourceEffect.bind(transport),
+  };
+}
+
 function inspectFailureReason(cause: unknown): ArchiveAction["reason"] {
   const message = cause instanceof Error ? cause.message : "";
   if (message.includes("does not advertise MOVE")) return "native_move_unavailable";
+  if (message.includes("neither MOVE nor UIDPLUS")) return "safe_move_unavailable";
   if (
     message.includes("Inbox UID is gone") ||
+    message.includes("Inbox source is already Deleted") ||
     message.includes("UIDVALIDITY changed") ||
     message.includes("different Message-ID")
   )
@@ -72,6 +99,27 @@ export const processArchiveActionEffect = Effect.fn("EmailArchive.process")(func
     );
   }
   const snapshot = inspected.success;
+  if (snapshot.strategy === "uidplus_copy") {
+    if (!copyTransport(transport) || !snapshot.targetFolder)
+      return yield* updateArchiveActionEffect(action.actionId, "queued", "failed", {
+        reason: "transport_unavailable",
+      });
+    const claimed = yield* updateArchiveActionEffect(
+      action.actionId,
+      "queued",
+      "copy_claimed",
+      { snapshot, attempts: action.attempts + 1, reason: "copy_uncertain" },
+    );
+    const copy = yield* copyTransport(transport)!
+      .copy(action.identity, snapshot.targetFolder, snapshot)
+      .pipe(Effect.result);
+    return yield* advanceCopyActionEffect(
+      claimed,
+      transport,
+      false,
+      copy._tag === "Success" ? copy.success : undefined,
+    );
+  }
   const claimed = yield* updateArchiveActionEffect(
     action.actionId,
     "queued",
@@ -164,74 +212,111 @@ export const reconcileClaimedArchiveEffect = Effect.fn("EmailArchive.reconcile")
   },
 );
 
-export const restoreArchivedActionEffect = Effect.fn("EmailArchive.restore")(function* (
-  actionId: string,
-  transport: Transport,
-) {
-  const action = yield* getArchiveActionEffect(actionId);
-  if (!action)
-    return yield* new ArchiveActionError({ message: "Archive action not found" });
-  if (action.status === "restored") return action;
-  if (action.status !== "archived" || !action.snapshot || !action.destination)
-    return yield* new ArchiveActionError({
-      message: `Archive action cannot be restored from ${action.status}`,
-    });
-  const api = archiveTransport(transport);
-  if (!api)
-    return yield* new ArchiveActionError({
-      message: "Active email transport does not support archive actions",
-    });
-  const inspected = yield* api.inspectDestination(action.identity, action.destination);
-  if (inspected.sourceHash !== action.snapshot.sourceHash)
-    return yield* new ArchiveActionError({
-      message: "Archived message content changed; restore refused",
-    });
-  const claimed = yield* updateArchiveActionEffect(
-    actionId,
-    "archived",
-    "restore_claimed",
-    { restoreSnapshot: inspected, reason: "uncertain" },
-  );
-  const moved = yield* api
-    .restore(action.identity, action.destination, action.snapshot.sourceHash)
-    .pipe(Effect.result);
-  if (moved._tag === "Success") {
-    const verified = yield* api
-      .verify(
-        moved.success.destination,
-        action.identity.messageId,
-        action.snapshot.sourceHash,
-        inspected.flags,
-      )
+const restoreArchivedActionUnlockedEffect = Effect.fn("EmailArchive.restore")(
+  function* (actionId: string, transport: Transport) {
+    const action = yield* getArchiveActionEffect(actionId);
+    if (!action)
+      return yield* new ArchiveActionError({ message: "Archive action not found" });
+    if (action.status === "restored") return action;
+    if (action.status !== "archived" || !action.snapshot || !action.destination)
+      return yield* new ArchiveActionError({
+        message: `Archive action cannot be restored from ${action.status}`,
+      });
+    const api = archiveTransport(transport);
+    if (!api)
+      return yield* new ArchiveActionError({
+        message: "Active email transport does not support archive actions",
+      });
+    const inspected = yield* api.inspectDestination(
+      action.identity,
+      action.destination,
+    );
+    if (inspected.sourceHash !== action.snapshot.sourceHash)
+      return yield* new ArchiveActionError({
+        message: "Archived message content changed; restore refused",
+      });
+    if (
+      action.snapshot.strategy === "uidplus_copy" ||
+      inspected.strategy === "uidplus_copy"
+    ) {
+      if (!copyTransport(transport))
+        return yield* new ArchiveActionError({
+          message: "UIDPLUS archive transport unavailable",
+        });
+      const restoreSnapshot = {
+        ...inspected,
+        strategy: "uidplus_copy" as const,
+        targetFolder: "INBOX",
+      };
+      const claimed = yield* updateArchiveActionEffect(
+        actionId,
+        "archived",
+        "restore_copy_claimed",
+        { restoreSnapshot, reason: "copy_uncertain" },
+      );
+      const source = { ...action.destination, messageId: action.identity.messageId };
+      const copy = yield* copyTransport(transport)!
+        .copy(source, "INBOX", restoreSnapshot)
+        .pipe(Effect.result);
+      return yield* advanceCopyActionEffect(
+        claimed,
+        transport,
+        true,
+        copy._tag === "Success" ? copy.success : undefined,
+      );
+    }
+    const claimed = yield* updateArchiveActionEffect(
+      actionId,
+      "archived",
+      "restore_claimed",
+      { restoreSnapshot: inspected, reason: "uncertain" },
+    );
+    const moved = yield* api
+      .restore(action.identity, action.destination, action.snapshot.sourceHash)
       .pipe(Effect.result);
-    if (verified._tag === "Success" && verified.success) {
-      const confirmed = yield* api
-        .reconcileRestore(
-          action.identity,
-          action.destination,
+    if (moved._tag === "Success") {
+      const verified = yield* api
+        .verify(
+          moved.success.destination,
+          action.identity.messageId,
           action.snapshot.sourceHash,
+          inspected.flags,
         )
         .pipe(Effect.result);
-      if (
-        confirmed._tag === "Success" &&
-        confirmed.success.state === "moved" &&
-        confirmed.success.destination.folder === moved.success.destination.folder &&
-        confirmed.success.destination.uidValidity ===
-          moved.success.destination.uidValidity &&
-        confirmed.success.destination.uid === moved.success.destination.uid &&
-        JSON.stringify(confirmed.success.snapshot.flags) ===
-          JSON.stringify(inspected.flags)
-      )
-        return yield* updateArchiveActionEffect(
-          actionId,
-          "restore_claimed",
-          "restored",
-          { restoredLocation: moved.success.destination, reason: undefined },
-        );
+      if (verified._tag === "Success" && verified.success) {
+        const confirmed = yield* api
+          .reconcileRestore(
+            action.identity,
+            action.destination,
+            action.snapshot.sourceHash,
+          )
+          .pipe(Effect.result);
+        if (
+          confirmed._tag === "Success" &&
+          confirmed.success.state === "moved" &&
+          confirmed.success.destination.folder === moved.success.destination.folder &&
+          confirmed.success.destination.uidValidity ===
+            moved.success.destination.uidValidity &&
+          confirmed.success.destination.uid === moved.success.destination.uid &&
+          JSON.stringify(confirmed.success.snapshot.flags) ===
+            JSON.stringify(inspected.flags)
+        )
+          return yield* updateArchiveActionEffect(
+            actionId,
+            "restore_claimed",
+            "restored",
+            { restoredLocation: moved.success.destination, reason: undefined },
+          );
+      }
     }
-  }
-  return yield* reconcileClaimedRestoreEffect(claimed, transport);
-});
+    return yield* reconcileClaimedRestoreEffect(claimed, transport);
+  },
+);
+
+export const restoreArchivedActionEffect = (actionId: string, transport: Transport) =>
+  withArchiveActionWorkflowEffect(
+    restoreArchivedActionUnlockedEffect(actionId, transport),
+  );
 
 export const reconcileClaimedRestoreEffect = Effect.fn("EmailArchive.reconcileRestore")(
   function* (action: ArchiveAction, transport: Transport) {
@@ -272,11 +357,165 @@ export const reconcileClaimedRestoreEffect = Effect.fn("EmailArchive.reconcileRe
   },
 );
 
-/** Bounded boot/periodic sweep. Claimed actions only get read-only recovery. */
+/** One durable step at a time. A claimed COPY/STORE/EXPUNGE is never repeated. */
+export const advanceCopyActionEffect = Effect.fn("EmailArchive.advanceCopy")(function* (
+  action: ArchiveAction,
+  transport: Transport,
+  reverse: boolean,
+  mappedDestination?: ArchiveLocation,
+  allowMutation = true,
+) {
+  const api = copyTransport(transport);
+  const snapshot = reverse ? action.restoreSnapshot : action.snapshot;
+  const source = reverse
+    ? action.destination && {
+        ...action.destination,
+        messageId: action.identity.messageId,
+      }
+    : action.identity;
+  const target = reverse ? "INBOX" : snapshot?.targetFolder;
+  if (!api || !snapshot || !source || !target)
+    return yield* new ArchiveActionError({
+      message: "Incomplete UIDPLUS archive receipt",
+    });
+  const copyClaimed = reverse ? "restore_copy_claimed" : "copy_claimed";
+  const copyVerified = reverse ? "restore_copy_verified" : "copy_verified";
+  const deleteClaimed = reverse ? "restore_delete_claimed" : "delete_claimed";
+  const expungeClaimed = reverse ? "restore_expunge_claimed" : "expunge_claimed";
+  const retained = reverse
+    ? "restore_copied_source_retained"
+    : "copied_source_retained";
+  const completed = reverse ? "restored" : "archived";
+  const locationPatch = (value: ArchiveLocation) =>
+    reverse ? { restoredLocation: value } : { destination: value };
+  let current = action;
+
+  if (current.status === copyClaimed) {
+    let expectedLocation = reverse ? current.restoredLocation : current.destination;
+    const sameLocation = (left: ArchiveLocation, right: ArchiveLocation) =>
+      left.folder === right.folder &&
+      left.uidValidity === right.uidValidity &&
+      left.uid === right.uid;
+    if (
+      mappedDestination &&
+      expectedLocation &&
+      !sameLocation(mappedDestination, expectedLocation)
+    )
+      return current;
+    if (mappedDestination && !expectedLocation) {
+      // The COPYUID response is stronger than a later Message-ID search. Store it
+      // before reconciliation so a restart cannot accept a different UID.
+      current = yield* updateArchiveActionEffect(
+        action.actionId,
+        copyClaimed,
+        copyClaimed,
+        locationPatch(mappedDestination),
+      );
+      expectedLocation = mappedDestination;
+    }
+    const read = yield* api.reconcileCopy(source, target, snapshot).pipe(Effect.result);
+    if (
+      read._tag === "Failure" ||
+      read.success.state !== "moved" ||
+      (expectedLocation && !sameLocation(expectedLocation, read.success.destination))
+    )
+      return current;
+    current = yield* updateArchiveActionEffect(
+      action.actionId,
+      copyClaimed,
+      copyVerified,
+      { ...locationPatch(read.success.destination), reason: undefined },
+    );
+  }
+  if (!allowMutation && current.status === copyVerified) return current;
+  const copiedLocation = reverse ? current.restoredLocation : current.destination;
+  if (!copiedLocation) return current;
+
+  if (current.status === copyVerified) {
+    current = yield* updateArchiveActionEffect(
+      action.actionId,
+      copyVerified,
+      deleteClaimed,
+      { reason: "source_mark_uncertain" },
+    );
+    yield* api.mark(source, copiedLocation, snapshot).pipe(Effect.result);
+  }
+  if (current.status === deleteClaimed) {
+    const read = yield* api
+      .inspect(source, copiedLocation, snapshot)
+      .pipe(Effect.result);
+    if (read._tag === "Failure" || read.success === "uncertain") return current;
+    if (read.success === "unmarked")
+      return yield* updateArchiveActionEffect(
+        action.actionId,
+        deleteClaimed,
+        retained,
+        { reason: "copied_source_retained" },
+      );
+    if (read.success === "absent")
+      return yield* updateArchiveActionEffect(
+        action.actionId,
+        deleteClaimed,
+        completed,
+        { reason: undefined },
+      );
+    if (!allowMutation) return current;
+    current = yield* updateArchiveActionEffect(
+      action.actionId,
+      deleteClaimed,
+      expungeClaimed,
+      { reason: "source_expunge_uncertain" },
+    );
+    yield* api.expunge(source, copiedLocation, snapshot).pipe(Effect.result);
+  }
+  if (current.status === expungeClaimed) {
+    const read = yield* api
+      .inspect(source, copiedLocation, snapshot)
+      .pipe(Effect.result);
+    if (read._tag === "Failure" || read.success === "uncertain") return current;
+    if (read.success === "absent")
+      return yield* updateArchiveActionEffect(
+        action.actionId,
+        expungeClaimed,
+        completed,
+        { reason: undefined },
+      );
+    return yield* updateArchiveActionEffect(action.actionId, expungeClaimed, retained, {
+      reason:
+        read.success === "marked" ? "copied_source_deleted" : "copied_source_retained",
+    });
+  }
+  if (current.status === retained) {
+    const read = yield* api
+      .inspect(source, copiedLocation, snapshot)
+      .pipe(Effect.result);
+    const nextAttemptAt = (yield* Clock.currentTimeMillis) + 5 * 60_000;
+    if (read._tag === "Failure" || read.success === "uncertain")
+      return yield* updateArchiveActionEffect(action.actionId, retained, retained, {
+        nextAttemptAt,
+      });
+    if (read.success === "absent")
+      return yield* updateArchiveActionEffect(action.actionId, retained, completed, {
+        reason: undefined,
+      });
+    const reason =
+      read.success === "marked"
+        ? ("copied_source_deleted" as const)
+        : ("copied_source_retained" as const);
+    return yield* updateArchiveActionEffect(action.actionId, retained, retained, {
+      reason,
+      nextAttemptAt,
+    });
+  }
+  return current;
+});
+
+/** Bounded sweep. It reconciles claimed operations without repeating them, then
+ * may advance a verified action to its next durably claimed operation. */
 export const processQueuedArchiveActionsEffect = Effect.fn("EmailArchive.sweep")(
   function* (transport: Transport) {
     const now = yield* Clock.currentTimeMillis;
-    const actions = (yield* listArchiveActionsEffect())
+    const due = (yield* listArchiveActionsEffect())
       .filter((action) =>
         [
           "queued",
@@ -284,17 +523,75 @@ export const processQueuedArchiveActionsEffect = Effect.fn("EmailArchive.sweep")
           "uncertain",
           "restore_claimed",
           "restore_uncertain",
+          "copy_claimed",
+          "copy_verified",
+          "delete_claimed",
+          "expunge_claimed",
+          "copied_source_retained",
+          "restore_copy_claimed",
+          "restore_copy_verified",
+          "restore_delete_claimed",
+          "restore_expunge_claimed",
+          "restore_copied_source_retained",
         ].includes(action.status),
       )
-      .filter((action) => action.status !== "queued" || action.nextAttemptAt <= now)
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .slice(0, 20);
-    for (const action of actions) {
-      if (action.status === "queued")
-        yield* processArchiveActionEffect(action, transport).pipe(Effect.ignore);
-      else if (action.status === "claimed" || action.status === "uncertain")
-        yield* reconcileClaimedArchiveEffect(action, transport).pipe(Effect.ignore);
-      else yield* reconcileClaimedRestoreEffect(action, transport).pipe(Effect.ignore);
+      .filter((action) => action.nextAttemptAt <= now);
+    const byDue = (a: ArchiveAction, b: ArchiveAction) =>
+      a.nextAttemptAt - b.nextAttemptAt || a.createdAt - b.createdAt;
+    const actionable = due
+      .filter((action) =>
+        ["queued", "copy_verified", "restore_copy_verified"].includes(action.status),
+      )
+      .sort(byDue);
+    const recovery = due
+      .filter(
+        (action) =>
+          !["queued", "copy_verified", "restore_copy_verified"].includes(action.status),
+      )
+      .sort(byDue);
+    const actions = [
+      ...actionable.slice(0, 10),
+      ...recovery.slice(0, 10),
+      ...[...actionable.slice(10), ...recovery.slice(10)]
+        .sort(byDue)
+        .slice(0, 20 - Math.min(10, actionable.length) - Math.min(10, recovery.length)),
+    ];
+    for (const scheduled of actions) {
+      yield* withArchiveActionWorkflowEffect(
+        Effect.gen(function* () {
+          const action = yield* getArchiveActionEffect(scheduled.actionId);
+          if (!action || action.status !== scheduled.status) return;
+          const process =
+            action.status === "queued"
+              ? processArchiveActionEffect(action, transport)
+              : action.status === "claimed" || action.status === "uncertain"
+                ? reconcileClaimedArchiveEffect(action, transport)
+                : action.status.startsWith("restore_copy_") ||
+                    action.status === "restore_delete_claimed" ||
+                    action.status === "restore_expunge_claimed" ||
+                    action.status === "restore_copied_source_retained"
+                  ? advanceCopyActionEffect(action, transport, true)
+                  : action.status === "copy_claimed" ||
+                      action.status === "copy_verified" ||
+                      action.status === "delete_claimed" ||
+                      action.status === "expunge_claimed" ||
+                      action.status === "copied_source_retained"
+                    ? advanceCopyActionEffect(action, transport, false)
+                    : reconcileClaimedRestoreEffect(action, transport);
+          const result = yield* process.pipe(Effect.result);
+          if (
+            action.status !== "queued" &&
+            !action.status.endsWith("copied_source_retained") &&
+            (result._tag === "Failure" || result.success.status === action.status)
+          )
+            yield* updateArchiveActionEffect(
+              action.actionId,
+              action.status,
+              action.status,
+              { nextAttemptAt: now + 5 * 60_000 },
+            ).pipe(Effect.ignore);
+        }),
+      );
     }
   },
 );

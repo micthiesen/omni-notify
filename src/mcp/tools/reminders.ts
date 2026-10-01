@@ -91,7 +91,7 @@ export function createRemindersTools(runtime: McpRuntime): McpToolDefinition[] {
       name: "list_reminder_lists",
       title: "List iCloud Reminder Lists",
       description:
-        "Discover server iCloud Reminders lists and their stable CloudKit IDs. Requires the separately configured server account. No Mac EventKit dependency.",
+        "Discover server iCloud Reminders lists and their stable CloudKit IDs. Each count is the number of incomplete, nondeleted reminders in that list; total is the number of lists before pagination. Requires the separately configured server account. No Mac EventKit dependency.",
       inputSchema: z.object(paginationInputShape).strict(),
       outputSchema: z.object({
         items: z
@@ -100,11 +100,15 @@ export function createRemindersTools(runtime: McpRuntime): McpToolDefinition[] {
               id,
               title: z.string(),
               color: z.string().nullable(),
-              count: z.number(),
+              count: z
+                .number()
+                .int()
+                .nonnegative()
+                .describe("Incomplete, nondeleted reminders in this list."),
             }),
           )
           .max(100),
-        total: z.number(),
+        total: z.number().describe("Number of lists before pagination."),
         nextCursor: z.number().nullable(),
       }),
       annotations: annotations(true, false, true, true),
@@ -131,7 +135,11 @@ export function createRemindersTools(runtime: McpRuntime): McpToolDefinition[] {
         .strict(),
       outputSchema: z.object({
         items: z.array(reminder).max(100),
-        total: z.number(),
+        total: z
+          .number()
+          .describe(
+            "Number of nondeleted reminders matching all supplied filters before pagination.",
+          ),
         nextCursor: z.number().nullable(),
       }),
       annotations: annotations(true, false, true, true),

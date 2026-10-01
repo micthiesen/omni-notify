@@ -48,7 +48,7 @@ interface ReadBudget {
 }
 
 interface SnapshotIndex {
-  lists: Map<string, RemindersList>;
+  lists: Map<string, RemindersListMetadata>;
   records: Map<string, CkRecord>;
   syncToken: string;
 }
@@ -76,7 +76,22 @@ export interface RemindersList {
   readonly id: string;
   readonly title: string;
   readonly color: string | null;
+  /** Incomplete, nondeleted reminders in this list in the complete snapshot. */
   readonly count: number;
+}
+
+type RemindersListMetadata = Omit<RemindersList, "count">;
+
+function countedLists(
+  lists: Iterable<RemindersListMetadata>,
+  reminders: Iterable<Reminder>,
+): RemindersList[] {
+  const counts = new Map<string, number>();
+  for (const reminder of reminders) {
+    if (!reminder.completed && !reminder.deleted)
+      counts.set(reminder.listId, (counts.get(reminder.listId) ?? 0) + 1);
+  }
+  return [...lists].map((list) => ({ ...list, count: counts.get(list.id) ?? 0 }));
 }
 
 export interface Reminder {
@@ -214,7 +229,7 @@ function ref(fields: Record<string, CkField>, name: string): string {
   return v.recordName;
 }
 
-function listFromRecord(record: CkRecord): RemindersList {
+function listFromRecord(record: CkRecord): RemindersListMetadata {
   const fields = record.fields ?? {};
   const title = stringValue(fields, "Name");
   if (!title) throw fail("decode list", "protocol");
@@ -222,7 +237,6 @@ function listFromRecord(record: CkRecord): RemindersList {
     id: record.recordName,
     title,
     color: stringValue(fields, "Color"),
-    count: numberValue(fields, "Count", "INT64") ?? 0,
   };
 }
 
@@ -370,7 +384,7 @@ function patchFields(patch: ReminderPatch, now: number, replica: string) {
 }
 
 export class RemindersCloudKitClient {
-  private listCache?: { lists: Map<string, RemindersList>; syncToken: string };
+  private listCache?: { lists: Map<string, RemindersListMetadata>; syncToken: string };
   private snapshotIndex?: SnapshotIndex;
   public constructor(private readonly ckPost: CkPost) {}
 
@@ -515,7 +529,7 @@ export class RemindersCloudKitClient {
         ? { lists: new Map(lists), records: indexedRecords, syncToken: latestToken }
         : undefined;
       return {
-        lists: [...lists.values()],
+        lists: countedLists(lists.values(), reminders.values()),
         reminders: [...reminders.values()].map((reminder) =>
           recurringIds.has(reminder.id) ? { ...reminder, recurring: true } : reminder,
         ),
@@ -601,7 +615,7 @@ export class RemindersCloudKitClient {
           this.snapshotIndex = { lists, records, syncToken: zone.syncToken };
           this.listCache = { lists: new Map(lists), syncToken: zone.syncToken };
           return {
-            lists: [...lists.values()],
+            lists: countedLists(lists.values(), reminders.values()),
             reminders: [...reminders.values()].map((reminder) =>
               recurringIds.has(reminder.id)
                 ? { ...reminder, recurring: true }

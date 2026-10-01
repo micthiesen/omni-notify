@@ -41,6 +41,100 @@ function snapshotClient(
 }
 
 describe("Reminders CloudKit codec", () => {
+  it("counts incomplete reminders across all lists instead of missing or stale List.Count fields", async () => {
+    const lists = Array.from({ length: 8 }, (_, index) => ({
+      ...list,
+      recordName: `List/${index}`,
+      fields: {
+        Name: list.fields.Name,
+        ...(index % 2 ? { Count: { type: "INT64", value: 99 } } : {}),
+      },
+    }));
+    const makeRecord = (listId: string, suffix: string, completed = false) =>
+      record({
+        recordName: `Reminder/${listId}/${suffix}`,
+        fields: {
+          ...record().fields,
+          List: { type: "REFERENCE", value: { recordName: listId } },
+          Completed: { type: "INT64", value: completed ? 1 : 0 },
+        },
+      });
+    const client = new RemindersCloudKitClient((path, body) => {
+      if (path === "/changes/zone")
+        return Effect.succeed({ zones: [{ records: lists, syncToken: "initial" }] });
+      const query = body as {
+        query: { filterBy: { fieldValue: { value: { recordName: string } } }[] };
+        continuationMarker?: string;
+      };
+      const listId = query.query.filterBy[0].fieldValue.value.recordName;
+      if (!query.continuationMarker)
+        return Effect.succeed({
+          records: [makeRecord(listId, "first"), makeRecord(listId, "completed", true)],
+          continuationMarker: "second",
+        });
+      return Effect.succeed({
+        records: [
+          makeRecord(listId, "second"),
+          { ...makeRecord(listId, "hard-deleted"), deleted: true },
+          {
+            recordName: `Reminder/${listId}/soft-deleted`,
+            recordType: "Reminder",
+            fields: { Deleted: { type: "INT64", value: 1 } },
+          },
+          makeRecord("List/unknown", "outside-list"),
+        ],
+      });
+    });
+    const snapshot = await Effect.runPromise(client.readSnapshot());
+    expect(snapshot.lists).toHaveLength(8);
+    expect(snapshot.lists.map((item) => item.count)).toEqual(Array(8).fill(2));
+    expect(snapshot.lists.reduce((sum, item) => sum + item.count, 0)).toBe(
+      snapshot.reminders.filter((item) => !item.completed && !item.deleted).length,
+    );
+  });
+
+  it("recomputes counts from atomic deltas for completion, reopen, move and deletion without list metadata changes", async () => {
+    const other = { ...list, recordName: "List/2" };
+    const reminder = record();
+    const changed = (fields: Record<string, unknown>) => ({
+      ...reminder,
+      fields: { ...reminder.fields, ...fields },
+    });
+    const deltas = [
+      [list, other],
+      [changed({ Completed: { type: "INT64", value: 1 } })],
+      [changed({ Completed: { type: "INT64", value: 0 } })],
+      [changed({ List: { type: "REFERENCE", value: { recordName: "List/2" } } })],
+      [{ recordName: reminder.recordName, deleted: true }],
+    ];
+    let page = 0;
+    const client = new RemindersCloudKitClient((path, body) => {
+      if (path === "/changes/zone")
+        return Effect.succeed({
+          zones: [{ records: deltas[page++], syncToken: `cursor-${page}` }],
+        });
+      const query = body as {
+        query: { filterBy: { fieldValue: { value: { recordName: string } } }[] };
+      };
+      return Effect.succeed({
+        records:
+          query.query.filterBy[0].fieldValue.value.recordName === "List/1"
+            ? [reminder]
+            : [],
+      });
+    });
+    for (const expected of [
+      [1, 0],
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [0, 0],
+    ]) {
+      const snapshot = await Effect.runPromise(client.readSnapshot());
+      expect(snapshot.lists.map((item) => item.count)).toEqual(expected);
+    }
+  });
+
   it("explicitly invalidates both snapshot and list cursors before a fresh full read", async () => {
     const cursors: unknown[] = [];
     let queries = 0;
@@ -824,7 +918,7 @@ describe("Reminders CloudKit codec", () => {
       }),
     );
     expect(await Effect.runPromise(client.readSnapshot())).toEqual({
-      lists: [{ id: "List/1", title: "Groceries", color: "blue", count: 1 }],
+      lists: [{ id: "List/1", title: "Groceries", color: "blue", count: 0 }],
       reminders: [],
     });
   });

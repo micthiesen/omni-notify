@@ -113,6 +113,16 @@ bearer authentication. Writes recommend Executor approval. Lists and reminders
 use exact CloudKit record IDs. Reads cap snapshots at 50 pages and 10,000 records;
 an incomplete snapshot is an error, not an empty result.
 
+`list_reminder_lists.items[].count` counts incomplete, nondeleted reminders in
+that exact list, derived from the complete reminder snapshot. Apple's optional
+list `Count` metadata is not used because it may be absent or stale. Counts are
+recomputed after incremental changes, including completion, reopening, moves,
+and deletion. The response `total` is the number of lists before pagination.
+`list_reminders.total` is the number of nondeleted reminders matching all supplied
+filters before pagination; omitting `completed` includes both completion states.
+For an unchanged account, summing all list counts equals `list_reminders` with
+`completed: false`. Separate requests can observe intervening account changes.
+
 Mutations require an idempotency key. Updates/completion/deletion also require
 the current `recordChangeTag`. Only specified fields are changed. Null clears
 dates, omission preserves them. Writes check individual CloudKit errors and

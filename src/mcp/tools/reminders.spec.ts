@@ -1,6 +1,7 @@
 import { Effect, Result } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import { createMitoolsTestRuntime } from "../../test/mitools.js";
+import type { Reminder } from "../../reminders/cloudkit.js";
 import type { McpRuntime } from "../runtime.js";
 import { createRemindersTools } from "./reminders.js";
 
@@ -10,6 +11,63 @@ afterAll(() => runtime.dispose());
 const tool = (name: string) => tools.find((item) => item.name === name)!;
 
 describe("server Reminders MCP boundary", () => {
+  it("keeps list counts and filtered reminder totals independent of pagination", async () => {
+    const lists = Array.from({ length: 8 }, (_, i) => ({
+      id: `List/${i}`,
+      title: `List ${i}`,
+      color: null,
+      count: i === 0 ? 8 : 3,
+    }));
+    const reminders: Reminder[] = lists.flatMap((list) =>
+      Array.from({ length: list.count + 1 }, (_, i) => ({
+        id: `Reminder/${list.id}/${i}`,
+        listId: list.id,
+        title: `Item ${i}`,
+        description: "",
+        completed: i === list.count,
+        completedDate: null,
+        dueDate: null,
+        startDate: null,
+        priority: 0,
+        flagged: false,
+        allDay: false,
+        deleted: false,
+        createdDate: null,
+        lastModifiedDate: null,
+        recordChangeTag: "tag",
+        recurring: false,
+      })),
+    );
+    reminders.push({ ...reminders[0], id: "Reminder/deleted", deleted: true });
+    const reads = createRemindersTools({
+      reminders: { snapshot: () => Effect.succeed({ lists, reminders }) },
+    } as unknown as McpRuntime);
+    const execute = (name: string, input: Record<string, unknown>) =>
+      runtime.run(reads.find((item) => item.name === name)!.execute(input));
+    expect(await execute("list_reminder_lists", { limit: 1 })).toEqual({
+      items: [lists[0]],
+      total: 8,
+      nextCursor: 1,
+    });
+    expect(await execute("list_reminder_lists", { cursor: 7, limit: 1 })).toEqual({
+      items: [lists[7]],
+      total: 8,
+      nextCursor: null,
+    });
+    expect(
+      await execute("list_reminders", { completed: false, limit: 1 }),
+    ).toMatchObject({ total: 29, nextCursor: 1 });
+    expect(
+      await execute("list_reminders", { listId: "List/0", completed: false, limit: 1 }),
+    ).toMatchObject({ total: 8, nextCursor: 1 });
+    expect(
+      await execute("list_reminders", { listId: "List/0", completed: true, limit: 1 }),
+    ).toMatchObject({ total: 1, nextCursor: null });
+    expect(
+      await execute("list_reminders", { listId: "List/0", limit: 1 }),
+    ).toMatchObject({ total: 9, nextCursor: 1 });
+  });
+
   it("keeps private reads disabled when the service is absent", async () => {
     const result = await runtime.run(
       tool("list_reminders").execute({}).pipe(Effect.result),

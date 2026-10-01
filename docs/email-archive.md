@@ -1,82 +1,82 @@
 # Queued reversible email archive
 
-The MCP tools `email_archive_queue`, `email_archive_status`,
-`email_archive_cancel`, and `email_archive_restore` move selected Inbox messages
-to the server-designated Archive and retain a durable receipt for reversal.
-There is no arbitrary mailbox move, delete or purge tool.
+`email_archive_queue` accepts a selected Inbox `messageId` and exact `origin`
+(`folder`, `uidValidity`, `uid`) from fresh `email_get` or `email_search` output.
+`email_archive_status` returns its durable action ID, phase, destination, and
+safe reason code. A completed restore also returns `restoredLocation`, the exact
+new Inbox UID and UIDVALIDITY. `email_archive_cancel` works only before the
+first mutation claim. `email_archive_restore` returns only that action's
+recorded Archive copy
+to Inbox. These tools cannot move arbitrary mailboxes or UIDs.
 
-## Current iCloud limitation
+## iCloud transport and source removal
 
-Read-only checks against the deployed iCloud account on 2026-10-01 confirmed
-IMAP4rev1 and UIDPLUS, but no native MOVE or IMAP4rev2. ImapFlow's effective
-MOVE capability check also returns false. The archive tools are deployed, but
-cannot archive on this endpoint under the native-MOVE-only safety constraint.
-Selected actions fail with `native_move_unavailable` before moving mail and
-remain terminal; do not blindly requeue them.
+The deployed iCloud server advertised IMAP4rev1 and UIDPLUS, but neither MOVE
+nor IMAP4rev2 on 2026-10-01. Omni uses native MOVE when a server advertises it.
+Otherwise the UIDPLUS path copies the exact selected message to the unique
+`\Archive` special-use mailbox, verifies its Message-ID, MIME hash, UIDVALIDITY,
+and flags, then marks the **exact Inbox source UID** `\Deleted` and sends
+`UID EXPUNGE <that UID>`. UID EXPUNGE permanently removes that source. It never
+issues plain mailbox-wide EXPUNGE or calls ImapFlow's combined `messageDelete`
+or MOVE emulation. Restore applies the same verified stages in reverse, using
+the recorded Archive UID as its only eligible source.
 
-A COPY-based alternative would need to verify the Archive copy before marking
-the exact Inbox source `\\Deleted` and issuing UID EXPUNGE. That permanently
-removes the source and introduces intermediate duplicate/deleted states. It is
-not implemented or authorized by the current no-deletion/purge constraint.
+The protocol distinction follows [RFC 4315](https://www.rfc-editor.org/rfc/rfc4315.html)
+for COPYUID and UID EXPUNGE, and [RFC 6851](https://www.rfc-editor.org/rfc/rfc6851.html)
+for native MOVE. The adapter was checked against deployed ImapFlow 1.6.5.
 
-## Select an exact message
+The eight archive actions that previously failed with `native_move_unavailable`
+remain terminal. This change does not requeue them or act on live mail. A new
+queue request needs a fresh selected identity and idempotency key.
 
-Use `email_search` or `email_get` with `fresh: true`. Keep the exact `messageId`
-and returned `origin` coordinates: `folder`, `uidValidity`, and `uid`.
-Only an origin of `INBOX` is eligible. Supply these fields with an
-`idempotencyKey` to `email_archive_queue`. Queue acceptance is not proof of a
-completed archive; inspect `email_archive_status` using the returned action ID.
+## Durable phases and recovery
 
-The worker runs every 30 seconds and on transport startup. Cancellation is
-available while the action remains queued. A durable claim prevents two workers
-from moving the same selected mail. Reusing an idempotency key for different
-mail is rejected.
+Before any mutation, Omni checks exact source UIDVALIDITY, Message-ID, MIME
+hash, flags, and the destination for an existing identical copy. It rejects an
+already `\Deleted` source. The action records a claim before each COPY, STORE,
+or UID EXPUNGE. A copied message is verified against the COPYUID mapping or a
+single exact mailbox match before source removal. The destination and source
+are rechecked before STORE and EXPUNGE. Archive messages owned by an action
+are excluded from Omni's ordinary auto-read pass so unread flags remain intact.
 
-## Safety and recovery
+The phases `copy_claimed`, `copy_verified`, `delete_claimed`, and
+`expunge_claimed` expose progress. Their `restore_` counterparts apply to
+reversal. After a lost response or restart, the worker reads mailbox state;
+it never repeats a claimed COPY, STORE, or UID EXPUNGE blindly. A verified
+earlier phase may advance to the next distinct operation. Status polling only
+reads mail and action records; it never starts a mailbox mutation.
 
-Before moving, Omni selects Inbox and verifies UIDVALIDITY, the exact UID and
-Message-ID. It records a SHA-256 hash of the original MIME and its flags, without
-persisting another body copy. It discovers the unique `\\Archive` special-use
-mailbox through IMAP LIST. A native post-login `MOVE` capability is mandatory.
-ImapFlow's COPY plus delete fallback is never used.
+`copied_source_retained` means a verified destination copy exists but the
+source remains, so the action is not complete. Its reason distinguishes an
+unmarked source (`copied_source_retained`) from a source still marked
+`\Deleted` (`copied_source_deleted`). A `copy_claimed` action with
+`copy_uncertain` may have copied mail, but Omni cannot yet identify a unique
+verified destination. Inspect both mailboxes before any manual intervention.
+Retained-source receipts are rechecked on status reads and worker sweeps. A
+delayed STORE can update their reason; a delayed UID EXPUNGE can confirm
+completion. These checks never start another mutation. Other uncertain phases
+keep their exact reservation and remain read-only on recovery when the result
+cannot be proven. No action reports `archived` or `restored` until the exact
+destination exists and the exact source is absent.
 
-The worker reserves the mutation durably before issuing MOVE. It verifies the
-resulting destination and content/flags before reporting `archived`. A timeout,
-disconnection, missing MOVE response, or crash after reservation triggers
-read-only reconciliation. Omni never automatically repeats an uncertain MOVE.
-Ambiguous duplicates remain uncertain rather than being selected by Message-ID
-alone. UIDVALIDITY changes also prevent trusting stale coordinates.
+An archive and its restore reserve the Message-ID against duplicate actions.
+The UIDPLUS path suppresses event echoes only at recorded destination UIDs.
+Before a destination UID is known, matching Message-ID alone does not suppress
+another mailbox event. The original Inbox event remains eligible. Ordinary
+Archive, Junk, and Trash auto-read policy continues for unrelated messages.
 
-Durable statuses distinguish queued, cancelled, claimed, archived, uncertain,
-failed, restore_claimed, restored, and restore_uncertain. Status exposes safe
-reason codes and attempt counts. Retrying a status read may reconcile an
-uncertain result, but cannot create another move.
+## Authorization, testing, and rollback
 
-Restore is limited to the exact Archive destination recorded by that action.
-It verifies the content again and moves it back to Inbox, retaining a second
-receipt. It cannot select an arbitrary Archive message or destination. A
-reserved restore with an uncertain result also reconciles without repeating the
-mutation.
+Queue and restore apply only to user-selected mail. A tool receipt or event
+notification is not a selection of other mail. Automated tests use fabricated
+IMAP messages and temporary durable storage. Do not archive real user mail as
+a test without its specific selection.
 
-Native MOVE retains message content and flags. Omni's auto-read policy excludes
-the exact messages owned by these archive actions, so unread mail stays unread.
-Ordinary Archive, Junk and Trash cleanup continues. Restore preserves the flags
-observed immediately before restoration.
-Archive and restore reserve a Message-ID event suppression marker so their new
-IMAP UIDs do not wake the email subscription again.
-
-## Authorization and testing
-
-Queue and restore require the user's selected-message authorization. Tool
-availability and an event notification do not authorize archiving unrelated
-mail. Drafting an automation must identify its intended scope first.
-
-Automated tests use fabricated IMAP records and temporary durable storage. They
-cover native MOVE requirements, exact identity mismatches, content/flags,
-reservation and reconciliation, duplicate requests, cancellation and restoration.
-No production user mail should be archived as a test without explicit selection.
-
-Rollback is safe for stored records: removing the tools and worker leaves mail
-and action receipts intact. Reverting code does not itself restore already
-archived mail. Complete any desired restore using its receipt before disabling
-the feature, or move the identified message back with a mail client.
+A rollback to a build from before UIDPLUS action statuses is safe only before
+the first UIDPLUS receipt is written. That older schema cannot decode the new
+statuses and reasons. After a receipt exists, disable new mutations with a
+patch to a schema-capable build while preserving receipts. A code rollback
+cannot undo a completed UID EXPUNGE. Restore a completed action through its
+receipt before disabling the feature if its original mailbox placement must be
+recovered. A retained or uncertain action needs mailbox inspection before
+further mutation.

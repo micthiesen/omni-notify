@@ -248,39 +248,39 @@
     {
       "name": "email_archive_queue",
       "title": "Queue Exact Inbox Email Archive",
-      "description": "Queue one exact Inbox message for a native move to the uniquely designated Archive mailbox. Supply the Message-ID and origin from a fresh email_get or email_search result. The queue receipt is durable; email_archive_status reports the verified outcome. This does not delete or purge mail.",
+      "description": "Queue one exact Inbox message for Archive. Uses native MOVE when available; otherwise verifies UIDPLUS COPY, then permanently removes the exact Inbox source with UID EXPUNGE. Supply Message-ID and origin from fresh email_get or email_search. Check durable status for outcome.",
       "annotations": {
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": true
       },
       "sideEffects": [
-        "Queues one exact Inbox message for a native move to Archive"
+        "Queues one exact Inbox message for native MOVE or scoped UIDPLUS COPY and source removal"
       ],
-      "cost": "No paid API; bounded IMAP reads and one native MOVE",
+      "cost": "No paid API; bounded IMAP reads and one scoped mailbox move",
       "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "email_archive_restore",
       "title": "Restore Archived Email to Inbox",
-      "description": "Reverse a verified archive action by moving its exact recorded Archive UID back to Inbox. Refuses changed content, a different Archive mailbox, or an uncertain prior action. Never moves arbitrary mail.",
+      "description": "Restore only this action's recorded Archive UID to Inbox. Uses native MOVE or verified UIDPLUS COPY followed by permanent exact-source UID EXPUNGE. Refuses changed content, a different Archive mailbox, or an uncertain action.",
       "annotations": {
         "readOnlyHint": false,
-        "destructiveHint": false,
+        "destructiveHint": true,
         "idempotentHint": true,
         "openWorldHint": true
       },
       "sideEffects": [
-        "Moves one verified archived email back to Inbox"
+        "Restores one exact recorded Archive UID using native MOVE or verified COPY and exact-source UID EXPUNGE"
       ],
-      "cost": "No paid API; bounded IMAP reads and one native MOVE",
+      "cost": "No paid API; bounded IMAP reads and one scoped mailbox move",
       "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "email_archive_status",
       "title": "Check Email Archive Action",
-      "description": "Read a durable archive receipt. Claimed or uncertain operations get read-only reconciliation; this never repeats a MOVE.",
+      "description": "Read a durable archive receipt and reconcile claimed outcomes using mailbox reads. This tool never writes mail or repeats a mutation.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -592,7 +592,7 @@
     {
       "name": "list_reminder_lists",
       "title": "List iCloud Reminder Lists",
-      "description": "Discover server iCloud Reminders lists and their stable CloudKit IDs. Requires the separately configured server account. No Mac EventKit dependency.",
+      "description": "Discover server iCloud Reminders lists and their stable CloudKit IDs. Each count is the number of incomplete, nondeleted reminders in that list; total is the number of lists before pagination. Requires the separately configured server account. No Mac EventKit dependency.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,

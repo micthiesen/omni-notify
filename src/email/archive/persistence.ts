@@ -16,7 +16,17 @@ export type ArchiveActionStatus =
   | "failed"
   | "restore_claimed"
   | "restored"
-  | "restore_uncertain";
+  | "restore_uncertain"
+  | "copy_claimed"
+  | "copy_verified"
+  | "delete_claimed"
+  | "expunge_claimed"
+  | "copied_source_retained"
+  | "restore_copy_claimed"
+  | "restore_copy_verified"
+  | "restore_delete_claimed"
+  | "restore_expunge_claimed"
+  | "restore_copied_source_retained";
 
 export interface ArchiveAction {
   actionId: string;
@@ -32,8 +42,14 @@ export interface ArchiveAction {
     | "transport_unavailable"
     | "source_unavailable"
     | "native_move_unavailable"
+    | "safe_move_unavailable"
     | "verification_failed"
-    | "uncertain";
+    | "uncertain"
+    | "copy_uncertain"
+    | "copied_source_retained"
+    | "copied_source_deleted"
+    | "source_mark_uncertain"
+    | "source_expunge_uncertain";
   createdAt: number;
   updatedAt: number;
 }
@@ -52,6 +68,8 @@ const LocationSchema = Schema.Struct({
 const SnapshotSchema = Schema.Struct({
   sourceHash: Schema.String,
   flags: Schema.Array(Schema.String),
+  strategy: Schema.optional(Schema.Literal("uidplus_copy")),
+  targetFolder: Schema.optional(Schema.String),
 });
 const ActionSchema = Schema.Struct({
   actionId: Schema.String,
@@ -66,6 +84,16 @@ const ActionSchema = Schema.Struct({
     "restore_claimed",
     "restored",
     "restore_uncertain",
+    "copy_claimed",
+    "copy_verified",
+    "delete_claimed",
+    "expunge_claimed",
+    "copied_source_retained",
+    "restore_copy_claimed",
+    "restore_copy_verified",
+    "restore_delete_claimed",
+    "restore_expunge_claimed",
+    "restore_copied_source_retained",
   ]),
   snapshot: Schema.optional(SnapshotSchema),
   restoreSnapshot: Schema.optional(SnapshotSchema),
@@ -78,8 +106,14 @@ const ActionSchema = Schema.Struct({
       "transport_unavailable",
       "source_unavailable",
       "native_move_unavailable",
+      "safe_move_unavailable",
       "verification_failed",
       "uncertain",
+      "copy_uncertain",
+      "copied_source_retained",
+      "copied_source_deleted",
+      "source_mark_uncertain",
+      "source_expunge_uncertain",
     ]),
   ),
   createdAt: Schema.Number,
@@ -318,8 +352,18 @@ export const archiveAutoReadProtectionEffect = Effect.fn(
     if (
       action.status === "claimed" ||
       action.status === "uncertain" ||
+      action.status === "copy_claimed" ||
+      action.status === "copy_verified" ||
+      action.status === "delete_claimed" ||
+      action.status === "expunge_claimed" ||
+      action.status === "copied_source_retained" ||
       action.status === "restore_claimed" ||
-      action.status === "restore_uncertain"
+      action.status === "restore_uncertain" ||
+      action.status === "restore_copy_claimed" ||
+      action.status === "restore_copy_verified" ||
+      action.status === "restore_delete_claimed" ||
+      action.status === "restore_expunge_claimed" ||
+      action.status === "restore_copied_source_retained"
     ) {
       fallbackMessageIds.add(action.identity.messageId);
       continue;

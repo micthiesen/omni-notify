@@ -52,9 +52,16 @@ import {
   inspectArchiveDestinationEffect as inspectNativeArchiveDestinationEffect,
   verifyArchiveLocationEffect as verifyNativeArchiveLocationEffect,
   reconcileRestoreMessageEffect as readRestoreMoveEffect,
+  copyExactArchiveMessageEffect as copyExactMessageEffect,
+  reconcileExactCopyEffect as readExactCopyEffect,
+  markExactArchiveSourceDeletedEffect as markExactDeletedEffect,
+  inspectExactDeletedSourceEffect as readExactDeletedEffect,
+  expungeExactArchiveSourceEffect as expungeExactSourceEffect,
   type ArchiveIdentity,
   type ArchiveLocation,
+  type ArchiveSnapshot,
 } from "./archive.js";
+import { uidExpungeExact } from "./uidExpunge.js";
 import {
   attachmentPartId,
   declaredAttachmentMimeType,
@@ -834,6 +841,94 @@ export class ImapTransport implements EmailTransport<
         const client = yield* this.requireClientEffect;
         return yield* readRestoreMoveEffect(client, identity, destination, sourceHash);
       }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  copyExactArchiveMessageEffect(
+    source: ArchiveIdentity,
+    targetFolder: string,
+    snapshot: ArchiveSnapshot,
+  ) {
+    return this.runSerializedEffect(
+      "UID COPY exact email",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* copyExactMessageEffect(client, source, targetFolder, snapshot);
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => this.clearReadCaches())),
+        Effect.ensuring(this.restoreInboxEffect()),
+      ),
+    );
+  }
+
+  reconcileExactCopyEffect(
+    source: ArchiveIdentity,
+    targetFolder: string,
+    snapshot: ArchiveSnapshot,
+  ) {
+    return this.runSerializedEffect(
+      "reconcile UID COPY",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* readExactCopyEffect(client, source, targetFolder, snapshot);
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  markExactArchiveSourceDeletedEffect(
+    source: ArchiveIdentity,
+    destination: ArchiveLocation,
+    snapshot: ArchiveSnapshot,
+  ) {
+    return this.runSerializedEffect(
+      "mark exact source Deleted",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* markExactDeletedEffect(client, source, destination, snapshot);
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => this.clearReadCaches())),
+        Effect.ensuring(this.restoreInboxEffect()),
+      ),
+    );
+  }
+
+  inspectExactDeletedSourceEffect(
+    source: ArchiveIdentity,
+    destination: ArchiveLocation,
+    snapshot: ArchiveSnapshot,
+  ) {
+    return this.runSerializedEffect(
+      "inspect exact Deleted source",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* readExactDeletedEffect(client, source, destination, snapshot);
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  expungeExactArchiveSourceEffect(
+    source: ArchiveIdentity,
+    destination: ArchiveLocation,
+    snapshot: ArchiveSnapshot,
+  ) {
+    return this.runSerializedEffect(
+      "UID EXPUNGE exact source",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        const archiveClient = client as typeof client & {
+          uidExpungeExact(uid: number): Promise<boolean>;
+        };
+        archiveClient.uidExpungeExact = (uid) => uidExpungeExact(client, uid);
+        return yield* expungeExactSourceEffect(
+          archiveClient,
+          source,
+          destination,
+          snapshot,
+        );
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => this.clearReadCaches())),
+        Effect.ensuring(this.restoreInboxEffect()),
+      ),
     );
   }
 
