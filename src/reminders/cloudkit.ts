@@ -250,7 +250,15 @@ function reminderFromRecord(record: CkRecord): Reminder {
       record.modified?.timestamp ??
       null,
     recordChangeTag: record.recordChangeTag,
-    recurring: Object.keys(fields).some((key) => /recurr|repeat/i.test(key)),
+    recurring: Object.entries(fields).some(([key, field]) => {
+      if (!/recurr|repeat/i.test(key)) return false;
+      return !(
+        key === "RecurrenceRuleIDs" &&
+        (field.type === "UNKNOWN_LIST" || field.type === "STRING_LIST") &&
+        Array.isArray(field.value) &&
+        field.value.length === 0
+      );
+    }),
   };
 }
 

@@ -41,6 +41,38 @@ function snapshotClient(
 }
 
 describe("Reminders CloudKit codec", () => {
+  it.each([
+    ["RecurrenceRuleIDs", "STRING_LIST", ["RecurrenceRule/1"]],
+    ["RecurrenceRuleIDs", "UNKNOWN_LIST", ["RecurrenceRule/1"]],
+    ["RecurrenceRuleIDs", "STRING_LIST", null],
+    ["RecurrenceRuleIDs", "UNKNOWN_LIST", ""],
+    ["RecurrenceRuleIDs", "STRING", []],
+    ["RecurrenceRules", "UNKNOWN_LIST", []],
+  ])(
+    "keeps populated, malformed, or unknown recurrence fields read-only: %s %s %j",
+    async (key, type, value) => {
+      const calls: string[] = [];
+      const client = new RemindersCloudKitClient((path) => {
+        calls.push(path);
+        return Effect.succeed({
+          records: [
+            record({
+              fields: { ...record().fields, [key as string]: { type, value } },
+            }),
+          ],
+        });
+      });
+      const current = await Effect.runPromise(client.getReminder("Reminder/12345678"));
+      expect(current?.recurring).toBe(true);
+      await expect(
+        Effect.runPromise(
+          client.updateReminder(current as Reminder, { flagged: false }),
+        ),
+      ).rejects.toThrow("unsupported");
+      expect(calls).toEqual(["/records/lookup"]);
+    },
+  );
+
   it("requests at most 50 reminders on every compound query page", async () => {
     let pages = 0;
     const limits: number[] = [];
@@ -684,7 +716,16 @@ describe("Reminders CloudKit codec", () => {
       calls.push(path);
       return Effect.succeed(
         path === "/records/lookup"
-          ? { records: [record()] }
+          ? {
+              records: [
+                record({
+                  fields: {
+                    ...record().fields,
+                    RecurrenceRuleIDs: { type: "UNKNOWN_LIST", value: [] },
+                  },
+                }),
+              ],
+            }
           : {
               records: [
                 {
@@ -778,48 +819,54 @@ describe("Reminders CloudKit codec", () => {
     ).rejects.toThrow("invalid");
   });
 
-  it("updates only requested fields and preserves an unknown timezone field", async () => {
-    let modifiedFields: Record<string, unknown> | undefined;
-    let written = false;
-    const original = record({
-      fields: {
-        ...record().fields,
-        TimeZone: { type: "STRING", value: "America/Vancouver" },
-      },
-    });
-    const client = new RemindersCloudKitClient((path, body) => {
-      if (path === "/records/query") return Effect.succeed({ records: [] });
-      if (path === "/records/modify") {
-        modifiedFields = (
-          body as { operations: { record: { fields: Record<string, unknown> } }[] }
-        ).operations[0].record.fields;
-        written = true;
-        return Effect.succeed({
-          records: [{ recordName: "Reminder/12345678", recordChangeTag: "tag-2" }],
-        });
-      }
-      return Effect.succeed({
-        records: [
-          written
-            ? record({
-                ...original,
-                recordChangeTag: "tag-2",
-                fields: {
-                  ...original.fields,
-                  Flagged: { type: "INT64", value: 0 },
-                },
-              })
-            : original,
-        ],
+  it.each(["UNKNOWN_LIST", "STRING_LIST"])(
+    "updates a reminder with empty %s recurrence IDs and preserves unrelated fields",
+    async (recurrenceType) => {
+      let modifiedFields: Record<string, unknown> | undefined;
+      let written = false;
+      const original = record({
+        fields: {
+          ...record().fields,
+          TimeZone: { type: "STRING", value: "America/Vancouver" },
+          RecurrenceRuleIDs: { type: recurrenceType, value: [] },
+        },
       });
-    });
-    const current = await Effect.runPromise(client.getReminder("Reminder/12345678"));
-    const updated = await Effect.runPromise(
-      client.updateReminder(current as Reminder, { flagged: false }),
-    );
-    expect(updated.flagged).toBe(false);
-    expect(modifiedFields).toHaveProperty("Flagged");
-    expect(modifiedFields).not.toHaveProperty("TimeZone");
-    expect(modifiedFields).not.toHaveProperty("DueDate");
-  });
+      const client = new RemindersCloudKitClient((path, body) => {
+        if (path === "/records/query") return Effect.succeed({ records: [] });
+        if (path === "/records/modify") {
+          modifiedFields = (
+            body as { operations: { record: { fields: Record<string, unknown> } }[] }
+          ).operations[0].record.fields;
+          written = true;
+          return Effect.succeed({
+            records: [{ recordName: "Reminder/12345678", recordChangeTag: "tag-2" }],
+          });
+        }
+        return Effect.succeed({
+          records: [
+            written
+              ? record({
+                  ...original,
+                  recordChangeTag: "tag-2",
+                  fields: {
+                    ...original.fields,
+                    Flagged: { type: "INT64", value: 0 },
+                  },
+                })
+              : original,
+          ],
+        });
+      });
+      const current = await Effect.runPromise(client.getReminder("Reminder/12345678"));
+      expect(current?.recurring).toBe(false);
+      const updated = await Effect.runPromise(
+        client.updateReminder(current as Reminder, { flagged: false }),
+      );
+      expect(updated.flagged).toBe(false);
+      expect(modifiedFields).toHaveProperty("Flagged");
+      expect(modifiedFields).not.toHaveProperty("TimeZone");
+      expect(modifiedFields).not.toHaveProperty("DueDate");
+      expect(modifiedFields).not.toHaveProperty("RecurrenceRuleIDs");
+    },
+  );
 });
