@@ -27,6 +27,27 @@ const statusSchema = Schema.Struct({
   ),
   challengeId: Schema.optional(Schema.String),
   challengeExpiresAt: Schema.optional(Schema.Number),
+  diagnostic: Schema.optional(
+    Schema.Struct({
+      stage: Schema.Literals([
+        "sign-in-init",
+        "sign-in-proof",
+        "sign-in-complete",
+        "account-session",
+        "second-factor",
+        "apple-request",
+        "private-storage",
+      ]),
+      category: Schema.Literals([
+        "apple-response",
+        "transport",
+        "protocol",
+        "storage",
+        "authentication",
+      ]),
+      httpStatus: Schema.optional(Schema.Number),
+    }),
+  ),
 });
 const responseSchema = Schema.Struct({ status: statusSchema });
 type Status = Schema.Schema.Type<typeof statusSchema>;
@@ -58,6 +79,17 @@ export function remindersRequest(
         }),
       catch: () => new Error("Could not reach the Reminders service"),
     });
+    if (!response.ok && (operation === "start" || operation === "verify")) {
+      const body = yield* Effect.tryPromise({
+        try: () => response.clone().json() as Promise<unknown>,
+        catch: () => new Error("Invalid Reminders response"),
+      }).pipe(Effect.catch(() => Effect.succeed(null)));
+      const status = yield* Schema.decodeUnknownEffect(responseSchema)(body).pipe(
+        Effect.map((value) => value.status),
+        Effect.catch(() => Effect.succeed(null)),
+      );
+      if (status && status.phase !== "authenticated") return status;
+    }
     if (!response.ok) {
       return yield* Effect.fail(
         new Error(
@@ -99,7 +131,7 @@ function statusText(status: Status): string {
     case "transient-outage":
       return "Apple is temporarily unavailable. Check access later.";
     case "unsupported-protocol":
-      return "Reminders access is unsupported or its data could not be decoded. Approve iCloud web access on a trusted device and check access. Keep Advanced Data Protection enabled; persistent failures need an integration update.";
+      return "Apple sign-in or Reminders access returned an unsupported response. The diagnostic below identifies the failed step. Keep Advanced Data Protection enabled.";
   }
 }
 
@@ -161,6 +193,15 @@ export default function RemindersPage() {
           <p role="status">
             {status ? statusText(status) : "Loading connection status…"}
           </p>
+          {status?.diagnostic && (
+            <p role="alert">
+              Failed step: {status.diagnostic.stage} ({status.diagnostic.category}
+              {status.diagnostic.httpStatus
+                ? `, Apple HTTP ${status.diagnostic.httpStatus}`
+                : ""}
+              ).
+            </p>
+          )}
           {status?.challengeId && status.phase === "authentication-needed" && (
             <form onSubmit={submitCode}>
               <label htmlFor="reminders-code">Verification code</label>
@@ -180,7 +221,12 @@ export default function RemindersPage() {
             </form>
           )}
           {status?.enabled &&
-            status.phase === "authentication-needed" &&
+            [
+              "authentication-needed",
+              "unsupported-protocol",
+              "transient-outage",
+              "rate-limited",
+            ].includes(status.phase) &&
             !status.challengeId && (
               <button type="button" disabled={busy} onClick={() => request("start")}>
                 Start sign-in

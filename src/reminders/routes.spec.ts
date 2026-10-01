@@ -2,20 +2,26 @@ import { Effect } from "effect";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { testRuntime } from "../live-check/testRuntime.js";
-import { registerRemindersRoutes, type RemindersControl } from "./routes.js";
+import {
+  registerRemindersRoutes,
+  type RemindersControl,
+  type RemindersPublicStatus,
+} from "./routes.js";
 
 const origin = "https://omni.example.test";
 const initial = { enabled: true, phase: "authentication-needed" as const };
 
 function fixture(config?: { origin?: string }) {
-  const status = vi.fn(() => Effect.succeed(initial));
+  const status = vi.fn<RemindersControl["status"]>(() => Effect.succeed(initial));
   const startAuthentication = vi.fn<RemindersControl["startAuthentication"]>(() =>
     Effect.succeed({ ...initial, challengeId: "challenge-one" }),
   );
   const submitCode = vi.fn(() =>
     Effect.succeed({ enabled: true, phase: "authenticated" as const }),
   );
-  const verifyAccess = vi.fn(() => Effect.succeed(initial));
+  const verifyAccess = vi.fn<RemindersControl["verifyAccess"]>(() =>
+    Effect.succeed(initial),
+  );
   const control: RemindersControl = {
     status,
     startAuthentication,
@@ -45,6 +51,81 @@ function fixture(config?: { origin?: string }) {
 }
 
 describe("Reminders admin routes", () => {
+  it("includes safe diagnostic status in failed start and verify responses", async () => {
+    const x = fixture();
+    const diagnostic = {
+      stage: "sign-in-init",
+      category: "apple-response",
+      httpStatus: 503,
+    };
+    x.status.mockImplementation(() =>
+      Effect.succeed({
+        enabled: true,
+        phase: "transient-outage",
+        diagnostic: {
+          ...diagnostic,
+          reason: "secret reason",
+          cookies: "secret cookies",
+        },
+        sessionToken: "secret token",
+      } as RemindersPublicStatus),
+    );
+    x.startAuthentication.mockImplementation(() => Effect.fail(new Error("secret")));
+    x.verifyAccess.mockImplementation(() => Effect.fail(new Error("secret")));
+    for (const action of ["start", "verify"]) {
+      const response = await x.request(
+        `/api/reminders/auth/${action}`,
+        "POST",
+        {},
+        "{}",
+      );
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({
+        error: "Reminders request failed",
+        status: { enabled: true, phase: "transient-outage", diagnostic },
+      });
+    }
+  });
+
+  it("rejects arbitrary diagnostic labels and invalid status codes", async () => {
+    const x = fixture();
+    x.status.mockImplementationOnce(() =>
+      Effect.succeed({
+        ...initial,
+        diagnostic: { stage: "secret URL", category: "transport", httpStatus: 503 },
+      } as unknown as RemindersPublicStatus),
+    );
+    expect(await (await x.request("/api/reminders/status")).json()).toEqual({
+      status: initial,
+    });
+    x.status.mockImplementationOnce(() =>
+      Effect.succeed({
+        ...initial,
+        diagnostic: { stage: "sign-in-init", category: "transport", httpStatus: 900 },
+      }),
+    );
+    expect(await (await x.request("/api/reminders/status")).json()).toEqual({
+      status: {
+        ...initial,
+        diagnostic: { stage: "sign-in-init", category: "transport" },
+      },
+    });
+  });
+
+  it("returns 429 when authentication is in its service cooldown", async () => {
+    const x = fixture();
+    x.status.mockImplementation(() =>
+      Effect.succeed({ enabled: true, phase: "rate-limited" }),
+    );
+    x.startAuthentication.mockImplementation(() => Effect.fail(new Error("limited")));
+    const response = await x.request("/api/reminders/auth/start", "POST", {}, "{}");
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      error: "Reminders request failed",
+      status: { enabled: true, phase: "rate-limited" },
+    });
+  });
+
   it("returns only public status metadata with no-store headers", async () => {
     const x = fixture();
     const valid = await x.request("/api/reminders/status");

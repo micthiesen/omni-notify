@@ -310,6 +310,10 @@ const program = Effect.scoped(
           : ".local/reminders-private",
       },
       {
+        logFailure: (diagnostic) =>
+          logger
+            .warn("iCloud Reminders request failed", diagnostic)
+            .pipe(Effect.provide(context)),
         notify: notify({
           title: "iCloud Reminders needs attention",
           message:

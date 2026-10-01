@@ -8,7 +8,11 @@ import {
   type ReminderPatch,
 } from "./cloudkit.js";
 import { remindersConfigured, type RemindersConfiguration } from "./config.js";
-import type { RemindersControl, RemindersPublicStatus } from "./routes.js";
+import type {
+  RemindersControl,
+  RemindersDiagnostic,
+  RemindersPublicStatus,
+} from "./routes.js";
 import {
   createRemindersStore,
   emptyRemindersState,
@@ -50,12 +54,63 @@ const fingerprint = (value: unknown) =>
     .digest("hex");
 
 interface Dependencies {
+  logFailure?: (diagnostic: RemindersDiagnostic) => Effect.Effect<void>;
   store?: RemindersStore;
   apple?: Pick<
     AppleRemindersClient,
     "begin" | "verify" | "submit2fa" | "requestPcsAccess" | "ckPost"
   >;
   notify: Effect.Effect<void, unknown>;
+}
+
+function appleDiagnostic(error: AppleRemindersError): RemindersDiagnostic {
+  let stage: RemindersDiagnostic["stage"];
+  switch (error.operation) {
+    case "SRP init":
+      stage = "sign-in-init";
+      break;
+    case "SRP proof":
+      stage = "sign-in-proof";
+      break;
+    case "SRP complete":
+      stage = "sign-in-complete";
+      break;
+    case "account login":
+    case "validate session":
+      stage = "account-session";
+      break;
+    case "MFA options":
+    case "MFA push":
+    case "MFA verify":
+    case "SMS request":
+    case "trust browser":
+      stage = "second-factor";
+      break;
+    case "load session":
+    case "save session":
+      stage = "private-storage";
+      break;
+    default:
+      stage = "apple-request";
+  }
+  const httpStatus =
+    Number.isInteger(error.status) && error.status! >= 100 && error.status! <= 599
+      ? error.status
+      : undefined;
+  return {
+    stage,
+    category:
+      stage === "private-storage"
+        ? "storage"
+        : httpStatus !== undefined
+          ? "apple-response"
+          : error.kind === "unsupported-protocol"
+            ? "protocol"
+            : error.kind === "transient-outage"
+              ? "transport"
+              : "authentication",
+    ...(httpStatus !== undefined ? { httpStatus } : {}),
+  };
 }
 
 /** One serialized account owner. Interrupted mutations remain reserved, never replayed. */
@@ -140,7 +195,9 @@ export class RemindersService implements RemindersControl {
   private recordFailure(error: unknown) {
     return Effect.gen({ self: this }, function* () {
       if (error instanceof AppleRemindersError) {
-        this.current = { enabled: true, phase: error.kind };
+        const diagnostic = appleDiagnostic(error);
+        this.current = { enabled: true, phase: error.kind, diagnostic };
+        yield* this.deps.logFailure?.(diagnostic) ?? Effect.void;
         if (
           error.kind === "authentication-needed" ||
           error.kind === "awaiting-device-approval" ||
@@ -152,10 +209,22 @@ export class RemindersService implements RemindersControl {
           enabled: true,
           phase: "unsupported-protocol",
           reason: "protocol",
+          diagnostic: { stage: "apple-request", category: "protocol" },
         };
+        yield* this.deps.logFailure?.(this.current.diagnostic!) ?? Effect.void;
         yield* this.notifyOnce();
       } else if (error instanceof RemindersServiceError && error.code === "storage") {
-        this.current = { enabled: this.enabled, phase: "transient-outage" };
+        const diagnostic: RemindersDiagnostic = {
+          stage: "private-storage",
+          category: "storage",
+        };
+        this.current = { enabled: this.enabled, phase: "transient-outage", diagnostic };
+        yield* this.deps.logFailure?.(diagnostic) ?? Effect.void;
+      } else if (
+        error instanceof RemindersServiceError &&
+        error.code === "rate-limited"
+      ) {
+        this.current = { ...this.current, phase: "rate-limited" };
       }
     });
   }

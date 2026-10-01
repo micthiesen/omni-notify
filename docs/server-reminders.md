@@ -28,6 +28,15 @@ HTTP to HTTPS. Use its existing Omni proxy host. Restrict the backend port to th
 proxy/trusted network; forwarded headers alone are not trusted as authentication.
 The page checks HTTPS before sending a code; the API requires the exact configured
 Origin for every POST. Disable proxy request-body logging for these endpoints.
+The certificate must cover that exact hostname and be trusted by the device.
+A certificate for another Boris service does not cover `omni.boris`; changing
+page checks cannot resolve a browser certificate warning.
+
+An application authentication failure includes a bounded diagnostic stage and,
+when available, Apple's HTTP status in the page and server log. No Apple response
+body, account identifier, cookie, token, password, or code is included. An NPM
+502 without this structured status is a separate proxy/application reachability
+problem. Do not retry sign-in automatically while investigating either failure.
 
 After the configured container is running:
 

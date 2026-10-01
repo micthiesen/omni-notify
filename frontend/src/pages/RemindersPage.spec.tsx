@@ -51,4 +51,29 @@ describe("Reminders administration page", () => {
       "Invalid Reminders response",
     );
   });
+
+  it("shows bounded application failure details instead of a generic 502", async () => {
+    const status = {
+      enabled: true,
+      phase: "unsupported-protocol",
+      diagnostic: {
+        stage: "account-session",
+        category: "apple-response",
+        httpStatus: 421,
+      },
+    };
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(Response.json({ status }, { status: 502 })),
+    );
+    expect(await Effect.runPromise(remindersRequest("start"))).toEqual(status);
+  });
+
+  it("keeps proxy failures distinct and never renders arbitrary error bodies", async () => {
+    vi.stubGlobal("fetch", () =>
+      Promise.resolve(new Response("secret upstream HTML", { status: 502 })),
+    );
+    await expect(Effect.runPromise(remindersRequest("start"))).rejects.toThrow(
+      "Reminders request failed (502)",
+    );
+  });
 });

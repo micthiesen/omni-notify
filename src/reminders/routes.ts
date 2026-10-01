@@ -3,6 +3,29 @@ import type { Hono } from "hono";
 import { Clock, Effect, Schema } from "effect";
 import { effectHandler, effectMiddleware, decodeJsonBody } from "../effect/http.js";
 
+const diagnosticStages = [
+  "sign-in-init",
+  "sign-in-proof",
+  "sign-in-complete",
+  "account-session",
+  "second-factor",
+  "apple-request",
+  "private-storage",
+] as const;
+const diagnosticCategories = [
+  "apple-response",
+  "transport",
+  "protocol",
+  "storage",
+  "authentication",
+] as const;
+
+export type RemindersDiagnostic = {
+  stage: (typeof diagnosticStages)[number];
+  category: (typeof diagnosticCategories)[number];
+  httpStatus?: number;
+};
+
 export type RemindersPublicStatus = {
   enabled: boolean;
   phase:
@@ -24,6 +47,7 @@ export type RemindersPublicStatus = {
     | "protocol";
   challengeId?: string;
   challengeExpiresAt?: number;
+  diagnostic?: RemindersDiagnostic;
 };
 
 export interface RemindersControl<R = never> {
@@ -42,6 +66,7 @@ const codeSchema = Schema.Struct({
 });
 
 function publicStatus(status: RemindersPublicStatus): RemindersPublicStatus {
+  const diagnostic = status.diagnostic;
   return {
     enabled: status.enabled,
     phase: status.phase,
@@ -49,6 +74,21 @@ function publicStatus(status: RemindersPublicStatus): RemindersPublicStatus {
     ...(status.challengeId ? { challengeId: status.challengeId } : {}),
     ...(status.challengeExpiresAt
       ? { challengeExpiresAt: status.challengeExpiresAt }
+      : {}),
+    ...(diagnostic &&
+    diagnosticStages.includes(diagnostic.stage) &&
+    diagnosticCategories.includes(diagnostic.category)
+      ? {
+          diagnostic: {
+            stage: diagnostic.stage,
+            category: diagnostic.category,
+            ...(Number.isInteger(diagnostic.httpStatus) &&
+            diagnostic.httpStatus! >= 100 &&
+            diagnostic.httpStatus! <= 599
+              ? { httpStatus: diagnostic.httpStatus }
+              : {}),
+          },
+        }
       : {}),
   };
 }
@@ -156,7 +196,17 @@ export function registerRemindersRoutes<R>(
       control.startAuthentication().pipe(
         Effect.map((status) => c.json({ status: publicStatus(status) })),
         Effect.catch(() =>
-          Effect.succeed(c.json({ error: "Reminders request failed" }, 502)),
+          control.status().pipe(
+            Effect.map((status) =>
+              c.json(
+                { error: "Reminders request failed", status: publicStatus(status) },
+                status.phase === "rate-limited" ? 429 : 502,
+              ),
+            ),
+            Effect.catch(() =>
+              Effect.succeed(c.json({ error: "Reminders request failed" }, 502)),
+            ),
+          ),
         ),
       ),
     ),
@@ -179,7 +229,17 @@ export function registerRemindersRoutes<R>(
       control.verifyAccess().pipe(
         Effect.map((status) => c.json({ status: publicStatus(status) })),
         Effect.catch(() =>
-          Effect.succeed(c.json({ error: "Reminders request failed" }, 502)),
+          control.status().pipe(
+            Effect.map((status) =>
+              c.json(
+                { error: "Reminders request failed", status: publicStatus(status) },
+                status.phase === "rate-limited" ? 429 : 502,
+              ),
+            ),
+            Effect.catch(() =>
+              Effect.succeed(c.json({ error: "Reminders request failed" }, 502)),
+            ),
+          ),
         ),
       ),
     ),

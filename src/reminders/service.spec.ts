@@ -5,6 +5,7 @@ import { vi } from "vitest";
 import { AppleRemindersError, type AppleRemindersClient } from "./apple.js";
 import type { RemindersConfiguration } from "./config.js";
 import { RemindersService } from "./service.js";
+import type { RemindersDiagnostic } from "./routes.js";
 import {
   emptyRemindersState,
   type RemindersStore,
@@ -26,6 +27,7 @@ function fixture(options?: {
   submit2fa?: () => Effect.Effect<"ready", AppleRemindersError>;
   ckPost?: (path: string, body: unknown) => Effect.Effect<unknown, AppleRemindersError>;
   state?: RemindersStoredState;
+  logFailure?: (diagnostic: RemindersDiagnostic) => Effect.Effect<void>;
 }) {
   let state = options?.state ?? emptyRemindersState();
   const read = vi.fn(() => Effect.sync(() => structuredClone(state)));
@@ -59,6 +61,7 @@ function fixture(options?: {
     "begin" | "verify" | "submit2fa" | "requestPcsAccess" | "ckPost"
   >;
   const service = new RemindersService(config, {
+    logFailure: options?.logFailure,
     store,
     apple,
     notify: Effect.sync(() => {
@@ -85,6 +88,59 @@ const authError = (kind: AppleRemindersError["kind"]) =>
   new AppleRemindersError({ operation: "fixture", reason: "opaque", kind });
 
 describe("Reminders service", () => {
+  it.effect("reports and logs only bounded sign-in diagnostics", () =>
+    Effect.gen(function* () {
+      const diagnostics: RemindersDiagnostic[] = [];
+      const x = fixture({
+        begin: () =>
+          Effect.fail(
+            new AppleRemindersError({
+              operation: "SRP init",
+              reason: "secret upstream cookies",
+              status: 503,
+              kind: "transient-outage",
+            }),
+          ),
+        logFailure: (diagnostic) =>
+          Effect.sync(() => {
+            diagnostics.push(diagnostic);
+          }),
+      });
+      yield* x.service.startAuthentication().pipe(Effect.result);
+      const expected = {
+        stage: "sign-in-init",
+        category: "apple-response",
+        httpStatus: 503,
+      };
+      expect((yield* x.service.status()).diagnostic).toEqual(expected);
+      expect(diagnostics).toEqual([expected]);
+      yield* x.service.startAuthentication().pipe(Effect.result);
+      expect((yield* x.service.status()).phase).toBe("rate-limited");
+      expect(x.begin).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  it.effect("does not expose unknown Apple operation or invalid HTTP status", () =>
+    Effect.gen(function* () {
+      const x = fixture({
+        begin: () =>
+          Effect.fail(
+            new AppleRemindersError({
+              operation: "secret account URL",
+              reason: "secret",
+              status: 900,
+              kind: "unsupported-protocol",
+            }),
+          ),
+      });
+      yield* x.service.startAuthentication().pipe(Effect.result);
+      expect((yield* x.service.status()).diagnostic).toEqual({
+        stage: "apple-request",
+        category: "protocol",
+      });
+    }),
+  );
+
   it.effect(
     "keeps incomplete configuration disabled without storage or network work",
     () =>

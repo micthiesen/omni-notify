@@ -157,9 +157,6 @@ describe("Apple Reminders transport", () => {
             return Response.json({
               dsInfo: { hsaVersion: 2 },
               hsaTrustedBrowser: false,
-              webservices: {
-                ckdatabasews: { url: "https://ckdatabasews.icloud.com" },
-              },
             });
           }
           return Response.json({});
@@ -189,6 +186,70 @@ describe("Apple Reminders transport", () => {
             : "https://idmsa.apple.com",
         });
       }
+    },
+  );
+
+  it.each([
+    [409, 401, true],
+    [409, 403, true],
+    [409, 421, true],
+    [200, 401, false],
+    [200, 403, false],
+    [200, 421, false],
+    [409, 451, false],
+    [409, 429, false],
+    [409, 500, false],
+    [409, 503, false],
+    [409, 200, false],
+  ] as const)(
+    "limits account-login MFA fallback after SRP %s and setup %s",
+    async (completeStatus, setupStatus, expectsMfa) => {
+      const { instance, fetchMock } = client(
+        (url) => {
+          if (url.pathname.endsWith("/signin/init")) {
+            return Response.json({
+              protocol: "s2k",
+              iteration: 1,
+              salt: Buffer.alloc(16, 1).toString("base64"),
+              b: Buffer.from([2]).toString("base64"),
+              c: "opaque-challenge",
+            });
+          }
+          if (url.pathname.endsWith("/signin/complete")) {
+            return Response.json(
+              {},
+              {
+                status: completeStatus,
+                headers: { "x-apple-session-token": "new-session" },
+              },
+            );
+          }
+          if (url.pathname.endsWith("/accountLogin")) {
+            return Response.json(
+              setupStatus === 200 ? { termsUpdateNeeded: true } : {},
+              { status: setupStatus },
+            );
+          }
+          return Response.json({});
+        },
+        { clientId: "auth-test" },
+      );
+      const result = await Effect.runPromise(instance.begin().pipe(Effect.result));
+      if (expectsMfa) {
+        expect(Result.isSuccess(result) && result.success).toBe("mfa-required");
+      } else {
+        expect(Result.isFailure(result) && result.failure.status).toBe(
+          setupStatus === 200 ? 451 : setupStatus,
+        );
+      }
+      expect(
+        fetchMock.mock.calls.some(([url]) => url.pathname === "/appleauth/auth"),
+      ).toBe(expectsMfa);
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          url.pathname.endsWith("/verify/trusteddevice"),
+        ),
+      ).toBe(expectsMfa);
     },
   );
 

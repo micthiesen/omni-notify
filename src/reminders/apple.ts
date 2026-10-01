@@ -602,6 +602,14 @@ export class AppleRemindersClient {
       if (data.termsUpdateNeeded === true) {
         return yield* this.fail("account login", "terms acceptance required", 451);
       }
+      const dsInfo = asRecord(data.dsInfo);
+      if (
+        Number(dsInfo.hsaVersion ?? 0) >= 2 &&
+        (data.hsaChallengeRequired === true || data.hsaTrustedBrowser === false)
+      ) {
+        yield* this.persist();
+        return false;
+      }
       const services = asRecord(data.webservices);
       const ck = asRecord(services.ckdatabasews);
       const ckUrl = stringField(ck.url);
@@ -616,11 +624,7 @@ export class AppleRemindersClient {
         session.dsid = String(dsid);
       }
       yield* this.persist();
-      const dsInfo = asRecord(data.dsInfo);
-      return !(
-        Number(dsInfo.hsaVersion ?? 0) >= 2 &&
-        (data.hsaChallengeRequired === true || data.hsaTrustedBrowser === false)
-      );
+      return true;
     });
   }
 
@@ -737,7 +741,16 @@ export class AppleRemindersClient {
         );
       }
       if (session.sessionToken) {
-        const trusted = yield* this.accountLogin();
+        const trusted = yield* this.accountLogin().pipe(
+          Effect.catch((error) =>
+            second.status === 409 &&
+            error.operation === "account login" &&
+            error.status !== undefined &&
+            [401, 403, 421].includes(error.status)
+              ? Effect.succeed(false)
+              : Effect.fail(error),
+          ),
+        );
         if (trusted) return "ready" as const;
       }
       const options = yield* this.request(
