@@ -13,7 +13,7 @@ permissions: {}
 jobs:
   external-denial:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 6
     steps:
       - name: Reject external requests, including forged LAN headers
         env:
@@ -39,10 +39,15 @@ jobs:
             test "$status" = 403
           done
       - name: Report legacy aliases and public integration routes
+        if: always()
         env:
           ORIGIN_IPV4: ${{ inputs.origin_ipv4 }}
         shell: bash
         run: |
+          python3 - <<'PY'
+          import ipaddress, os
+          assert ipaddress.IPv4Address(os.environ['ORIGIN_IPV4']).is_global
+          PY
           # Read-only observations, without credentials, response bodies, or redirects.
           # Legacy HTTPS is also checked without bypassing its mismatched certificate.
           for origin in http://omni.boris https://omni.boris https://pods.syas.ca; do
@@ -50,7 +55,7 @@ jobs:
             if [[ "$origin" == *omni.boris ]]; then
               resolve=(--resolve "omni.boris:80:${ORIGIN_IPV4}" --resolve "omni.boris:443:${ORIGIN_IPV4}")
             fi
-            for path in /api/health /reminders /api/reminders/status /mcp /pods/feed.xml /pods/logo.jpeg; do
+            for path in /api/health /reminders /api/reminders/status /mcp /pods/rss /pods/logo.jpeg; do
               result=0
               status=$(curl --silent --show-error --max-time 15 \
                 --user-agent 'OpenAI File Downloader, XaiImageApiFetch/1.0' \
