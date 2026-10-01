@@ -93,6 +93,43 @@ afterEach(async () => {
 });
 
 describe("Omni MCP streamable HTTP server", () => {
+  it("delivers private PDF resource bytes through the authenticated MCP protocol", async () => {
+    const bytes = Buffer.from("%PDF-1.7\nprivate synthetic fixture");
+    const handler = createOmniMcpHandler(
+      runtime({
+        emailControls: {
+          transport: {
+            fetchAttachmentByIdEffect: () =>
+              Effect.succeed({
+                name: "fixture.pdf",
+                mimeType: "application/pdf",
+                data: bytes,
+              }),
+          } as unknown as EmailTransport,
+        },
+      }),
+      TEST_TOKEN,
+    );
+    handlers.push(handler);
+    const client = await connectClient(handler);
+    const result = await client.callTool({
+      name: "email_attachment_get",
+      arguments: { messageId: "<fixture@example.test>", attachmentId: "fixture" },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.content).toContainEqual({
+      type: "resource",
+      resource: {
+        uri: "omni-email-attachment:fixture",
+        mimeType: "application/pdf",
+        blob: bytes.toString("base64"),
+      },
+    });
+    expect(result.structuredContent).toMatchObject({
+      filename: "fixture.pdf",
+      size: bytes.length,
+    });
+  });
   it("serves bounded Hister reads and rejects invalid tool input over MCP", async () => {
     let requests = 0;
     const hister = createHisterService(

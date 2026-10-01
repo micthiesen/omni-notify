@@ -28,6 +28,8 @@ export interface McpToolDefinition<R = AppServices> {
     >
   >;
   policy: ToolPolicy;
+  /** Optional binary/resource representation of validated structured output. */
+  formatResult?: (value: Record<string, unknown>) => CallToolResult;
   execute: (
     input: Record<string, unknown>,
   ) => EffectType<Record<string, unknown>, McpToolError, R>;

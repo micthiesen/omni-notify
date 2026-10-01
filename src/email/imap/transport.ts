@@ -43,6 +43,15 @@ import { createDraftEffect as appendDraftEffect } from "./actions.js";
 import { getComposeEmailConfiguration } from "../../emails/client.js";
 
 import { appendSentCopyEffect, type SentCopyInput } from "./sent.js";
+import {
+  attachmentPartId,
+  declaredAttachmentMimeType,
+  encodeStableAttachmentId,
+  MAX_ATTACHMENT_BYTES,
+  MAX_ATTACHMENT_MESSAGE_BYTES,
+  safeAttachmentFilename,
+  validAttachmentMessageId,
+} from "./attachments.js";
 
 const IMAP_HOST = "imap.mail.me.com";
 const IMAP_PORT = 993;
@@ -952,6 +961,144 @@ export class ImapTransport implements EmailTransport<
           return email;
         }),
       (lock) => Effect.sync(() => lock.release()),
+    );
+  }
+
+  fetchAttachmentByIdEffect(
+    messageId: string,
+    attachmentId: string,
+    options: { maxBytes?: number } = {},
+  ) {
+    return this.runSerializedEffect(
+      "IMAP stable attachment download",
+      Effect.gen({ self: this }, function* () {
+        const maxBytes = options.maxBytes ?? MAX_ATTACHMENT_BYTES;
+        if (
+          !validAttachmentMessageId(messageId) ||
+          !/^imap-attachment:[a-f0-9]{64}$/.test(attachmentId) ||
+          !Number.isInteger(maxBytes) ||
+          maxBytes < 1 ||
+          maxBytes > MAX_ATTACHMENT_BYTES
+        )
+          return yield* new ImapOperationError({
+            operation: "validate attachment request",
+            cause: new Error("Invalid attachment identity or byte limit"),
+          });
+        const client = yield* this.requireClientEffect;
+        const folders = [...FOLDERS];
+        for (const folder of folders) {
+          const result = yield* Effect.acquireUseRelease(
+            this.promiseEffect("lock attachment mailbox", () =>
+              client.getMailboxLock(folder, { readOnly: true }),
+            ),
+            () =>
+              Effect.gen({ self: this }, function* () {
+                const found = yield* this.promiseEffect("find attachment message", () =>
+                  client.search({ header: { "message-id": messageId } }, { uid: true }),
+                );
+                if (!Array.isArray(found)) return undefined;
+                if (found.length > 50)
+                  return yield* new ImapOperationError({
+                    operation: "find attachment message",
+                    cause: new Error(
+                      "Too many matches for bounded attachment retrieval",
+                    ),
+                  });
+                for (const uid of [...found].reverse()) {
+                  const meta = orUndefined(
+                    yield* this.promiseEffect("preflight attachment message", () =>
+                      client.fetchOne(
+                        String(uid),
+                        { size: true, envelope: true },
+                        { uid: true },
+                      ),
+                    ),
+                  );
+                  if (!meta || meta.envelope?.messageId !== messageId) continue;
+                  if (
+                    !Number.isSafeInteger(meta.size) ||
+                    meta.size! < 1 ||
+                    meta.size! > MAX_ATTACHMENT_MESSAGE_BYTES
+                  )
+                    return yield* new ImapOperationError({
+                      operation: "bound attachment message",
+                      cause: new Error(
+                        "Message exceeds attachment retrieval byte limit",
+                      ),
+                    });
+                  const full = orUndefined(
+                    yield* this.promiseEffect("fetch bounded attachment message", () =>
+                      client.fetchOne(
+                        String(uid),
+                        {
+                          source: {
+                            start: 0,
+                            maxLength: MAX_ATTACHMENT_MESSAGE_BYTES + 1,
+                          },
+                        },
+                        { uid: true },
+                      ),
+                    ),
+                  );
+                  if (!full?.source) continue;
+                  if (full.source.length > MAX_ATTACHMENT_MESSAGE_BYTES)
+                    return yield* new ImapOperationError({
+                      operation: "bound attachment source",
+                      cause: new Error(
+                        "Message exceeds attachment retrieval byte limit",
+                      ),
+                    });
+                  const parsed = yield* this.promiseEffect(
+                    "parse bounded attachment message",
+                    () =>
+                      simpleParser(full.source!, {
+                        skipHtmlToText: true,
+                        skipTextToHtml: true,
+                        skipImageLinks: true,
+                      }),
+                  );
+                  if (parsed.messageId !== messageId) continue;
+                  const matches = parsed.attachments.filter((part) => {
+                    const partId = attachmentPartId(part);
+                    return (
+                      partId !== undefined &&
+                      encodeStableAttachmentId(messageId, partId) === attachmentId
+                    );
+                  });
+                  if (matches.length === 0) continue;
+                  if (matches.length !== 1)
+                    return yield* new ImapOperationError({
+                      operation: "validate MIME attachment identity",
+                      cause: new Error("Ambiguous MIME attachment identity"),
+                    });
+                  const part = matches[0];
+                  if (!Buffer.isBuffer(part.content) || part.content.length > maxBytes)
+                    return yield* new ImapOperationError({
+                      operation: "bound attachment bytes",
+                      cause: new Error("Attachment exceeds requested byte limit"),
+                    });
+                  return {
+                    name: safeAttachmentFilename(part.filename),
+                    mimeType: declaredAttachmentMimeType(part),
+                    data: part.content,
+                  };
+                }
+                return undefined;
+              }),
+            (lock) => Effect.sync(() => lock.release()),
+          );
+          if (result) return result;
+          if (folder === FOLDERS[FOLDERS.length - 1]) {
+            const sent = (yield* this.promiseEffect(
+              "discover Sent attachment mailbox",
+              () => client.list(),
+            )).filter((mailbox) => mailbox.specialUse?.toLowerCase() === "\\sent");
+            if (sent.length === 1 && !folders.includes(sent[0].path))
+              folders.push(sent[0].path);
+          }
+        }
+        return undefined;
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
     );
   }
 

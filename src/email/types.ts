@@ -6,6 +6,11 @@ import type { Docstore } from "@micthiesen/mitools/docstore";
 export interface EmailAttachment {
   /** Opaque IMAP folder and UID coordinates. */
   blobId: string;
+  /** Stable exact Message-ID plus MIME part handle, independent of folder/UID. */
+  attachmentId?: string;
+  partId?: string;
+  disposition?: string;
+  contentId?: string;
   name: string;
   type: string; // MIME type
   size: number;
@@ -31,6 +36,10 @@ export interface FetchedEmail {
 
 export const EmailAttachmentSchema = Schema.Struct({
   blobId: Schema.String,
+  attachmentId: Schema.optional(Schema.String),
+  partId: Schema.optional(Schema.String),
+  disposition: Schema.optional(Schema.String),
+  contentId: Schema.optional(Schema.String),
   name: Schema.String,
   type: Schema.String,
   size: Schema.Number,
@@ -152,5 +161,11 @@ export interface EmailTransport<out E = unknown, out R = never> {
   /** Download one attachment's bytes; undefined when unavailable. */
   downloadAttachmentEffect(
     attachment: EmailAttachment,
+  ): Effect.Effect<DownloadedAttachment | undefined, E, R>;
+  /** Bounded private read by stable Message-ID and MIME identity; never marks read. */
+  fetchAttachmentByIdEffect?(
+    messageId: string,
+    attachmentId: string,
+    options?: { maxBytes?: number },
   ): Effect.Effect<DownloadedAttachment | undefined, E, R>;
 }

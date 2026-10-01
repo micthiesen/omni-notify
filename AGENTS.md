@@ -192,6 +192,11 @@ from delivery. Uncertain APPENDs only reconcile by exact Message-ID and MIME; co
 repair never retransmits. Composed mail falls back to iCloud SMTP only when no
 explicit SMTP fields are set. See `docs/mcp.md`.
 
+Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
+revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK
+semantics, declared MIME validation, safe download names, and private binary
+responses without public storage or server-selected filesystem destinations.
+
 ## Code and tests
 
 - Oxfmt, 88 columns, two-space indentation; Oxlint for correctness checks.

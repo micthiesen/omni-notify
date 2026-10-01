@@ -1,6 +1,7 @@
 import type { AddressObject, ParsedMail } from "mailparser";
 import { extractInterestingLinks, htmlToText } from "../htmlToText.js";
 import type { EmailAttachment, FetchedEmail } from "../types.js";
+import { attachmentPartId, encodeStableAttachmentId } from "./attachments.js";
 
 /** Where a message physically lives right now (UIDs are per-folder). */
 export interface MessageCoords {
@@ -46,12 +47,22 @@ export function mapParsedMessage(
 
   const from = parsed.from?.value?.[0];
 
-  const attachments: EmailAttachment[] = parsed.attachments.map((a, index) => ({
-    blobId: encodeAttachmentBlobId(coords, index),
-    name: a.filename ?? "unnamed",
-    type: a.contentType,
-    size: a.size,
-  }));
+  const attachments: EmailAttachment[] = parsed.attachments.map((a, index) => {
+    const partId = attachmentPartId(a);
+    return {
+      blobId: encodeAttachmentBlobId(coords, index),
+      name: a.filename ?? "unnamed",
+      type: a.contentType,
+      size: a.size,
+      partId,
+      attachmentId:
+        parsed.messageId && partId
+          ? encodeStableAttachmentId(parsed.messageId, partId)
+          : undefined,
+      disposition: a.contentDisposition,
+      contentId: a.contentId,
+    };
+  });
 
   return {
     id:

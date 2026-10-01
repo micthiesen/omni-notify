@@ -192,7 +192,15 @@ const emailSummarySchema = z.object({
   excerpt: z.string(),
   excerptTruncated: z.boolean(),
   attachments: z.array(
-    z.object({ name: z.string(), mimeType: z.string(), size: z.number() }),
+    z.object({
+      attachmentId: z.string().nullable(),
+      partId: z.string().nullable(),
+      disposition: z.string().nullable(),
+      contentId: z.string().nullable(),
+      name: z.string(),
+      mimeType: z.string(),
+      size: z.number(),
+    }),
   ),
 });
 
@@ -274,6 +282,10 @@ function serializeEmail(email: FetchedEmail, maxExcerptChars: number) {
     excerpt: excerpt.text,
     excerptTruncated: excerpt.truncated,
     attachments: email.attachments.slice(0, 25).map((attachment) => ({
+      attachmentId: attachment.attachmentId ?? null,
+      partId: attachment.partId ?? null,
+      disposition: attachment.disposition ?? null,
+      contentId: attachment.contentId ? truncate(attachment.contentId, 500).text : null,
       name: truncate(attachment.name, 300).text,
       mimeType: truncate(attachment.type, 200).text,
       size: attachment.size,

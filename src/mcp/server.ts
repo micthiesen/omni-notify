@@ -58,7 +58,7 @@ export function createOmniMcpHandler(
               tool.execute(input).pipe(
                 Effect.match({
                   onFailure: failedToolResult,
-                  onSuccess: successfulToolResult,
+                  onSuccess: tool.formatResult ?? successfulToolResult,
                 }),
               ),
             ),
