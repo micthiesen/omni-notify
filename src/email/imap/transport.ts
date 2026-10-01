@@ -28,9 +28,10 @@ import type {
 } from "../types.js";
 import {
   type AutoReadClient,
-  discoverAutoReadFoldersEffect,
+  discoverAutoReadMailboxPlanEffect,
   markRecentUnreadReadEffect,
 } from "./autoRead.js";
+import { archiveAutoReadProtectionEffect } from "../archive/persistence.js";
 import {
   decodeAttachmentBlobId,
   type MessageCoords,
@@ -43,6 +44,17 @@ import { createDraftEffect as appendDraftEffect } from "./actions.js";
 import { getComposeEmailConfiguration } from "../../emails/client.js";
 
 import { appendSentCopyEffect, type SentCopyInput } from "./sent.js";
+import {
+  inspectArchiveSourceEffect,
+  moveArchiveMessageEffect as nativeMoveArchiveMessageEffect,
+  reconcileArchiveMessageEffect as readArchiveMoveEffect,
+  restoreArchiveMessageEffect as nativeRestoreArchiveMessageEffect,
+  inspectArchiveDestinationEffect as inspectNativeArchiveDestinationEffect,
+  verifyArchiveLocationEffect as verifyNativeArchiveLocationEffect,
+  reconcileRestoreMessageEffect as readRestoreMoveEffect,
+  type ArchiveIdentity,
+  type ArchiveLocation,
+} from "./archive.js";
 import {
   attachmentPartId,
   declaredAttachmentMimeType,
@@ -130,6 +142,7 @@ export class ImapTransport implements EmailTransport<
   private stopped = false;
   /** Special-use mailboxes are rediscovered after every new connection. */
   private autoReadFolders: string[] | undefined;
+  private autoReadArchiveFolders: string[] | undefined;
   /** Last bulk-import-guard skip count per folder, to de-noise repeat logs. */
   private lastSkipCounts = new Map<string, number>();
   /** imapflow mailbox selection is connection-global, so every complete
@@ -305,8 +318,9 @@ export class ImapTransport implements EmailTransport<
         );
 
         this.autoReadFolders = undefined;
+        this.autoReadArchiveFolders = undefined;
         this.clearReadCaches();
-        const caps = ["IDLE", "CONDSTORE", "QRESYNC", "UIDPLUS"]
+        const caps = ["IDLE", "CONDSTORE", "QRESYNC", "UIDPLUS", "MOVE"]
           .map((c) => `${c}=${client.capabilities.has(c) ? "y" : "n"}`)
           .join(" ");
         yield* this.logger.info(`IMAP connected to ${IMAP_HOST} (${caps})`);
@@ -406,7 +420,7 @@ export class ImapTransport implements EmailTransport<
     return Effect.gen({ self: this }, function* () {
       if (this.autoReadFolders === undefined) {
         const discovered = yield* Effect.result(
-          discoverAutoReadFoldersEffect(client as AutoReadClient),
+          discoverAutoReadMailboxPlanEffect(client as AutoReadClient),
         );
         if (discovered._tag === "Failure") {
           yield* this.logger.warn(
@@ -414,12 +428,17 @@ export class ImapTransport implements EmailTransport<
           );
           return;
         }
-        this.autoReadFolders = discovered.success;
+        this.autoReadFolders = discovered.success.folders;
+        this.autoReadArchiveFolders = discovered.success.archiveFolders;
       }
       yield* markRecentUnreadReadEffect(
         client as AutoReadClient,
         this.autoReadFolders,
         this.logger,
+        (folder, validity) =>
+          this.autoReadArchiveFolders?.includes(folder)
+            ? archiveAutoReadProtectionEffect(folder, validity)
+            : Effect.succeed({ skip: false, excludedUids: new Set<number>() }),
       );
     });
   }
@@ -709,6 +728,113 @@ export class ImapTransport implements EmailTransport<
       );
       return emails;
     });
+  }
+
+  inspectArchiveMessageEffect(identity: ArchiveIdentity) {
+    return this.runSerializedEffect(
+      "inspect archive source",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* inspectArchiveSourceEffect(client, identity);
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  moveArchiveMessageEffect(identity: ArchiveIdentity, sourceHash: string) {
+    return this.runSerializedEffect(
+      "archive exact Inbox message",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* nativeMoveArchiveMessageEffect(client, identity, sourceHash);
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => this.clearReadCaches())),
+        Effect.ensuring(this.restoreInboxEffect()),
+      ),
+    );
+  }
+
+  reconcileArchiveMessageEffect(identity: ArchiveIdentity, sourceHash: string) {
+    return this.runSerializedEffect(
+      "reconcile archive message",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* readArchiveMoveEffect(client, identity, sourceHash);
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  restoreArchiveMessageEffect(
+    identity: ArchiveIdentity,
+    destination: ArchiveLocation,
+    sourceHash: string,
+  ) {
+    return this.runSerializedEffect(
+      "restore exact archived message",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* nativeRestoreArchiveMessageEffect(
+          client,
+          identity,
+          destination,
+          sourceHash,
+        );
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => this.clearReadCaches())),
+        Effect.ensuring(this.restoreInboxEffect()),
+      ),
+    );
+  }
+
+  inspectArchiveDestinationEffect(
+    identity: ArchiveIdentity,
+    destination: ArchiveLocation,
+  ) {
+    return this.runSerializedEffect(
+      "inspect archive restore source",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* inspectNativeArchiveDestinationEffect(
+          client,
+          identity,
+          destination,
+        );
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  verifyArchiveLocationEffect(
+    location: ArchiveLocation,
+    messageId: string,
+    sourceHash: string,
+    flags: readonly string[],
+  ) {
+    return this.runSerializedEffect(
+      "verify archive location",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* verifyNativeArchiveLocationEffect(
+          client,
+          location,
+          messageId,
+          sourceHash,
+          flags,
+        );
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
+  reconcileRestoreMessageEffect(
+    identity: ArchiveIdentity,
+    destination: ArchiveLocation,
+    sourceHash: string,
+  ) {
+    return this.runSerializedEffect(
+      "reconcile restore message",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        return yield* readRestoreMoveEffect(client, identity, destination, sourceHash);
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
   }
 
   private searchSerializedEffect(options: EmailSearchOptions) {

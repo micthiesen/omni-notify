@@ -36,6 +36,10 @@ describe("public HTTP guard", () => {
       "::1",
       "fe80::1",
       "::ffff:127.0.0.1",
+      "192.88.99.1",
+      "2001:20::1",
+      "fec0::1",
+      "4000::1",
     ]) {
       expect(isPublicAddress(address), address).toBe(false);
     }

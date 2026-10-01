@@ -248,6 +248,7 @@ const rawConfigSchema = Schema.Struct({
     Schema.withDecodingDefaultType(Effect.succeed(3000)),
   ),
   OMNI_MCP_TOKEN: optionalString,
+  OMNI_EVENTS_EXECUTOR_AUTH_URL: optionalString,
   HISTER_URL: trimmedUrlString.pipe(
     Schema.check(
       Schema.makeFilter(

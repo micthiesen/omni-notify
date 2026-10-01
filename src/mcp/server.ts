@@ -1,6 +1,7 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { Effect } from "effect";
 import { hasValidBearerToken, unauthorizedMcpResponse } from "./auth.js";
+import { registerEventMethods } from "./events/protocol.js";
 import type { McpRuntime } from "./runtime.js";
 import {
   failedToolResult,
@@ -43,6 +44,7 @@ export function createOmniMcpHandler(
         { name: "omni", version: "1.0.0" },
         { instructions: MCP_SERVER_INSTRUCTIONS },
       );
+      registerEventMethods(server, runtime);
       for (const tool of tools) {
         server.registerTool(
           tool.name,

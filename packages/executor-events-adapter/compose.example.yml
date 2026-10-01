@@ -1,0 +1,19 @@
+# Merge into /home/michael/compose/docker-compose.yml after setting a tested image tag.
+services:
+  executor-events-adapter:
+    image: ghcr.io/micthiesen/omni-executor-events-adapter:${ADAPTER_IMAGE_TAG}
+    restart: unless-stopped
+    environment:
+      PORT: "4789"
+      EXECUTOR_BASE_URL: http://executor:4788
+      OMNI_BASE_URL: http://omni-notify:8080
+      EXECUTOR_ALLOWED_USER_ID: ${EXECUTOR_ALLOWED_USER_ID}
+      PUBLIC_MCP_ORIGIN: https://mcp.syas.ca
+      OMNI_MCP_TOKEN: ${OMNI_MCP_TOKEN}
+    networks:
+      - agent-integrations
+
+networks:
+  agent-integrations:
+    external: true
+    name: compose_agent-integrations

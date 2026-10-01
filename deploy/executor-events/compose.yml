@@ -1,0 +1,33 @@
+name: executor-events
+services:
+  executor-events-adapter:
+    image: ghcr.io/micthiesen/executor-events-adapter:${ADAPTER_SHA:?Set an exact verified commit SHA}
+    container_name: executor-events-adapter
+    restart: unless-stopped
+    env_file: private.env
+    environment:
+      EXECUTOR_BASE_URL: http://executor:4788
+      OMNI_BASE_URL: http://omni-notify:8080
+      EXECUTOR_ALLOWED_USER_ID: ${EXECUTOR_ALLOWED_USER_ID:?Set the existing Executor owner ID}
+      PORT: "4789"
+    networks: [integrations]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    pids_limit: 128
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:4789/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+networks:
+  integrations:
+    external: true
+    name: compose_agent-integrations

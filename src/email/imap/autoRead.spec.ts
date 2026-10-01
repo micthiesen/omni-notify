@@ -83,6 +83,87 @@ describe("markRecentUnreadRead", () => {
     });
   });
 
+  it("leaves protected Archive UIDs unread while marking ordinary mail", async () => {
+    const client = makeClient({
+      search: vi.fn(async () => [4, 9, 12]),
+      mailbox: { uidValidity: 20n },
+    });
+    const logger = { warn: vi.fn(() => Effect.void) };
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(client, ["Archive"], logger, (_folder, validity) => {
+        expect(validity).toBe("20");
+        return Effect.succeed({
+          skip: false,
+          excludedUids: new Set([9, 12]),
+        });
+      }),
+    );
+    expect(client.messageFlagsAdd).toHaveBeenCalledWith([4], ["\\Seen"], {
+      uid: true,
+      silent: true,
+    });
+  });
+
+  it("resolves an uncertain action by exact Message-ID and marks other Archive mail", async () => {
+    const messageId = "<protected@example.test>";
+    const client = makeClient({
+      mailbox: { uidValidity: 20n },
+      search: vi.fn(async (query) => ("header" in query ? [9, 10] : [4, 9, 10])),
+      fetchOne: vi.fn(async (uid) => ({
+        envelope: {
+          messageId: uid === "9" ? messageId : "<substring@example.test>",
+        },
+      })),
+    });
+    const logger = { warn: vi.fn(() => Effect.void) };
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(client, ["Archive"], logger, () =>
+        Effect.succeed({
+          skip: false,
+          excludedUids: new Set<number>(),
+          fallbackMessageIds: [messageId],
+        }),
+      ),
+    );
+    expect(client.messageFlagsAdd).toHaveBeenCalledWith([4, 10], ["\\Seen"], {
+      uid: true,
+      silent: true,
+    });
+  });
+
+  it("leaves Archive unread for this pass when protected identity lookup fails", async () => {
+    const client = makeClient({
+      search: vi.fn(async (query) => ("header" in query ? false : [4, 9])),
+    });
+    const logger = { warn: vi.fn(() => Effect.void) };
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(client, ["Archive"], logger, () =>
+        Effect.succeed({
+          skip: false,
+          excludedUids: new Set<number>(),
+          fallbackMessageIds: ["<protected@example.test>"],
+        }),
+      ),
+    );
+    expect(client.messageFlagsAdd).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it("skips ambiguous Archive state while continuing Junk cleanup", async () => {
+    const client = makeClient({ search: vi.fn(async () => [4]) });
+    const logger = { warn: vi.fn(() => Effect.void) };
+    await Effect.runPromise(
+      markRecentUnreadReadEffect(client, ["Archive", "Junk"], logger, (folder) =>
+        Effect.succeed({
+          skip: folder === "Archive",
+          excludedUids: new Set<number>(),
+        }),
+      ),
+    );
+    expect(client.search).toHaveBeenCalledOnce();
+    expect(client.messageFlagsAdd).toHaveBeenCalledOnce();
+  });
+
   it("releases the writable lock when marking succeeds or fails", async () => {
     const successRelease = vi.fn();
     const successClient = makeClient({

@@ -1,5 +1,10 @@
 # Executor MCP
 
+Email wake subscriptions are documented in [MCP Events](mcp-events.md). The
+separate Executor adapter preserves the existing connection and OAuth routes.
+See [queued reversible archive](email-archive.md) for the exact-message archive,
+status, cancellation and restore tools.
+
 Omni serves a streamable-HTTP MCP endpoint at `/mcp` on its existing HTTP port,
 `FRONTEND_PORT` (3000 by default). The endpoint uses the official MCP server
 transport, advertises the general server name `omni`, and supports the normal

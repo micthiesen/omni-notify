@@ -19,6 +19,8 @@ export type PublicTextRequest = (
 ) => LimitedTextResponse;
 
 const blockedAddresses = new BlockList();
+const globalIpv6 = new BlockList();
+globalIpv6.addSubnet("2000::", 3, "ipv6");
 
 for (const [network, prefix] of [
   ["0.0.0.0", 8],
@@ -29,6 +31,7 @@ for (const [network, prefix] of [
   ["172.16.0.0", 12],
   ["192.0.0.0", 24],
   ["192.0.2.0", 24],
+  ["192.88.99.0", 24],
   ["192.168.0.0", 16],
   ["198.18.0.0", 15],
   ["198.51.100.0", 24],
@@ -45,7 +48,7 @@ for (const [network, prefix] of [
   ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
   ["100::", 64],
-  ["2001::", 32],
+  ["2001::", 23],
   ["2001:2::", 48],
   ["2001:10::", 28],
   ["2001:db8::", 32],
@@ -83,7 +86,10 @@ export function isPublicAddress(address: string): boolean {
   if (mapped) return isPublicAddress(mapped);
   const family = isIP(address);
   if (family === 4) return !blockedAddresses.check(address, "ipv4");
-  if (family === 6) return !blockedAddresses.check(address, "ipv6");
+  if (family === 6)
+    return (
+      globalIpv6.check(address, "ipv6") && !blockedAddresses.check(address, "ipv6")
+    );
   return false;
 }
 

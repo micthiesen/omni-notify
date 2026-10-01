@@ -11,6 +11,9 @@ import { loadBriefingConfigs } from "./briefing-agent/configs.js";
 import { createCalendarHandler } from "./calendar-events/index.js";
 import { importHistoricalCosts } from "./costs/migrate.js";
 import { EmailDispatcher } from "./email/dispatcher.js";
+import { processQueuedArchiveActionsEffect } from "./email/archive/service.js";
+import { EmailEventService } from "./mcp/events/service.js";
+import { createExecutorEventAuthorizer } from "./mcp/events/executorAuth.js";
 import { ImapTransport } from "./email/imap/transport.js";
 import EmailRetryTask from "./email/retryTask.js";
 import { EmailTriageService } from "./email/triage.js";
@@ -214,6 +217,7 @@ const startEmailFeatures = Effect.fn("Main.startEmailFeatures")(function* (
     message: string,
     trigger: "email",
   ) => Effect.Effect<void, WorkspaceOperationError, TaskServices>,
+  events?: EmailEventService,
 ) {
   if (!config.ICLOUD_USERNAME || !config.ICLOUD_APP_PASSWORD) return undefined;
   const emailLogger = parentLogger.extend("Email");
@@ -222,6 +226,7 @@ const startEmailFeatures = Effect.fn("Main.startEmailFeatures")(function* (
     parentLogger.extend("IMAP"),
   );
   const dispatcher = new EmailDispatcher<TaskServices>(transport, emailLogger);
+  if (events) dispatcher.register(events.emailHandler());
   const triage = new EmailTriageService(emailLogger.extend("Triage"));
   const parcel = yield* createParcelHandler(parentLogger, triage);
   if (parcel) dispatcher.register(parcel);
@@ -328,6 +333,17 @@ const program = Effect.scoped(
     yield* registry.initializeEffect();
     yield* Effect.addFinalizer(() => registry.shutdownEffect());
     const emailControls: EmailControls = {};
+    const executorEventAuthUrl =
+      config.OMNI_EVENTS_EXECUTOR_AUTH_URL ||
+      (config.DOCKERIZED ? "http://executor:4788/api/auth/mcp/get-session" : undefined);
+    const events = config.OMNI_MCP_TOKEN
+      ? new EmailEventService(
+          config.OMNI_MCP_TOKEN,
+          executorEventAuthUrl
+            ? createExecutorEventAuthorizer(executorEventAuthUrl)
+            : undefined,
+        )
+      : undefined;
     const requestWorkspaceEmailRun = (
       workspaceId: string,
       subjectId: string,
@@ -371,6 +387,7 @@ const program = Effect.scoped(
       iosControls,
       intelligence,
       reminders,
+      events,
     );
     yield* Effect.addFinalizer(() =>
       closeServer.pipe(
@@ -383,6 +400,21 @@ const program = Effect.scoped(
       return yield* Effect.never;
     }
     const scheduler = yield* Scheduler;
+    if (events) {
+      yield* scheduler.register(
+        registry.track({
+          name: "McpEventDelivery",
+          schedule: "*/30 * * * * *",
+          run: events.drain(),
+        }),
+      );
+      yield* events.drain().pipe(
+        Effect.catch(() =>
+          logger.warn("MCP event recovery deferred to scheduled retry"),
+        ),
+        Effect.forkScoped,
+      );
+    }
     yield* reminders.healthCheck().pipe(Effect.forkScoped);
     yield* scheduler.register(
       registry.track({
@@ -394,12 +426,23 @@ const program = Effect.scoped(
     for (const task of tasks) yield* scheduler.register(registry.track(task));
     let emailCleanup: Effect.Effect<void, never, TaskServices> = Effect.void;
     if (config.ICLOUD_USERNAME && config.ICLOUD_APP_PASSWORD) {
+      yield* scheduler.register(
+        registry.track({
+          name: "EmailArchive",
+          schedule: "*/30 * * * * *",
+          run: Effect.suspend(() =>
+            emailControls.transport
+              ? processQueuedArchiveActionsEffect(emailControls.transport)
+              : Effect.void,
+          ),
+        }),
+      );
       yield* scheduler.register(registry.track(new EmailWatchdogTask(logger)));
       yield* scheduler.register(
         registry.track(new EmailRetryTask(() => emailControls, logger)),
       );
       yield* Effect.addFinalizer(() => emailCleanup);
-      yield* startEmailFeatures(logger, requestWorkspaceEmailRun).pipe(
+      yield* startEmailFeatures(logger, requestWorkspaceEmailRun, events).pipe(
         Effect.tap((email) =>
           Effect.sync(() => {
             if (!email) return;
@@ -407,6 +450,15 @@ const program = Effect.scoped(
             emailControls.transport = email.transport;
             emailControls.handlers = email.handlers;
           }),
+        ),
+        Effect.tap((email) =>
+          email
+            ? processQueuedArchiveActionsEffect(email.transport).pipe(
+                Effect.catch(() =>
+                  logger.warn("Email archive recovery deferred to scheduled retry"),
+                ),
+              )
+            : Effect.void,
         ),
         Effect.tapError((error) =>
           logger.error("Failed to start email features, retrying", error),

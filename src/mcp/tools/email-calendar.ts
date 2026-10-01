@@ -186,6 +186,13 @@ const emailSummarySchema = z.object({
   cc: z.array(z.string()),
   replyTo: z.array(z.string()),
   messageId: z.string().nullable(),
+  origin: z
+    .object({
+      folder: z.string(),
+      uidValidity: z.string(),
+      uid: z.number().int().positive(),
+    })
+    .nullable(),
   inReplyTo: z.string().nullable(),
   references: z.array(z.string()),
   receivedAt: z.string(),
@@ -293,6 +300,7 @@ function serializeEmail(email: FetchedEmail, maxExcerptChars: number) {
       .slice(0, 50)
       .map((value) => truncate(value, 320).text),
     messageId: email.messageId ? truncate(email.messageId, 1_000).text : null,
+    origin: email.origin ?? null,
     inReplyTo: email.inReplyTo ?? null,
     references: (email.references ?? [])
       .slice(-50)

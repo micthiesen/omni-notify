@@ -586,6 +586,7 @@ export function startServer(
   iosControls?: IOSControlService,
   livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider,
   reminders?: RemindersService,
+  events?: import("./mcp/events/service.js").EmailEventService,
 ): EffectType<void, IntegrationError> {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
@@ -600,6 +601,7 @@ export function startServer(
       iosControls,
       livestreamDiagnostics,
       reminders,
+      events,
       hister: config.HISTER_ACCESS_TOKEN
         ? createHisterService(config.HISTER_URL, config.HISTER_ACCESS_TOKEN)
         : undefined,

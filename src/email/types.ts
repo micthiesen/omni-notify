@@ -19,6 +19,8 @@ export interface EmailAttachment {
 
 export interface FetchedEmail {
   id: string;
+  /** Exact mailbox identity at the time of this read. A later move changes it. */
+  origin?: { folder: string; uidValidity: string; uid: number };
   subject: string;
   from: string;
   to?: string[];
@@ -50,6 +52,13 @@ export const EmailAttachmentSchema = Schema.Struct({
 
 export const FetchedEmailSchema = Schema.Struct({
   id: Schema.String,
+  origin: Schema.optional(
+    Schema.Struct({
+      folder: Schema.String,
+      uidValidity: Schema.String,
+      uid: Schema.Number,
+    }),
+  ),
   subject: Schema.String,
   from: Schema.String,
   to: Schema.optional(Schema.Array(Schema.String)),
@@ -149,6 +158,41 @@ export interface EmailTransport<out E = unknown, out R = never> {
    * protocol access.
    */
   searchEmailsEffect?(options: EmailSearchOptions): Effect.Effect<FetchedEmail[], E, R>;
+  /** Read exact source MIME and flags before durably claiming a native MOVE. */
+  inspectArchiveMessageEffect?(
+    identity: import("./imap/archive.js").ArchiveIdentity,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveSnapshot, E, R>;
+  /** One native IMAP MOVE of an exact Inbox message to the designated Archive. */
+  moveArchiveMessageEffect?(
+    identity: import("./imap/archive.js").ArchiveIdentity,
+    sourceHash: string,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveMoveResult, E, R>;
+  /** Read-only check used after uncertain MOVE outcomes and restarts. */
+  reconcileArchiveMessageEffect?(
+    identity: import("./imap/archive.js").ArchiveIdentity,
+    sourceHash?: string,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveReconcileResult, E, R>;
+  /** Reverse one recorded archive move by exact Archive coordinates. */
+  restoreArchiveMessageEffect?(
+    identity: import("./imap/archive.js").ArchiveIdentity,
+    destination: import("./imap/archive.js").ArchiveLocation,
+    sourceHash: string,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveMoveResult, E, R>;
+  inspectArchiveDestinationEffect?(
+    identity: import("./imap/archive.js").ArchiveIdentity,
+    destination: import("./imap/archive.js").ArchiveLocation,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveSnapshot, E, R>;
+  verifyArchiveLocationEffect?(
+    location: import("./imap/archive.js").ArchiveLocation,
+    messageId: string,
+    sourceHash: string,
+    flags: readonly string[],
+  ): Effect.Effect<boolean, E, R>;
+  reconcileRestoreMessageEffect?(
+    identity: import("./imap/archive.js").ArchiveIdentity,
+    destination: import("./imap/archive.js").ArchiveLocation,
+    sourceHash: string,
+  ): Effect.Effect<import("./imap/archive.js").ArchiveReconcileResult, E, R>;
   /** Save or reconcile a private Sent copy; never submits SMTP. */
   saveSentCopyEffect?(
     input: import("./imap/sent.js").SentCopyInput,

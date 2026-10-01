@@ -69,6 +69,7 @@ export function mapParsedMessage(
     id:
       parsed.messageId ??
       [BLOB_PREFIX, coords.folder, coords.uidValidity, coords.uid].join("|"),
+    origin: coords,
     subject: parsed.subject ?? "",
     from: from?.address ?? from?.name ?? "",
     to: parsedAddresses(parsed.to),
