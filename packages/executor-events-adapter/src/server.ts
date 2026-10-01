@@ -188,6 +188,7 @@ function forwardEvent(
           "content-type": "application/json",
           accept: "application/json, text/event-stream",
           "mcp-protocol-version": VERSION,
+          "mcp-method": rpcRequest(raw)!.method,
           "x-omni-events-owner": owner,
           "x-omni-events-authorization": authorization,
           "user-agent": USER_AGENT,

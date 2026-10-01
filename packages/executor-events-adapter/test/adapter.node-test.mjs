@@ -65,6 +65,11 @@ before(async () => {
       path: req.url,
       body: JSON.parse(Buffer.concat(chunks).toString()),
     };
+    if (received.headers["mcp-method"] !== received.body.method) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "Mcp-Method header mismatch" } }));
+      return;
+    }
     res.setHeader("content-type", "application/json");
     res.end(
       JSON.stringify({ jsonrpc: "2.0", id: received.body.id, result: { events: [] } }),
@@ -139,6 +144,7 @@ test("modern discovery and event forwarding use the same OAuth owner", async () 
   assert.equal(received.headers["x-omni-events-owner"], ownerId(userId, clientId));
   assert.equal(received.headers["x-omni-events-authorization"], `Bearer ${token}`);
   assert.equal(received.headers.authorization, "Bearer omni-test-token");
+  assert.equal(received.headers["mcp-method"], "events/list");
 });
 
 test("the MCP 2 client negotiates the modern protocol against the adapter", async () => {
