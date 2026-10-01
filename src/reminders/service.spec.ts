@@ -88,6 +88,91 @@ const authError = (kind: AppleRemindersError["kind"]) =>
   new AppleRemindersError({ operation: "fixture", reason: "opaque", kind });
 
 describe("Reminders service", () => {
+  it.effect("reports accepted code separately from protected-data access", () =>
+    Effect.gen(function* () {
+      const x = fixture({
+        verify: () => Effect.succeed(true),
+        ckPost: () =>
+          Effect.succeed({
+            zones: [
+              {
+                records: [
+                  {
+                    recordName: "fixture",
+                    recordType: "Reminder",
+                    recordChangeTag: "tag",
+                    fields: {
+                      TitleDocument: { type: "ENCRYPTED_BYTES", value: "opaque" },
+                    },
+                  },
+                ],
+              },
+            ],
+          }),
+      });
+      const challenge = yield* x.service.startAuthentication();
+      const status = yield* x.service.submitCode({
+        challengeId: challenge.challengeId!,
+        code: "123456",
+      });
+      expect(status).toMatchObject({
+        phase: "awaiting-device-approval",
+        reason: "pcs",
+      });
+      expect(status.challengeId).toBeUndefined();
+      expect(x.submit2fa).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  it.effect(
+    "keeps encrypted data awaiting approval without repeating sign-in or consent",
+    () =>
+      Effect.gen(function* () {
+        let encrypted = true;
+        const x = fixture({
+          verify: () => Effect.succeed(true),
+          ckPost: () =>
+            Effect.succeed({
+              zones: [
+                {
+                  records: encrypted
+                    ? [
+                        {
+                          recordName: "fixture",
+                          recordType: "Reminder",
+                          recordChangeTag: "tag",
+                          fields: {
+                            TitleDocument: { type: "ENCRYPTED_BYTES", value: "opaque" },
+                          },
+                        },
+                      ]
+                    : [],
+                },
+              ],
+            }),
+        });
+        yield* x.service.healthCheck();
+        expect(yield* x.service.status()).toMatchObject({
+          phase: "awaiting-device-approval",
+          reason: "pcs",
+        });
+        yield* x.service.healthCheck();
+        expect(x.ckPost).toHaveBeenCalledTimes(1);
+        expect(x.requestPcsAccess).not.toHaveBeenCalled();
+        expect(x.begin).not.toHaveBeenCalled();
+        const blocked = yield* x.service.snapshot().pipe(Effect.result);
+        expect(Result.isFailure(blocked) && blocked.failure.message).toContain(
+          "awaiting-device-approval",
+        );
+        encrypted = false;
+        expect(yield* x.service.verifyAccess()).toMatchObject({
+          phase: "authenticated",
+        });
+        expect(x.requestPcsAccess).toHaveBeenCalledTimes(1);
+        expect(x.ckPost).toHaveBeenCalledTimes(2);
+      }),
+  );
+
   it.each([
     ["MFA options", "second-factor-options"],
     ["MFA push", "device-notification"],

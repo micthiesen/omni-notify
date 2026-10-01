@@ -47,6 +47,7 @@ export class RemindersError extends Data.TaggedError("RemindersError")<{
     | "conflict"
     | "not_found"
     | "unsupported"
+    | "awaiting-device-approval"
     | "transport";
 }> {
   public override get message(): string {
@@ -169,7 +170,13 @@ function flag(fields: Record<string, CkField>, name: string): boolean {
 }
 
 function document(fields: Record<string, CkField>, name: string): string {
-  const raw = stringValue(fields, name);
+  const field = fields[name];
+  if (field?.type === "ENCRYPTED_BYTES")
+    throw fail(`decode ${name}`, "awaiting-device-approval");
+  const raw =
+    field?.type === "BYTES"
+      ? stringValue({ [name]: { ...field, type: "STRING" } }, name)
+      : stringValue(fields, name);
   if (raw === null) return "";
   try {
     return decodeCrdtDocument(raw);

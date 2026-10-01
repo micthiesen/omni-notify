@@ -57,6 +57,7 @@ describe("Reminders administration page", () => {
     "second-factor-options",
     "device-notification",
     "code-verification",
+    "protected-data-access",
   ])("shows bounded %s details instead of a generic 502", async (stage) => {
     const status = {
       enabled: true,

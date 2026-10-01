@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { describe, expect, it } from "vitest";
 import { RemindersCloudKitClient, type Reminder } from "./cloudkit.js";
 import { decodeCrdtDocument, encodeCrdtDocument } from "./codec.js";
@@ -31,6 +31,58 @@ const list = {
 };
 
 describe("Reminders CloudKit codec", () => {
+  it.each(["TitleDocument", "NotesDocument"])(
+    "keeps encrypted %s unavailable",
+    async (field) => {
+      const r = record();
+      const client = new RemindersCloudKitClient(() =>
+        Effect.succeed({
+          zones: [
+            {
+              records: [
+                {
+                  ...r,
+                  fields: {
+                    ...r.fields,
+                    [field]: { type: "ENCRYPTED_BYTES", value: "opaque" },
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      );
+      const result = await Effect.runPromise(client.readSnapshot().pipe(Effect.result));
+      expect(Result.isFailure(result) && result.failure.code).toBe(
+        "awaiting-device-approval",
+      );
+    },
+  );
+
+  it("decodes unencrypted BYTES documents", async () => {
+    const r = record();
+    const client = new RemindersCloudKitClient(() =>
+      Effect.succeed({
+        zones: [
+          {
+            records: [
+              {
+                ...r,
+                fields: {
+                  ...r.fields,
+                  TitleDocument: { ...r.fields.TitleDocument, type: "BYTES" },
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    expect((await Effect.runPromise(client.readSnapshot())).reminders[0]?.title).toBe(
+      "Buy milk",
+    );
+  });
+
   it("round trips Unicode and rejects malformed documents", () => {
     expect(decodeCrdtDocument(encodeCrdtDocument("Café 🌿\nMilk"))).toBe(
       "Café 🌿\nMilk",

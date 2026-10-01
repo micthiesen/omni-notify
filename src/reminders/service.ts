@@ -24,6 +24,7 @@ export class RemindersServiceError extends Data.TaggedError("RemindersServiceErr
   readonly code:
     | "disabled"
     | "authentication-needed"
+    | "awaiting-device-approval"
     | "stale-challenge"
     | "rate-limited"
     | "uncertain-write"
@@ -95,6 +96,11 @@ function appleDiagnostic(error: AppleRemindersError): RemindersDiagnostic {
     case "load session":
     case "save session":
       stage = "private-storage";
+      break;
+    case "PCS state":
+    case "PCS consent":
+    case "PCS cookies":
+      stage = "protected-data-access";
       break;
     default:
       stage = "apple-request";
@@ -210,6 +216,17 @@ export class RemindersService implements RemindersControl {
           error.kind === "terms-required"
         )
           yield* this.notifyOnce();
+      } else if (
+        error instanceof RemindersError &&
+        error.code === "awaiting-device-approval"
+      ) {
+        this.challenge = undefined;
+        this.current = {
+          enabled: true,
+          phase: "awaiting-device-approval",
+          reason: "pcs",
+        };
+        yield* this.notifyOnce();
       } else if (error instanceof RemindersError && error.code === "protocol") {
         this.current = {
           enabled: true,
@@ -357,7 +374,14 @@ export class RemindersService implements RemindersControl {
         challenge.attempts++;
         yield* this.apple!.submit2fa(input.code);
         this.challenge = undefined; // A verified code is consumed even if CloudKit is unavailable.
-        return yield* this.checkAccess(true);
+        return yield* this.checkAccess(true).pipe(
+          Effect.catchIf(
+            (error) =>
+              error instanceof RemindersError &&
+              error.code === "awaiting-device-approval",
+            (error) => this.recordFailure(error).pipe(Effect.andThen(this.status())),
+          ),
+        );
       }).pipe(Effect.tapError((error) => this.recordFailure(error))),
     );
   }
@@ -365,6 +389,8 @@ export class RemindersService implements RemindersControl {
   private ready() {
     return Effect.gen({ self: this }, function* () {
       yield* this.load();
+      if (this.current.phase === "awaiting-device-approval")
+        return yield* Effect.fail(failure("awaiting-device-approval"));
       if (this.current.phase !== "authenticated")
         return yield* Effect.fail(failure("authentication-needed"));
     });

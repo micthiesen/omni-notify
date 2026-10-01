@@ -945,6 +945,12 @@ export class AppleRemindersClient {
             consent.status,
           );
         }
+        if (asRecord(consent.data).isDeviceConsentNotificationSent !== true)
+          return yield* this.fail(
+            "PCS consent",
+            "Apple did not confirm the consent notification",
+            consent.status,
+          );
         return "consent-required" as const;
       }
       const cookies = yield* this.request(
@@ -953,7 +959,16 @@ export class AppleRemindersClient {
         "POST",
         { appName: "reminders", derivedFromUserAction: true },
       );
-      if (cookies.status !== 200 || asRecord(cookies.data).status !== "success") {
+      const pcs = asRecord(cookies.data);
+      if (
+        cookies.status === 200 &&
+        [
+          "Requested the device to upload cookies.",
+          "Cookies not available yet on server.",
+        ].includes(String(pcs.message))
+      )
+        return "consent-required" as const;
+      if (cookies.status !== 200 || pcs.status !== "success") {
         return yield* this.fail(
           "PCS cookies",
           "Apple has not granted access",

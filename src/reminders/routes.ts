@@ -12,6 +12,7 @@ const diagnosticStages = [
   "second-factor-options",
   "device-notification",
   "code-verification",
+  "protected-data-access",
   "apple-request",
   "private-storage",
 ] as const;

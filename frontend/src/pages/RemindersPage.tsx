@@ -38,6 +38,7 @@ const statusSchema = Schema.Struct({
         "second-factor-options",
         "device-notification",
         "code-verification",
+        "protected-data-access",
         "apple-request",
         "private-storage",
       ]),
@@ -126,7 +127,9 @@ function statusText(status: Status): string {
         ? "Enter the six-digit code shown on your trusted Apple device."
         : "Sign in to connect iCloud Reminders.";
     case "awaiting-device-approval":
-      return "Approve the sign-in on your trusted Apple device, then check access.";
+      return status.reason === "pcs"
+        ? "Apple sign-in succeeded, but protected Reminders data is not available yet. Select Check access to request access, approve any prompt on your trusted Apple device, then check access again. Keep Advanced Data Protection enabled."
+        : "Approve the sign-in on your trusted Apple device, then check access.";
     case "terms-required":
       return "Apple requires you to review account terms in its own interface.";
     case "rate-limited":

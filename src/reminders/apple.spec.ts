@@ -31,6 +31,47 @@ function client(
 }
 
 describe("Apple Reminders transport", () => {
+  it.each([
+    ["Requested the device to upload cookies.", "consent-required"],
+    ["Cookies not available yet on server.", "consent-required"],
+    ["success", "ready"],
+    ["unknown", "error"],
+  ])("handles PCS response %s", async (message, expected) => {
+    const { instance, fetchMock } = client((url) =>
+      Response.json(
+        url.pathname.endsWith("/requestWebAccessState")
+          ? { isICDRSDisabled: true, isDeviceConsentedForPCS: true }
+          : message === "success"
+            ? { status: "success" }
+            : { message },
+      ),
+    );
+    const result = await Effect.runPromise(
+      instance.requestPcsAccess().pipe(Effect.result),
+    );
+    if (expected === "error") expect(Result.isFailure(result)).toBe(true);
+    else expect(Result.isSuccess(result) && result.success).toBe(expected);
+    expect(fetchMock.mock.calls.map(([url]) => url.pathname)).toEqual([
+      "/setup/ws/1/requestWebAccessState",
+      "/setup/ws/1/requestPCS",
+    ]);
+  });
+
+  it.each([true, false])("requires a confirmed PCS notification: %s", async (sent) => {
+    const { instance, fetchMock } = client((url) =>
+      Response.json(
+        url.pathname.endsWith("/requestWebAccessState")
+          ? { isICDRSDisabled: true, isDeviceConsentedForPCS: false }
+          : { isDeviceConsentNotificationSent: sent },
+      ),
+    );
+    const result = await Effect.runPromise(
+      instance.requestPcsAccess().pipe(Effect.result),
+    );
+    expect(Result.isSuccess(result)).toBe(sent);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("uses upstream service headers for setup and CloudKit only", async () => {
     const { instance, fetchMock } = client((url) =>
       Response.json(
