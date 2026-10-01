@@ -1,0 +1,40 @@
+name: Verify Reminders LAN boundary
+
+on:
+  workflow_dispatch:
+    inputs:
+      origin_ipv4:
+        description: Current public IPv4 of Boris's existing HTTPS ingress
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  external-denial:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Reject external requests, including forged LAN headers
+        env:
+          ORIGIN_IPV4: ${{ inputs.origin_ipv4 }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import ipaddress, os
+          address = ipaddress.IPv4Address(os.environ['ORIGIN_IPV4'])
+          assert address.is_global, 'Expected a public IPv4 address'
+          PY
+          for mode in plain forged; do
+            headers=()
+            if [[ "$mode" == forged ]]; then
+              headers=(-H 'X-Real-IP: 10.10.1.42' -H 'X-Forwarded-For: 10.10.1.42' -H 'CF-Connecting-IP: 10.10.1.42')
+            fi
+            status=$(curl --silent --show-error --max-time 20 \
+              --user-agent 'OpenAI File Downloader, XaiImageApiFetch/1.0' \
+              --resolve "omni.syas.ca:443:${ORIGIN_IPV4}" \
+              "${headers[@]}" --output /dev/null --write-out '%{http_code}' \
+              "https://omni.syas.ca/api/health?omni_probe=github_${GITHUB_RUN_ID}_${mode}")
+            echo "$mode request: HTTP $status"
+            test "$status" = 403
+          done
