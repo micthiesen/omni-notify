@@ -25,6 +25,7 @@ jobs:
           address = ipaddress.IPv4Address(os.environ['ORIGIN_IPV4'])
           assert address.is_global, 'Expected a public IPv4 address'
           PY
+          failed=0
           for mode in plain forged; do
             headers=()
             if [[ "$mode" == forged ]]; then
@@ -36,8 +37,9 @@ jobs:
               "${headers[@]}" --output /dev/null --write-out '%{http_code}' \
               "https://omni.syas.ca/api/health?omni_probe=github_${GITHUB_RUN_ID}_${mode}")
             echo "$mode request: HTTP $status"
-            test "$status" = 403
+            if [[ "$status" != 403 ]]; then failed=1; fi
           done
+          exit "$failed"
       - name: Report legacy aliases and public integration routes
         if: always()
         env:
@@ -50,6 +52,7 @@ jobs:
           PY
           # Read-only observations, without credentials, response bodies, or redirects.
           # Legacy HTTPS is also checked without bypassing its mismatched certificate.
+          failed=0
           for origin in http://omni.boris https://omni.boris http://pods.syas.ca https://pods.syas.ca; do
             resolve=()
             if [[ "$origin" == *omni.boris ]]; then
@@ -65,16 +68,18 @@ jobs:
                 "${origin}${path}?omni_probe=github_${GITHUB_RUN_ID}_aliases") || result=$?
               echo "$origin$path: HTTP $status; curl exit $result"
               case "$origin" in
-                http://omni.boris) test "$result:$status" = 0:403 ;;
+                http://omni.boris) expected=0:403 ;;
                 https://omni.boris)
                   # This legacy private suffix still has a hostname mismatch.
                   # Do not bypass TLS to probe it; use omni.syas.ca for HTTPS.
-                  test "$result:$status" = 60:000 ;;
+                  expected=60:000 ;;
+                http://pods.syas.ca) expected=0:301 ;;
                 *)
-                  expected=404
-                  [[ "$path" == /pods/rss ]] && expected=401
-                  [[ "$path" == /pods/logo.jpeg ]] && expected=200
-                  test "$result:$status" = "0:$expected" ;;
+                  expected=0:404
+                  [[ "$path" == /pods/rss ]] && expected=0:401
+                  [[ "$path" == /pods/logo.jpeg ]] && expected=0:200 ;;
               esac
+              if [[ "$result:$status" != "$expected" ]]; then failed=1; fi
             done
           done
+          exit "$failed"
