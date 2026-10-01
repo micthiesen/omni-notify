@@ -5,6 +5,20 @@ The MCP tools `email_archive_queue`, `email_archive_status`,
 to the server-designated Archive and retain a durable receipt for reversal.
 There is no arbitrary mailbox move, delete or purge tool.
 
+## Current iCloud limitation
+
+Read-only checks against the deployed iCloud account on 2026-10-01 confirmed
+IMAP4rev1 and UIDPLUS, but no native MOVE or IMAP4rev2. ImapFlow's effective
+MOVE capability check also returns false. The archive tools are deployed, but
+cannot archive on this endpoint under the native-MOVE-only safety constraint.
+Selected actions fail with `native_move_unavailable` before moving mail and
+remain terminal; do not blindly requeue them.
+
+A COPY-based alternative would need to verify the Archive copy before marking
+the exact Inbox source `\\Deleted` and issuing UID EXPUNGE. That permanently
+removes the source and introduces intermediate duplicate/deleted states. It is
+not implemented or authorized by the current no-deletion/purge constraint.
+
 ## Select an exact message
 
 Use `email_search` or `email_get` with `fresh: true`. Keep the exact `messageId`
