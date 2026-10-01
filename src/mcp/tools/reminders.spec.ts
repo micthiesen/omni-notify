@@ -105,9 +105,51 @@ describe("server Reminders MCP boundary", () => {
       "complete_reminder",
       "reopen_reminder",
       "delete_reminder",
+      "update_reminder_list",
+      "create_reminder_recurrence",
+      "update_reminder_recurrence",
+      "remove_reminder_recurrence",
     ]) {
       expect(tool(name).policy.recommendedPolicy).toBe("require_approval");
       expect(tool(name).annotations.readOnlyHint).toBe(false);
     }
+  });
+
+  it("rejects unsupported list writes and missing rule concurrency identity at the MCP boundary", async () => {
+    for (const [name, input] of [
+      [
+        "update_reminder_list",
+        {
+          id: "List/test",
+          changeTag: "tag",
+          idempotencyKey: "fixture-key-123456",
+          color: "red",
+        },
+      ],
+      [
+        "update_reminder_recurrence",
+        {
+          id: "Reminder/test",
+          changeTag: "tag",
+          idempotencyKey: "fixture-key-123456",
+          ruleId: "RecurrenceRule/test",
+          patch: { interval: 2 },
+        },
+      ],
+      [
+        "create_reminder_recurrence",
+        {
+          id: "Reminder/test",
+          changeTag: "tag",
+          idempotencyKey: "fixture-key-123456",
+          rule: { frequency: "not-a-frequency", interval: 1 },
+        },
+      ],
+    ] as const) {
+      const result = await runtime.run(tool(name).execute(input).pipe(Effect.result));
+      expect(Result.isFailure(result) && result.failure.phase).toBe("input");
+    }
+    expect(tools.some((item) => item.name === "create_reminder_list")).toBe(false);
+    expect(tools.some((item) => item.name === "delete_reminder_list")).toBe(false);
   });
 });

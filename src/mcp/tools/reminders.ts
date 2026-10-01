@@ -76,6 +76,81 @@ const writePolicy = {
   cost: "none",
   recommendedPolicy: "require_approval" as const,
 };
+const listDetails = z.object({
+  id,
+  title: z.string(),
+  color: z.string().nullable(),
+  recordChangeTag: z.string().nullable(),
+});
+const basicRecurrence = z
+  .object({
+    frequency: z.enum([
+      "daily",
+      "weekly",
+      "monthly",
+      "yearly",
+      "hourly",
+      "minutely",
+      "secondly",
+    ]),
+    interval: z.number().int().min(1).max(2147483647),
+    occurrenceCount: z.number().int().min(0).max(2147483647).nullable().optional(),
+    firstDayOfWeek: z
+      .number()
+      .int()
+      .min(0)
+      .max(7)
+      .nullable()
+      .optional()
+      .describe(
+        "Preserves the server's first-day metadata, including opaque zero. Omit to preserve existing metadata.",
+      ),
+  })
+  .strict();
+const recurrenceValue = basicRecurrence.extend({
+  endDate: timestamp.optional(),
+  daysOfWeek: z
+    .array(
+      z.object({
+        dayOfTheWeek: z.number().int(),
+        weekNumber: z.number().int().optional(),
+      }),
+    )
+    .nullable()
+    .optional(),
+  daysOfMonth: z.array(z.number().int()).nullable().optional(),
+  daysOfYear: z.array(z.number().int()).nullable().optional(),
+  weeksOfYear: z.array(z.number().int()).nullable().optional(),
+  monthsOfYear: z.array(z.number().int()).nullable().optional(),
+  setPositions: z.array(z.number().int()).nullable().optional(),
+});
+const recurrenceResult = z.object({
+  reminderId: id,
+  reminderChangeTag: z.string(),
+  rules: z
+    .array(
+      z.object({
+        id,
+        reminderId: id,
+        recordChangeTag: z.string().nullable(),
+        writable: z.boolean(),
+        recurrence: z.discriminatedUnion("supported", [
+          z.object({ supported: z.literal(true), rule: recurrenceValue }),
+          z.object({
+            supported: z.literal(false),
+            reason: z.string(),
+            fields: z.array(z.string()).max(32),
+          }),
+        ]),
+      }),
+    )
+    .max(100),
+});
+const recurrenceTarget = {
+  ...target,
+  ruleId: id,
+  ruleChangeTag: z.string().min(1).max(256),
+};
 function withService<A, E>(
   runtime: McpRuntime,
   run: (service: RemindersService) => Effect.Effect<A, E>,
@@ -105,6 +180,7 @@ export function createRemindersTools(runtime: McpRuntime): McpToolDefinition[] {
                 .int()
                 .nonnegative()
                 .describe("Incomplete, nondeleted reminders in this list."),
+              recordChangeTag: z.string().nullable().optional(),
             }),
           )
           .max(100),
@@ -118,6 +194,101 @@ export function createRemindersTools(runtime: McpRuntime): McpToolDefinition[] {
           Effect.map((snapshot) =>
             paginate([...snapshot.lists], input.cursor, input.limit),
           ),
+        ),
+    }),
+    defineTool({
+      name: "get_reminder_list",
+      title: "Get iCloud Reminder List",
+      description:
+        "Read one exact list's name, color and current change tag. Does not mutate reminders.",
+      inputSchema: z.object({ id }).strict(),
+      outputSchema: z.object({ list: listDetails.nullable() }),
+      annotations: annotations(true, false, true, true),
+      policy: readPolicy,
+      execute: ({ id }) =>
+        withService(runtime, (s) => s.getList(id)).pipe(
+          Effect.map((list) => ({ list })),
+        ),
+    }),
+    defineTool({
+      name: "update_reminder_list",
+      title: "Rename iCloud Reminder List",
+      description:
+        "Rename one exact list using its current changeTag and durable idempotencyKey. Preserves list metadata and reminder contents; verifies the stored name. Creation and deletion of lists are unsupported.",
+      inputSchema: z.object({ ...target, title: z.string().min(1).max(4096) }).strict(),
+      outputSchema: z.object({ list: listDetails }),
+      annotations: annotations(false, true, true, true),
+      policy: writePolicy,
+      execute: ({ idempotencyKey, id, changeTag, title }) =>
+        withService(runtime, (s) =>
+          s.updateList(idempotencyKey, id, changeTag, title),
+        ).pipe(Effect.map((list) => ({ list }))),
+    }),
+    defineTool({
+      name: "get_reminder_recurrence",
+      title: "Read iCloud Reminder Recurrence",
+      description:
+        "Read exact recurrence rule IDs, change tags, known rule details and writable status for one reminder. Unsupported rule forms remain readable and cannot be edited by these tools.",
+      inputSchema: z.object({ id }).strict(),
+      outputSchema: recurrenceResult,
+      annotations: annotations(true, false, true, true),
+      policy: readPolicy,
+      execute: ({ id }) => withService(runtime, (s) => s.getRecurrences(id)),
+    }),
+    defineTool({
+      name: "create_reminder_recurrence",
+      title: "Add iCloud Reminder Recurrence",
+      description:
+        "Atomically attach one validated recurrence rule to a reminder without existing recurrence. Requires current reminder changeTag and idempotencyKey. Supports frequency, interval, occurrence count, end date and date selectors. Does not complete the reminder or generate an occurrence.",
+      inputSchema: z.object({ ...target, rule: recurrenceValue }).strict(),
+      outputSchema: recurrenceResult,
+      annotations: annotations(false, true, true, true),
+      policy: writePolicy,
+      execute: ({ idempotencyKey, id, changeTag, rule }) =>
+        withService(runtime, (s) =>
+          s.createRecurrence(idempotencyKey, id, changeTag, rule),
+        ),
+    }),
+    defineTool({
+      name: "update_reminder_recurrence",
+      title: "Update iCloud Reminder Recurrence",
+      description:
+        "Update specified fields on a single supported recurrence rule. Omitted fields are preserved; null clears a selector or end date. Requires both current reminder and rule change tags and idempotencyKey. Unknown rule forms are refused; uncertain writes never automatically replay.",
+      inputSchema: z
+        .object({
+          ...recurrenceTarget,
+          patch: recurrenceValue
+            .partial()
+            .refine((value) => Object.keys(value).length > 0),
+        })
+        .strict(),
+      outputSchema: recurrenceResult,
+      annotations: annotations(false, true, true, true),
+      policy: writePolicy,
+      execute: ({ idempotencyKey, id, changeTag, ruleId, ruleChangeTag, patch }) =>
+        withService(runtime, (s) =>
+          s.updateRecurrence(
+            idempotencyKey,
+            id,
+            changeTag,
+            ruleId,
+            ruleChangeTag,
+            patch,
+          ),
+        ),
+    }),
+    defineTool({
+      name: "remove_reminder_recurrence",
+      title: "Remove iCloud Reminder Recurrence",
+      description:
+        "Atomically unlink and soft-delete one supported recurrence rule, preserving its reminder. Requires current reminder and rule change tags and idempotencyKey. Unknown rules are rejected. Does not delete or complete the reminder.",
+      inputSchema: z.object(recurrenceTarget).strict(),
+      outputSchema: recurrenceResult,
+      annotations: annotations(false, true, true, true),
+      policy: writePolicy,
+      execute: ({ idempotencyKey, id, changeTag, ruleId, ruleChangeTag }) =>
+        withService(runtime, (s) =>
+          s.removeRecurrence(idempotencyKey, id, changeTag, ruleId, ruleChangeTag),
         ),
     }),
     defineTool({

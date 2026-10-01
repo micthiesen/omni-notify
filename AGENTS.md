@@ -178,8 +178,12 @@ page intentionally has no additional login; only bounded authentication controls
 and public status are exposed there. Reminders data and CRUD remain behind MCP
 bearer authentication. Preserve strict Origin checks, serialized challenges, private
 encrypted session storage, durable mutation reservations, and read-after-write
-verification. Never accept Apple terms or disable ADP automatically. Recurring
-reminders are read-only. See `docs/server-reminders.md` and its upstream notice.
+verification. Never accept Apple terms or disable ADP automatically. Recurrence
+rule changes require exact parent and rule tags, atomic linkage, and fresh
+verification. Unknown or multiple rules stay protected. Ordinary recurring
+reminder edits and completion remain blocked until their provider semantics are
+verified. List creation must preserve the Account ordering CRDT; a List record
+alone is insufficient. See `docs/server-reminders.md` and its upstream notice.
 
 Workspace rows are changed through their service/API, not direct database edits.
 Pending actions, Marketplace publishing, buyer messages, offers, address

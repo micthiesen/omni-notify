@@ -591,6 +591,113 @@ describe("Reminders service", () => {
   );
 
   it.effect(
+    "reserves recurrence writes across restart and never replays a lost atomic response",
+    () =>
+      Effect.gen(function* () {
+        const x = fixture({
+          verify: () => Effect.succeed(true),
+          ckPost: (path, body) => {
+            if (path === "/records/lookup") {
+              const id = (body as { records: { recordName: string }[] }).records[0]
+                .recordName;
+              return Effect.succeed({
+                records: [
+                  id.startsWith("RecurrenceRule/")
+                    ? { recordName: id, serverErrorCode: "NOT_FOUND" }
+                    : {
+                        recordName: id,
+                        recordType: "Reminder",
+                        recordChangeTag: "current",
+                        fields: {
+                          List: {
+                            type: "REFERENCE",
+                            value: { recordName: "List/test" },
+                          },
+                          RecurrenceRuleIDs: { type: "STRING_LIST", value: [] },
+                        },
+                      },
+                ],
+              });
+            }
+            if (path === "/records/query") return Effect.succeed({ records: [] });
+            if (path === "/records/modify")
+              return Effect.fail(authError("transient-outage"));
+            return Effect.succeed({ zones: [{ records: [] }] });
+          },
+        });
+        yield* x.service.verifyAccess();
+        const run = (service: RemindersService) =>
+          service.createRecurrence(
+            "recurrence-ledger-key",
+            "Reminder/12345678",
+            "current",
+            { frequency: "daily", interval: 1 },
+          );
+        expect(Result.isFailure(yield* run(x.service).pipe(Effect.result))).toBe(true);
+        expect(Object.values(x.getState().operations)[0]).toMatchObject({
+          state: "reserved",
+          recordId: expect.stringMatching(/^RecurrenceRule\//),
+        });
+        const restarted = new RemindersService(config, {
+          store: x.store,
+          apple: x.apple,
+          notify: Effect.void,
+        });
+        yield* restarted.verifyAccess();
+        const replay = yield* run(restarted).pipe(Effect.result);
+        expect(Result.isFailure(replay) && replay.failure.code).toBe("uncertain-write");
+        expect(
+          x.ckPost.mock.calls.filter(([path]) => path === "/records/modify"),
+        ).toHaveLength(1);
+      }),
+  );
+
+  it.effect("returns confirmed list rename receipts without repeating writes", () =>
+    Effect.gen(function* () {
+      let title = "Original";
+      let tag = "old";
+      const x = fixture({
+        verify: () => Effect.succeed(true),
+        ckPost: (path) => {
+          if (path === "/records/lookup")
+            return Effect.succeed({
+              records: [
+                {
+                  recordName: "List/test",
+                  recordType: "List",
+                  recordChangeTag: tag,
+                  fields: { Name: { type: "STRING", value: title } },
+                },
+              ],
+            });
+          if (path === "/records/modify") {
+            title = "Renamed";
+            tag = "new";
+            return Effect.succeed({
+              records: [{ recordName: "List/test", recordChangeTag: tag }],
+            });
+          }
+          return Effect.succeed({ zones: [{ records: [] }] });
+        },
+      });
+      yield* x.service.verifyAccess();
+      const run = () =>
+        x.service.updateList("list-rename-key-123", "List/test", "old", "Renamed");
+      const first = yield* run();
+      expect(yield* run()).toEqual(first);
+      expect(
+        x.ckPost.mock.calls.filter(([path]) => path === "/records/modify"),
+      ).toHaveLength(1);
+      const conflict = yield* x.service
+        .updateList("list-rename-key-123", "List/test", "old", "Different")
+        .pipe(Effect.result);
+      expect(Result.isFailure(conflict) && conflict.failure.code).toBe(
+        "idempotency-conflict",
+      );
+    }),
+  );
+
+  it.effect(
     "keeps a mutation reservation after its network request is interrupted",
     () =>
       Effect.gen(function* () {

@@ -918,7 +918,15 @@ describe("Reminders CloudKit codec", () => {
       }),
     );
     expect(await Effect.runPromise(client.readSnapshot())).toEqual({
-      lists: [{ id: "List/1", title: "Groceries", color: "blue", count: 0 }],
+      lists: [
+        {
+          id: "List/1",
+          title: "Groceries",
+          color: "blue",
+          count: 0,
+          recordChangeTag: null,
+        },
+      ],
       reminders: [],
     });
   });
@@ -1039,7 +1047,13 @@ describe("Reminders CloudKit codec", () => {
       },
     ]);
     expect(snapshot.lists).toEqual([
-      { id: "List/1", title: "Groceries", color: "blue", count: 1 },
+      {
+        id: "List/1",
+        title: "Groceries",
+        color: "blue",
+        count: 1,
+        recordChangeTag: null,
+      },
     ]);
     expect(snapshot.reminders[0]).toMatchObject({
       title: "Buy milk",

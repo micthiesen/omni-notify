@@ -8,6 +8,7 @@ import {
   type ReminderPatch,
 } from "./cloudkit.js";
 import { remindersConfigured, type RemindersConfiguration } from "./config.js";
+import type { RecurrenceInput } from "./cloudkitExtras.js";
 import type {
   RemindersControl,
   RemindersDiagnostic,
@@ -478,6 +479,75 @@ export class RemindersService implements RemindersControl {
       this.ready().pipe(
         Effect.andThen(() => this.cloud!.getReminder(id)),
         Effect.tapError((error) => this.recordFailure(error)),
+      ),
+    );
+  }
+
+  getList(id: string) {
+    return this.withDataLock(
+      this.ready().pipe(Effect.andThen(() => this.cloud!.extras.getList(id))),
+    );
+  }
+  getRecurrences(id: string) {
+    return this.withDataLock(
+      this.ready().pipe(Effect.andThen(() => this.cloud!.extras.getRecurrences(id))),
+    );
+  }
+  updateList(key: string, id: string, changeTag: string, title: string) {
+    return this.mutation(
+      key,
+      { operation: "update-list", id, changeTag, title },
+      id,
+      Effect.suspend(() => this.cloud!.extras.updateList(id, changeTag, title)),
+    );
+  }
+  createRecurrence(key: string, id: string, changeTag: string, rule: RecurrenceInput) {
+    const ruleId = `RecurrenceRule/${fingerprint(key).slice(0, 32).toUpperCase()}`;
+    return this.mutation(
+      key,
+      { operation: "create-recurrence", id, changeTag, rule },
+      ruleId,
+      Effect.suspend(() =>
+        this.cloud!.extras.createRecurrence(id, changeTag, ruleId, rule),
+      ),
+    );
+  }
+  updateRecurrence(
+    key: string,
+    id: string,
+    changeTag: string,
+    ruleId: string,
+    ruleChangeTag: string,
+    patch: Partial<RecurrenceInput>,
+  ) {
+    return this.mutation(
+      key,
+      { operation: "update-recurrence", id, changeTag, ruleId, ruleChangeTag, patch },
+      ruleId,
+      Effect.suspend(() =>
+        this.cloud!.extras.updateRecurrence(
+          id,
+          changeTag,
+          ruleId,
+          ruleChangeTag,
+          patch,
+        ),
+      ),
+    );
+  }
+  removeRecurrence(
+    key: string,
+    id: string,
+    changeTag: string,
+    ruleId: string,
+    ruleChangeTag: string,
+  ) {
+    return this.mutation(
+      key,
+      { operation: "remove-recurrence", id, changeTag, ruleId, ruleChangeTag },
+      ruleId,
+      Effect.suspend(() =>
+        this.cloud!.extras.removeRecurrence(id, changeTag, ruleId, ruleChangeTag),
       ),
     );
   }

@@ -138,9 +138,43 @@ uses midnight UTC to represent a civil date with `allDay: true`; existing timezo
 fields are preserved when not patched. Existing records are not normalized.
 Titles, notes, priority (0/1/5/9), flags, dates, completion and reopening are supported.
 
-Recurrence creation/editing is not implemented. Existing recurring records are
-readable, and their mutations are rejected, including completion and deletion,
-to avoid corrupting recurrence or generating incorrect next occurrences.
+Lists expose their current `recordChangeTag`. `get_reminder_list` reads one exact
+list and `update_reminder_list` renames it using that tag and an idempotency key.
+Only `Name` and its merged resolution token are written; reminder contents and
+other list metadata are preserved. List creation and deletion are not exposed.
+
+`get_reminder_recurrence` returns exact rule IDs, change tags, decoded details,
+and whether a rule can be edited. `create_reminder_recurrence`,
+`update_reminder_recurrence`, and `remove_reminder_recurrence` support one rule per
+reminder, with durable reservations and atomic parent-link plus child writes.
+Removal unlinks and soft-deletes the rule, preserving the reminder. Updates and
+removal require both reminder and rule change tags. Every expected record must
+acknowledge success, followed by fresh verification; uncertain operations stay
+reserved and are not replayed, including after restart.
+
+Rule fields include frequency, interval, occurrence count (zero is unbounded),
+end date, weekday ordinals, month days, year days, year weeks, months, and set
+positions. Omitted fields are preserved; null clears an optional field. Selectors
+use bounded base64 JSON service values with RFC 5545 ranges and combination
+checks. Unknown rule forms remain readable but cannot be edited or removed by
+these tools. Multiple or inconsistent rule relationships are also read-only.
+The stored first-day value zero is preserved without interpreting it as a weekday.
+
+The frequency wire mapping comes from Apple's web client: daily=0, weekly=1,
+monthly=2, yearly=3, hourly=4, minutely=5, secondly=6. Do not use pyicloud's
+conflicting frequency enum. Known scalar fields use `INT64`; extended fields
+retain observed types, or omit the optional CloudKit type for new fields as
+Apple's client does. The pure codec does not infer a `BYTES` or `TIMESTAMP` type.
+Protocol references: [Apple Reminders web build 2636Build17](https://www.icloud.com/applications/reminders2/2636Build17/en-us/main.js),
+[CloudKit field dictionaries](https://developer.apple.com/library/archive/documentation/DataManagement/Conceptual/CloudKitWebServicesReference/Types.html),
+and [RFC 5545 recurrence values](https://www.rfc-editor.org/rfc/rfc5545.html#section-3.3.10).
+
+Ordinary reminder edits, completion, reopening and deletion still reject recurring
+reminders. Apple's web client completes recurring reminders through the special
+`CompleteRecurringReminder` query; setting `Completed` directly would not safely
+generate the next occurrence. That workflow is not implemented here. No existing
+user reminder is mutated during tests. Live validation of newly supported writes
+must use only separately identified disposable test reminders.
 
 ## Upstream attribution
 

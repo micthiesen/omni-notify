@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Data, Effect, Schema } from "effect";
 import { decodeCrdtDocument, encodeCrdtDocument } from "./codec.js";
+import { RemindersCloudKitExtras } from "./cloudkitExtras.js";
 
 // CloudKit Reminders record layout adapted from the MIT-licensed iobroker.icloud
 // implementation at 07a91933e3f05a36d9c8918ece7f3de295aef805.
@@ -78,6 +79,7 @@ export interface RemindersList {
   readonly color: string | null;
   /** Incomplete, nondeleted reminders in this list in the complete snapshot. */
   readonly count: number;
+  readonly recordChangeTag?: string | null;
 }
 
 type RemindersListMetadata = Omit<RemindersList, "count">;
@@ -237,6 +239,7 @@ function listFromRecord(record: CkRecord): RemindersListMetadata {
     id: record.recordName,
     title,
     color: stringValue(fields, "Color"),
+    recordChangeTag: record.recordChangeTag ?? null,
   };
 }
 
@@ -386,7 +389,12 @@ function patchFields(patch: ReminderPatch, now: number, replica: string) {
 export class RemindersCloudKitClient {
   private listCache?: { lists: Map<string, RemindersListMetadata>; syncToken: string };
   private snapshotIndex?: SnapshotIndex;
-  public constructor(private readonly ckPost: CkPost) {}
+  public readonly extras: RemindersCloudKitExtras;
+  public constructor(private readonly ckPost: CkPost) {
+    this.extras = new RemindersCloudKitExtras(ckPost, (listId) =>
+      this.queryList(listId, { pages: 0, records: 0 }),
+    );
+  }
 
   public hasSnapshot(): boolean {
     return this.snapshotIndex !== undefined;

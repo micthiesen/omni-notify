@@ -186,6 +186,22 @@
       "recommendedExecutorPolicy": "require_approval"
     },
     {
+      "name": "create_reminder_recurrence",
+      "title": "Add iCloud Reminder Recurrence",
+      "description": "Atomically attach one validated recurrence rule to a reminder without existing recurrence. Requires current reminder changeTag and idempotencyKey. Supports frequency, interval, occurrence count, end date and date selectors. Does not complete the reminder or generate an occurrence.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
       "name": "delete_reminder",
       "title": "Delete iCloud Reminder",
       "description": "Soft-delete exactly one non-recurring reminder using Apple's Deleted field. Requires current changeTag. Confirms deletion by reading it back; uncertain writes never replay automatically.",
@@ -577,6 +593,38 @@
       "name": "get_reminder",
       "title": "Get iCloud Reminder",
       "description": "Read one reminder by exact CloudKit ID, including its current change tag for concurrency-safe edits.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads private server iCloud Reminders"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "get_reminder_list",
+      "title": "Get iCloud Reminder List",
+      "description": "Read one exact list's name, color and current change tag. Does not mutate reminders.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads private server iCloud Reminders"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "get_reminder_recurrence",
+      "title": "Read iCloud Reminder Recurrence",
+      "description": "Read exact recurrence rule IDs, change tags, known rule details and writable status for one reminder. Unsupported rule forms remain readable and cannot be edited by these tools.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -1036,6 +1084,22 @@
       "recommendedExecutorPolicy": "require_approval"
     },
     {
+      "name": "remove_reminder_recurrence",
+      "title": "Remove iCloud Reminder Recurrence",
+      "description": "Atomically unlink and soft-delete one supported recurrence rule, preserving its reminder. Requires current reminder and rule change tags and idempotencyKey. Unknown rules are rejected. Does not delete or complete the reminder.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
       "name": "reopen_reminder",
       "title": "Reopen iCloud Reminder",
       "description": "Reopen one exact non-recurring reminder, preserving its other fields. Requires current changeTag and idempotencyKey. Read-after-write verified.",
@@ -1161,6 +1225,38 @@
       "name": "update_reminder",
       "title": "Update iCloud Reminder",
       "description": "Patch only specified fields on one exact reminder. Omitted fields stay unchanged; null dates clear them. Requires current changeTag. Recurring reminders are rejected to preserve recurrence. Never automatically repeat an uncertain write.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "update_reminder_list",
+      "title": "Rename iCloud Reminder List",
+      "description": "Rename one exact list using its current changeTag and durable idempotencyKey. Preserves list metadata and reminder contents; verifies the stored name. Creation and deletion of lists are unsupported.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Mutates the exact owner's iCloud reminder after durable reservation"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "update_reminder_recurrence",
+      "title": "Update iCloud Reminder Recurrence",
+      "description": "Update specified fields on a single supported recurrence rule. Omitted fields are preserved; null clears a selector or end date. Requires both current reminder and rule change tags and idempotencyKey. Unknown rule forms are refused; uncertain writes never automatically replay.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
