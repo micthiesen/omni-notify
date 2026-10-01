@@ -38,3 +38,24 @@ jobs:
             echo "$mode request: HTTP $status"
             test "$status" = 403
           done
+      - name: Report legacy aliases and public integration routes
+        env:
+          ORIGIN_IPV4: ${{ inputs.origin_ipv4 }}
+        shell: bash
+        run: |
+          # Read-only observations, without credentials, response bodies, or redirects.
+          # Legacy HTTPS is also checked without bypassing its mismatched certificate.
+          for origin in http://omni.boris https://omni.boris https://pods.syas.ca; do
+            resolve=()
+            if [[ "$origin" == *omni.boris ]]; then
+              resolve=(--resolve "omni.boris:80:${ORIGIN_IPV4}" --resolve "omni.boris:443:${ORIGIN_IPV4}")
+            fi
+            for path in /api/health /reminders /api/reminders/status /mcp /pods/feed.xml /pods/logo.jpeg; do
+              result=0
+              status=$(curl --silent --show-error --max-time 15 \
+                --user-agent 'OpenAI File Downloader, XaiImageApiFetch/1.0' \
+                "${resolve[@]}" --output /dev/null --write-out '%{http_code}' \
+                "${origin}${path}?omni_probe=github_${GITHUB_RUN_ID}_aliases") || result=$?
+              echo "$origin$path: HTTP $status; curl exit $result"
+            done
+          done
