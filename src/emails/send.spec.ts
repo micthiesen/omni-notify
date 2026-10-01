@@ -84,3 +84,33 @@ describe("sendComposedEmailEffect", () => {
     expect(sent).toBe(true);
   });
 });
+
+it("sends persisted wire bytes with an explicit deduplicated Bcc envelope", async () => {
+  const raw = Buffer.from("Message-ID: <wire@test>\r\n\r\nBody");
+  const sendMail = vi.fn(async () => ({
+    accepted: ["to@test", "cc@test", "hidden@test"],
+    rejected: [],
+  }));
+  expect(
+    await runtime.runPromise(
+      sendComposedEmailEffect(
+        {
+          from: "me@test",
+          to: ["to@test"],
+          cc: ["cc@test", "to@test"],
+          bcc: ["hidden@test"],
+          subject: "Test",
+          text: "Body",
+          raw,
+        },
+        { sendMail } as never,
+      ),
+    ),
+  ).toBe(true);
+  expect(sendMail).toHaveBeenCalledWith(
+    expect.objectContaining({
+      raw,
+      envelope: { from: "me@test", to: ["to@test", "cc@test", "hidden@test"] },
+    }),
+  );
+});

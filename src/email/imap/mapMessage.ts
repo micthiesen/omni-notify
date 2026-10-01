@@ -63,6 +63,7 @@ export function mapParsedMessage(
     cc: parsedAddresses(parsed.cc),
     replyTo: parsedAddresses(parsed.replyTo),
     messageId: parsed.messageId,
+    inReplyTo: parsed.inReplyTo,
     references: parsed.references
       ? Array.isArray(parsed.references)
         ? parsed.references

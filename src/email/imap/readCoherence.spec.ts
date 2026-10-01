@@ -14,6 +14,7 @@ function fixture() {
     );
   const client = {
     usable: true,
+    list: vi.fn(async () => []),
     mailbox,
     getMailboxLock: vi.fn(async (path: string) => {
       mailbox.path = path;

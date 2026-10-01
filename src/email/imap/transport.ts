@@ -42,6 +42,8 @@ import { BoundedReadCache } from "./readCache.js";
 import { createDraftEffect as appendDraftEffect } from "./actions.js";
 import { getComposeEmailConfiguration } from "../../emails/client.js";
 
+import { appendSentCopyEffect, type SentCopyInput } from "./sent.js";
+
 const IMAP_HOST = "imap.mail.me.com";
 const IMAP_PORT = 993;
 
@@ -608,6 +610,28 @@ export class ImapTransport implements EmailTransport<
     });
   }
 
+  saveSentCopyEffect(
+    input: SentCopyInput,
+    options: {
+      allowAppend?: boolean;
+      beforeAppend?: Effect.Effect<
+        boolean,
+        unknown,
+        import("@micthiesen/mitools/docstore").Docstore | Logger
+      >;
+    } = {},
+  ) {
+    return this.runSerializedEffect(
+      "IMAP save Sent copy",
+      Effect.gen({ self: this }, function* () {
+        const client = yield* this.requireClientEffect;
+        const result = yield* appendSentCopyEffect(client, input, options);
+        this.clearReadCaches();
+        return result;
+      }).pipe(Effect.ensuring(this.restoreInboxEffect())),
+    );
+  }
+
   createDraftEffect(input: EmailDraftInput, options: { allowAppend?: boolean } = {}) {
     return this.runSerializedEffect(
       "IMAP create draft",
@@ -628,7 +652,8 @@ export class ImapTransport implements EmailTransport<
         if (cached) return cached;
         const client = yield* this.requireClientEffect;
         const coords = decodeMessageId(id);
-        for (const folder of FOLDERS) {
+        const folderNames = coords ? [coords.folder] : [...FOLDERS];
+        for (const folder of folderNames) {
           if (coords && coords.folder !== folder) continue;
           const email = yield* this.findInFolderEffect(
             client,
@@ -645,6 +670,15 @@ export class ImapTransport implements EmailTransport<
               yield* Clock.currentTimeMillis,
             );
             return email;
+          }
+          // Discover Sent only after the usual folders miss; LIST outages cannot block Inbox reads.
+          if (!coords && folder === FOLDERS[FOLDERS.length - 1]) {
+            const sent = (yield* this.promiseEffect(
+              "discover Sent for direct read",
+              () => client.list(),
+            )).filter((folder) => folder.specialUse?.toLowerCase() === "\\sent");
+            if (sent.length === 1 && !folderNames.includes(sent[0].path))
+              folderNames.push(sent[0].path);
           }
         }
         return undefined;
@@ -684,7 +718,18 @@ export class ImapTransport implements EmailTransport<
             ? ["INBOX"]
             : options.folder === "archive"
               ? ["Archive"]
-              : FOLDERS;
+              : options.folder === "sent"
+                ? (yield* this.promiseEffect("discover Sent mailbox", () =>
+                    client.list(),
+                  ))
+                    .filter((folder) => folder.specialUse?.toLowerCase() === "\\sent")
+                    .map((folder) => folder.path)
+                : FOLDERS;
+        if (options.folder === "sent" && folderNames.length !== 1)
+          return yield* new ImapOperationError({
+            operation: "discover Sent mailbox",
+            cause: new Error("Expected exactly one server-designated Sent mailbox"),
+          });
         const perFolderLimit = Math.min(Math.max(1, options.limit), 50);
         const byFolder = yield* Effect.forEach(
           folderNames,
@@ -844,15 +889,33 @@ export class ImapTransport implements EmailTransport<
                 client.search({ header: { "message-id": id } }, { uid: true }),
               );
               if (Array.isArray(found) && found.length > 0) {
-                uid = found[found.length - 1];
-                if (!fresh) {
-                  this.messageLocationCache.set(
-                    id,
-                    { folder, uidValidity: mailboxValidity, uid },
-                    id.length + folder.length + mailboxValidity.length + 16,
-                    yield* Clock.currentTimeMillis,
+                if (found.length > 50)
+                  return yield* new ImapOperationError({
+                    operation: "find exact Message-ID",
+                    cause: new Error(
+                      "Too many substring matches for a bounded direct read",
+                    ),
+                  });
+                for (const candidate of [...found].reverse()) {
+                  const email = yield* this.fetchMappedMessageEffect(
+                    client,
+                    folder,
+                    mailboxValidity,
+                    candidate,
+                    undefined,
+                    fresh,
                   );
+                  if (email?.messageId !== id) continue;
+                  if (!fresh)
+                    this.messageLocationCache.set(
+                      id,
+                      { folder, uidValidity: mailboxValidity, uid: candidate },
+                      id.length + folder.length + mailboxValidity.length + 16,
+                      yield* Clock.currentTimeMillis,
+                    );
+                  return email;
                 }
+                return undefined;
               }
             }
           }
@@ -869,11 +932,11 @@ export class ImapTransport implements EmailTransport<
                 client.fetchOne(String(uid), { uid: true }, { uid: true }),
               ),
             );
-            if (exists) return cached;
+            if (exists && (coords || cached.messageId === id)) return cached;
             this.parsedMessageCache.delete(cacheKey);
             return undefined;
           }
-          return yield* this.fetchMappedMessageEffect(
+          const email = yield* this.fetchMappedMessageEffect(
             client,
             folder,
             mailboxValidity,
@@ -881,6 +944,12 @@ export class ImapTransport implements EmailTransport<
             undefined,
             fresh,
           );
+          // HEADER SEARCH is substring-based; never return another message as a reply parent.
+          if (!coords && email?.messageId !== id) {
+            this.messageLocationCache.delete(id);
+            return undefined;
+          }
+          return email;
         }),
       (lock) => Effect.sync(() => lock.release()),
     );

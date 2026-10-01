@@ -31,6 +31,8 @@ export interface ComposedEmailParams {
   inReplyTo?: string;
   references?: string[];
   messageId?: string;
+  /** Prebuilt Bcc-free SMTP MIME, persisted before submitting. */
+  raw?: Buffer;
 }
 
 export function sendEmailEffect(
@@ -70,6 +72,21 @@ export function sendComposedEmailEffect(
     return yield* Effect.tryPromise({
       try: () =>
         transport.sendMail({
+          ...(params.raw
+            ? {
+                raw: params.raw,
+                envelope: {
+                  from: params.from,
+                  to: [
+                    ...new Set([
+                      ...params.to,
+                      ...(params.cc ?? []),
+                      ...(params.bcc ?? []),
+                    ]),
+                  ],
+                },
+              }
+            : {}),
           from: params.from,
           to: params.to,
           cc: params.cc,

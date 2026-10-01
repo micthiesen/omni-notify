@@ -20,6 +20,7 @@ export interface FetchedEmail {
   replyTo?: string[];
   messageId?: string;
   references?: string[];
+  inReplyTo?: string;
   textBody: string;
   /** Shipment/booking-shaped URLs pulled from the HTML body (hrefs are
    * stripped from textBody, but tracking numbers often live only in them). */
@@ -87,7 +88,7 @@ export interface EmailSearchOptions {
   /** IMAP internal date upper bound (exclusive, day precision). */
   before?: Date;
   /** Which monitored folder(s) to search. */
-  folder?: "inbox" | "archive" | "all";
+  folder?: "inbox" | "archive" | "sent" | "all";
   /** Maximum number of messages to return across all folders. */
   limit: number;
   /** Bypass recent search and parsed-message caches. */
@@ -135,6 +136,14 @@ export interface EmailTransport<out E = unknown, out R = never> {
    * protocol access.
    */
   searchEmailsEffect?(options: EmailSearchOptions): Effect.Effect<FetchedEmail[], E, R>;
+  /** Save or reconcile a private Sent copy; never submits SMTP. */
+  saveSentCopyEffect?(
+    input: import("./imap/sent.js").SentCopyInput,
+    options?: {
+      allowAppend?: boolean;
+      beforeAppend?: Effect.Effect<boolean, unknown, R>;
+    },
+  ): Effect.Effect<import("./imap/sent.js").SentCopyResult, E, R>;
   /** Save a draft in the server-designated Drafts mailbox. */
   createDraftEffect?(
     input: EmailDraftInput,

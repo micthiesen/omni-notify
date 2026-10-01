@@ -63,7 +63,28 @@ To, Cc, Bcc, plain text, and reply threading. Both require an `idempotencyKey`:
 use a new key for a new operation and reuse the same key and content on a retry.
 Completed operations return their recorded result. Conflicting content or an
 uncertain prior operation cannot silently trigger another write or delivery.
-Sending always requires explicit owner approval.
+Sending always requires explicit owner approval. `sent: true` means SMTP accepted
+all envelope recipients; it does not establish final inbox delivery. The returned
+`sentCopy` is separate: `verified`, `pending` (copy transport unavailable or a
+failure before APPEND), `uncertain` (copy attempt needs reconciliation), or
+`legacy-unavailable`.
+
+Before SMTP submission, Omni persists the original sender, Date, Bcc-free wire
+MIME, and private Sent MIME. SMTP uses an explicit envelope including Bcc; Bcc
+never appears on the delivered message. The private copy preserves Bcc. After
+SMTP acceptance is durably recorded, the copy is appended with `\\Seen` and
+its original INTERNALDATE to the unique server-designated `\\Sent` mailbox.
+Exact Message-ID and decoded MIME content are verified. Replies extend References
+with In-Reply-To; callers should retain the parent subject with a `Re:` prefix.
+Reads expose In-Reply-To, Message-ID and References for verification.
+
+`email_send_status` reads the durable receipt by idempotency key without network
+writes. `email_sent_copy_repair` saves only a private copy from persisted MIME;
+it never submits SMTP. Once an APPEND starts, retries only search and verify;
+an absent copy after an uncertain APPEND requires investigation, not an automatic
+second APPEND. Legacy receipts lack MIME and cannot be repaired through this tool.
+`email_search` accepts `folder: "sent"` with the same bounded/fresh read semantics;
+`all` retains the existing Inbox/Archive scope.
 
 Explicit SMTP settings take precedence. Without SMTP settings, composed email
 uses the existing iCloud credentials with authenticated STARTTLS on port 587,

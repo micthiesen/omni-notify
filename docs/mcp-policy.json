@@ -369,7 +369,7 @@
     {
       "name": "email_send",
       "title": "Send Email",
-      "description": "Send a plain-text email through Omni's configured SMTP account. A required idempotency key prevents automatic resends after uncertain outcomes.",
+      "description": "Submit a plain-text email to SMTP and save a private Sent copy. sent means all recipients were accepted by SMTP, not final delivery. Reply callers should use the parent subject (Re: prefix), Message-ID and References. Reusing a key never retransmits.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -377,9 +377,40 @@
         "openWorldHint": true
       },
       "sideEffects": [
-        "Sends an external email to the specified recipients"
+        "Sends an external email to the specified recipients",
+        "May append a private copy in the Sent mailbox"
       ],
       "cost": "Consumes SMTP provider quota",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "email_send_status",
+      "title": "Read Email Send Receipt",
+      "description": "Read the durable SMTP acceptance receipt by idempotency key. Missing or uncertain receipts do not establish delivery. This never submits SMTP or appends mail.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No paid API",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "email_sent_copy_repair",
+      "title": "Repair Email Sent Copy",
+      "description": "Save or reconcile a Sent copy using a confirmed receipt and its persisted original MIME. Never retransmits SMTP. Legacy receipts without MIME cannot be reconstructed by this tool. An uncertain APPEND is only searched, never repeated.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "May append one private Sent copy; never sends email"
+      ],
+      "cost": "No paid API",
       "recommendedExecutorPolicy": "require_approval"
     },
     {

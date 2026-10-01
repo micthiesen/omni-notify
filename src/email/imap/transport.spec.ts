@@ -29,6 +29,7 @@ describe("ImapTransport mailbox serialization", () => {
       );
     const client = {
       usable: true,
+      list: vi.fn(async () => []),
       mailbox,
       getMailboxLock: vi.fn(async (folder: string) => {
         mailbox.path = folder;
@@ -87,6 +88,7 @@ describe("ImapTransport mailbox serialization", () => {
     const mailbox = { path: "INBOX", uidValidity: 12 };
     const client = {
       usable: true,
+      list: vi.fn(async () => []),
       mailbox,
       getMailboxLock: vi.fn(async (folder: string) => {
         mailbox.path = folder;
@@ -138,6 +140,7 @@ describe("ImapTransport mailbox serialization", () => {
     const mailbox = { path: "INBOX", uidValidity: 1 };
     const client = {
       usable: true,
+      list: vi.fn(async () => []),
       mailbox,
       getMailboxLock: vi.fn(async (folder: string) => {
         lockRequests++;

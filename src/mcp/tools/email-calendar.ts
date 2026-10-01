@@ -186,6 +186,7 @@ const emailSummarySchema = z.object({
   cc: z.array(z.string()),
   replyTo: z.array(z.string()),
   messageId: z.string().nullable(),
+  inReplyTo: z.string().nullable(),
   references: z.array(z.string()),
   receivedAt: z.string(),
   excerpt: z.string(),
@@ -265,6 +266,7 @@ function serializeEmail(email: FetchedEmail, maxExcerptChars: number) {
       .slice(0, 50)
       .map((value) => truncate(value, 320).text),
     messageId: email.messageId ? truncate(email.messageId, 1_000).text : null,
+    inReplyTo: email.inReplyTo ?? null,
     references: (email.references ?? [])
       .slice(-50)
       .map((value) => truncate(value, 1_000).text),
@@ -390,7 +392,7 @@ export function createEmailCalendarTools(runtime: McpRuntime): McpToolDefinition
             .datetime({ offset: true })
             .describe("Exclusive upper bound; IMAP applies day precision")
             .optional(),
-          folder: z.enum(["inbox", "archive", "all"]).default("all"),
+          folder: z.enum(["inbox", "archive", "sent", "all"]).default("all"),
           limit: z.number().int().min(1).max(50).default(20),
           fresh: z.boolean().default(false),
           excerptChars: z.number().int().min(0).max(2_000).default(500),

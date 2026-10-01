@@ -99,7 +99,7 @@ describe("email compose MCP idempotency", () => {
       alreadyExisted: true,
     });
     expect(createDraftEffect).toHaveBeenCalledTimes(2);
-    expect(createDraftEffect.mock.calls[1]?.[1]).toEqual({ allowAppend: false });
+    expect(createDraftEffect.mock.calls[1]?.[1]).toMatchObject({ allowAppend: false });
   });
 
   it("reserves a concurrent key once, so only one send reaches SMTP", async () => {
@@ -121,4 +121,116 @@ describe("email compose MCP idempotency", () => {
     await expect(first).resolves.toMatchObject({ sent: true, alreadySent: false });
     expect(mocks.send).toHaveBeenCalledOnce();
   });
+});
+
+describe("durable Sent recovery", () => {
+  const toolsWithCopy = (saveSentCopyEffect: unknown) =>
+    createEmailComposeTools({
+      emailControls: { transport: { saveSentCopyEffect } },
+    } as never);
+  it("records SMTP success separately, then only reconciles a failed copy on retry", async () => {
+    const copy = vi
+      .fn()
+      .mockImplementationOnce((_input, options) =>
+        options.beforeAppend.pipe(
+          Effect.andThen(Effect.fail(new Error("lost APPEND response"))),
+        ),
+      )
+      .mockReturnValue(
+        Effect.succeed({
+          messageId: "<copy@test>",
+          mailbox: "Sent",
+          alreadyExisted: true,
+        }),
+      );
+    const tools = toolsWithCopy(copy);
+    const send = tools.find((t) => t.name === "email_send")!;
+    const status = tools.find((t) => t.name === "email_send_status")!;
+    const repair = tools.find((t) => t.name === "email_sent_copy_repair")!;
+    mocks.send.mockReset().mockReturnValue(Effect.succeed(true));
+    const input = message({ idempotencyKey: "sent-recovery" });
+    const first = await run(send, input);
+    expect(first).toMatchObject({
+      sent: true,
+      sentCopy: "uncertain",
+      alreadySent: false,
+    });
+    expect(await run(status, { idempotencyKey: input.idempotencyKey })).toMatchObject({
+      smtpAccepted: true,
+      sentCopy: "uncertain",
+    });
+    expect(copy).toHaveBeenCalledOnce();
+    expect(copy.mock.calls[0]?.[1]).toMatchObject({ allowAppend: true });
+    expect(await run(repair, { idempotencyKey: input.idempotencyKey })).toEqual({
+      sentCopy: "verified",
+    });
+    expect(copy.mock.calls[1]?.[1]).toMatchObject({ allowAppend: false });
+    expect(copy.mock.calls[1]?.[0].content).toEqual(copy.mock.calls[0]?.[0].content);
+    expect(await run(send, input)).toMatchObject({
+      sent: true,
+      alreadySent: true,
+      sentCopy: "verified",
+    });
+    expect(mocks.send).toHaveBeenCalledOnce();
+    expect(copy).toHaveBeenCalledTimes(2);
+  });
+  it("never appends after partial SMTP acceptance and reports missing receipts truthfully", async () => {
+    const copy = vi.fn();
+    const tools = toolsWithCopy(copy);
+    mocks.send.mockReset().mockReturnValue(Effect.succeed(false));
+    const key = "sent-partial";
+    await expect(
+      run(
+        tools.find((t) => t.name === "email_send")!,
+        message({ idempotencyKey: key }),
+      ),
+    ).rejects.toThrow(/Some recipients may/);
+    await expect(
+      run(
+        tools.find((t) => t.name === "email_sent_copy_repair")!,
+        { idempotencyKey: key },
+      ),
+    ).rejects.toThrow(/not confirmed/);
+    expect(copy).not.toHaveBeenCalled();
+    expect(
+      await run(
+        tools.find((t) => t.name === "email_send_status")!,
+        { idempotencyKey: "missing" },
+      ),
+    ).toMatchObject({ found: false, smtpAccepted: false, status: null });
+  });
+});
+
+it("keeps pre-APPEND outages repairable without retransmitting SMTP", async () => {
+  const copy = vi
+    .fn()
+    .mockReturnValueOnce(Effect.fail(new Error("disconnected")))
+    .mockImplementation((_input, options) =>
+      options.beforeAppend.pipe(
+        Effect.map(() => ({
+          messageId: "<copy@test>",
+          mailbox: "Sent",
+          alreadyExisted: false,
+        })),
+      ),
+    );
+  const tools = createEmailComposeTools({
+    emailControls: { transport: { saveSentCopyEffect: copy } },
+  } as never);
+  mocks.send.mockReset().mockReturnValue(Effect.succeed(true));
+  const key = "disconnected-copy";
+  expect(
+    await run(
+      tools.find((t) => t.name === "email_send")!,
+      message({ idempotencyKey: key }),
+    ),
+  ).toMatchObject({ sent: true, sentCopy: "pending" });
+  expect(
+    await run(
+      tools.find((t) => t.name === "email_sent_copy_repair")!,
+      { idempotencyKey: key },
+    ),
+  ).toEqual({ sentCopy: "verified" });
+  expect(copy.mock.calls[1]?.[1]).toMatchObject({ allowAppend: true });
+  expect(mocks.send).toHaveBeenCalledOnce();
 });

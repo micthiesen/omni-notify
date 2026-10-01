@@ -186,8 +186,11 @@ read snapshots last 30 seconds, parsed immutable messages five minutes. Preserve
 the `fresh` bypass and mailbox-event invalidation. Draft creation discovers the
 special-use mailbox and verifies APPEND by Message-ID. Drafts and sends reserve
 idempotency keys durably; uncertain sends never retry automatically, and partial
-recipient rejection cannot report success. Composed mail falls back to iCloud
-SMTP only when no explicit SMTP fields are set. See `docs/mcp.md`.
+recipient rejection cannot report success. Composed sends persist MIME before SMTP,
+record SMTP acceptance before Sent APPEND, and keep Sent verification separate
+from delivery. Uncertain APPENDs only reconcile by exact Message-ID and MIME; copy
+repair never retransmits. Composed mail falls back to iCloud SMTP only when no
+explicit SMTP fields are set. See `docs/mcp.md`.
 
 ## Code and tests
 
