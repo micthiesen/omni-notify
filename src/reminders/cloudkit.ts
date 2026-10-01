@@ -6,6 +6,8 @@ import { decodeCrdtDocument, encodeCrdtDocument } from "./codec.js";
 // implementation at 07a91933e3f05a36d9c8918ece7f3de295aef805.
 const ZONE = { zoneName: "Reminders", zoneType: "REGULAR_CUSTOM_ZONE" } as const;
 const MAX_PAGES = 50;
+const MAX_LIST_PAGES = 200;
+const MAX_QUERY_PAGES = 200;
 const MAX_RECORDS = 10_000;
 const MAX_FIELD_BYTES = 64 * 1024;
 
@@ -35,6 +37,15 @@ const ZoneSchema = Schema.Struct({
 });
 const ChangesSchema = Schema.Struct({ zones: Schema.Array(ZoneSchema) });
 const RecordsSchema = Schema.Struct({ records: Schema.Array(RecordSchema) });
+const QuerySchema = Schema.Struct({
+  records: Schema.Array(RecordSchema),
+  continuationMarker: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+interface ReadBudget {
+  pages: number;
+  records: number;
+}
 
 type CkRecord = Schema.Schema.Type<typeof RecordSchema>;
 type CkField = Schema.Schema.Type<typeof FieldSchema>;
@@ -171,16 +182,16 @@ function flag(fields: Record<string, CkField>, name: string): boolean {
 
 function document(fields: Record<string, CkField>, name: string): string {
   const field = fields[name];
-  if (field?.type === "ENCRYPTED_BYTES")
-    throw fail(`decode ${name}`, "awaiting-device-approval");
   const raw =
-    field?.type === "BYTES"
+    field?.type === "BYTES" || field?.type === "ENCRYPTED_BYTES"
       ? stringValue({ [name]: { ...field, type: "STRING" } }, name)
       : stringValue(fields, name);
   if (raw === null) return "";
   try {
     return decodeCrdtDocument(raw);
   } catch {
+    if (field?.type === "ENCRYPTED_BYTES")
+      throw fail(`decode ${name}`, "awaiting-device-approval");
     throw fail(`decode ${name}`, "unsupported");
   }
 }
@@ -244,18 +255,28 @@ function reminderFromRecord(record: CkRecord): Reminder {
 }
 
 function recurrenceReferences(record: CkRecord): string[] {
-  if (record.deleted || !/recurr|repeat/i.test(record.recordType ?? "")) return [];
+  if (
+    record.deleted ||
+    (record.fields?.Deleted?.type === "INT64" && record.fields.Deleted.value === 1) ||
+    !/recurr|repeat/i.test(record.recordType ?? "")
+  )
+    return [];
+  const reminderId = ref(record.fields ?? {}, "Reminder");
+  if (!reminderId) throw fail("recurrence reference", "protocol");
   const ids: string[] = [];
   for (const field of Object.values(record.fields ?? {})) {
+    if (field.type !== "REFERENCE") continue;
     if (
-      field.type === "REFERENCE" &&
       typeof field.value === "object" &&
       field.value !== null &&
       "recordName" in field.value &&
-      typeof field.value.recordName === "string"
+      typeof field.value.recordName === "string" &&
+      field.value.recordName.length > 0
     )
       ids.push(field.value.recordName);
+    else throw fail("recurrence reference", "protocol");
   }
+  if (!ids.length) throw fail("recurrence reference", "protocol");
   return ids;
 }
 
@@ -335,6 +356,7 @@ function patchFields(patch: ReminderPatch, now: number, replica: string) {
 }
 
 export class RemindersCloudKitClient {
+  private listCache?: { lists: Map<string, RemindersList>; syncToken: string };
   public constructor(private readonly ckPost: CkPost) {}
 
   private post<A, I>(path: string, body: unknown, schema: Schema.Codec<A, I>) {
@@ -359,16 +381,26 @@ export class RemindersCloudKitClient {
 
   public readSnapshot(): Effect.Effect<RemindersSnapshot, RemindersError> {
     return Effect.gen({ self: this }, function* () {
-      const lists = new Map<string, RemindersList>();
+      const lists = new Map(this.listCache?.lists);
       const reminders = new Map<string, Reminder>();
       const recurringIds = new Set<string>();
-      let token: string | undefined;
+      let token = this.listCache?.syncToken;
+      let latestToken: string | undefined;
       let complete = false;
-      let seen = 0;
-      for (let page = 0; page < MAX_PAGES; page++) {
+      const budget: ReadBudget = { pages: 0, records: 0 };
+      const cursors = new Set<string>(token ? [token] : []);
+      for (let page = 0; page < MAX_LIST_PAGES; page++) {
         const response = yield* this.post(
           "/changes/zone",
-          { zones: [{ zoneID: ZONE, ...(token ? { syncToken: token } : {}) }] },
+          {
+            zones: [
+              {
+                zoneID: ZONE,
+                desiredRecordTypes: ["List"],
+                ...(token ? { syncToken: token } : {}),
+              },
+            ],
+          },
           ChangesSchema,
         );
         if (response.zones.length !== 1)
@@ -376,55 +408,137 @@ export class RemindersCloudKitClient {
         const zone = response.zones[0];
         if (zone.error) return yield* Effect.fail(fail("snapshot zone", "protocol"));
         for (const record of zone.records ?? []) {
-          seen++;
-          if (seen > MAX_RECORDS)
+          if (++budget.records > MAX_RECORDS)
             return yield* Effect.fail(fail("snapshot limit", "protocol"));
           if (record.serverErrorCode || record.errorCode) {
             return yield* Effect.fail(fail("snapshot record", "protocol"));
           }
-          if (record.recordType === "List") {
-            if (record.deleted) lists.delete(record.recordName);
-            else
-              lists.set(
-                record.recordName,
-                yield* Effect.try({
-                  try: () => listFromRecord(record),
-                  catch: () => fail("decode list", "protocol"),
-                }),
-              );
-          } else if (record.recordType === "Reminder") {
-            if (record.deleted) reminders.delete(record.recordName);
-            else {
-              const reminder = yield* Effect.try({
-                try: () => reminderFromRecord(record),
-                catch: (cause) =>
-                  cause instanceof RemindersError
-                    ? cause
-                    : fail("decode reminder", "protocol"),
-              });
-              if (reminder.deleted) reminders.delete(record.recordName);
-              else reminders.set(record.recordName, reminder);
-            }
-          } else {
-            for (const id of recurrenceReferences(record)) recurringIds.add(id);
+          if (
+            record.deleted ||
+            (record.fields?.Deleted?.type === "INT64" &&
+              record.fields.Deleted.value === 1)
+          )
+            lists.delete(record.recordName);
+          else if (record.recordType === "List") {
+            lists.set(
+              record.recordName,
+              yield* Effect.try({
+                try: () => listFromRecord(record),
+                catch: () => fail("decode list", "protocol"),
+              }),
+            );
           }
         }
+        latestToken = zone.syncToken;
         if (!zone.moreComing) {
           complete = true;
           break;
         }
-        if (!zone.syncToken || zone.syncToken === token) {
+        if (!zone.syncToken || cursors.has(zone.syncToken)) {
           return yield* Effect.fail(fail("snapshot cursor", "protocol"));
         }
         token = zone.syncToken;
+        cursors.add(token);
       }
       if (!complete) return yield* Effect.fail(fail("snapshot limit", "protocol"));
+      if (latestToken)
+        this.listCache = { lists: new Map(lists), syncToken: latestToken };
+      for (const listId of lists.keys()) {
+        const records = yield* this.queryList(listId, budget);
+        for (const record of records) {
+          if (
+            record.deleted ||
+            (record.fields?.Deleted?.type === "INT64" &&
+              record.fields.Deleted.value === 1)
+          )
+            continue;
+          if (record.recordType === "Reminder") {
+            const reminder = yield* Effect.try({
+              try: () => reminderFromRecord(record),
+              catch: (cause) =>
+                cause instanceof RemindersError
+                  ? cause
+                  : fail("decode reminder", "protocol"),
+            });
+            if (reminder.listId === listId && !reminder.deleted)
+              reminders.set(reminder.id, reminder);
+          } else {
+            const references = yield* Effect.try({
+              try: () => recurrenceReferences(record),
+              catch: () => fail("recurrence reference", "protocol"),
+            });
+            for (const id of references) recurringIds.add(id);
+          }
+        }
+      }
       return {
         lists: [...lists.values()],
         reminders: [...reminders.values()].map((reminder) =>
           recurringIds.has(reminder.id) ? { ...reminder, recurring: true } : reminder,
         ),
       };
+    });
+  }
+
+  public verifyReadAccess(): Effect.Effect<void, RemindersError> {
+    return Effect.gen({ self: this }, function* () {
+      let token: string | undefined;
+      let seen = 0;
+      const cursors = new Set<string>();
+      for (let page = 0; page < MAX_PAGES; page++) {
+        const response = yield* this.post(
+          "/changes/zone",
+          {
+            zones: [
+              {
+                zoneID: ZONE,
+                reverse: true,
+                desiredRecordTypes: ["List", "Reminder"],
+                ...(token ? { syncToken: token } : {}),
+              },
+            ],
+          },
+          ChangesSchema,
+        );
+        if (response.zones.length !== 1 || response.zones[0].error)
+          return yield* Effect.fail(fail("access probe", "protocol"));
+        const zone = response.zones[0];
+        if (!zone.records) return yield* Effect.fail(fail("access probe", "protocol"));
+        let decodedReminder = false;
+        for (const record of zone.records) {
+          if (++seen > MAX_RECORDS || record.serverErrorCode || record.errorCode)
+            return yield* Effect.fail(fail("access probe", "protocol"));
+          if (
+            record.deleted ||
+            (record.fields?.Deleted?.type === "INT64" &&
+              record.fields.Deleted.value === 1)
+          )
+            continue;
+          if (record.recordType === "Reminder") {
+            yield* Effect.try({
+              try: () => reminderFromRecord(record),
+              catch: (cause) =>
+                cause instanceof RemindersError
+                  ? cause
+                  : fail("access probe", "protocol"),
+            });
+            decodedReminder = true;
+          } else if (record.recordType === "List") {
+            yield* Effect.try({
+              try: () => listFromRecord(record),
+              catch: () => fail("access probe", "protocol"),
+            });
+          } else {
+            return yield* Effect.fail(fail("access probe", "protocol"));
+          }
+        }
+        if (decodedReminder || !zone.moreComing) return;
+        if (!zone.syncToken || cursors.has(zone.syncToken))
+          return yield* Effect.fail(fail("access probe cursor", "protocol"));
+        token = zone.syncToken;
+        cursors.add(token);
+      }
+      return yield* Effect.fail(fail("access probe limit", "protocol"));
     });
   }
 
@@ -446,37 +560,85 @@ export class RemindersCloudKitClient {
         return null;
       if (record.serverErrorCode || record.errorCode)
         return yield* Effect.fail(fail("lookup", "protocol"));
-      return record.deleted ? null : record;
+      return record.deleted ||
+        (record.fields?.Deleted?.type === "INT64" && record.fields.Deleted.value === 1)
+        ? null
+        : record;
     });
   }
 
-  private hasRecurrenceReference(id: string): Effect.Effect<boolean, RemindersError> {
+  private queryList(
+    listId: string,
+    budget: ReadBudget,
+  ): Effect.Effect<CkRecord[], RemindersError> {
     return Effect.gen({ self: this }, function* () {
-      let token: string | undefined;
-      let seen = 0;
-      for (let page = 0; page < MAX_PAGES; page++) {
+      let continuationMarker: string | undefined;
+      const cursors = new Set<string>();
+      const records: CkRecord[] = [];
+      while (budget.pages++ < MAX_QUERY_PAGES) {
         const response = yield* this.post(
-          "/changes/zone",
-          { zones: [{ zoneID: ZONE, ...(token ? { syncToken: token } : {}) }] },
-          ChangesSchema,
+          "/records/query",
+          {
+            zoneID: ZONE,
+            resultsLimit: 50,
+            query: {
+              recordType: "reminderList",
+              filterBy: [
+                {
+                  comparator: "EQUALS",
+                  fieldName: "List",
+                  fieldValue: {
+                    type: "REFERENCE",
+                    value: { recordName: listId, action: "VALIDATE" },
+                  },
+                },
+                {
+                  comparator: "EQUALS",
+                  fieldName: "includeCompleted",
+                  fieldValue: int(1),
+                },
+                {
+                  comparator: "EQUALS",
+                  fieldName: "LookupValidatingReference",
+                  fieldValue: int(1),
+                },
+              ],
+            },
+            ...(continuationMarker ? { continuationMarker } : {}),
+          },
+          QuerySchema,
         );
-        if (response.zones.length !== 1 || response.zones[0].error) {
-          return yield* Effect.fail(fail("recurrence scan", "protocol"));
-        }
-        const zone = response.zones[0];
-        for (const record of zone.records ?? []) {
-          if (++seen > MAX_RECORDS || record.serverErrorCode || record.errorCode) {
-            return yield* Effect.fail(fail("recurrence scan", "protocol"));
+        for (const record of response.records) {
+          if (
+            ++budget.records > MAX_RECORDS ||
+            record.serverErrorCode ||
+            record.errorCode
+          ) {
+            return yield* Effect.fail(fail("list query", "protocol"));
           }
-          if (recurrenceReferences(record).includes(id)) return true;
+          records.push(record);
         }
-        if (!zone.moreComing) return false;
-        if (!zone.syncToken || zone.syncToken === token) {
-          return yield* Effect.fail(fail("recurrence scan", "protocol"));
+        if (!response.continuationMarker) return records;
+        if (cursors.has(response.continuationMarker)) {
+          return yield* Effect.fail(fail("list query cursor", "protocol"));
         }
-        token = zone.syncToken;
+        continuationMarker = response.continuationMarker;
+        cursors.add(continuationMarker);
       }
-      return yield* Effect.fail(fail("recurrence scan limit", "protocol"));
+      return yield* Effect.fail(fail("list query limit", "protocol"));
+    });
+  }
+
+  private hasRecurrenceReference(
+    id: string,
+    listId: string,
+  ): Effect.Effect<boolean, RemindersError> {
+    return Effect.gen({ self: this }, function* () {
+      const records = yield* this.queryList(listId, { pages: 0, records: 0 });
+      return yield* Effect.try({
+        try: () => records.some((record) => recurrenceReferences(record).includes(id)),
+        catch: () => fail("recurrence reference", "protocol"),
+      });
     });
   }
 
@@ -493,7 +655,7 @@ export class RemindersCloudKitClient {
       });
       if (reminder.deleted) return null;
       if (reminder.recurring) return reminder;
-      const recurring = yield* this.hasRecurrenceReference(id);
+      const recurring = yield* this.hasRecurrenceReference(id, reminder.listId);
       return recurring ? { ...reminder, recurring: true } : reminder;
     });
   }

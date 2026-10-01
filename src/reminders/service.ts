@@ -166,7 +166,11 @@ export class RemindersService implements RemindersControl {
       });
     this.cloud = new RemindersCloudKitClient((path, body) =>
       this.apple!.ckPost(
-        path as "/changes/zone" | "/records/lookup" | "/records/modify",
+        path as
+          | "/changes/zone"
+          | "/records/query"
+          | "/records/lookup"
+          | "/records/modify",
         body,
       ).pipe(
         Effect.tapError((error) => this.recordFailure(error)),
@@ -270,7 +274,7 @@ export class RemindersService implements RemindersControl {
 
   private authenticated() {
     return Effect.gen({ self: this }, function* () {
-      yield* this.cloud!.readSnapshot(); // Authentication alone does not establish Reminders access.
+      yield* this.cloud!.verifyReadAccess(); // Decode protected content before claiming access.
       this.challenge = undefined;
       this.current = { enabled: true, phase: "authenticated" };
       this.stored = { ...this.stored, notified: false };

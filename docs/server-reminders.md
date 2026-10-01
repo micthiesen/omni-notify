@@ -151,3 +151,33 @@ The parent path used by ioBroker returns HTTP 405. This endpoint correction foll
 [rclone's deployed notification request](https://github.com/rclone/rclone/blob/0b8e9c4ccdec2b9b4c4f6f0b446912eb888d0a4e/backend/iclouddrive/api/session.go#L647).
 Code verification uses `POST` to the same path and retains the challenge headers
 from the delivery response. No popup is requested by background health checks.
+
+## Shared protected iCloud access
+
+`src/icloud/protectedAccess.ts` provides the service-independent PCS workflow for
+Reminders and future iCloud integrations. Its caller supplies an authenticated,
+cookie-persisting request adapter and serializes requests for the account. It
+does not own credentials, change Apple settings, or approve device prompts.
+Only an explicit user action starts the workflow. It requests service access
+once, then polls at five-second intervals with `derivedFromUserAction: false`,
+up to ten requests. Pending approval returns to the UI without claiming access.
+
+Apple releases service keys to its servers through the approved session's PCS
+cookie; Omni does not extract device keys. A CloudKit field can retain the
+`ENCRYPTED_BYTES` type after its contents have been decrypted. Reminders accepts
+only a valid bounded CRDT document, including zlib, gzip and raw protobuf forms.
+Ciphertext remains blocked. The final access check decodes current protected
+Reminders content, independently of complete list discovery.
+
+The PCS workflow is adapted from MIT-licensed
+[timlaing/pyicloud PR 317](https://github.com/timlaing/pyicloud/pull/317), revision
+`b5f2e2a7f9e5cd5be7e009626c4ae021d8b2bb34`, `pyicloud/base.py`.
+Copyright (c) 2025 The PyiCloud Authors. Its full license is preserved in
+[licenses/pyicloud-MIT.txt](licenses/pyicloud-MIT.txt) and shipped in the image.
+
+Current-record queries follow `pyicloud/services/reminders/_reads.py` at revision
+`86c4bc90d5632bcaf7507e5335e127f7450a177a`, under the same MIT license.
+List discovery exhausts Apple's paginated zone history before exposing results;
+the client retains the completed list index and cursor for incremental refreshes.
+Reminders use each list's compound query, including recurrence relationships.
+Incomplete pagination or malformed recurrence records fail closed.

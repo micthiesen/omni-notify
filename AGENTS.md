@@ -63,6 +63,8 @@ Effect 4 migration guide. Keep ecosystem package versions aligned with `effect`.
 
 - `src/index.ts`: entrypoint and scheduled-task registration.
 - `src/effect/`: shared Effect adapters and runtime seams.
+- `src/icloud/`: shared protected-data access workflows; callers own authenticated
+  requests, encrypted cookie persistence and per-account serialization.
 - `src/live-check/`: aggregate streamer state and viewer metrics.
 - `src/email/`: transport, dispatch, activity, triage, retry, and watchdog.
 - `src/parcel-tracker/` and `src/calendar-events/`: email handlers.

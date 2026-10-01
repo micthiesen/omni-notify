@@ -87,16 +87,45 @@ function fixture(options?: {
 const authError = (kind: AppleRemindersError["kind"]) =>
   new AppleRemindersError({ operation: "fixture", reason: "opaque", kind });
 
-describe("Reminders service", () => {
-  it.effect("reports accepted code separately from protected-data access", () =>
-    Effect.gen(function* () {
-      const x = fixture({
-        verify: () => Effect.succeed(true),
-        ckPost: () =>
-          Effect.succeed({
+const encryptedSnapshot = (encrypted: () => boolean) => (path: string, body: unknown) =>
+  Effect.succeed(
+    path === "/changes/zone" &&
+      (body as { zones: { reverse?: boolean }[] }).zones[0].reverse
+      ? {
+          zones: [
+            {
+              records: encrypted()
+                ? [
+                    {
+                      recordName: "fixture",
+                      recordType: "Reminder",
+                      recordChangeTag: "tag",
+                      fields: {
+                        TitleDocument: { type: "ENCRYPTED_BYTES", value: "opaque" },
+                      },
+                    },
+                  ]
+                : [],
+            },
+          ],
+        }
+      : path === "/changes/zone"
+        ? {
             zones: [
               {
                 records: [
+                  {
+                    recordName: "List/test",
+                    recordType: "List",
+                    fields: { Name: { type: "STRING", value: "Test" } },
+                  },
+                ],
+              },
+            ],
+          }
+        : {
+            records: encrypted()
+              ? [
                   {
                     recordName: "fixture",
                     recordType: "Reminder",
@@ -105,10 +134,17 @@ describe("Reminders service", () => {
                       TitleDocument: { type: "ENCRYPTED_BYTES", value: "opaque" },
                     },
                   },
-                ],
-              },
-            ],
-          }),
+                ]
+              : [],
+          },
+  );
+
+describe("Reminders service", () => {
+  it.effect("reports accepted code separately from protected-data access", () =>
+    Effect.gen(function* () {
+      const x = fixture({
+        verify: () => Effect.succeed(true),
+        ckPost: encryptedSnapshot(() => true),
       });
       const challenge = yield* x.service.startAuthentication();
       const status = yield* x.service.submitCode({
@@ -131,25 +167,7 @@ describe("Reminders service", () => {
         let encrypted = true;
         const x = fixture({
           verify: () => Effect.succeed(true),
-          ckPost: () =>
-            Effect.succeed({
-              zones: [
-                {
-                  records: encrypted
-                    ? [
-                        {
-                          recordName: "fixture",
-                          recordType: "Reminder",
-                          recordChangeTag: "tag",
-                          fields: {
-                            TitleDocument: { type: "ENCRYPTED_BYTES", value: "opaque" },
-                          },
-                        },
-                      ]
-                    : [],
-                },
-              ],
-            }),
+          ckPost: encryptedSnapshot(() => encrypted),
         });
         yield* x.service.healthCheck();
         expect(yield* x.service.status()).toMatchObject({

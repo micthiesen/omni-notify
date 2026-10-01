@@ -20,6 +20,7 @@
  */
 import crypto from "node:crypto";
 import { Data, Effect, Schema } from "effect";
+import { ICloudPcsError, requestProtectedAccess } from "../icloud/protectedAccess.js";
 import { CookieJar } from "tough-cookie";
 
 // ── Inline SRP implementation (Apple GSA mode, SHA-256, 2048-bit) ─────────────
@@ -456,7 +457,7 @@ export class AppleRemindersClient {
       const response = await this.fetchImpl(url, {
         method,
         redirect: "manual",
-        signal: AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]),
+        signal,
         headers: {
           "User-Agent": isAuth ? AUTH_USER_AGENT : SERVICE_USER_AGENT,
           Accept: "application/json",
@@ -511,6 +512,7 @@ export class AppleRemindersClient {
     method: "GET" | "POST" | "PUT" = "POST",
     body?: unknown,
     headers: Record<string, string> = {},
+    timeoutMs = this.timeoutMs,
   ) {
     return Effect.tryPromise({
       try: (signal) => this.requestRaw(url, method, body, headers, signal),
@@ -530,6 +532,17 @@ export class AppleRemindersClient {
               : "transient-outage",
         }),
     }).pipe(
+      Effect.timeoutOrElse({
+        duration: timeoutMs,
+        orElse: () =>
+          Effect.fail(
+            new AppleRemindersError({
+              operation,
+              reason: "Apple request timed out",
+              kind: "transient-outage",
+            }),
+          ),
+      }),
       Effect.tap(({ response }) =>
         Effect.gen({ self: this }, function* () {
           if (this.session) this.captureAuth(response, this.session);
@@ -924,63 +937,36 @@ export class AppleRemindersClient {
         clientId: session.clientId,
         ...(session.dsid ? { dsid: session.dsid } : {}),
       });
-      const state = yield* this.request(
-        "PCS state",
-        `${SETUP_ROOT}requestWebAccessState?${params}`,
+      return yield* requestProtectedAccess(
+        (operation, endpoint, body) =>
+          this.request(operation, `${SETUP_ROOT}${endpoint}?${params}`, "POST", body),
+        "reminders",
+      ).pipe(
+        Effect.mapError((error) =>
+          error instanceof ICloudPcsError
+            ? new AppleRemindersError({
+                operation: error.operation,
+                reason: "Protected iCloud access failed",
+                status: error.status,
+                kind:
+                  error.status === undefined
+                    ? "unsupported-protocol"
+                    : this.fail(
+                        error.operation,
+                        "Protected iCloud access failed",
+                        error.status,
+                      ).kind,
+              })
+            : error,
+        ),
       );
-      if (state.status !== 200) {
-        return yield* this.fail("PCS state", "Apple rejected request", state.status);
-      }
-      const info = asRecord(state.data);
-      if (info.isICDRSDisabled !== true) return "not-required" as const;
-      if (info.isDeviceConsentedForPCS !== true) {
-        const consent = yield* this.request(
-          "PCS consent",
-          `${SETUP_ROOT}enableDeviceConsentForPCS?${params}`,
-        );
-        if (consent.status !== 200) {
-          return yield* this.fail(
-            "PCS consent",
-            "Apple rejected request",
-            consent.status,
-          );
-        }
-        if (asRecord(consent.data).isDeviceConsentNotificationSent !== true)
-          return yield* this.fail(
-            "PCS consent",
-            "Apple did not confirm the consent notification",
-            consent.status,
-          );
-        return "consent-required" as const;
-      }
-      const cookies = yield* this.request(
-        "PCS cookies",
-        `${SETUP_ROOT}requestPCS?${params}`,
-        "POST",
-        { appName: "reminders", derivedFromUserAction: true },
-      );
-      const pcs = asRecord(cookies.data);
-      if (
-        cookies.status === 200 &&
-        [
-          "Requested the device to upload cookies.",
-          "Cookies not available yet on server.",
-        ].includes(String(pcs.message))
-      )
-        return "consent-required" as const;
-      if (cookies.status !== 200 || pcs.status !== "success") {
-        return yield* this.fail(
-          "PCS cookies",
-          "Apple has not granted access",
-          cookies.status,
-        );
-      }
-      yield* this.persist();
-      return "ready" as const;
     });
   }
 
-  ckPost(path: "/changes/zone" | "/records/lookup" | "/records/modify", body: unknown) {
+  ckPost(
+    path: "/changes/zone" | "/records/query" | "/records/lookup" | "/records/modify",
+    body: unknown,
+  ) {
     return Effect.gen({ self: this }, function* () {
       const session = yield* this.load();
       if (!session.ckBaseUrl) return yield* this.fail("CloudKit", "session not ready");
@@ -991,6 +977,7 @@ export class AppleRemindersClient {
           "POST",
           body,
           { "Content-Type": "text/plain" },
+          path === "/records/query" ? (this.deps.timeoutMs ?? 60_000) : this.timeoutMs,
         );
       let response = yield* call();
       if (response.status === 401 && path !== "/records/modify") {

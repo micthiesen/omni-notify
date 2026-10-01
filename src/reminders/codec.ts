@@ -1,4 +1,4 @@
-import { deflateSync, inflateSync } from "node:zlib";
+import { deflateSync, unzipSync } from "node:zlib";
 
 // Adapted from the MIT-licensed iobroker.icloud reminders implementation
 // (07a91933e3f05a36d9c8918ece7f3de295aef805). See the upstream notice.
@@ -139,9 +139,11 @@ export function decodeCrdtDocument(value: string): string {
   }
   let data: Buffer;
   try {
-    data = inflateSync(compressed, { maxOutputLength: MAX_TEXT_BYTES * 2 });
+    data = unzipSync(compressed, { maxOutputLength: MAX_TEXT_BYTES * 2 });
   } catch {
-    throw new Error("Cannot decompress reminder document");
+    // CloudKit also returns uncompressed protobuf documents. The same strict
+    // parser below must accept the document; ciphertext is never shown as text.
+    data = compressed;
   }
   const text = documentText(data);
   if (text === null) throw new Error("Cannot decode reminder document");

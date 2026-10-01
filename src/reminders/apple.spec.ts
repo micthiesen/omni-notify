@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
-import { Effect, Result } from "effect";
+import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vitest";
+import { Effect, Fiber, Result } from "effect";
+import { TestClock } from "effect/testing";
 import { AppleRemindersClient, type AppleSession } from "./apple.js";
 
 const saved: AppleSession = {
@@ -14,6 +16,7 @@ const saved: AppleSession = {
 function client(
   responder: (url: URL, init: RequestInit) => Response | Promise<Response>,
   initial: AppleSession = saved,
+  timeoutMs?: number,
 ) {
   const writes: AppleSession[] = [];
   const fetchMock = vi.fn(responder);
@@ -26,14 +29,128 @@ function client(
         writes.push(session);
       }),
     fetch: fetchMock as typeof fetch,
+    timeoutMs,
   });
   return { instance, writes, fetchMock };
 }
 
 describe("Apple Reminders transport", () => {
+  it.effect("lets a current-record query take longer than the normal 15 seconds", () =>
+    Effect.gen(function* () {
+      let resolve!: (response: Response) => void;
+      let signal: AbortSignal | undefined;
+      const { instance, fetchMock } = client((_url, init) => {
+        signal = init.signal!;
+        return new Promise<Response>((done) => {
+          resolve = done;
+        });
+      });
+      const fiber = yield* Effect.forkChild(instance.ckPost("/records/query", {}));
+      yield* TestClock.adjust("20 seconds");
+      expect(signal?.aborted).toBe(false);
+      resolve(Response.json({ records: [] }));
+      expect(yield* Fiber.join(fiber)).toEqual({ records: [] });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }),
+  );
+
+  for (const bodyStalls of [false, true]) {
+    it.effect(
+      `bounds a query stalled ${bodyStalls ? "after" : "before"} response headers without replay`,
+      () =>
+        Effect.gen(function* () {
+          let signal: AbortSignal | undefined;
+          const { instance, fetchMock, writes } = client((_url, init) => {
+            signal = init.signal!;
+            return bodyStalls
+              ? new Response(new ReadableStream())
+              : new Promise<Response>(() => {});
+          });
+          const fiber = yield* Effect.forkChild(
+            instance.ckPost("/records/query", {}).pipe(Effect.result),
+          );
+          yield* TestClock.adjust("59 seconds");
+          expect(signal?.aborted).toBe(false);
+          yield* TestClock.adjust("1 second");
+          const result = yield* Fiber.join(fiber);
+          expect(Result.isFailure(result) && result.failure).toMatchObject({
+            kind: "transient-outage",
+            reason: "Apple request timed out",
+          });
+          expect(signal?.aborted).toBe(true);
+          expect(fetchMock).toHaveBeenCalledTimes(1);
+          expect(writes).toHaveLength(0);
+        }),
+    );
+  }
+
+  for (const [path, timeoutMs] of [
+    ["/records/lookup", undefined],
+    ["/records/query", 2_000],
+  ] as const) {
+    it.effect(`preserves the timeout for ${path} with override ${timeoutMs}`, () =>
+      Effect.gen(function* () {
+        const { instance, fetchMock } = client(
+          () => new Promise<Response>(() => {}),
+          saved,
+          timeoutMs,
+        );
+        const fiber = yield* Effect.forkChild(
+          instance.ckPost(path, {}).pipe(Effect.result),
+        );
+        yield* TestClock.adjust(timeoutMs ?? 15_000);
+        const result = yield* Fiber.join(fiber);
+        expect(Result.isFailure(result) && result.failure.kind).toBe(
+          "transient-outage",
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+      }),
+    );
+  }
+
+  it.effect("aborts an interrupted query without replay or persistence", () =>
+    Effect.gen(function* () {
+      let signal: AbortSignal | undefined;
+      const { instance, fetchMock, writes } = client((_url, init) => {
+        signal = init.signal!;
+        return new Promise<Response>(() => {});
+      });
+      const fiber = yield* Effect.forkChild(instance.ckPost("/records/query", {}));
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.interrupt(fiber);
+      expect(signal?.aborted).toBe(true);
+      yield* TestClock.adjust("1 minute");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(writes).toHaveLength(0);
+    }),
+  );
+
+  it("persists PCS cookies and sends them on resumed CloudKit reads", async () => {
+    const first = client((url) =>
+      url.pathname.endsWith("/requestWebAccessState")
+        ? Response.json({ isICDRSDisabled: true, isDeviceConsentedForPCS: true })
+        : Response.json(
+            { status: "success" },
+            {
+              headers: {
+                "set-cookie":
+                  "X-APPLE-WEBAUTH-PCS-Cloudkit=fixture-cookie; Domain=icloud.com; Path=/; Secure; HttpOnly",
+              },
+            },
+          ),
+    );
+    expect(await Effect.runPromise(first.instance.requestPcsAccess())).toBe("ready");
+    const resumed = client(
+      () => Response.json({ zones: [{ records: [] }] }),
+      first.writes.at(-1)!,
+    );
+    await Effect.runPromise(resumed.instance.ckPost("/changes/zone", { zones: [] }));
+    expect(resumed.fetchMock.mock.calls[0]?.[1].headers).toMatchObject({
+      Cookie: expect.stringContaining("X-APPLE-WEBAUTH-PCS-Cloudkit=fixture-cookie"),
+    });
+  });
+
   it.each([
-    ["Requested the device to upload cookies.", "consent-required"],
-    ["Cookies not available yet on server.", "consent-required"],
     ["success", "ready"],
     ["unknown", "error"],
   ])("handles PCS response %s", async (message, expected) => {
