@@ -144,9 +144,18 @@ describe("Apple Reminders transport", () => {
     ]);
   });
 
-  it.each([200, 503])(
-    "handles device push status %s with fresh SRP headers",
-    async (pushStatus) => {
+  it.each([
+    [200, true, 200],
+    [405, true, 200],
+    [405, false, 200],
+    [200, true, 405],
+    [401, true, 200],
+    [429, true, 200],
+    [500, true, 200],
+    [503, true, 200],
+  ] as const)(
+    "handles push %s with challenge %s and options %s",
+    async (pushStatus, hasChallenge, optionsStatus) => {
       const { instance, fetchMock } = client(
         (url) => {
           if (url.pathname.endsWith("/verify/trusteddevice"))
@@ -160,7 +169,11 @@ describe("Apple Reminders transport", () => {
                 b: Buffer.from([2]).toString("base64"),
                 c: "opaque-challenge",
               },
-              { headers: { scnt: "fresh-scnt", "x-apple-id-session-id": "fresh-id" } },
+              {
+                headers: hasChallenge
+                  ? { scnt: "fresh-scnt", "x-apple-id-session-id": "fresh-id" }
+                  : {},
+              },
             );
           }
           if (url.pathname.endsWith("/signin/complete")) {
@@ -178,23 +191,34 @@ describe("Apple Reminders transport", () => {
               hsaTrustedBrowser: false,
             });
           }
+          if (url.pathname === "/appleauth/auth")
+            return Response.json({}, { status: optionsStatus });
           return Response.json({});
         },
         { clientId: "auth-test" },
       );
       const result = await Effect.runPromise(instance.begin().pipe(Effect.result));
-      if (pushStatus === 200) {
+      if (
+        optionsStatus === 200 &&
+        (pushStatus === 200 || (pushStatus === 405 && hasChallenge))
+      ) {
         expect(Result.isSuccess(result) && result.success).toBe("mfa-required");
       } else {
-        expect(Result.isFailure(result) && result.failure.kind).toBe("rate-limited");
+        expect(Result.isFailure(result) && result.failure.status).toBe(
+          optionsStatus !== 200 ? optionsStatus : pushStatus,
+        );
+        expect(Result.isFailure(result) && result.failure.operation).toBe(
+          optionsStatus !== 200 ? "MFA options" : "MFA push",
+        );
       }
       const complete = fetchMock.mock.calls.find(([url]) =>
         url.pathname.endsWith("/signin/complete"),
       );
-      expect(complete?.[1]?.headers).toMatchObject({
-        scnt: "fresh-scnt",
-        "X-Apple-ID-Session-Id": "fresh-id",
-      });
+      if (hasChallenge)
+        expect(complete?.[1]?.headers).toMatchObject({
+          scnt: "fresh-scnt",
+          "X-Apple-ID-Session-Id": "fresh-id",
+        });
       for (const [url, init] of fetchMock.mock.calls) {
         if (url.hostname !== "idmsa.apple.com") continue;
         expect(init.headers).toMatchObject({
@@ -271,6 +295,23 @@ describe("Apple Reminders transport", () => {
       ).toBe(expectsMfa);
     },
   );
+
+  it("never treats code-verification 405 as successful authentication", async () => {
+    const { instance, fetchMock } = client(() => Response.json({}, { status: 405 }), {
+      clientId: "auth-test",
+      scnt: "challenge",
+      sessionId: "challenge-id",
+    });
+    const result = await Effect.runPromise(
+      instance.submit2fa("123456").pipe(Effect.result),
+    );
+    expect(Result.isFailure(result) && result.failure.operation).toBe("MFA verify");
+    expect(Result.isFailure(result) && result.failure.status).toBe(405);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0].pathname).toBe(
+      "/appleauth/auth/verify/trusteddevice/securitycode",
+    );
+  });
 
   it("drops a stale persisted challenge before retrying SRP init", async () => {
     let initCount = 0;

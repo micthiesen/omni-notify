@@ -782,7 +782,12 @@ export class AppleRemindersClient {
         undefined,
         this.authHeaders(session),
       );
-      if (push.status !== 200 && push.status !== 204) {
+      // ioBroker continues to code entry when the optional device push fails.
+      // Limit that fallback to method-not-allowed with a usable MFA challenge;
+      // authentication, outage and rate-limit failures must remain visible.
+      const codeEntryAvailable =
+        push.status === 405 && Boolean(session.scnt && session.sessionId);
+      if (push.status !== 200 && push.status !== 204 && !codeEntryAvailable) {
         return yield* this.fail(
           "MFA push",
           "Apple rejected device notification",

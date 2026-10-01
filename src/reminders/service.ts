@@ -80,8 +80,14 @@ function appleDiagnostic(error: AppleRemindersError): RemindersDiagnostic {
       stage = "account-session";
       break;
     case "MFA options":
+      stage = "second-factor-options";
+      break;
     case "MFA push":
+      stage = "device-notification";
+      break;
     case "MFA verify":
+      stage = "code-verification";
+      break;
     case "SMS request":
     case "trust browser":
       stage = "second-factor";

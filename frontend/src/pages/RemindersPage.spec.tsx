@@ -52,12 +52,17 @@ describe("Reminders administration page", () => {
     );
   });
 
-  it("shows bounded application failure details instead of a generic 502", async () => {
+  it.each([
+    "account-session",
+    "second-factor-options",
+    "device-notification",
+    "code-verification",
+  ])("shows bounded %s details instead of a generic 502", async (stage) => {
     const status = {
       enabled: true,
       phase: "unsupported-protocol",
       diagnostic: {
-        stage: "account-session",
+        stage,
         category: "apple-response",
         httpStatus: 421,
       },

@@ -9,6 +9,9 @@ const diagnosticStages = [
   "sign-in-complete",
   "account-session",
   "second-factor",
+  "second-factor-options",
+  "device-notification",
+  "code-verification",
   "apple-request",
   "private-storage",
 ] as const;

@@ -88,6 +88,30 @@ const authError = (kind: AppleRemindersError["kind"]) =>
   new AppleRemindersError({ operation: "fixture", reason: "opaque", kind });
 
 describe("Reminders service", () => {
+  it.each([
+    ["MFA options", "second-factor-options"],
+    ["MFA push", "device-notification"],
+    ["MFA verify", "code-verification"],
+  ])("distinguishes %s failures", async (operation, stage) => {
+    const x = fixture({
+      begin: () =>
+        Effect.fail(
+          new AppleRemindersError({
+            operation,
+            reason: "private response",
+            status: 405,
+            kind: "unsupported-protocol",
+          }),
+        ),
+    });
+    await Effect.runPromise(x.service.startAuthentication().pipe(Effect.result));
+    expect((await Effect.runPromise(x.service.status())).diagnostic).toEqual({
+      stage,
+      category: "apple-response",
+      httpStatus: 405,
+    });
+  });
+
   it.effect("reports and logs only bounded sign-in diagnostics", () =>
     Effect.gen(function* () {
       const diagnostics: RemindersDiagnostic[] = [];
