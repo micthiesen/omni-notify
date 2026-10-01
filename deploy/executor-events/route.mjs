@@ -124,7 +124,7 @@ const signed = await Token().create({
   expiresIn: "5m",
 });
 const access = new Access(signed.token);
-await access.init();
+await access.can("proxy_hosts:update", id);
 const updated = await proxyHosts.update(access, { id, advanced_config: wanted });
 if (updated.meta?.nginx_online === false)
   throw new Error("NPM rejected nginx configuration; inspect and rollback");
