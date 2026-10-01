@@ -145,3 +145,9 @@ in the runtime image at `/app/licenses/ioBroker.icloud-MIT.txt`. The adaptation
 removes ioBroker lifecycle/logging, unredacted auth diagnostics, optimistic write
 success, and the recommendation to disable ADP. It uses Omni's Effect boundaries,
 private persistence, logger, notifications, MCP and frontend instead.
+
+The device-popup request uses `PUT /appleauth/auth/verify/trusteddevice/securitycode`.
+The parent path used by ioBroker returns HTTP 405. This endpoint correction follows
+[rclone's deployed notification request](https://github.com/rclone/rclone/blob/0b8e9c4ccdec2b9b4c4f6f0b446912eb888d0a4e/backend/iclouddrive/api/session.go#L647).
+Code verification uses `POST` to the same path and retains the challenge headers
+from the delivery response. No popup is requested by background health checks.

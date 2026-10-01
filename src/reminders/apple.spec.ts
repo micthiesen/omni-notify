@@ -157,9 +157,19 @@ describe("Apple Reminders transport", () => {
     "handles push %s with challenge %s and options %s",
     async (pushStatus, hasChallenge, optionsStatus) => {
       const { instance, fetchMock } = client(
-        (url) => {
-          if (url.pathname.endsWith("/verify/trusteddevice"))
-            return Response.json({}, { status: pushStatus });
+        (url, init) => {
+          if (url.pathname.endsWith("/verify/trusteddevice/securitycode")) {
+            if (init.method === "POST") return Response.json({}, { status: 400 });
+            return Response.json(
+              {},
+              {
+                status: pushStatus,
+                headers: hasChallenge
+                  ? { scnt: "push-scnt", "x-apple-id-session-id": "push-id" }
+                  : {},
+              },
+            );
+          }
           if (url.pathname.endsWith("/signin/init")) {
             return Response.json(
               {
@@ -192,7 +202,15 @@ describe("Apple Reminders transport", () => {
             });
           }
           if (url.pathname === "/appleauth/auth")
-            return Response.json({}, { status: optionsStatus });
+            return Response.json(
+              {},
+              {
+                status: optionsStatus,
+                headers: hasChallenge
+                  ? { scnt: "options-scnt", "x-apple-id-session-id": "options-id" }
+                  : {},
+              },
+            );
           return Response.json({});
         },
         { clientId: "auth-test" },
@@ -219,6 +237,37 @@ describe("Apple Reminders transport", () => {
           scnt: "fresh-scnt",
           "X-Apple-ID-Session-Id": "fresh-id",
         });
+      const pushes = fetchMock.mock.calls.filter(([url]) =>
+        url.pathname.endsWith("/verify/trusteddevice/securitycode"),
+      );
+      expect(pushes).toHaveLength(optionsStatus === 200 ? 1 : 0);
+      if (optionsStatus === 200) {
+        expect(pushes[0]?.[1]).toMatchObject({ method: "PUT" });
+        expect(pushes[0]?.[1].body).toBeUndefined();
+        if (hasChallenge)
+          expect(pushes[0]?.[1].headers).toMatchObject({
+            scnt: "options-scnt",
+            "X-Apple-ID-Session-Id": "options-id",
+          });
+      }
+      if (pushStatus === 200 && optionsStatus === 200) {
+        const submitted = await Effect.runPromise(
+          instance.submit2fa("123456").pipe(Effect.result),
+        );
+        expect(Result.isFailure(submitted) && submitted.failure.status).toBe(400);
+        const last = fetchMock.mock.calls.at(-1)!;
+        expect(last[0].pathname).toBe(
+          "/appleauth/auth/verify/trusteddevice/securitycode",
+        );
+        expect(last[1]).toMatchObject({
+          method: "POST",
+          headers: { scnt: "push-scnt", "X-Apple-ID-Session-Id": "push-id" },
+          body: JSON.stringify({ securityCode: { code: "123456" } }),
+        });
+        expect(
+          fetchMock.mock.calls.filter(([url]) => url.pathname.endsWith("/signin/init")),
+        ).toHaveLength(1);
+      }
       for (const [url, init] of fetchMock.mock.calls) {
         if (url.hostname !== "idmsa.apple.com") continue;
         expect(init.headers).toMatchObject({
@@ -290,7 +339,7 @@ describe("Apple Reminders transport", () => {
       ).toBe(expectsMfa);
       expect(
         fetchMock.mock.calls.some(([url]) =>
-          url.pathname.endsWith("/verify/trusteddevice"),
+          url.pathname.endsWith("/verify/trusteddevice/securitycode"),
         ),
       ).toBe(expectsMfa);
     },

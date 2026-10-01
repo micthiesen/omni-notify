@@ -777,7 +777,9 @@ export class AppleRemindersClient {
       }
       const push = yield* this.request(
         "MFA push",
-        `${AUTH_ROOT}verify/trusteddevice`,
+        // PUT requests delivery; POST to this same path verifies the code.
+        // The parent /verify/trusteddevice path rejects PUT with HTTP 405.
+        `${AUTH_ROOT}verify/trusteddevice/securitycode`,
         "PUT",
         undefined,
         this.authHeaders(session),
