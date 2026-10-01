@@ -146,6 +146,7 @@ describe("Apple Reminders transport", () => {
 
   it.each([
     [200, true, 200],
+    [202, true, 200],
     [405, true, 200],
     [405, false, 200],
     [200, true, 405],
@@ -218,7 +219,7 @@ describe("Apple Reminders transport", () => {
       const result = await Effect.runPromise(instance.begin().pipe(Effect.result));
       if (
         optionsStatus === 200 &&
-        (pushStatus === 200 || (pushStatus === 405 && hasChallenge))
+        ([200, 202].includes(pushStatus) || (pushStatus === 405 && hasChallenge))
       ) {
         expect(Result.isSuccess(result) && result.success).toBe("mfa-required");
       } else {
@@ -250,7 +251,7 @@ describe("Apple Reminders transport", () => {
             "X-Apple-ID-Session-Id": "options-id",
           });
       }
-      if (pushStatus === 200 && optionsStatus === 200) {
+      if ([200, 202].includes(pushStatus) && optionsStatus === 200) {
         const submitted = await Effect.runPromise(
           instance.submit2fa("123456").pipe(Effect.result),
         );
@@ -342,6 +343,78 @@ describe("Apple Reminders transport", () => {
           url.pathname.endsWith("/verify/trusteddevice/securitycode"),
         ),
       ).toBe(expectsMfa);
+    },
+  );
+
+  it.each([
+    [200, true, true, 200, 200, true],
+    [204, undefined, true, 204, 200, true],
+    [409, true, true, 200, 200, true],
+    [409, true, false, 200, 200, false],
+    [409, false, true, 200, 200, false],
+    [409, undefined, true, 200, 200, false],
+    [200, false, true, 200, 200, false],
+    [202, true, true, 200, 200, false],
+    [409, true, true, 403, 200, false],
+    [409, true, true, 200, 451, false],
+  ] as const)(
+    "verifies code %s valid=%s token=%s, trust %s and account %s",
+    async (status, valid, token, trustStatus, accountStatus, ready) => {
+      const { instance, fetchMock } = client(
+        (url) => {
+          if (url.pathname.endsWith("/securitycode")) {
+            const headers = {
+              scnt: "verified-scnt",
+              "x-apple-id-session-id": "verified-id",
+              ...(token ? { "x-apple-session-token": "verified-token" } : {}),
+            };
+            return status === 204
+              ? new Response(null, { status, headers })
+              : Response.json({ securityCode: { valid } }, { status, headers });
+          }
+          if (url.pathname.endsWith("/2sv/trust"))
+            return new Response(null, {
+              status: trustStatus,
+              headers: { "x-apple-twosv-trust-token": "verified-trust" },
+            });
+          if (url.pathname.endsWith("/accountLogin"))
+            return Response.json(
+              {
+                dsInfo: { hsaVersion: 2, dsid: "fixture" },
+                hsaTrustedBrowser: true,
+                webservices: {
+                  ckdatabasews: { url: "https://ckdatabasews.icloud.com" },
+                },
+              },
+              { status: accountStatus },
+            );
+          throw new Error("Unexpected fixture request");
+        },
+        { ...saved, scnt: "challenge", sessionId: "challenge-id" },
+      );
+      const result = await Effect.runPromise(
+        instance.submit2fa("123456").pipe(Effect.result),
+      );
+      expect(Result.isSuccess(result)).toBe(ready);
+      if (ready) expect(Result.isSuccess(result) && result.success).toBe("ready");
+      const passedCode =
+        valid !== false &&
+        (status === 200 ||
+          status === 204 ||
+          (status === 409 && valid === true && token));
+      expect(fetchMock.mock.calls).toHaveLength(
+        !passedCode ? 1 : trustStatus === 403 ? 2 : 3,
+      );
+      if (passedCode)
+        expect(fetchMock.mock.calls[1]?.[1].headers).toMatchObject({
+          scnt: "verified-scnt",
+          "X-Apple-ID-Session-Id": "verified-id",
+        });
+      if (passedCode && trustStatus !== 403)
+        expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1].body))).toMatchObject({
+          dsWebAuthToken: "verified-token",
+          trustToken: "verified-trust",
+        });
     },
   );
 

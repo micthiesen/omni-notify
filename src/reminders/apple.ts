@@ -789,7 +789,8 @@ export class AppleRemindersClient {
       // authentication, outage and rate-limit failures must remain visible.
       const codeEntryAvailable =
         push.status === 405 && Boolean(session.scnt && session.sessionId);
-      if (push.status !== 200 && push.status !== 204 && !codeEntryAvailable) {
+      // Apple may accept asynchronous popup delivery with 202.
+      if (![200, 202, 204].includes(push.status) && !codeEntryAvailable) {
         return yield* this.fail(
           "MFA push",
           "Apple rejected device notification",
@@ -880,7 +881,18 @@ export class AppleRemindersClient {
         this.authHeaders(session),
       );
       this.captureAuth(response.response, session);
-      if (response.status !== 200 && response.status !== 204) {
+      // Modern Apple code verification can report success as HTTP 409.
+      // Require explicit validity and a token on this response, never a saved
+      // token or the conflict status alone. Trust/account checks still follow.
+      const codeValid = asRecord(asRecord(response.data).securityCode).valid;
+      const acceptedConflict =
+        response.status === 409 &&
+        codeValid === true &&
+        Boolean(response.response.headers.get("x-apple-session-token")?.trim());
+      if (
+        codeValid === false ||
+        (response.status !== 200 && response.status !== 204 && !acceptedConflict)
+      ) {
         yield* this.persist();
         return yield* this.fail("MFA verify", "Apple rejected code", response.status);
       }
