@@ -1,7 +1,7 @@
 import { Logger } from "@micthiesen/mitools/logging";
 import { ManagedRuntime } from "effect";
 import { describe, expect, it, vi } from "vitest";
-import { sendComposedEmailEffect } from "./send.js";
+import { sendComposedEmailEffect, sendEmailEffect } from "./send.js";
 
 const runtime = ManagedRuntime.make(Logger.layer());
 
@@ -18,7 +18,6 @@ describe("sendComposedEmailEffect", () => {
           to: ["to@example.test"],
           cc: ["cc@example.test"],
           bcc: ["bcc@example.test"],
-          from: "me@example.test",
           subject: "Test",
           text: "Body",
           messageId: "<stable@omni-notify>",
@@ -28,7 +27,10 @@ describe("sendComposedEmailEffect", () => {
     );
     expect(sent).toBe(true);
     expect(sendMail).toHaveBeenCalledWith(
-      expect.objectContaining({ messageId: "<stable@omni-notify>" }),
+      expect.objectContaining({
+        from: "michael@thiesen.dev",
+        messageId: "<stable@omni-notify>",
+      }),
     );
   });
 
@@ -37,7 +39,6 @@ describe("sendComposedEmailEffect", () => {
       sendComposedEmailEffect(
         {
           to: ["to@example.test", "second@example.test"],
-          from: "me@example.test",
           subject: "Test",
           text: "Body",
         },
@@ -53,7 +54,6 @@ describe("sendComposedEmailEffect", () => {
       sendComposedEmailEffect(
         {
           to: ["to@example.test"],
-          from: "me@example.test",
           subject: "Test",
           text: "Body",
         },
@@ -74,7 +74,6 @@ describe("sendComposedEmailEffect", () => {
         {
           to: ["same@example.test"],
           cc: ["same@example.test"],
-          from: "me@example.test",
           subject: "Test",
           text: "Body",
         },
@@ -86,7 +85,9 @@ describe("sendComposedEmailEffect", () => {
 });
 
 it("sends persisted wire bytes with an explicit deduplicated Bcc envelope", async () => {
-  const raw = Buffer.from("Message-ID: <wire@test>\r\n\r\nBody");
+  const raw = Buffer.from(
+    "From: michael@thiesen.dev\r\nMessage-ID: <wire@test>\r\n\r\nBody",
+  );
   const sendMail = vi.fn(async () => ({
     accepted: ["to@test", "cc@test", "hidden@test"],
     rejected: [],
@@ -95,7 +96,6 @@ it("sends persisted wire bytes with an explicit deduplicated Bcc envelope", asyn
     await runtime.runPromise(
       sendComposedEmailEffect(
         {
-          from: "me@test",
           to: ["to@test"],
           cc: ["cc@test", "to@test"],
           bcc: ["hidden@test"],
@@ -110,7 +110,48 @@ it("sends persisted wire bytes with an explicit deduplicated Bcc envelope", asyn
   expect(sendMail).toHaveBeenCalledWith(
     expect.objectContaining({
       raw,
-      envelope: { from: "me@test", to: ["to@test", "cc@test", "hidden@test"] },
+      envelope: {
+        from: "michael@thiesen.dev",
+        to: ["to@test", "cc@test", "hidden@test"],
+      },
     }),
+  );
+});
+
+it("refuses persisted MIME with a different From before contacting SMTP", async () => {
+  const sendMail = vi.fn();
+  expect(
+    await runtime.runPromise(
+      sendComposedEmailEffect(
+        {
+          to: ["to@example.test"],
+          subject: "Test",
+          text: "Body",
+          raw: Buffer.from("From: micthiesen@icloud.com\r\n\r\nBody"),
+        },
+        { sendMail } as never,
+      ),
+    ),
+  ).toBe(false);
+  expect(sendMail).not.toHaveBeenCalled();
+});
+
+it("uses the fixed identity for notification mail", async () => {
+  const sendMail = vi.fn(async () => ({}));
+  expect(
+    await runtime.runPromise(
+      sendEmailEffect(
+        {
+          to: "to@example.test",
+          subject: "Logs",
+          text: "Body",
+          html: "<p>Body</p>",
+        },
+        { sendMail } as never,
+      ),
+    ),
+  ).toBe(true);
+  expect(sendMail).toHaveBeenCalledWith(
+    expect.objectContaining({ from: "michael@thiesen.dev" }),
   );
 });

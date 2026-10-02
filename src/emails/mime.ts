@@ -1,6 +1,7 @@
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { Data, Effect } from "effect";
 import type { ComposedEmailParams } from "./send.js";
+import { OUTGOING_EMAIL_FROM } from "./identity.js";
 
 export class EmailMimeError extends Data.TaggedError("EmailMimeError")<{
   readonly cause: unknown;
@@ -13,7 +14,7 @@ export function prepareComposedEmailEffect(
   return Effect.tryPromise({
     try: async () => {
       const options = {
-        from: params.from,
+        from: OUTGOING_EMAIL_FROM,
         to: params.to,
         cc: params.cc,
         bcc: params.bcc,
@@ -32,7 +33,7 @@ export function prepareComposedEmailEffect(
       return {
         wire: wire.toString("base64"),
         content: (await copy.build()).toString("base64"),
-        from: params.from,
+        from: OUTGOING_EMAIL_FROM,
         date: params.date.toISOString(),
       };
     },

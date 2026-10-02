@@ -8,7 +8,6 @@ const values = (
   SMTP_PORT: 587,
   SMTP_USER: "smtp-user",
   SMTP_PASS: "smtp-pass",
-  EMAIL_FROM: "sender@example.test",
   ICLOUD_USERNAME: "icloud-user",
   ICLOUD_APP_PASSWORD: "icloud-pass",
   ...overrides,
@@ -21,7 +20,7 @@ describe("compose SMTP configuration", () => {
       port: 587,
       user: "smtp-user",
       pass: "smtp-pass",
-      from: "sender@example.test",
+      from: "michael@thiesen.dev",
       secure: false,
       requireTLS: true,
       source: "smtp",
@@ -32,14 +31,13 @@ describe("compose SMTP configuration", () => {
     });
   });
 
-  it("falls back to complete iCloud credentials and uses its username as the sender", () => {
+  it("uses iCloud credentials without using the login as the sender", () => {
     expect(
       resolveComposeEmailConfiguration(
         values({
           SMTP_HOST: "",
           SMTP_USER: "",
           SMTP_PASS: "",
-          EMAIL_FROM: "",
         }),
       ),
     ).toEqual({
@@ -47,7 +45,7 @@ describe("compose SMTP configuration", () => {
       port: 587,
       user: "icloud-user",
       pass: "icloud-pass",
-      from: "icloud-user",
+      from: "michael@thiesen.dev",
       secure: false,
       requireTLS: true,
       source: "icloud",

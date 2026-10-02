@@ -2,6 +2,7 @@ import { logConfig } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { Data, Effect, Schema, SchemaGetter } from "effect";
 import { validateMcpTokenConfiguration } from "../mcp/auth.js";
+import { OUTGOING_EMAIL_FROM } from "../emails/identity.js";
 
 const optionalString = Schema.optional(Schema.String);
 const defaultString = (value: string) =>
@@ -241,7 +242,7 @@ const rawConfigSchema = Schema.Struct({
   ),
   SMTP_USER: optionalString,
   SMTP_PASS: optionalString,
-  EMAIL_FROM: optionalString,
+  EMAIL_FROM: Schema.optional(Schema.Literals(["", OUTGOING_EMAIL_FROM])),
   LOGS_EMAIL_TO: optionalString,
   WHISKER_CREDENTIALS: Schema.optional(whiskerCredentials),
   FRONTEND_PORT: coercedFiniteNumber.pipe(

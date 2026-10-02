@@ -7,7 +7,6 @@ describe("composed MIME", () => {
   it("keeps Bcc private, preserves date/body/subject and extends the reply chain", async () => {
     const result = await Effect.runPromise(
       prepareComposedEmailEffect({
-        from: "me@example.test",
         to: ["to@example.test"],
         cc: ["cc@example.test"],
         bcc: ["hidden@example.test"],
@@ -21,9 +20,13 @@ describe("composed MIME", () => {
     );
     const wire = await simpleParser(Buffer.from(result.wire, "base64"));
     const copy = await simpleParser(Buffer.from(result.content, "base64"));
+    expect(result.from).toBe("michael@thiesen.dev");
     expect(wire.bcc).toBeUndefined();
     expect(JSON.stringify(copy.bcc)).toContain("hidden@example.test");
     for (const parsed of [wire, copy]) {
+      expect(parsed.from?.value).toEqual([
+        { address: "michael@thiesen.dev", name: "" },
+      ]);
       expect(parsed.messageId).toBe("<stable@example.test>");
       expect(parsed.date?.toISOString()).toBe("2026-09-30T23:59:05.000Z");
       expect(parsed.subject).toBe("Re: Sam — follow-up");

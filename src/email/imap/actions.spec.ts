@@ -50,9 +50,7 @@ describe("createDraftEffect", () => {
       search: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([1]),
       fetchOne: vi.fn(async () => ({ envelope: { messageId } })),
     });
-    const result = await Effect.runPromise(
-      createDraftEffect(fixture.client, input, "me@example.test"),
-    );
+    const result = await Effect.runPromise(createDraftEffect(fixture.client, input));
     const parsed = await simpleParser(fixture.appended!);
 
     expect(result).toEqual({
@@ -62,6 +60,7 @@ describe("createDraftEffect", () => {
     expect(fixture.client.getMailboxLock).toHaveBeenCalledWith("Drafts.localized", {
       readOnly: false,
     });
+    expect(parsed.from?.value).toEqual([{ address: "michael@thiesen.dev", name: "" }]);
     expect(JSON.stringify(parsed.to)).toContain("to@example.test");
     expect(JSON.stringify(parsed.cc)).toContain("cc@example.test");
     expect(JSON.stringify(parsed.bcc)).toContain("hidden@example.test");
@@ -78,7 +77,7 @@ describe("createDraftEffect", () => {
       }),
     });
     const result = await Effect.runPromise(
-      Effect.result(createDraftEffect(fixture.client, input, "me@example.test")),
+      Effect.result(createDraftEffect(fixture.client, input)),
     );
     expect(result._tag).toBe("Failure");
     expect(release).toHaveBeenCalledOnce();
@@ -88,7 +87,7 @@ describe("createDraftEffect", () => {
   it("does not report success when APPEND returns false or verification fails", async () => {
     const appendRejected = draftClient({ append: vi.fn(async () => false) });
     const rejectedResult = await Effect.runPromise(
-      Effect.result(createDraftEffect(appendRejected.client, input, "me@example.test")),
+      Effect.result(createDraftEffect(appendRejected.client, input)),
     );
     expect(rejectedResult._tag).toBe("Failure");
 
@@ -97,7 +96,7 @@ describe("createDraftEffect", () => {
       append: vi.fn(async () => "1"),
     });
     const invisibleResult = await Effect.runPromise(
-      Effect.result(createDraftEffect(invisible.client, input, "me@example.test")),
+      Effect.result(createDraftEffect(invisible.client, input)),
     );
     expect(invisibleResult._tag).toBe("Failure");
   });
@@ -112,7 +111,7 @@ describe("createDraftEffect", () => {
     });
     await expect(
       Effect.runPromise(
-        createDraftEffect(existing.client, input, "me@example.test", {
+        createDraftEffect(existing.client, input, {
           allowAppend: false,
         }),
       ),
@@ -122,7 +121,7 @@ describe("createDraftEffect", () => {
     const absent = draftClient();
     const result = await Effect.runPromise(
       Effect.result(
-        createDraftEffect(absent.client, input, "me@example.test", {
+        createDraftEffect(absent.client, input, {
           allowAppend: false,
         }),
       ),

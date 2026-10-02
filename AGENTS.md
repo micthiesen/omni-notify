@@ -131,6 +131,12 @@ keys for distinct users, URLs, subjects, or tracking numbers. Logs emitted durin
 a tracked task run remain attributable through async work and are bounded before
 persistence.
 
+`CodexResets` polls Reset Beacon's public alert feed and history every five minutes.
+Keep predictions, announcements, observed rollouts and reported landings distinct.
+Never infer a landing from an elapsed deadline or a banked grant from an ordinary
+reset. Include source links and preserve durable delivery reservations. See
+`docs/codex-resets.md`.
+
 ### PressPods
 
 Retrievers run independently and the metadata model selects the best usable
@@ -208,6 +214,11 @@ record SMTP acceptance before Sent APPEND, and keep Sent verification separate
 from delivery. Uncertain APPENDs only reconcile by exact Message-ID and MIME; copy
 repair never retransmits. Composed mail falls back to iCloud SMTP only when no
 explicit SMTP fields are set. See `docs/mcp.md`.
+
+All new outgoing email and drafts use `michael@thiesen.dev`, fixed server-side.
+SMTP/IMAP authentication identities remain separate. Tools never accept a sender
+or From option; invalid legacy `EMAIL_FROM` configuration fails boot. Preserve
+historical Sent MIME during copy repair and never retransmit it to change identity.
 
 Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
 revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK

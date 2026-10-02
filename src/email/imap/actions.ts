@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { Data, Effect } from "effect";
 import type { EmailDraftInput, EmailDraftResult } from "../types.js";
+import { OUTGOING_EMAIL_FROM } from "../../emails/identity.js";
 
 export interface ImapDraftClient {
   list(): Promise<Array<{ path: string; specialUse?: string }>>;
@@ -41,7 +42,6 @@ export function deterministicDraftMessageId(idempotencyKey: string): string {
 export function createDraftEffect(
   client: ImapDraftClient,
   input: EmailDraftInput,
-  from: string,
   options: { allowAppend?: boolean } = {},
 ): Effect.Effect<EmailDraftResult, ImapDraftError> {
   const messageId = deterministicDraftMessageId(input.idempotencyKey);
@@ -99,7 +99,7 @@ export function createDraftEffect(
           }
 
           const mime = new MailComposer({
-            from,
+            from: OUTGOING_EMAIL_FROM,
             to: input.to,
             cc: input.cc,
             bcc: input.bcc,

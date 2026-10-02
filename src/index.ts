@@ -43,6 +43,7 @@ import { PodcastRecommendationTask } from "./podcast-recs/task.js";
 import PressPodsTask from "./press-pods/task.js";
 import { MediaRecommendationTask } from "./recommendations/task.js";
 import { ArrRecoveryTask } from "./arr-recovery/task.js";
+import { CodexResetTask } from "./codex-resets/task.js";
 import { ObserverRepairTask } from "./observer-repair/task.js";
 import { MediaTasteReflectionTask } from "./recommendations/taste/task.js";
 import { type EmailControls, startServer } from "./server.js";
@@ -206,6 +207,9 @@ const buildTasks = Effect.fn("Main.buildTasks")(function* (
     tasks.push(new WorkspaceTask(definition, logger));
   }
   tasks.push(new WorkspaceNotificationTask(logger));
+  if (config.PUSHOVER_USER && config.PUSHOVER_TOKEN) {
+    tasks.push(new CodexResetTask(logger.extend("CodexResets")));
+  }
   return tasks;
 });
 

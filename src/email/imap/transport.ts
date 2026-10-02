@@ -41,7 +41,6 @@ import { getFolderCursorEffect, saveFolderCursorEffect } from "./persistence.js"
 import { planFolderSync } from "./sync.js";
 import { BoundedReadCache } from "./readCache.js";
 import { createDraftEffect as appendDraftEffect } from "./actions.js";
-import { getComposeEmailConfiguration } from "../../emails/client.js";
 
 import { appendSentCopyEffect, type SentCopyInput } from "./sent.js";
 import {
@@ -672,8 +671,7 @@ export class ImapTransport implements EmailTransport<
       "IMAP create draft",
       Effect.gen({ self: this }, function* () {
         const client = yield* this.requireClientEffect;
-        const from = getComposeEmailConfiguration()?.from ?? this.auth.user;
-        return yield* appendDraftEffect(client, input, from, options);
+        return yield* appendDraftEffect(client, input, options);
       }).pipe(Effect.ensuring(this.restoreInboxEffect())),
     );
   }

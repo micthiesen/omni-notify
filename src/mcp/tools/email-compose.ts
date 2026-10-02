@@ -303,7 +303,7 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
           const config = getComposeEmailConfiguration();
           if (!config)
             return yield* new EmailComposeError({
-              message: "SMTP sender configuration is not available",
+              message: "SMTP credentials for michael@thiesen.dev are not available",
             });
           const fingerprint = fingerprintFor({ ...input, from: config.from });
           const reservation = yield* reserveEffect(
@@ -376,14 +376,13 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
           const config = getComposeEmailConfiguration();
           if (!config)
             return yield* new EmailComposeError({
-              message: "Email sending is not configured",
+              message: "SMTP credentials for michael@thiesen.dev are not configured",
             });
           const fingerprint = fingerprintFor({ ...input, from: config.from });
           const messageId = `<${fingerprint}@omni-notify>`;
           const date = new Date(yield* Clock.currentTimeMillis);
           const prepared = yield* prepareComposedEmailEffect({
             ...input,
-            from: config.from,
             messageId,
             date,
           });
@@ -407,7 +406,6 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
             to: input.to,
             cc: input.cc,
             bcc: input.bcc,
-            from: config.from,
             subject: input.subject,
             text: input.text,
             inReplyTo: input.inReplyTo,

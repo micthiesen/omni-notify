@@ -1,9 +1,11 @@
 import type { LogItem } from "@micthiesen/mitools/logging";
 import { Logger } from "@micthiesen/mitools/logging";
 import { Effect, Schema } from "effect";
+import { simpleParser } from "mailparser";
 import type { SentMessageInfo, Transporter } from "nodemailer";
 
 import config from "../utils/config.js";
+import { OUTGOING_EMAIL_FROM } from "./identity.js";
 import { getTransporter } from "./client.js";
 import { type EmailContent, renderLogEmail } from "./templates.js";
 
@@ -15,7 +17,6 @@ const DeliveryResultSchema = Schema.Struct({
 
 interface SendEmailParams {
   to: string;
-  from: string;
   subject: string;
   html: string;
   text: string;
@@ -25,7 +26,6 @@ export interface ComposedEmailParams {
   to: string[];
   cc?: string[];
   bcc?: string[];
-  from: string;
   subject: string;
   text: string;
   inReplyTo?: string;
@@ -37,16 +37,16 @@ export interface ComposedEmailParams {
 
 export function sendEmailEffect(
   params: SendEmailParams,
+  transport: Pick<Transporter<SentMessageInfo>, "sendMail"> | null = getTransporter(),
 ): Effect.Effect<boolean, never, Logger> {
   return Effect.gen(function* () {
-    const { to, from, subject, html, text } = params;
-    const transporter = getTransporter();
-    if (!transporter) {
-      yield* logger.debug("SMTP not configured, skipping email");
+    const { to, subject, html, text } = params;
+    if (!transport) {
+      yield* logger.error(`SMTP is not configured to send as ${OUTGOING_EMAIL_FROM}`);
       return false;
     }
     return yield* Effect.tryPromise(() =>
-      transporter.sendMail({ from, to, subject, html, text }),
+      transport.sendMail({ from: OUTGOING_EMAIL_FROM, to, subject, html, text }),
     ).pipe(
       Effect.as(true),
       Effect.tap(() => logger.debug(`Email sent: "${subject}" to ${to}`)),
@@ -66,8 +66,27 @@ export function sendComposedEmailEffect(
 ): Effect.Effect<boolean, never, Logger> {
   return Effect.gen(function* () {
     if (!transport) {
-      yield* logger.error("SMTP is not configured for composed email");
+      yield* logger.error(`SMTP is not configured to send as ${OUTGOING_EMAIL_FROM}`);
       return false;
+    }
+    const raw = params.raw;
+    if (raw) {
+      const validSender = yield* Effect.tryPromise(() => simpleParser(raw)).pipe(
+        Effect.map(
+          (mail) =>
+            mail.from?.value.length === 1 &&
+            mail.from.value[0].address === OUTGOING_EMAIL_FROM &&
+            !mail.headers.has("sender") &&
+            !mail.headers.has("resent-from"),
+        ),
+        Effect.catch(() => Effect.succeed(false)),
+      );
+      if (!validSender) {
+        yield* logger.error(
+          `Persisted email must be from ${OUTGOING_EMAIL_FROM}; SMTP submission refused`,
+        );
+        return false;
+      }
     }
     return yield* Effect.tryPromise({
       try: () =>
@@ -76,7 +95,7 @@ export function sendComposedEmailEffect(
             ? {
                 raw: params.raw,
                 envelope: {
-                  from: params.from,
+                  from: OUTGOING_EMAIL_FROM,
                   to: [
                     ...new Set([
                       ...params.to,
@@ -87,7 +106,7 @@ export function sendComposedEmailEffect(
                 },
               }
             : {}),
-          from: params.from,
+          from: OUTGOING_EMAIL_FROM,
           to: params.to,
           cc: params.cc,
           bcc: params.bcc,
@@ -131,9 +150,9 @@ export function sendLogEmailEffect(
   logs: LogItem[],
 ): Effect.Effect<boolean, never, Logger> {
   return Effect.gen(function* () {
-    const { EMAIL_FROM, LOGS_EMAIL_TO } = config;
+    const { LOGS_EMAIL_TO } = config;
 
-    if (!EMAIL_FROM || !LOGS_EMAIL_TO) {
+    if (!LOGS_EMAIL_TO) {
       yield* logger.debug("Log email not configured, skipping");
       return false;
     }
@@ -141,7 +160,6 @@ export function sendLogEmailEffect(
     const { html, text }: EmailContent = renderLogEmail(subject, logs);
     return yield* sendEmailEffect({
       to: LOGS_EMAIL_TO,
-      from: EMAIL_FROM,
       subject,
       html,
       text,

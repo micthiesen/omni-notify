@@ -4,7 +4,7 @@ import { createMitoolsTestRuntime } from "../../test/mitools.js";
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(),
-  configuration: { from: "sender@example.test" },
+  configuration: { from: "michael@thiesen.dev" },
 }));
 
 vi.mock("../../emails/client.js", () => ({
@@ -46,6 +46,28 @@ const run = (
 afterAll(() => testRuntime.dispose());
 
 describe("email compose MCP idempotency", () => {
+  it("rejects caller-selected sender fields on sends, replies and drafts", async () => {
+    mocks.send.mockReset();
+    for (const tool of [sendTool, draftTool]) {
+      for (const field of ["from", "sender"]) {
+        expect(
+          tool.inputSchema.safeParse(message({ [field]: "micthiesen@icloud.com" }))
+            .success,
+        ).toBe(false);
+        await expect(
+          run(
+            tool,
+            message({
+              [field]: "micthiesen@icloud.com",
+              inReplyTo: "<parent@example.test>",
+            }),
+          ),
+        ).rejects.toThrow();
+      }
+    }
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
   it("returns the stored success on retry without sending twice", async () => {
     mocks.send.mockReset().mockReturnValue(Effect.succeed(true));
     const first = await run(sendTool, message());

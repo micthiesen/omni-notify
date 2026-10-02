@@ -167,8 +167,23 @@ second APPEND. Legacy receipts lack MIME and cannot be repaired through this too
 Explicit SMTP settings take precedence. Without SMTP settings, composed email
 uses the existing iCloud credentials with authenticated STARTTLS on port 587,
 following [Apple's mail server settings](https://support.apple.com/en-us/102525).
-`EMAIL_FROM` can select the configured sender; otherwise the account address is
-used. Partial SMTP configuration is treated as unavailable rather than silently
+All outgoing mail, replies, drafts, notification emails, and newly generated Sent
+MIME use `michael@thiesen.dev`. There is no caller-selectable From field. iCloud SMTP and
+IMAP continue to authenticate with `ICLOUD_USERNAME` (`micthiesen@icloud.com` in
+production); that login is never used as the sender. `EMAIL_FROM` may be absent,
+empty, or exactly `michael@thiesen.dev`; any other value fails configuration
+validation at boot. SMTP rejection is reported as failure without trying another
+sender. Historical Sent copies retain their original persisted MIME.
+
+Deployment requires the custom-domain address to be enabled for the existing
+iCloud account. Keep the existing login and app password. No production environment
+change is needed when `EMAIL_FROM` is absent, as on Boris on 2026-10-02. If an
+existing `EMAIL_FROM` differs, Michael must update that existing secret-file line
+before deployment. SMTP authentication or MAIL FROM acceptance alone does not
+prove that Apple will authorize the message after DATA; verify a user-authorized
+test message and its received From header when end-to-end proof is needed.
+
+Partial SMTP configuration is treated as unavailable rather than silently
 switching accounts. `email_health` reports the selected provider and draft
 support without exposing addresses or credentials. It checks configuration;
 it does not authenticate to the provider or send a message.

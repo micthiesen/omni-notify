@@ -2,6 +2,7 @@ import type { Transporter } from "nodemailer";
 import nodemailer from "nodemailer";
 
 import config from "../utils/config.js";
+import { OUTGOING_EMAIL_FROM } from "./identity.js";
 
 let transporter: Transporter | null = null;
 
@@ -23,7 +24,6 @@ export function resolveComposeEmailConfiguration(
     | "SMTP_PORT"
     | "SMTP_USER"
     | "SMTP_PASS"
-    | "EMAIL_FROM"
     | "ICLOUD_USERNAME"
     | "ICLOUD_APP_PASSWORD"
   > = config,
@@ -34,7 +34,7 @@ export function resolveComposeEmailConfiguration(
       port: values.SMTP_PORT,
       user: values.SMTP_USER,
       pass: values.SMTP_PASS,
-      from: values.EMAIL_FROM || values.SMTP_USER,
+      from: OUTGOING_EMAIL_FROM,
       secure: values.SMTP_PORT === 465,
       requireTLS: values.SMTP_PORT !== 465,
       source: "smtp",
@@ -47,7 +47,7 @@ export function resolveComposeEmailConfiguration(
       port: 587,
       user: values.ICLOUD_USERNAME,
       pass: values.ICLOUD_APP_PASSWORD,
-      from: values.EMAIL_FROM || values.ICLOUD_USERNAME,
+      from: OUTGOING_EMAIL_FROM,
       secure: false,
       requireTLS: true,
       source: "icloud",

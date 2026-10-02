@@ -6,6 +6,17 @@ const load = (environment: Record<string, string | undefined> = {}) =>
   Effect.runSync(loadConfigEffect(environment));
 
 describe("Effect application configuration", () => {
+  it("rejects sender overrides while keeping mailbox credentials independent", () => {
+    expect(load({ ICLOUD_USERNAME: "micthiesen@icloud.com" }).ICLOUD_USERNAME).toBe(
+      "micthiesen@icloud.com",
+    );
+    expect(load({ EMAIL_FROM: "michael@thiesen.dev" }).EMAIL_FROM).toBe(
+      "michael@thiesen.dev",
+    );
+    expect(load({ EMAIL_FROM: "" }).EMAIL_FROM).toBe("");
+    expect(() => load({ EMAIL_FROM: "micthiesen@icloud.com" })).toThrow();
+  });
+
   beforeEach(() => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
   });
