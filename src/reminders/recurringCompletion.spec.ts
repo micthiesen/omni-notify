@@ -230,12 +230,55 @@ function completionFixture() {
       changeTag: before.recordChangeTag,
       ruleId: input.ruleId,
       ruleChangeTag: "rule-tag",
-      timeZone: input.timeZone,
+      timeZone: "America/Los_Angeles",
     },
   };
 }
 
 describe("verified recurring occurrence advancement", () => {
+  it("rejects Apple's obsolete Vancouver fall-back adjustment without repairing or repeating it", async () => {
+    const x = completionFixture();
+    x.target.timeZone = "America/Vancouver";
+    // tzdata 2026b: Vancouver stays on UTC-7. A 25-hour advance moves 10am to 11am.
+    const result = await Effect.runPromise(
+      completeRecurringOccurrence(x.deps, x.target).pipe(Effect.result),
+    );
+    expect(Result.isFailure(result) && result.failure.code).toBe("uncertain");
+    expect(x.deps.post).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["America/Vancouver", 1793466000000, 24],
+    ["America/Los_Angeles", Date.UTC(2026, 2, 7, 18), 23],
+  ] as const)(
+    "accepts %s advancement preserving local time over %s + %s hours",
+    async (timeZone, due, hours) => {
+      const x = completionFixture();
+      x.target.timeZone = timeZone;
+      Object.assign(x.before, { dueDate: due });
+      x.current.dueDate = due + hours * 3600000;
+      x.completed.dueDate = due;
+      x.returned[0].fields = x.previewFields(x.current);
+      x.returned[1].fields = x.previewFields(x.completed);
+      expect(
+        await Effect.runPromise(completeRecurringOccurrence(x.deps, x.target)),
+      ).toMatchObject({ state: "advanced", verified: true });
+    },
+  );
+
+  it("leaves all-day civil-date verification separate from timed local-clock checks", async () => {
+    const x = completionFixture();
+    const due = Date.UTC(2026, 10, 1);
+    Object.assign(x.before, { dueDate: due, allDay: true });
+    Object.assign(x.current, { dueDate: due + 86400000, allDay: true });
+    Object.assign(x.completed, { dueDate: due, allDay: true });
+    x.returned[0].fields = x.previewFields(x.current);
+    x.returned[1].fields = x.previewFields(x.completed);
+    expect(
+      await Effect.runPromise(completeRecurringOccurrence(x.deps, x.target)),
+    ).toMatchObject({ state: "advanced", verified: true });
+  });
+
   it.each([
     "wrong-completed-type",
     "wrong-due-preview",
@@ -373,7 +416,7 @@ describe("verified recurring occurrence advancement", () => {
         changeTag: "before",
         ruleId,
         ruleChangeTag: "rule-tag",
-        timeZone: input.timeZone,
+        timeZone: "America/Los_Angeles",
       }),
     );
     expect(receipt).toMatchObject({
@@ -486,7 +529,7 @@ describe("verified recurring occurrence advancement", () => {
     },
   );
 
-  it("verifies same-identity advancement and completed copy across the observed 25-hour DST transition", async () => {
+  it("verifies same-identity advancement and completed copy across the 25-hour Los Angeles DST transition", async () => {
     const x = completionFixture();
     const result = await Effect.runPromise(
       completeRecurringOccurrence(x.deps, x.target),

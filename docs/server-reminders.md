@@ -186,8 +186,19 @@ acknowledgments. Exact returned IDs and typed completion/due-date values must
 match fresh lookups. The root must have a new tag, the rule must retain its
 original tag and writable state, and a final clone lookup must retain the verified
 clone tag. Receipt tags always come from these fresh reads.
-There is no fixed 24-hour increment: the observed Vancouver DST transition moved
-the due instant by 25 hours while preserving the intended local time.
+Timed daily/weekly/monthly/yearly advancement must preserve the local clock time
+under the server's current timezone data and the caller's explicit timezone.
+Legitimate DST changes can yield 23- or 25-hour daily intervals, as covered by
+Los Angeles fixtures. A nonexistent local time during a DST gap may remain
+uncertain conservatively. All-day civil dates retain their separate semantics.
+
+The live Vancouver probe exposed a provider timezone mismatch: Apple's 25-hour
+advance changed 10 a.m. to 11 a.m. under current tzdata 2026b. Our earlier claim
+that this preserved Vancouver local time was incorrect. British Columbia ended
+seasonal clock changes in 2026 ([provincial announcement](https://news.gov.bc.ca/releases/2026AG0013-000209)).
+Such mismatches remain uncertain after the single mutation; Omni neither repairs
+the due date nor repeats completion automatically. Reconcile the exact reminder
+before any separately authorized correction.
 
 Completion retains the account snapshot index. The existing incremental
 `changes/zone` refresh discovers the new clone and rechecks recurrence, avoiding

@@ -146,6 +146,17 @@ const unchangedContent = (before: Reminder, after: Reminder) =>
 const outcomeUncertain = () =>
   new RemindersError({ operation: "recurring completion outcome", code: "uncertain" });
 
+function localClock(date: number, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-US-u-nu-latn", {
+    timeZone,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    fractionalSecondDigits: 3,
+  }).format(date);
+}
+
 function previewMatches(
   record: RecurringCompletionRecord,
   reminder: Reminder,
@@ -207,6 +218,9 @@ export function completeRecurringOccurrence(
       return yield* Effect.fail(
         new RemindersError({ operation: "recurring completion", code: "unsupported" }),
       );
+    const calendarFrequency = ["daily", "weekly", "monthly", "yearly"].includes(
+      originalRule.recurrence.rule.frequency,
+    );
     // Validate timezone before issuing the mutation. There is no protocol CAS;
     // concurrent native-client edits are detected only by subsequent verification.
     yield* Effect.try({
@@ -325,6 +339,10 @@ export function completeRecurringOccurrence(
         !current.recurring ||
         current.dueDate === null ||
         current.dueDate <= originalDueDate ||
+        (!before.allDay &&
+          calendarFrequency &&
+          localClock(current.dueDate, target.timeZone) !==
+            localClock(originalDueDate, target.timeZone)) ||
         !completed.completed ||
         completed.recurring ||
         completed.dueDate !== originalDueDate ||
