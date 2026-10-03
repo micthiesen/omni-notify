@@ -44,6 +44,31 @@ const pacificTime = (value: string) =>
     timeZoneName: "short",
   }).format(new Date(value));
 
+/** Push previews should contain the news, not a clipped reply thread or raw URLs. */
+function compactSummary(text: string): string {
+  const clean = text
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (clean.length <= 200) return clean;
+  const prefix = clean.slice(0, 197);
+  const space = prefix.lastIndexOf(" ");
+  return `${prefix.slice(0, space > 150 ? space : 197).trimEnd()}…`;
+}
+
+function sourceLabel(sourceUrl: string): string {
+  const source = new URL(sourceUrl);
+  if (
+    ["x.com", "twitter.com", "www.x.com", "www.twitter.com"].includes(source.hostname)
+  ) {
+    const handle = source.pathname.split("/")[1];
+    if (/^[a-zA-Z0-9_]{1,15}$/.test(handle)) return `@${handle} via Reset Beacon`;
+  }
+  return source.hostname === "resetbeacon.com"
+    ? "Reset Beacon"
+    : `${source.hostname.slice(0, 80)} via Reset Beacon`;
+}
+
 /** The feed supplies classification; history supplies type and reconciles old hints.
  * An elapsed announcement deadline never constitutes evidence of a landed reset. */
 export function selectResetAlerts(
@@ -110,43 +135,66 @@ export function selectResetAlerts(
     const labels = {
       likely: "looks likely",
       scheduled: "announced",
-      rollout: "landing (observed)",
-      landed: "reported landed",
+      rollout: "rolling out",
+      landed: "landed",
       update: "update",
     };
-    const timing = item.targetAt
-      ? `Announced time: ${pacificTime(item.targetAt)}.${Date.parse(item.targetAt) <= now && stage === "scheduled" ? " Time has passed; landing is not yet confirmed." : ""}`
-      : "";
-    const action =
-      stage === "update"
-        ? "Read the source for the current status; completion is not established."
-        : type === "banked"
-          ? "Saved credit; current usage is unchanged until redeemed."
-          : stage === "likely" || stage === "scheduled"
-            ? "Use remaining allowance beforehand if useful."
-            : "Check your Usage page; account rollout can vary.";
-    const caveat = stage === "likely" ? "Prediction or hint, not confirmation." : "";
-    const typeLine = `Type: ${type}${event ? `; scope: ${event.scope}` : " (source has not specified)"}.`;
-    const evidence =
-      item.evidenceId && /^[a-zA-Z0-9-]{1,64}$/.test(item.evidenceId)
-        ? `\nArchive: https://resetbeacon.com/evidence/${item.evidenceId}/`
+    const scopes: Record<string, string> = {
+      all: "all users",
+      plus_pro: "Plus / Pro",
+      pro: "Pro",
+      model: "model-specific",
+      unknown: "scope unspecified",
+    };
+    const scope = event
+      ? (scopes[event.scope] ?? "scope unspecified")
+      : "scope unspecified";
+    const typeLine = `${type === "unspecified" ? "Reset type unspecified" : type === "banked" ? "Banked credit" : "Non-banked reset"}; ${scope}.`;
+    const timing =
+      item.targetAt && stage === "scheduled"
+        ? `Expected ${pacificTime(item.targetAt)}.${Date.parse(item.targetAt) <= now ? " Time has passed; landing is not yet confirmed." : ""}`
         : "";
-    const footer = `\nSource: ${item.sourceUrl}\nTracker: https://resetbeacon.com/${evidence}`;
-    const prefix = [typeLine, timing, caveat, action]
-      .filter(Boolean)
-      .join("\n")
-      .slice(0, 300);
-    const room = Math.max(0, 1_024 - prefix.length - footer.length - 2);
-    const summary =
-      item.summary.length > room
-        ? `${item.summary.slice(0, Math.max(0, room - 1))}…`
-        : item.summary;
+    const news =
+      stage === "landed"
+        ? "Reported complete. Check your Usage page."
+        : stage === "rollout"
+          ? "Observed on the tracker's account; your account may update later."
+          : stage === "scheduled"
+            ? timing || "A reset has been announced; timing is unspecified."
+            : compactSummary(item.summary);
+    const guidance =
+      type === "banked"
+        ? "Saved credit; current usage is unchanged until redeemed."
+        : stage === "likely"
+          ? "Prediction or hint, not confirmation."
+          : stage === "update"
+            ? "Completion is not established."
+            : stage === "scheduled" &&
+                (!item.targetAt || Date.parse(item.targetAt) > now)
+              ? "Use remaining allowance beforehand if useful."
+              : "";
+    const posted = item.sourcePublishedAt
+      ? `Posted ${pacificTime(item.sourcePublishedAt)}.`
+      : "";
     return [
       {
         // Ignore cosmetic feed revisions, but retain stage, type and schedule changes.
         key: `${item.eventId}:${stage}:${type}${stage === "scheduled" ? `:${item.targetAt ?? "unspecified"}` : ""}`,
-        title: `Codex reset ${labels[stage]} (${type})`,
-        message: `${prefix}\n\n${summary}${footer}`,
+        aliases: item.postId
+          ? [
+              `post:${item.postId}:${stage}:${type}${stage === "scheduled" ? `:${item.targetAt ?? "unspecified"}` : ""}`,
+            ]
+          : [],
+        title: `Codex reset ${labels[stage]}`,
+        message: [
+          typeLine,
+          news,
+          guidance,
+          posted,
+          `Source: ${sourceLabel(item.sourceUrl)}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
         url: item.sourceUrl,
         occurredAt,
       },

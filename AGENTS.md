@@ -131,10 +131,12 @@ keys for distinct users, URLs, subjects, or tracking numbers. Logs emitted durin
 a tracked task run remain attributable through async work and are bounded before
 persistence.
 
-`CodexResets` polls Reset Beacon's public alert feed and history every five minutes.
+`CodexResets` polls Reset Beacon's public alert feed and history every minute.
 Keep predictions, announcements, observed rollouts and reported landings distinct.
 Never infer a landing from an elapsed deadline or a banked grant from an ordinary
-reset. Include source links and preserve durable delivery reservations. See
+reset. Completed history can precede the alert feed; deduplicate both by source
+post as well as event. Keep pushes concise with a source button and preserve
+durable delivery reservations. See
 `docs/codex-resets.md`.
 
 ### PressPods

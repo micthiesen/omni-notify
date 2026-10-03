@@ -74,6 +74,76 @@ describe("deliverResetAlerts", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it("uses an existing legacy primary key to suppress an alias-aware alert", async () => {
+    const oldAlert = withKey("legacy-alert-key");
+    await run([oldAlert], now());
+    const updatedAlert: ResetAlert = {
+      ...withKey("new-feed-key"),
+      aliases: ["legacy-alert-key"],
+    };
+    await expect(run([updatedAlert], now())).resolves.toEqual({
+      sent: 0,
+      skipped: 1,
+      uncertain: 0,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    await expect(
+      runtime.run(ResetDeliveryEntity.get({ key: updatedAlert.key })),
+    ).resolves.toMatchObject({ _tag: "Some", value: { status: "sent" } });
+  });
+
+  it("shares an alias between history and feed primary keys", async () => {
+    const historyAlert: ResetAlert = {
+      ...withKey("history:completion-1"),
+      aliases: ["post:announcement-1:landed:non-banked"],
+    };
+    const feedAlert: ResetAlert = {
+      ...withKey("feed-event:landed:non-banked"),
+      aliases: ["post:announcement-1:landed:non-banked"],
+    };
+    await expect(run([historyAlert, feedAlert], now())).resolves.toEqual({
+      sent: 1,
+      skipped: 1,
+      uncertain: 0,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks concurrent alerts that share an alias", async () => {
+    const firstAlert: ResetAlert = {
+      ...withKey("history:concurrent"),
+      aliases: ["post:concurrent:landed:non-banked"],
+    };
+    const secondAlert: ResetAlert = {
+      ...withKey("feed:concurrent"),
+      aliases: ["post:concurrent:landed:non-banked"],
+    };
+    let release!: () => void;
+    send.mockReturnValue(
+      Effect.promise(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      ),
+    );
+    const first = run([firstAlert], now());
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await expect(run([secondAlert], now())).resolves.toEqual({
+      sent: 0,
+      skipped: 0,
+      uncertain: 1,
+    });
+    release();
+    await expect(first).resolves.toEqual({ sent: 1, skipped: 0, uncertain: 0 });
+    await expect(run([secondAlert], now())).resolves.toEqual({
+      sent: 0,
+      skipped: 1,
+      uncertain: 0,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("retains ambiguous attempts after failure so a restarted run cannot resend", async () => {
     const uncertainAlert = withKey("uncertain-alert");
     send.mockReturnValueOnce(

@@ -40,8 +40,8 @@ describe("Codex reset alert policy", () => {
     for (const [topic, state, expected] of [
       ["likely", "likely_forecast", "looks likely"],
       ["schedule", "official_scheduled", "announced"],
-      ["rollout", "rollout_observed", "landing (observed)"],
-      ["action", "action_claimed", "reported landed"],
+      ["rollout", "rollout_observed", "rolling out"],
+      ["action", "action_claimed", "landed"],
     ]) {
       const [alert] = selectResetAlerts(
         feed([{ ...item, topic, state }]),
@@ -53,9 +53,10 @@ describe("Codex reset alert policy", () => {
         now,
       );
       expect(alert.title).toContain(expected);
-      expect(alert.message).toContain("Type: non-banked; scope: all");
-      expect(alert.message).toContain(item.sourceUrl);
-      expect(alert.message).toContain("https://resetbeacon.com/evidence/capture-123/");
+      expect(alert.message).toContain("Non-banked reset; all users");
+      expect(alert.url).toBe(item.sourceUrl);
+      expect(alert.message).toContain("Source: @thsottiaux via Reset Beacon");
+      expect(alert.message).not.toContain("https://");
     }
   });
 
@@ -82,13 +83,13 @@ describe("Codex reset alert policy", () => {
       }),
       now,
     );
-    expect(alert.title).toContain("(banked)");
+    expect(alert.message).toContain("Banked credit");
     expect(alert.message).toContain("current usage is unchanged until redeemed");
   });
 
   it("does not infer a reset type without matching history evidence", () => {
     const [alert] = selectResetAlerts(feed(), { items: [] }, now);
-    expect(alert.message).toContain("Type: unspecified");
+    expect(alert.message).toContain("Reset type unspecified");
   });
 
   it("does not promote a banked policy promise mislabeled action_claimed to landed", () => {
@@ -110,7 +111,8 @@ describe("Codex reset alert policy", () => {
       }),
       now,
     );
-    expect(alert.title).toBe("Codex reset update (banked)");
+    expect(alert.title).toBe("Codex reset update");
+    expect(alert.message).toContain("Banked credit");
     expect(alert.message).toContain("it had not landed");
   });
 
@@ -163,7 +165,7 @@ describe("Codex reset alert policy", () => {
       now,
     );
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].title).toContain("reported landed");
+    expect(alerts[0].title).toContain("landed");
   });
 
   it("retains distinct keys for schedule/type changes and stages", () => {
@@ -179,6 +181,7 @@ describe("Codex reset alert policy", () => {
       now,
     )[0];
     expect(first.key).not.toEqual(changed.key);
+    expect(first.aliases).not.toEqual(changed.aliases);
     expect(first.key).not.toEqual(banked.key);
   });
 
@@ -194,8 +197,53 @@ describe("Codex reset alert policy", () => {
       history(),
       now,
     );
-    expect(alert.message.length).toBeLessThanOrEqual(1024);
-    expect(alert.message).toContain("https://example.com/");
+    expect(alert.message.length).toBeLessThanOrEqual(500);
+    expect(alert.url).toContain("https://example.com/");
+    expect(alert.message).not.toContain("https://");
+  });
+
+  it("keeps a landed push compact even when the source summary embeds a whole reply thread", () => {
+    const [alert] = selectResetAlerts(
+      feed([
+        {
+          ...item,
+          topic: "action",
+          state: "action_claimed",
+          targetAt: null,
+          sourcePublishedAt: "2026-10-02T15:18:48Z",
+          summary: `Asked “${"Long earlier announcement. ".repeat(20)}”, the lead replied: “Reset all propagated. Enjoy. https://t.”`,
+        },
+      ]),
+      history({ ...event, eventKind: "completed", status: "completed" }),
+      now,
+    );
+    expect(alert.title).toBe("Codex reset landed");
+    expect(alert.message).toContain("Reported complete. Check your Usage page.");
+    expect(alert.message).toContain("Posted Oct 2, 8:18 a.m. PDT.");
+    expect(alert.message).not.toContain("Asked");
+    expect(alert.message.length).toBeLessThan(220);
+    expect(alert.key).toBe("october-reset:landed:non-banked");
+    expect(alert.aliases).toEqual(["post:123:landed:non-banked"]);
+  });
+
+  it("keeps predictions readable and never includes broken tracking URLs", () => {
+    const [alert] = selectResetAlerts(
+      feed([
+        {
+          ...item,
+          topic: "likely",
+          state: "likely_forecast",
+          targetAt: null,
+          summary: `85% chance within 24 hours. https://t. ${"Supporting detail. ".repeat(40)}`,
+        },
+      ]),
+      history(),
+      now,
+    );
+    expect(alert.message).toContain("85% chance within 24 hours.");
+    expect(alert.message).toContain("Prediction or hint, not confirmation.");
+    expect(alert.message).not.toContain("https://t");
+    expect(alert.message.length).toBeLessThan(400);
   });
 
   it("fails source decoding on invalid timestamps, unsafe URLs and missing fields", () => {

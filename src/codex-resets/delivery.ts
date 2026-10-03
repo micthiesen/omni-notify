@@ -6,6 +6,7 @@ import config from "../utils/config.js";
 
 export interface ResetAlert {
   key: string;
+  aliases?: readonly string[];
   title: string;
   message: string;
   url: string;
@@ -49,27 +50,47 @@ export class ResetAlertDeliveryError extends Data.TaggedError(
 function reserve(alert: ResetAlert, now: number) {
   return Effect.gen(function* () {
     const docstore = yield* Docstore;
-    const pk = ResetDeliveryEntity.getPk({ key: alert.key });
+    const keys = [...new Set([alert.key, ...(alert.aliases ?? [])])];
     return yield* docstore.transaction("reserve Codex reset alert", (tx) => {
-      const raw = tx.getRawRow(pk, now);
-      if (raw) {
-        const current = decodeDelivery(raw.data);
-        if (current.key !== alert.key)
-          throw new Error("Codex reset alert key mismatch");
-        return current.status;
-      }
+      const current = keys.flatMap((key) => {
+        const pk = ResetDeliveryEntity.getPk({ key });
+        const raw = tx.getRawRow(pk, now);
+        if (!raw) return [];
+        const delivery = decodeDelivery(raw.data);
+        if (delivery.key !== key) throw new Error("Codex reset alert key mismatch");
+        return [{ key, delivery }];
+      });
+      const status = current.some(({ delivery }) => delivery.status === "sending")
+        ? "sending"
+        : current.length > 0
+          ? "sent"
+          : undefined;
+      const template = current[0]?.delivery;
       const delivery: ResetDelivery = {
         key: alert.key,
-        status: "sending",
-        occurredAt: alert.occurredAt,
-        updatedAt: now,
+        status: status ?? "sending",
+        occurredAt: template?.occurredAt ?? alert.occurredAt,
+        updatedAt: template?.updatedAt ?? now,
       };
-      tx.upsertDoc(
-        pk,
-        delivery,
-        { entity: ResetDeliveryEntity.name, expiresAt: now + 90 * 24 * 60 * 60 * 1000 },
-        now,
-      );
+      const primaryExists = current.some((entry) => entry.key === alert.key);
+      // An in-flight alias may belong to another alert's primary key. Do not
+      // create this alert's primary reservation: its owner will settle the
+      // shared alias when the provider call finishes.
+      if (!primaryExists && status === "sending") return status;
+      for (const key of keys) {
+        if (current.some((entry) => entry.key === key)) continue;
+        const record = { ...delivery, key };
+        tx.upsertDoc(
+          ResetDeliveryEntity.getPk({ key }),
+          record,
+          {
+            entity: ResetDeliveryEntity.name,
+            expiresAt: now + 90 * 24 * 60 * 60 * 1000,
+          },
+          now,
+        );
+      }
+      if (status) return status;
       return "reserved" as const;
     });
   });
@@ -78,18 +99,26 @@ function reserve(alert: ResetAlert, now: number) {
 function markSent(alert: ResetAlert, now: number) {
   return Effect.gen(function* () {
     const docstore = yield* Docstore;
-    const pk = ResetDeliveryEntity.getPk({ key: alert.key });
+    const keys = [...new Set([alert.key, ...(alert.aliases ?? [])])];
     yield* docstore.transaction("mark Codex reset alert sent", (tx) => {
-      const raw = tx.getRawRow(pk, now);
-      if (!raw)
-        throw new Error("Codex reset alert reservation expired before acknowledgement");
-      const current = decodeDelivery(raw.data);
-      tx.upsertDoc(
-        pk,
-        { ...current, status: "sent", updatedAt: now },
-        { entity: ResetDeliveryEntity.name, expiresAt: now + 90 * 24 * 60 * 60 * 1000 },
-        now,
-      );
+      for (const key of keys) {
+        const pk = ResetDeliveryEntity.getPk({ key });
+        const raw = tx.getRawRow(pk, now);
+        if (!raw)
+          throw new Error(
+            "Codex reset alert reservation expired before acknowledgement",
+          );
+        const current = decodeDelivery(raw.data);
+        tx.upsertDoc(
+          pk,
+          { ...current, status: "sent", updatedAt: now },
+          {
+            entity: ResetDeliveryEntity.name,
+            expiresAt: now + 90 * 24 * 60 * 60 * 1000,
+          },
+          now,
+        );
+      }
     });
   });
 }
@@ -97,12 +126,15 @@ function markSent(alert: ResetAlert, now: number) {
 function releaseDefiniteRejection(alert: ResetAlert, now: number) {
   return Effect.gen(function* () {
     const docstore = yield* Docstore;
-    const pk = ResetDeliveryEntity.getPk({ key: alert.key });
+    const keys = [...new Set([alert.key, ...(alert.aliases ?? [])])];
     yield* docstore.transaction("release rejected Codex reset alert", (tx) => {
-      const raw = tx.getRawRow(pk, now);
-      if (!raw) return;
-      const current = decodeDelivery(raw.data);
-      if (current.status === "sending") tx.deleteDoc(pk);
+      for (const key of keys) {
+        const pk = ResetDeliveryEntity.getPk({ key });
+        const raw = tx.getRawRow(pk, now);
+        if (!raw) continue;
+        const current = decodeDelivery(raw.data);
+        if (current.status === "sending") tx.deleteDoc(pk);
+      }
     });
   });
 }
@@ -138,6 +170,7 @@ export const deliverResetAlerts = Effect.fn("CodexResetDelivery.deliverResetAler
           title: alert.title,
           message: alert.message,
           url: alert.url,
+          url_title: "View source",
           token: config.PUSHOVER_TOKEN,
         }),
       );
