@@ -254,6 +254,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `PUSHOVER_USER` | Yes | Pushover user key |
 | `PUSHOVER_TOKEN` | Yes | Pushover app token |
 | `OMNI_MCP_TOKEN` | In production | Random bearer token for authenticated streamable HTTP at `/mcp`; minimum 32 diverse characters |
+| `OMNI_DEVICE_LINK_TOKEN` | No | Device token for the Mac's `omni-link` agent; enables the `claude_*` MCP tools. Minimum 32 diverse characters, different from `OMNI_MCP_TOKEN` |
 | `PRINTER_IPP_URL` | No | Fixed `ipp://` or `ipps://` endpoint that enables MCP printer status and approved monochrome PDF printing |
 | `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)); required when `channels.json` has Kick channels |
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |

@@ -51,3 +51,19 @@ export function unauthorizedMcpResponse(): Response {
     },
   );
 }
+
+/** The Mac's device token is optional but must be strong and distinct from MCP's. */
+export function validateDeviceLinkTokenConfiguration(
+  token: string | undefined,
+  mcpToken: string | undefined,
+): void {
+  if (!token) return;
+  if (!isStrongMcpToken(token)) {
+    throw new Error(
+      `OMNI_DEVICE_LINK_TOKEN must be at least ${MIN_MCP_TOKEN_LENGTH} characters with sufficient character diversity`,
+    );
+  }
+  if (token === mcpToken) {
+    throw new Error("OMNI_DEVICE_LINK_TOKEN must differ from OMNI_MCP_TOKEN");
+  }
+}

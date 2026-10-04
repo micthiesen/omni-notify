@@ -223,6 +223,13 @@ physically exposes the document. Omni waits for the final IPP job state and
 reports completion or a printer-reported failure; a timeout remains explicitly
 unconfirmed.
 
+### Claude Code sessions on the Mac
+
+The `claude_*` tools list, inspect, start, continue, and stop Claude Code
+sessions on Michael's Mac through its `omni-link` agent. They exist only when
+`OMNI_DEVICE_LINK_TOKEN` is set. See [Claude Code sessions](claude-sessions.md)
+for the link protocol, project allowlist, and failure semantics.
+
 ## Executor policy
 
 Executor is expected to apply policy before every tool call. Reads, searches,

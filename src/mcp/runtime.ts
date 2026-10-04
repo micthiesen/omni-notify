@@ -11,6 +11,7 @@ import type { AppServices } from "../effect/appRuntime.js";
 import type { HisterService } from "../hister/service.js";
 import type { EmailEventService } from "./events/service.js";
 import type { RemindersService } from "../reminders/service.js";
+import type { DeviceLinkService } from "../device-link/service.js";
 
 export interface McpRuntime {
   reminders?: RemindersService;
@@ -25,4 +26,5 @@ export interface McpRuntime {
   printer?: PrinterService;
   hister?: HisterService;
   events?: EmailEventService;
+  deviceLink?: DeviceLinkService;
 }

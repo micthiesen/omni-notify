@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasValidBearerToken,
   isStrongMcpToken,
+  validateDeviceLinkTokenConfiguration,
   validateMcpTokenConfiguration,
 } from "./auth.js";
 
@@ -28,5 +29,22 @@ describe("MCP bearer authentication", () => {
     );
     expect(isStrongMcpToken("a".repeat(64))).toBe(false);
     expect(isStrongMcpToken(`${TEST_TOKEN}\n`)).toBe(false);
+  });
+
+  it("keeps the Mac device token optional, strong, and distinct", () => {
+    const deviceToken = "device-0123456789-abcdefghijklmnopqrstuvwxyz";
+    expect(() =>
+      validateDeviceLinkTokenConfiguration(undefined, TEST_TOKEN),
+    ).not.toThrow();
+    expect(() => validateDeviceLinkTokenConfiguration("", TEST_TOKEN)).not.toThrow();
+    expect(() =>
+      validateDeviceLinkTokenConfiguration(deviceToken, TEST_TOKEN),
+    ).not.toThrow();
+    expect(() => validateDeviceLinkTokenConfiguration("short", TEST_TOKEN)).toThrow(
+      "at least 32 characters",
+    );
+    expect(() => validateDeviceLinkTokenConfiguration(TEST_TOKEN, TEST_TOKEN)).toThrow(
+      "must differ from OMNI_MCP_TOKEN",
+    );
   });
 });

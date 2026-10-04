@@ -8,6 +8,7 @@ import { createEmailAttachmentTools } from "./email-attachments.js";
 import { createMediaPersonalTools } from "./media-personal.js";
 import { createPrinterTools } from "./printer.js";
 import { createBrowserHistoryTools } from "./browser-history.js";
+import { createClaudeSessionTools } from "./claude-sessions.js";
 import { createRemindersTools } from "./reminders.js";
 
 export function createToolDefinitions(runtime: McpRuntime): McpToolDefinition[] {
@@ -21,5 +22,6 @@ export function createToolDefinitions(runtime: McpRuntime): McpToolDefinition[] 
     ...createMediaPersonalTools(runtime),
     ...createPrinterTools(runtime),
     ...createBrowserHistoryTools(runtime),
+    ...createClaudeSessionTools(runtime),
   ];
 }

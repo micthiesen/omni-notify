@@ -140,6 +140,168 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
+      "name": "claude_link_status",
+      "title": "Get Mac Link Status",
+      "description": "Report whether Michael's Mac is connected to Omni for Claude Code session control, whether its kill switch is engaged, and when it last checked in. Reads Omni's state only.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Reads Omni's in-memory link state"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "claude_projects_list",
+      "title": "List Claude Code Projects on the Mac",
+      "description": "List the projects where new Claude Code sessions may start on Michael's Mac. This is the same project list the Mac's Remote Control servers (claude-rc) use. Start sessions by project name.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Reads the Mac's claude-rc project configuration"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "claude_session_get",
+      "title": "Get Claude Code Session",
+      "description": "Read one Claude Code session's status, transcript revision, and last assistant text. Use the revision with claude_session_wait.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Reads session metadata and transcripts on the Mac"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "claude_session_read",
+      "title": "Read Claude Code Transcript",
+      "description": "Page through a Claude Code session's transcript: user and assistant text, tool calls, and abbreviated tool results. Without a cursor it returns the latest items; pass nextCursor to continue forward.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Reads a session transcript on the Mac"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "claude_session_result",
+      "title": "Get Claude Code Turn Result",
+      "description": "Return the assistant text a Claude Code session produced since its last user input, with the session status.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Reads a session transcript on the Mac"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "claude_session_send",
+      "title": "Send Input to Claude Code Session",
+      "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. If the result is unknown, read the session before sending again.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Resumes a Claude Code session on the Mac with full access to its directory",
+        "The agent may edit files, run commands, commit, push, and use the network"
+      ],
+      "cost": "Consumes Claude subscription usage",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "claude_session_start",
+      "title": "Start Claude Code Session",
+      "description": "Start a new background Claude Code session on Michael's Mac in a configured project (see claude_projects_list). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Starts a Claude Code process on the Mac with full access to the project",
+        "The agent may edit files, run commands, commit, push, and use the network"
+      ],
+      "cost": "Consumes Claude subscription usage",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "claude_session_stop",
+      "title": "Stop Claude Code Session",
+      "description": "Stop a background Claude Code session on the Mac. The conversation is kept and can be continued later with claude_session_send.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Ends the session's running process and any turn in progress"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "claude_session_wait",
+      "title": "Wait for Claude Code Session",
+      "description": "Wait up to 45 seconds for a session to finish its turn. Pass afterRevision (from claude_session_get or a start/send result) so the wait cannot return before the new turn. When timedOut is true, call again.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Polls session status on the Mac"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "claude_sessions_list",
+      "title": "List Claude Code Sessions on the Mac",
+      "description": "List Claude Code sessions on Michael's Mac, newest first: background, interactive terminal, and Remote Control sessions in any directory. Each session reports its configured project when its directory belongs to one. Filter by project name to narrow the list.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [
+        "Reads session metadata and transcripts on the Mac"
+      ],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
       "name": "complete_recurring_reminder",
       "title": "Complete iCloud Recurring Reminder Occurrence",
       "description": "Complete exactly one occurrence using Apple's recurring-completion operation. Requires current reminder and rule tags, explicit IANA timeZone and durable idempotencyKey. Fresh reads verify the completed copy and advanced original, or a simple finite series ending on the current occurrence's civil date. Other unrecognized outcomes remain uncertain and never automatically retry. Apple provides no atomic change-tag precondition for this operation; avoid simultaneous native edits.",

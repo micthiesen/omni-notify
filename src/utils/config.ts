@@ -1,7 +1,10 @@
 import { logConfig } from "@micthiesen/mitools/config";
 import { LogLevel } from "@micthiesen/mitools/logging";
 import { Data, Effect, Schema, SchemaGetter } from "effect";
-import { validateMcpTokenConfiguration } from "../mcp/auth.js";
+import {
+  validateDeviceLinkTokenConfiguration,
+  validateMcpTokenConfiguration,
+} from "../mcp/auth.js";
 import { OUTGOING_EMAIL_FROM } from "../emails/identity.js";
 
 const optionalString = Schema.optional(Schema.String);
@@ -249,6 +252,7 @@ const rawConfigSchema = Schema.Struct({
     Schema.withDecodingDefaultType(Effect.succeed(3000)),
   ),
   OMNI_MCP_TOKEN: optionalString,
+  OMNI_DEVICE_LINK_TOKEN: optionalString,
   OMNI_EVENTS_EXECUTOR_AUTH_URL: optionalString,
   HISTER_URL: trimmedUrlString.pipe(
     Schema.check(
@@ -339,6 +343,14 @@ const privateConfigKeys = [
   "LOGS_EMAIL_TO",
 ] as const;
 
+function validateTokenConfiguration(parsed: Config): void {
+  validateMcpTokenConfiguration(parsed.OMNI_MCP_TOKEN, parsed.DOCKERIZED);
+  validateDeviceLinkTokenConfiguration(
+    parsed.OMNI_DEVICE_LINK_TOKEN,
+    parsed.OMNI_MCP_TOKEN,
+  );
+}
+
 /** Decode an explicit environment without reading or mutating process globals. */
 export const loadConfigEffect = (
   environment: Readonly<Record<string, string | undefined>> = process.env,
@@ -347,8 +359,7 @@ export const loadConfigEffect = (
     Effect.map(deriveConfig),
     Effect.tap((parsed) =>
       Effect.try({
-        try: () =>
-          validateMcpTokenConfiguration(parsed.OMNI_MCP_TOKEN, parsed.DOCKERIZED),
+        try: () => validateTokenConfiguration(parsed),
         catch: (cause) => new ConfigLoadError({ cause }),
       }).pipe(Effect.andThen(logConfig(parsed, [...privateConfigKeys]))),
     ),
@@ -362,7 +373,7 @@ function loadBootConfig(
 ): Config {
   try {
     const parsed = deriveConfig(Schema.decodeUnknownSync(rawConfigSchema)(environment));
-    validateMcpTokenConfiguration(parsed.OMNI_MCP_TOKEN, parsed.DOCKERIZED);
+    validateTokenConfiguration(parsed);
     return parsed;
   } catch (cause) {
     throw new ConfigLoadError({ cause });

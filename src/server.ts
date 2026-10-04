@@ -82,6 +82,8 @@ import {
 } from "./live-check/streamers.js";
 import { toTriggerChannels } from "./live-check/triggerChannels.js";
 import { registerOmniMcpRoute } from "./mcp/route.js";
+import { registerDeviceLinkRoutes } from "./device-link/routes.js";
+import { DeviceLinkService } from "./device-link/service.js";
 import {
   effectHandler,
   effectMiddleware,
@@ -590,6 +592,9 @@ export function startServer(
 ): EffectType<void, IntegrationError> {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
+  const deviceLink = config.OMNI_DEVICE_LINK_TOKEN
+    ? new DeviceLinkService()
+    : undefined;
   const mcp = registerOmniMcpRoute(
     app,
     {
@@ -608,9 +613,19 @@ export function startServer(
       printer: config.PRINTER_IPP_URL
         ? createPrinterService(config.PRINTER_IPP_URL)
         : undefined,
+      deviceLink,
     },
     config.OMNI_MCP_TOKEN,
   );
+
+  if (deviceLink && config.OMNI_DEVICE_LINK_TOKEN) {
+    registerDeviceLinkRoutes(
+      effectRunner,
+      app,
+      deviceLink,
+      config.OMNI_DEVICE_LINK_TOKEN,
+    );
+  }
 
   app.use(
     "/api/*",
