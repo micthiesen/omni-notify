@@ -37,7 +37,8 @@ const WhiskerPetSchema = Schema.Struct({
   name: Schema.String,
   weight: Schema.Number,
   lastWeightReading: Schema.Number,
-  weightHistory: Schema.Array(WeightReadingSchema),
+  // Whisker returns null instead of [] when the last seven days have no readings.
+  weightHistory: Schema.NullOr(Schema.Array(WeightReadingSchema)),
 });
 const GraphQlErrorSchema = Schema.Struct({ message: Schema.String });
 
@@ -120,7 +121,14 @@ export function fetchPetsByUser(idToken: string, userId: string) {
     GET_PETS_BY_USER,
     { userId },
     Schema.Struct({ getPetsByUser: Schema.Array(WhiskerPetSchema) }),
-  ).pipe(Effect.map((data) => data.getPetsByUser));
+  ).pipe(
+    Effect.map((data): readonly WhiskerPet[] =>
+      data.getPetsByUser.map((pet) => ({
+        ...pet,
+        weightHistory: pet.weightHistory ?? [],
+      })),
+    ),
+  );
 }
 
 export function fetchWeightHistory(idToken: string, petId: string, limit?: number) {
