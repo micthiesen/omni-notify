@@ -18,6 +18,17 @@ type Credentials = NonNullable<Config["WHISKER_CREDENTIALS"]>;
 
 const MS_PER_DAY = 86_400_000;
 
+// Whisker's profiles have Sam and Sandy reversed; their weight trends match the
+// swapped names. Correct the labels here rather than in the Whisker app.
+const PET_NAME_OVERRIDES: Readonly<Record<string, string>> = {
+  "PET-b4738d2e-9a37-4d70-b401-a86e56bfd180": "Sandy",
+  "PET-697f1644-6b4b-43cb-945b-61426edcbb86": "Sam",
+};
+
+export function petDisplayName(petId: string, whiskerName: string): string {
+  return PET_NAME_OVERRIDES[petId] ?? whiskerName;
+}
+
 function round(value: number, decimals: number): string {
   const factor = 10 ** decimals;
   return (Math.round(value * factor) / factor).toFixed(decimals);
@@ -60,9 +71,10 @@ export default class PetTrackerTask implements ScheduledTask<unknown, Logger | S
       const now = new Date(yield* Clock.currentTimeMillis).toISOString();
 
       for (const pet of pets) {
+        const name = petDisplayName(pet.petId, pet.name);
         yield* upsertPet({
           pet_id: pet.petId,
-          name: pet.name,
+          name,
           current_weight: pet.weight,
           updated_at: now,
         });
@@ -81,7 +93,7 @@ export default class PetTrackerTask implements ScheduledTask<unknown, Logger | S
         if (newReadings > 0) {
           affectedPets.push({
             petId: pet.petId,
-            name: pet.name,
+            name,
             currentWeight: pet.weight,
           });
         }
