@@ -45,10 +45,16 @@ points to `10.10.1.100`. NPM manages a matching Let's Encrypt certificate throug
 Cloudflare DNS validation, including renewal. No public application access is
 needed for certificate issuance.
 
-Both the new hostname and the legacy `omni.boris` proxy allow `10.10.1.0/24`
-and deny other TCP peers. Their server-level real-IP configuration trusts only
-Unix sockets, overriding inherited CDN/private-network header trust. Forwarded
-headers cannot turn an external TCP peer into an allowed LAN client. The legacy
+Both the new hostname and the legacy `omni.boris` proxy share NPM access list
+"Omni HTTPS LAN only", which allows `10.10.1.0/24` and `172.19.0.1` and denies
+other TCP peers. `172.19.0.1` is the `compose_agent-integrations` bridge gateway:
+wg-easy runs in Docker and masquerades VPN clients, so their requests reach NPM
+from that address. Only traffic originating on Boris uses it; Boris has no public
+IPv6 or tunnel ingress. If that network is recreated with a new subnet, VPN
+access fails closed until the list is updated. Their server-level real-IP
+configuration trusts only Unix sockets, overriding inherited CDN/private-network
+header trust. Forwarded headers cannot turn an external TCP peer into an allowed
+LAN client. The legacy
 `.boris` HTTPS certificate still does not match; use the new hostname for HTTPS.
 
 Keep `pods.syas.ca`'s existing public `/pods/*` routes and its deny filter for other
