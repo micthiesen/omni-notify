@@ -318,3 +318,46 @@ export function formatJson(value: unknown): string {
     return String(value);
   }
 }
+
+const TOOL_INPUT_KEYS = [
+  "command",
+  "file_path",
+  "pattern",
+  "url",
+  "query",
+  "description",
+  "prompt",
+  "skill",
+  "code",
+] as const;
+
+/** One readable line for a transcript snippet, cut at `max` characters. */
+export function snippet(text: string | null, max = 140): string | null {
+  const line = text
+    ?.split("\n")
+    .map((part) => part.trim())
+    .find((part) => part.length > 0);
+  if (!line) return null;
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** The meaningful part of a tool call's JSON input, such as a Bash command. */
+export function toolInputSummary(input: string | null): string | null {
+  if (!input) return null;
+  try {
+    const value: unknown = JSON.parse(input);
+    if (typeof value === "object" && value !== null) {
+      const record = value as Record<string, unknown>;
+      for (const key of TOOL_INPUT_KEYS) {
+        if (typeof record[key] === "string") return snippet(record[key]);
+      }
+    }
+  } catch {
+    // Inputs are capped at 1,000 characters, so long JSON arrives cut off.
+    const match = input.match(
+      /"(?:command|file_path|pattern|url|query|description|prompt|skill|code)":"((?:[^"\\]|\\.)*)/,
+    );
+    if (match?.[1]) return snippet(match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"'));
+  }
+  return snippet(input);
+}

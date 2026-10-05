@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { McpCall } from "../api";
 import {
+  snippet,
+  toolInputSummary,
   explainClaudeError,
   groupClaudeActions,
   summarizeCompactAction,
@@ -163,5 +165,24 @@ describe("summarizeCompactAction", () => {
         }),
       ),
     ).toBe("disabled · mbp");
+  });
+});
+
+describe("transcript snippets", () => {
+  it("summarizes tool inputs by their meaningful field", () => {
+    expect(toolInputSummary('{"command":"pnpm test\\nmore","description":"x"}')).toBe(
+      "pnpm test",
+    );
+    expect(toolInputSummary('{"file_path":"/a/b.ts"}')).toBe("/a/b.ts");
+    expect(toolInputSummary('{"code":"const o = tools.omni; return o')).toBe(
+      "const o = tools.omni; return o",
+    );
+    expect(toolInputSummary(null)).toBeNull();
+  });
+
+  it("takes the first non-empty line and caps its length", () => {
+    expect(snippet("\n\n  hello\nworld")).toBe("hello");
+    expect(snippet("x".repeat(10), 5)).toBe("xxxx…");
+    expect(snippet("   ")).toBeNull();
   });
 });

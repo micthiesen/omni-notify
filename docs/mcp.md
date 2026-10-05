@@ -238,7 +238,7 @@ tools), arrays at 20 items, and keys that look like secrets are redacted. Only
 `claude_*` calls also keep a bounded copy of their output. The newest 2,000 calls
 are kept; calls left running by a restart are marked `interrupted` at boot.
 
-The LAN UI shows this history at `/mcp`, and `/claude` organizes Claude session
+The LAN UI shows this history at `/mcp-activity` (`/mcp` is the endpoint), and `/claude` organizes Claude session
 actions by session alongside the Mac's live sessions and link state. Their data
 comes from `GET /api/mcp/activity` and `GET /api/claude/*`, which are read-only.
 

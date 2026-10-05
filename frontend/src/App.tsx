@@ -48,7 +48,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/costs": "Costs",
   "/workspaces": "Workspaces",
   "/operations": "Operations",
-  "/mcp": "MCP Activity",
+  "/mcp-activity": "MCP Activity",
   "/claude": "Claude Code",
 };
 
@@ -207,7 +207,7 @@ export default function App() {
           </Suspense>
         );
         break;
-      case "/mcp":
+      case "/mcp-activity":
         page = (
           <Suspense fallback={<div className="loading">Loading…</div>}>
             <McpPage />

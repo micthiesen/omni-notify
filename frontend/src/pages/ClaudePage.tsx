@@ -31,7 +31,9 @@ import {
   parseIsoMs,
   shortSessionId,
   stringField,
+  snippet,
   summarizeCompactAction,
+  toolInputSummary,
 } from "../utils/claudeActivity";
 import { formatAbsolute, formatDuration, formatRelative } from "../utils/format";
 
@@ -216,7 +218,11 @@ function TranscriptItemView({ item }: { item: ClaudeTranscriptItem }) {
           <details className="claude-tool-chip">
             <summary>
               <span className="claude-tool-name">{item.tool ?? "tool"}</span>
-              {item.input && <span className="claude-tool-input">{item.input}</span>}
+              {item.input && (
+                <span className="claude-tool-input">
+                  {toolInputSummary(item.input)}
+                </span>
+              )}
             </summary>
             {item.input && <pre className="mcp-json">{item.input}</pre>}
           </details>
@@ -231,6 +237,9 @@ function TranscriptItemView({ item }: { item: ClaudeTranscriptItem }) {
             <summary>
               {item.isError ? "Tool error" : "Tool result"}
               {item.tool && <span className="claude-tool-name">{item.tool}</span>}
+              {snippet(item.text, 100) && (
+                <span className="claude-tool-input">{snippet(item.text, 100)}</span>
+              )}
               {truncated}
             </summary>
             <pre className="mcp-json">{item.text ?? "(empty)"}</pre>
@@ -780,7 +789,7 @@ function ActionsSection({
         <h2 className="section-title">
           Actions <span className="section-count">{actions.length}</span>
         </h2>
-        <Link to="/mcp" className="section-view-all">
+        <Link to="/mcp-activity" className="section-view-all">
           All MCP calls ›
         </Link>
       </div>

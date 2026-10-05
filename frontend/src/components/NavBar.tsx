@@ -50,7 +50,7 @@ const MORE_LINKS: NavItem[] = [
   { to: "/costs", label: "Costs", icon: "costs" },
   { to: "/data", label: "Data", icon: "data" },
   { to: "/claude", label: "Claude", icon: "claude" },
-  { to: "/mcp", label: "MCP", icon: "mcp" },
+  { to: "/mcp-activity", label: "MCP", icon: "mcp" },
 ];
 
 function isPathActive(path: string, item: NavItem): boolean {

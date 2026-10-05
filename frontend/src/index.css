@@ -6942,8 +6942,11 @@ textarea::placeholder {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .mcp-call-details {
