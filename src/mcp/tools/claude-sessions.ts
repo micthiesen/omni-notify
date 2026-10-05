@@ -1,6 +1,10 @@
 import { Clock, Duration, Effect } from "effect";
 import { z } from "zod";
-import type { DeviceCommand, DeviceLinkService } from "../../device-link/service.js";
+import {
+  type DeviceCommand,
+  DeviceLinkError,
+  type DeviceLinkService,
+} from "../../device-link/service.js";
 import type { McpRuntime } from "../runtime.js";
 import {
   annotations,
@@ -104,8 +108,51 @@ export function toItem(raw: Raw): z.infer<typeof itemSchema> {
   };
 }
 
+const HOME_DIRECTORY = /\/Users\/[^/\s"'`]+/g;
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * MCP results describe a generic Claude Code host. They never name the machine
+ * or expose its home directory; Omni's own UI may still show both.
+ */
+export function scrubHostDetails(value: unknown, host: string | null): unknown {
+  const hostName =
+    host && host.length >= 3 ? new RegExp(`\\b${escapeRegExp(host)}\\b`, "gi") : null;
+  const scrub = (item: unknown): unknown => {
+    if (typeof item === "string") {
+      const homeless = item.replace(HOME_DIRECTORY, "~");
+      return hostName ? homeless.replace(hostName, "the host") : homeless;
+    }
+    if (Array.isArray(item)) return item.map(scrub);
+    if (typeof item === "object" && item !== null) {
+      return Object.fromEntries(
+        Object.entries(item).map(([key, entry]) => [key, scrub(entry)]),
+      );
+    }
+    return item;
+  };
+  return scrub(value);
+}
+
+const GENERIC_DETAILS: Record<string, string> = {
+  disabled:
+    "Session control is disabled on the Claude Code host (kill switch); nothing ran",
+};
+
+function publicError(error: DeviceLinkError, host: string | null): DeviceLinkError {
+  return new DeviceLinkError({
+    code: error.code,
+    retryable: error.retryable,
+    detail: GENERIC_DETAILS[error.code] ?? String(scrubHostDetails(error.detail, host)),
+  });
+}
+
 function requireLink(runtime: McpRuntime): DeviceLinkService {
-  if (!runtime.deviceLink) throw new Error("The Mac device link is not configured");
+  if (!runtime.deviceLink)
+    throw new Error("The Claude Code host link is not configured");
   return runtime.deviceLink;
 }
 
@@ -121,7 +168,10 @@ function run(
     const link = yield* Effect.try(() => requireLink(runtime));
     const started = yield* Clock.currentTimeMillis;
     const elapsed = Clock.currentTimeMillis.pipe(Effect.map((now) => now - started));
+    const { host } = yield* link.status();
     return yield* link.execute(command, args, timeout).pipe(
+      Effect.map((data) => scrubHostDetails(data, host) as Raw),
+      Effect.mapError((error) => publicError(error, host)),
       Effect.tap(() =>
         elapsed.pipe(
           Effect.flatMap((ms) =>
@@ -155,15 +205,14 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
   return [
     defineTool({
       name: "claude_link_status",
-      title: "Get Mac Link Status",
+      title: "Get Claude Code Host Status",
       description:
-        "Report whether Michael's Mac is connected to Omni for Claude Code session control, whether its kill switch is engaged, and when it last checked in. Reads Omni's state only.",
+        "Report whether the Claude Code host is connected to Omni for session control, whether its kill switch is engaged, and when it last checked in. Reads Omni's state only.",
       inputSchema: emptyInputSchema,
       outputSchema: z.object({
         configured: z.boolean(),
         online: z.boolean(),
         disabled: z.boolean(),
-        host: z.string().nullable(),
         lastSeenAt: z.string().nullable(),
         pendingJobs: z.number().int().nonnegative(),
       }),
@@ -171,21 +220,22 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
       policy: readPolicy("Reads Omni's in-memory link state"),
       execute: () =>
         runtime.deviceLink
-          ? runtime.deviceLink.status()
+          ? runtime.deviceLink
+              .status()
+              .pipe(Effect.map(({ host: _host, ...status }) => status))
           : Effect.succeed({
               configured: false,
               online: false,
               disabled: false,
-              host: null,
               lastSeenAt: null,
               pendingJobs: 0,
             }),
     }),
     defineTool({
       name: "claude_projects_list",
-      title: "List Claude Code Projects on the Mac",
+      title: "List Claude Code Projects",
       description:
-        "List the projects where new Claude Code sessions may start on Michael's Mac. This is the same project list the Mac's Remote Control servers (claude-rc) use. Start sessions by project name.",
+        "List the projects where new Claude Code sessions may start on the Claude Code host. This is the same project list its Remote Control servers use. Start sessions by project name.",
       inputSchema: emptyInputSchema,
       outputSchema: z.object({
         projects: z.array(
@@ -193,7 +243,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
         ),
       }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads the Mac's claude-rc project configuration"),
+      policy: readPolicy("Reads the host's project configuration"),
       execute: () =>
         run(runtime, "projects", {}, QUICK).pipe(
           Effect.map((data) => ({
@@ -207,9 +257,9 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
     }),
     defineTool({
       name: "claude_sessions_list",
-      title: "List Claude Code Sessions on the Mac",
+      title: "List Claude Code Sessions",
       description:
-        "List Claude Code sessions on Michael's Mac, newest first: background, interactive terminal, and Remote Control sessions in any directory. Each session reports its configured project when its directory belongs to one. Filter by project name to narrow the list.",
+        "List Claude Code sessions on the Claude Code host, newest first: background, interactive terminal, and Remote Control sessions in any directory. Each session reports its configured project when its directory belongs to one. Filter by project name to narrow the list.",
       inputSchema: z
         .object({
           project: projectName.optional(),
@@ -219,7 +269,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
         .strict(),
       outputSchema: z.object({ sessions: z.array(sessionSchema) }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads session metadata and transcripts on the Mac"),
+      policy: readPolicy("Reads session metadata and transcripts on the host"),
       execute: (input) =>
         run(
           runtime,
@@ -238,7 +288,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
       inputSchema: z.object({ session: sessionId }).strict(),
       outputSchema: z.object({ session: sessionSchema }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads session metadata and transcripts on the Mac"),
+      policy: readPolicy("Reads session metadata and transcripts on the host"),
       execute: (input) =>
         run(runtime, "status", { session: input.session }, QUICK).pipe(
           Effect.map((data) => ({ session: toSession(data) })),
@@ -264,7 +314,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
         hasMore: z.boolean(),
       }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads a session transcript on the Mac"),
+      policy: readPolicy("Reads a session transcript on the host"),
       execute: (input) =>
         run(
           runtime,
@@ -293,7 +343,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
         truncated: z.boolean(),
       }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads a session transcript on the Mac"),
+      policy: readPolicy("Reads a session transcript on the host"),
       execute: (input) =>
         run(runtime, "result", { session: input.session }, QUICK).pipe(
           Effect.map((data) => {
@@ -320,7 +370,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
         .strict(),
       outputSchema: z.object({ session: sessionSchema, timedOut: z.boolean() }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Polls session status on the Mac"),
+      policy: readPolicy("Polls session status on the host"),
       execute: (input) =>
         run(
           runtime,
@@ -342,7 +392,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
       name: "claude_session_start",
       title: "Start Claude Code Session",
       description:
-        "Start a new background Claude Code session on Michael's Mac in a configured project (see claude_projects_list). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
+        "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_projects_list). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
       inputSchema: z
         .object({
           project: projectName,
@@ -364,7 +414,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(false, true, true, true),
       policy: {
         sideEffects: [
-          "Starts a Claude Code process on the Mac with full access to the project",
+          "Starts a Claude Code process on the host with full access to the project",
           "The agent may edit files, run commands, commit, push, and use the network",
         ],
         cost: "Consumes Claude subscription usage",
@@ -410,7 +460,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
       annotations: annotations(false, true, false, true),
       policy: {
         sideEffects: [
-          "Resumes a Claude Code session on the Mac with full access to its directory",
+          "Resumes a Claude Code session on the host with full access to its directory",
           "The agent may edit files, run commands, commit, push, and use the network",
         ],
         cost: "Consumes Claude subscription usage",
@@ -434,7 +484,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
       name: "claude_session_stop",
       title: "Stop Claude Code Session",
       description:
-        "Stop a background Claude Code session on the Mac. The conversation is kept and can be continued later with claude_session_send.",
+        "Stop a background Claude Code session on the Claude Code host. The conversation is kept and can be continued later with claude_session_send.",
       inputSchema: z.object({ session: sessionId }).strict(),
       outputSchema: z.object({ id: z.string().nullable(), sessionId: z.string() }),
       annotations: annotations(false, false, true, false),

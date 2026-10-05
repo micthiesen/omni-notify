@@ -141,8 +141,8 @@
     },
     {
       "name": "claude_link_status",
-      "title": "Get Mac Link Status",
-      "description": "Report whether Michael's Mac is connected to Omni for Claude Code session control, whether its kill switch is engaged, and when it last checked in. Reads Omni's state only.",
+      "title": "Get Claude Code Host Status",
+      "description": "Report whether the Claude Code host is connected to Omni for session control, whether its kill switch is engaged, and when it last checked in. Reads Omni's state only.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -157,8 +157,8 @@
     },
     {
       "name": "claude_projects_list",
-      "title": "List Claude Code Projects on the Mac",
-      "description": "List the projects where new Claude Code sessions may start on Michael's Mac. This is the same project list the Mac's Remote Control servers (claude-rc) use. Start sessions by project name.",
+      "title": "List Claude Code Projects",
+      "description": "List the projects where new Claude Code sessions may start on the Claude Code host. This is the same project list its Remote Control servers use. Start sessions by project name.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -166,7 +166,7 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Reads the Mac's claude-rc project configuration"
+        "Reads the host's project configuration"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -182,7 +182,7 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Reads session metadata and transcripts on the Mac"
+        "Reads session metadata and transcripts on the host"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -198,7 +198,7 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Reads a session transcript on the Mac"
+        "Reads a session transcript on the host"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -214,7 +214,7 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Reads a session transcript on the Mac"
+        "Reads a session transcript on the host"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -230,7 +230,7 @@
         "openWorldHint": true
       },
       "sideEffects": [
-        "Resumes a Claude Code session on the Mac with full access to its directory",
+        "Resumes a Claude Code session on the host with full access to its directory",
         "The agent may edit files, run commands, commit, push, and use the network"
       ],
       "cost": "Consumes Claude subscription usage",
@@ -239,7 +239,7 @@
     {
       "name": "claude_session_start",
       "title": "Start Claude Code Session",
-      "description": "Start a new background Claude Code session on Michael's Mac in a configured project (see claude_projects_list). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
+      "description": "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_projects_list). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -247,7 +247,7 @@
         "openWorldHint": true
       },
       "sideEffects": [
-        "Starts a Claude Code process on the Mac with full access to the project",
+        "Starts a Claude Code process on the host with full access to the project",
         "The agent may edit files, run commands, commit, push, and use the network"
       ],
       "cost": "Consumes Claude subscription usage",
@@ -256,7 +256,7 @@
     {
       "name": "claude_session_stop",
       "title": "Stop Claude Code Session",
-      "description": "Stop a background Claude Code session on the Mac. The conversation is kept and can be continued later with claude_session_send.",
+      "description": "Stop a background Claude Code session on the Claude Code host. The conversation is kept and can be continued later with claude_session_send.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -280,15 +280,15 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Polls session status on the Mac"
+        "Polls session status on the host"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
     },
     {
       "name": "claude_sessions_list",
-      "title": "List Claude Code Sessions on the Mac",
-      "description": "List Claude Code sessions on Michael's Mac, newest first: background, interactive terminal, and Remote Control sessions in any directory. Each session reports its configured project when its directory belongs to one. Filter by project name to narrow the list.",
+      "title": "List Claude Code Sessions",
+      "description": "List Claude Code sessions on the Claude Code host, newest first: background, interactive terminal, and Remote Control sessions in any directory. Each session reports its configured project when its directory belongs to one. Filter by project name to narrow the list.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -296,7 +296,7 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Reads session metadata and transcripts on the Mac"
+        "Reads session metadata and transcripts on the host"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -818,7 +818,7 @@
     {
       "name": "list_reminder_lists",
       "title": "List iCloud Reminder Lists",
-      "description": "Discover server iCloud Reminders lists and their stable CloudKit IDs. Each count is the number of incomplete, nondeleted reminders in that list; total is the number of lists before pagination. Requires the separately configured server account. No Mac EventKit dependency.",
+      "description": "Discover server iCloud Reminders lists and their stable CloudKit IDs. Each count is the number of incomplete, nondeleted reminders in that list; total is the number of lists before pagination. Requires the separately configured server account.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,

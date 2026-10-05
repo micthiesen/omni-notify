@@ -50,6 +50,12 @@ existing session. Sends are not idempotent.
 
 ## Tools
 
+The MCP surface calls the machine "the Claude Code host" and never names it.
+Tool text cannot mention Mac, macOS, laptops, or the hostname (a policy test
+enforces this). Results and errors replace the hostname with "the host" and
+home directories with `~`, transcript text included. `claude_link_status` omits
+the hostname. Omni's own UI and stored data may still show it.
+
 | Tool | Purpose |
 | --- | --- |
 | `claude_link_status` | Omni's view of the link; works while the Mac is offline |

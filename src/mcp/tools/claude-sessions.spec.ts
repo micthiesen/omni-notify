@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toItem, toSession } from "./claude-sessions.js";
+import { scrubHostDetails, toItem, toSession } from "./claude-sessions.js";
 
 describe("Claude session tool normalization", () => {
   it("maps claude-for-dot summaries to the MCP session shape", () => {
@@ -59,5 +59,23 @@ describe("Claude session tool normalization", () => {
     });
     expect(tool).toMatchObject({ tool: "Bash", text: null, truncated: false });
     expect(tool.input).toHaveLength(1_000);
+  });
+
+  it("removes the host name and home directory from results", () => {
+    expect(
+      scrubHostDetails(
+        {
+          cwd: "/Users/michael/Code/omni-notify",
+          items: [{ text: "Ran on MaxBook in /Users/michael/.dotfiles" }],
+          revision: 3,
+        },
+        "MaxBook",
+      ),
+    ).toEqual({
+      cwd: "~/Code/omni-notify",
+      items: [{ text: "Ran on the host in ~/.dotfiles" }],
+      revision: 3,
+    });
+    expect(scrubHostDetails("maxbookish", "MaxBook")).toBe("maxbookish");
   });
 });

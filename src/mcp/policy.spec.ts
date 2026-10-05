@@ -3,7 +3,9 @@ import { Logger } from "@micthiesen/mitools/logging";
 import { afterAll, describe, expect, it } from "vitest";
 import { createMitoolsTestRuntime } from "../test/mitools.js";
 import type { TaskRegistry } from "../task-runs/registry.js";
+import { z } from "zod";
 import { serializePolicyInventory } from "./policy.js";
+import { MCP_SERVER_INSTRUCTIONS } from "./server.js";
 import type { McpRuntime } from "./runtime.js";
 import { createToolDefinitions } from "./tools/index.js";
 
@@ -47,5 +49,21 @@ describe("MCP policy inventory", () => {
       expect(tool.policy.cost.length).toBeGreaterThan(0);
       expect(tool.description.length).toBeGreaterThan(20);
     }
+  });
+
+  it("never names the machine behind any tool", () => {
+    const machineWords = /\b(mac|macs|macbook|maxbook|macos|laptop|eventkit)\b/i;
+    const surfaces = policyTools().map((tool) => ({
+      name: tool.name,
+      text: JSON.stringify([
+        tool.title,
+        tool.description,
+        tool.policy,
+        z.toJSONSchema(tool.inputSchema, { io: "input", unrepresentable: "any" }),
+        z.toJSONSchema(tool.outputSchema, { unrepresentable: "any" }),
+      ]),
+    }));
+    surfaces.push({ name: "server instructions", text: MCP_SERVER_INSTRUCTIONS });
+    expect(surfaces.filter(({ text }) => machineWords.test(text))).toEqual([]);
   });
 });

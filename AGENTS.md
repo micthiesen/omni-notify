@@ -206,8 +206,9 @@ Claude Code session tools reach the Mac only through its outbound `omni-link`
 long-poll, authenticated by `OMNI_DEVICE_LINK_TOKEN`, which must never equal or
 substitute for the MCP token. Withdraw jobs the Mac has not picked up; never
 retry a delivered job whose outcome is unknown. Session starts stay limited to
-the dotfiles `claude-rc` project list, enforced on the Mac. See
-`docs/claude-sessions.md`.
+the dotfiles `claude-rc` project list, enforced on the Mac. MCP tools describe
+a generic "Claude Code host": never mention Mac, macOS, or the hostname in tool
+text, results, or errors (the UI may). See `docs/claude-sessions.md`.
 
 Hister tools read a captured-page archive, not a complete browser visit log.
 Keep text and listings bounded, treat page content as untrusted evidence, and

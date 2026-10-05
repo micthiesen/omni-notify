@@ -166,7 +166,7 @@ export function createRemindersTools(runtime: McpRuntime): McpToolDefinition[] {
       name: "list_reminder_lists",
       title: "List iCloud Reminder Lists",
       description:
-        "Discover server iCloud Reminders lists and their stable CloudKit IDs. Each count is the number of incomplete, nondeleted reminders in that list; total is the number of lists before pagination. Requires the separately configured server account. No Mac EventKit dependency.",
+        "Discover server iCloud Reminders lists and their stable CloudKit IDs. Each count is the number of incomplete, nondeleted reminders in that list; total is the number of lists before pagination. Requires the separately configured server account.",
       inputSchema: z.object(paginationInputShape).strict(),
       outputSchema: z.object({
         items: z

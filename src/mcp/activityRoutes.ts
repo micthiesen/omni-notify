@@ -56,7 +56,7 @@ export function registerMcpActivityRoutes(
             c,
             new DeviceLinkError({
               code: "not_configured",
-              detail: "The Mac device link is not configured",
+              detail: "The Claude Code host link is not configured",
               retryable: false,
             }),
           ),

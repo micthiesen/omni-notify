@@ -201,7 +201,7 @@ export class DeviceLinkService {
       if (!this.isOnline(now)) {
         return yield* new DeviceLinkError({
           code: "offline",
-          detail: `The Mac is offline (last seen ${
+          detail: `The Claude Code host is offline (last seen ${
             this.lastSeenAt ? new Date(this.lastSeenAt).toISOString() : "never"
           }); nothing ran`,
           retryable: true,
@@ -210,7 +210,8 @@ export class DeviceLinkService {
       if (this.disabled) {
         return yield* new DeviceLinkError({
           code: "disabled",
-          detail: "omni-link is disabled on the Mac (`omni-link enable`); nothing ran",
+          detail:
+            "Session control is disabled on the Claude Code host (kill switch); nothing ran",
           retryable: false,
         });
       }
@@ -236,7 +237,8 @@ export class DeviceLinkService {
         if (yield* withdrawIfQueued) {
           return yield* new DeviceLinkError({
             code: "not_picked_up",
-            detail: "The Mac did not pick up the request in time; nothing ran",
+            detail:
+              "The Claude Code host did not pick up the request in time; nothing ran",
             retryable: true,
           });
         }
@@ -247,7 +249,7 @@ export class DeviceLinkService {
           return yield* new DeviceLinkError({
             code: "outcome_unknown",
             detail:
-              "The Mac accepted the request but sent no result in time; the outcome is unknown. Check the session before retrying",
+              "The Claude Code host accepted the request but sent no result in time; the outcome is unknown. Check the session before retrying",
             retryable: false,
           });
         }
@@ -281,7 +283,7 @@ function decodeOutcome(
       () =>
         new DeviceLinkError({
           code: "bad_output",
-          detail: "The Mac returned output that is not a claude-for-dot envelope",
+          detail: "The Claude Code host returned malformed output",
           retryable: false,
         }),
     ),
