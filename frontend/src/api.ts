@@ -95,6 +95,7 @@ export interface LivestreamIntelligence {
     currentDggViewers?: number | null;
     baselineDggViewers?: number | null;
     baselineSamples?: number;
+    typicalPeakViewers?: number | null;
     candidateObservations?: number;
     suppressionReason?: string | null;
     updatedAt: number;
@@ -1025,6 +1026,7 @@ const LivestreamTrendSchema = Schema.Struct({
   currentDggViewers: Schema.optional(Schema.NullOr(Schema.Number)),
   baselineDggViewers: Schema.optional(Schema.NullOr(Schema.Number)),
   baselineSamples: Schema.optional(Schema.Number),
+  typicalPeakViewers: Schema.optional(Schema.NullOr(Schema.Number)),
   candidateObservations: Schema.optional(Schema.Number),
   suppressionReason: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.Number,

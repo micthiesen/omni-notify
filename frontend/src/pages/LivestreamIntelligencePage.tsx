@@ -321,6 +321,12 @@ export default function LivestreamIntelligencePage({
                         : ""}
                     </p>
                   )}
+                  {intelligence.trend.typicalPeakViewers != null && (
+                    <p>
+                      Typical session peak:{" "}
+                      {Math.round(intelligence.trend.typicalPeakViewers)}
+                    </p>
+                  )}
                   <div className="meta-row">
                     <span>
                       {intelligence.trend.baselineSamples ?? 0} baseline samples

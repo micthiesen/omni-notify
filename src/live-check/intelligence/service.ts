@@ -12,7 +12,12 @@ import type { StreamerStatusLive } from "../persistence.js";
 import { getNotificationUrlFields } from "../platforms/index.js";
 import type { Streamer } from "../streamers.js";
 import { alertSentInSession, livestreamAlertConfidenceFloor } from "./alertPolicy.js";
-import { computeRelevance, ViewerAnomalyTracker } from "./anomaly.js";
+import { getStreamSessions } from "../sessions.js";
+import {
+  computeRelevance,
+  typicalSessionPeak,
+  ViewerAnomalyTracker,
+} from "./anomaly.js";
 import { LivestreamAudioCapture } from "./audio.js";
 import {
   isTranscriptAlertType,
@@ -283,6 +288,10 @@ export class EffectWorkQueue {
 
 export class LivestreamIntelligenceService implements LivestreamIntelligenceObserver {
   private readonly anomaly = new ViewerAnomalyTracker();
+  private readonly typicalPeaks = new Map<
+    string,
+    { sessionStartedAt: number; peak: number | null }
+  >();
   private readonly capture: Pick<LivestreamAudioCapture, "captureEffect">;
   private readonly speech: Pick<
     LocalSpeechRuntime,
@@ -381,6 +390,30 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
     );
   }
 
+  /** Cached once per session; history only changes when a session ends. */
+  private typicalPeak(streamerId: string, sessionStartedAt: number, now: number) {
+    return Effect.gen({ self: this }, function* () {
+      const cached = this.typicalPeaks.get(streamerId);
+      if (cached?.sessionStartedAt === sessionStartedAt) return cached.peak;
+      return yield* getStreamSessions(streamerId).pipe(
+        Effect.map((data) => typicalSessionPeak(data.sessions, now)),
+        Effect.tap((peak) =>
+          Effect.sync(() =>
+            this.typicalPeaks.set(streamerId, { sessionStartedAt, peak }),
+          ),
+        ),
+        // Not cached, so the next observation retries the read.
+        Effect.catch((error) =>
+          this.logger
+            .warn(
+              `Typical viewer peak unavailable for ${streamerId}: ${failureMessage(error)}`,
+            )
+            .pipe(Effect.as(null)),
+        ),
+      );
+    });
+  }
+
   public observeLive(observation: LiveObservation) {
     return Effect.gen({ self: this }, function* () {
       if (!this.speech.hasVoiceprint && !this.voiceprintWarningLogged) {
@@ -399,11 +432,19 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
         previous?.sessionStartedAt === sessionStartedAt
           ? previous
           : newState(observation, now);
+      const typicalPeak = yield* this.typicalPeak(
+        observation.streamer.id,
+        sessionStartedAt,
+        now,
+      );
       const trend = this.anomaly.observe({
         streamerId: observation.streamer.id,
         viewers: viewerCountForAnomaly(observation.status),
         dggViewers: observation.streamer.dgg?.viewers ?? null,
         sessionStartedAt,
+        sourceKey: `${observation.status.primary.platform}:${observation.status.primary.username}`,
+        totalViewers: observation.status.viewerCount ?? null,
+        typicalPeak,
         now,
       });
       const presenceFresh =
@@ -562,6 +603,7 @@ export class LivestreamIntelligenceService implements LivestreamIntelligenceObse
       }
       this.active.delete(streamerId);
       this.anomaly.clear(streamerId);
+      this.typicalPeaks.delete(streamerId);
       this.voiceEvidence.clear(streamerId);
       this.pendingVoice.delete(streamerId);
       this.pendingSummary.delete(streamerId);

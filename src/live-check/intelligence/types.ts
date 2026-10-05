@@ -29,6 +29,7 @@ export interface ViewerTrend {
   currentDggViewers?: number | null;
   baselineDggViewers?: number | null;
   baselineSamples?: number;
+  typicalPeakViewers?: number | null;
   candidateObservations?: number;
   suppressionReason?: string | null;
   updatedAt: number;

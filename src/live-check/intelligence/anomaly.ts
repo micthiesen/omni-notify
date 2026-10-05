@@ -1,3 +1,4 @@
+import type { StreamSession } from "../sessions.js";
 import type { Streamer } from "../streamers.js";
 import type { SemanticMetadata, ViewerTrend } from "./types.js";
 
@@ -7,11 +8,30 @@ type ViewerSample = {
   dggViewers: number | null;
 };
 
-const SAMPLE_WINDOW_MS = 30 * 60 * 1000;
-const MIN_BASELINE_AGE_MS = 4 * 60 * 1000;
-const MIN_SESSION_AGE_MS = 15 * 60 * 1000;
-const MIN_BASELINE_SAMPLES = 10;
+// Baselines come from samples 5-20 minutes old, so the last few minutes can
+// show a jump without diluting the level it is measured against.
+const SAMPLE_WINDOW_MS = 20 * 60 * 1000;
+const MIN_BASELINE_AGE_MS = 5 * 60 * 1000;
+// Audiences keep arriving for a while after go-live; a baseline drawn from
+// that ramp makes ordinary growth look like a surge.
+const MIN_SESSION_AGE_MS = 20 * 60 * 1000;
+const MIN_BASELINE_SAMPLES = 8;
+// A baseline whose newer half sits this far above its older half is still
+// climbing, so a higher current count is the ramp continuing, not a surge.
+const MAX_BASELINE_CLIMB = 0.15;
+// Each half needs this many samples before the window can count as flat, so a
+// restart or primary switch cannot skip the climb check with a short history.
+const MIN_HALF_SAMPLES = 3;
 const SURGE_CONFIRMATION_OBSERVATIONS = 2;
+const VIEWER_SURGE_PERCENT = 50;
+const MIN_VIEWER_SURGE_GAIN = 100;
+const DGG_SURGE_PERCENT = 100;
+const MIN_DGG_SURGE_GAIN = 30;
+
+const TYPICAL_PEAK_SESSIONS = 10;
+const MIN_TYPICAL_PEAK_SESSIONS = 3;
+const MIN_TYPICAL_PEAK_SESSION_MS = 30 * 60 * 1000;
+const TYPICAL_PEAK_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function median(values: number[]): number {
   if (values.length === 0) return 0;
@@ -27,32 +47,110 @@ function percentChange(current: number, baseline: number): number {
   return ((current - baseline) / baseline) * 100;
 }
 
+/**
+ * Median summed-viewer peak of the streamer's recent full sessions, or null
+ * without enough history. Short restarts are excluded because their peaks
+ * understate a normal stream.
+ */
+export function typicalSessionPeak(
+  sessions: readonly StreamSession[],
+  now: number,
+): number | null {
+  const peaks = sessions
+    .filter(
+      (session) =>
+        session.durationMs >= MIN_TYPICAL_PEAK_SESSION_MS &&
+        session.endedAt >= now - TYPICAL_PEAK_MAX_AGE_MS,
+    )
+    .slice(-TYPICAL_PEAK_SESSIONS)
+    .map((session) => session.peakViewers);
+  return peaks.length >= MIN_TYPICAL_PEAK_SESSIONS ? median(peaks) : null;
+}
+
+type BaselineSample = { at: number; value: number };
+
+type Baseline = {
+  level: number;
+  samples: number;
+  shape: "flat" | "climbing" | "sparse";
+};
+
+function measureBaseline(
+  samples: BaselineSample[],
+  windowStart: number,
+  windowEnd: number,
+): Baseline {
+  const midpoint = (windowStart + windowEnd) / 2;
+  const older = samples.filter((sample) => sample.at < midpoint);
+  const newer = samples.filter((sample) => sample.at >= midpoint);
+  const olderLevel = median(older.map((sample) => sample.value));
+  const newerLevel = median(newer.map((sample) => sample.value));
+  return {
+    level: median(samples.map((sample) => sample.value)),
+    samples: samples.length,
+    shape:
+      older.length < MIN_HALF_SAMPLES || newer.length < MIN_HALF_SAMPLES
+        ? "sparse"
+        : newerLevel > olderLevel * (1 + MAX_BASELINE_CLIMB)
+          ? "climbing"
+          : "flat",
+  };
+}
+
 export class ViewerAnomalyTracker {
   private readonly samples = new Map<string, ViewerSample[]>();
   private readonly surgeStreaks = new Map<string, { viewers: number; dgg: number }>();
+  private readonly sources = new Map<string, string>();
 
   observe(input: {
     streamerId: string;
+    /** Primary binding's viewers, so a second binding going live is not a jump. */
     viewers: number | null;
     dggViewers: number | null;
     sessionStartedAt: number;
+    /** Identifies the primary binding; a change restarts the viewer baseline. */
+    sourceKey?: string;
+    /** Summed viewers across live bindings, compared against `typicalPeak`. */
+    totalViewers?: number | null;
+    /** Typical summed session peak; a platform surge must reach it. */
+    typicalPeak?: number | null;
     now?: number;
   }): ViewerTrend {
     const now = input.now ?? Date.now();
+    if (input.sourceKey !== undefined) {
+      const previousSource = this.sources.get(input.streamerId);
+      if (previousSource !== undefined && previousSource !== input.sourceKey) {
+        // DGG presence does not depend on the primary binding, so keep it.
+        const samples = this.samples.get(input.streamerId) ?? [];
+        this.samples.set(
+          input.streamerId,
+          samples.map((sample) => ({ ...sample, viewers: null })),
+        );
+        const streaks = this.surgeStreaks.get(input.streamerId);
+        if (streaks)
+          this.surgeStreaks.set(input.streamerId, { ...streaks, viewers: 0 });
+      }
+      this.sources.set(input.streamerId, input.sourceKey);
+    }
     const history = (this.samples.get(input.streamerId) ?? []).filter(
       (sample) => sample.at >= now - SAMPLE_WINDOW_MS,
     );
-    const baselineSamples = history.filter(
-      (sample) => sample.at <= now - MIN_BASELINE_AGE_MS,
+    const windowStart = now - SAMPLE_WINDOW_MS;
+    const windowEnd = now - MIN_BASELINE_AGE_MS;
+    const baselineSamples = history.filter((sample) => sample.at <= windowEnd);
+    const viewerBaseline = measureBaseline(
+      baselineSamples.flatMap((sample) =>
+        sample.viewers === null ? [] : [{ at: sample.at, value: sample.viewers }],
+      ),
+      windowStart,
+      windowEnd,
     );
-    const viewerBaselineValues = baselineSamples
-      .map((sample) => sample.viewers)
-      .filter((value): value is number => value !== null);
-    const viewerBaseline = median(viewerBaselineValues);
-    const dggBaseline = median(
-      baselineSamples
-        .map((sample) => sample.dggViewers)
-        .filter((value): value is number => value !== null),
+    const dggBaseline = measureBaseline(
+      baselineSamples.flatMap((sample) =>
+        sample.dggViewers === null ? [] : [{ at: sample.at, value: sample.dggViewers }],
+      ),
+      windowStart,
+      windowEnd,
     );
     const oldest = baselineSamples[0];
     const elapsedMinutes = oldest ? Math.max(1, (now - oldest.at) / 60_000) : 1;
@@ -62,27 +160,30 @@ export class ViewerAnomalyTracker {
         ? (input.viewers - (oldestViewer.viewers ?? 0)) / elapsedMinutes
         : 0;
     const viewerPercent =
-      input.viewers === null ? 0 : percentChange(input.viewers, viewerBaseline);
+      input.viewers === null ? 0 : percentChange(input.viewers, viewerBaseline.level);
     const dggPercent =
-      input.dggViewers === null || dggBaseline <= 0
+      input.dggViewers === null || dggBaseline.level <= 0
         ? null
-        : percentChange(input.dggViewers, dggBaseline);
+        : percentChange(input.dggViewers, dggBaseline.level);
     const sessionWarmed = now - input.sessionStartedAt >= MIN_SESSION_AGE_MS;
-    const viewerSurgeCandidate =
+    const viewerJump =
       sessionWarmed &&
-      viewerBaselineValues.length >= MIN_BASELINE_SAMPLES &&
+      viewerBaseline.samples >= MIN_BASELINE_SAMPLES &&
       input.viewers !== null &&
-      viewerPercent >= 50 &&
-      input.viewers - viewerBaseline >= Math.max(100, viewerBaseline * 0.2);
-    const dggBaselineValues = baselineSamples
-      .map((sample) => sample.dggViewers)
-      .filter((value): value is number => value !== null);
-    const dggSurgeCandidate =
+      viewerPercent >= VIEWER_SURGE_PERCENT &&
+      input.viewers - viewerBaseline.level >= MIN_VIEWER_SURGE_GAIN;
+    const typicalPeak = input.typicalPeak ?? null;
+    const belowTypicalPeak =
+      typicalPeak !== null && (input.totalViewers ?? input.viewers ?? 0) < typicalPeak;
+    const viewerSurgeCandidate =
+      viewerJump && viewerBaseline.shape === "flat" && !belowTypicalPeak;
+    const dggJump =
       sessionWarmed &&
-      dggBaselineValues.length >= MIN_BASELINE_SAMPLES &&
+      dggBaseline.samples >= MIN_BASELINE_SAMPLES &&
       dggPercent !== null &&
-      dggPercent >= 100 &&
-      (input.dggViewers ?? 0) - dggBaseline >= 30;
+      dggPercent >= DGG_SURGE_PERCENT &&
+      (input.dggViewers ?? 0) - dggBaseline.level >= MIN_DGG_SURGE_GAIN;
+    const dggSurgeCandidate = dggJump && dggBaseline.shape === "flat";
     const previousStreaks = this.surgeStreaks.get(input.streamerId) ?? {
       viewers: 0,
       dgg: 0,
@@ -99,12 +200,12 @@ export class ViewerAnomalyTracker {
     const reasons: string[] = [];
     if (viewerSurge) {
       reasons.push(
-        `viewers up ${Math.round(viewerPercent)}% (${input.viewers} vs ${Math.round(viewerBaseline)} baseline)`,
+        `viewers up ${Math.round(viewerPercent)}% (${input.viewers} vs ${Math.round(viewerBaseline.level)} baseline)`,
       );
     }
     if (dggSurge) {
       reasons.push(
-        `DGG audience up ${Math.round(dggPercent ?? 0)}% (${input.dggViewers} vs ${Math.round(dggBaseline)} baseline)`,
+        `DGG audience up ${Math.round(dggPercent ?? 0)}% (${input.dggViewers} vs ${Math.round(dggBaseline.level)} baseline)`,
       );
     }
     let suppressionReason: string | null = null;
@@ -115,12 +216,24 @@ export class ViewerAnomalyTracker {
       );
       suppressionReason = `Building a post-start baseline (${minutesRemaining}m remaining)`;
     } else if (
-      viewerBaselineValues.length < MIN_BASELINE_SAMPLES &&
-      dggBaselineValues.length < MIN_BASELINE_SAMPLES
+      viewerBaseline.samples < MIN_BASELINE_SAMPLES &&
+      dggBaseline.samples < MIN_BASELINE_SAMPLES
     ) {
       suppressionReason = `Waiting for ${MIN_BASELINE_SAMPLES} baseline samples`;
     } else if ((viewerSurgeCandidate || dggSurgeCandidate) && !anomalous) {
       suppressionReason = "Confirming the viewer rise with another observation";
+    } else if (!anomalous && (viewerJump || dggJump)) {
+      const shapes = [
+        ...(viewerJump ? [viewerBaseline.shape] : []),
+        ...(dggJump ? [dggBaseline.shape] : []),
+      ];
+      if (shapes.includes("climbing")) {
+        suppressionReason = "Audience is still ramping up";
+      } else if (shapes.includes("sparse")) {
+        suppressionReason = "Waiting for a longer baseline";
+      } else if (viewerJump && belowTypicalPeak && typicalPeak !== null) {
+        suppressionReason = `Below the typical session peak of ${Math.round(typicalPeak)}`;
+      }
     }
     history.push({
       at: now,
@@ -135,10 +248,11 @@ export class ViewerAnomalyTracker {
       anomalous,
       reason: reasons.length > 0 ? reasons.join("; ") : null,
       currentViewers: input.viewers,
-      baselineViewers: viewerBaselineValues.length > 0 ? viewerBaseline : null,
+      baselineViewers: viewerBaseline.samples > 0 ? viewerBaseline.level : null,
       currentDggViewers: input.dggViewers,
-      baselineDggViewers: dggBaselineValues.length > 0 ? dggBaseline : null,
-      baselineSamples: Math.max(viewerBaselineValues.length, dggBaselineValues.length),
+      baselineDggViewers: dggBaseline.samples > 0 ? dggBaseline.level : null,
+      baselineSamples: Math.max(viewerBaseline.samples, dggBaseline.samples),
+      typicalPeakViewers: typicalPeak,
       candidateObservations,
       suppressionReason,
       updatedAt: now,
@@ -148,6 +262,7 @@ export class ViewerAnomalyTracker {
   clear(streamerId: string): void {
     this.samples.delete(streamerId);
     this.surgeStreaks.delete(streamerId);
+    this.sources.delete(streamerId);
   }
 }
 

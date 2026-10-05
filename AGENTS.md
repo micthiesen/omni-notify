@@ -102,6 +102,11 @@ last title, and offline or primary-switch transitions clear pending state. A
 viewer peak becomes a record only after count falls 5 percent below it; flush a
 pending peak when the stream goes offline.
 
+Viewer surges compare against a 5-20-minute-old baseline that must be flat, not
+still climbing after go-live, and a platform surge must also reach the median
+peak of recent full sessions. Sparse baselines after a restart or primary switch
+suppress rather than alert.
+
 ### Email
 
 - Dispatch is no-drop: events received during processing schedule another pass,
