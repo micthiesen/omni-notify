@@ -21,11 +21,20 @@ export const executorOwnerId = (userId: string, clientId: string): string =>
     .update(JSON.stringify([userId, clientId]))
     .digest("hex")}`;
 
-/** Returns only an authorization decision. The session response may contain credentials. */
+/**
+ * Resolves to when the owner's delegated access token stops validating, or null
+ * when it does not validate now.
+ */
+export type ExecutorEventAuthorizer = (
+  owner: string,
+  authorization: string,
+) => Effect.Effect<number | null, Error>;
+
+/** Returns only the token expiry. The session response may contain credentials. */
 export function createExecutorEventAuthorizer(
   sessionUrl: string,
   request: typeof fetch = fetch,
-): (owner: string, authorization: string) => Effect.Effect<boolean, Error> {
+): ExecutorEventAuthorizer {
   const endpoint = new URL(sessionUrl);
   if (
     !["http:", "https:"].includes(endpoint.protocol) ||
@@ -39,8 +48,8 @@ export function createExecutorEventAuthorizer(
       const now = yield* Clock.currentTimeMillis;
       return yield* Effect.tryPromise({
         try: async (signal) => {
-          if (!/^executor:[0-9a-f]{64}$/.test(owner)) return false;
-          if (!/^Bearer [^\s]{1,8192}$/.test(authorization)) return false;
+          if (!/^executor:[0-9a-f]{64}$/.test(owner)) return null;
+          if (!/^Bearer [^\s]{1,8192}$/.test(authorization)) return null;
           const response = await request(endpoint, {
             method: "GET",
             headers: {
@@ -52,7 +61,7 @@ export function createExecutorEventAuthorizer(
           });
           if (response.status === 401 || response.status === 403) {
             await response.body?.cancel();
-            return false;
+            return null;
           }
           if (!response.ok) {
             await response.body?.cancel();
@@ -65,17 +74,17 @@ export function createExecutorEventAuthorizer(
           try {
             session = Schema.decodeUnknownSync(SessionSchema)(raw);
           } catch {
-            return false;
+            return null;
           }
           const expiry =
             typeof session.accessTokenExpiresAt === "number"
               ? session.accessTokenExpiresAt
               : Date.parse(session.accessTokenExpiresAt);
-          return (
-            Number.isFinite(expiry) &&
+          return Number.isFinite(expiry) &&
             expiry > now &&
             executorOwnerId(session.userId, session.clientId) === owner
-          );
+            ? expiry
+            : null;
         },
         catch: () => new ExecutorEventAuthorizationError(),
       });

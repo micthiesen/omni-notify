@@ -77,10 +77,16 @@ subscription's pending events stay `withheld` and are rechecked after 15 minutes
 when Executor cannot answer, after one minute. Other subscriptions keep
 delivering. A subscription refresh that stores a validating token releases
 withheld events immediately. Withheld events fail only when their subscription
-expires, is removed or is replaced by a new generation. With the current
-24-hour default lifetime, an event can therefore wait until ChatGPT's next
-refresh; shortening `refreshBefore` to the token lifetime would change that and
-has not been adopted.
+expires, is removed or is replaced by a new generation.
+
+So that a valid token is normally present, a delegated subscription's
+`refreshBefore` is the earlier of its granted lifetime and one minute before the
+expiry of the token it was created or refreshed with, never earlier than the
+request and never later than that expiry. Each refresh revalidates the client's
+current token through the adapter. The stored subscription lifetime (24 hours by
+default, at most seven days) is unchanged, so an event that arrives after the
+token expires and before a late refresh stays withheld rather than failing or
+being delivered.
 
 Callback signing uses the Standard Webhooks HMAC format over the stable delivery
 ID, fresh Unix signing timestamp, and exact JSON body bytes. Secrets must decode
@@ -100,7 +106,8 @@ outbox retry policy owns retries; HTTP 410 and 413 are terminal.
 
 The read-only `email_events_status` MCP tool reports what Omni has observed: the
 30 most recent `events/list`, `events/subscribe` and `events/unsubscribe`
-requests with outcomes, up to 20 subscriptions with state and callback hostname,
+requests with outcomes, up to 20 subscriptions with state, callback hostname and
+advertised `refreshBefore`,
 delivery counts including `withheld`, and the ten most recent deliveries with
 HTTP status, transport error, failure or `withheld` reason. Owners appear as a 12-character hash prefix. It
 never returns secrets, bearer tokens, callback paths or message content.
@@ -125,7 +132,9 @@ The parent must use the existing Executor connection to:
 2. Create an explicit Inbox or Archive subscription in the intended Work chat
    or dot. Confirm `events/subscribe`, successful challenge verification and
    durable subscription acceptance (`accepted` or `refreshed` in
-   `email_events_status`).
+   `email_events_status`). Over the next hours, confirm `refreshed` rows arrive
+   about hourly with an advancing `refreshBefore`; repeated refreshes without
+   progress mean ChatGPT is reusing an unrotated token.
 3. Select a harmless test message or send a new test message to the chosen
    folder. Confirm a matching outbox delivery receives HTTP 2xx and the intended
    chat receives the identifiers. Fetch content with `email_get` if needed.

@@ -26,7 +26,9 @@ describe("Omni MCP Events protocol", () => {
         Effect.succeed(
           authorizationAccepted &&
             candidate === owner &&
-            bearer === "Bearer delegated-fixture",
+            bearer === "Bearer delegated-fixture"
+            ? Date.now() + 60 * 60_000
+            : null,
         ),
       {
         verify: () =>

@@ -31,6 +31,7 @@ const statusSchema = z.object({
       owner: z.string(),
       callbackHost: z.string().nullable(),
       state: z.enum(["active", "expired", "stale_key"]),
+      refreshBefore: z.string(),
       expiresAt: z.string(),
       verifiedAt: z.string(),
     }),

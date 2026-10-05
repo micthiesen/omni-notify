@@ -232,9 +232,10 @@ or From option; invalid legacy `EMAIL_FROM` configuration fails boot. Preserve
 historical Sent MIME during copy repair and never retransmit it to change identity.
 
 Email MCP Events deliver only with a stored delegated token that validates at
-delivery time. Executor tokens expire hourly; hold such events as `withheld`
-until a refresh stores a valid token or the subscription ends, and never extend
-access to deliver sooner. See `docs/mcp-events.md`.
+delivery time. Executor tokens expire hourly; advertise `refreshBefore` no later
+than the delegated token's expiry, hold events as `withheld` until a refresh
+stores a valid token or the subscription ends, and never extend access to
+deliver sooner. See `docs/mcp-events.md`.
 
 Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
 revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK

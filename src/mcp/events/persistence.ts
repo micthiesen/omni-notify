@@ -39,6 +39,8 @@ export interface EventSubscription {
   encryptedPreviousSecret?: string;
   previousSecretUntil?: number;
   encryptedAuthorization?: string;
+  /** Advertised refresh time; never later than a delegated token's expiry. */
+  refreshBefore?: number;
   expiresAt: number;
   verifiedAt: number;
 }
@@ -119,6 +121,7 @@ const subscriptionSchema = Schema.Struct({
   encryptedPreviousSecret: Schema.optional(Schema.String),
   previousSecretUntil: Schema.optional(Schema.Number),
   encryptedAuthorization: Schema.optional(Schema.String),
+  refreshBefore: Schema.optional(Schema.Number),
   expiresAt: Schema.Number,
   verifiedAt: Schema.Number,
 });

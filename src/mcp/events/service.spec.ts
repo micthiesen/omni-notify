@@ -1,6 +1,6 @@
 import { Docstore } from "@micthiesen/mitools/docstore";
 import { expect, layer } from "@effect/vitest";
-import { Effect, Option } from "effect";
+import { Clock, Effect, Option } from "effect";
 import { TestClock } from "effect/testing";
 import type { FetchedEmail } from "../../email/types.js";
 import type { McpRuntime } from "../runtime.js";
@@ -35,12 +35,25 @@ function email(messageId = "<one@example.test>", folder = "INBOX"): FetchedEmail
   };
 }
 
+const TOKEN_LIFETIME_MS = 60 * 60_000;
+
+/** Fixtures answer validity; a valid token expires an hour after the check. */
 function service(
   status = 204,
   authorizeOwner?: (owner: string, bearer: string) => Effect.Effect<boolean, Error>,
 ) {
   const sent: string[] = [];
-  const instance = new EmailEventService("test-omni-bearer", authorizeOwner, {
+  const authorize =
+    authorizeOwner &&
+    ((owner: string, bearer: string) =>
+      authorizeOwner(owner, bearer).pipe(
+        Effect.flatMap((valid) =>
+          valid
+            ? Clock.currentTimeMillis.pipe(Effect.map((now) => now + TOKEN_LIFETIME_MS))
+            : Effect.succeed(null),
+        ),
+      ));
+  const instance = new EmailEventService("test-omni-bearer", authorize, {
     verify: () => Effect.void,
     deliver: (input) => {
       sent.push(input.event.eventId);
@@ -128,6 +141,66 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
       ).toBe(true);
       expect(yield* events.drain()).toBe(1);
       expect((yield* EventPersistence.deliveries())[0]?.status).toBe("failed");
+    }),
+  );
+
+  it.effect("asks delegated subscribers to refresh by their token expiry", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      const owner = `executor:${"c".repeat(64)}`;
+      const principal = { owner, authorization: "Bearer delegated-fixture" };
+      const delegated = service(204, () => Effect.succeed(true)).instance;
+      const now = yield* Clock.currentTimeMillis;
+
+      const hourly = yield* delegated.subscribe(subscribeInput(), principal);
+      expect(Date.parse(hourly.refreshBefore)).toBe(now + TOKEN_LIFETIME_MS - 60_000);
+      expect((yield* EventPersistence.subscription(hourly.id))?.expiresAt).toBe(
+        now + 24 * 60 * 60_000,
+      );
+
+      const brief = yield* delegated.subscribe(
+        { ...subscribeInput("archive"), ttlMs: 10 * 60_000 },
+        principal,
+      );
+      expect(Date.parse(brief.refreshBefore)).toBe(now + 10 * 60_000);
+
+      const direct = yield* service().instance.subscribe(subscribeInput());
+      expect(Date.parse(direct.refreshBefore)).toBe(now + 24 * 60 * 60_000);
+    }),
+  );
+
+  it.effect("keeps refreshBefore within a nearly expired token's lifetime", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      const now = yield* Clock.currentTimeMillis;
+      let expiry: number | null = now + 30_000;
+      const events = new EmailEventService(
+        "test-omni-bearer",
+        () => Effect.succeed(expiry),
+        { verify: () => Effect.void, deliver: () => Effect.succeed({ status: 204 }) },
+      );
+      const principal = {
+        owner: `executor:${"d".repeat(64)}`,
+        authorization: "Bearer delegated-fixture",
+      };
+      const soon = yield* events.subscribe(subscribeInput(), principal);
+      expect(Date.parse(soon.refreshBefore)).toBe(now);
+
+      expiry = now + 2 * TOKEN_LIFETIME_MS;
+      const rotated = yield* events.subscribe(subscribeInput(), principal);
+      expect(Date.parse(rotated.refreshBefore)).toBe(expiry - 60_000);
+
+      const status = yield* events.status();
+      expect(status.subscriptions[0]).toMatchObject({
+        refreshBefore: new Date(expiry - 60_000).toISOString(),
+        expiresAt: new Date(now + 24 * 60 * 60_000).toISOString(),
+      });
+
+      expiry = null;
+      const expired = yield* events
+        .subscribe(subscribeInput(), principal)
+        .pipe(Effect.result);
+      expect(expired._tag).toBe("Failure");
     }),
   );
 

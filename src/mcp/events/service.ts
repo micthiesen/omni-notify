@@ -10,6 +10,7 @@ import { Data, Effect, Clock, Semaphore } from "effect";
 import type { Docstore } from "@micthiesen/mitools/docstore";
 import type { FetchedEmail, EmailHandler } from "../../email/types.js";
 import { isArchiveActionMessageEffect } from "../../email/archive/persistence.js";
+import type { ExecutorEventAuthorizer } from "./executorAuth.js";
 import {
   EventPersistence,
   type EventDelivery,
@@ -39,6 +40,8 @@ const WITHHELD_RECHECK_MS: Record<EventDeliveryWithhold, number> = {
   authorization_unavailable: 60_000,
 };
 const STATUS_RECENT_DELIVERIES = 10;
+/** Ask delegated clients to refresh this long before their token expires. */
+const REFRESH_MARGIN_MS = 60_000;
 const STATUS_SUBSCRIPTIONS = 20;
 
 export class EventSubscriptionError extends Data.TaggedError("EventSubscriptionError")<{
@@ -124,17 +127,11 @@ export class EmailEventService {
   private readonly owner: string;
   private readonly webhook: WebhookPort;
   private readonly semaphore = Semaphore.makeUnsafe(1);
-  private readonly authorizeOwner?: (
-    owner: string,
-    authorization: string,
-  ) => Effect.Effect<boolean, Error>;
+  private readonly authorizeOwner?: ExecutorEventAuthorizer;
 
   constructor(
     token: string,
-    authorizeOwner?: (
-      owner: string,
-      authorization: string,
-    ) => Effect.Effect<boolean, Error>,
+    authorizeOwner?: ExecutorEventAuthorizer,
     webhook: WebhookPort = { verify: verifyCallback, deliver: deliverWebhook },
   ) {
     this.key = createHmac("sha256", token)
@@ -186,15 +183,17 @@ export class EmailEventService {
     return `sub_${createHmac("sha256", this.key).update(material).digest("hex").slice(0, 40)}`;
   }
 
+  /** Resolves a delegated principal's token expiry; direct callers have none. */
   private authorizePrincipal(owner: string, principal?: EventPrincipal) {
     return Effect.gen({ self: this }, function* () {
-      if (
-        principal &&
-        (!this.authorizeOwner ||
-          !(yield* this.authorizeOwner(owner, principal.authorization)))
-      ) {
+      if (!principal) return undefined;
+      const expiresAt = this.authorizeOwner
+        ? yield* this.authorizeOwner(owner, principal.authorization)
+        : null;
+      if (expiresAt === null) {
         return yield* new EventSubscriptionError({ reason: "invalid_principal" });
       }
+      return expiresAt;
     });
   }
 
@@ -236,7 +235,7 @@ export class EmailEventService {
       );
     return this.semaphore.withPermits(1)(
       Effect.gen({ self: this }, function* () {
-        yield* this.authorizePrincipal(owner, principal);
+        const tokenExpiresAt = yield* this.authorizePrincipal(owner, principal);
         if (input.name !== EVENT_NAME) {
           return yield* new EventSubscriptionError({ reason: "invalid_event" });
         }
@@ -283,6 +282,17 @@ export class EmailEventService {
         }
         const requested = input.ttlMs == null ? DEFAULT_TTL_MS : input.ttlMs;
         const ttl = Math.min(Math.max(1_000, requested), MAX_TTL_MS);
+        // Delivery needs a token that validates when it is sent, so ask the
+        // client to refresh by the time this one expires. The subscription's
+        // lifetime and every authorization check are unchanged.
+        const refreshBefore =
+          tokenExpiresAt === undefined
+            ? now + ttl
+            : Math.min(
+                now + ttl,
+                tokenExpiresAt,
+                Math.max(now, tokenExpiresAt - REFRESH_MARGIN_MS),
+              );
         const secretChanged = previous?.owner === owner && !sameSecret;
         const row: EventSubscription = {
           id,
@@ -302,6 +312,7 @@ export class EmailEventService {
           encryptedAuthorization: principal
             ? this.seal(principal.authorization)
             : undefined,
+          refreshBefore,
           expiresAt: now + ttl,
           verifiedAt: recentlyVerified ? previous.verifiedAt : now,
         };
@@ -311,7 +322,7 @@ export class EmailEventService {
           refreshed: previous?.owner === owner,
           result: {
             id,
-            refreshBefore: new Date(row.expiresAt).toISOString(),
+            refreshBefore: new Date(refreshBefore).toISOString(),
             cursor: null,
             truncated: false,
           },
@@ -431,7 +442,7 @@ export class EmailEventService {
         // Check each delegated subscription at most once per pass. A held
         // subscription defers all of its rows together so it cannot crowd out
         // other subscriptions or abort the pass.
-        const authorized = new Set<string>();
+        const authorized = new Map<string, number>();
         const withheld = new Set<string>();
         for (const row of due) {
           if (withheld.has(row.subscriptionId)) continue;
@@ -457,7 +468,7 @@ export class EmailEventService {
   }
 
   /** Returns why the row's subscription is withheld, if it is. */
-  private deliverOne(row: EventDelivery, authorized: Set<string>) {
+  private deliverOne(row: EventDelivery, authorized: Map<string, number>) {
     return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
       const fail = (failure: EventDeliveryFailure) =>
@@ -490,14 +501,19 @@ export class EmailEventService {
         // Executor access tokens expire hourly. Never deliver without one that
         // validates now; hold the event until a refresh stores a valid token or
         // the subscription ends.
-        if (!authorized.has(subscription.id)) {
+        let validUntil = authorized.get(subscription.id);
+        if (validUntil === undefined) {
           const check = yield* this.authorizeOwner(
             subscription.owner,
             authorization,
           ).pipe(Effect.result);
           if (check._tag === "Failure") return "authorization_unavailable" as const;
-          if (!check.success) return "authorization_invalid" as const;
-          authorized.add(subscription.id);
+          if (check.success === null) return "authorization_invalid" as const;
+          validUntil = check.success;
+          authorized.set(subscription.id, validUntil);
+        }
+        if (validUntil <= (yield* Clock.currentTimeMillis)) {
+          return "authorization_invalid" as const;
         }
       }
       const url = this.openSafe(subscription.encryptedUrl);
@@ -580,6 +596,7 @@ export class EmailEventService {
                 : row.expiresAt <= now
                   ? ("expired" as const)
                   : ("active" as const),
+            refreshBefore: iso(row.refreshBefore ?? row.expiresAt),
             expiresAt: iso(row.expiresAt),
             verifiedAt: iso(row.verifiedAt),
           })),

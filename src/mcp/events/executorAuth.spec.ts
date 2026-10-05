@@ -19,14 +19,15 @@ describe("Executor event owner revalidation", () => {
       "http://executor:4788/api/auth/mcp/get-session",
       async () => new Response(null, { status: 401 }),
     );
-    expect(await Effect.runPromise(revoked(owner, "Bearer opaque"))).toBe(false);
+    expect(await Effect.runPromise(revoked(owner, "Bearer opaque"))).toBeNull();
   });
   it("requires the exact user/client pair and a live access token", async () => {
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
     const request = vi.fn(async () =>
       Response.json({
         userId: "user-1",
         clientId: "client-2",
-        accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        accessTokenExpiresAt: expiresAt,
         accessToken: "private-upstream-value",
       }),
     );
@@ -38,12 +39,12 @@ describe("Executor event owner revalidation", () => {
       await Effect.runPromise(
         authorize(executorOwnerId("user-1", "client-2"), "Bearer opaque"),
       ),
-    ).toBe(true);
+    ).toBe(Date.parse(expiresAt));
     expect(
       await Effect.runPromise(
         authorize(executorOwnerId("user-1", "other"), "Bearer opaque"),
       ),
-    ).toBe(false);
+    ).toBeNull();
     expect(request).toHaveBeenCalledWith(
       new URL("http://executor:3000/api/auth/mcp/get-session"),
       expect.objectContaining({
@@ -69,7 +70,7 @@ describe("Executor event owner revalidation", () => {
         "http://executor:3000/api/auth/mcp/get-session",
         async () => Response.json(body),
       );
-      expect(await Effect.runPromise(authorize(owner, "Bearer opaque"))).toBe(false);
+      expect(await Effect.runPromise(authorize(owner, "Bearer opaque"))).toBeNull();
     }
   });
 });
