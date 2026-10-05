@@ -186,3 +186,11 @@ describe("transcript snippets", () => {
     expect(snippet("   ")).toBeNull();
   });
 });
+
+describe("message tool summaries", () => {
+  it("prefers a message summary over raw JSON", () => {
+    expect(
+      toolInputSummary('{"to":"agent","summary":"Re-verify fixes","message":"x"}'),
+    ).toBe("Re-verify fixes");
+  });
+});

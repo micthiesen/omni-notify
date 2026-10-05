@@ -329,6 +329,8 @@ const TOOL_INPUT_KEYS = [
   "prompt",
   "skill",
   "code",
+  "summary",
+  "message",
 ] as const;
 
 /** One readable line for a transcript snippet, cut at `max` characters. */
@@ -355,7 +357,7 @@ export function toolInputSummary(input: string | null): string | null {
   } catch {
     // Inputs are capped at 1,000 characters, so long JSON arrives cut off.
     const match = input.match(
-      /"(?:command|file_path|pattern|url|query|description|prompt|skill|code)":"((?:[^"\\]|\\.)*)/,
+      /"(?:command|file_path|pattern|url|query|description|prompt|skill|code|summary|message)":"((?:[^"\\]|\\.)*)/,
     );
     if (match?.[1]) return snippet(match[1].replace(/\\n/g, "\n").replace(/\\"/g, '"'));
   }
