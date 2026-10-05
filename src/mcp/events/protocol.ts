@@ -29,6 +29,35 @@ const unsubscribeSchema = z
   })
   .strict();
 const listSchema = z.object({ cursor: z.string().optional() }).strict();
+const OWNER_PATTERN = /^executor:[0-9a-f]{64}$/;
+
+const EVENT_CATALOG = [
+  {
+    name: "email.received",
+    description:
+      "A new iCloud message arrived in the selected Inbox or Archive mailbox. Read full mail with email tools using messageId.",
+    delivery: ["webhook"],
+    inputSchema: {
+      type: "object",
+      properties: {
+        folder: { type: "string", enum: ["inbox", "archive"] },
+      },
+      required: ["folder"],
+      additionalProperties: false,
+    },
+    payloadSchema: {
+      type: "object",
+      properties: {
+        messageId: { type: "string" },
+        folder: { type: "string", enum: ["inbox", "archive"] },
+        uidValidity: { type: "string" },
+        uid: { type: "integer" },
+      },
+      required: ["messageId", "folder", "uidValidity", "uid"],
+      additionalProperties: false,
+    },
+  },
+];
 
 function rpcError(error: EventSubscriptionError): Error {
   const callback = ["invalid_callback", "challenge_failed", "timeout"].includes(
@@ -46,7 +75,7 @@ function principalFromHeaders(headers?: Headers): EventPrincipal | undefined {
   if (!owner && !authorization) return undefined;
   if (
     !owner ||
-    !/^executor:[0-9a-f]{64}$/.test(owner) ||
+    !OWNER_PATTERN.test(owner) ||
     !authorization ||
     !/^Bearer [^\s]{1,8192}$/.test(authorization)
   ) {
@@ -62,35 +91,17 @@ export function registerEventMethods(server: McpServer, runtime: McpRuntime): vo
   server.server.registerCapabilities({ events: {} } as Parameters<
     typeof server.server.registerCapabilities
   >[0]);
-  server.server.setRequestHandler("events/list", { params: listSchema }, () => ({
-    events: [
-      {
-        name: "email.received",
-        description:
-          "A new iCloud message arrived in the selected Inbox or Archive mailbox. Read full mail with email tools using messageId.",
-        delivery: ["webhook"],
-        inputSchema: {
-          type: "object",
-          properties: {
-            folder: { type: "string", enum: ["inbox", "archive"] },
-          },
-          required: ["folder"],
-          additionalProperties: false,
-        },
-        payloadSchema: {
-          type: "object",
-          properties: {
-            messageId: { type: "string" },
-            folder: { type: "string", enum: ["inbox", "archive"] },
-            uidValidity: { type: "string" },
-            uid: { type: "integer" },
-          },
-          required: ["messageId", "folder", "uidValidity", "uid"],
-          additionalProperties: false,
-        },
-      },
-    ],
-  }));
+  server.server.setRequestHandler(
+    "events/list",
+    { params: listSchema },
+    async (_, ctx) => {
+      const owner = ctx.http?.req?.headers.get("x-omni-events-owner") ?? undefined;
+      await runtime.effectRunner.runPromise(
+        events.recordDiscovery(owner && OWNER_PATTERN.test(owner) ? owner : undefined),
+      );
+      return { events: EVENT_CATALOG };
+    },
+  );
   server.server.setRequestHandler(
     "events/subscribe",
     { params: subscribeSchema },

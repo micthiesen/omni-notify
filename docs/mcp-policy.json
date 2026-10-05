@@ -520,6 +520,20 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
+      "name": "email_events_status",
+      "title": "Check Email Event Delivery",
+      "description": "Report the email.received MCP Events lifecycle Omni has observed: recent events/list and subscription requests, subscriptions by callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
       "name": "email_feedback_list",
       "title": "List Email Feedback",
       "description": "List explicit corrections used by the email relevance triage prompts, newest first.",

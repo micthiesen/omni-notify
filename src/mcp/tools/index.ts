@@ -4,6 +4,7 @@ import { createCoreWorkspaceTools } from "./core-workspaces.js";
 import { createEmailCalendarTools } from "./email-calendar.js";
 import { createEmailComposeTools } from "./email-compose.js";
 import { createEmailArchiveTools } from "./email-archive.js";
+import { createEmailEventTools } from "./email-events.js";
 import { createEmailAttachmentTools } from "./email-attachments.js";
 import { createMediaPersonalTools } from "./media-personal.js";
 import { createPrinterTools } from "./printer.js";
@@ -18,6 +19,7 @@ export function createToolDefinitions(runtime: McpRuntime): McpToolDefinition[] 
     ...createEmailCalendarTools(runtime),
     ...createEmailComposeTools(runtime),
     ...createEmailArchiveTools(runtime),
+    ...createEmailEventTools(runtime),
     ...createEmailAttachmentTools(runtime),
     ...createMediaPersonalTools(runtime),
     ...createPrinterTools(runtime),

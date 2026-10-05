@@ -91,6 +91,13 @@ describe("Omni MCP Events protocol", () => {
         z.object({ events: z.array(z.object({ name: z.string() })) }),
       );
       expect(catalog.events.map((event) => event.name)).toEqual(["email.received"]);
+      expect(await testRuntime.run(EventPersistence.requests())).toContainEqual(
+        expect.objectContaining({
+          method: "events/list",
+          owner: `executor:${"a".repeat(12)}`,
+          outcome: "listed",
+        }),
+      );
 
       const input = {
         name: "email.received",

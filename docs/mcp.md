@@ -2,6 +2,7 @@
 
 Email wake subscriptions are documented in [MCP Events](mcp-events.md). The
 separate Executor adapter preserves the existing connection and OAuth routes.
+`email_events_status` reports observed event requests, subscriptions and deliveries.
 See [queued reversible archive](email-archive.md) for the exact-message archive,
 status, cancellation and restore tools.
 

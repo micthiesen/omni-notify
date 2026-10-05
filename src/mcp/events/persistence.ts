@@ -5,6 +5,28 @@ import { Effect, Option, Schema } from "effect";
 
 export type EventFolder = "inbox" | "archive";
 
+export const EVENT_DELIVERY_FAILURES = [
+  "subscription_inactive",
+  "credentials_unavailable",
+  "rejected",
+  "attempts_exhausted",
+] as const;
+export type EventDeliveryFailure = (typeof EVENT_DELIVERY_FAILURES)[number];
+
+/** Why a pending delivery is held without an attempt. */
+export const EVENT_DELIVERY_WITHHOLDS = [
+  "authorization_invalid",
+  "authorization_unavailable",
+] as const;
+export type EventDeliveryWithhold = (typeof EVENT_DELIVERY_WITHHOLDS)[number];
+
+export const EVENT_REQUEST_METHODS = [
+  "events/list",
+  "events/subscribe",
+  "events/unsubscribe",
+] as const;
+export type EventRequestMethod = (typeof EVENT_REQUEST_METHODS)[number];
+
 export interface EventSubscription {
   id: string;
   owner: string;
@@ -45,9 +67,27 @@ export interface EventDelivery {
   nextAttemptAt: number;
   status: "pending" | "delivered" | "failed";
   lastStatus?: number;
+  /** Transport failure without an HTTP status, such as a timeout. */
+  lastError?: string;
+  failure?: EventDeliveryFailure;
+  /** Pending without an attempt because the stored authorization does not validate. */
+  withheld?: EventDeliveryWithhold;
   createdAt: number;
   updatedAt: number;
 }
+
+/** Diagnostic record of an event RPC. Holds no credentials or callback paths. */
+export interface EventRequest {
+  id: string;
+  at: number;
+  method: EventRequestMethod;
+  owner: string;
+  folder?: EventFolder;
+  callbackHost?: string;
+  outcome: string;
+}
+
+const MAX_EVENT_REQUESTS = 30;
 
 export const EventSubscriptionEntity = new Entity<EventSubscription, ["id"]>(
   "mcp-event-subscription",
@@ -59,6 +99,10 @@ export const EventReceiptEntity = new Entity<EventReceipt, ["messageKey"]>(
 );
 export const EventDeliveryEntity = new Entity<EventDelivery, ["id"]>(
   "mcp-event-delivery",
+  ["id"],
+);
+export const EventRequestEntity = new Entity<EventRequest, ["id"]>(
+  "mcp-event-request",
   ["id"],
 );
 
@@ -101,8 +145,29 @@ const deliverySchema = Schema.Struct({
   nextAttemptAt: Schema.Number,
   status: Schema.Literals(["pending", "delivered", "failed"]),
   lastStatus: Schema.optional(Schema.Number),
+  lastError: Schema.optional(Schema.String),
+  withheld: Schema.optional(Schema.Literals(EVENT_DELIVERY_WITHHOLDS)),
+  failure: Schema.optional(Schema.Literals(EVENT_DELIVERY_FAILURES)),
   createdAt: Schema.Number,
   updatedAt: Schema.Number,
+});
+const requestSchema = Schema.Struct({
+  id: Schema.String,
+  at: Schema.Number,
+  method: Schema.Literals(EVENT_REQUEST_METHODS),
+  owner: Schema.String,
+  folder: Schema.optional(folder),
+  callbackHost: Schema.optional(Schema.String),
+  outcome: Schema.String,
+});
+
+/** Newest first, bounded to the most recent requests. */
+const listEventRequests = Effect.fn("Events.requests")(function* () {
+  const rows = yield* EventRequestEntity.getAll();
+  const decoded = yield* Effect.forEach(rows, (row) =>
+    Schema.decodeUnknownEffect(requestSchema)(row),
+  );
+  return decoded.sort((a, b) => b.at - a.at || b.id.localeCompare(a.id));
 });
 
 export const EventPersistence = {
@@ -166,5 +231,13 @@ export const EventPersistence = {
   }),
   upsertDelivery: Effect.fn("Events.upsertDelivery")(function* (row: EventDelivery) {
     yield* EventDeliveryEntity.upsert(row);
+  }),
+  requests: listEventRequests,
+  recordRequest: Effect.fn("Events.recordRequest")(function* (row: EventRequest) {
+    yield* EventRequestEntity.upsert(row);
+    const rows = yield* listEventRequests();
+    for (const stale of rows.slice(MAX_EVENT_REQUESTS)) {
+      yield* EventRequestEntity.delete({ id: stale.id });
+    }
   }),
 } as const;

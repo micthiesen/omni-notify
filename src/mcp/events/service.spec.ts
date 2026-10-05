@@ -1,7 +1,10 @@
 import { Docstore } from "@micthiesen/mitools/docstore";
 import { expect, layer } from "@effect/vitest";
 import { Effect, Option } from "effect";
+import { TestClock } from "effect/testing";
 import type { FetchedEmail } from "../../email/types.js";
+import type { McpRuntime } from "../runtime.js";
+import { createEmailEventTools } from "../tools/email-events.js";
 import {
   queueArchiveActionEffect,
   updateArchiveActionEffect,
@@ -10,6 +13,7 @@ import {
   EventDeliveryEntity,
   EventPersistence,
   EventReceiptEntity,
+  EventRequestEntity,
   EventSubscriptionEntity,
 } from "./persistence.js";
 import { EmailEventService } from "./service.js";
@@ -33,7 +37,7 @@ function email(messageId = "<one@example.test>", folder = "INBOX"): FetchedEmail
 
 function service(
   status = 204,
-  authorizeOwner?: (owner: string, bearer: string) => Effect.Effect<boolean>,
+  authorizeOwner?: (owner: string, bearer: string) => Effect.Effect<boolean, Error>,
 ) {
   const sent: string[] = [];
   const instance = new EmailEventService("test-omni-bearer", authorizeOwner, {
@@ -127,7 +131,64 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
     }),
   );
 
-  it.effect("rejects revoked delegated owners before delivery", () =>
+  it.effect("withholds delegated delivery until the stored token validates", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      let valid = "Bearer delegated-fixture";
+      const checked: string[] = [];
+      const owner = `executor:${"a".repeat(64)}`;
+      const events = service(204, (_, bearer) => {
+        checked.push(bearer);
+        return Effect.succeed(bearer === valid);
+      });
+      const subscribed = yield* events.instance.subscribe(subscribeInput(), {
+        owner,
+        authorization: valid,
+      });
+      expect(
+        (yield* EventPersistence.subscription(subscribed.id))?.encryptedAuthorization,
+      ).not.toContain("delegated-fixture");
+      for (const id of ["<one@example.test>", "<two@example.test>", "<three@x.test>"])
+        yield* events.instance.recordEmail(email(id));
+      valid = "Bearer refreshed-fixture";
+      checked.length = 0;
+      expect(yield* events.instance.drain()).toBe(3);
+      expect(checked).toEqual(["Bearer delegated-fixture"]);
+      expect(yield* events.instance.drain()).toBe(0);
+      yield* TestClock.adjust("14 minutes");
+      expect(yield* events.instance.drain()).toBe(0);
+      yield* TestClock.adjust("2 minutes");
+      expect(yield* events.instance.drain()).toBe(3);
+      expect(checked).toHaveLength(2);
+      expect(events.sent).toHaveLength(0);
+      const held = yield* EventPersistence.deliveries();
+      expect(held).toHaveLength(3);
+      for (const row of held) {
+        expect(row).toMatchObject({
+          status: "pending",
+          withheld: "authorization_invalid",
+          attempts: 0,
+        });
+      }
+
+      yield* events.instance.subscribe(subscribeInput(), {
+        owner,
+        authorization: valid,
+      });
+      checked.length = 0;
+      expect(yield* events.instance.drain()).toBe(3);
+      expect(checked).toEqual(["Bearer refreshed-fixture"]);
+      expect(events.sent).toHaveLength(3);
+      for (const row of yield* EventPersistence.deliveries()) {
+        expect(row.status).toBe("delivered");
+        expect(row.withheld).toBeUndefined();
+      }
+    }),
+  );
+
+  it.effect("fails withheld events only when their subscription ends", () =>
     Effect.gen(function* () {
       yield* EventSubscriptionEntity.deleteAll();
       yield* EventReceiptEntity.deleteAll();
@@ -135,18 +196,154 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
       let active = true;
       const owner = `executor:${"a".repeat(64)}`;
       const events = service(204, () => Effect.succeed(active));
-      const subscribed = yield* events.instance.subscribe(subscribeInput(), {
+      yield* events.instance.subscribe(subscribeInput(), {
         owner,
         authorization: "Bearer delegated-fixture",
       });
-      expect(
-        (yield* EventPersistence.subscription(subscribed.id))?.encryptedAuthorization,
-      ).not.toContain("delegated-fixture");
       yield* events.instance.recordEmail(email());
       active = false;
       yield* events.instance.drain();
+      yield* TestClock.adjust("25 hours");
+      yield* events.instance.drain();
       expect(events.sent).toHaveLength(0);
-      expect((yield* EventPersistence.deliveries())[0]?.status).toBe("failed");
+      const failed = (yield* EventPersistence.deliveries())[0];
+      expect(failed).toMatchObject({
+        status: "failed",
+        failure: "subscription_inactive",
+      });
+      expect(failed?.withheld).toBeUndefined();
+    }),
+  );
+
+  it.effect("holds a subscription briefly when Executor cannot authorize", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      const owner = `executor:${"a".repeat(64)}`;
+      const events = service(204, () => Effect.fail(new Error("Executor down")));
+      const delegated = yield* events.instance
+        .subscribe(subscribeInput(), {
+          owner,
+          authorization: "Bearer delegated-fixture",
+        })
+        .pipe(Effect.result);
+      expect(delegated._tag).toBe("Failure");
+
+      let available = true;
+      const flaky = service(204, () =>
+        available ? Effect.succeed(true) : Effect.fail(new Error("Executor down")),
+      );
+      yield* flaky.instance.subscribe(subscribeInput(), {
+        owner,
+        authorization: "Bearer delegated-fixture",
+      });
+      yield* flaky.instance.subscribe(subscribeInput("archive"));
+      yield* flaky.instance.recordEmail(email("<inbox@example.test>"));
+      yield* flaky.instance.recordEmail(email("<archive@example.test>", "Archive"));
+      available = false;
+      expect(yield* flaky.instance.drain()).toBe(2);
+      expect(flaky.sent).toHaveLength(1);
+      const rows = yield* EventPersistence.deliveries();
+      expect(rows.find((row) => row.data.folder === "inbox")).toMatchObject({
+        status: "pending",
+        withheld: "authorization_unavailable",
+        attempts: 0,
+      });
+      expect(rows.find((row) => row.data.folder === "archive")?.status).toBe(
+        "delivered",
+      );
+      available = true;
+      yield* TestClock.adjust("61 seconds");
+      yield* flaky.instance.drain();
+      expect(flaky.sent).toHaveLength(2);
+    }),
+  );
+
+  it.effect("serves the status tool from the service without secrets", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      yield* EventRequestEntity.deleteAll();
+      const base = { emailControls: {} } as unknown as McpRuntime;
+      const run = (runtime: McpRuntime) =>
+        createEmailEventTools(runtime)[0]!.execute({}) as unknown as Effect.Effect<
+          Record<string, unknown>,
+          unknown,
+          Docstore
+        >;
+      expect(yield* run(base)).toMatchObject({ enabled: false, subscriptions: [] });
+      const events = service().instance;
+      yield* events.subscribe(subscribeInput());
+      yield* events.recordEmail(email("<tool@example.test>"));
+      const status = yield* run({ ...base, events });
+      expect(status).toMatchObject({
+        enabled: true,
+        subscriptionTotal: 1,
+        subscriptions: [{ folder: "inbox", callbackHost: "chatgpt.example.com" }],
+        deliveries: { pending: 1, withheld: 0 },
+      });
+      expect(JSON.stringify(status)).not.toContain("<tool@example.test>");
+      expect(JSON.stringify(status)).not.toContain(secret);
+    }),
+  );
+
+  it.effect("records bounded event requests without credentials or paths", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventRequestEntity.deleteAll();
+      const owner = `executor:${"b".repeat(64)}`;
+      const principal = { owner, authorization: "Bearer delegated-fixture" };
+      const events = service(204, () => Effect.succeed(true)).instance;
+      yield* events.recordDiscovery(owner);
+      yield* TestClock.adjust("1 second");
+      yield* events.subscribe(subscribeInput(), principal);
+      yield* TestClock.adjust("1 second");
+      yield* events.subscribe(subscribeInput(), principal);
+      yield* TestClock.adjust("1 second");
+      const rejected = yield* events
+        .subscribe(
+          {
+            ...subscribeInput("archive"),
+            delivery: { mode: "webhook", url: "http://plain.example.com/x", secret },
+          },
+          principal,
+        )
+        .pipe(Effect.result);
+      expect(rejected._tag).toBe("Failure");
+      yield* TestClock.adjust("1 second");
+      const removal = {
+        name: "email.received",
+        arguments: { folder: "inbox" as const },
+        delivery: { mode: "webhook" as const, url },
+      };
+      yield* events.unsubscribe(removal, principal);
+      yield* TestClock.adjust("1 second");
+      yield* events.unsubscribe(removal, principal);
+
+      const status = yield* events.status();
+      expect(
+        status.requests.map(({ method, outcome }) => `${method} ${outcome}`),
+      ).toEqual([
+        "events/unsubscribe not_found",
+        "events/unsubscribe removed",
+        "events/subscribe invalid_callback",
+        "events/subscribe refreshed",
+        "events/subscribe accepted",
+        "events/list listed",
+      ]);
+      expect(status.requests[4]).toMatchObject({
+        owner: `executor:${"b".repeat(12)}`,
+        folder: "inbox",
+        callbackHost: "chatgpt.example.com",
+      });
+      const text = JSON.stringify(status);
+      for (const hidden of [secret, "/events/callback", "delegated-fixture", owner]) {
+        expect(text).not.toContain(hidden);
+      }
+
+      for (let index = 0; index < 35; index++) yield* events.recordDiscovery();
+      expect(yield* EventPersistence.requests()).toHaveLength(30);
     }),
   );
 
@@ -247,7 +444,11 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
         yield* events.subscribe(subscribeInput());
         yield* events.recordEmail(email());
         yield* events.drain();
-        expect((yield* EventPersistence.deliveries())[0]?.status).toBe(expected);
+        expect((yield* EventPersistence.deliveries())[0]).toMatchObject({
+          status: expected,
+          lastStatus: status,
+          failure: expected === "failed" ? "rejected" : undefined,
+        });
       }
       yield* EventSubscriptionEntity.deleteAll();
       yield* EventReceiptEntity.deleteAll();
@@ -259,7 +460,10 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
       yield* EventPersistence.upsertDelivery({ ...queued, attempts: 8 });
       yield* events.instance.drain();
       expect(events.sent).toHaveLength(0);
-      expect((yield* EventPersistence.delivery(queued.id))?.status).toBe("failed");
+      expect(yield* EventPersistence.delivery(queued.id)).toMatchObject({
+        status: "failed",
+        failure: "attempts_exhausted",
+      });
     }),
   );
 });

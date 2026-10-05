@@ -13,7 +13,10 @@ import { isArchiveActionMessageEffect } from "../../email/archive/persistence.js
 import {
   EventPersistence,
   type EventDelivery,
+  type EventDeliveryFailure,
+  type EventDeliveryWithhold,
   type EventFolder,
+  type EventRequestMethod,
   type EventSubscription,
 } from "./persistence.js";
 import {
@@ -30,6 +33,13 @@ const VERIFY_CACHE_MS = 60 * 60_000;
 const ROTATION_MS = 5 * 60_000;
 const MAX_ATTEMPTS = 8;
 const MAX_DUE_PER_PASS = 10;
+/** How long a subscription's deliveries wait before rechecking authorization. */
+const WITHHELD_RECHECK_MS: Record<EventDeliveryWithhold, number> = {
+  authorization_invalid: 15 * 60_000,
+  authorization_unavailable: 60_000,
+};
+const STATUS_RECENT_DELIVERIES = 10;
+const STATUS_SUBSCRIPTIONS = 20;
 
 export class EventSubscriptionError extends Data.TaggedError("EventSubscriptionError")<{
   readonly reason:
@@ -77,6 +87,35 @@ export function canonicalEventArguments(input: { folder: EventFolder }): string 
 function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
+
+/** A short, non-secret label that distinguishes delegated clients. */
+function ownerLabel(owner: string): string {
+  return owner.startsWith("executor:") ? owner.slice(0, 21) : "direct";
+}
+
+function callbackHost(url: string | undefined): string | undefined {
+  if (!url || !URL.canParse(url)) return undefined;
+  return new URL(url).hostname.slice(0, 253) || undefined;
+}
+
+const iso = (time: number) => new Date(time).toISOString();
+
+/** A refresh stored a validating token, so withheld events can be attempted now. */
+const releaseWithheld = Effect.fn("Events.releaseWithheld")(function* (
+  subscription: Pick<EventSubscription, "id" | "generation">,
+  now: number,
+) {
+  for (const row of yield* EventPersistence.deliveries()) {
+    if (
+      row.subscriptionId === subscription.id &&
+      row.subscriptionGeneration === subscription.generation &&
+      row.status === "pending" &&
+      row.withheld
+    ) {
+      yield* EventPersistence.upsertDelivery({ ...row, nextAttemptAt: now });
+    }
+  }
+});
 
 /** Owner identity and encryption keys derive from the MCP bearer token, never stored. */
 export class EmailEventService {
@@ -147,17 +186,57 @@ export class EmailEventService {
     return `sub_${createHmac("sha256", this.key).update(material).digest("hex").slice(0, 40)}`;
   }
 
+  private authorizePrincipal(owner: string, principal?: EventPrincipal) {
+    return Effect.gen({ self: this }, function* () {
+      if (
+        principal &&
+        (!this.authorizeOwner ||
+          !(yield* this.authorizeOwner(owner, principal.authorization)))
+      ) {
+        return yield* new EventSubscriptionError({ reason: "invalid_principal" });
+      }
+    });
+  }
+
+  /** Best effort: diagnostics must never fail or delay an event request. */
+  private recordRequest(
+    method: EventRequestMethod,
+    owner: string,
+    outcome: string,
+    folder?: string,
+    url?: string,
+  ) {
+    return Effect.gen(function* () {
+      yield* EventPersistence.recordRequest({
+        id: randomUUID(),
+        at: yield* Clock.currentTimeMillis,
+        method,
+        owner: ownerLabel(owner),
+        ...(folder === "inbox" || folder === "archive" ? { folder } : {}),
+        ...(callbackHost(url) ? { callbackHost: callbackHost(url) } : {}),
+        outcome,
+      });
+    }).pipe(Effect.ignoreCause);
+  }
+
+  /** Records that a client read the event catalog; `owner` is a delegated owner. */
+  recordDiscovery(owner?: string) {
+    return this.recordRequest("events/list", owner ?? this.owner, "listed");
+  }
+
   subscribe(input: SubscribeInput, principal?: EventPrincipal) {
+    const owner = principal?.owner ?? this.owner;
+    const record = (outcome: string) =>
+      this.recordRequest(
+        "events/subscribe",
+        owner,
+        outcome,
+        input.arguments.folder,
+        input.delivery.url,
+      );
     return this.semaphore.withPermits(1)(
       Effect.gen({ self: this }, function* () {
-        const owner = principal?.owner ?? this.owner;
-        if (
-          principal &&
-          (!this.authorizeOwner ||
-            !(yield* this.authorizeOwner(owner, principal.authorization)))
-        ) {
-          return yield* new EventSubscriptionError({ reason: "invalid_principal" });
-        }
+        yield* this.authorizePrincipal(owner, principal);
         if (input.name !== EVENT_NAME) {
           return yield* new EventSubscriptionError({ reason: "invalid_event" });
         }
@@ -227,41 +306,60 @@ export class EmailEventService {
           verifiedAt: recentlyVerified ? previous.verifiedAt : now,
         };
         yield* EventPersistence.upsertSubscription(row);
+        if (principal) yield* releaseWithheld(row, now).pipe(Effect.ignoreCause);
         return {
-          id,
-          refreshBefore: new Date(row.expiresAt).toISOString(),
-          cursor: null,
-          truncated: false,
+          refreshed: previous?.owner === owner,
+          result: {
+            id,
+            refreshBefore: new Date(row.expiresAt).toISOString(),
+            cursor: null,
+            truncated: false,
+          },
         };
-      }),
+      }).pipe(
+        Effect.tap(({ refreshed }) => record(refreshed ? "refreshed" : "accepted")),
+        Effect.tapError((error) =>
+          record(error instanceof EventSubscriptionError ? error.reason : "error"),
+        ),
+        Effect.map(({ result }) => result),
+      ),
     );
   }
 
   unsubscribe(input: UnsubscribeInput, principal?: EventPrincipal) {
+    const owner = principal?.owner ?? this.owner;
+    const record = (outcome: string) =>
+      this.recordRequest(
+        "events/unsubscribe",
+        owner,
+        outcome,
+        input.arguments.folder,
+        input.delivery.url,
+      );
     return this.semaphore.withPermits(1)(
       Effect.gen({ self: this }, function* () {
-        const owner = principal?.owner ?? this.owner;
-        if (
-          principal &&
-          (!this.authorizeOwner ||
-            !(yield* this.authorizeOwner(owner, principal.authorization)))
-        ) {
-          return yield* new EventSubscriptionError({ reason: "invalid_principal" });
-        }
-        if (input.name !== EVENT_NAME) return {};
+        yield* this.authorizePrincipal(owner, principal);
+        if (input.name !== EVENT_NAME) return "not_found";
         if (input.arguments.folder !== "inbox" && input.arguments.folder !== "archive")
-          return {};
+          return "not_found";
         let url: string;
         try {
           url = validateCallbackUrl(input.delivery.url).href;
         } catch {
-          return {};
+          return "not_found";
         }
         const id = this.subscriptionId({ ...input, owner, url });
         const prior = yield* EventPersistence.subscription(id);
-        if (prior?.owner === owner) yield* EventPersistence.deleteSubscription(id);
-        return {};
-      }),
+        if (prior?.owner !== owner) return "not_found";
+        yield* EventPersistence.deleteSubscription(id);
+        return "removed";
+      }).pipe(
+        Effect.tap(record),
+        Effect.tapError((error) =>
+          record(error instanceof EventSubscriptionError ? error.reason : "error"),
+        ),
+        Effect.as({}),
+      ),
     );
   }
 
@@ -323,22 +421,56 @@ export class EmailEventService {
     return this.semaphore.withPermits(1)(
       Effect.gen({ self: this }, function* () {
         const now = yield* Clock.currentTimeMillis;
-        const due = (yield* EventPersistence.deliveries())
-          .filter((row) => row.status === "pending" && row.nextAttemptAt <= now)
+        const pending = (yield* EventPersistence.deliveries()).filter(
+          (row) => row.status === "pending",
+        );
+        const due = pending
+          .filter((row) => row.nextAttemptAt <= now)
           .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)
           .slice(0, MAX_DUE_PER_PASS);
-        for (const row of due) yield* this.deliverOne(row);
+        // Check each delegated subscription at most once per pass. A held
+        // subscription defers all of its rows together so it cannot crowd out
+        // other subscriptions or abort the pass.
+        const authorized = new Set<string>();
+        const withheld = new Set<string>();
+        for (const row of due) {
+          if (withheld.has(row.subscriptionId)) continue;
+          const reason = yield* this.deliverOne(row, authorized);
+          if (!reason) continue;
+          withheld.add(row.subscriptionId);
+          for (const held of pending) {
+            if (held.subscriptionId !== row.subscriptionId) continue;
+            yield* EventPersistence.upsertDelivery({
+              ...held,
+              withheld: reason,
+              nextAttemptAt: Math.max(
+                held.nextAttemptAt,
+                now + WITHHELD_RECHECK_MS[reason],
+              ),
+              updatedAt: now,
+            });
+          }
+        }
         return due.length;
       }),
     );
   }
 
-  private deliverOne(row: EventDelivery) {
+  /** Returns why the row's subscription is withheld, if it is. */
+  private deliverOne(row: EventDelivery, authorized: Set<string>) {
     return Effect.gen({ self: this }, function* () {
       const now = yield* Clock.currentTimeMillis;
+      const fail = (failure: EventDeliveryFailure) =>
+        EventPersistence.upsertDelivery({
+          ...row,
+          status: "failed",
+          failure,
+          withheld: undefined,
+          updatedAt: now,
+        }).pipe(Effect.as(undefined));
+      if (row.attempts >= MAX_ATTEMPTS) return yield* fail("attempts_exhausted");
       const subscription = yield* EventPersistence.subscription(row.subscriptionId);
       if (
-        row.attempts >= MAX_ATTEMPTS ||
         !subscription ||
         subscription.keyId !== this.keyId ||
         subscription.owner !== row.owner ||
@@ -346,42 +478,34 @@ export class EmailEventService {
         subscription.expiresAt <= now ||
         subscription.folder !== row.data.folder
       ) {
-        yield* EventPersistence.upsertDelivery({
-          ...row,
-          status: "failed",
-          updatedAt: now,
-        });
-        return;
+        return yield* fail("subscription_inactive");
       }
       if (subscription.owner.startsWith("executor:")) {
         const authorization =
           subscription.encryptedAuthorization &&
           this.openSafe(subscription.encryptedAuthorization);
-        if (
-          !authorization ||
-          !this.authorizeOwner ||
-          !(yield* this.authorizeOwner(subscription.owner, authorization))
-        ) {
-          yield* EventPersistence.upsertDelivery({
-            ...row,
-            status: "failed",
-            updatedAt: now,
-          });
-          return;
+        if (!authorization || !this.authorizeOwner) {
+          return yield* fail("credentials_unavailable");
+        }
+        // Executor access tokens expire hourly. Never deliver without one that
+        // validates now; hold the event until a refresh stores a valid token or
+        // the subscription ends.
+        if (!authorized.has(subscription.id)) {
+          const check = yield* this.authorizeOwner(
+            subscription.owner,
+            authorization,
+          ).pipe(Effect.result);
+          if (check._tag === "Failure") return "authorization_unavailable" as const;
+          if (!check.success) return "authorization_invalid" as const;
+          authorized.add(subscription.id);
         }
       }
       const url = this.openSafe(subscription.encryptedUrl);
       const secret = this.openSafe(subscription.encryptedSecret);
-      if (!url || !secret) {
-        yield* EventPersistence.upsertDelivery({
-          ...row,
-          status: "failed",
-          updatedAt: now,
-        });
-        return;
-      }
+      if (!url || !secret) return yield* fail("credentials_unavailable");
       const claimed: EventDelivery = {
         ...row,
+        withheld: undefined,
         attempts: row.attempts + 1,
         nextAttemptAt: now + Math.min(6 * 60 * 60_000, 30_000 * 2 ** row.attempts),
         updatedAt: now,
@@ -408,22 +532,86 @@ export class EmailEventService {
         })
         .pipe(Effect.result);
       const status = response._tag === "Success" ? response.success.status : undefined;
+      const rejected =
+        status !== undefined &&
+        status >= 300 &&
+        status < 500 &&
+        status !== 408 &&
+        status !== 429;
+      const delivered = status !== undefined && status >= 200 && status < 300;
+      const exhausted = !delivered && !rejected && claimed.attempts >= MAX_ATTEMPTS;
       yield* EventPersistence.upsertDelivery({
         ...claimed,
-        status:
-          status !== undefined && status >= 200 && status < 300
-            ? "delivered"
-            : (status !== undefined &&
-                  status >= 300 &&
-                  status < 500 &&
-                  status !== 408 &&
-                  status !== 429) ||
-                claimed.attempts >= MAX_ATTEMPTS
-              ? "failed"
-              : "pending",
+        status: delivered ? "delivered" : rejected || exhausted ? "failed" : "pending",
         lastStatus: status,
+        lastError: response._tag === "Failure" ? response.failure.reason : undefined,
+        failure: rejected ? "rejected" : exhausted ? "attempts_exhausted" : undefined,
         updatedAt: yield* Clock.currentTimeMillis,
       });
+    });
+  }
+
+  /** Bounded, secret-free view of every event boundary Omni controls. */
+  status() {
+    return Effect.gen({ self: this }, function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const subscriptions = yield* EventPersistence.subscriptions();
+      const deliveries = yield* EventPersistence.deliveries();
+      const recent = [...deliveries]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, STATUS_RECENT_DELIVERIES);
+      return {
+        checkedAt: iso(now),
+        subscriptionTotal: subscriptions.length,
+        subscriptions: subscriptions
+          .sort((a, b) => b.expiresAt - a.expiresAt)
+          .slice(0, STATUS_SUBSCRIPTIONS)
+          .map((row) => ({
+            id: row.id,
+            folder: row.folder,
+            owner: ownerLabel(row.owner),
+            callbackHost:
+              row.keyId === this.keyId
+                ? (callbackHost(this.openSafe(row.encryptedUrl)) ?? null)
+                : null,
+            state:
+              row.keyId !== this.keyId
+                ? ("stale_key" as const)
+                : row.expiresAt <= now
+                  ? ("expired" as const)
+                  : ("active" as const),
+            expiresAt: iso(row.expiresAt),
+            verifiedAt: iso(row.verifiedAt),
+          })),
+        deliveries: {
+          pending: deliveries.filter((row) => row.status === "pending").length,
+          withheld: deliveries.filter((row) => row.status === "pending" && row.withheld)
+            .length,
+          delivered: deliveries.filter((row) => row.status === "delivered").length,
+          failed: deliveries.filter((row) => row.status === "failed").length,
+          recent: recent.map((row) => ({
+            eventId: row.eventId,
+            subscriptionId: row.subscriptionId,
+            folder: row.data.folder,
+            status: row.status,
+            attempts: row.attempts,
+            lastStatus: row.lastStatus ?? null,
+            lastError: row.lastError ?? null,
+            failure: row.failure ?? null,
+            withheld: row.withheld ?? null,
+            createdAt: iso(row.createdAt),
+            updatedAt: iso(row.updatedAt),
+          })),
+        },
+        requests: (yield* EventPersistence.requests()).map((row) => ({
+          at: iso(row.at),
+          method: row.method,
+          owner: row.owner,
+          folder: row.folder ?? null,
+          callbackHost: row.callbackHost ?? null,
+          outcome: row.outcome,
+        })),
+      };
     });
   }
 
