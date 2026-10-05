@@ -2373,3 +2373,305 @@ export function sendPodcastRecommendationFeedback(
     },
   );
 }
+
+// ===== MCP and Claude Code activity =====
+
+export type McpCallStatus = "running" | "ok" | "error" | "interrupted";
+
+/** "allow" | "require_approval" | "block"; kept open so a new policy never blanks the page. */
+export type McpPolicy = string;
+
+export interface McpCall {
+  callId: string;
+  tool: string;
+  title: string;
+  recommendedPolicy: McpPolicy;
+  readOnly: boolean;
+  startedAt: number;
+  finishedAt: number | null;
+  durationMs: number | null;
+  status: McpCallStatus;
+  error: string | null;
+  /** Bounded JSON; secret-looking keys arrive as "[redacted]". */
+  input: unknown;
+  /** Bounded JSON, recorded only for claude_* tools. */
+  output: unknown;
+}
+
+export interface McpToolSummary {
+  tool: string;
+  title: string;
+  calls: number;
+  errors: number;
+  lastAt: number;
+  avgDurationMs: number | null;
+  recommendedPolicy: McpPolicy;
+}
+
+export interface McpActivityResponse {
+  calls: McpCall[];
+  nextBefore: number | null;
+  summary: {
+    stored: number;
+    last24h: number;
+    errors24h: number;
+    running: number;
+    approvalCalls24h: number;
+  };
+  tools: McpToolSummary[];
+  retention: { maxCalls: number };
+}
+
+export interface ClaudeLinkStatus {
+  configured: boolean;
+  online: boolean;
+  disabled: boolean;
+  host: string | null;
+  lastSeenAt: string | null;
+  pendingJobs: number;
+}
+
+export interface ClaudeSession {
+  id: string | null;
+  sessionId: string;
+  kind: string | null;
+  title: string | null;
+  cwd: string | null;
+  project: string | null;
+  status: string;
+  state: string | null;
+  startedAt: string | null;
+  revision: number;
+  lastAssistant: string | null;
+}
+
+export interface ClaudeTranscriptItem {
+  index: number;
+  kind: string;
+  timestamp: string | null;
+  text: string | null;
+  truncated: boolean;
+  tool: string | null;
+  input: string | null;
+  isError: boolean | null;
+}
+
+export interface ClaudeTranscript {
+  sessionId: string;
+  items: ClaudeTranscriptItem[];
+  revision: number;
+  nextCursor: number | null;
+  hasMore: boolean;
+}
+
+export interface ClaudeActivityResponse {
+  link: ClaudeLinkStatus;
+  actions: McpCall[];
+  retention: { maxCalls: number };
+}
+
+/**
+ * The Mac link answered 503 (not configured, offline, disabled) or the Mac
+ * reported a failure (502). Carries the server's message and code so pages can
+ * explain the link state instead of showing a generic error.
+ */
+export class ClaudeLinkError extends Data.TaggedError("ClaudeLinkError")<{
+  readonly status: number;
+  readonly code: string;
+  readonly message: string;
+}> {}
+
+const McpCallSchema = Schema.Struct({
+  callId: Schema.String,
+  tool: Schema.String,
+  title: Schema.String,
+  recommendedPolicy: Schema.String,
+  readOnly: Schema.Boolean,
+  startedAt: Schema.Number,
+  finishedAt: Schema.NullOr(Schema.Number),
+  durationMs: Schema.NullOr(Schema.Number),
+  status: Schema.Literals(["running", "ok", "error", "interrupted"]),
+  error: Schema.NullOr(Schema.String),
+  input: Schema.Unknown,
+  output: Schema.Unknown,
+});
+
+const RetentionSchema = Schema.Struct({ maxCalls: Schema.Number });
+
+const McpActivityResponseSchema = browserSchema<McpActivityResponse>(
+  Schema.Struct({
+    calls: Schema.Array(McpCallSchema),
+    nextBefore: Schema.NullOr(Schema.Number),
+    summary: Schema.Struct({
+      stored: Schema.Number,
+      last24h: Schema.Number,
+      errors24h: Schema.Number,
+      running: Schema.Number,
+      approvalCalls24h: Schema.Number,
+    }),
+    tools: Schema.Array(
+      Schema.Struct({
+        tool: Schema.String,
+        title: Schema.String,
+        calls: Schema.Number,
+        errors: Schema.Number,
+        lastAt: Schema.Number,
+        avgDurationMs: Schema.NullOr(Schema.Number),
+        recommendedPolicy: Schema.String,
+      }),
+    ),
+    retention: RetentionSchema,
+  }),
+);
+
+const ClaudeLinkStatusSchema = Schema.Struct({
+  configured: Schema.Boolean,
+  online: Schema.Boolean,
+  disabled: Schema.Boolean,
+  host: Schema.NullOr(Schema.String),
+  lastSeenAt: Schema.NullOr(Schema.String),
+  pendingJobs: Schema.Number,
+});
+
+const ClaudeSessionSchema = Schema.Struct({
+  id: Schema.NullOr(Schema.String),
+  sessionId: Schema.String,
+  kind: Schema.NullOr(Schema.String),
+  title: Schema.NullOr(Schema.String),
+  cwd: Schema.NullOr(Schema.String),
+  project: Schema.NullOr(Schema.String),
+  status: Schema.String,
+  state: Schema.NullOr(Schema.String),
+  startedAt: Schema.NullOr(Schema.String),
+  revision: Schema.Number,
+  lastAssistant: Schema.NullOr(Schema.String),
+});
+
+const ClaudeTranscriptSchema = browserSchema<ClaudeTranscript>(
+  Schema.Struct({
+    sessionId: Schema.String,
+    items: Schema.Array(
+      Schema.Struct({
+        index: Schema.Number,
+        kind: Schema.String,
+        timestamp: Schema.NullOr(Schema.String),
+        text: Schema.NullOr(Schema.String),
+        truncated: Schema.Boolean,
+        tool: Schema.NullOr(Schema.String),
+        input: Schema.NullOr(Schema.String),
+        isError: Schema.NullOr(Schema.Boolean),
+      }),
+    ),
+    revision: Schema.Number,
+    nextCursor: Schema.NullOr(Schema.Number),
+    hasMore: Schema.Boolean,
+  }),
+);
+
+const ClaudeActivityResponseSchema = browserSchema<ClaudeActivityResponse>(
+  Schema.Struct({
+    link: ClaudeLinkStatusSchema,
+    actions: Schema.Array(McpCallSchema),
+    retention: RetentionSchema,
+  }),
+);
+
+const LinkErrorBodySchema = Schema.Struct({
+  error: Schema.String,
+  code: Schema.optional(Schema.String),
+});
+
+/**
+ * Live Mac queries skip the GET restart retry: a 503 here usually means the
+ * link is offline or disabled, and the page polls again on its own schedule.
+ */
+const readLinkError = (response: Response): Effect.Effect<ClaudeLinkError> =>
+  Effect.tryPromise({
+    try: () => response.clone().json() as Promise<unknown>,
+    catch: () => undefined,
+  }).pipe(
+    Effect.flatMap((body) => Schema.decodeUnknownEffect(LinkErrorBodySchema)(body)),
+    Effect.map(
+      (body) =>
+        new ClaudeLinkError({
+          status: response.status,
+          code: body.code ?? "unavailable",
+          message: body.error,
+        }),
+    ),
+    Effect.catch(() =>
+      Effect.succeed(
+        new ClaudeLinkError({
+          status: response.status,
+          code: "unavailable",
+          message: `HTTP ${response.status}: ${response.statusText}`,
+        }),
+      ),
+    ),
+  );
+
+/**
+ * Live Mac queries skip the GET restart retry: a 503 here usually means the
+ * link is offline or disabled, and the page polls again on its own schedule.
+ */
+const claudeLinkGet = <A>(
+  path: string,
+  schema: Schema.Decoder<A, never>,
+): Effect.Effect<A, ApiClientError | ClaudeLinkError> =>
+  fetchResponse(path).pipe(
+    Effect.flatMap((response): Effect.Effect<A, ApiClientError | ClaudeLinkError> =>
+      response.status === 502 || response.status === 503
+        ? readLinkError(response).pipe(Effect.flatMap(Effect.fail))
+        : decodeResponse(path, response, schema),
+    ),
+  );
+
+export function fetchMcpActivity(options?: {
+  limit?: number;
+  tool?: string;
+  status?: McpCallStatus;
+  before?: number;
+}): Effect.Effect<McpActivityResponse, ApiClientError> {
+  const params = new URLSearchParams();
+  if (options?.limit !== undefined) params.set("limit", String(options.limit));
+  if (options?.tool) params.set("tool", options.tool);
+  if (options?.status) params.set("status", options.status);
+  if (options?.before !== undefined) params.set("before", String(options.before));
+  const query = params.toString();
+  return apiGet(
+    `/api/mcp/activity${query ? `?${query}` : ""}`,
+    McpActivityResponseSchema,
+  );
+}
+
+export function fetchClaudeActivity(
+  limit = 200,
+): Effect.Effect<ClaudeActivityResponse, ApiClientError> {
+  return apiGet(`/api/claude/activity?limit=${limit}`, ClaudeActivityResponseSchema);
+}
+
+export function fetchClaudeSessions(options?: {
+  includeStopped?: boolean;
+  limit?: number;
+}): Effect.Effect<{ sessions: ClaudeSession[] }, ApiClientError | ClaudeLinkError> {
+  const params = new URLSearchParams({
+    includeStopped: String(options?.includeStopped ?? false),
+    limit: String(options?.limit ?? 25),
+  });
+  return claudeLinkGet(
+    `/api/claude/sessions?${params.toString()}`,
+    listResponseSchema("sessions", browserSchema<ClaudeSession>(ClaudeSessionSchema)),
+  );
+}
+
+export function fetchClaudeTranscript(
+  sessionId: string,
+  options?: { limit?: number; cursor?: number },
+): Effect.Effect<ClaudeTranscript, ApiClientError | ClaudeLinkError> {
+  const params = new URLSearchParams({ limit: String(options?.limit ?? 40) });
+  if (options?.cursor !== undefined) params.set("cursor", String(options.cursor));
+  return claudeLinkGet(
+    `/api/claude/sessions/${encodeURIComponent(sessionId)}/transcript?${params.toString()}`,
+    ClaudeTranscriptSchema,
+  );
+}

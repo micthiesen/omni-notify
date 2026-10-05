@@ -1,5 +1,6 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { Effect } from "effect";
+import { withCallRecording } from "./activity.js";
 import { hasValidBearerToken, unauthorizedMcpResponse } from "./auth.js";
 import { registerEventMethods } from "./events/protocol.js";
 import type { McpRuntime } from "./runtime.js";
@@ -32,6 +33,7 @@ export function createOmniMcpHandler(
   token: string,
 ): OmniMcpHandler {
   const tools = createToolDefinitions(runtime);
+  const activityLogger = runtime.logger.extend("Activity");
   const names = new Set<string>();
   for (const tool of tools) {
     if (names.has(tool.name)) throw new Error(`Duplicate MCP tool name: ${tool.name}`);
@@ -57,7 +59,7 @@ export function createOmniMcpHandler(
           },
           (input) =>
             runtime.effectRunner.runPromise(
-              tool.execute(input).pipe(
+              withCallRecording(tool, input, activityLogger, tool.execute(input)).pipe(
                 Effect.match({
                   onFailure: failedToolResult,
                   onSuccess: tool.formatResult ?? successfulToolResult,

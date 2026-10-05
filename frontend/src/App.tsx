@@ -26,6 +26,8 @@ const CostsPage = lazy(() => import("./pages/CostsPage"));
 const WorkspacesPage = lazy(() => import("./pages/WorkspacesPage"));
 const OperationsPage = lazy(() => import("./pages/OperationsPage"));
 const RemindersPage = lazy(() => import("./pages/RemindersPage"));
+const McpPage = lazy(() => import("./pages/McpPage"));
+const ClaudePage = lazy(() => import("./pages/ClaudePage"));
 
 function normalizePath(path: string): string {
   if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
@@ -46,6 +48,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/costs": "Costs",
   "/workspaces": "Workspaces",
   "/operations": "Operations",
+  "/mcp": "MCP Activity",
+  "/claude": "Claude Code",
 };
 
 export default function App() {
@@ -200,6 +204,20 @@ export default function App() {
         page = (
           <Suspense fallback={<div className="loading">Loading…</div>}>
             <OperationsPage />
+          </Suspense>
+        );
+        break;
+      case "/mcp":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <McpPage />
+          </Suspense>
+        );
+        break;
+      case "/claude":
+        page = (
+          <Suspense fallback={<div className="loading">Loading…</div>}>
+            <ClaudePage />
           </Suspense>
         );
         break;

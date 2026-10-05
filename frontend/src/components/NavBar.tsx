@@ -14,7 +14,9 @@ type IconName =
   | "email"
   | "pets"
   | "costs"
-  | "data";
+  | "data"
+  | "claude"
+  | "mcp";
 
 interface NavItem {
   to: string;
@@ -47,6 +49,8 @@ const MORE_LINKS: NavItem[] = [
   { to: "/pets", label: "Pets", icon: "pets" },
   { to: "/costs", label: "Costs", icon: "costs" },
   { to: "/data", label: "Data", icon: "data" },
+  { to: "/claude", label: "Claude", icon: "claude" },
+  { to: "/mcp", label: "MCP", icon: "mcp" },
 ];
 
 function isPathActive(path: string, item: NavItem): boolean {
@@ -127,6 +131,21 @@ function NavIcon({ name }: { name: IconName }) {
         <ellipse cx="12" cy="5" rx="8" ry="3" />
         <path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
         <path d="M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" />
+      </>
+    ),
+    claude: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="m7 9 3 3-3 3" />
+        <path d="M13 15h4" />
+      </>
+    ),
+    mcp: (
+      <>
+        <circle cx="6" cy="12" r="2.5" />
+        <circle cx="18" cy="6" r="2.5" />
+        <circle cx="18" cy="18" r="2.5" />
+        <path d="M8.3 10.9 15.7 7.1M8.3 13.1l7.4 3.8" />
       </>
     ),
   };

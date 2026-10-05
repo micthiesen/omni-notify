@@ -1,4 +1,5 @@
 import { runMain } from "@micthiesen/mitools/cli";
+import { markInterruptedCalls } from "./mcp/activity.js";
 import { exponentialBackoff } from "@micthiesen/mitools/async";
 import { Entity } from "@micthiesen/mitools/entities";
 import { Logger, type NamedLogger } from "@micthiesen/mitools/logging";
@@ -340,6 +341,10 @@ const program = Effect.scoped(
     yield* logger.info(`Server iCloud Reminders: ${(yield* reminders.status()).phase}`);
     const registry = new TaskRegistry(logger);
     yield* registry.initializeEffect();
+    const interruptedMcpCalls = yield* markInterruptedCalls();
+    if (interruptedMcpCalls > 0) {
+      yield* logger.warn(`Marked ${interruptedMcpCalls} interrupted MCP call(s)`);
+    }
     yield* Effect.addFinalizer(() => registry.shutdownEffect());
     const emailControls: EmailControls = {};
     const executorEventAuthUrl =

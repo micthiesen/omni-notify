@@ -83,6 +83,7 @@ import {
 import { toTriggerChannels } from "./live-check/triggerChannels.js";
 import { registerOmniMcpRoute } from "./mcp/route.js";
 import { registerDeviceLinkRoutes } from "./device-link/routes.js";
+import { registerMcpActivityRoutes } from "./mcp/activityRoutes.js";
 import { DeviceLinkService } from "./device-link/service.js";
 import {
   effectHandler,
@@ -1099,6 +1100,8 @@ export function startServer(
       );
     }),
   );
+
+  registerMcpActivityRoutes(effectRunner, app, deviceLink);
 
   app.get(
     "/api/costs",

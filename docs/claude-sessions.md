@@ -68,4 +68,11 @@ A typical flow is `start`, then `wait` with the returned revision until
 not sent input; reach those through Remote Control.
 
 Omni logs each forwarded command with its session or project, duration, and
-outcome code, never prompt text.
+outcome code, never prompt text. The `/claude` page shows the link state, the
+Mac's live sessions with transcripts, and every `claude_*` call grouped by
+session, including prompts and results (bounded, see [MCP activity](mcp.md#activity)).
+Its live panels query the Mac read-only through the same link.
+
+Sessions started through `claude-for-dot` are background `claude --bg` processes.
+They do not count against the `capacity` of the project's `claude-rc` Remote
+Control server, which counts only sessions it spawned itself.
