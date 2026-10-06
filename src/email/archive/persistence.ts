@@ -134,6 +134,65 @@ function decodeAction(data: Buffer): ArchiveAction {
   return Schema.decodeUnknownSync(ActionSchema)(decodeDoc<unknown>(data));
 }
 
+/**
+ * Every action ever reserved for a Message-ID. Rows written before the history
+ * key existed only have the latest-action marker, which is read as a one-item
+ * history.
+ */
+function reservationIds(
+  history: Buffer | undefined,
+  marker: Buffer | undefined,
+): string[] {
+  const ids = history
+    ? Schema.decodeUnknownSync(Schema.Array(Schema.String))(decodeDoc<unknown>(history))
+    : [];
+  const latest = marker
+    ? [Schema.decodeUnknownSync(Schema.String)(decodeDoc<unknown>(marker))]
+    : [];
+  return [...new Set([...ids, ...latest])];
+}
+
+/** The exact physical copy: mailbox, UIDVALIDITY, and UID. One account per runtime. */
+function sameSourceCopy(left: ArchiveIdentity, right: ArchiveIdentity): boolean {
+  return (
+    left.folder === right.folder &&
+    left.uidValidity === right.uidValidity &&
+    left.uid === right.uid
+  );
+}
+
+const SETTLED_STATUSES: ReadonlySet<ArchiveActionStatus> = new Set([
+  "archived",
+  "restored",
+  "cancelled",
+  "failed",
+]);
+
+/** No mailbox operation is pending or unproven for this action. */
+export const isSettledArchiveStatus = (status: ArchiveActionStatus) =>
+  SETTLED_STATUSES.has(status);
+
+/**
+ * A Message-ID can name several physical copies. Each copy is reserved by its
+ * own source identity, while any unsettled action for the same Message-ID
+ * blocks a sibling: recovery reconciles by Message-ID and content hash, so two
+ * concurrent moves could make each other's outcome ambiguous.
+ */
+function reservationConflict(
+  previous: ArchiveAction,
+  identity: ArchiveIdentity,
+): string | undefined {
+  if (sameSourceCopy(previous.identity, identity))
+    return previous.status === "restored" ||
+      previous.status === "cancelled" ||
+      previous.status === "failed"
+      ? undefined
+      : "Message already has an archive action";
+  return isSettledArchiveStatus(previous.status)
+    ? undefined
+    : "Another copy with this Message-ID has an unresolved archive action";
+}
+
 export const archiveActionId = (idempotencyKey: string) => digest(idempotencyKey);
 
 export const queueArchiveActionEffect = Effect.fn("EmailArchive.queue")(function* (
@@ -166,20 +225,13 @@ export const queueArchiveActionEffect = Effect.fn("EmailArchive.queue")(function
         return action;
       }
       const marker = tx.getRawRow(markerKey(identity.messageId), now);
-      if (marker) {
-        const previousId = Schema.decodeUnknownSync(Schema.String)(
-          decodeDoc<unknown>(marker.data),
-        );
+      const historyRow = tx.getRawRow(historyKey(identity.messageId), now);
+      const history = reservationIds(historyRow?.data, marker?.data);
+      for (const previousId of history) {
         const previous = tx.getRawRow(actionKey(previousId), now);
-        if (previous) {
-          const previousStatus = decodeAction(previous.data).status;
-          if (
-            previousStatus !== "restored" &&
-            previousStatus !== "cancelled" &&
-            previousStatus !== "failed"
-          )
-            return { error: "Message already has an archive action" };
-        }
+        if (!previous) continue;
+        const conflict = reservationConflict(decodeAction(previous.data), identity);
+        if (conflict) return { error: conflict };
       }
       const action: ArchiveAction = {
         actionId,
@@ -202,14 +254,6 @@ export const queueArchiveActionEffect = Effect.fn("EmailArchive.queue")(function
         { entity: "email-archive-message" },
         now,
       );
-      const historyRow = tx.getRawRow(historyKey(identity.messageId), now);
-      const history = historyRow
-        ? Schema.decodeUnknownSync(Schema.Array(Schema.String))(
-            decodeDoc<unknown>(historyRow.data),
-          )
-        : marker
-          ? [Schema.decodeUnknownSync(Schema.String)(decodeDoc<unknown>(marker.data))]
-          : [];
       tx.upsertDoc(
         historyKey(identity.messageId),
         [...new Set([...history, actionId])],
@@ -293,29 +337,45 @@ function sameLocation(
   );
 }
 
-/** Reserve by Message-ID, but suppress only a move caused by this action. */
+/** All actions recorded for a Message-ID, across every physical copy. */
+export const listArchiveActionsForMessageEffect = Effect.fn(
+  "EmailArchive.listForMessage",
+)(function* (messageId: string) {
+  const docstore = yield* Docstore;
+  const history = yield* docstore.getRawRow(historyKey(messageId));
+  const marker = yield* docstore.getRawRow(markerKey(messageId));
+  const actions: ArchiveAction[] = [];
+  for (const actionId of reservationIds(
+    Option.isSome(history) ? history.value.data : undefined,
+    Option.isSome(marker) ? marker.value.data : undefined,
+  )) {
+    const action = yield* getArchiveActionEffect(actionId);
+    if (action) actions.push(action);
+  }
+  return actions;
+});
+
+/** Suppress only a mailbox event that a recorded action's own move caused. */
 export const isArchiveActionMessageEffect = Effect.fn("EmailArchive.isActionMessage")(
   function* (messageId: string, origin?: ArchiveLocation) {
     if (!origin) return false;
-    const docstore = yield* Docstore;
-    const history = yield* docstore.getRawRow(historyKey(messageId));
-    const actionIds = Option.isSome(history)
-      ? [
-          ...Schema.decodeUnknownSync(Schema.Array(Schema.String))(
-            decodeDoc<unknown>(history.value.data),
-          ),
-        ]
-      : [];
-    if (actionIds.length === 0) {
-      const marker = yield* docstore.getRawRow(markerKey(messageId));
-      if (Option.isNone(marker)) return false;
-      actionIds.push(
-        Schema.decodeUnknownSync(Schema.String)(decodeDoc<unknown>(marker.value.data)),
-      );
-    }
-    for (const actionId of actionIds) {
-      const action = yield* getArchiveActionEffect(actionId);
-      if (!action || sameLocation(origin, action.identity)) continue;
+    const actions = yield* listArchiveActionsForMessageEffect(messageId);
+    // Inbox copies known to predate a restore: every action's source copy and
+    // any earlier completed restore. A restored copy gets a UID above them.
+    const knownInboxUids = actions.flatMap((action) =>
+      [
+        action.identity,
+        action.status === "restored" ? action.restoredLocation : undefined,
+      ]
+        .filter(
+          (location): location is ArchiveLocation =>
+            location?.folder === "INBOX" && location.uidValidity === origin.uidValidity,
+        )
+        .map((location) => location.uid),
+    );
+    const newestKnownInboxUid = Math.max(0, ...knownInboxUids);
+    for (const action of actions) {
+      if (sameLocation(origin, action.identity)) continue;
       if (
         action.status === "queued" ||
         action.status === "cancelled" ||
@@ -334,7 +394,12 @@ export const isArchiveActionMessageEffect = Effect.fn("EmailArchive.isActionMess
         action.status === "restore_claimed" ||
         action.status === "restore_uncertain"
       ) {
-        if (origin.folder === "INBOX") return true;
+        // Without a recorded restore UID, suppress only Inbox UIDs above every
+        // known copy. An unrecorded same-Message-ID copy above them is
+        // indistinguishable from this restore until reconciliation records it.
+        const preexistingCopy =
+          !!action.restoredLocation || origin.uid <= newestKnownInboxUid;
+        if (origin.folder === "INBOX" && !preexistingCopy) return true;
       }
     }
     return false;

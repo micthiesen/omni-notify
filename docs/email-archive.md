@@ -59,7 +59,23 @@ keep their exact reservation and remain read-only on recovery when the result
 cannot be proven. No action reports `archived` or `restored` until the exact
 destination exists and the exact source is absent.
 
-An archive and its restore reserve the Message-ID against duplicate actions.
+A Message-ID can name several physical copies, so each action reserves its
+exact source copy (mailbox, UIDVALIDITY, UID); Omni runs one mail account per
+runtime. A copy with a non-terminal or `archived` action rejects a new
+idempotency key, while a retry with the same key returns the existing receipt.
+A different copy with the same Message-ID, including the same UID under a new
+UIDVALIDITY, can be queued once every other action for that Message-ID is
+`archived`, `restored`, `cancelled`, or `failed`. Restore applies the same
+rule. Recovery identifies copies by Message-ID and MIME hash, so only one copy
+per Message-ID may be in flight or unproven at a time. Reservations are read
+from the per-Message-ID history and legacy latest-action marker, so receipts
+written before this rule need no migration. Duplicate deliveries often have
+identical MIME bytes. The duplicate-destination check, and copy and move
+reconciliation, ignore Archive copies recorded (by Archive UIDVALIDITY and UID)
+as the destination of another `archived` action for the same Message-ID. Any
+other identical Archive copy still blocks the action as possible evidence of
+an earlier uncertain move. Verification uses the MOVE or COPYUID mapping.
+
 The UIDPLUS path suppresses event echoes only at recorded destination UIDs.
 Before a destination UID is known, matching Message-ID alone does not suppress
 another mailbox event. The original Inbox event remains eligible. Ordinary

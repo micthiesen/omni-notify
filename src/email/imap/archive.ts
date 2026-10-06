@@ -11,6 +11,21 @@ export interface ArchiveIdentity extends ArchiveLocation {
   messageId: string;
 }
 
+/**
+ * An archive source with call-time context, never persisted. `claimedCopies`
+ * are verified Archive destinations of other settled actions for the same
+ * Message-ID. Identical duplicate deliveries share MIME bytes, so those copies
+ * are not evidence of an earlier move of this source.
+ */
+export interface ArchiveSourceRequest extends ArchiveIdentity {
+  claimedCopies?: readonly ArchiveLocation[];
+}
+
+const sameArchiveLocation = (left: ArchiveLocation, right: ArchiveLocation) =>
+  left.folder === right.folder &&
+  left.uidValidity === right.uidValidity &&
+  left.uid === right.uid;
+
 export interface ArchiveSnapshot {
   sourceHash: string;
   flags: readonly string[];
@@ -174,7 +189,7 @@ export function discoverArchiveEffect(client: ArchiveClient) {
 
 export function inspectArchiveSourceEffect(
   client: ArchiveClient,
-  identity: ArchiveIdentity,
+  identity: ArchiveSourceRequest,
 ) {
   return Effect.gen(function* () {
     if (identity.folder !== "INBOX")
@@ -200,6 +215,7 @@ export function inspectArchiveSourceEffect(
       archive,
       identity.messageId,
       snapshot.sourceHash,
+      identity.claimedCopies,
     );
     if (existing.length > 0)
       return yield* fail(
@@ -253,7 +269,7 @@ function moveExactEffect(
 
 export function moveArchiveMessageEffect(
   client: ArchiveClient,
-  identity: ArchiveIdentity,
+  identity: ArchiveSourceRequest,
   expectedHash: string,
 ) {
   return Effect.gen(function* () {
@@ -349,6 +365,7 @@ function findExactInFolderEffect(
   folder: string,
   messageId: string,
   expectedHash: string,
+  claimedCopies: readonly ArchiveLocation[] = [],
 ) {
   return inMailboxEffect(client, folder, true, () =>
     Effect.gen(function* () {
@@ -391,11 +408,12 @@ function findExactInFolderEffect(
           sourceHash: contentHash(message.source),
           flags: normalizedFlags(message.flags),
         };
-        if (snapshot.sourceHash === expectedHash)
-          matches.push({
-            destination: { folder, uidValidity: validity, uid },
-            snapshot,
-          });
+        const destination = { folder, uidValidity: validity, uid };
+        if (
+          snapshot.sourceHash === expectedHash &&
+          !claimedCopies.some((claimed) => sameArchiveLocation(claimed, destination))
+        )
+          matches.push({ destination, snapshot });
       }
       return matches;
     }),
@@ -405,7 +423,7 @@ function findExactInFolderEffect(
 /** No mutation: reconcile a possibly lost MOVE response after a restart. */
 export function reconcileArchiveMessageEffect(
   client: ArchiveClient,
-  identity: ArchiveIdentity,
+  identity: ArchiveSourceRequest,
   sourceHash: string,
 ): Effect.Effect<ArchiveReconcileResult, ArchiveImapError> {
   return Effect.gen(function* () {
@@ -420,6 +438,7 @@ export function reconcileArchiveMessageEffect(
       archive,
       identity.messageId,
       sourceHash,
+      identity.claimedCopies,
     );
     if (source?.sourceHash === sourceHash && destinations.length === 0)
       return { state: "not_moved" } as const;
@@ -481,7 +500,7 @@ export function reconcileRestoreMessageEffect(
 /** Only the UIDPLUS path uses these steps. Each call makes at most one mutation. */
 export function copyExactArchiveMessageEffect(
   client: ArchiveClient,
-  source: ArchiveIdentity,
+  source: ArchiveSourceRequest,
   targetFolder: string,
   snapshot: ArchiveSnapshot,
 ) {
@@ -501,6 +520,7 @@ export function copyExactArchiveMessageEffect(
       targetFolder,
       source.messageId,
       snapshot.sourceHash,
+      source.claimedCopies,
     );
     if (existing.length)
       return yield* fail("UID COPY", "Matching destination already exists");
@@ -530,7 +550,7 @@ export function copyExactArchiveMessageEffect(
 /** Read-only recovery after a lost COPY response. Never issues a second COPY. */
 export function reconcileExactCopyEffect(
   client: ArchiveClient,
-  source: ArchiveIdentity,
+  source: ArchiveSourceRequest,
   targetFolder: string,
   snapshot: ArchiveSnapshot,
 ): Effect.Effect<ArchiveReconcileResult, ArchiveImapError> {
@@ -548,6 +568,7 @@ export function reconcileExactCopyEffect(
       targetFolder,
       source.messageId,
       snapshot.sourceHash,
+      source.claimedCopies,
     );
     if (
       matches.length !== 1 ||

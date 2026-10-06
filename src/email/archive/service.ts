@@ -1,11 +1,13 @@
 import { Clock, Effect, Semaphore } from "effect";
 import type { TaskServices } from "../../task-runs/registry.js";
 import type { EmailTransport } from "../types.js";
-import type { ArchiveLocation } from "../imap/archive.js";
+import type { ArchiveLocation, ArchiveSourceRequest } from "../imap/archive.js";
 import { ArchiveActionError, type ArchiveAction } from "./persistence.js";
 import {
   getArchiveActionEffect,
+  isSettledArchiveStatus,
   listArchiveActionsEffect,
+  listArchiveActionsForMessageEffect,
   updateArchiveActionEffect,
 } from "./persistence.js";
 
@@ -71,6 +73,31 @@ function inspectFailureReason(cause: unknown): ArchiveAction["reason"] {
   return "transport_unavailable";
 }
 
+function blocksQueuedSibling(sibling: ArchiveAction, action: ArchiveAction): boolean {
+  if (sibling.actionId === action.actionId || isSettledArchiveStatus(sibling.status))
+    return false;
+  if (sibling.status !== "queued") return true;
+  return (
+    sibling.createdAt < action.createdAt ||
+    (sibling.createdAt === action.createdAt && sibling.actionId < action.actionId)
+  );
+}
+
+/** The forward source plus verified Archive copies owned by settled siblings. */
+const archiveSourceEffect = Effect.fn("EmailArchive.source")(function* (
+  action: ArchiveAction,
+) {
+  const siblings = yield* listArchiveActionsForMessageEffect(action.identity.messageId);
+  const claimedCopies = siblings.flatMap((sibling) =>
+    sibling.actionId !== action.actionId &&
+    sibling.status === "archived" &&
+    sibling.destination
+      ? [sibling.destination]
+      : [],
+  );
+  return { ...action.identity, claimedCopies } satisfies ArchiveSourceRequest;
+});
+
 export const processArchiveActionEffect = Effect.fn("EmailArchive.process")(function* (
   action: ArchiveAction,
   transport: Transport,
@@ -81,7 +108,18 @@ export const processArchiveActionEffect = Effect.fn("EmailArchive.process")(func
     return yield* new ArchiveActionError({
       message: "Active email transport does not support archive actions",
     });
-  const inspected = yield* api.inspect(action.identity).pipe(Effect.result);
+  // Queueing runs outside the workflow lock, so a sibling restore may have
+  // started since. Wait for it to settle. Among queued siblings the oldest
+  // proceeds, so two queued copies never wait on each other.
+  const siblings = yield* listArchiveActionsForMessageEffect(action.identity.messageId);
+  if (siblings.some((sibling) => blocksQueuedSibling(sibling, action))) {
+    const now = yield* Clock.currentTimeMillis;
+    return yield* updateArchiveActionEffect(action.actionId, "queued", "queued", {
+      nextAttemptAt: now + 60_000,
+    });
+  }
+  const source = yield* archiveSourceEffect(action);
+  const inspected = yield* api.inspect(source).pipe(Effect.result);
   if (inspected._tag === "Failure") {
     const reason = inspectFailureReason(inspected.failure);
     const attempts = action.attempts + 1;
@@ -111,7 +149,7 @@ export const processArchiveActionEffect = Effect.fn("EmailArchive.process")(func
       { snapshot, attempts: action.attempts + 1, reason: "copy_uncertain" },
     );
     const copy = yield* copyTransport(transport)!
-      .copy(action.identity, snapshot.targetFolder, snapshot)
+      .copy(source, snapshot.targetFolder, snapshot)
       .pipe(Effect.result);
     return yield* advanceCopyActionEffect(
       claimed,
@@ -127,9 +165,7 @@ export const processArchiveActionEffect = Effect.fn("EmailArchive.process")(func
     { snapshot, reason: "uncertain", attempts: action.attempts + 1 },
   );
   // From this point a crash may have lost the MOVE response. Never retry MOVE.
-  const moved = yield* api
-    .move(action.identity, snapshot.sourceHash)
-    .pipe(Effect.result);
+  const moved = yield* api.move(source, snapshot.sourceHash).pipe(Effect.result);
   if (moved._tag === "Success") {
     const verified = yield* api
       .verify(
@@ -141,7 +177,7 @@ export const processArchiveActionEffect = Effect.fn("EmailArchive.process")(func
       .pipe(Effect.result);
     if (verified._tag === "Success" && verified.success) {
       const confirmed = yield* api
-        .reconcile(action.identity, snapshot.sourceHash)
+        .reconcile(source, snapshot.sourceHash)
         .pipe(Effect.result);
       if (
         confirmed._tag === "Success" &&
@@ -177,7 +213,7 @@ export const reconcileClaimedArchiveEffect = Effect.fn("EmailArchive.reconcile")
         message: "Active email transport does not support archive actions",
       });
     const result = yield* api
-      .reconcile(action.identity, action.snapshot.sourceHash)
+      .reconcile(yield* archiveSourceEffect(action), action.snapshot.sourceHash)
       .pipe(Effect.result);
     if (result._tag === "Failure") {
       if (action.status === "claimed")
@@ -221,6 +257,19 @@ const restoreArchivedActionUnlockedEffect = Effect.fn("EmailArchive.restore")(
     if (action.status !== "archived" || !action.snapshot || !action.destination)
       return yield* new ArchiveActionError({
         message: `Archive action cannot be restored from ${action.status}`,
+      });
+    // Recovery matches by Message-ID and content, so one copy moves at a time.
+    const siblings = yield* listArchiveActionsForMessageEffect(
+      action.identity.messageId,
+    );
+    if (
+      siblings.some(
+        (sibling) =>
+          sibling.actionId !== actionId && !isSettledArchiveStatus(sibling.status),
+      )
+    )
+      return yield* new ArchiveActionError({
+        message: "Another copy with this Message-ID has an unresolved archive action",
       });
     const api = archiveTransport(transport);
     if (!api)
@@ -372,7 +421,7 @@ export const advanceCopyActionEffect = Effect.fn("EmailArchive.advanceCopy")(fun
         ...action.destination,
         messageId: action.identity.messageId,
       }
-    : action.identity;
+    : yield* archiveSourceEffect(action);
   const target = reverse ? "INBOX" : snapshot?.targetFolder;
   if (!api || !snapshot || !source || !target)
     return yield* new ArchiveActionError({

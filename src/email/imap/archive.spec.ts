@@ -338,3 +338,73 @@ describe("verified UIDPLUS fallback", () => {
     expect(spies.messageFlagsAdd).not.toHaveBeenCalled();
   });
 });
+
+describe("identical-bytes duplicate deliveries", () => {
+  const sibling = { folder: "iCloud Archive", uidValidity: "20", uid: 11 };
+  const withSibling = { ...identity, claimedCopies: [sibling] };
+
+  it("archives past a sibling's claimed copy and verifies the new UID", async () => {
+    const { client, spies, folders, message } = fixture();
+    folders["iCloud Archive"].set(11, { ...message, flags: new Set(message.flags) });
+    const snapshot = await Effect.runPromise(
+      inspectArchiveSourceEffect(client, withSibling),
+    );
+    const moved = await Effect.runPromise(
+      moveArchiveMessageEffect(client, withSibling, snapshot.sourceHash),
+    );
+    expect(spies.messageMove).toHaveBeenCalledOnce();
+    expect(moved.destination).toEqual({ ...sibling, uid: 12 });
+    expect(
+      await Effect.runPromise(
+        reconcileArchiveMessageEffect(client, withSibling, snapshot.sourceHash),
+      ),
+    ).toMatchObject({ state: "moved", destination: moved.destination });
+    expect(
+      await Effect.runPromise(
+        reconcileArchiveMessageEffect(client, identity, snapshot.sourceHash),
+      ),
+    ).toEqual({ state: "uncertain" });
+    expect(folders["iCloud Archive"].has(11)).toBe(true);
+  });
+
+  it("copies past a sibling's claimed copy and reconciles to the COPYUID", async () => {
+    const { client, folders, message } = fixture(false, true);
+    folders["iCloud Archive"].set(11, { ...message, flags: new Set(message.flags) });
+    const snapshot = await Effect.runPromise(
+      inspectArchiveSourceEffect(client, withSibling),
+    );
+    const copied = await Effect.runPromise(
+      copyExactArchiveMessageEffect(
+        client,
+        withSibling,
+        snapshot.targetFolder!,
+        snapshot,
+      ),
+    );
+    expect(copied).toEqual({ ...sibling, uid: 12 });
+    expect(
+      await Effect.runPromise(
+        reconcileExactCopyEffect(client, withSibling, snapshot.targetFolder!, snapshot),
+      ),
+    ).toMatchObject({ state: "moved", destination: copied });
+  });
+
+  it("still refuses an unclaimed identical Archive copy", async () => {
+    const { client, spies, folders, message } = fixture();
+    folders["iCloud Archive"].set(11, message);
+    for (const claimedCopies of [
+      [{ ...sibling, uid: 99 }],
+      [{ ...sibling, uidValidity: "19" }],
+    ])
+      await expect(
+        Effect.runPromise(
+          moveArchiveMessageEffect(
+            client,
+            { ...identity, claimedCopies },
+            "unused-hash",
+          ),
+        ),
+      ).rejects.toThrow(/Matching Archive copy already exists/);
+    expect(spies.messageMove).not.toHaveBeenCalled();
+  });
+});

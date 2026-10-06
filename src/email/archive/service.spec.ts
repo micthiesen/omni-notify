@@ -938,3 +938,263 @@ describe("durable email archive actions", () => {
     expect(methods.restoreArchiveMessageEffect).toHaveBeenCalledOnce();
   });
 });
+
+describe("archive actions for copies that share a Message-ID", () => {
+  const inbox = (messageId: string, uid: number, uidValidity = "1318024686") => ({
+    folder: "INBOX",
+    uidValidity,
+    uid,
+    messageId,
+  });
+  const archiveUid = (uid: number) => 52802 + (604 - uid);
+  const perCopyTransport = (reconcile: "moved" | "uncertain" = "moved") =>
+    transport({
+      moveArchiveMessageEffect: vi.fn((source: { uid: number }) =>
+        Effect.succeed({
+          sourceHash: "abc",
+          flags: ["\\Flagged"],
+          destination: {
+            folder: "Archive",
+            uidValidity: "20",
+            uid: archiveUid(source.uid),
+          },
+        }),
+      ),
+      reconcileArchiveMessageEffect: vi.fn((source: { uid: number }) =>
+        Effect.succeed(
+          reconcile === "uncertain"
+            ? { state: "uncertain" }
+            : {
+                state: "moved",
+                destination: {
+                  folder: "Archive",
+                  uidValidity: "20",
+                  uid: archiveUid(source.uid),
+                },
+                snapshot: { sourceHash: "abc", flags: ["\\Flagged"] },
+              },
+        ),
+      ),
+    });
+
+  it("archives a second physical copy after the first copy is archived", async () => {
+    const messageId =
+      "<B7tN/sj-RWeYS-AAAAALBnCQCEcAMATfMrPdIT-customerservice@novusnow.ca>";
+    const methods = perCopyTransport();
+    const first = await run(
+      queueArchiveActionEffect("novus-604", inbox(messageId, 604)),
+    );
+    await expect(
+      run(queueArchiveActionEffect("novus-603-early", inbox(messageId, 603))),
+    ).rejects.toThrow(/Another copy .* unresolved/);
+    const archived = await run(processArchiveActionEffect(first, methods));
+    expect(archived).toMatchObject({
+      status: "archived",
+      destination: { folder: "Archive", uidValidity: "20", uid: 52802 },
+    });
+    const second = await run(
+      queueArchiveActionEffect("novus-603", inbox(messageId, 603)),
+    );
+    expect(second.status).toBe("queued");
+    expect(second.actionId).not.toBe(first.actionId);
+    expect((await run(processArchiveActionEffect(second, methods))).status).toBe(
+      "archived",
+    );
+    const claimed = [{ folder: "Archive", uidValidity: "20", uid: 52802 }];
+    expect(methods.inspectArchiveMessageEffect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ uid: 603, claimedCopies: claimed }),
+    );
+    expect(methods.reconcileArchiveMessageEffect).toHaveBeenLastCalledWith(
+      expect.objectContaining({ uid: 603, claimedCopies: claimed }),
+      "abc",
+    );
+    expect(await run(getArchiveActionEffect(first.actionId))).toMatchObject({
+      status: "archived",
+      identity: inbox(messageId, 604),
+      destination: { uid: 52802 },
+    });
+  });
+
+  it("returns the completed receipt for a retry and refuses a new key for that copy", async () => {
+    const source = inbox("<retry-copy@example.test>", 604);
+    const queued = await run(queueArchiveActionEffect("retry-copy", source));
+    const archived = await run(processArchiveActionEffect(queued, perCopyTransport()));
+    expect(archived.status).toBe("archived");
+    expect(await run(queueArchiveActionEffect("retry-copy", source))).toEqual(archived);
+    await expect(
+      run(queueArchiveActionEffect("retry-copy-other-key", source)),
+    ).rejects.toThrow(/already has an archive action/);
+  });
+
+  it("blocks sibling copies and restores while a move outcome is unproven", async () => {
+    const messageId = "<uncertain-copy@example.test>";
+    const settled = await run(
+      queueArchiveActionEffect("uncertain-copy-602", inbox(messageId, 602)),
+    );
+    await run(processArchiveActionEffect(settled, perCopyTransport()));
+    const queued = await run(
+      queueArchiveActionEffect("uncertain-copy-604", inbox(messageId, 604)),
+    );
+    const lost = transport({
+      moveArchiveMessageEffect: vi.fn(() => Effect.fail(new Error("connection lost"))),
+      reconcileArchiveMessageEffect: vi.fn(() =>
+        Effect.succeed({ state: "uncertain" }),
+      ),
+    });
+    expect((await run(processArchiveActionEffect(queued, lost))).status).toBe(
+      "uncertain",
+    );
+    await expect(
+      run(queueArchiveActionEffect("uncertain-copy-603", inbox(messageId, 603))),
+    ).rejects.toThrow(/unresolved archive action/);
+    await expect(
+      run(restoreArchivedActionEffect(settled.actionId, perCopyTransport())),
+    ).rejects.toThrow(/unresolved archive action/);
+    expect(lost.restoreArchiveMessageEffect).not.toHaveBeenCalled();
+    await run(
+      updateArchiveActionEffect(queued.actionId, "uncertain", "uncertain", {
+        nextAttemptAt: 0,
+      }),
+    );
+    await run(processQueuedArchiveActionsEffect(perCopyTransport()));
+    expect((await run(getArchiveActionEffect(queued.actionId)))?.status).toBe(
+      "archived",
+    );
+    expect(lost.moveArchiveMessageEffect).toHaveBeenCalledOnce();
+    expect(
+      (await run(queueArchiveActionEffect("uncertain-copy-603", inbox(messageId, 603))))
+        .status,
+    ).toBe("queued");
+  });
+
+  it("treats a UID under a new UIDVALIDITY as a different source copy", async () => {
+    const messageId = "<validity-copy@example.test>";
+    const old = await run(
+      queueArchiveActionEffect("validity-old", inbox(messageId, 604, "1")),
+    );
+    await run(updateArchiveActionEffect(old.actionId, "queued", "claimed"));
+    await expect(
+      run(queueArchiveActionEffect("validity-new", inbox(messageId, 604, "2"))),
+    ).rejects.toThrow(/unresolved archive action/);
+    await run(
+      updateArchiveActionEffect(old.actionId, "claimed", "failed", {
+        reason: "source_unavailable",
+      }),
+    );
+    const renumbered = await run(
+      queueArchiveActionEffect("validity-new", inbox(messageId, 604, "2")),
+    );
+    expect(renumbered.identity.uidValidity).toBe("2");
+    await expect(
+      run(queueArchiveActionEffect("validity-old", inbox(messageId, 604, "2"))),
+    ).rejects.toThrow(/different message/);
+  });
+
+  it("reads legacy marker-only reservations per source copy", async () => {
+    const messageId = "<legacy-copy@example.test>";
+    const legacy = await run(
+      queueArchiveActionEffect("legacy-copy-604", inbox(messageId, 604)),
+    );
+    const digest = createHash("sha256").update(messageId).digest("hex");
+    await run(
+      Docstore.use((service) => service.deleteDoc(`email-archive:history:${digest}`)),
+    );
+    await expect(
+      run(queueArchiveActionEffect("legacy-copy-603", inbox(messageId, 603))),
+    ).rejects.toThrow(/unresolved archive action/);
+    await run(processArchiveActionEffect(legacy, perCopyTransport()));
+    const sibling = await run(
+      queueArchiveActionEffect("legacy-copy-603", inbox(messageId, 603)),
+    );
+    expect(sibling.status).toBe("queued");
+    await expect(
+      run(queueArchiveActionEffect("legacy-copy-604-again", inbox(messageId, 604))),
+    ).rejects.toThrow(/already has an archive action/);
+    expect(
+      await run(
+        isArchiveActionMessageEffect(messageId, {
+          folder: "Archive",
+          uidValidity: "20",
+          uid: 52802,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not suppress a pre-existing Inbox sibling during a restore", async () => {
+    const messageId = "<restore-sibling@example.test>";
+    const queued = await run(
+      queueArchiveActionEffect("restore-sibling", inbox(messageId, 604)),
+    );
+    await run(processArchiveActionEffect(queued, perCopyTransport()));
+    await run(
+      updateArchiveActionEffect(queued.actionId, "archived", "restore_claimed"),
+    );
+    expect(
+      await run(isArchiveActionMessageEffect(messageId, inbox(messageId, 603))),
+    ).toBe(false);
+    expect(
+      await run(isArchiveActionMessageEffect(messageId, inbox(messageId, 900))),
+    ).toBe(true);
+  });
+  it("suppresses only restore echoes above every known Inbox copy", async () => {
+    const messageId = "<restore-window@example.test>";
+    const first = await run(
+      queueArchiveActionEffect("restore-window-604", inbox(messageId, 604)),
+    );
+    await run(processArchiveActionEffect(first, perCopyTransport()));
+    const later = await run(
+      queueArchiveActionEffect("restore-window-700", inbox(messageId, 700)),
+    );
+    await run(updateArchiveActionEffect(later.actionId, "queued", "cancelled"));
+    await run(updateArchiveActionEffect(first.actionId, "archived", "restore_claimed"));
+    const event = (uid: number) =>
+      run(isArchiveActionMessageEffect(messageId, inbox(messageId, uid)));
+    expect(await event(650)).toBe(false);
+    expect(await event(700)).toBe(false);
+    expect(await event(701)).toBe(true);
+    await run(
+      updateArchiveActionEffect(
+        first.actionId,
+        "restore_claimed",
+        "restore_uncertain",
+        {
+          restoredLocation: { folder: "INBOX", uidValidity: "1318024686", uid: 800 },
+        },
+      ),
+    );
+    expect(await event(750)).toBe(false);
+    expect(await event(900)).toBe(false);
+    expect(await event(800)).toBe(true);
+  });
+
+  it("defers a queued copy while a sibling restore is unproven", async () => {
+    const messageId = "<toctou-copy@example.test>";
+    const first = await run(
+      queueArchiveActionEffect("toctou-604", inbox(messageId, 604)),
+    );
+    await run(processArchiveActionEffect(first, perCopyTransport()));
+    const second = await run(
+      queueArchiveActionEffect("toctou-603", inbox(messageId, 603)),
+    );
+    // The restore claimed after the sibling passed its queue check.
+    await run(updateArchiveActionEffect(first.actionId, "archived", "restore_claimed"));
+    await run(
+      updateArchiveActionEffect(first.actionId, "restore_claimed", "restore_uncertain"),
+    );
+    const methods = perCopyTransport();
+    const deferred = await run(processArchiveActionEffect(second, methods));
+    expect(deferred).toMatchObject({ status: "queued", attempts: 0 });
+    expect(deferred.nextAttemptAt).toBeGreaterThan(second.nextAttemptAt);
+    expect(methods.inspectArchiveMessageEffect).not.toHaveBeenCalled();
+    expect(methods.moveArchiveMessageEffect).not.toHaveBeenCalled();
+    await run(
+      updateArchiveActionEffect(first.actionId, "restore_uncertain", "restored", {
+        restoredLocation: { folder: "INBOX", uidValidity: "1318024686", uid: 900 },
+      }),
+    );
+    expect((await run(processArchiveActionEffect(deferred, methods))).status).toBe(
+      "archived",
+    );
+  });
+});
