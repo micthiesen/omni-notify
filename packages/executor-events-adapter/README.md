@@ -31,14 +31,16 @@ Run `npm ci && npm run build && npm test` for local checks. The package and lock
 file are independent of third-party Executor core. Update dependencies here and
 rebuild only this image when Executor changes.
 
-The intended Boris Compose addition is one container on the existing
-`agent-integrations` network, with no published host port and the variables
-above. Add an exact `/mcp` location for `mcp.syas.ca` in Nginx Proxy Manager
-pointing to `executor-events-adapter:4789`; leave its current `/` location and
-all other virtual hosts intact. This is a network routing change and must be
-reviewed before it is applied. Rollback removes the exact location; legacy
-traffic then reaches Executor directly. Pin the Executor image digest during a
-deployment so the tested auth and tool contracts do not move under the adapter.
+On Boris the adapter is one container on the existing `agent-integrations`
+network, with no published host port and the variables above, kept current by
+the same deploy timer as Omni (see
+[`deploy/executor-events`](../../deploy/executor-events/README.md)). An exact
+`/mcp` location for `mcp.syas.ca` in Nginx Proxy Manager points to
+`executor-events-adapter:4789`; its `/` location and all other virtual hosts are
+unchanged. Rollback removes the exact location; legacy traffic then reaches
+Executor directly. Executor itself follows `:latest` like every Boris image, so
+an Executor release that changes its auth or MCP contract shows up as failing
+adapter tests or `events_status` errors.
 
 The adapter's `/health` responds without authentication inside the Docker
 network. `/mcp` requires Executor OAuth for MCP 2026-07-28 requests. Legacy

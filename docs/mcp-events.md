@@ -1,4 +1,4 @@
-# Email events through Executor
+# MCP Events through Executor
 
 Omni implements MCP Events at its authenticated `/mcp` endpoint. The separate
 [`executor-events-adapter`](../packages/executor-events-adapter/README.md) package
@@ -34,15 +34,23 @@ References:
 - [Executor API reference](https://github.com/UsefulSoftwareCo/executor/blob/98d606bd2b47b9dcc2c03a129a14b5134d9852c8/packages/core/api/src/server/executor-app.ts)
 - [Executor v2 contracts](https://github.com/UsefulSoftwareCo/executor/tree/2eb2871ecaaf168928eeb77fee89bfdc8e25c614)
 
-## Event and identity
+## Events
 
-`events/list` exposes `email.received`, with an explicit `folder` argument of
-`inbox` or `archive`. Subscribe separately for each desired scope. The event
-contains a Message-ID, originating folder, UIDVALIDITY and UID. Read the full
-message with the existing `email_get` tool. Subjects, bodies, attachments, and
-unsubscribe URLs do not travel in callbacks. Messages without a Message-ID are
-excluded. Origin comes from the actual IMAP fetch, not an inferred display name
-or attachment.
+`events/list` serves the catalog in `src/mcp/events/catalog.ts`. Each event
+declares its arguments, payload schema and the rule that matches a payload to a
+subscription. All events share one durable outbox, signing, authorization and
+retry path. Neither event has a protocol replay cursor; subscription responses
+use `cursor: null`. Every event also has ordinary tools for clients without MCP
+Events, so subscriptions only remove polling.
+
+### `email.received`
+
+Takes an explicit `folder` argument of `inbox` or `archive`. Subscribe
+separately for each desired scope. The event contains a Message-ID, originating
+folder, UIDVALIDITY and UID. Read the full message with the existing `email_get`
+tool. Subjects, bodies, attachments, and unsubscribe URLs do not travel in
+callbacks. Messages without a Message-ID are excluded. Origin comes from the
+actual IMAP fetch, not an inferred display name or attachment.
 
 The first observed folder is retained across replay. Moving the same Message-ID
 from Inbox to Archive does not create a second receipt event. Queued archive
@@ -50,10 +58,37 @@ and restore operations also reserve a suppression marker before moving mail.
 This covers messages that predate event observation and prevents automation
 feedback loops.
 
-Dispatcher acceptance writes durable receipt/outbox state before the IMAP
-cursor commits. Delivery is separate from polling. Boot recovery and a scheduled
-30-second sweep retry pending work without changing event IDs. The event type
-has no protocol replay cursor; subscription responses use `cursor: null`.
+### `claude.session.turn_finished`
+
+Fires when a Claude Code session on the Claude Code host finishes a turn or
+stops. The optional `project` argument limits it to one project. The payload
+holds the session ID, short ID, project, status and transcript revision; read the
+reply with `claude_session_get` (`includeResult`). No prompt or reply text
+travels in callbacks.
+
+While any subscription for it is active and the host link is online, the
+`ClaudeSessionEvents` task lists the host's running sessions every 15 seconds and
+compares each with the last state Omni recorded. A settled session whose
+revision advanced, or that was working when last seen, produces one event per
+session and revision. A session seen for the first time only sets the baseline.
+`claude_session_start` and `claude_session_send` record the turn they begin, so
+a turn that ends before the next poll still fires. A session that stops mid-turn
+leaves the running list and is read individually. Turns last seen more than a
+day ago do not fire when polling resumes.
+
+## Delivery
+
+Publishing writes the receipt and outbox rows in one transaction, then wakes the
+delivery worker, so a subscriber normally hears about new mail seconds after
+IMAP IDLE reports it. For email this happens before the IMAP cursor commits.
+Boot recovery and a scheduled 30-second sweep retry pending work without
+changing event IDs. Outbox state changes hold one short lock; webhook calls and
+Executor authorization checks run outside it, so a slow callback never delays
+email dispatch.
+
+Finished deliveries are kept for seven days, receipts for 30 days (beyond the
+IMAP seven-day INTERNALDATE guard, so replays stay deduplicated) and
+subscriptions for seven days after they expire.
 
 ## Subscription and callback security
 
@@ -104,9 +139,10 @@ outbox retry policy owns retries; HTTP 410 and 413 are terminal.
 
 ## Diagnostics
 
-The read-only `email_events_status` MCP tool reports what Omni has observed: the
+The read-only `events_status` MCP tool reports what Omni has observed for every
+event: the
 30 most recent `events/list`, `events/subscribe` and `events/unsubscribe`
-requests with outcomes, up to 20 subscriptions with state, callback hostname and
+requests with outcomes, up to 20 subscriptions with event, arguments, state, callback hostname and
 advertised `refreshBefore`,
 delivery counts including `withheld`, and the ten most recent deliveries with
 HTTP status, transport error, failure or `withheld` reason. Owners appear as a 12-character hash prefix. It
@@ -127,12 +163,12 @@ The parent must use the existing Executor connection to:
    [metadata refresh procedure](https://developers.openai.com/plugins/deploy/connect-chatgpt#refresh-metadata).
    Refreshing Omni's tool inventory inside Executor does not refresh ChatGPT's
    native event-source catalog. Published plugins follow continuous review.
-   Confirm `email_events_status` shows a new `events/list` request; if it does
+   Confirm `events_status` shows a new `events/list` request; if it does
    not, ChatGPT did not reach the adapter with MCP 2026-07-28 discovery.
 2. Create an explicit Inbox or Archive subscription in the intended Work chat
    or dot. Confirm `events/subscribe`, successful challenge verification and
    durable subscription acceptance (`accepted` or `refreshed` in
-   `email_events_status`). Over the next hours, confirm `refreshed` rows arrive
+   `events_status`). Over the next hours, confirm `refreshed` rows arrive
    about hourly with an advancing `refreshBefore`; repeated refreshes without
    progress mean ChatGPT is reusing an unrotated token.
 3. Select a harmless test message or send a new test message to the chosen

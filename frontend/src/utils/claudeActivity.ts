@@ -52,8 +52,20 @@ export function isClaudeTool(tool: string): boolean {
   return tool.startsWith("claude_");
 }
 
-export function claudeActionKind(tool: string): ClaudeActionKind {
-  return TOOL_KINDS[tool] ?? "other";
+/**
+ * claude_session_get also waits and returns results; older calls used separate
+ * wait, result, and projects tools, which stay mapped for history.
+ */
+export function claudeActionKind(
+  call: Pick<McpCall, "tool" | "input">,
+): ClaudeActionKind {
+  const kind = TOOL_KINDS[call.tool] ?? "other";
+  if (kind !== "get") return kind;
+  const input = asRecord(call.input);
+  if (input?.includeResult === true) return "result";
+  return typeof input?.waitSeconds === "number" && input.waitSeconds > 0
+    ? "wait"
+    : "get";
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
@@ -173,7 +185,7 @@ export function groupClaudeActions(actions: McpCall[]): {
   const groups = new Map<string, ClaudeActionGroup>();
   const other: McpCall[] = [];
   for (const call of actions) {
-    const kind = claudeActionKind(call.tool);
+    const kind = claudeActionKind(call);
     if (SESSIONLESS.has(kind)) {
       other.push(call);
       continue;
@@ -259,7 +271,7 @@ export function explainClaudeError(error: string | null): ErrorExplanation {
 
 /** One-line description for compact (non-conversational) actions. */
 export function summarizeCompactAction(call: McpCall): string {
-  const kind = claudeActionKind(call.tool);
+  const kind = claudeActionKind(call);
   const output = call.output;
   switch (kind) {
     case "list": {

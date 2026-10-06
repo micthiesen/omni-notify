@@ -1,11 +1,13 @@
 name: executor-events
 services:
   executor-events-adapter:
-    image: ghcr.io/micthiesen/executor-events-adapter:${ADAPTER_SHA:?Set an exact verified commit SHA}
+    image: ghcr.io/micthiesen/executor-events-adapter:latest
     container_name: executor-events-adapter
     restart: unless-stopped
-    env_file: private.env
     environment:
+      # Interpolated from Boris's main .env, the same value Omni receives, so a
+      # rotated token reaches the adapter on the next deploy check.
+      OMNI_MCP_TOKEN: ${OMNI_MCP_TOKEN:?Set OMNI_MCP_TOKEN in the main Compose .env}
       EXECUTOR_BASE_URL: http://executor:4788
       OMNI_BASE_URL: http://omni-notify:8080
       PUBLIC_MCP_ORIGIN: https://mcp.syas.ca

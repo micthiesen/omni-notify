@@ -38,15 +38,20 @@ Job state is in memory. An Omni restart fails in-flight calls with
 
 New sessions start only in the projects the Mac's `claude-rc` Remote Control
 supervisor uses: `claude-rc/config.toml` in dotfiles plus the Mac's
-`~/.config/claude-rc/local.toml`, enabled entries only. `claude_projects_list`
+`~/.config/claude-rc/local.toml`, enabled entries only. `claude_link_status`
 returns that list and `claude_session_start` takes a project name. All other
 tools work on every session on the Mac, whatever its directory or origin.
 
-Sessions run with the same full access as `claude-for-dot`
-(`--dangerously-skip-permissions`). `start`, `send`, and `stop` therefore have
-the Executor policy `require_approval`; listing, reading, and waiting are
-`allow`. Starts require an `idempotencyKey`, so a retried start returns the
-existing session. Sends are not idempotent.
+Sessions intentionally run with the same full access as `claude-for-dot`
+(`--dangerously-skip-permissions`), so a background session never stalls on a
+permission prompt. Approval happens before the session runs instead: `start`,
+`send`, and `stop` have the Executor policy `require_approval`; listing, reading,
+and waiting are `allow`. This is a deliberate design, not a gap to close.
+
+Starts require an `idempotencyKey`, so a retried start returns the existing
+session. Sends accept an optional `idempotencyKey`: a retry after a launched send
+returns it with `reused: true`, and a retry whose earlier attempt never recorded
+its launch fails with `send_in_doubt` instead of sending twice.
 
 ## Tools
 
@@ -58,19 +63,19 @@ the hostname. Omni's own UI and stored data may still show it.
 
 | Tool | Purpose |
 | --- | --- |
-| `claude_link_status` | Omni's view of the link; works while the Mac is offline |
-| `claude_projects_list` | Projects where sessions may start |
+| `claude_link_status` | Link state (works while the Mac is offline) and the projects where sessions may start |
 | `claude_sessions_list` | Sessions, newest first, optionally by project |
-| `claude_session_get` | Status, revision, last assistant text |
+| `claude_session_get` | Status, revision, last assistant text; optionally waits up to 45 seconds and returns the turn's result |
 | `claude_session_read` | Transcript pages; item text is capped at 8,000 characters |
-| `claude_session_result` | Assistant text since the last input, capped at 20,000 |
-| `claude_session_wait` | Wait up to 45 seconds; pass `afterRevision` |
 | `claude_session_start` | Start a background session in a project |
 | `claude_session_send` | Continue an idle background session |
 | `claude_session_stop` | Stop a background session and keep its conversation |
 
-A typical flow is `start`, then `wait` with the returned revision until
-`timedOut` is false, then `result`. Interactive terminal sessions can be read but
+A typical flow is `start`, then `claude_session_get` with `afterRevision`,
+`waitSeconds`, and `includeResult` until `timedOut` is false. Clients that
+support MCP Events can instead subscribe to `claude.session.turn_finished`
+([MCP Events](mcp-events.md)) and read the result once it fires. The polling
+tools remain for every other client. Interactive terminal sessions can be read but
 not sent input; reach those through Remote Control.
 
 Omni logs each forwarded command with its session or project, duration, and

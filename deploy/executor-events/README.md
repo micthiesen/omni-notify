@@ -1,26 +1,35 @@
 # Boris deployment
 
 This is a separate Compose project under `/home/michael/compose/executor-events`.
-It joins the existing `compose_agent-integrations` network, publishes no host
-ports, and uses an exact adapter image SHA. Executor core, its data/authentication,
-login/UI, and every other service keep their current configuration.
+It joins the existing `compose_agent-integrations` network and publishes no host
+ports. Executor core, its data/authentication, login/UI, and every other service
+keep their current configuration.
 
-## Install or update after verification
+## Deployment
 
-Run on Boris from a checkout or copied directory containing these files:
+Boris's `omni-notify-deploy.timer` keeps the adapter current in the same pass
+that updates Omni. Every minute `bin/deploy_omni_notify.sh` pulls
+`executor-events-adapter:latest`; when the image or the project's Compose config
+hash changed, it recreates only the adapter, waits for its health check and sends
+the same Pushover success or failure notices as Omni. The `Executor Events
+Adapter` workflow publishes the image only when `packages/executor-events-adapter`
+or its workflow changes.
+
+The adapter reads `OMNI_MCP_TOKEN` from Boris's main Compose `.env` by
+interpolation, the same value Omni receives, so a rotated token reaches it on the
+next deploy check without copying credentials.
+
+`install.py` sets up the project once, or again after `compose.yml` changes here.
+Copy this directory to Boris (`executor-events/source/` holds the current copy)
+and run:
 
 ```sh
-python3 install.py VERIFIED_40_CHARACTER_SHA --owner EXISTING_EXECUTOR_USER_ID
+python3 install.py --owner EXISTING_EXECUTOR_USER_ID
 ```
 
-The installer reads the resolved existing Omni MCP token into process memory
-from the running Omni container, copies only that credential into mode-0600
-`private.env`, and writes nonsecret version/owner settings to `deployment.env`.
-It does not print credentials or edit the main Compose files, Reminders config,
-or the existing `.env`. `deployment.env.previous` retains the previous pin.
-The separate package image is built and published by the `Executor Events Adapter`
-workflow in this repository. Check both that workflow and Omni's main workflow
-for the exact SHA before installing. Do not use `latest` for this sidecar.
+It writes the nonsecret owner to mode-0600 `deployment.env`, copies
+`compose.yml`, then pulls and starts the adapter. It does not print credentials
+or edit the main Compose files, Reminders config, or the main `.env`.
 
 Omni defaults its delegated authorization check to
 `http://executor:4788/api/auth/mcp/get-session` when Dockerized. The optional
@@ -62,16 +71,15 @@ legacy clients retain their endpoint, credentials and OAuth metadata. Event
 subscriptions and outbox remain in Omni; rolling back the route does not erase
 or unsubscribe them. Stop subscriptions first if delivery should stop.
 
-To roll back the adapter image, copy `deployment.env.previous` over
-`deployment.env`, then run from `/home/michael/compose/executor-events`:
+After routing rollback, the unused adapter can be stopped from
+`/home/michael/compose/executor-events`; stop the deploy timer's adapter check
+first or it restarts the container:
 
 ```sh
-docker compose --env-file deployment.env -f compose.yml up -d --wait
+docker compose --env-file ../.env --env-file deployment.env -f compose.yml stop
 ```
 
-After routing rollback, the unused adapter can be stopped with the same Compose
-command ending in `stop`. Do not stop or recreate Executor or NPM to update the
-adapter. For an Omni code rollback use its prior image SHA; archive receipts
+Do not stop or recreate Executor or NPM to update the adapter. Archive receipts
 and event data are additive and do not require a destructive migration.
 
 ## Verify

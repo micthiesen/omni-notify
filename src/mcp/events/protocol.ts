@@ -1,10 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { McpRuntime } from "../runtime.js";
+import { EVENT_DEFINITIONS } from "./catalog.js";
 import { EventSubscriptionError, type EventPrincipal } from "./service.js";
 
-const folderSchema = z.enum(["inbox", "archive"]);
-const argumentsSchema = z.object({ folder: folderSchema }).strict();
+// Each event validates its own arguments; unknown keys are rejected there.
+const argumentsSchema = z.record(z.string(), z.unknown()).default({});
 const deliverySchema = z
   .object({
     mode: z.literal("webhook"),
@@ -31,33 +32,13 @@ const unsubscribeSchema = z
 const listSchema = z.object({ cursor: z.string().optional() }).strict();
 const OWNER_PATTERN = /^executor:[0-9a-f]{64}$/;
 
-const EVENT_CATALOG = [
-  {
-    name: "email.received",
-    description:
-      "A new iCloud message arrived in the selected Inbox or Archive mailbox. Read full mail with email tools using messageId.",
-    delivery: ["webhook"],
-    inputSchema: {
-      type: "object",
-      properties: {
-        folder: { type: "string", enum: ["inbox", "archive"] },
-      },
-      required: ["folder"],
-      additionalProperties: false,
-    },
-    payloadSchema: {
-      type: "object",
-      properties: {
-        messageId: { type: "string" },
-        folder: { type: "string", enum: ["inbox", "archive"] },
-        uidValidity: { type: "string" },
-        uid: { type: "integer" },
-      },
-      required: ["messageId", "folder", "uidValidity", "uid"],
-      additionalProperties: false,
-    },
-  },
-];
+const EVENT_CATALOG = EVENT_DEFINITIONS.map((definition) => ({
+  name: definition.name,
+  description: definition.description,
+  delivery: ["webhook"],
+  inputSchema: definition.inputSchema,
+  payloadSchema: definition.payloadSchema,
+}));
 
 function rpcError(error: EventSubscriptionError): Error {
   const callback = ["invalid_callback", "challenge_failed", "timeout"].includes(

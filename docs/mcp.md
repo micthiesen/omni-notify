@@ -1,8 +1,8 @@
 # Executor MCP
 
-Email wake subscriptions are documented in [MCP Events](mcp-events.md). The
+Email and Claude Code wake subscriptions are documented in [MCP Events](mcp-events.md). The
 separate Executor adapter preserves the existing connection and OAuth routes.
-`email_events_status` reports observed event requests, subscriptions and deliveries.
+`events_status` reports observed event requests, subscriptions and deliveries.
 See [queued reversible archive](email-archive.md) for the exact-message archive,
 status, cancellation and restore tools.
 
@@ -35,7 +35,7 @@ families cover:
 - CalDAV event inspection, preview, creation, update, and deletion
 - task status, task runs, livestreams, briefings, workspaces, actions, and papercuts
 - media library, watchlist, recommendations, podcast accounts, and podcast recommendations
-- PressPods jobs and episodes, pet weights, aggregate costs, web search, and iOS live-control diagnostics
+- PressPods jobs and episodes, pet weights, and aggregate costs
 - optional fixed-printer status and bounded public-PDF printing
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
 

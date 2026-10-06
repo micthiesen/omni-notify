@@ -1,10 +1,10 @@
 import { Docstore } from "@micthiesen/mitools/docstore";
 import { expect, layer } from "@effect/vitest";
-import { Clock, Effect, Option } from "effect";
+import { Clock, Deferred, Effect, Fiber, Option } from "effect";
 import { TestClock } from "effect/testing";
 import type { FetchedEmail } from "../../email/types.js";
 import type { McpRuntime } from "../runtime.js";
-import { createEmailEventTools } from "../tools/email-events.js";
+import { createEventTools } from "../tools/events.js";
 import {
   queueArchiveActionEffect,
   updateArchiveActionEffect,
@@ -16,7 +16,7 @@ import {
   EventRequestEntity,
   EventSubscriptionEntity,
 } from "./persistence.js";
-import { EmailEventService } from "./service.js";
+import { McpEventService } from "./service.js";
 
 const secret = `whsec_${Buffer.alloc(32, 7).toString("base64")}`;
 const url = "https://chatgpt.example.com/events/callback";
@@ -53,13 +53,15 @@ function service(
             : Effect.succeed(null),
         ),
       ));
-  const instance = new EmailEventService("test-omni-bearer", authorize, {
-    verify: () => Effect.void,
-    deliver: (input) => {
-      sent.push(input.event.eventId);
-      return Effect.succeed({ status });
-    },
-  });
+  const instance = Effect.runSync(
+    McpEventService.make("test-omni-bearer", authorize, {
+      verify: () => Effect.void,
+      deliver: (input) => {
+        sent.push(input.event.eventId);
+        return Effect.succeed({ status });
+      },
+    }),
+  );
   return { instance, sent };
 }
 
@@ -174,10 +176,11 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
       yield* EventSubscriptionEntity.deleteAll();
       const now = yield* Clock.currentTimeMillis;
       let expiry: number | null = now + 30_000;
-      const events = new EmailEventService(
-        "test-omni-bearer",
-        () => Effect.succeed(expiry),
-        { verify: () => Effect.void, deliver: () => Effect.succeed({ status: 204 }) },
+      const events = Effect.runSync(
+        McpEventService.make("test-omni-bearer", () => Effect.succeed(expiry), {
+          verify: () => Effect.void,
+          deliver: () => Effect.succeed({ status: 204 }),
+        }),
       );
       const principal = {
         owner: `executor:${"d".repeat(64)}`,
@@ -340,7 +343,7 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
       yield* EventRequestEntity.deleteAll();
       const base = { emailControls: {} } as unknown as McpRuntime;
       const run = (runtime: McpRuntime) =>
-        createEmailEventTools(runtime)[0]!.execute({}) as unknown as Effect.Effect<
+        createEventTools(runtime)[0]!.execute({}) as unknown as Effect.Effect<
           Record<string, unknown>,
           unknown,
           Docstore
@@ -353,7 +356,13 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
       expect(status).toMatchObject({
         enabled: true,
         subscriptionTotal: 1,
-        subscriptions: [{ folder: "inbox", callbackHost: "chatgpt.example.com" }],
+        subscriptions: [
+          {
+            name: "email.received",
+            arguments: { folder: "inbox" },
+            callbackHost: "chatgpt.example.com",
+          },
+        ],
         deliveries: { pending: 1, withheld: 0 },
       });
       expect(JSON.stringify(status)).not.toContain("<tool@example.test>");
@@ -407,7 +416,8 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
       ]);
       expect(status.requests[4]).toMatchObject({
         owner: `executor:${"b".repeat(12)}`,
-        folder: "inbox",
+        name: "email.received",
+        arguments: { folder: "inbox" },
         callbackHost: "chatgpt.example.com",
       });
       const text = JSON.stringify(status);
@@ -431,13 +441,15 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
         yield* original.subscribe(subscribeInput());
         yield* original.recordEmail(email());
         const sent: string[] = [];
-        const rotated = new EmailEventService("rotated-token", undefined, {
-          verify: () => Effect.void,
-          deliver: (input) => {
-            sent.push(input.event.eventId);
-            return Effect.succeed({ status: 204 });
-          },
-        });
+        const rotated = Effect.runSync(
+          McpEventService.make("rotated-token", undefined, {
+            verify: () => Effect.void,
+            deliver: (input) => {
+              sent.push(input.event.eventId);
+              return Effect.succeed({ status: 204 });
+            },
+          }),
+        );
         yield* rotated.drain();
         expect(sent).toHaveLength(0);
         expect((yield* EventPersistence.deliveries())[0]?.status).toBe("failed");
@@ -537,6 +549,183 @@ layer(Docstore.layerMemory)("MCP Events durable lifecycle", (it) => {
         status: "failed",
         failure: "attempts_exhausted",
       });
+    }),
+  );
+  it.effect("publishes while a slow webhook is still in flight", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      const release = yield* Deferred.make<void>();
+      const started = yield* Deferred.make<void>();
+      const events = yield* McpEventService.make("test-omni-bearer", undefined, {
+        verify: () => Effect.void,
+        deliver: () =>
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as({ status: 204 }),
+          ),
+      });
+      yield* events.subscribe(subscribeInput());
+      yield* events.recordEmail(email("<slow@example.test>"));
+      const drain = yield* Effect.forkChild(events.drain());
+      yield* Deferred.await(started);
+      // The webhook is blocked, yet the dispatcher's publish still commits.
+      yield* events.recordEmail(email("<next@example.test>"));
+      expect(yield* EventPersistence.deliveries()).toHaveLength(2);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(drain);
+      const statuses = (yield* EventPersistence.deliveries()).map((row) => row.status);
+      expect(statuses.sort()).toEqual(["delivered", "pending"]);
+    }),
+  );
+
+  it.effect("delivers as soon as an event is published", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      const delivered = yield* Deferred.make<string>();
+      const events = yield* McpEventService.make("test-omni-bearer", undefined, {
+        verify: () => Effect.void,
+        deliver: (input) =>
+          Deferred.succeed(delivered, input.event.eventId).pipe(
+            Effect.as({ status: 204 }),
+          ),
+      });
+      yield* Effect.forkChild(events.deliveryWorker());
+      yield* events.subscribe(subscribeInput());
+      yield* events.recordEmail(email("<fast@example.test>"));
+      const eventId = yield* Deferred.await(delivered);
+      expect((yield* EventPersistence.deliveries())[0]?.eventId).toBe(eventId);
+    }),
+  );
+
+  it.effect("prunes finished deliveries, old receipts and ended subscriptions", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      yield* TestClock.adjust("1 hour");
+      const events = service();
+      yield* events.instance.subscribe({ ...subscribeInput(), ttlMs: 60_000 });
+      yield* events.instance.recordEmail(email("<old@example.test>"));
+      yield* events.instance.drain();
+      yield* TestClock.adjust("8 days");
+      yield* events.instance.drain();
+      expect(yield* EventPersistence.deliveries()).toHaveLength(0);
+      expect(yield* EventSubscriptionEntity.getAll()).toHaveLength(0);
+      // Receipts outlive the IMAP guard, so a replay is still recognized.
+      expect(yield* EventReceiptEntity.getAll()).toHaveLength(1);
+      yield* TestClock.adjust("30 days");
+      yield* events.instance.drain();
+      expect(yield* EventReceiptEntity.getAll()).toHaveLength(0);
+    }),
+  );
+
+  it.effect("delivers rows stored before events were generic", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      const events = service();
+      const { id } = yield* events.instance.subscribe(subscribeInput());
+      const stored = (yield* EventSubscriptionEntity.get({ id })).pipe(
+        Option.getOrThrow,
+      );
+      const { arguments: _arguments, ...legacy } = stored as typeof stored & {
+        arguments: unknown;
+      };
+      yield* EventSubscriptionEntity.upsert({ ...legacy, folder: "inbox" } as never);
+      expect((yield* EventPersistence.subscription(id))?.arguments).toEqual({
+        folder: "inbox",
+      });
+      yield* EventRequestEntity.upsert({
+        id: "legacy-request",
+        at: 1,
+        method: "events/subscribe",
+        owner: "direct",
+        folder: "archive",
+        outcome: "accepted",
+      } as never);
+      expect(
+        (yield* EventPersistence.requests()).find((row) => row.id === "legacy-request"),
+      ).toMatchObject({ arguments: { folder: "archive" } });
+      // Refreshing the legacy row keeps its identity.
+      expect((yield* events.instance.subscribe(subscribeInput())).id).toBe(id);
+      yield* events.instance.recordEmail(email("<legacy@example.test>"));
+      yield* events.instance.drain();
+      expect(events.sent).toHaveLength(1);
+    }),
+  );
+
+  it.effect("matches claude turn events to subscribed projects", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      const events = service();
+      const claude = (args: Record<string, unknown>) => ({
+        name: "claude.session.turn_finished",
+        arguments: args,
+        delivery: { mode: "webhook" as const, url, secret },
+      });
+      const failure = yield* events.instance
+        .subscribe(claude({ project: "../etc" }))
+        .pipe(Effect.flip);
+      expect(failure).toMatchObject({ reason: "invalid_arguments" });
+      yield* events.instance.subscribe(claude({ project: "omni-notify" }));
+      yield* events.instance.subscribe({
+        ...claude({}),
+        delivery: { ...claude({}).delivery, url: `${url}/all` },
+      });
+      expect(
+        yield* events.instance.hasActiveSubscription("claude.session.turn_finished"),
+      ).toBe(true);
+      const turn = (project: string, revision: number) =>
+        events.instance.publish({
+          name: "claude.session.turn_finished",
+          receiptKey: `turn:${project}:${revision}`,
+          eventKey: `turn:${project}:${revision}`,
+          timestamp: "2026-10-05T00:00:00.000Z",
+          data: { sessionId: "s", id: "s1", project, status: "idle", revision },
+        });
+      yield* turn("omni-notify", 3);
+      yield* turn("dotfiles", 4);
+      yield* turn("dotfiles", 4);
+      expect(yield* EventPersistence.deliveries()).toHaveLength(3);
+    }),
+  );
+  it.effect("publishes while a subscriber's challenge is still in flight", () =>
+    Effect.gen(function* () {
+      yield* EventSubscriptionEntity.deleteAll();
+      yield* EventReceiptEntity.deleteAll();
+      yield* EventDeliveryEntity.deleteAll();
+      const release = yield* Deferred.make<void>();
+      const started = yield* Deferred.make<void>();
+      let challenges = 0;
+      const events = yield* McpEventService.make("test-omni-bearer", undefined, {
+        verify: () =>
+          ++challenges === 1
+            ? Effect.void
+            : Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+              ),
+        deliver: () => Effect.succeed({ status: 204 }),
+      });
+      yield* events.subscribe(subscribeInput());
+      const slow = yield* Effect.forkChild(
+        events.subscribe({
+          ...subscribeInput("archive"),
+          delivery: { mode: "webhook", url: `${url}/slow`, secret },
+        }),
+      );
+      yield* Deferred.await(started);
+      yield* events.recordEmail(email("<during@example.test>"));
+      expect(yield* EventPersistence.deliveries()).toHaveLength(1);
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(slow);
+      expect(yield* EventSubscriptionEntity.getAll()).toHaveLength(2);
     }),
   );
 });

@@ -589,13 +589,12 @@ export function startServer(
   iosControls?: IOSControlService,
   livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider,
   reminders?: RemindersService,
-  events?: import("./mcp/events/service.js").EmailEventService,
+  events?: import("./mcp/events/service.js").McpEventService,
+  deviceLink?: DeviceLinkService,
+  claudeWatcher?: import("./mcp/events/claudeSessions.js").ClaudeSessionWatcher,
 ): EffectType<void, IntegrationError> {
   const logger = parentLogger.extend("Server");
   const app = new Hono();
-  const deviceLink = config.OMNI_DEVICE_LINK_TOKEN
-    ? new DeviceLinkService()
-    : undefined;
   const mcp = registerOmniMcpRoute(
     app,
     {
@@ -615,6 +614,7 @@ export function startServer(
         ? createPrinterService(config.PRINTER_IPP_URL)
         : undefined,
       deviceLink,
+      claudeWatcher,
     },
     config.OMNI_MCP_TOKEN,
   );

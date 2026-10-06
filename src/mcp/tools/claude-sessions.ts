@@ -192,6 +192,19 @@ function run(
   });
 }
 
+/** Lets turn_finished fire for a turn that ends before the watcher's next poll. */
+function noteTurnStarted(runtime: McpRuntime, session: Session, revision: number) {
+  if (!runtime.claudeWatcher || !session.sessionId) return Effect.void;
+  return runtime.claudeWatcher
+    .noteTurnStarted({
+      sessionId: session.sessionId,
+      id: session.id,
+      project: session.project,
+      revision,
+    })
+    .pipe(Effect.ignoreCause);
+}
+
 const QUICK = Duration.seconds(60);
 const LAUNCH = Duration.seconds(150);
 
@@ -207,7 +220,7 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
       name: "claude_link_status",
       title: "Get Claude Code Host Status",
       description:
-        "Report whether the Claude Code host is connected to Omni for session control, whether its kill switch is engaged, and when it last checked in. Reads Omni's state only.",
+        "Report whether the Claude Code host is connected to Omni for session control, whether its kill switch is engaged, when it last checked in, and the projects where new sessions may start (the same list its Remote Control servers use; null while the host is unreachable). Start sessions by project name.",
       inputSchema: emptyInputSchema,
       outputSchema: z.object({
         configured: z.boolean(),
@@ -215,45 +228,53 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
         disabled: z.boolean(),
         lastSeenAt: z.string().nullable(),
         pendingJobs: z.number().int().nonnegative(),
+        projects: z
+          .array(z.object({ name: z.string(), path: z.string(), exists: z.boolean() }))
+          .nullable(),
+        projectsError: z.string().nullable(),
       }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads Omni's in-memory link state"),
+      policy: readPolicy(
+        "Reads Omni's link state and the host's project configuration",
+      ),
       execute: () =>
-        runtime.deviceLink
-          ? runtime.deviceLink
-              .status()
-              .pipe(Effect.map(({ host: _host, ...status }) => status))
-          : Effect.succeed({
+        Effect.gen(function* () {
+          if (!runtime.deviceLink) {
+            return {
               configured: false,
               online: false,
               disabled: false,
               lastSeenAt: null,
               pendingJobs: 0,
-            }),
-    }),
-    defineTool({
-      name: "claude_projects_list",
-      title: "List Claude Code Projects",
-      description:
-        "List the projects where new Claude Code sessions may start on the Claude Code host. This is the same project list its Remote Control servers use. Start sessions by project name.",
-      inputSchema: emptyInputSchema,
-      outputSchema: z.object({
-        projects: z.array(
-          z.object({ name: z.string(), path: z.string(), exists: z.boolean() }),
-        ),
-      }),
-      annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads the host's project configuration"),
-      execute: () =>
-        run(runtime, "projects", {}, QUICK).pipe(
-          Effect.map((data) => ({
-            projects: records(data.projects).map((project) => ({
-              name: str(project.name) ?? "",
-              path: str(project.path) ?? "",
-              exists: project.exists === true,
-            })),
-          })),
-        ),
+              projects: null,
+              projectsError: "The Claude Code host link is not configured",
+            };
+          }
+          const { host: _host, ...status } = yield* runtime.deviceLink.status();
+          const projects =
+            status.online && !status.disabled
+              ? yield* run(runtime, "projects", {}, QUICK).pipe(Effect.result)
+              : undefined;
+          return {
+            ...status,
+            projects:
+              projects?._tag === "Success"
+                ? records(projects.success.projects).map((project) => ({
+                    name: str(project.name) ?? "",
+                    path: str(project.path) ?? "",
+                    exists: project.exists === true,
+                  }))
+                : null,
+            projectsError:
+              projects === undefined
+                ? status.disabled
+                  ? "Session control is disabled on the Claude Code host"
+                  : "The Claude Code host is offline"
+                : projects._tag === "Failure"
+                  ? projects.failure.message
+                  : null,
+          };
+        }),
     }),
     defineTool({
       name: "claude_sessions_list",
@@ -283,16 +304,60 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
     defineTool({
       name: "claude_session_get",
       title: "Get Claude Code Session",
-      description:
-        "Read one Claude Code session's status, transcript revision, and last assistant text. Use the revision with claude_session_wait.",
-      inputSchema: z.object({ session: sessionId }).strict(),
-      outputSchema: z.object({ session: sessionSchema }),
+      description: `Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to ${WAIT_MAX_SECONDS}) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.`,
+      inputSchema: z
+        .object({
+          session: sessionId,
+          afterRevision: z.number().int().min(0).optional(),
+          waitSeconds: z.number().int().min(0).max(WAIT_MAX_SECONDS).default(0),
+          includeResult: z.boolean().default(false),
+        })
+        .strict(),
+      outputSchema: z.object({
+        session: sessionSchema,
+        timedOut: z.boolean(),
+        result: z.string().nullable(),
+        truncated: z.boolean(),
+      }),
       annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads session metadata and transcripts on the host"),
+      policy: readPolicy("Reads session status and transcripts on the host"),
       execute: (input) =>
-        run(runtime, "status", { session: input.session }, QUICK).pipe(
-          Effect.map((data) => ({ session: toSession(data) })),
-        ),
+        Effect.gen(function* () {
+          const waited =
+            input.waitSeconds > 0
+              ? yield* run(
+                  runtime,
+                  "wait",
+                  {
+                    session: input.session,
+                    after: input.afterRevision,
+                    timeout: input.waitSeconds,
+                  },
+                  Duration.seconds(input.waitSeconds + 20),
+                )
+              : undefined;
+          const timedOut = waited?.timed_out === true;
+          if (!input.includeResult || timedOut) {
+            const data =
+              waited ??
+              (yield* run(runtime, "status", { session: input.session }, QUICK));
+            return {
+              session: toSession(data),
+              timedOut,
+              result: null,
+              truncated: false,
+            };
+          }
+          const data = yield* run(runtime, "result", { session: input.session }, QUICK);
+          const text = str(data.result);
+          const bounded = text === null ? null : truncate(text, RESULT_TEXT_LIMIT);
+          return {
+            session: toSession(data),
+            timedOut: false,
+            result: bounded?.text ?? null,
+            truncated: bounded?.truncated ?? false,
+          };
+        }),
     }),
     defineTool({
       name: "claude_session_read",
@@ -331,68 +396,15 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
           })),
         ),
     }),
-    defineTool({
-      name: "claude_session_result",
-      title: "Get Claude Code Turn Result",
-      description:
-        "Return the assistant text a Claude Code session produced since its last user input, with the session status.",
-      inputSchema: z.object({ session: sessionId }).strict(),
-      outputSchema: z.object({
-        session: sessionSchema,
-        result: z.string().nullable(),
-        truncated: z.boolean(),
-      }),
-      annotations: annotations(true, false, true, false),
-      policy: readPolicy("Reads a session transcript on the host"),
-      execute: (input) =>
-        run(runtime, "result", { session: input.session }, QUICK).pipe(
-          Effect.map((data) => {
-            const text = str(data.result);
-            const bounded = text === null ? null : truncate(text, RESULT_TEXT_LIMIT);
-            return {
-              session: toSession(data),
-              result: bounded?.text ?? null,
-              truncated: bounded?.truncated ?? false,
-            };
-          }),
-        ),
-    }),
-    defineTool({
-      name: "claude_session_wait",
-      title: "Wait for Claude Code Session",
-      description: `Wait up to ${WAIT_MAX_SECONDS} seconds for a session to finish its turn. Pass afterRevision (from claude_session_get or a start/send result) so the wait cannot return before the new turn. When timedOut is true, call again.`,
-      inputSchema: z
-        .object({
-          session: sessionId,
-          afterRevision: z.number().int().min(0).optional(),
-          timeoutSeconds: z.number().int().min(1).max(WAIT_MAX_SECONDS).default(30),
-        })
-        .strict(),
-      outputSchema: z.object({ session: sessionSchema, timedOut: z.boolean() }),
-      annotations: annotations(true, false, true, false),
-      policy: readPolicy("Polls session status on the host"),
-      execute: (input) =>
-        run(
-          runtime,
-          "wait",
-          {
-            session: input.session,
-            after: input.afterRevision,
-            timeout: input.timeoutSeconds,
-          },
-          Duration.seconds(input.timeoutSeconds + 20),
-        ).pipe(
-          Effect.map((data) => ({
-            session: toSession(data),
-            timedOut: data.timed_out === true,
-          })),
-        ),
-    }),
+    // Sessions intentionally run with full access (bypass permissions), like
+    // claude-for-dot. Approval happens before start and send through the
+    // require_approval policy, not inside the session, so a background session
+    // never stalls on a permission prompt. Do not add a permission mode here.
     defineTool({
       name: "claude_session_start",
       title: "Start Claude Code Session",
       description:
-        "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_projects_list). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
+        "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_link_status). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
       inputSchema: z
         .object({
           project: projectName,
@@ -438,23 +450,32 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
             session: toSession(data),
             reused: data.reused === true,
           })),
+          Effect.tap(({ session, reused }) =>
+            reused ? Effect.void : noteTurnStarted(runtime, session, session.revision),
+          ),
         ),
     }),
     defineTool({
       name: "claude_session_send",
       title: "Send Input to Claude Code Session",
       description:
-        "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. If the result is unknown, read the session before sending again.",
+        "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result.",
       inputSchema: z
         .object({
           session: sessionId,
           prompt,
           interrupt: z.boolean().default(false),
+          idempotencyKey: z
+            .string()
+            .regex(/^[A-Za-z0-9._:-]{1,128}$/)
+            .optional()
+            .describe("Caller-chosen key that makes retries safe"),
         })
         .strict(),
       outputSchema: z.object({
         session: sessionSchema,
         previousRevision: z.number().int().nonnegative(),
+        reused: z.boolean(),
         warning: z.string().nullable(),
       }),
       annotations: annotations(false, true, false, true),
@@ -470,14 +491,23 @@ export function createClaudeSessionTools(runtime: McpRuntime): McpToolDefinition
         run(
           runtime,
           "send",
-          { session: input.session, prompt: input.prompt, interrupt: input.interrupt },
+          {
+            session: input.session,
+            prompt: input.prompt,
+            interrupt: input.interrupt,
+            idempotencyKey: input.idempotencyKey,
+          },
           LAUNCH,
         ).pipe(
           Effect.map((data) => ({
             session: toSession(data),
             previousRevision: int(data.previous_revision),
+            reused: data.reused === true,
             warning: str(data.warning),
           })),
+          Effect.tap(({ session, previousRevision, reused }) =>
+            reused ? Effect.void : noteTurnStarted(runtime, session, previousRevision),
+          ),
         ),
     }),
     defineTool({

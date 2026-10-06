@@ -2,8 +2,7 @@ import { Entity } from "@micthiesen/mitools/entities";
 import { Docstore } from "@micthiesen/mitools/docstore";
 import { Clock } from "effect";
 import { Effect, Option, Schema } from "effect";
-
-export type EventFolder = "inbox" | "archive";
+import type { EventArguments, EventData } from "./catalog.js";
 
 export const EVENT_DELIVERY_FAILURES = [
   "subscription_inactive",
@@ -32,8 +31,8 @@ export interface EventSubscription {
   owner: string;
   keyId: string;
   generation: string;
-  name: "email.received";
-  folder: EventFolder;
+  name: string;
+  arguments: EventArguments;
   encryptedUrl: string;
   encryptedSecret: string;
   encryptedPreviousSecret?: string;
@@ -45,9 +44,11 @@ export interface EventSubscription {
   verifiedAt: number;
 }
 
+/** Dedup marker for one source observation; email keys by Message-ID digest. */
 export interface EventReceipt {
   messageKey: string;
-  folder: EventFolder;
+  name?: string;
+  folder?: string;
   receivedAt: number;
 }
 
@@ -57,14 +58,9 @@ export interface EventDelivery {
   owner: string;
   subscriptionGeneration: string;
   eventId: string;
-  name: "email.received";
+  name: string;
   timestamp: string;
-  data: {
-    messageId: string;
-    folder: EventFolder;
-    uidValidity: string;
-    uid: number;
-  };
+  data: EventData;
   attempts: number;
   nextAttemptAt: number;
   status: "pending" | "delivered" | "failed";
@@ -84,7 +80,8 @@ export interface EventRequest {
   at: number;
   method: EventRequestMethod;
   owner: string;
-  folder?: EventFolder;
+  name?: string;
+  arguments?: EventArguments;
   callbackHost?: string;
   outcome: string;
 }
@@ -108,14 +105,16 @@ export const EventRequestEntity = new Entity<EventRequest, ["id"]>(
   ["id"],
 );
 
-const folder = Schema.Literals(["inbox", "archive"]);
+const args = Schema.Record(Schema.String, Schema.String);
 const subscriptionSchema = Schema.Struct({
   id: Schema.String,
   owner: Schema.String,
   keyId: Schema.String,
   generation: Schema.String,
-  name: Schema.Literal("email.received"),
-  folder,
+  name: Schema.String,
+  arguments: Schema.optional(args),
+  /** Rows written before event arguments were generic. */
+  folder: Schema.optional(Schema.String),
   encryptedUrl: Schema.String,
   encryptedSecret: Schema.String,
   encryptedPreviousSecret: Schema.optional(Schema.String),
@@ -127,7 +126,8 @@ const subscriptionSchema = Schema.Struct({
 });
 const receiptSchema = Schema.Struct({
   messageKey: Schema.String,
-  folder,
+  name: Schema.optional(Schema.String),
+  folder: Schema.optional(Schema.String),
   receivedAt: Schema.Number,
 });
 const deliverySchema = Schema.Struct({
@@ -136,14 +136,9 @@ const deliverySchema = Schema.Struct({
   owner: Schema.String,
   subscriptionGeneration: Schema.String,
   eventId: Schema.String,
-  name: Schema.Literal("email.received"),
+  name: Schema.String,
   timestamp: Schema.String,
-  data: Schema.Struct({
-    messageId: Schema.String,
-    folder,
-    uidValidity: Schema.String,
-    uid: Schema.Number,
-  }),
+  data: Schema.Record(Schema.String, Schema.Unknown),
   attempts: Schema.Number,
   nextAttemptAt: Schema.Number,
   status: Schema.Literals(["pending", "delivered", "failed"]),
@@ -159,7 +154,10 @@ const requestSchema = Schema.Struct({
   at: Schema.Number,
   method: Schema.Literals(EVENT_REQUEST_METHODS),
   owner: Schema.String,
-  folder: Schema.optional(folder),
+  name: Schema.optional(Schema.String),
+  arguments: Schema.optional(args),
+  /** Requests recorded before event arguments were generic. */
+  folder: Schema.optional(Schema.String),
   callbackHost: Schema.optional(Schema.String),
   outcome: Schema.String,
 });
@@ -168,23 +166,32 @@ const requestSchema = Schema.Struct({
 const listEventRequests = Effect.fn("Events.requests")(function* () {
   const rows = yield* EventRequestEntity.getAll();
   const decoded = yield* Effect.forEach(rows, (row) =>
-    Schema.decodeUnknownEffect(requestSchema)(row),
+    Schema.decodeUnknownEffect(requestSchema)(row).pipe(
+      Effect.map(({ folder, ...request }): EventRequest => ({
+        ...request,
+        ...(folder && !request.arguments ? { arguments: { folder } } : {}),
+      })),
+    ),
   );
   return decoded.sort((a, b) => b.at - a.at || b.id.localeCompare(a.id));
 });
 
+const decodeSubscription = (row: unknown) =>
+  Schema.decodeUnknownEffect(subscriptionSchema)(row).pipe(
+    Effect.map(({ folder, arguments: stored, ...subscription }): EventSubscription => ({
+      ...subscription,
+      arguments: stored ?? (folder ? { folder } : {}),
+    })),
+  );
+
 export const EventPersistence = {
   subscriptions: Effect.fn("Events.subscriptions")(function* () {
     const rows = yield* EventSubscriptionEntity.getAll();
-    return yield* Effect.forEach(rows, (row) =>
-      Schema.decodeUnknownEffect(subscriptionSchema)(row),
-    );
+    return yield* Effect.forEach(rows, decodeSubscription);
   }),
   subscription: Effect.fn("Events.subscription")(function* (id: string) {
     const row = yield* EventSubscriptionEntity.get({ id });
-    return Option.isSome(row)
-      ? yield* Schema.decodeUnknownEffect(subscriptionSchema)(row.value)
-      : undefined;
+    return Option.isSome(row) ? yield* decodeSubscription(row.value) : undefined;
   }),
   upsertSubscription: Effect.fn("Events.upsertSubscription")(function* (
     row: EventSubscription,
@@ -202,6 +209,15 @@ export const EventPersistence = {
   }),
   upsertReceipt: Effect.fn("Events.upsertReceipt")(function* (row: EventReceipt) {
     yield* EventReceiptEntity.upsert(row);
+  }),
+  receipts: Effect.fn("Events.receipts")(function* () {
+    const rows = yield* EventReceiptEntity.getAll();
+    return yield* Effect.forEach(rows, (row) =>
+      Schema.decodeUnknownEffect(receiptSchema)(row),
+    );
+  }),
+  deleteReceipt: Effect.fn("Events.deleteReceipt")(function* (messageKey: string) {
+    yield* EventReceiptEntity.delete({ messageKey });
   }),
   commitReceiptAndDeliveries: Effect.fn("Events.commitReceiptAndDeliveries")(function* (
     receipt: EventReceipt,
@@ -234,6 +250,9 @@ export const EventPersistence = {
   }),
   upsertDelivery: Effect.fn("Events.upsertDelivery")(function* (row: EventDelivery) {
     yield* EventDeliveryEntity.upsert(row);
+  }),
+  deleteDelivery: Effect.fn("Events.deleteDelivery")(function* (id: string) {
+    yield* EventDeliveryEntity.delete({ id });
   }),
   requests: listEventRequests,
   recordRequest: Effect.fn("Events.recordRequest")(function* (row: EventRequest) {

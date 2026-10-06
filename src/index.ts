@@ -13,7 +13,9 @@ import { createCalendarHandler } from "./calendar-events/index.js";
 import { importHistoricalCosts } from "./costs/migrate.js";
 import { EmailDispatcher } from "./email/dispatcher.js";
 import { processQueuedArchiveActionsEffect } from "./email/archive/service.js";
-import { EmailEventService } from "./mcp/events/service.js";
+import { McpEventService } from "./mcp/events/service.js";
+import { ClaudeSessionWatcher } from "./mcp/events/claudeSessions.js";
+import { DeviceLinkService } from "./device-link/service.js";
 import { createExecutorEventAuthorizer } from "./mcp/events/executorAuth.js";
 import { ImapTransport } from "./email/imap/transport.js";
 import EmailRetryTask from "./email/retryTask.js";
@@ -222,7 +224,7 @@ const startEmailFeatures = Effect.fn("Main.startEmailFeatures")(function* (
     message: string,
     trigger: "email",
   ) => Effect.Effect<void, WorkspaceOperationError, TaskServices>,
-  events?: EmailEventService,
+  events?: McpEventService,
 ) {
   if (!config.ICLOUD_USERNAME || !config.ICLOUD_APP_PASSWORD) return undefined;
   const emailLogger = parentLogger.extend("Email");
@@ -351,13 +353,18 @@ const program = Effect.scoped(
       config.OMNI_EVENTS_EXECUTOR_AUTH_URL ||
       (config.DOCKERIZED ? "http://executor:4788/api/auth/mcp/get-session" : undefined);
     const events = config.OMNI_MCP_TOKEN
-      ? new EmailEventService(
+      ? yield* McpEventService.make(
           config.OMNI_MCP_TOKEN,
           executorEventAuthUrl
             ? createExecutorEventAuthorizer(executorEventAuthUrl)
             : undefined,
         )
       : undefined;
+    const deviceLink = config.OMNI_DEVICE_LINK_TOKEN
+      ? new DeviceLinkService()
+      : undefined;
+    const claudeWatcher =
+      events && deviceLink ? new ClaudeSessionWatcher(events, deviceLink) : undefined;
     const requestWorkspaceEmailRun = (
       workspaceId: string,
       subjectId: string,
@@ -402,6 +409,8 @@ const program = Effect.scoped(
       intelligence,
       reminders,
       events,
+      deviceLink,
+      claudeWatcher,
     );
     yield* Effect.addFinalizer(() =>
       closeServer.pipe(
@@ -427,6 +436,16 @@ const program = Effect.scoped(
           logger.warn("MCP event recovery deferred to scheduled retry"),
         ),
         Effect.forkScoped,
+      );
+      yield* events.deliveryWorker().pipe(Effect.forkScoped);
+    }
+    if (claudeWatcher) {
+      yield* scheduler.register(
+        registry.track({
+          name: "ClaudeSessionEvents",
+          schedule: "*/15 * * * * *",
+          run: claudeWatcher.poll(),
+        }),
       );
     }
     yield* reminders.healthCheck().pipe(Effect.forkScoped);

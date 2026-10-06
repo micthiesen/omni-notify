@@ -1,4 +1,8 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig, mergeConfig } from "vitest/config";
 import { baseVitestConfig } from "@micthiesen/mitools/vitest";
 
-export default defineConfig(baseVitestConfig);
+// Agent worktrees under .claude/ hold other checkouts of this repository.
+export default mergeConfig(
+  baseVitestConfig,
+  defineConfig({ test: { exclude: ["**/.claude/**"] } }),
+);

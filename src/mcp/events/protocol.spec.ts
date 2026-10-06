@@ -7,7 +7,7 @@ import { createMitoolsTestRuntime } from "../../test/mitools.js";
 import type { TaskRegistry } from "../../task-runs/registry.js";
 import type { McpRuntime } from "../runtime.js";
 import { createOmniMcpHandler } from "../server.js";
-import { EmailEventService } from "./service.js";
+import { McpEventService } from "./service.js";
 import { EventPersistence } from "./persistence.js";
 import { WebhookError } from "./webhook.js";
 
@@ -20,23 +20,25 @@ describe("Omni MCP Events protocol", () => {
     const owner = `executor:${"a".repeat(64)}`;
     let verificationFails = false;
     let authorizationAccepted = true;
-    const events = new EmailEventService(
-      token,
-      (candidate, bearer) =>
-        Effect.succeed(
-          authorizationAccepted &&
-            candidate === owner &&
-            bearer === "Bearer delegated-fixture"
-            ? Date.now() + 60 * 60_000
-            : null,
-        ),
-      {
-        verify: () =>
-          verificationFails
-            ? Effect.fail(new WebhookError({ reason: "challenge_failed" }))
-            : Effect.void,
-        deliver: () => Effect.succeed({ status: 204 }),
-      },
+    const events = Effect.runSync(
+      McpEventService.make(
+        token,
+        (candidate, bearer) =>
+          Effect.succeed(
+            authorizationAccepted &&
+              candidate === owner &&
+              bearer === "Bearer delegated-fixture"
+              ? Date.now() + 60 * 60_000
+              : null,
+          ),
+        {
+          verify: () =>
+            verificationFails
+              ? Effect.fail(new WebhookError({ reason: "challenge_failed" }))
+              : Effect.void,
+          deliver: () => Effect.succeed({ status: 204 }),
+        },
+      ),
     );
     const runtime: McpRuntime = {
       logger: Logger.named("McpEventsSpec"),
@@ -92,7 +94,10 @@ describe("Omni MCP Events protocol", () => {
         { method: "events/list", params: {} },
         z.object({ events: z.array(z.object({ name: z.string() })) }),
       );
-      expect(catalog.events.map((event) => event.name)).toEqual(["email.received"]);
+      expect(catalog.events.map((event) => event.name)).toEqual([
+        "email.received",
+        "claude.session.turn_finished",
+      ]);
       expect(await testRuntime.run(EventPersistence.requests())).toContainEqual(
         expect.objectContaining({
           method: "events/list",

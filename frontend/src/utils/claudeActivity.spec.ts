@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { McpCall } from "../api";
 import {
+  claudeActionKind,
   snippet,
   toolInputSummary,
   explainClaudeError,
@@ -192,5 +193,20 @@ describe("message tool summaries", () => {
     expect(
       toolInputSummary('{"to":"agent","summary":"Re-verify fixes","message":"x"}'),
     ).toBe("Re-verify fixes");
+  });
+});
+
+describe("claudeActionKind", () => {
+  it("reads waits and results from claude_session_get input", () => {
+    const get = (input: Record<string, unknown>) =>
+      claudeActionKind(call({ callId: "g", tool: "claude_session_get", input }));
+    expect(get({ session: "abc" })).toBe("get");
+    expect(get({ session: "abc", waitSeconds: 30 })).toBe("wait");
+    expect(get({ session: "abc", waitSeconds: 30, includeResult: true })).toBe(
+      "result",
+    );
+    expect(claudeActionKind(call({ callId: "w", tool: "claude_session_wait" }))).toBe(
+      "wait",
+    );
   });
 });

@@ -142,7 +142,7 @@
     {
       "name": "claude_link_status",
       "title": "Get Claude Code Host Status",
-      "description": "Report whether the Claude Code host is connected to Omni for session control, whether its kill switch is engaged, and when it last checked in. Reads Omni's state only.",
+      "description": "Report whether the Claude Code host is connected to Omni for session control, whether its kill switch is engaged, when it last checked in, and the projects where new sessions may start (the same list its Remote Control servers use; null while the host is unreachable). Start sessions by project name.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -150,23 +150,7 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Reads Omni's in-memory link state"
-      ],
-      "cost": "none",
-      "recommendedExecutorPolicy": "allow"
-    },
-    {
-      "name": "claude_projects_list",
-      "title": "List Claude Code Projects",
-      "description": "List the projects where new Claude Code sessions may start on the Claude Code host. This is the same project list its Remote Control servers use. Start sessions by project name.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "sideEffects": [
-        "Reads the host's project configuration"
+        "Reads Omni's link state and the host's project configuration"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -174,7 +158,7 @@
     {
       "name": "claude_session_get",
       "title": "Get Claude Code Session",
-      "description": "Read one Claude Code session's status, transcript revision, and last assistant text. Use the revision with claude_session_wait.",
+      "description": "Read one Claude Code session's status, transcript revision, and last assistant text. To wait for a turn to finish, pass waitSeconds (up to 45) with afterRevision from a start or send result so the wait cannot return before the new turn; when timedOut is true, call again. includeResult adds all assistant text since the last user input once the turn has finished. Subscribing to the claude.session.turn_finished MCP event avoids repeated waits where the client supports MCP Events.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -182,7 +166,7 @@
         "openWorldHint": false
       },
       "sideEffects": [
-        "Reads session metadata and transcripts on the host"
+        "Reads session status and transcripts on the host"
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "allow"
@@ -204,25 +188,9 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
-      "name": "claude_session_result",
-      "title": "Get Claude Code Turn Result",
-      "description": "Return the assistant text a Claude Code session produced since its last user input, with the session status.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "sideEffects": [
-        "Reads a session transcript on the host"
-      ],
-      "cost": "none",
-      "recommendedExecutorPolicy": "allow"
-    },
-    {
       "name": "claude_session_send",
       "title": "Send Input to Claude Code Session",
-      "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. If the result is unknown, read the session before sending again.",
+      "description": "Continue an idle background Claude Code session with new user input. Busy sessions are refused unless interrupt is true, which ends the current turn first. Interactive terminal sessions cannot receive input here. Pass an idempotencyKey so a retry returns the earlier send (reused) instead of sending twice; a retry whose earlier attempt never finished fails with send_in_doubt. Without a key, read the session before sending again after an unknown result.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -239,7 +207,7 @@
     {
       "name": "claude_session_start",
       "title": "Start Claude Code Session",
-      "description": "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_projects_list). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
+      "description": "Start a new background Claude Code session on the Claude Code host in a configured project (see claude_link_status). The session runs with full access (bypass permissions) and can edit, run commands, commit, and push in that project. Reusing an idempotencyKey for the same project returns the existing session instead of starting another.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -268,22 +236,6 @@
       ],
       "cost": "none",
       "recommendedExecutorPolicy": "require_approval"
-    },
-    {
-      "name": "claude_session_wait",
-      "title": "Wait for Claude Code Session",
-      "description": "Wait up to 45 seconds for a session to finish its turn. Pass afterRevision (from claude_session_get or a start/send result) so the wait cannot return before the new turn. When timedOut is true, call again.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "sideEffects": [
-        "Polls session status on the host"
-      ],
-      "cost": "none",
-      "recommendedExecutorPolicy": "allow"
     },
     {
       "name": "claude_sessions_list",
@@ -520,20 +472,6 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
-      "name": "email_events_status",
-      "title": "Check Email Event Delivery",
-      "description": "Report the email.received MCP Events lifecycle Omni has observed: recent events/list and subscription requests, subscriptions by callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "sideEffects": [],
-      "cost": "none",
-      "recommendedExecutorPolicy": "allow"
-    },
-    {
       "name": "email_feedback_list",
       "title": "List Email Feedback",
       "description": "List explicit corrections used by the email relevance triage prompts, newest first.",
@@ -748,6 +686,20 @@
       ],
       "cost": "No paid API",
       "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "events_status",
+      "title": "Check MCP Event Delivery",
+      "description": "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "none",
+      "recommendedExecutorPolicy": "allow"
     },
     {
       "name": "get_browser_page",

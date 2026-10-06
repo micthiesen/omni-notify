@@ -4,8 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - packages/executor-events-adapter/**
+      - .github/workflows/executor-events-adapter.yml
   pull_request:
     branches: [main]
+    paths:
+      - packages/executor-events-adapter/**
+      - .github/workflows/executor-events-adapter.yml
 
 concurrency:
   group: executor-events-adapter-${{ github.ref }}

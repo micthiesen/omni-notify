@@ -8,7 +8,7 @@ import {
 import type { McpRuntime } from "../runtime.js";
 import { annotations, defineTool, emptyInputSchema } from "../tool.js";
 
-const folderSchema = z.enum(["inbox", "archive"]);
+const argumentsSchema = z.record(z.string(), z.string());
 
 const statusSchema = z.object({
   enabled: z.boolean(),
@@ -18,7 +18,8 @@ const statusSchema = z.object({
       at: z.string(),
       method: z.enum(EVENT_REQUEST_METHODS),
       owner: z.string(),
-      folder: folderSchema.nullable(),
+      name: z.string().nullable(),
+      arguments: argumentsSchema.nullable(),
       callbackHost: z.string().nullable(),
       outcome: z.string(),
     }),
@@ -27,7 +28,8 @@ const statusSchema = z.object({
   subscriptions: z.array(
     z.object({
       id: z.string(),
-      folder: folderSchema,
+      name: z.string(),
+      arguments: argumentsSchema,
       owner: z.string(),
       callbackHost: z.string().nullable(),
       state: z.enum(["active", "expired", "stale_key"]),
@@ -45,7 +47,7 @@ const statusSchema = z.object({
       z.object({
         eventId: z.string(),
         subscriptionId: z.string(),
-        folder: folderSchema,
+        name: z.string(),
         status: z.enum(["pending", "delivered", "failed"]),
         attempts: z.number(),
         lastStatus: z.number().nullable(),
@@ -59,13 +61,13 @@ const statusSchema = z.object({
   }),
 });
 
-export function createEmailEventTools(runtime: McpRuntime) {
+export function createEventTools(runtime: McpRuntime) {
   return [
     defineTool({
-      name: "email_events_status",
-      title: "Check Email Event Delivery",
+      name: "events_status",
+      title: "Check MCP Event Delivery",
       description:
-        "Report the email.received MCP Events lifecycle Omni has observed: recent events/list and subscription requests, subscriptions by callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
+        "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
       inputSchema: emptyInputSchema,
       outputSchema: statusSchema,
       annotations: annotations(true, false, true, false),

@@ -9,7 +9,8 @@ import type { EmailControls } from "../server.js";
 import type { TaskRegistry } from "../task-runs/registry.js";
 import type { AppServices } from "../effect/appRuntime.js";
 import type { HisterService } from "../hister/service.js";
-import type { EmailEventService } from "./events/service.js";
+import type { McpEventService } from "./events/service.js";
+import type { ClaudeSessionWatcher } from "./events/claudeSessions.js";
 import type { RemindersService } from "../reminders/service.js";
 import type { DeviceLinkService } from "../device-link/service.js";
 
@@ -25,6 +26,7 @@ export interface McpRuntime {
   livestreamDiagnostics?: LivestreamIntelligenceDiagnosticsProvider;
   printer?: PrinterService;
   hister?: HisterService;
-  events?: EmailEventService;
+  events?: McpEventService;
   deviceLink?: DeviceLinkService;
+  claudeWatcher?: ClaudeSessionWatcher;
 }

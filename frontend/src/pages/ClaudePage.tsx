@@ -547,7 +547,7 @@ function Tag({ children, tone }: { children: ReactNode; tone?: string }) {
 }
 
 function ActionBody({ call }: { call: McpCall }) {
-  const kind = claudeActionKind(call.tool);
+  const kind = claudeActionKind(call);
   const input = call.input;
   const output = call.output;
   const session = outputSession(call);
@@ -632,7 +632,7 @@ function ActionBody({ call }: { call: McpCall }) {
 }
 
 function TimelineItem({ call, now }: { call: McpCall; now: number }) {
-  const kind = claudeActionKind(call.tool);
+  const kind = claudeActionKind(call);
   return (
     <li className={`claude-tl-item claude-tl-${kind} claude-tl-status-${call.status}`}>
       <span className="claude-tl-marker" aria-hidden="true" />
@@ -729,7 +729,7 @@ function OtherActions({ calls, now }: { calls: McpCall[]; now: number }) {
       </header>
       <ul className="claude-other-list">
         {shown.map((call) => {
-          const kind = claudeActionKind(call.tool);
+          const kind = claudeActionKind(call);
           return (
             <li key={call.callId} className="claude-other-row">
               <span className="claude-other-label">{ACTION_LABELS[kind]}</span>
