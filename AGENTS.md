@@ -147,6 +147,13 @@ post as well as event. Keep pushes concise with a source button and preserve
 durable delivery reservations. See
 `docs/codex-resets.md`.
 
+`ClaudeResets` polls Reset Radar's structured catalog for confirmed historical
+Claude Code counter-reset reports. Tracker confirmation is not account
+verification. Preserve banked-reset wording without inferring redemption or
+expiry. The providers share bounded reads, scheduling, and delivery code under
+`src/reset-alerts/`, with separate durable namespaces and unchanged Codex keys.
+See `docs/claude-resets.md`.
+
 ### PressPods
 
 Retrievers run independently and the metadata model selects the best usable

@@ -1,9 +1,14 @@
+import {
+  ALERT_LOOKBACK_MS,
+  CLOCK_SKEW_MS,
+  pacificTime,
+  compactSummary,
+} from "../reset-alerts/presentation.js";
 import type { ResetAlert } from "./delivery.js";
 import type { AlertFeed, ResetHistory } from "./source.js";
 
-export const ALERT_LOOKBACK_MS = 48 * 60 * 60_000;
+export { ALERT_LOOKBACK_MS } from "../reset-alerts/presentation.js";
 export const FEED_MAX_AGE_MS = 45 * 60_000;
-const CLOCK_SKEW_MS = 5 * 60_000;
 
 export function isFreshFeed(feed: AlertFeed, now: number): boolean {
   const age = now - Date.parse(feed.generatedAt);
@@ -32,28 +37,6 @@ function stageOf(
       : "update";
   }
   return undefined;
-}
-
-const pacificTime = (value: string) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Vancouver",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  }).format(new Date(value));
-
-/** Push previews should contain the news, not a clipped reply thread or raw URLs. */
-function compactSummary(text: string): string {
-  const clean = text
-    .replace(/https?:\/\/\S+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (clean.length <= 200) return clean;
-  const prefix = clean.slice(0, 197);
-  const space = prefix.lastIndexOf(" ");
-  return `${prefix.slice(0, space > 150 ? space : 197).trimEnd()}…`;
 }
 
 function sourceLabel(sourceUrl: string): string {
