@@ -117,6 +117,13 @@ export interface EmailSearchOptions {
   fresh?: boolean;
 }
 
+/** Verified bytes re-read from the mailbox by stable identity, never caller-supplied. */
+export interface OutgoingEmailAttachment {
+  filename: string;
+  contentType: "application/pdf";
+  content: Buffer;
+}
+
 export interface EmailDraftInput {
   idempotencyKey: string;
   to: string[];
@@ -126,6 +133,8 @@ export interface EmailDraftInput {
   text: string;
   inReplyTo?: string;
   references?: string[];
+  /** Every entry must be appended; an implementation that cannot must fail. */
+  attachments?: readonly OutgoingEmailAttachment[];
 }
 
 export interface EmailDraftResult {

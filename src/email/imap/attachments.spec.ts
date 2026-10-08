@@ -220,6 +220,7 @@ describe("stable read-only attachments", () => {
       "offer.pdf",
     );
     expect(safeAttachmentFilename("..\u0000")).toBe("attachment");
+    expect(safeAttachmentFilename("\ufeffscan\u200b\u0085\u061c.pdf")).toBe("scan.pdf");
     expect(safeAttachmentFilename("a".repeat(300))).toHaveLength(180);
   });
 });

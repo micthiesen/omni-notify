@@ -260,6 +260,13 @@ Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
 revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK
 semantics, declared MIME validation, safe download names, and private binary
 responses without public storage or server-selected filesystem destinations.
+Outgoing send and draft attachments are only `attachmentReference` values
+(`{messageId, attachmentId, sha256}`) from `email_attachment_get`, re-read through
+that path, never caller bytes. The required SHA-256 must match before any APPEND
+or SMTP; keep the PDF-only scope tied to that reviewed-read path. Resolve them before reserving the
+idempotency key, settle known keys from their receipt first, and keep attachment
+bytes in the persisted MIME so Sent copy repair never re-reads a source. Receipts
+drop wire MIME once SMTP completes and the private copy once it is verified.
 
 ## Code and tests
 

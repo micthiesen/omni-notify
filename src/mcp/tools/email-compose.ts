@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { decodeDoc, Docstore } from "@micthiesen/mitools/docstore";
+import { causeMessage } from "@micthiesen/mitools/errors";
 import { Clock, Data, Effect, Option, Schema } from "effect";
 import { z } from "zod";
 import type { EmailDraftInput } from "../../email/types.js";
@@ -8,6 +9,13 @@ import { sendComposedEmailEffect } from "../../emails/send.js";
 import { prepareComposedEmailEffect } from "../../emails/mime.js";
 import type { McpRuntime } from "../runtime.js";
 import { annotations, defineTool, type McpToolDefinition } from "../tool.js";
+import {
+  OutgoingAttachmentMetadataSchema,
+  outgoingAttachmentMetadataOutput,
+  outgoingAttachmentsSchema,
+  resolveOutgoingAttachmentsEffect,
+  type OutgoingAttachmentMetadata,
+} from "./email-compose-attachments.js";
 
 const recipient = z.string().trim().email().max(320);
 const recipientList = z.array(recipient).min(1).max(20);
@@ -37,6 +45,7 @@ const composeFields = {
   text: z.string().min(1).max(20_000),
   inReplyTo: messageIdSchema.optional(),
   references: z.array(messageIdSchema).max(20).optional(),
+  attachments: outgoingAttachmentsSchema,
 };
 
 export class EmailComposeError extends Data.TaggedError("EmailComposeError")<{
@@ -44,13 +53,26 @@ export class EmailComposeError extends Data.TaggedError("EmailComposeError")<{
   readonly cause?: unknown;
 }> {}
 
+/** MCP error text reports only the innermost cause, so keep guidance in the message. */
+const failWith = (message: string) => (cause: unknown) =>
+  new EmailComposeError({ message: `${message}: ${causeMessage(cause)}` });
+
+/** Receipts drop MIME no later step uses: wire after SMTP, the copy once verified. */
 const PreparedMessageSchema = Schema.Struct({
   from: Schema.String,
   date: Schema.String,
-  wire: Schema.String,
-  content: Schema.String,
+  wire: Schema.optional(Schema.String),
+  content: Schema.optional(Schema.String),
 });
 type PreparedMessage = typeof PreparedMessageSchema.Type;
+
+function retainedMime(prepared: PreparedMessage | undefined, keepContent: boolean) {
+  if (!prepared) return {};
+  const { from, date, content } = prepared;
+  return {
+    prepared: { from, date, ...(keepContent && content ? { content } : {}) },
+  };
+}
 const SentCopySchema = Schema.Literals(["pending", "uncertain", "verified"]);
 const StoredAttemptSchema = Schema.Struct({
   fingerprint: Schema.String,
@@ -63,14 +85,17 @@ const StoredAttemptSchema = Schema.Struct({
   ),
   prepared: Schema.optional(PreparedMessageSchema),
   sentCopy: Schema.optional(SentCopySchema),
+  attachments: Schema.optional(Schema.Array(OutgoingAttachmentMetadataSchema)),
   updatedAt: Schema.Number,
 });
 type StoredAttempt = typeof StoredAttemptSchema.Type;
 
+type StoredAttachments = readonly OutgoingAttachmentMetadata[];
 type Reservation =
   | { kind: "reserved" }
-  | { kind: "succeeded"; messageId: string }
-  | { kind: "pending" | "failed" }
+  | { kind: "succeeded"; messageId: string; attachments: StoredAttachments }
+  | { kind: "pending"; attachments: StoredAttachments }
+  | { kind: "failed" }
   | { kind: "mismatch" };
 
 const keyFor = (kind: "draft" | "send", key: string) =>
@@ -78,11 +103,24 @@ const keyFor = (kind: "draft" | "send", key: string) =>
 const fingerprintFor = (input: unknown) =>
   createHash("sha256").update(JSON.stringify(input)).digest("hex");
 
+function existingReservation(
+  prior: StoredAttempt,
+  fingerprint: string,
+): Exclude<Reservation, { kind: "reserved" }> {
+  if (prior.fingerprint !== fingerprint) return { kind: "mismatch" };
+  const attachments = prior.attachments ?? [];
+  if (prior.status === "succeeded" && prior.result?.sent) {
+    return { kind: "succeeded", messageId: prior.result.messageId, attachments };
+  }
+  if (prior.status === "pending") return { kind: "pending", attachments };
+  return { kind: "failed" };
+}
+
 function reserveEffect(
   kind: "draft" | "send",
   idempotencyKey: string,
   fingerprint: string,
-  prepared?: PreparedMessage,
+  extra: { prepared?: PreparedMessage; attachments?: StoredAttachments } = {},
 ): Effect.Effect<Reservation, EmailComposeError, Docstore> {
   return Effect.gen(function* () {
     const docstore = yield* Docstore;
@@ -93,32 +131,19 @@ function reserveEffect(
       const prior = stored
         ? Schema.decodeUnknownSync(StoredAttemptSchema)(decodeDoc<unknown>(stored.data))
         : undefined;
-      if (prior) {
-        if (prior.fingerprint !== fingerprint) return { kind: "mismatch" };
-        if (prior.status === "succeeded" && prior.result?.sent) {
-          return { kind: "succeeded", messageId: prior.result.messageId };
-        }
-        if (prior.status === "succeeded") return { kind: "failed" };
-        return { kind: prior.status };
-      }
+      if (prior) return existingReservation(prior, fingerprint);
+      const { prepared, attachments } = extra;
       const row: StoredAttempt = {
         fingerprint,
         status: "pending",
         updatedAt: now,
         ...(prepared ? { prepared, sentCopy: "pending" as const } : {}),
+        ...(attachments?.length ? { attachments } : {}),
       };
       tx.upsertDoc(pk, row, { entity: `email-compose-${kind}` }, now);
       return { kind: "reserved" };
     });
-  }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EmailComposeError({
-          message: `Could not reserve email ${kind}`,
-          cause,
-        }),
-    ),
-  );
+  }).pipe(Effect.mapError(failWith(`Could not reserve email ${kind}`)));
 }
 
 function completeEffect(
@@ -138,6 +163,15 @@ function completeEffect(
       const prior = Schema.decodeUnknownSync(StoredAttemptSchema)(
         decodeDoc<unknown>(stored.data),
       );
+      if (
+        prior.fingerprint === fingerprint &&
+        prior.status === "succeeded" &&
+        prior.result?.sent === sent &&
+        prior.result.messageId === messageId
+      ) {
+        // A concurrent reconciler recorded the same outcome first.
+        return;
+      }
       if (prior.fingerprint !== fingerprint || prior.status !== "pending") {
         throw new Error("Email compose reservation changed unexpectedly");
       }
@@ -145,6 +179,7 @@ function completeEffect(
         pk,
         {
           ...prior,
+          ...retainedMime(prior.prepared, true),
           status: sent ? "succeeded" : "failed",
           result: { sent, messageId },
           updatedAt: now,
@@ -155,27 +190,31 @@ function completeEffect(
     });
   }).pipe(
     Effect.mapError(
-      (cause) =>
-        new EmailComposeError({
-          message: `Could not persist email ${kind} outcome; do not repeat with a new key`,
-          cause,
-        }),
+      failWith(`Could not persist email ${kind} outcome; do not repeat with a new key`),
     ),
   );
 }
 
-function readAttemptEffect(idempotencyKey: string) {
+function readAttemptEffect(kind: "draft" | "send", idempotencyKey: string) {
   return Effect.gen(function* () {
     const docstore = yield* Docstore;
-    const row = yield* docstore.getRawRow(keyFor("send", idempotencyKey));
+    const row = yield* docstore.getRawRow(keyFor(kind, idempotencyKey));
     if (Option.isNone(row)) return undefined;
     return yield* Schema.decodeUnknownEffect(StoredAttemptSchema)(
       decodeDoc<unknown>(row.value.data),
     );
-  }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EmailComposeError({ message: "Could not read send receipt", cause }),
+  }).pipe(Effect.mapError(failWith(`Could not read ${kind} receipt`)));
+}
+
+/** Settle known keys before re-reading attachment sources or composing MIME. */
+function findReservationEffect(
+  kind: "draft" | "send",
+  idempotencyKey: string,
+  fingerprint: string,
+) {
+  return readAttemptEffect(kind, idempotencyKey).pipe(
+    Effect.map((prior) =>
+      prior ? existingReservation(prior, fingerprint) : undefined,
     ),
   );
 }
@@ -183,68 +222,70 @@ function readAttemptEffect(idempotencyKey: string) {
 /** Claim APPEND durably; a crash or lost response permits read-only reconciliation only. */
 function saveSentEffect(runtime: McpRuntime, idempotencyKey: string) {
   return Effect.gen(function* () {
-    const attempt = yield* readAttemptEffect(idempotencyKey);
+    const attempt = yield* readAttemptEffect("send", idempotencyKey);
     if (!attempt?.result?.sent || attempt.status !== "succeeded")
       return yield* new EmailComposeError({
         message:
           "SMTP acceptance is not confirmed; Sent copy repair cannot send or assume delivery",
       });
     if (attempt.sentCopy === "verified") return "verified" as const;
-    if (!attempt.prepared) return "legacy-unavailable" as const;
+    const content = attempt.prepared?.content;
+    if (!attempt.prepared || !content) return "legacy-unavailable" as const;
     const transport = runtime.emailControls.transport;
-    if (!transport?.saveSentCopyEffect) return attempt.sentCopy ?? "pending";
-    const docstore = yield* Docstore;
-    const now = yield* Clock.currentTimeMillis;
-    const beforeAppend = docstore.transaction("claim Sent APPEND", (tx) => {
-      const row = tx.getRawRow(keyFor("send", idempotencyKey), now);
-      if (!row) throw new Error("Send receipt disappeared");
-      const prior = Schema.decodeUnknownSync(StoredAttemptSchema)(
-        decodeDoc<unknown>(row.data),
-      );
-      if (prior.sentCopy !== "pending") return false;
-      tx.upsertDoc(
-        keyFor("send", idempotencyKey),
-        { ...prior, sentCopy: "uncertain" },
-        { entity: "email-compose-send" },
-        now,
-      );
-      return true;
-    });
-    const copied = yield* transport
-      .saveSentCopyEffect(
+    const saveSentCopy = transport?.saveSentCopyEffect?.bind(transport);
+    if (!saveSentCopy) return attempt.sentCopy ?? "pending";
+    const { messageId } = attempt.result;
+    const { date } = attempt.prepared;
+    return yield* Effect.gen(function* () {
+      const docstore = yield* Docstore;
+      const now = yield* Clock.currentTimeMillis;
+      const beforeAppend = docstore.transaction("claim Sent APPEND", (tx) => {
+        const row = tx.getRawRow(keyFor("send", idempotencyKey), now);
+        if (!row) throw new Error("Send receipt disappeared");
+        const prior = Schema.decodeUnknownSync(StoredAttemptSchema)(
+          decodeDoc<unknown>(row.data),
+        );
+        if (prior.sentCopy !== "pending") return false;
+        tx.upsertDoc(
+          keyFor("send", idempotencyKey),
+          { ...prior, sentCopy: "uncertain" },
+          { entity: "email-compose-send" },
+          now,
+        );
+        return true;
+      });
+      const copied = yield* saveSentCopy(
         {
-          messageId: attempt.result.messageId,
-          content: Buffer.from(attempt.prepared.content, "base64"),
-          internalDate: new Date(attempt.prepared.date),
+          messageId,
+          content: Buffer.from(content, "base64"),
+          internalDate: new Date(date),
         },
         { allowAppend: attempt.sentCopy === "pending", beforeAppend },
-      )
-      .pipe(Effect.result);
-    if (copied._tag === "Failure")
-      return (yield* readAttemptEffect(idempotencyKey))?.sentCopy ?? "pending";
-    yield* docstore.transaction("verify Sent copy receipt", (tx) => {
-      const row = tx.getRawRow(keyFor("send", idempotencyKey), now);
-      if (!row) throw new Error("Send receipt disappeared");
-      const prior = Schema.decodeUnknownSync(StoredAttemptSchema)(
-        decodeDoc<unknown>(row.data),
-      );
-      tx.upsertDoc(
-        keyFor("send", idempotencyKey),
-        { ...prior, sentCopy: "verified" },
-        { entity: "email-compose-send" },
-        now,
-      );
-    });
-    return "verified" as const;
-  }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new EmailComposeError({
-          message: "SMTP was accepted but Sent copy persistence failed; do not resend",
-          cause,
-        }),
-    ),
-  );
+      ).pipe(Effect.result);
+      if (copied._tag === "Failure")
+        return (
+          (yield* readAttemptEffect("send", idempotencyKey))?.sentCopy ?? "pending"
+        );
+      yield* docstore.transaction("verify Sent copy receipt", (tx) => {
+        const row = tx.getRawRow(keyFor("send", idempotencyKey), now);
+        if (!row) throw new Error("Send receipt disappeared");
+        const prior = Schema.decodeUnknownSync(StoredAttemptSchema)(
+          decodeDoc<unknown>(row.data),
+        );
+        tx.upsertDoc(
+          keyFor("send", idempotencyKey),
+          { ...prior, ...retainedMime(prior.prepared, false), sentCopy: "verified" },
+          { entity: "email-compose-send" },
+          now,
+        );
+      });
+      return "verified" as const;
+    }).pipe(
+      Effect.mapError(
+        failWith("SMTP was accepted but Sent copy persistence failed; do not resend"),
+      ),
+    );
+  });
 }
 
 function reservationFailure(
@@ -284,12 +325,18 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
       name: "email_draft_create",
       title: "Create Email Draft",
       description:
-        "Save a plain-text draft in the server-designated Drafts mailbox. Reusing an idempotency key with different content is rejected.",
+        "Save a plain-text draft in the server-designated Drafts mailbox, optionally attaching PDFs you reviewed with email_attachment_get by passing each attachmentReference unchanged. Omni re-reads attachments server-side and refuses bytes that differ from the reviewed SHA-256; never pass file bytes. A draft lets the owner review attachments before sending. Reusing an idempotency key with different content is rejected.",
       inputSchema: draftSchema,
-      outputSchema: z.object({ draftId: z.string(), alreadyExisted: z.boolean() }),
+      outputSchema: z.object({
+        draftId: z.string(),
+        alreadyExisted: z.boolean(),
+        attachments: z.array(outgoingAttachmentMetadataOutput),
+      }),
       annotations: annotations(false, false, true, true),
       policy: {
-        sideEffects: ["Creates a draft in the configured email account"],
+        sideEffects: [
+          "Creates a draft in the configured email account, including copies of any referenced private PDF attachments",
+        ],
         cost: "No per-call paid API expected",
         recommendedPolicy: "allow",
       },
@@ -306,13 +353,28 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
               message: "SMTP credentials for michael@thiesen.dev are not available",
             });
           const fingerprint = fingerprintFor({ ...input, from: config.from });
-          const reservation = yield* reserveEffect(
+          const existing = yield* findReservationEffect(
             "draft",
             input.idempotencyKey,
             fingerprint,
           );
+          const attachments = existing
+            ? []
+            : yield* resolveOutgoingAttachmentsEffect(transport, input.attachments);
+          const reservation =
+            existing ??
+            (yield* reserveEffect("draft", input.idempotencyKey, fingerprint, {
+              attachments: attachments.map(({ metadata }) => metadata),
+            }));
           if (reservation.kind === "succeeded") {
-            return { draftId: reservation.messageId, alreadyExisted: true };
+            return {
+              draftId: reservation.messageId,
+              alreadyExisted: true,
+              attachments: reservation.attachments,
+            };
+          }
+          if (reservation.kind !== "reserved" && reservation.kind !== "pending") {
+            return yield* reservationFailure("draft", reservation);
           }
           const draftInput: EmailDraftInput = {
             idempotencyKey: input.idempotencyKey,
@@ -323,12 +385,8 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
             text: input.text,
             inReplyTo: input.inReplyTo,
             references: input.references,
+            attachments: attachments.map(({ file }) => file),
           };
-          if (reservation.kind === "failed")
-            return yield* reservationFailure("draft", reservation);
-          if (reservation.kind !== "reserved" && reservation.kind !== "pending") {
-            return yield* reservationFailure("draft", reservation);
-          }
           const result = yield* transport
             .createDraftEffect(
               draftInput,
@@ -347,6 +405,10 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
             ...result.success,
             alreadyExisted:
               result.success.alreadyExisted || reservation.kind === "pending",
+            attachments:
+              reservation.kind === "pending"
+                ? reservation.attachments
+                : attachments.map(({ metadata }) => metadata),
           };
         }),
     }),
@@ -354,18 +416,19 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
       name: "email_send",
       title: "Send Email",
       description:
-        "Submit a plain-text email to SMTP and save a private Sent copy. sent means all recipients were accepted by SMTP, not final delivery. Reply callers should use the parent subject (Re: prefix), Message-ID and References. Reusing a key never retransmits.",
+        "Submit a plain-text email to SMTP and save a private Sent copy. Optional attachments are PDFs you reviewed with email_attachment_get: pass each attachmentReference ({messageId, attachmentId, sha256}) unchanged. Omni re-reads them fresh server-side (never pass file bytes) and fails before sending if any is missing, not a PDF, over the size limits, or different from the reviewed SHA-256. When requesting approval, name each attachment's filename and source email. sent means all recipients were accepted by SMTP, not final delivery. Reply callers should use the parent subject (Re: prefix), Message-ID and References. Reusing a key never retransmits.",
       inputSchema: sendSchema,
       outputSchema: z.object({
         sent: z.literal(true),
         messageId: z.string(),
         alreadySent: z.boolean(),
         sentCopy: z.enum(["pending", "uncertain", "verified", "legacy-unavailable"]),
+        attachments: z.array(outgoingAttachmentMetadataOutput),
       }),
       annotations: annotations(false, false, true, true),
       policy: {
         sideEffects: [
-          "Sends an external email to the specified recipients",
+          "Sends an external email, including any referenced private PDF attachments, to the specified recipients",
           "May append a private copy in the Sent mailbox",
         ],
         cost: "Consumes SMTP provider quota",
@@ -379,10 +442,41 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
               message: "SMTP credentials for michael@thiesen.dev are not configured",
             });
           const fingerprint = fingerprintFor({ ...input, from: config.from });
+          const alreadySent = (
+            reservation: Extract<Reservation, { kind: "succeeded" }>,
+          ) =>
+            saveSentEffect(runtime, input.idempotencyKey).pipe(
+              Effect.map((sentCopy) => ({
+                sent: true as const,
+                messageId: reservation.messageId,
+                alreadySent: true,
+                sentCopy,
+                attachments: reservation.attachments,
+              })),
+            );
+          const existing = yield* findReservationEffect(
+            "send",
+            input.idempotencyKey,
+            fingerprint,
+          );
+          if (existing?.kind === "succeeded") return yield* alreadySent(existing);
+          if (existing) return yield* reservationFailure("send", existing);
+          const attachments = yield* resolveOutgoingAttachmentsEffect(
+            runtime.emailControls.transport,
+            input.attachments,
+          );
+          const metadata = attachments.map((attachment) => attachment.metadata);
           const messageId = `<${fingerprint}@omni-notify>`;
           const date = new Date(yield* Clock.currentTimeMillis);
           const prepared = yield* prepareComposedEmailEffect({
-            ...input,
+            to: input.to,
+            cc: input.cc,
+            bcc: input.bcc,
+            subject: input.subject,
+            text: input.text,
+            inReplyTo: input.inReplyTo,
+            references: input.references,
+            attachments: attachments.map(({ file }) => file),
             messageId,
             date,
           });
@@ -390,16 +484,9 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
             "send",
             input.idempotencyKey,
             fingerprint,
-            prepared,
+            { prepared, attachments: metadata },
           );
-          if (reservation.kind === "succeeded") {
-            return {
-              sent: true as const,
-              messageId: reservation.messageId,
-              alreadySent: true,
-              sentCopy: yield* saveSentEffect(runtime, input.idempotencyKey),
-            };
-          }
+          if (reservation.kind === "succeeded") return yield* alreadySent(reservation);
           if (reservation.kind !== "reserved")
             return yield* reservationFailure("send", reservation);
           const sent = yield* sendComposedEmailEffect({
@@ -430,6 +517,7 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
             messageId,
             alreadySent: false,
             sentCopy: yield* saveSentEffect(runtime, input.idempotencyKey),
+            attachments: metadata,
           };
         }),
     }),
@@ -449,12 +537,13 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
         sentCopy: z
           .enum(["pending", "uncertain", "verified", "legacy-unavailable"])
           .nullable(),
+        attachments: z.array(outgoingAttachmentMetadataOutput),
       }),
       annotations: annotations(true, false, true, false),
       policy: { sideEffects: [], cost: "No paid API", recommendedPolicy: "allow" },
       execute: (input) =>
         Effect.gen(function* () {
-          const attempt = yield* readAttemptEffect(input.idempotencyKey);
+          const attempt = yield* readAttemptEffect("send", input.idempotencyKey);
           return {
             found: Boolean(attempt),
             status: attempt?.status ?? null,
@@ -464,6 +553,7 @@ export function createEmailComposeTools(runtime: McpRuntime): McpToolDefinition[
             recordedAt: attempt ? new Date(attempt.updatedAt).toISOString() : null,
             messageDate: attempt?.prepared?.date ?? null,
             sentCopy: attempt ? (attempt.sentCopy ?? "legacy-unavailable") : null,
+            attachments: attempt?.attachments ?? [],
           };
         }),
     }),

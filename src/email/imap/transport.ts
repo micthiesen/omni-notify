@@ -68,6 +68,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENT_MESSAGE_BYTES,
   safeAttachmentFilename,
+  STABLE_ATTACHMENT_ID_PATTERN,
   validAttachmentMessageId,
 } from "./attachments.js";
 
@@ -1194,7 +1195,7 @@ export class ImapTransport implements EmailTransport<
         const maxBytes = options.maxBytes ?? MAX_ATTACHMENT_BYTES;
         if (
           !validAttachmentMessageId(messageId) ||
-          !/^imap-attachment:[a-f0-9]{64}$/.test(attachmentId) ||
+          !STABLE_ATTACHMENT_ID_PATTERN.test(attachmentId) ||
           !Number.isInteger(maxBytes) ||
           maxBytes < 1 ||
           maxBytes > MAX_ATTACHMENT_BYTES

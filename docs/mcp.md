@@ -42,7 +42,8 @@ families cover:
 The server does not expose arbitrary shell or filesystem access, environment
 values, general database access, secret-bearing HTTP, arbitrary attachment or audio
 bytes, or caller-selected SMTP identities. A bounded private PDF attachment read is
-available through `email_attachment_get`. Inputs are typed and validated.
+available through `email_attachment_get`, and sends and drafts can attach those
+PDFs by reference. Inputs are typed and validated.
 Searches and listings use pagination or fixed bounds, and large text fields are
 truncated with explicit metadata. Cost summaries are limited to 7, 30, or 90
 days and refuse to scan more than 100,000 stored events.
@@ -153,9 +154,71 @@ MIME, and private Sent MIME. SMTP uses an explicit envelope including Bcc; Bcc
 never appears on the delivered message. The private copy preserves Bcc. After
 SMTP acceptance is durably recorded, the copy is appended with `\\Seen` and
 its original INTERNALDATE to the unique server-designated `\\Sent` mailbox.
-Exact Message-ID and decoded MIME content are verified. Replies extend References
+Exact Message-ID and decoded MIME content are verified. The receipt then drops MIME
+that no later step uses: the wire MIME once SMTP completes, and the private copy
+once the Sent copy is verified. Sender, Date and result metadata remain. Replies extend References
 with In-Reply-To; callers should retain the parent subject with a `Re:` prefix.
 Reads expose In-Reply-To, Message-ID and References for verification.
+
+#### Outgoing PDF attachments
+
+`email_send` and `email_draft_create` accept an optional `attachments` list. The
+workflow is retrieve, review, then attach:
+
+1. Find the attachment with `email_get` or `email_search`.
+2. Read it with `email_attachment_get`. Its result includes
+   `attachmentReference: { messageId, attachmentId, sha256 }`, which pins the exact
+   bytes that were returned.
+3. Pass that `attachmentReference` unchanged in `attachments`, for example to reply
+   with a PDF from the parent email.
+
+`sha256` is required. Callers never upload bytes, paths, URLs or filenames. Before
+any draft APPEND or SMTP submission, Omni re-reads each part through the same
+fresh, read-only path as `email_attachment_get` (Inbox, Archive or the designated
+Sent mailbox, exact Message-ID and MIME part identity, 20 MiB source cap, Seen
+flags unchanged) and compares the SHA-256 of the bytes it will attach. A mismatch
+fails closed. This covers a changed part and a different email that reuses the
+Message-ID: the reference binds Message-ID and MIME part, and the newest readable
+copy wins, so the pin is what guarantees the reviewed file is the one sent.
+
+Supported type and limits: only `application/pdf` parts with a `%PDF-` header,
+up to five attachments, 5 MiB each and 10 MiB decoded in total, which keeps the
+encoded message under
+[iCloud's 20 MB message limit](https://support.apple.com/en-us/102198). Duplicate
+references, malformed digests and extra fields are rejected before any IMAP read.
+
+This first version is PDF-only on purpose. Outgoing attachments must be files the
+assistant has reviewed, and `email_attachment_get`, the only reviewed-bytes path,
+returns only PDFs with matching MIME type and header. Accepting other types would
+either send files nobody could review through Omni or widen the private read
+boundary, so both stay unchanged. The PDF check verifies format identity, not
+document safety. Other types need their own read path and a separate decision.
+
+Attachments are resolved before the idempotency key is reserved. A missing,
+moved, deleted, changed, non-PDF or oversized source fails with a tool error that
+names the attachment by position and `attachmentId`, never by filename or
+content, and nothing is sent, drafted or reserved. Re-read it with
+`email_attachment_get` and retry; the same key works because nothing was
+reserved. Owner approval for a send covers every referenced attachment. Approval
+requests should name each attachment's filename and source email, which
+`email_attachment_get` reports; the tool input alone shows only IDs and digests.
+A draft lets the owner inspect attachments before anything is sent. Each part is
+sent with `Content-Disposition: attachment`, the sanitized source filename (with
+`.pdf` appended when missing, and literal RFC 2047 `=?` markers broken up),
+`Content-Type: application/pdf`, and the verified bytes. Inline source parts are
+attached as ordinary attachments.
+
+The attachment references are part of the idempotency fingerprint and the
+derived Message-ID; an empty list is the same as no list. A known key is settled
+from its receipt before any source is re-read, so a retry after success returns
+the stored result even if the source has since moved. The persisted wire and
+private Sent MIME include the attachment bytes, so Sent copy APPEND, verification
+and repair never re-read a source or retransmit SMTP, and the existing uncertain
+APPEND rules apply unchanged. A receipt holds about 40 MB for 10 MiB of
+attachments until SMTP completes, about half that until the Sent copy is
+verified, then only metadata. Results and `email_send_status` include an `attachments` array with
+`messageId`, `attachmentId`, `filename`, `mimeType`, `size`, and `sha256`; drafts
+return the same metadata. Omni does not log attachment filenames or contents.
 
 `email_send_status` reads the durable receipt by idempotency key without network
 writes. `email_sent_copy_repair` saves only a private copy from persisted MIME;

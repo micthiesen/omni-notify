@@ -68,6 +68,34 @@ describe("createDraftEffect", () => {
     expect(parsed.references).toEqual(["<root@example.test>", "<parent@example.test>"]);
   });
 
+  it("attaches verified PDF bytes to the draft MIME without changing reply headers", async () => {
+    const messageId = deterministicDraftMessageId(input.idempotencyKey);
+    const content = Buffer.from("%PDF-1.7\ndraft synthetic fixture\n%%EOF");
+    const fixture = draftClient({
+      search: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([1]),
+      fetchOne: vi.fn(async () => ({ envelope: { messageId } })),
+    });
+    await Effect.runPromise(
+      createDraftEffect(fixture.client, {
+        ...input,
+        attachments: [
+          { filename: "report.pdf", contentType: "application/pdf", content },
+        ],
+      }),
+    );
+    const parsed = await simpleParser(fixture.appended!);
+    expect(parsed.text?.trimEnd()).toBe("A draft body");
+    expect(parsed.inReplyTo).toBe("<parent@example.test>");
+    expect(parsed.references).toEqual(["<root@example.test>", "<parent@example.test>"]);
+    expect(parsed.attachments).toHaveLength(1);
+    expect(parsed.attachments[0]).toMatchObject({
+      filename: "report.pdf",
+      contentType: "application/pdf",
+      contentDisposition: "attachment",
+    });
+    expect(parsed.attachments[0].content.equals(content)).toBe(true);
+  });
+
   it("releases the Drafts lock after failures", async () => {
     const release = vi.fn();
     const fixture = draftClient({

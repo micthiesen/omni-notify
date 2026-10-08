@@ -3,6 +3,7 @@ import MailComposer from "nodemailer/lib/mail-composer/index.js";
 import { Data, Effect } from "effect";
 import type { EmailDraftInput, EmailDraftResult } from "../types.js";
 import { OUTGOING_EMAIL_FROM } from "../../emails/identity.js";
+import { composerAttachmentOptions } from "../../emails/mime.js";
 
 export interface ImapDraftClient {
   list(): Promise<Array<{ path: string; specialUse?: string }>>;
@@ -108,6 +109,7 @@ export function createDraftEffect(
             messageId,
             inReplyTo: input.inReplyTo,
             references: input.references,
+            ...composerAttachmentOptions(input.attachments),
           });
           const message = mime.compile();
           message.keepBcc = true;

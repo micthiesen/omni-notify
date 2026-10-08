@@ -3,6 +3,7 @@ import type { Attachment } from "mailparser";
 
 export const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 export const MAX_ATTACHMENT_MESSAGE_BYTES = 20 * 1024 * 1024;
+export const STABLE_ATTACHMENT_ID_PATTERN = /^imap-attachment:[a-f0-9]{64}$/;
 
 export function validAttachmentMessageId(messageId: string): boolean {
   return (
@@ -40,13 +41,27 @@ export function declaredAttachmentMimeType(attachment: Attachment): string {
     : "application/octet-stream";
 }
 
+/** Format identity only: declared PDF MIME plus a PDF header, not document safety. */
+export function isPdfAttachment(attachment: {
+  mimeType: string;
+  data: Buffer;
+}): boolean {
+  return (
+    attachment.mimeType.toLowerCase() === "application/pdf" &&
+    attachment.data.subarray(0, 5).toString("ascii") === "%PDF-"
+  );
+}
+
 /** A display/download filename, never a filesystem path supplied by the sender. */
 export function safeAttachmentFilename(filename: string | undefined): string {
   const name = (filename ?? "attachment")
     .replaceAll("\\", "/")
     .split("/")
     .at(-1)!
-    .replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(
+      /[\x00-\x1f\x7f-\x9f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g,
+      "",
+    )
     .trim()
     .replace(/^\.+/, "")
     .slice(0, 180);
