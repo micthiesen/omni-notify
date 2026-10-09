@@ -1,0 +1,8 @@
+Message-ID: <qp@example.test>
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+line one is long =
+continued=20
+café raw =C3=A9 encoded   
+end=

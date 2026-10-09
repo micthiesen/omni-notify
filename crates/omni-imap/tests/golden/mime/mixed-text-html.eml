@@ -1,0 +1,20 @@
+From: mixed@example.test
+Message-ID: <mixed@example.test>
+Subject: Mixed
+Content-Type: multipart/mixed; boundary="x"
+
+--x
+Content-Type: text/plain
+
+Plain <part> & first
+
+second para
+--x
+Content-Type: text/html
+
+<b>html part</b>
+--x
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; mx.example.test
+--x--

@@ -1,0 +1,9 @@
+From someone@example.test Mon Sep  1 10:00:00 2026
+CONTENT-TYPE: text/plain; CHARSET="UTF-8"
+MESSAGE-ID:   <Upper@Example.Test>  
+subject: lower key
+X-No-Colon-Line
+Date: Mon, 7 Sep 26 09:05 EDT
+From: =?UTF-8?B?QWxpY2U=?= =?UTF-8?B?IDxhbGljZUBleGFtcGxlLnRlc3Q+?=
+
+body

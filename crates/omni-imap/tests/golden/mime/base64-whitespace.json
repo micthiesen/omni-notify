@@ -1,0 +1,61 @@
+{
+  "messageId": "<b64ws@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": "<h1>Track your package</h1>",
+  "text": null,
+  "headerKeys": [
+    "message-id",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2",
+      "partId": "2",
+      "contentType": "application/pdf",
+      "declaredType": "application/pdf",
+      "filename": "Report Q3.PDF",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 9,
+      "sha256": "e5c62df5dab5c87b6a015ef3d43597074d1eec433b15f51aec63b8582d0e4ab4"
+    }
+  ],
+  "mapped": {
+    "id": "<b64ws@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<b64ws@example.test>",
+    "references": [],
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "Report Q3.PDF",
+        "type": "application/pdf",
+        "size": 9,
+        "partId": "2",
+        "attachmentId": "imap-attachment:eeb4eb72b1b1856ac4da7504138e3cfa0060fcabd740a431bcee1971fae4fa5b",
+        "disposition": "attachment"
+      }
+    ]
+  }
+}

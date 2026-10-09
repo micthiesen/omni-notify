@@ -1,0 +1,85 @@
+{
+  "messageId": "<Original@example.test>",
+  "inReplyTo": "<parent@example.test>",
+  "references": [
+    "<root@example.test>",
+    "<parent@example.test>"
+  ],
+  "subject": "Re: Follow-up",
+  "date": "2026-09-30T23:59:10.000Z",
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "Michael",
+        "address": "me@example.test"
+      }
+    ]
+  ],
+  "to": [
+    [
+      {
+        "name": "",
+        "address": "clinic@example.test"
+      }
+    ]
+  ],
+  "cc": [
+    [
+      {
+        "name": "",
+        "address": "copy@example.test"
+      }
+    ]
+  ],
+  "bcc": [
+    [
+      {
+        "name": "",
+        "address": "private@example.test"
+      }
+    ]
+  ],
+  "replyTo": null,
+  "html": null,
+  "text": "Hi,\n\nPlease book the follow-up.",
+  "headerKeys": [
+    "from",
+    "to",
+    "cc",
+    "bcc",
+    "date",
+    "message-id",
+    "in-reply-to",
+    "references",
+    "subject",
+    "content-type"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<Original@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Re: Follow-up",
+    "from": "me@example.test",
+    "to": [
+      "clinic@example.test"
+    ],
+    "cc": [
+      "copy@example.test"
+    ],
+    "replyTo": [],
+    "messageId": "<Original@example.test>",
+    "inReplyTo": "<parent@example.test>",
+    "references": [
+      "<root@example.test>",
+      "<parent@example.test>"
+    ],
+    "textBody": "Hi,\n\nPlease book the follow-up.",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

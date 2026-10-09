@@ -1,0 +1,56 @@
+[package]
+name = "omni-personal"
+description = "Personal services: pet weights (Whisker), the LAN printer, Hister browser history and Codex/Claude reset alerts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "omni-pets-seed"
+path = "src/bin/omni-pets-seed.rs"
+
+[dependencies]
+aws-cognito-srp.workspace = true
+axum.workspace = true
+base64.workspace = true
+bytes.workspace = true
+futures.workspace = true
+indexmap.workspace = true
+ipp.workspace = true
+jiff.workspace = true
+omni-ai.workspace = true
+omni-alerts.workspace = true
+omni-api.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-mcp-kit.workspace = true
+omni-runtime.workspace = true
+omni-server-kit.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+percent-encoding.workspace = true
+rand.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+omni-testkit.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tokio-util.workspace = true
+tower.workspace = true
+wiremock.workspace = true

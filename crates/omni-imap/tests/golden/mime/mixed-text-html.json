@@ -1,0 +1,46 @@
+{
+  "messageId": "<mixed@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Mixed",
+  "date": null,
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "",
+        "address": "mixed@example.test"
+      }
+    ]
+  ],
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": "<p>Plain &lt;part&gt; &amp; first</p><p>second para</p><br/>\n<b>html part</b><br/>\n<p>Reporting-MTA: dns; mx.example.test</p>",
+  "text": null,
+  "headerKeys": [
+    "from",
+    "message-id",
+    "subject",
+    "content-type"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<mixed@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Mixed",
+    "from": "mixed@example.test",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<mixed@example.test>",
+    "references": [],
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

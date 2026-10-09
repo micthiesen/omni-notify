@@ -1,0 +1,49 @@
+{
+  "messageId": "<Upper@Example.Test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "lower key",
+  "date": "2026-09-07T13:05:00.000Z",
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "Alice",
+        "address": "alice@example.test"
+      }
+    ]
+  ],
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "body",
+  "headerKeys": [
+    "content-type",
+    "message-id",
+    "subject",
+    "",
+    "date",
+    "from"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<Upper@Example.Test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "lower key",
+    "from": "alice@example.test",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<Upper@Example.Test>",
+    "references": [],
+    "textBody": "body",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "messageId": "<cid@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": "<p>hi<img src=\"data:image/gif;base64,R0lGODlh\"><a href=\"data:image/gif;base64,R0lGODlh\">x</a></p>",
+  "text": null,
+  "headerKeys": [
+    "message-id",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2",
+      "partId": "2",
+      "contentType": "image/gif",
+      "declaredType": "image/gif",
+      "filename": null,
+      "contentDisposition": null,
+      "contentId": "<img1>",
+      "cid": "img1",
+      "related": true,
+      "size": 6,
+      "sha256": "610f5ae4d76e332636a17bd357fd6ce99029316a99d320280d4d77a746bf29e8"
+    }
+  ],
+  "mapped": {
+    "id": "<cid@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<cid@example.test>",
+    "references": [],
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "unnamed",
+        "type": "image/gif",
+        "size": 6,
+        "partId": "2",
+        "attachmentId": "imap-attachment:1d88f8039580260a0e1df35c8a3fa4f92358f8717c615daa8df258764268660c",
+        "contentId": "<img1>"
+      }
+    ]
+  }
+}

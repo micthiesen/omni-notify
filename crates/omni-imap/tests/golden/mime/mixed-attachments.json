@@ -1,0 +1,125 @@
+{
+  "messageId": "<billing-123@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Facture de septembre",
+  "date": "2026-09-03T12:00:00.000Z",
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "",
+        "address": "billing@example.test"
+      }
+    ]
+  ],
+  "to": [
+    [
+      {
+        "name": "José",
+        "address": "jose@example.test"
+      }
+    ]
+  ],
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "Voici la facture été 2026.",
+  "headerKeys": [
+    "from",
+    "to",
+    "message-id",
+    "subject",
+    "date",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2",
+      "partId": "2",
+      "contentType": "application/pdf",
+      "declaredType": "application/octet-stream",
+      "filename": "facture été.pdf",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 16,
+      "sha256": "990da638e0c207617125348c088fc1d9ec7edabaf5086f497b79c4303a048a8f"
+    },
+    {
+      "rawPartId": "3",
+      "partId": "3",
+      "contentType": "text/csv",
+      "declaredType": "text/csv",
+      "filename": "rows.csv",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 8,
+      "sha256": "a64a34aacbdacd17c0c52c867be14c6b9dab76b5e7348392eb829431fbba3a33"
+    },
+    {
+      "rawPartId": "4",
+      "partId": "4",
+      "contentType": "application/pdf",
+      "declaredType": "application/pdf",
+      "filename": "résumé.pdf",
+      "contentDisposition": null,
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 15,
+      "sha256": "aaf354d498ab70917dd2e845ecd7822d7419a2ac9a48873480dd4422af92ac57"
+    }
+  ],
+  "mapped": {
+    "id": "<billing-123@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Facture de septembre",
+    "from": "billing@example.test",
+    "to": [
+      "jose@example.test"
+    ],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<billing-123@example.test>",
+    "references": [],
+    "textBody": "Voici la facture été 2026.",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "facture été.pdf",
+        "type": "application/pdf",
+        "size": 16,
+        "partId": "2",
+        "attachmentId": "imap-attachment:796c7470dbc079cddf46c75b88e1a0364295c16089294ec33ed8bece95637c6c",
+        "disposition": "attachment"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|1",
+        "name": "rows.csv",
+        "type": "text/csv",
+        "size": 8,
+        "partId": "3",
+        "attachmentId": "imap-attachment:c2edf7ee99445e09dd12806fdf8a90291a1da1d1790f66dcac2e1716f912f887",
+        "disposition": "attachment"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|2",
+        "name": "résumé.pdf",
+        "type": "application/pdf",
+        "size": 15,
+        "partId": "4",
+        "attachmentId": "imap-attachment:3d30ebae4d551ecce865797084a1c70f5b1bbe9633395b54ba7dcfa588b3ed6b"
+      }
+    ]
+  }
+}

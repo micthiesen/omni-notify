@@ -1,0 +1,10 @@
+From: flow@example.test
+Message-ID: <flowed@example.test>
+Subject: Flowed
+Content-Type: text/plain; charset=utf-8; format=flowed; delsp=yes
+
+This is a long line that  
+continues here.
+ >quoted stuffed
+-- 
+sig

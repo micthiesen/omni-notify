@@ -1,0 +1,29 @@
+Message-ID: <attachment@example.test>
+Content-Type: multipart/mixed; boundary="outer"
+
+--outer
+Content-Type: text/plain
+
+body
+--outer
+Content-Type: multipart/related; boundary="inner"
+
+--inner
+Content-Type: text/html
+
+<img src="cid:pic">
+--inner
+Content-Type: image/png
+Content-Disposition: inline; filename="pic.png"
+Content-ID: <pic>
+Content-Transfer-Encoding: base64
+
+aW1hZ2U=
+--inner--
+--outer
+Content-Type: application/pdf; name="agreement.pdf"
+Content-Disposition: attachment; filename="agreement.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKcHJpdmF0ZQ==
+--outer--

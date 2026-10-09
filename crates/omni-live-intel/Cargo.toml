@@ -1,0 +1,55 @@
+[package]
+name = "omni-live-intel"
+description = "Livestream intelligence: audio capture, local speech, viewer anomalies, Destiny presence, summaries and alerts."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "omni-voice-enroll"
+path = "src/bin/omni-voice-enroll.rs"
+
+[[bin]]
+name = "omni-intel-doctor"
+path = "src/bin/omni-intel-doctor.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+futures.workspace = true
+icu_normalizer.workspace = true
+indexmap.workspace = true
+jiff.workspace = true
+omni-ai.workspace = true
+omni-alerts.workspace = true
+omni-api.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-runtime.workspace = true
+omni-server-kit.workspace = true
+omni-store.workspace = true
+regex.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+sherpa-onnx.workspace = true
+# Not used directly: pins the native library version (see the workspace manifest).
+sherpa-onnx-sys.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["process", "io-util", "time", "sync", "rt", "fs"] }
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util", "macros", "rt", "rt-multi-thread"] }
+tower.workspace = true

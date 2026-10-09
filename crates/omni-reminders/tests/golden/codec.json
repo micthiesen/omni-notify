@@ -1,0 +1,206 @@
+{
+  "crdt": [
+    {
+      "text": "",
+      "protobufBase64": "CAASUAgAEAAaShIAGhAKBAgAEAAQABoECAAQACgBGhYKCAgAEP////8PEAAaCAgAEP////8PIhwKGgoQ1GvK5BuHZsGNde/jXJFFwxICCAASAggB",
+      "encodedBase64": "eJzjYBAK4GAQYJDyEmKQEuBiAbEFGKTAtAajlBgXBweDwP/////zCzBIwdlKMlxSXAJXsk89kW5PO9hb+v5xzETXw0JMHAxCTByMAIUZFKY="
+    },
+    {
+      "text": "Buy milk",
+      "protobufBase64": "CAASbggAEAAaaBIIQnV5IG1pbGsaEAoECAAQABAAGgQIABAAKAEaEAoECAEQABAIGgQIARAAKAIaFgoICAAQ/////w8QABoICAAQ/////w8iHAoaChDUa8rkG4dmwY117+NckUXDEgIICBICCAEqAggI",
+      "encodedBase64": "eJzjYBDK42AQYJDKEOJwKq1UyM3MyZYS4GIBiQkwSIFpDUawCKMAgwCHFJjWYJIS4+LgYBD4////f34BBik4W0mGS4pL4Er2qSfS7WkHe0vfP46Z6HpYiImDQ4iJg1GLiYMDAHdKGPU="
+    },
+    {
+      "text": "ADP reminder 🌿",
+      "protobufBase64": "CAASdwgAEAAacRIRQURQIHJlbWluZGVyIPCfjL8aEAoECAAQABAAGgQIABAAKAEaEAoECAEQABAPGgQIARAAKAIaFgoICAAQ/////w8QABoICAAQ/////w8iHAoaChDUa8rkG4dmwY117+NckUXDEgIIDxICCAEqAggP",
+      "encodedBase64": "eJzjYBAq52AQYJAqFBJ0dAlQKErNzcxLSS1S+DC/Z7+UABcLSFKAQQpMazCCRRgFGAT4pcC0BpOUGBcHB4PA//////MLMEjB2UoyXFJcAleyTz2Rbk872Fv6/nHMRNfDQkwc/EJMHIxaTBz8AE0oHW0="
+    },
+    {
+      "text": "Title second line paragraph\u0001\t🙂",
+      "protobufBase64": "CAASjAEIABAAGoUBEiVUaXRsZeKAqHNlY29uZCBsaW5l4oCpcGFyYWdyYXBoAQnwn5mCGhAKBAgAEAAQABoECAAQACgBGhAKBAgBEAAQHxoECAEQACgCGhYKCAgAEP////8PEAAaCAgAEP////8PIhwKGgoQ1GvK5BuHZsGNde/jXJFFwxICCB8SAggBKgIIHw==",
+      "encodedBase64": "eJzjYBDqYeRgEGCQamUUUg3JLMlJfdSwojg1OT8vRSEnMy/1UcPKgsSixPSixIIMRs4P82c2SQlwsYB0CDBIgWkNRrAIowCDgLwUmNZgkhLj4uBgEPj///9/fgEGKThbSYZLikvgSvapJ9LtaQd7S98/jpnoeliIiUNeiImDUYuJQx4AFlEnXA=="
+    }
+  ],
+  "srp": [
+    {
+      "protocol": "s2k",
+      "a": "fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549fefaee8d4cb706688d6424bb67d1b260c00d007c0828af4128a27234957b7549",
+      "A": "Q0Bu9i91Yu79xp9cEivQlvxRkJjVMukIevwiPjFCEJHLV2jhEtZ/iQl6hlm55XQm4m6ryRBNFGyC+8ugVjr1qyOBeF1BhZbBSepFV8VS0oM+SrCheuvN3vnpLFPuLnNiOSihDbwVB1pR5TEdyur/6OwThNrO3x8n+ISflHenY1FExPprrvI9PT4/ZNOxS2lTOEhiozuRIeb8liYUQs6pyamTRbWMTiKS4V+2lsZJKn2l/dSy+1PDMQy1Elc7u/HnyP/OpoQV6BH5d9xpinO8ZbaBbIvGrD/pFFsUxO5uuSsrpjX7CusgsZWzXyXXRJtfCrMQKLAAv9JPpnxr8DY22Q==",
+      "server": {
+        "protocol": "s2k",
+        "iteration": 1000,
+        "salt": "Z29sZGVuLXNhbHQtMDEyMw==",
+        "b": "RyjWTUhZ2CpIvklJN2lOamYUgL94kYOI6xF+9paB9O3fl1omVO+bMr+jUndu1tDBBNAxgf1Oi7KXIw6dWfVuaiZkKWPZpYgWj3Ofmhah+B1y6ewteZ1axz/ycMdvaz57q/Lvsc/Z7lESgzvWVWWUmuJ+Eo5p8Ee09eQAh6KA+YQBNzPY6dkfnbWAOn8dUQtkpKLXF1QTvMzwKoZtLw0eF5/Lynil+Nrxd785wjwfaLbVagOBNYxxIz+O65/GqUn8LtTnTn5UZ7xcEnU+EClMkaNqEuHcGug8qidwQvn4G3Pyjq96j9aeDfydzo8tc+Jo/loimXAvukZ82WtxkZbcCQ==",
+        "c": "opaque-c"
+      },
+      "password": "correct horse battery",
+      "account": "golden@example.com",
+      "proof": {
+        "accountName": "golden@example.com",
+        "m1": "2NM7iINC11wPV7T6dj+ZHsqi1M2AOrknmaJGOThXS94=",
+        "m2": "+3RehUgMvPwHBJ1uQ/Zjh2+XCDnSireXCOVtzps/Fss=",
+        "c": "opaque-c"
+      }
+    },
+    {
+      "protocol": "s2k_fo",
+      "a": "b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f50b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f50b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f50b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f50b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f50b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f50b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f50b994f98ef75100da8acd84ba1140fcf20ef6e41dd2d8632acb9a0bcc8b4b2f5",
+      "A": "a8WlQE9wNfeOCAj7Qp5ia35cUwP4Kc81uFs4PB2GyxGQwqabrhI0mRkvUjEcGevmW3xlxXXSX/yN4gpvhl/L39v9llnwETS2e4pwvXvrd3S9Ls9H0S4/qcAq73NY7y4O3751E0UZG7w4ysvN+XlDKHju694Y6RANrJXBZqNRABNe49F3BfGOSFsQl8pmB43rVAC2buyKLXG0XHFiH6fKHWvHx21ahtuxcJqaG1ZKPYPoaJu7oDUAUuioObH2bohMduGf2Y8gd/QFTM4KSEEHfw4LYQwHarpmK8yss2UO08VK/5qfGl7W1EN97jokY5DSsmWw75X+woCpn2ahlEFhBg==",
+      "server": {
+        "protocol": "s2k_fo",
+        "iteration": 1000,
+        "salt": "Z29sZGVuLXNhbHQtMDEyMw==",
+        "b": "p2iNOjYFW07xapO7sJJZ5BUq6Ux7tmCE90XaT5U43D7a95+4wDiEN5i6iAMsraKhBdNETsfiHhflcGAtRF/sDqjf1QzSJ0imgX+aKQhoWe/pXP/3MXLUYprC+RSEqFZfDZrjLJ4AMQ75gvxZvBCCPgwehVnW/XnIBn/BIhgTrx6DZ9RCssaq2NpculFxkIm+P3DGWKvCvJrKXQWo3XT+7J02ouWQcd34/noidrP9LW7bGYmIXXFrVnRgvHgFuUHjCXUG15wyuOyowYXhcY7aratmoG2Hgicwoeec4VPSSptY4Dkmdqq1geJJJGOp2Dj02WPFHuwNRTqkUCdeUG5jfw==",
+        "c": "opaque-c"
+      },
+      "password": "correct horse battery",
+      "account": "golden@example.com",
+      "proof": {
+        "accountName": "golden@example.com",
+        "m1": "R+DJuK4qUpSt3d0kIYYULA9DYrZGgkuhspaYIf8pX5w=",
+        "m2": "PTwPk1Cu6Jee5Xai9xGAHxsz1bG7QIlu6BBvWmuzzcY=",
+        "c": "opaque-c"
+      }
+    }
+  ],
+  "recurrence": [
+    {
+      "rule": {
+        "frequency": "yearly",
+        "interval": 2,
+        "occurrenceCount": 0,
+        "firstDayOfWeek": 2,
+        "endDate": 1800000000000,
+        "daysOfWeek": [
+          {
+            "dayOfTheWeek": 2,
+            "weekNumber": 0
+          },
+          {
+            "dayOfTheWeek": 7
+          }
+        ],
+        "daysOfMonth": [
+          1,
+          -1
+        ],
+        "daysOfYear": [
+          1,
+          -366
+        ],
+        "weeksOfYear": [
+          1,
+          -53
+        ],
+        "monthsOfYear": [
+          1,
+          12
+        ],
+        "setPositions": [
+          1,
+          -1
+        ]
+      },
+      "encoded": {
+        "supported": true,
+        "values": {
+          "Frequency": 3,
+          "Interval": 2,
+          "OccurrenceCount": 0,
+          "EndDate": 1800000000000,
+          "FirstDayOfTheWeek": 2,
+          "DaysOfTheWeek": "W3siZGF5T2ZUaGVXZWVrIjoyLCJ3ZWVrTnVtYmVyIjowfSx7ImRheU9mVGhlV2VlayI6N31d",
+          "DaysOfTheMonth": "WzEsLTFd",
+          "DaysOfTheYear": "WzEsLTM2Nl0=",
+          "WeeksOfTheYear": "WzEsLTUzXQ==",
+          "MonthsOfTheYear": "WzEsMTJd",
+          "SetPositions": "WzEsLTFd"
+        }
+      }
+    },
+    {
+      "rule": {
+        "frequency": "monthly",
+        "interval": 1,
+        "daysOfWeek": [
+          {
+            "dayOfTheWeek": 2,
+            "weekNumber": -1
+          }
+        ]
+      },
+      "encoded": {
+        "supported": true,
+        "values": {
+          "Frequency": 2,
+          "Interval": 1,
+          "DaysOfTheWeek": "W3siZGF5T2ZUaGVXZWVrIjoyLCJ3ZWVrTnVtYmVyIjotMX1d"
+        }
+      }
+    }
+  ],
+  "fingerprints": [
+    {
+      "input": "stable-request-key-1",
+      "fingerprint": "b724a43c29ea75aae3c55291c4ecd8c9390a60064e0061a80031f0b9412a5bc4"
+    },
+    {
+      "input": {
+        "operation": "create",
+        "listId": "List/test",
+        "title": "Milk"
+      },
+      "fingerprint": "d762acdfcfdcbf02dd31eb1641a52b991463e2a45a21a68987d1798f2aabc9a1"
+    },
+    {
+      "input": {
+        "operation": "create",
+        "listId": "List/a",
+        "title": "Ä b",
+        "dueDate": null,
+        "priority": 5,
+        "allDay": true,
+        "description": "x y"
+      },
+      "fingerprint": "c7b3ba23ce6571ec76e1bb32f661e7a3828d3a4abc1c8cd70c440e0a1ec4e5db"
+    },
+    {
+      "input": {
+        "operation": "update-recurrence",
+        "id": "Reminder/1",
+        "changeTag": "t",
+        "ruleId": "RecurrenceRule/1",
+        "ruleChangeTag": "r",
+        "patch": {
+          "2": 6,
+          "10": 5,
+          "endDate": null,
+          "daysOfWeek": [
+            {
+              "dayOfTheWeek": 2,
+              "weekNumber": -1
+            }
+          ],
+          "Interval": 3,
+          "interval": 2,
+          "_a": 1,
+          "a": 2,
+          "B": 3,
+          "b": 4
+        }
+      },
+      "fingerprint": "08ef0c933455737f2c96ec59341475faa5b0dcf61d5a713e5aa7c15f324ec5e7"
+    },
+    {
+      "input": {
+        "operation": "complete-recurring",
+        "id": "Reminder/1",
+        "changeTag": "t",
+        "ruleId": "RecurrenceRule/1",
+        "ruleChangeTag": "r",
+        "timeZone": "America/Vancouver"
+      },
+      "fingerprint": "a19fe2b25f3bae4575c26a4c9439eef5dab923a5edf39c2e4aae919461a7d595"
+    }
+  ]
+}

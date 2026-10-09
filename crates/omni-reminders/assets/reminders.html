@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Reminders · Omni Notify</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --text: #1d1d1f;
+  --muted: #5f6368;
+  --bg: #f5f5f7;
+  --bg-card: #ffffff;
+  --border: #d2d2d7;
+  --alert: #b3261e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #f5f5f7;
+    --muted: #a1a1a6;
+    --bg: #111113;
+    --bg-card: #1c1c1e;
+    --border: #3a3a3c;
+    --alert: #ff8a80;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 32px 16px;
+  color: var(--text);
+  background: var(--bg);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.reminders-panel { max-width: 640px; margin: 0 auto; }
+.reminders-panel h1 { margin: 0 0 8px; font-size: 28px; }
+.reminders-panel p { margin: 16px 0; line-height: 1.6; }
+.reminders-panel [role="alert"] { color: var(--alert); }
+.reminders-panel form { display: grid; gap: 12px; justify-items: start; margin: 24px 0; }
+.reminders-panel input {
+  width: 12ch;
+  padding: 10px 12px;
+  color: var(--text);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 20px;
+  letter-spacing: 0.15em;
+}
+.reminders-panel button {
+  margin: 0 8px 8px 0;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg-card);
+  font: inherit;
+  cursor: pointer;
+}
+.reminders-panel button:disabled { cursor: wait; opacity: 0.6; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main id="main-content">
+<section class="reminders-panel" aria-label="iCloud Reminders">
+  <h1>iCloud Reminders</h1>
+  <p>Connect your account to monitor Reminders. Keep Advanced Data Protection enabled.</p>
+  <p id="insecure" role="alert" hidden>Open this page over HTTPS to administer Reminders.</p>
+  <div id="controls" hidden>
+    <p id="status" role="status">Loading connection status…</p>
+    <p id="diagnostic" role="alert" hidden></p>
+    <form id="code-form" hidden>
+      <label for="reminders-code">Verification code</label>
+      <input id="reminders-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6">
+      <button id="submit-code" type="submit">Submit code</button>
+    </form>
+    <button id="start" type="button" hidden>Start sign-in</button>
+    <button id="verify" type="button" hidden>Check access</button>
+  </div>
+  <p id="error" role="alert" hidden></p>
+</section>
+</main>
+<script src="/reminders/app.js"></script>
+</body>
+</html>

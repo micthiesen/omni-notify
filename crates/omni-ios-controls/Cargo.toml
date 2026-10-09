@@ -1,0 +1,40 @@
+[package]
+name = "omni-ios-controls"
+description = "iOS live controls: signed routes, registrations, live slots and APNs control pushes."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+futures.workspace = true
+hex.workspace = true
+hmac.workspace = true
+jsonwebtoken.workspace = true
+omni-api.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-live.workspace = true
+omni-runtime.workspace = true
+omni-server-kit.workspace = true
+omni-store.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+omni-testkit.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true
+wiremock.workspace = true

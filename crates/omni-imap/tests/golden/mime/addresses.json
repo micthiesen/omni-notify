@@ -1,0 +1,97 @@
+{
+  "messageId": "< spaced@example.test >",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Addresses",
+  "date": null,
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "René Dupont",
+        "address": "rene@example.test"
+      }
+    ]
+  ],
+  "to": [
+    [
+      {
+        "name": "Team",
+        "group": [
+          {
+            "name": "",
+            "address": "alice@example.test"
+          },
+          {
+            "name": "Bob B",
+            "address": "bob@example.test"
+          }
+        ]
+      },
+      {
+        "name": "",
+        "address": "carol@example.test"
+      }
+    ]
+  ],
+  "cc": [
+    [
+      {
+        "name": "Joe Foo, PhD",
+        "address": "joe@example.test"
+      }
+    ]
+  ],
+  "bcc": [
+    [
+      {
+        "name": "",
+        "address": "hidden@example.test"
+      }
+    ]
+  ],
+  "replyTo": [
+    [
+      {
+        "name": "",
+        "address": "reply@bücher.example"
+      }
+    ]
+  ],
+  "html": null,
+  "text": "x",
+  "headerKeys": [
+    "from",
+    "to",
+    "cc",
+    "bcc",
+    "reply-to",
+    "message-id",
+    "subject"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "< spaced@example.test >",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Addresses",
+    "from": "rene@example.test",
+    "to": [
+      "carol@example.test"
+    ],
+    "cc": [
+      "joe@example.test"
+    ],
+    "replyTo": [
+      "reply@bücher.example"
+    ],
+    "messageId": "< spaced@example.test >",
+    "references": [],
+    "textBody": "x",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

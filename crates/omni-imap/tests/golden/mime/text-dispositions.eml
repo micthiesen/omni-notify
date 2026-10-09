@@ -1,0 +1,22 @@
+Message-ID: <disp@example.test>
+Content-Type: multipart/mixed; boundary="d"
+
+--d
+Content-Type: text/plain; name="notes.txt"
+
+inline named text
+--d
+Content-Type: text/plain
+Content-Disposition: attachment; filename="log.txt"
+
+log body
+--d
+Content-Type: image/jpeg
+Content-Disposition: foo; filename="photo.jpg"
+
+jpegbytes
+--d
+Content-Disposition: attachment; filename="guess.png"
+
+noctype
+--d--

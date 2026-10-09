@@ -1,0 +1,6 @@
+Message-ID: <root-att@example.test>
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename="disguised.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQ=

@@ -1,0 +1,42 @@
+[package]
+name = "omni-live"
+description = "Livestream monitoring: channels.json, aggregate streamer state, notifications, viewer metrics, sessions, DGG discovery and the LiveCheckTask."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+futures.workspace = true
+html-escape.workspace = true
+indexmap.workspace = true
+jiff.workspace = true
+omni-alerts.workspace = true
+omni-api.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-runtime.workspace = true
+omni-server-kit.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+regex.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+wiremock.workspace = true

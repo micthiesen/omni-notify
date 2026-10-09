@@ -1,0 +1,94 @@
+{
+  "messageId": "<plain@example.test>",
+  "inReplyTo": "<parent@example.test>",
+  "references": [
+    "<root@example.test>",
+    "<parent@example.test>"
+  ],
+  "subject": "Café menu update",
+  "date": "2026-09-01T10:00:00.000Z",
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "Sender, Ltd.",
+        "address": "sender@example.test"
+      }
+    ]
+  ],
+  "to": [
+    [
+      {
+        "name": "Reader",
+        "address": "reader@example.test"
+      },
+      {
+        "name": "",
+        "address": "other@example.test"
+      }
+    ]
+  ],
+  "cc": [
+    [
+      {
+        "name": "",
+        "address": "copy@example.test"
+      }
+    ]
+  ],
+  "bcc": null,
+  "replyTo": [
+    [
+      {
+        "name": "",
+        "address": "replies@example.test"
+      }
+    ]
+  ],
+  "html": null,
+  "text": "Hello there,\nVisit https://example.test/track/123 for your parcel.\n",
+  "headerKeys": [
+    "from",
+    "to",
+    "cc",
+    "reply-to",
+    "message-id",
+    "in-reply-to",
+    "references",
+    "subject",
+    "date",
+    "list-unsubscribe",
+    "list-unsubscribe-post",
+    "content-type"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<plain@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Café menu update",
+    "from": "sender@example.test",
+    "to": [
+      "reader@example.test",
+      "other@example.test"
+    ],
+    "cc": [
+      "copy@example.test"
+    ],
+    "replyTo": [
+      "replies@example.test"
+    ],
+    "messageId": "<plain@example.test>",
+    "inReplyTo": "<parent@example.test>",
+    "references": [
+      "<root@example.test>",
+      "<parent@example.test>"
+    ],
+    "textBody": "Hello there,\nVisit https://example.test/track/123 for your parcel.\n",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

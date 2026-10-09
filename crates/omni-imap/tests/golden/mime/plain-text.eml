@@ -1,0 +1,16 @@
+From: "Sender, Ltd." <sender@example.test>
+To: Reader <reader@example.test>, other@example.test
+Cc: copy@example.test
+Reply-To: replies@example.test
+Message-ID: <plain@example.test>
+In-Reply-To: <parent@example.test>
+References: <root@example.test>
+  <parent@example.test>
+Subject: =?UTF-8?Q?Caf=C3=A9_menu?= update
+Date: Tue, 01 Sep 2026 10:00:00 +0000
+List-Unsubscribe: <https://example.test/unsub?t=1>, <mailto:unsub@example.test>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: text/plain; charset=utf-8
+
+Hello there,
+Visit https://example.test/track/123 for your parcel.

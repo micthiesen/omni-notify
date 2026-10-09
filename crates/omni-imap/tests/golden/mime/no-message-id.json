@@ -1,0 +1,52 @@
+{
+  "messageId": null,
+  "inReplyTo": null,
+  "references": null,
+  "subject": "No ID",
+  "date": null,
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "Someone",
+        "address": ""
+      }
+    ]
+  ],
+  "to": [
+    [
+      {
+        "name": "undisclosed-recipients",
+        "group": []
+      }
+    ]
+  ],
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "Body line",
+  "headerKeys": [
+    "subject",
+    "from",
+    "to"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "imap|INBOX|1|7",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "No ID",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "references": [],
+    "textBody": "Body line",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

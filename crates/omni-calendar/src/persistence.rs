@@ -1,0 +1,517 @@
+//! Tracked calendar events (`src/calendar-events/persistence.ts`): the
+//! `calendar-created-event` entity, keyed by a normalized content hash, used for
+//! create dedup and cancel/update matching.
+
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
+use jiff::tz::TimeZone;
+use omni_core::digest::sha256_hex;
+use omni_store::cbor::{self, Extra, JsValue};
+use omni_store::entity::{self, Entity, EntityOps as _, EntityWrite as _, UpsertOpts};
+use omni_store::{DocMeta, DocOps as _, DocWrite as _, Store, Tx};
+use regex::Regex;
+use serde::{Deserialize, Serialize};
+
+use crate::error::CalendarPersistenceError;
+use crate::extraction::schema::{EventRecurrence, ExtractedEvent};
+
+const LOG: &str = "Main:CalendarEvents";
+
+/// Local tombstone state; absent means active.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EventStatus {
+    Cancelled,
+}
+
+/// `calendar-created-event` (`CreatedCalendarEventData`), keyed by `eventHash`.
+/// Field order follows the TS object literals that write it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedCalendarEvent {
+    pub event_hash: String,
+    pub email_id: String,
+    pub calendar_event_id: String,
+    pub title: String,
+    pub start_date: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<String>,
+    /// Absent on rows written before the field existed (27 production rows).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all_day: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_zone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reminder_minutes: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<EventRecurrence>,
+    pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<EventStatus>,
+    #[serde(flatten)]
+    pub extra: Extra,
+}
+
+impl Entity for CreatedCalendarEvent {
+    const NAME: &'static str = "calendar-created-event";
+    type Key = String;
+    fn key(&self) -> String {
+        self.event_hash.clone()
+    }
+}
+
+impl CreatedCalendarEvent {
+    pub fn is_cancelled(&self) -> bool {
+        self.status == Some(EventStatus::Cancelled)
+    }
+
+    /// A new active record of `event` (all extracted fields, no tombstone).
+    pub fn from_event(
+        event_hash: String,
+        email_id: String,
+        calendar_event_id: String,
+        event: &ExtractedEvent,
+        created_at: i64,
+    ) -> Self {
+        Self {
+            event_hash,
+            email_id,
+            calendar_event_id,
+            title: event.title.clone(),
+            start_date: event.start_date.clone(),
+            start_time: event.start_time.clone(),
+            end_date: event.end_date.clone(),
+            end_time: event.end_time.clone(),
+            all_day: Some(event.all_day),
+            location: event.location.clone(),
+            time_zone: event.time_zone.clone(),
+            description: event.description.clone(),
+            duration: event.duration.clone(),
+            reminder_minutes: event.reminder_minutes,
+            recurrence: event.recurrence.clone(),
+            created_at,
+            status: None,
+            extra: Extra::default(),
+        }
+    }
+}
+
+static NON_WORD: LazyLock<Option<Regex>> =
+    LazyLock::new(|| Regex::new(r"[^\p{L}\p{N}\s\x{FEFF}]").ok());
+static SPACES: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"[\s\x{FEFF}]+").ok());
+
+/// Normalizes a title for identity comparison: strips emoji, arrows and other
+/// punctuation and collapses casing and whitespace, so the same event
+/// re-extracted with a slightly different title still dedups.
+pub fn normalize_title(title: &str) -> String {
+    let lower = title.to_lowercase();
+    let (Some(non_word), Some(spaces)) = (NON_WORD.as_ref(), SPACES.as_ref()) else {
+        return lower;
+    };
+    let stripped = non_word.replace_all(&lower, " ");
+    let collapsed = spaces.replace_all(&stripped, " ");
+    collapsed
+        .trim_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}')
+        .to_owned()
+}
+
+/// `"<normalizeTitle>|<startDate>|<startTime|allday>"`.
+pub fn compute_event_hash(title: &str, start_date: &str, start_time: Option<&str>) -> String {
+    format!(
+        "{}|{start_date}|{}",
+        normalize_title(title),
+        start_time.unwrap_or("allday")
+    )
+}
+
+/// Stable CalDAV resource identity for a logical event: a replay after the
+/// server accepted the PUT but before local persistence uses the same resource
+/// URL, so `If-None-Match` turns it into `already_exists`.
+pub fn compute_calendar_event_uid(event_hash: &str) -> String {
+    let digest = sha256_hex(event_hash.as_bytes());
+    format!("omni-{}@omni-notify", &digest[..32])
+}
+
+/// The MCP tool's UID scheme (`mcp-<sha256[..32]>@omni-notify`).
+pub fn compute_mcp_event_uid(event_hash: &str) -> String {
+    let digest = sha256_hex(event_hash.as_bytes());
+    format!("mcp-{}@omni-notify", &digest[..32])
+}
+
+/// UTC `YYYY-MM-DD` of the local wall-clock `now` shifted by `days` calendar
+/// days (JS `setDate(getDate() + days)` then `toISOString().slice(0, 10)`).
+fn shifted_date_stamp(now_ms: i64, days: i64, tz: &TimeZone) -> String {
+    let Ok(now) = jiff::Timestamp::from_millisecond(now_ms) else {
+        return String::new();
+    };
+    let shifted = now
+        .to_zoned(tz.clone())
+        .checked_add(jiff::Span::new().days(days))
+        .map(|z| z.timestamp())
+        .unwrap_or(now);
+    shifted.strftime("%Y-%m-%d").to_string()
+}
+
+/// Active events within a window of 7 days past through `future_days` ahead.
+pub fn select_recent_events(
+    all: Vec<CreatedCalendarEvent>,
+    future_days: i64,
+    now_ms: i64,
+    tz: &TimeZone,
+) -> Vec<CreatedCalendarEvent> {
+    let past = shifted_date_stamp(now_ms, -7, tz);
+    let future = shifted_date_stamp(now_ms, future_days, tz);
+    all.into_iter()
+        .filter(|e| {
+            !e.is_cancelled() && e.start_date.as_str() >= past.as_str() && e.start_date <= future
+        })
+        .collect()
+}
+
+/// From active candidates sharing a normalized title, the one on `start_date`;
+/// otherwise a lone candidate only, never an arbitrary pick among several.
+pub fn pick_by_start_date<'a>(
+    active: &[&'a CreatedCalendarEvent],
+    start_date: &str,
+) -> Option<&'a CreatedCalendarEvent> {
+    if let Some(exact) = active.iter().find(|e| e.start_date == start_date) {
+        return Some(exact);
+    }
+    match active {
+        [only] => Some(only),
+        _ => None,
+    }
+}
+
+/// An active event by normalized title + start date within `candidates` (the
+/// windowed set shown to the model, never the full store), falling back to a
+/// lone title-only match.
+pub fn find_event<'a>(
+    title: &str,
+    start_date: &str,
+    candidates: impl IntoIterator<Item = &'a CreatedCalendarEvent>,
+) -> Option<&'a CreatedCalendarEvent> {
+    let normalized = normalize_title(title);
+    let active: Vec<&CreatedCalendarEvent> = candidates
+        .into_iter()
+        .filter(|e| !e.is_cancelled() && normalize_title(&e.title) == normalized)
+        .collect();
+    pick_by_start_date(&active, start_date)
+}
+
+/// Per-prompt handles (`evt_N`) to the events shown to the model.
+pub type EventHandles = HashMap<String, CreatedCalendarEvent>;
+
+/// Strict resolution through the explicit `evt_N` handle, without any
+/// title/date fallback. Cancels use this so a title-only match (a receipt
+/// echoing an upcoming appointment) can never delete an event.
+pub fn resolve_explicit_event_reference<'a>(
+    event_id: Option<&str>,
+    by_id: &'a EventHandles,
+) -> Option<&'a CreatedCalendarEvent> {
+    let event_id = event_id.filter(|id| !id.is_empty())?;
+    // Tolerate the handle echoed with brackets or whitespace ("[evt_2]").
+    let handle: String = event_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    by_id.get(&handle)
+}
+
+/// A title + start date lookup used when no explicit handle resolves.
+pub type EventFallback<'f, 'a> = &'f dyn Fn(&str, &str) -> Option<&'a CreatedCalendarEvent>;
+
+/// Which stored event an update refers to: the explicit handle first, then
+/// `fallback` (by default title + start date over the windowed handles).
+pub fn resolve_event_reference<'a>(
+    event_id: Option<&str>,
+    title: &str,
+    start_date: &str,
+    by_id: &'a EventHandles,
+    fallback: Option<EventFallback<'_, 'a>>,
+) -> Option<&'a CreatedCalendarEvent> {
+    if let Some(matched) = resolve_explicit_event_reference(event_id, by_id) {
+        return Some(matched);
+    }
+    match fallback {
+        Some(fallback) => fallback(title, start_date),
+        None => find_event(title, start_date, by_id.values()),
+    }
+}
+
+/// The comparable fields of an event (`hasEventChanged`'s second argument).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct EventFields<'a> {
+    pub title: &'a str,
+    pub start_date: &'a str,
+    pub start_time: Option<&'a str>,
+    pub end_date: Option<&'a str>,
+    pub end_time: Option<&'a str>,
+    /// `None` only for legacy records without `allDay`.
+    pub all_day: Option<bool>,
+    pub location: Option<&'a str>,
+    pub time_zone: Option<&'a str>,
+    pub description: Option<&'a str>,
+    pub duration: Option<&'a str>,
+    pub reminder_minutes: Option<f64>,
+    pub recurrence: Option<&'a EventRecurrence>,
+}
+
+impl<'a> From<&'a ExtractedEvent> for EventFields<'a> {
+    fn from(e: &'a ExtractedEvent) -> Self {
+        Self {
+            title: &e.title,
+            start_date: &e.start_date,
+            start_time: e.start_time.as_deref(),
+            end_date: e.end_date.as_deref(),
+            end_time: e.end_time.as_deref(),
+            all_day: Some(e.all_day),
+            location: e.location.as_deref(),
+            time_zone: e.time_zone.as_deref(),
+            description: e.description.as_deref(),
+            duration: e.duration.as_deref(),
+            reminder_minutes: e.reminder_minutes,
+            recurrence: e.recurrence.as_ref(),
+        }
+    }
+}
+
+impl<'a> From<&'a CreatedCalendarEvent> for EventFields<'a> {
+    fn from(e: &'a CreatedCalendarEvent) -> Self {
+        Self {
+            title: &e.title,
+            start_date: &e.start_date,
+            start_time: e.start_time.as_deref(),
+            end_date: e.end_date.as_deref(),
+            end_time: e.end_time.as_deref(),
+            all_day: e.all_day,
+            location: e.location.as_deref(),
+            time_zone: e.time_zone.as_deref(),
+            description: e.description.as_deref(),
+            duration: e.duration.as_deref(),
+            reminder_minutes: e.reminder_minutes,
+            recurrence: e.recurrence.as_ref(),
+        }
+    }
+}
+
+fn recurrence_key(recurrence: Option<&EventRecurrence>) -> String {
+    recurrence.map_or_else(String::new, |r| {
+        format!("{}|{}", r.frequency.as_str(), r.until)
+    })
+}
+
+/// Whether an event differs meaningfully from the stored record (cosmetic title
+/// drift is ignored).
+pub fn has_event_changed(record: &CreatedCalendarEvent, event: &EventFields<'_>) -> bool {
+    normalize_title(&record.title) != normalize_title(event.title)
+        || record.start_date != event.start_date
+        || record.start_time.as_deref() != event.start_time
+        || record.end_date.as_deref() != event.end_date
+        || record.end_time.as_deref() != event.end_time
+        || record.all_day != event.all_day
+        || record.location.as_deref() != event.location
+        || record.time_zone.as_deref() != event.time_zone
+        || record.description.as_deref() != event.description
+        || record.duration.as_deref() != event.duration
+        || record.reminder_minutes != event.reminder_minutes
+        || recurrence_key(record.recurrence.as_ref()) != recurrence_key(event.recurrence)
+}
+
+fn pk(event_hash: &str) -> Result<String, omni_store::StoreError> {
+    entity::pk::<CreatedCalendarEvent>(&event_hash.to_owned())
+}
+
+fn raw_meta(now: i64) -> DocMeta {
+    DocMeta {
+        entity: Some(CreatedCalendarEvent::NAME.to_owned()),
+        version: CreatedCalendarEvent::VERSION,
+        expires_at: None,
+        updated_at: Some(now),
+    }
+}
+
+/// Every tracked event (corrupt rows skipped).
+pub async fn get_tracked_events(
+    store: &Store,
+) -> Result<Vec<CreatedCalendarEvent>, CalendarPersistenceError> {
+    store
+        .read(|docs| docs.get_all::<CreatedCalendarEvent>())
+        .await
+        .map_err(CalendarPersistenceError::wrap(
+            "list tracked calendar events",
+        ))
+}
+
+pub async fn get_tracked_event(
+    store: &Store,
+    event_hash: &str,
+) -> Result<Option<CreatedCalendarEvent>, CalendarPersistenceError> {
+    let key = event_hash.to_owned();
+    store
+        .read(move |docs| docs.get::<CreatedCalendarEvent>(&key))
+        .await
+        .map_err(CalendarPersistenceError::wrap(
+            "read tracked calendar event",
+        ))
+}
+
+/// Whether an active (not cancelled) record exists for the hash.
+pub async fn has_created_event(
+    store: &Store,
+    event_hash: &str,
+) -> Result<bool, CalendarPersistenceError> {
+    let key = event_hash.to_owned();
+    store
+        .read(move |docs| {
+            Ok(docs
+                .get::<CreatedCalendarEvent>(&key)?
+                .is_some_and(|record| !record.is_cancelled()))
+        })
+        .await
+        .map_err(CalendarPersistenceError::wrap(
+            "check created calendar event",
+        ))
+}
+
+pub async fn record_created_event(
+    store: &Store,
+    data: CreatedCalendarEvent,
+) -> Result<(), CalendarPersistenceError> {
+    store
+        .write(move |tx| tx.upsert(&data, UpsertOpts::default()))
+        .await
+        .map_err(CalendarPersistenceError::wrap(
+            "record created calendar event",
+        ))
+}
+
+/// Writes the replacement row, then (in the same transaction) tombstones the
+/// previous identity when the hash changed.
+pub async fn replace_created_event(
+    store: &Store,
+    data: CreatedCalendarEvent,
+    previous_event_hash: &str,
+) -> Result<(), CalendarPersistenceError> {
+    let previous = previous_event_hash.to_owned();
+    store
+        .write(move |tx| {
+            tx.upsert(&data, UpsertOpts::default())?;
+            if data.event_hash == previous {
+                return Ok(());
+            }
+            set_cancelled_raw(tx, &previous)
+        })
+        .await
+        .map_err(CalendarPersistenceError::wrap(
+            "replace tracked calendar event",
+        ))
+}
+
+/// `{...stored, status: "cancelled"}` on the raw value, keeping every field.
+fn set_cancelled_raw(tx: &mut Tx<'_>, event_hash: &str) -> Result<(), omni_store::StoreError> {
+    let pk = pk(event_hash)?;
+    let Some(row) = tx.get_raw_row(&pk)? else {
+        return Ok(());
+    };
+    let mut value = row.decode()?;
+    let Some(object) = value.as_object_mut() else {
+        return Err(omni_store::StoreError::CorruptRow {
+            pk,
+            reason: "payload is not an object".to_owned(),
+        });
+    };
+    object.insert("status".to_owned(), JsValue::String("cancelled".to_owned()));
+    let now = tx.now_ms();
+    tx.upsert_doc(&pk, &value, raw_meta(now))
+}
+
+/// Marks an event cancelled, keeping the record to prevent re-creation.
+pub async fn mark_event_cancelled(
+    store: &Store,
+    event_hash: &str,
+) -> Result<(), CalendarPersistenceError> {
+    let key = event_hash.to_owned();
+    store
+        .write(move |tx| set_cancelled_raw(tx, &key))
+        .await
+        .map_err(CalendarPersistenceError::wrap(
+            "mark calendar event cancelled",
+        ))
+}
+
+/// Active events for the extraction prompt: 7 days back through a year ahead
+/// (a 90-day horizon once hid a September event announced in April).
+pub async fn get_recent_events(
+    store: &Store,
+    now_ms: i64,
+    tz: &TimeZone,
+) -> Result<Vec<CreatedCalendarEvent>, CalendarPersistenceError> {
+    Ok(select_recent_events(
+        get_tracked_events(store).await?,
+        365,
+        now_ms,
+        tz,
+    ))
+}
+
+/// Re-keys every stored event whose persisted `eventHash` predates the current
+/// normalization, in one transaction; returns how many rows moved. Idempotent.
+pub async fn reconcile_event_hashes(store: &Store) -> Result<u64, CalendarPersistenceError> {
+    store
+        .write(|tx| {
+            let now = tx.now_ms();
+            let mut rekeyed = 0u64;
+            for stored in tx.get_raw_rows_by_prefix(&format!("${}#", CreatedCalendarEvent::NAME))? {
+                if stored.expires_at.is_some_and(|at| at <= now) {
+                    continue;
+                }
+                let Ok(mut value) = stored.decode() else {
+                    continue;
+                };
+                let Some(object) = value.as_object_mut() else {
+                    continue;
+                };
+                let (Some(title), Some(start_date)) = (
+                    object.get("title").and_then(JsValue::as_str),
+                    object.get("startDate").and_then(JsValue::as_str),
+                ) else {
+                    tracing::warn!(target: LOG, "Skipping hash reconcile of {}: no title/startDate", stored.pk);
+                    continue;
+                };
+                let start_time = object.get("startTime").and_then(JsValue::as_str);
+                let expected = compute_event_hash(title, start_date, start_time);
+                let current = object.get("eventHash").and_then(JsValue::as_str);
+                if current == Some(expected.as_str()) {
+                    continue;
+                }
+                let old_pk = match current {
+                    Some(hash) => pk(hash)?,
+                    None => stored.pk.clone(),
+                };
+                object.insert("eventHash".to_owned(), JsValue::String(expected.clone()));
+                tx.upsert_doc(&pk(&expected)?, &value, raw_meta(now))?;
+                tx.delete_doc(&old_pk)?;
+                rekeyed += 1;
+            }
+            Ok(rekeyed)
+        })
+        .await
+        .map_err(CalendarPersistenceError::wrap("reconcile calendar event hashes"))
+}
+
+/// Decodes a raw row into the typed entity (compat audit helper).
+pub fn decode_row(value: JsValue) -> Result<CreatedCalendarEvent, cbor::DecodeError> {
+    cbor::from_value(value)
+}

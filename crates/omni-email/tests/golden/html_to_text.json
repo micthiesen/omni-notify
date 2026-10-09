@@ -1,0 +1,142 @@
+[
+  {
+    "html": "<p>Hello   <b>big</b>\n world</p><p>Second</p>",
+    "text": "Hello big world\n\nSecond"
+  },
+  {
+    "html": "<div>a</div><div>b</div>",
+    "text": "a\nb"
+  },
+  {
+    "html": "line<br>next",
+    "text": "line\nnext"
+  },
+  {
+    "html": "<a href=\"https://x.test/track\">Track</a> <img src=\"p.png\" alt=\"logo\"><hr>now",
+    "text": "Track now"
+  },
+  {
+    "html": "<h1>Order</h1><h4>Note</h4>",
+    "text": "Order\n\nNOTE"
+  },
+  {
+    "html": "<ul><li>one</li><li>two</li></ul>",
+    "text": " * one\n * two"
+  },
+  {
+    "html": "<ol start=\"3\"><li>c</li><li>d</li></ol>",
+    "text": " 3. c\n 4. d"
+  },
+  {
+    "html": "<ol type=\"i\"><li>a</li><li>b</li><li>c</li><li>d</li></ol>",
+    "text": " i.   a\n ii.  b\n iii. c\n iv.  d"
+  },
+  {
+    "html": "<ol type=\"A\"><li>a</li><li>b</li></ol>",
+    "text": " A. a\n B. b"
+  },
+  {
+    "html": "<blockquote>q<br>r</blockquote>",
+    "text": "> q\n> r"
+  },
+  {
+    "html": "<html><head><title>T</title><style>p{}</style></head><body><script>x()</script>Hi</body></html>",
+    "text": "Hi"
+  },
+  {
+    "html": "<title>T</title>Hi",
+    "text": "THi"
+  },
+  {
+    "html": "<ul><li>outer<ul><li>inner</li></ul></li><li>next</li></ul>",
+    "text": " * outer\n   * inner\n * next"
+  },
+  {
+    "html": "<table><tr><td>Item</td><td>Qty</td></tr><tr><td>Shoes</td><td>1</td></tr></table>",
+    "text": "ItemQtyShoes1"
+  },
+  {
+    "html": "<pre>  keep\n   spaces </pre><p>after</p>",
+    "text": "  keep\n   spaces \n\nafter"
+  },
+  {
+    "html": "Tracking&nbsp;number: <strong>1Z999</strong> &amp; more &lt;ok&gt;",
+    "text": "Tracking number: 1Z999 & more <ok>"
+  },
+  {
+    "html": "<div><p>Nested <span>inline</span></p><p>two</p></div><div>three</div>",
+    "text": "Nested inline\n\ntwo\n\nthree"
+  },
+  {
+    "html": "<section><header>Head</header><main>Body</main><footer>Foot</footer></section>",
+    "text": "Head\nBody\nFoot"
+  },
+  {
+    "html": "text before<div>block</div>text after",
+    "text": "text before\nblock\ntext after"
+  },
+  {
+    "html": "<p></p><p>  </p><p>x</p>",
+    "text": "x"
+  },
+  {
+    "html": "<h2>Your order has shipped!</h2><p>Track it <a href=\"https://t.test/1\">here</a>.</p><h5>fine print</h5>",
+    "text": "Your order has shipped!\n\nTrack it here.\n\nFINE PRINT"
+  },
+  {
+    "html": "a​b  c\td\r\ne",
+    "text": "a b c d e"
+  },
+  {
+    "html": "<!-- comment --><p>visible</p><!-- trailing -->",
+    "text": "visible"
+  },
+  {
+    "html": "<ul>\n  <li>x</li>\n  <!-- c -->\n  <li>y</li>\n</ul>",
+    "text": " * x\n   \n * y"
+  },
+  {
+    "html": "<div>Unicode: 日本語 — ünïcödé ✓</div>",
+    "text": "Unicode: 日本語 — ünïcödé ✓"
+  },
+  {
+    "html": "<br><br>start<br><br><br>end<br>",
+    "text": "\n\nstart\n\n\nend\n"
+  },
+  {
+    "html": "<table><thead><tr><th>Name</th></tr></thead><tbody><tr><td>Value</td></tr></tbody></table>",
+    "text": "NameValue"
+  },
+  {
+    "html": "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Shipped</title></head><body style=\"margin:0\"><table width=\"100%\" cellpadding=\"0\"><tr><td align=\"center\"><table><tr><td><img src=\"logo.png\" alt=\"Shop\"></td></tr><tr><td><h1 style=\"font-size:20px\">Your order is on its way!</h1><p>Hi Michael,</p><p>Good news &mdash; your package has shipped.</p><p><strong>Tracking number:</strong> <a href=\"https://www.ups.com/track?tracknum=1Z999AA10123456784\">1Z999AA10123456784</a></p></td></tr><tr><td><a href=\"https://shop.test/orders/1\" style=\"display:inline-block\">View order</a></td></tr></table></td></tr></table><div style=\"font-size:11px\">You received this email because&nbsp;you shopped with us.<br/>Unsubscribe</div></body></html>",
+    "text": "Your order is on its way!\n\nHi Michael,\n\nGood news — your package has shipped.\n\nTracking number: 1Z999AA10123456784\n\nView order\n\nYou received this email because you shopped with us.\nUnsubscribe"
+  },
+  {
+    "html": "<p>Line one<br/>\n   Line two</p>\n\n<p>  Spaced   out  </p>",
+    "text": "Line one\nLine two\n\nSpaced out"
+  },
+  {
+    "html": "<div><div><div>deep</div></div></div><span>tail</span>",
+    "text": "deep\ntail"
+  },
+  {
+    "html": "<p>Unclosed <b>bold <i>italic</p><p>next",
+    "text": "Unclosed bold italic\n\nnext"
+  },
+  {
+    "html": "<ul><li><p>para in li</p></li><li>plain</li></ul>",
+    "text": " * para in li\n\n * plain"
+  },
+  {
+    "html": "<center>Centered</center><font color=red>Font</font>",
+    "text": "CenteredFont"
+  },
+  {
+    "html": "<dl><dt>Term</dt><dd>Definition</dd></dl>",
+    "text": "TermDefinition"
+  },
+  {
+    "html": "<h3>Title</h3>\n<table><tr><td>A</td><td>B</td></tr></table>\n<h6>small</h6>",
+    "text": "Title\n\nAB\n\nSMALL"
+  }
+]

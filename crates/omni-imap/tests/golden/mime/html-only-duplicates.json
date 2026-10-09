@@ -1,0 +1,77 @@
+{
+  "messageId": "<second@example.test>",
+  "inReplyTo": null,
+  "references": [
+    "<r1@example.test>",
+    "<r2@example.test>",
+    "<r3@example.test>"
+  ],
+  "subject": null,
+  "date": "2026-10-09T12:56:29.555Z",
+  "dateIsNow": true,
+  "from": [
+    [
+      {
+        "name": "News",
+        "address": "news@example.test"
+      }
+    ]
+  ],
+  "to": [
+    [
+      {
+        "name": "",
+        "address": "a@example.test"
+      }
+    ],
+    [
+      {
+        "name": "",
+        "address": "b@example.test"
+      }
+    ]
+  ],
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": "<p>Café &amp; more <a href=\"https://example.test/booking?id=9\">book</a></p>",
+  "text": null,
+  "headerKeys": [
+    "from",
+    "to",
+    "to",
+    "message-id",
+    "message-id",
+    "references",
+    "references",
+    "subject",
+    "date",
+    "content-type",
+    "content-transfer-encoding"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<second@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "news@example.test",
+    "to": [
+      "a@example.test",
+      "b@example.test"
+    ],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<second@example.test>",
+    "references": [
+      "<r1@example.test>",
+      "<r2@example.test>",
+      "<r3@example.test>"
+    ],
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

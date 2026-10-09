@@ -1,0 +1,84 @@
+{
+  "messageId": "<attachment@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": "<p>body</p><br/>\n<img src=\"data:image/png;base64,aW1hZ2U=\">",
+  "text": null,
+  "headerKeys": [
+    "message-id",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2.2",
+      "partId": "2.2",
+      "contentType": "image/png",
+      "declaredType": "image/png",
+      "filename": "pic.png",
+      "contentDisposition": "inline",
+      "contentId": "<pic>",
+      "cid": "pic",
+      "related": true,
+      "size": 5,
+      "sha256": "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d"
+    },
+    {
+      "rawPartId": "3",
+      "partId": "3",
+      "contentType": "application/pdf",
+      "declaredType": "application/pdf",
+      "filename": "agreement.pdf",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 16,
+      "sha256": "d1f2d2fc29e2900a1cae14fad77b01d761189f4c9fb2a417a84db30c2f0bfd1a"
+    }
+  ],
+  "mapped": {
+    "id": "<attachment@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<attachment@example.test>",
+    "references": [],
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "pic.png",
+        "type": "image/png",
+        "size": 5,
+        "partId": "2.2",
+        "attachmentId": "imap-attachment:078442510038ecb9a6b1673ad77055ced43651a0c6bae07c416f8a4fba23f553",
+        "disposition": "inline",
+        "contentId": "<pic>"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|1",
+        "name": "agreement.pdf",
+        "type": "application/pdf",
+        "size": 16,
+        "partId": "3",
+        "attachmentId": "imap-attachment:d84bf771fdf3777f8e75c0544e52398e681bfd1fd2ece12dce2c275125312701",
+        "disposition": "attachment"
+      }
+    ]
+  }
+}

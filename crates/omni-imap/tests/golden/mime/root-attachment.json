@@ -1,0 +1,64 @@
+{
+  "messageId": "<root-att@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": null,
+  "headerKeys": [
+    "message-id",
+    "content-type",
+    "content-disposition",
+    "content-transfer-encoding"
+  ],
+  "attachments": [
+    {
+      "rawPartId": null,
+      "partId": "1",
+      "contentType": "application/pdf",
+      "declaredType": "application/octet-stream",
+      "filename": "disguised.pdf",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 8,
+      "sha256": "e16fa5d9b51928755db85b917f0297babaf22c7a47e97d9212adab56e61ba04e"
+    }
+  ],
+  "mapped": {
+    "id": "<root-att@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<root-att@example.test>",
+    "references": [],
+    "textBody": "",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "disguised.pdf",
+        "type": "application/pdf",
+        "size": 8,
+        "partId": "1",
+        "attachmentId": "imap-attachment:24f71024a9c6e57cadededfff47b23387c8fb4853ae68600b0c9d2196e61bb9e",
+        "disposition": "attachment"
+      }
+    ]
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "messageId": "<unterminated@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "first",
+  "headerKeys": [
+    "message-id",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2",
+      "partId": "2",
+      "contentType": "application/pdf",
+      "declaredType": "application/pdf",
+      "filename": "cut.pdf",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 8,
+      "sha256": "b9a3971d87263988a95bdffb655cbd547b3bc8cd2cf60022e808ec9e7ee34e39"
+    }
+  ],
+  "mapped": {
+    "id": "<unterminated@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<unterminated@example.test>",
+    "references": [],
+    "textBody": "first",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "cut.pdf",
+        "type": "application/pdf",
+        "size": 8,
+        "partId": "2",
+        "attachmentId": "imap-attachment:ed2b7ccaa70a4d2e274878b3977618bb2587d2fb01ef93712159f9a21edfb7c2",
+        "disposition": "attachment"
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "messageId": "<utf8@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Résumé ééé",
+  "date": null,
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "Zoë",
+        "address": "zoe@example.test"
+      }
+    ]
+  ],
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "Naïve café — ok\n",
+  "headerKeys": [
+    "from",
+    "subject",
+    "message-id",
+    "content-type",
+    "content-transfer-encoding"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<utf8@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Résumé ééé",
+    "from": "zoe@example.test",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<utf8@example.test>",
+    "references": [],
+    "textBody": "Naïve café — ok\n",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

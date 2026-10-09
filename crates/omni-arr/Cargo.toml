@@ -1,0 +1,39 @@
+[package]
+name = "omni-arr"
+description = "Sonarr/Radarr import recovery and Observer (Overseerr) issue repair."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+futures.workspace = true
+icu_normalizer.workspace = true
+indexmap.workspace = true
+jiff.workspace = true
+omni-ai.workspace = true
+omni-alerts.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-runtime.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+futures.workspace = true
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+wiremock.workspace = true

@@ -1,0 +1,42 @@
+[package]
+name = "omni-calendar"
+description = "Calendar events from email: filter, AI extraction, sanitization, CalDAV (iCloud) writes, tracked-event persistence and MCP tools."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+futures.workspace = true
+indexmap.workspace = true
+jiff.workspace = true
+omni-ai.workspace = true
+omni-alerts.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-email.workspace = true
+omni-http.workspace = true
+omni-mcp-kit.workspace = true
+omni-runtime.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+regex.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_with.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber.workspace = true
+wiremock.workspace = true

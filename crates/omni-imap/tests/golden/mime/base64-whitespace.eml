@@ -1,0 +1,18 @@
+Message-ID: <b64ws@example.test>
+Content-Type: multipart/mixed; boundary=b
+
+--b
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: BASE64
+
+PGgxPlRyYWNr IHlvdXIg	
+cGFja2FnZTwvaDE+
+
+--b
+Content-Type: application/pdf
+Content-Disposition: ATTACHMENT; filename="Report Q3.PDF"
+Content-Transfer-Encoding: base64
+
+JVBERi0x
+LjQK
+--b--

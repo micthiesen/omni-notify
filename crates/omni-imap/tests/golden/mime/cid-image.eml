@@ -1,0 +1,14 @@
+Message-ID: <cid@example.test>
+Content-Type: multipart/related; boundary="r"
+
+--r
+Content-Type: text/html
+
+<p>hi<img src="cid:img1"><a href="cid:img1">x</a></p>
+--r
+Content-Type: image/gif
+Content-ID: <img1>
+Content-Transfer-Encoding: base64
+
+R0lGODlh
+--r--

@@ -1,0 +1,14 @@
+From: Michael <me@example.test>
+To: clinic@example.test
+Cc: copy@example.test
+Bcc: private@example.test
+Date: Wed, 30 Sep 2026 23:59:10 +0000
+Message-ID: <Original@example.test>
+In-Reply-To: <parent@example.test>
+References: <root@example.test> <parent@example.test>
+Subject: Re: Follow-up
+Content-Type: text/plain; charset=utf-8
+
+Hi,
+
+Please book the follow-up.

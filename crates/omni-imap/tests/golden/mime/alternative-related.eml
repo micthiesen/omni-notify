@@ -1,0 +1,31 @@
+From: Shop <shop@example.test>
+To: me@example.test
+Message-ID: <alt@example.test>
+Subject: Order shipped
+Date: Wed, 2 Sep 2026 08:30:00 -0700
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alt"
+
+--alt
+Content-Type: text/plain; charset=us-ascii
+
+Your order #42 shipped.
+--alt
+Content-Type: multipart/related; boundary="rel"
+
+--rel
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGJvZHk+PHA+WW91ciBvcmRlciA8YSBocmVmPSJodHRwczovL3Nob3AuZXhhbXBsZS9v
+cmRlci80MiI+IzQyPC9hPiBzaGlwcGVkLjwvcD48aW1nIHNyYz0iY2lkOmxvZ29AeCI+PC9ib2R5
+PjwvaHRtbD4=
+--rel
+Content-Type: image/png; name="logo.png"
+Content-ID: <logo@x>
+Content-Disposition: inline; filename="logo.png"
+Content-Transfer-Encoding: base64
+
+iVBORyBmYWtl
+--rel--
+--alt--

@@ -1,0 +1,13 @@
+From: News <news@example.test>
+To: a@example.test
+To: b@example.test
+Message-ID: <first@example.test>
+Message-ID: <second@example.test>
+References: <r1@example.test>
+References: <r2@example.test> <r3@example.test>
+Subject:
+Date: garbage date
+Content-Type: text/html; charset=windows-1252
+Content-Transfer-Encoding: quoted-printable
+
+<p>Caf=E9 &amp; more <a href=3D"https://example.test/booking?id=3D9">book</a></p>

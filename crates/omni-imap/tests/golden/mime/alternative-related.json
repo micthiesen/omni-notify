@@ -1,0 +1,83 @@
+{
+  "messageId": "<alt@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Order shipped",
+  "date": "2026-09-02T15:30:00.000Z",
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "Shop",
+        "address": "shop@example.test"
+      }
+    ]
+  ],
+  "to": [
+    [
+      {
+        "name": "",
+        "address": "me@example.test"
+      }
+    ]
+  ],
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": "<html><body><p>Your order <a href=\"https://shop.example/order/42\">#42</a> shipped.</p><img src=\"data:image/png;base64,iVBORyBmYWtl\"></body></html>",
+  "text": null,
+  "headerKeys": [
+    "from",
+    "to",
+    "message-id",
+    "subject",
+    "date",
+    "mime-version",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2.2",
+      "partId": "2.2",
+      "contentType": "image/png",
+      "declaredType": "image/png",
+      "filename": "logo.png",
+      "contentDisposition": "inline",
+      "contentId": "<logo@x>",
+      "cid": "logo@x",
+      "related": true,
+      "size": 9,
+      "sha256": "075f8e3f22fcb592f1c27b086375ceeaacc767bd43a4583cffd38685d3a1d9bb"
+    }
+  ],
+  "mapped": {
+    "id": "<alt@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Order shipped",
+    "from": "shop@example.test",
+    "to": [
+      "me@example.test"
+    ],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<alt@example.test>",
+    "references": [],
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "logo.png",
+        "type": "image/png",
+        "size": 9,
+        "partId": "2.2",
+        "attachmentId": "imap-attachment:7654561fd21e44c1764223d7d478d8b9d2269aac26fd6998bfc02c05fe93d817",
+        "disposition": "inline",
+        "contentId": "<logo@x>"
+      }
+    ]
+  }
+}

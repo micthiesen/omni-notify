@@ -1,0 +1,47 @@
+{
+  "messageId": "<flowed@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Flowed",
+  "date": null,
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "",
+        "address": "flow@example.test"
+      }
+    ]
+  ],
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "This is a long line that continues here.\n>quoted stuffed\n-- \nsig",
+  "headerKeys": [
+    "from",
+    "message-id",
+    "subject",
+    "content-type"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<flowed@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Flowed",
+    "from": "flow@example.test",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<flowed@example.test>",
+    "references": [],
+    "textBody": "This is a long line that continues here.\n>quoted stuffed\n-- \nsig",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

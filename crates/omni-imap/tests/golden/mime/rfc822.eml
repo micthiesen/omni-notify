@@ -1,0 +1,36 @@
+From: fwd@example.test
+Message-ID: <fwd@example.test>
+Subject: Fwd: things
+Content-Type: multipart/mixed; boundary="m"
+
+--m
+Content-Type: text/plain
+
+See attached.
+--m
+Content-Type: message/rfc822
+Content-Disposition: attachment; filename="orig.eml"
+
+From: orig@example.test
+Subject: Original
+
+Original body
+--m
+Content-Type: message/rfc822
+Content-Disposition: inline
+
+From: inner@example.test
+Subject: Inner
+Content-Type: multipart/mixed; boundary="in"
+
+--in
+Content-Type: text/plain
+
+inner text
+--in
+Content-Type: application/zip; name="a.zip"
+Content-Transfer-Encoding: base64
+
+UEsgemlw
+--in--
+--m--

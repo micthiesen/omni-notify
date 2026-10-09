@@ -1,0 +1,106 @@
+{
+  "messageId": "<disp@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "inline named text",
+  "headerKeys": [
+    "message-id",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2",
+      "partId": "2",
+      "contentType": "text/plain",
+      "declaredType": "text/plain",
+      "filename": "log.txt",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 8,
+      "sha256": "aa7e5f3c7b6f4fc5001e304da285bc207f62faab04dfd028d1661d2c48f8533e"
+    },
+    {
+      "rawPartId": "3",
+      "partId": "3",
+      "contentType": "image/jpeg",
+      "declaredType": "image/jpeg",
+      "filename": "photo.jpg",
+      "contentDisposition": "foo",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 9,
+      "sha256": "bbf6124fd0287f049f9bd572995c6d04874b173eeeb32b070aef2504d686b87f"
+    },
+    {
+      "rawPartId": "4",
+      "partId": "4",
+      "contentType": "image/png",
+      "declaredType": "application/octet-stream",
+      "filename": "guess.png",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 7,
+      "sha256": "80f2d24bc20de13c24e6e2893c8ac2ccc664863dfd1bbcf8f045cb8e463309f5"
+    }
+  ],
+  "mapped": {
+    "id": "<disp@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<disp@example.test>",
+    "references": [],
+    "textBody": "inline named text",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "log.txt",
+        "type": "text/plain",
+        "size": 8,
+        "partId": "2",
+        "attachmentId": "imap-attachment:5e97d42864a3fe24f4836054f1541a5a73e79fa7d59936857f6abcd91505b12e",
+        "disposition": "attachment"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|1",
+        "name": "photo.jpg",
+        "type": "image/jpeg",
+        "size": 9,
+        "partId": "3",
+        "attachmentId": "imap-attachment:e5d65a8975df795e36b92329f27b8c1e2cdfc1e1f224eeaf9656e41511edf3e6",
+        "disposition": "foo"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|2",
+        "name": "guess.png",
+        "type": "image/png",
+        "size": 7,
+        "partId": "4",
+        "attachmentId": "imap-attachment:85ababd35cacc6386ec104e134dc9ae4475313497b0c11f534b8d8442ccb9e06",
+        "disposition": "attachment"
+      }
+    ]
+  }
+}

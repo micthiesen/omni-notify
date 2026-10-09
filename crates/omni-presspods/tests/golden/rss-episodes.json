@@ -1,0 +1,52 @@
+[
+  {
+    "episodeId": "ZmVlZC1nb2xkZW4tZXBpc29kZS0x",
+    "title": "The Analysts Are Compromised & \"Why\" It's <Fine>",
+    "author": "Ed Elson",
+    "authorGender": "male",
+    "publication": "Simply Put",
+    "domain": "x.com",
+    "articleUrl": "https://x.com/edels0n/status/2077031491045929255?s=46&t=tracking",
+    "normalizedUrl": "https://x.com/i/status/2077031491045929255",
+    "leadImageUrl": "https://pbs.twimg.com/media/cover.jpg?name=orig&format=jpg",
+    "excerpt": "Wall Street's analysts love SpaceX & Tesla; here's \"why\" <that> matters.",
+    "content": "Why would analysts cheer? Here's the hook.\n\nThat's from The Analysts Are Compromised, by Ed Elson.\n\n## Déjà Vu\n\nAccording to JPMorgan, SpaceX is worth 2.9 trillion dollars. Rated 4## stars.\n> As the report puts it, incentives matter ]]> a lot.\n  > >  Nested quote line\n\n## Here To Stay 🚀\n\nThe solution is simple: fix the incentives. Don’t hold your breath.\n\nThat was The Analysts Are Compromised, by Ed Elson.",
+    "voiceName": "Higgs (cloned)",
+    "voiceProvider": "Higgs",
+    "synthesizedSeconds": 312.5,
+    "chapters": [
+      { "startTimeSeconds": 11.2, "title": "Introduction" },
+      { "startTimeSeconds": 64.75, "title": "Déjà Vu" }
+    ],
+    "audioFile": "ZmVlZC1nb2xkZW4tZXBpc29kZS0x.mp3",
+    "durationSeconds": 523.4351020408163,
+    "fileBytes": 6281216,
+    "retrieverName": "x",
+    "retrieverSeconds": 41.2,
+    "createdAt": 1784037871123,
+    "publishedAt": 1784030671000
+  },
+  {
+    "episodeId": "ZmVlZC1nb2xkZW4tZXBpc29kZS0y",
+    "title": "A long read without an author or an excerpt",
+    "domain": "example.com",
+    "articleUrl": "https://example.com/long-read?p=1&ref=rss",
+    "content": "This narration has no stored excerpt, so the feed truncates the content itself to two hundred and fifty five characters, including the three dots of the suffix. It keeps going well past that limit so the truncation is visible in the golden output, and mentions <angle brackets> & ampersands too.",
+    "audioFile": "ZmVlZC1nb2xkZW4tZXBpc29kZS0y.mp3",
+    "durationSeconds": 3725.9,
+    "fileBytes": 44711,
+    "createdAt": 1767225600000
+  },
+  {
+    "episodeId": "ZmVlZC1nb2xkZW4tZXBpc29kZS0z",
+    "title": "Empty excerpt, zero duration, no image",
+    "author": "Jane O'Brien",
+    "articleUrl": "https://news.example.org/a/b/",
+    "excerpt": "",
+    "content": "> Quoted opener\nplain line\n\n##NotAHeading\n##   Spaced Heading   ",
+    "audioFile": "ZmVlZC1nb2xkZW4tZXBpc29kZS0z.mp3",
+    "durationSeconds": 0,
+    "fileBytes": 0,
+    "createdAt": 1700000000000
+  }
+]

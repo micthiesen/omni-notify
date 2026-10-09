@@ -1,0 +1,92 @@
+{
+  "messageId": "<fwd@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Fwd: things",
+  "date": null,
+  "dateIsNow": false,
+  "from": [
+    [
+      {
+        "name": "",
+        "address": "fwd@example.test"
+      }
+    ]
+  ],
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "See attached.\n\nFrom: inner@example.test\nSubject: Inner\n\ninner text",
+  "headerKeys": [
+    "from",
+    "message-id",
+    "subject",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "2",
+      "partId": "2",
+      "contentType": "message/rfc822",
+      "declaredType": "message/rfc822",
+      "filename": "orig.eml",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 59,
+      "sha256": "22f26150fddf8b788821909a315af4364455f6bc80dd01f2a26269b3a56adc95"
+    },
+    {
+      "rawPartId": "4.2",
+      "partId": "4.2",
+      "contentType": "application/zip",
+      "declaredType": "application/zip",
+      "filename": "a.zip",
+      "contentDisposition": null,
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 6,
+      "sha256": "ef4ed439ff2f9d6ce020741747ad424e277baf4eb46809ebdba86603f4eade2d"
+    }
+  ],
+  "mapped": {
+    "id": "<fwd@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Fwd: things",
+    "from": "fwd@example.test",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<fwd@example.test>",
+    "references": [],
+    "textBody": "See attached.\n\nFrom: inner@example.test\nSubject: Inner\n\ninner text",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "orig.eml",
+        "type": "message/rfc822",
+        "size": 59,
+        "partId": "2",
+        "attachmentId": "imap-attachment:9b63ceefa5ce528ae5fea4a4782f3af5b2bb536753fcc14dc8620cfb0616292a",
+        "disposition": "attachment"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|1",
+        "name": "a.zip",
+        "type": "application/zip",
+        "size": 6,
+        "partId": "4.2",
+        "attachmentId": "imap-attachment:f691be8970df28afde8f17a153483c794b787a6ef11f32c7facc801c9bef2b6d"
+      }
+    ]
+  }
+}

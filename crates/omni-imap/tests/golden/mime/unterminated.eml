@@ -1,0 +1,12 @@
+Message-ID: <unterminated@example.test>
+Content-Type: multipart/mixed; boundary="u"
+
+--u
+Content-Type: text/plain
+
+first
+--u
+Content-Type: application/pdf
+Content-Disposition: attachment; filename="cut.pdf"
+
+%PDF-cut

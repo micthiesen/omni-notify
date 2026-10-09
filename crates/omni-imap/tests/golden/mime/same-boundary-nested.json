@@ -1,0 +1,62 @@
+{
+  "messageId": "<same@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "inner plain",
+  "headerKeys": [
+    "message-id",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "1.2",
+      "partId": "1.2",
+      "contentType": "image/png",
+      "declaredType": "image/png",
+      "filename": "a.png",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 3,
+      "sha256": "8f8cbb7dcf46e0bc7d53265749a6c17d116093a6ba95e442764060c76fd4a86c"
+    }
+  ],
+  "mapped": {
+    "id": "<same@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<same@example.test>",
+    "references": [],
+    "textBody": "inner plain",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "a.png",
+        "type": "image/png",
+        "size": 3,
+        "partId": "1.2",
+        "attachmentId": "imap-attachment:146cba1fab4288a61063845fe100f98b03533aa49a697644da7d2714eac1ec14",
+        "disposition": "attachment"
+      }
+    ]
+  }
+}

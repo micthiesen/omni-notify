@@ -1,0 +1,46 @@
+[package]
+name = "omni-email"
+description = "Email pipeline core: dispatcher, retry queue, watchdog, activity, triage, sender rules, feedback, routes and MCP tools."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+futures.workspace = true
+ego-tree.workspace = true
+jiff.workspace = true
+omni-ai.workspace = true
+omni-api.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-mailer.workspace = true
+omni-mcp-kit.workspace = true
+omni-runtime.workspace = true
+omni-server-kit.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+indexmap.workspace = true
+regex.workspace = true
+schemars.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+mail-parser.workspace = true
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true
+tracing-subscriber.workspace = true

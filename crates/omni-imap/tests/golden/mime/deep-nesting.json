@@ -1,0 +1,104 @@
+{
+  "messageId": "<deep@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": null,
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": "<p>html</p>",
+  "text": null,
+  "headerKeys": [
+    "message-id",
+    "content-type"
+  ],
+  "attachments": [
+    {
+      "rawPartId": "1.2.2",
+      "partId": "1.2.2",
+      "contentType": "image/jpeg",
+      "declaredType": "image/jpeg",
+      "filename": null,
+      "contentDisposition": null,
+      "contentId": "<i1>",
+      "cid": "i1",
+      "related": true,
+      "size": 3,
+      "sha256": "f8146b6cb4961f87a1519047b8c83402754ed108ade55457d43166e564b7b4fe"
+    },
+    {
+      "rawPartId": "2",
+      "partId": "2",
+      "contentType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "declaredType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "filename": "doc.docx",
+      "contentDisposition": "attachment",
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 4,
+      "sha256": "584cb925e6ad45273e46037369c5ec3a5d7cfdd409ce13a69e7087f8accd1c79"
+    },
+    {
+      "rawPartId": "3",
+      "partId": "3",
+      "contentType": "text/calendar",
+      "declaredType": "application/octet-stream",
+      "filename": "ticket.ics",
+      "contentDisposition": null,
+      "contentId": null,
+      "cid": null,
+      "related": false,
+      "size": 15,
+      "sha256": "9daa8e24f9b759073687839a0aa7de2a2f09abc2a771e77a34e1a05dd4198387"
+    }
+  ],
+  "mapped": {
+    "id": "<deep@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<deep@example.test>",
+    "references": [],
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": [
+      {
+        "blobId": "imap|INBOX|1|7|0",
+        "name": "unnamed",
+        "type": "image/jpeg",
+        "size": 3,
+        "partId": "1.2.2",
+        "attachmentId": "imap-attachment:42cc6eca2b87780e9fbc3c03314a5966940042fdd0c3e14936c0cba14a7c4bbe",
+        "contentId": "<i1>"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|1",
+        "name": "doc.docx",
+        "type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "size": 4,
+        "partId": "2",
+        "attachmentId": "imap-attachment:73a26ffecbac5a73c419475c34d6e7fa4d20fba9bcf17fa7248373b8c23cb68a",
+        "disposition": "attachment"
+      },
+      {
+        "blobId": "imap|INBOX|1|7|2",
+        "name": "ticket.ics",
+        "type": "text/calendar",
+        "size": 15,
+        "partId": "3",
+        "attachmentId": "imap-attachment:8b928affe5601df800419d01de1664ff8e950b791ce3e9fcbbc32d7dcc978d90"
+      }
+    ]
+  }
+}

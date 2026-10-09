@@ -1,0 +1,39 @@
+{
+  "messageId": "<koi@example.test>",
+  "inReplyTo": null,
+  "references": null,
+  "subject": "Привет",
+  "date": null,
+  "dateIsNow": false,
+  "from": null,
+  "to": null,
+  "cc": null,
+  "bcc": null,
+  "replyTo": null,
+  "html": null,
+  "text": "Привет\n",
+  "headerKeys": [
+    "message-id",
+    "subject",
+    "content-type"
+  ],
+  "attachments": [],
+  "mapped": {
+    "id": "<koi@example.test>",
+    "origin": {
+      "folder": "INBOX",
+      "uidValidity": "1",
+      "uid": 7
+    },
+    "subject": "Привет",
+    "from": "",
+    "to": [],
+    "cc": [],
+    "replyTo": [],
+    "messageId": "<koi@example.test>",
+    "references": [],
+    "textBody": "Привет\n",
+    "receivedAt": "2026-09-30T12:00:00.000Z",
+    "attachments": []
+  }
+}

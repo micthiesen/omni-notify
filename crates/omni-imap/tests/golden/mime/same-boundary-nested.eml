@@ -1,0 +1,16 @@
+Message-ID: <same@example.test>
+Content-Type: multipart/mixed; boundary="s"
+
+--s
+Content-Type: multipart/alternative; boundary="s"
+
+--s
+Content-Type: text/plain
+
+inner plain
+--s
+Content-Type: image/png
+Content-Disposition: attachment; filename="a.png"
+
+png
+--s--

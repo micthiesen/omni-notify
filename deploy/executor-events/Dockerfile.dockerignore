@@ -1,0 +1,11 @@
+# BuildKit reads this instead of the root .dockerignore for
+# deploy/executor-events/Dockerfile. Only the Cargo workspace is sent.
+*
+!rust-toolchain.toml
+!Cargo.toml
+!Cargo.lock
+!.cargo/
+!crates/
+crates/*/target
+**/node_modules
+**/.DS_Store
