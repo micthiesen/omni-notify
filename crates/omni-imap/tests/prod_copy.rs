@@ -49,7 +49,11 @@ fn check_prepared(pk: &str, attempt: &StoredAttempt, failures: &mut Vec<String>)
     let (Some(prepared), Some(result)) = (&attempt.prepared, &attempt.result) else {
         return;
     };
-    let Ok(content) = base64::engine::general_purpose::STANDARD.decode(&prepared.content) else {
+    // The private copy is dropped once the Sent copy is verified.
+    let Some(content) = &prepared.content else {
+        return;
+    };
+    let Ok(content) = base64::engine::general_purpose::STANDARD.decode(content) else {
         failures.push(format!("{pk}: content is not base64"));
         return;
     };

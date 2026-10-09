@@ -12,6 +12,7 @@ pub mod archive_service;
 pub mod archive_store;
 pub mod attachments;
 pub mod compose;
+pub mod compose_attachments;
 pub mod cursor;
 #[cfg(feature = "testing")]
 pub mod fake;

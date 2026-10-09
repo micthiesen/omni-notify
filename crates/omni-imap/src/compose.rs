@@ -6,6 +6,11 @@
 //! never success. Composed sends persist the exact MIME before SMTP, record
 //! SMTP acceptance before the Sent APPEND, and keep Sent verification separate
 //! from delivery. Raw keys: `email-compose:{draft|send}:<sha256hex(key)>`.
+//!
+//! Attachments are pinned references re-read server-side
+//! ([`crate::compose_attachments`]). Known keys settle from their receipt
+//! before any source is re-read, so retries never resend. Receipts drop MIME no
+//! later step uses: `wire` after SMTP, the private copy once it is verified.
 
 use std::sync::Arc;
 
@@ -19,6 +24,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest as _, Sha256};
 
+use crate::attachments::AttachmentReader;
+use crate::compose_attachments::{
+    OutgoingAttachmentMetadata, OutgoingAttachmentReference, resolve_outgoing_attachments,
+};
 use crate::ops::drafts::{EmailDraftInput, EmailDraftResult};
 use crate::ops::sent::{BeforeAppend, SentCopyInput, SentCopyResult};
 use crate::protocol::ImapError;
@@ -51,17 +60,31 @@ impl ComposeKind {
 }
 
 /// The persisted original MIME (`PreparedMessage`), base64 `wire` (SMTP, no
-/// Bcc) and `content` (private Sent copy).
+/// Bcc) and `content` (private Sent copy). `wire` is dropped once SMTP has an
+/// outcome and `content` once the Sent copy is verified.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreparedMessage {
     pub from: String,
     /// ISO send date.
     pub date: String,
-    pub wire: String,
-    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wire: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+/// `retainedMime`: `{from, date}` plus the private copy when it is still needed.
+fn retained_mime(prepared: PreparedMessage, keep_content: bool) -> PreparedMessage {
+    PreparedMessage {
+        from: prepared.from,
+        date: prepared.date,
+        wire: None,
+        content: prepared.content.filter(|c| keep_content && !c.is_empty()),
+        extra: Extra::new(),
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +123,8 @@ pub struct StoredAttempt {
     pub prepared: Option<PreparedMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sent_copy: Option<SentCopyState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachments: Option<Vec<OutgoingAttachmentMetadata>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<AttemptResult>,
     #[serde(flatten)]
@@ -156,6 +181,12 @@ impl EmailComposeError {
             cause: Some(cause.into()),
         }
     }
+}
+
+/// `failWith`: MCP error text reports only the innermost cause, so the
+/// guidance and the cause's message are flattened into one message.
+fn fail_with<E: std::fmt::Display>(message: String) -> impl FnOnce(E) -> EmailComposeError {
+    move |cause| EmailComposeError::new(format!("{message}: {cause}"))
 }
 
 /// SMTP submission of prebuilt MIME. `true` only when every recipient was accepted.
@@ -225,6 +256,8 @@ pub struct ComposeRequest {
     pub text: String,
     pub in_reply_to: Option<String>,
     pub references: Option<Vec<String>>,
+    /// `None` for an absent or empty list (the attachment-free fingerprint).
+    pub attachments: Option<Vec<OutgoingAttachmentReference>>,
 }
 
 impl ComposeRequest {
@@ -251,6 +284,22 @@ impl ComposeRequest {
         if let Some(references) = &self.references {
             map.insert("references".to_owned(), Value::from(references.clone()));
         }
+        if let Some(attachments) = &self.attachments {
+            let list = attachments
+                .iter()
+                .map(|r| {
+                    let mut item = Map::new();
+                    item.insert("messageId".to_owned(), Value::from(r.message_id.clone()));
+                    item.insert(
+                        "attachmentId".to_owned(),
+                        Value::from(r.attachment_id.clone()),
+                    );
+                    item.insert("sha256".to_owned(), Value::from(r.sha256.clone()));
+                    Value::Object(item)
+                })
+                .collect();
+            map.insert("attachments".to_owned(), Value::Array(list));
+        }
         map.insert("from".to_owned(), Value::from(from));
         omni_core::js::json_stringify(&Value::Object(map))
     }
@@ -260,7 +309,10 @@ impl ComposeRequest {
         hex::encode(Sha256::digest(self.fingerprint_json(from).as_bytes()))
     }
 
-    fn draft_input(&self) -> EmailDraftInput {
+    fn draft_input(
+        &self,
+        attachments: Vec<omni_mailer::OutgoingEmailAttachment>,
+    ) -> EmailDraftInput {
         EmailDraftInput {
             idempotency_key: self.idempotency_key.clone(),
             to: self.to.clone(),
@@ -270,10 +322,14 @@ impl ComposeRequest {
             text: self.text.clone(),
             in_reply_to: self.in_reply_to.clone(),
             references: self.references.clone(),
+            attachments,
         }
     }
 
-    fn compose_input(&self) -> omni_mailer::ComposeInput {
+    fn compose_input(
+        &self,
+        attachments: Vec<omni_mailer::OutgoingEmailAttachment>,
+    ) -> omni_mailer::ComposeInput {
         omni_mailer::ComposeInput {
             to: self.to.clone(),
             cc: self.cc.clone().unwrap_or_default(),
@@ -282,6 +338,7 @@ impl ComposeRequest {
             text: self.text.clone(),
             in_reply_to: self.in_reply_to.clone(),
             references: self.references.clone().unwrap_or_default(),
+            attachments,
         }
     }
 
@@ -312,10 +369,31 @@ pub fn key_for(kind: ComposeKind, idempotency_key: &str) -> String {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Reservation {
     Reserved,
-    Succeeded(String),
-    Pending,
+    Succeeded {
+        message_id: String,
+        attachments: Vec<OutgoingAttachmentMetadata>,
+    },
+    Pending {
+        attachments: Vec<OutgoingAttachmentMetadata>,
+    },
     Failed,
     Mismatch,
+}
+
+/// `existingReservation`: how a stored receipt settles a repeated key.
+fn existing_reservation(prior: StoredAttempt, fingerprint: &str) -> Reservation {
+    if prior.fingerprint != fingerprint {
+        return Reservation::Mismatch;
+    }
+    let attachments = prior.attachments.unwrap_or_default();
+    match (prior.status, prior.result) {
+        (AttemptStatus::Succeeded, Some(result)) if result.sent => Reservation::Succeeded {
+            message_id: result.message_id,
+            attachments,
+        },
+        (AttemptStatus::Pending, _) => Reservation::Pending { attachments },
+        _ => Reservation::Failed,
+    }
 }
 
 fn decode_attempt(pk: &str, value: JsValue) -> Result<StoredAttempt, StoreError> {
@@ -360,13 +438,15 @@ fn reservation_failure(action: &str, reservation: &Reservation) -> EmailComposeE
         Reservation::Mismatch => {
             format!("Idempotency key already belongs to different {action} content")
         }
-        Reservation::Pending => format!(
+        Reservation::Pending { .. } => format!(
             "A prior {action} attempt has an uncertain outcome; it will not be retried automatically. Do not retry with a new key without checking delivery."
         ),
         Reservation::Failed => format!(
             "A prior {action} attempt was not confirmed and will not be retried automatically. Do not retry with a new key without checking delivery."
         ),
-        Reservation::Succeeded(_) => format!("Unexpected successful {action} reservation state"),
+        Reservation::Succeeded { .. } => {
+            format!("Unexpected successful {action} reservation state")
+        }
         Reservation::Reserved => format!("Unexpected reservation state for {action}"),
     })
 }
@@ -377,6 +457,7 @@ fn reservation_failure(action: &str, reservation: &Reservation) -> EmailComposeE
 pub struct DraftOutput {
     pub draft_id: String,
     pub already_existed: bool,
+    pub attachments: Vec<OutgoingAttachmentMetadata>,
 }
 
 /// `email_send` output.
@@ -387,6 +468,7 @@ pub struct SendOutput {
     pub message_id: String,
     pub already_sent: bool,
     pub sent_copy: SentCopyReport,
+    pub attachments: Vec<OutgoingAttachmentMetadata>,
 }
 
 /// `email_send_status` output.
@@ -400,6 +482,7 @@ pub struct SendStatusOutput {
     pub recorded_at: Option<String>,
     pub message_date: Option<String>,
     pub sent_copy: Option<SentCopyReport>,
+    pub attachments: Vec<OutgoingAttachmentMetadata>,
 }
 
 /// The compose workflows; cheap to clone.
@@ -409,6 +492,8 @@ pub struct ComposeService {
     clock: SharedClock,
     sender: Option<Arc<dyn ComposeSender>>,
     mailbox: Option<Arc<dyn ComposeMailbox>>,
+    /// Re-reads referenced PDFs (the transport in production).
+    attachments: Option<Arc<dyn AttachmentReader>>,
     /// The configured sender identity (`michael@thiesen.dev`); `None` when
     /// no SMTP configuration resolves.
     from: Option<String>,
@@ -429,8 +514,16 @@ impl ComposeService {
             clock,
             sender,
             mailbox,
+            attachments: None,
             from,
         }
+    }
+
+    /// Enables attachments by pinned reference.
+    #[must_use]
+    pub fn with_attachment_reader(mut self, reader: Option<Arc<dyn AttachmentReader>>) -> Self {
+        self.attachments = reader;
+        self
     }
 
     fn mailbox(&self) -> Option<&Arc<dyn ComposeMailbox>> {
@@ -443,6 +536,7 @@ impl ComposeService {
         idempotency_key: &str,
         fingerprint: &str,
         prepared: Option<PreparedMessage>,
+        attachments: Vec<OutgoingAttachmentMetadata>,
     ) -> Result<Reservation, EmailComposeError> {
         let pk = key_for(kind, idempotency_key);
         let fingerprint = fingerprint.to_owned();
@@ -450,18 +544,7 @@ impl ComposeService {
             .write(move |tx| -> Result<Reservation, StoreError> {
                 let now = tx.now_ms();
                 if let Some(prior) = read_attempt_tx(tx, &pk)? {
-                    if prior.fingerprint != fingerprint {
-                        return Ok(Reservation::Mismatch);
-                    }
-                    return Ok(match (prior.status, prior.result) {
-                        (AttemptStatus::Succeeded, Some(result)) if result.sent => {
-                            Reservation::Succeeded(result.message_id)
-                        }
-                        (AttemptStatus::Succeeded, _) | (AttemptStatus::Failed, _) => {
-                            Reservation::Failed
-                        }
-                        (AttemptStatus::Pending, _) => Reservation::Pending,
-                    });
+                    return Ok(existing_reservation(prior, &fingerprint));
                 }
                 let has_prepared = prepared.is_some();
                 let attempt = StoredAttempt {
@@ -470,6 +553,7 @@ impl ComposeService {
                     updated_at: now,
                     prepared,
                     sent_copy: has_prepared.then_some(SentCopyState::Pending),
+                    attachments: (!attachments.is_empty()).then_some(attachments),
                     result: None,
                     extra: Extra::new(),
                 };
@@ -477,9 +561,10 @@ impl ComposeService {
                 Ok(Reservation::Reserved)
             })
             .await
-            .map_err(|e| {
-                EmailComposeError::caused(format!("Could not reserve email {}", kind.as_str()), e)
-            })
+            .map_err(fail_with(format!(
+                "Could not reserve email {}",
+                kind.as_str()
+            )))
     }
 
     async fn complete(
@@ -501,11 +586,22 @@ impl ComposeService {
                         "Email compose reservation disappeared",
                     ));
                 };
+                if prior.fingerprint == fingerprint
+                    && prior.status == AttemptStatus::Succeeded
+                    && prior
+                        .result
+                        .as_ref()
+                        .is_some_and(|r| r.sent == sent && r.message_id == message_id)
+                {
+                    // A concurrent reconciler recorded the same outcome first.
+                    return Ok(());
+                }
                 if prior.fingerprint != fingerprint || prior.status != AttemptStatus::Pending {
                     return Err(CompleteError::Message(
                         "Email compose reservation changed unexpectedly",
                     ));
                 }
+                prior.prepared = prior.prepared.map(|p| retained_mime(p, true));
                 prior.status = if sent {
                     AttemptStatus::Succeeded
                 } else {
@@ -521,26 +617,51 @@ impl ComposeService {
                 Ok(())
             })
             .await
-            .map_err(|e| {
-                EmailComposeError::caused(
-                    format!(
-                        "Could not persist email {} outcome; do not repeat with a new key",
-                        kind.as_str()
-                    ),
-                    e,
-                )
-            })
+            .map_err(fail_with(format!(
+                "Could not persist email {} outcome; do not repeat with a new key",
+                kind.as_str()
+            )))
     }
 
-    async fn read_send_attempt(
+    async fn read_attempt(
         &self,
+        kind: ComposeKind,
         idempotency_key: &str,
     ) -> Result<Option<StoredAttempt>, EmailComposeError> {
-        let pk = key_for(ComposeKind::Send, idempotency_key);
+        let pk = key_for(kind, idempotency_key);
         self.store
             .read(move |docs| read_attempt_tx(docs, &pk))
             .await
-            .map_err(|e| EmailComposeError::caused("Could not read send receipt", e))
+            .map_err(fail_with(format!(
+                "Could not read {} receipt",
+                kind.as_str()
+            )))
+    }
+
+    /// Settles known keys before re-reading attachment sources or composing MIME.
+    async fn find_reservation(
+        &self,
+        kind: ComposeKind,
+        idempotency_key: &str,
+        fingerprint: &str,
+    ) -> Result<Option<Reservation>, EmailComposeError> {
+        Ok(self
+            .read_attempt(kind, idempotency_key)
+            .await?
+            .map(|prior| existing_reservation(prior, fingerprint)))
+    }
+
+    async fn resolve_attachments(
+        &self,
+        request: &ComposeRequest,
+    ) -> Result<Vec<crate::compose_attachments::ResolvedOutgoingAttachment>, EmailComposeError>
+    {
+        resolve_outgoing_attachments(
+            self.attachments.as_ref(),
+            request.attachments.as_deref().unwrap_or_default(),
+        )
+        .await
+        .map_err(|e| EmailComposeError::new(e.0))
     }
 
     /// `email_draft_create`.
@@ -559,27 +680,45 @@ impl ComposeService {
             ));
         };
         let fingerprint = request.fingerprint(&from);
-        let reservation = self
-            .reserve(
-                ComposeKind::Draft,
-                &request.idempotency_key,
-                &fingerprint,
-                None,
-            )
+        let existing = self
+            .find_reservation(ComposeKind::Draft, &request.idempotency_key, &fingerprint)
             .await?;
-        match &reservation {
-            Reservation::Succeeded(message_id) => {
+        let resolved = match existing {
+            Some(_) => Vec::new(),
+            None => self.resolve_attachments(request).await?,
+        };
+        let (files, metadata): (Vec<_>, Vec<_>) =
+            resolved.into_iter().map(|r| (r.file, r.metadata)).unzip();
+        let reservation = match existing {
+            Some(existing) => existing,
+            None => {
+                self.reserve(
+                    ComposeKind::Draft,
+                    &request.idempotency_key,
+                    &fingerprint,
+                    None,
+                    metadata.clone(),
+                )
+                .await?
+            }
+        };
+        let (pending, attachments) = match reservation {
+            Reservation::Succeeded {
+                message_id,
+                attachments,
+            } => {
                 return Ok(DraftOutput {
-                    draft_id: message_id.clone(),
+                    draft_id: message_id,
                     already_existed: true,
+                    attachments,
                 });
             }
-            Reservation::Reserved | Reservation::Pending => {}
-            other => return Err(reservation_failure("draft", other)),
-        }
-        let pending = reservation == Reservation::Pending;
+            Reservation::Reserved => (false, metadata),
+            Reservation::Pending { attachments } => (true, attachments),
+            other => return Err(reservation_failure("draft", &other)),
+        };
         let result = mailbox
-            .create_draft(&request.draft_input(), !pending)
+            .create_draft(&request.draft_input(files), !pending)
             .await
             .map_err(|e| EmailComposeError::caused(e.to_string(), e))?;
         self.complete(
@@ -593,6 +732,22 @@ impl ComposeService {
         Ok(DraftOutput {
             draft_id: result.draft_id,
             already_existed: result.already_existed || pending,
+            attachments,
+        })
+    }
+
+    async fn already_sent(
+        &self,
+        idempotency_key: &str,
+        message_id: String,
+        attachments: Vec<OutgoingAttachmentMetadata>,
+    ) -> Result<SendOutput, EmailComposeError> {
+        Ok(SendOutput {
+            sent: true,
+            message_id,
+            already_sent: true,
+            sent_copy: self.save_sent(idempotency_key).await?,
+            attachments,
         })
     }
 
@@ -604,19 +759,40 @@ impl ComposeService {
             ));
         };
         let fingerprint = request.fingerprint(&from);
+        match self
+            .find_reservation(ComposeKind::Send, &request.idempotency_key, &fingerprint)
+            .await?
+        {
+            Some(Reservation::Succeeded {
+                message_id,
+                attachments,
+            }) => {
+                return self
+                    .already_sent(&request.idempotency_key, message_id, attachments)
+                    .await;
+            }
+            Some(other) => return Err(reservation_failure("send", &other)),
+            None => {}
+        }
+        let resolved = self.resolve_attachments(request).await?;
+        let (files, metadata): (Vec<_>, Vec<_>) =
+            resolved.into_iter().map(|r| (r.file, r.metadata)).unzip();
         let message_id = format!("<{fingerprint}@omni-notify>");
         let date_ms = self.clock.now_ms();
-        let prepared =
-            omni_mailer::prepare_composed_email(&request.compose_input(), &message_id, date_ms)
-                .map_err(|e| EmailComposeError::caused(e.to_string(), e))?;
+        let prepared = omni_mailer::prepare_composed_email(
+            &request.compose_input(files),
+            &message_id,
+            date_ms,
+        )
+        .map_err(|e| EmailComposeError::caused(e.to_string(), e))?;
         let wire = STANDARD
             .decode(&prepared.wire_b64)
             .map_err(|e| EmailComposeError::caused(e.to_string(), e))?;
         let stored = PreparedMessage {
-            from: prepared.from.clone(),
-            date: prepared.date_iso.clone(),
-            wire: prepared.wire_b64.clone(),
-            content: prepared.content_b64.clone(),
+            from: prepared.from,
+            date: prepared.date_iso,
+            wire: Some(prepared.wire_b64),
+            content: Some(prepared.content_b64),
             extra: Extra::new(),
         };
         let reservation = self
@@ -625,16 +801,17 @@ impl ComposeService {
                 &request.idempotency_key,
                 &fingerprint,
                 Some(stored),
+                metadata.clone(),
             )
             .await?;
         match reservation {
-            Reservation::Succeeded(message_id) => {
-                return Ok(SendOutput {
-                    sent: true,
-                    message_id,
-                    already_sent: true,
-                    sent_copy: self.save_sent(&request.idempotency_key).await?,
-                });
+            Reservation::Succeeded {
+                message_id,
+                attachments,
+            } => {
+                return self
+                    .already_sent(&request.idempotency_key, message_id, attachments)
+                    .await;
             }
             Reservation::Reserved => {}
             other => return Err(reservation_failure("send", &other)),
@@ -658,6 +835,7 @@ impl ComposeService {
             message_id,
             already_sent: false,
             sent_copy: self.save_sent(&request.idempotency_key).await?,
+            attachments: metadata,
         })
     }
 
@@ -666,7 +844,9 @@ impl ComposeService {
         &self,
         idempotency_key: &str,
     ) -> Result<SendStatusOutput, EmailComposeError> {
-        let attempt = self.read_send_attempt(idempotency_key).await?;
+        let attempt = self
+            .read_attempt(ComposeKind::Send, idempotency_key)
+            .await?;
         Ok(match attempt {
             None => SendStatusOutput {
                 found: false,
@@ -676,6 +856,7 @@ impl ComposeService {
                 recorded_at: None,
                 message_date: None,
                 sent_copy: None,
+                attachments: Vec::new(),
             },
             Some(attempt) => SendStatusOutput {
                 found: true,
@@ -690,6 +871,7 @@ impl ComposeService {
                         .sent_copy
                         .map_or(SentCopyReport::LegacyUnavailable, Into::into),
                 ),
+                attachments: attempt.attachments.unwrap_or_default(),
             },
         })
     }
@@ -704,21 +886,9 @@ impl ComposeService {
 
     /// Claims APPEND durably; a crash or lost response permits read-only reconciliation only.
     async fn save_sent(&self, idempotency_key: &str) -> Result<SentCopyReport, EmailComposeError> {
-        self.save_sent_inner(idempotency_key)
-            .await
-            .map_err(|cause| {
-                EmailComposeError::caused(
-                    "SMTP was accepted but Sent copy persistence failed; do not resend",
-                    cause,
-                )
-            })
-    }
-
-    async fn save_sent_inner(
-        &self,
-        idempotency_key: &str,
-    ) -> Result<SentCopyReport, EmailComposeError> {
-        let attempt = self.read_send_attempt(idempotency_key).await?;
+        let attempt = self
+            .read_attempt(ComposeKind::Send, idempotency_key)
+            .await?;
         let confirmed = attempt.as_ref().filter(|a| {
             a.status == AttemptStatus::Succeeded && a.result.as_ref().is_some_and(|r| r.sent)
         });
@@ -730,7 +900,11 @@ impl ComposeService {
         if attempt.sent_copy == Some(SentCopyState::Verified) {
             return Ok(SentCopyReport::Verified);
         }
-        let Some(prepared) = &attempt.prepared else {
+        let Some((prepared, content)) = attempt
+            .prepared
+            .as_ref()
+            .and_then(|p| p.content.as_ref().filter(|c| !c.is_empty()).map(|c| (p, c)))
+        else {
             return Ok(SentCopyReport::LegacyUnavailable);
         };
         let Some(mailbox) = self.mailbox().cloned() else {
@@ -743,14 +917,36 @@ impl ComposeService {
             .as_ref()
             .map(|r| r.message_id.clone())
             .unwrap_or_default();
+        self.copy_to_sent(
+            idempotency_key,
+            mailbox.as_ref(),
+            message_id,
+            content,
+            &prepared.date,
+            attempt.sent_copy == Some(SentCopyState::Pending),
+        )
+        .await
+        .map_err(fail_with(
+            "SMTP was accepted but Sent copy persistence failed; do not resend".to_owned(),
+        ))
+    }
+
+    async fn copy_to_sent(
+        &self,
+        idempotency_key: &str,
+        mailbox: &dyn ComposeMailbox,
+        message_id: String,
+        content: &str,
+        date: &str,
+        allow_append: bool,
+    ) -> Result<SentCopyReport, EmailComposeError> {
         let content = STANDARD
-            .decode(&prepared.content)
-            .map_err(|e| EmailComposeError::caused(e.to_string(), e))?;
+            .decode(content)
+            .map_err(|e| EmailComposeError::new(e.to_string()))?;
         let input = SentCopyInput {
             message_id,
             content,
-            internal_date_ms: prepared
-                .date
+            internal_date_ms: date
                 .parse::<jiff::Timestamp>()
                 .ok()
                 .map(|t| t.as_millisecond()),
@@ -776,13 +972,14 @@ impl ComposeService {
                     .map_err(|e| e.to_string())
             })
         });
-        let allow_append = attempt.sent_copy == Some(SentCopyState::Pending);
         let copied = mailbox
             .save_sent_copy(&input, allow_append, Some(before_append))
             .await;
         if let Err(error) = copied {
             tracing::warn!(target: LOG, "Sent copy not confirmed: {error}");
-            let latest = self.read_send_attempt(idempotency_key).await?;
+            let latest = self
+                .read_attempt(ComposeKind::Send, idempotency_key)
+                .await?;
             return Ok(latest
                 .and_then(|a| a.sent_copy)
                 .map_or(SentCopyReport::Pending, Into::into));
@@ -792,12 +989,13 @@ impl ComposeService {
                 let Some(mut prior) = read_attempt_tx(tx, &pk)? else {
                     return Err(CompleteError::Message("Send receipt disappeared"));
                 };
+                prior.prepared = prior.prepared.map(|p| retained_mime(p, false));
                 prior.sent_copy = Some(SentCopyState::Verified);
                 write_attempt(tx, &pk, ComposeKind::Send, &prior)?;
                 Ok(())
             })
             .await
-            .map_err(|e| EmailComposeError::caused(e.to_string(), e))?;
+            .map_err(|e| EmailComposeError::new(e.to_string()))?;
         Ok(SentCopyReport::Verified)
     }
 }
@@ -859,6 +1057,7 @@ mod tests {
             text: "Body ".to_owned(),
             in_reply_to: Some("<p@x.y>".to_owned()),
             references: Some(vec!["<r@x.y>".to_owned()]),
+            attachments: None,
         };
         assert_eq!(
             request.fingerprint_json("michael@thiesen.dev"),

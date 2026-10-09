@@ -20,6 +20,8 @@ pub struct EmailDraftInput {
     pub text: String,
     pub in_reply_to: Option<String>,
     pub references: Option<Vec<String>>,
+    /// Every entry must be appended; an implementation that cannot must fail.
+    pub attachments: Vec<omni_mailer::OutgoingEmailAttachment>,
 }
 
 fn bare_id(id: &str) -> String {
@@ -68,8 +70,7 @@ pub fn compose_draft_mime(
     if let Some(references) = input.references.as_ref().filter(|r| !r.is_empty()) {
         builder = builder.references(MessageId::new_list(references.iter().map(|r| bare_id(r))));
     }
-    builder
-        .text_body(input.text.clone())
+    omni_mailer::with_attachments(builder.text_body(input.text.clone()), &input.attachments)
         .write_to_vec()
         .map_err(|e| e.to_string())
 }

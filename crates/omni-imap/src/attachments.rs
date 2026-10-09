@@ -2,10 +2,13 @@
 
 use std::sync::LazyLock;
 
+use futures::future::BoxFuture;
+use omni_core::email::DownloadedAttachment;
 use regex::Regex;
 use sha2::{Digest as _, Sha256};
 
 use crate::mime::Attachment;
+use crate::protocol::ImapError;
 
 /// Decoded attachment bytes returned to callers.
 pub const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
@@ -65,6 +68,25 @@ pub fn declared_attachment_mime_type(attachment: &Attachment) -> String {
     }
 }
 
+/// Format identity only: declared PDF MIME plus a PDF header, not document safety.
+pub fn is_pdf_attachment(mime_type: &str, data: &[u8]) -> bool {
+    mime_type.eq_ignore_ascii_case("application/pdf") && data.starts_with(b"%PDF-")
+}
+
+/// The stable attachment reader seam (the IMAP transport in production).
+pub trait AttachmentReader: Send + Sync {
+    /// False until the transport has started (TS `emailControls.transport` unset).
+    fn available(&self) -> bool {
+        true
+    }
+    fn fetch_attachment<'a>(
+        &'a self,
+        message_id: &'a str,
+        attachment_id: &'a str,
+        max_bytes: usize,
+    ) -> BoxFuture<'a, Result<Option<DownloadedAttachment>, ImapError>>;
+}
+
 /// A display/download filename, never a sender-supplied filesystem path.
 pub fn safe_attachment_filename(filename: Option<&str>) -> String {
     let raw = filename.unwrap_or("attachment").replace('\\', "/");
@@ -74,12 +96,15 @@ pub fn safe_attachment_filename(filename: Option<&str>) -> String {
         .filter(|c| {
             let code = u32::from(*c);
             !(code <= 0x1f
-                || code == 0x7f
+                || (0x7f..=0x9f).contains(&code)
+                || code == 0x061c
+                || (0x200b..=0x200f).contains(&code)
                 || (0x202a..=0x202e).contains(&code)
-                || (0x2066..=0x2069).contains(&code))
+                || (0x2066..=0x2069).contains(&code)
+                || code == 0xfeff)
         })
         .collect();
-    let trimmed = cleaned.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    let trimmed = omni_core::js::trim(&cleaned);
     let without_dots = trimmed.trim_start_matches('.');
     let limited = omni_core::js::utf16_slice(without_dots, 0, 180).into_owned();
     if limited.is_empty() {

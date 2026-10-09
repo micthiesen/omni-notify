@@ -9,6 +9,7 @@ use omni_imap::fake::{FakeCall, FakeMessage, FakeOp, FakeServer};
 use omni_imap::mime::parse_message;
 use omni_imap::ops::drafts::{EmailDraftInput, create_draft, deterministic_draft_message_id};
 use omni_imap::protocol::ImapError;
+use omni_mailer::OutgoingEmailAttachment;
 
 const NOW: i64 = 1_790_769_600_000;
 
@@ -25,6 +26,7 @@ fn input() -> EmailDraftInput {
             "<root@example.test>".to_owned(),
             "<parent@example.test>".to_owned(),
         ]),
+        attachments: Vec::new(),
     }
 }
 
@@ -82,6 +84,51 @@ async fn discovers_the_special_use_drafts_mailbox_and_serializes_bcc_and_reply_h
             "<parent@example.test>".to_owned()
         ])
     );
+}
+
+#[tokio::test]
+async fn attaches_verified_pdf_bytes_to_the_draft_mime_without_changing_reply_headers() {
+    let server = server();
+    let mut client = server.client();
+    let content = b"%PDF-1.7\ndraft synthetic fixture\n%%EOF".to_vec();
+    let mut with_pdf = input();
+    with_pdf.attachments = vec![OutgoingEmailAttachment {
+        filename: "report.pdf".to_owned(),
+        content_type: "application/pdf".to_owned(),
+        content: content.clone(),
+    }];
+    let result = create_draft(&mut client, &with_pdf, true, NOW)
+        .await
+        .unwrap();
+    assert_eq!(result.draft_id, deterministic_draft_message_id("draft-key"));
+    let stored = server.message("Drafts.localized", 1).unwrap();
+    let parsed = parse_message(&stored.source, NOW).unwrap();
+    assert_eq!(
+        parsed
+            .text
+            .as_deref()
+            .map(|t| t.replace("\r\n", "\n"))
+            .as_deref()
+            .map(str::trim_end),
+        Some("A draft body")
+    );
+    assert_eq!(parsed.in_reply_to.as_deref(), Some("<parent@example.test>"));
+    assert_eq!(
+        parsed.references,
+        Some(vec![
+            "<root@example.test>".to_owned(),
+            "<parent@example.test>".to_owned()
+        ])
+    );
+    assert_eq!(parsed.attachments.len(), 1);
+    let attachment = &parsed.attachments[0];
+    assert_eq!(attachment.filename.as_deref(), Some("report.pdf"));
+    assert_eq!(attachment.content_type, "application/pdf");
+    assert_eq!(
+        attachment.content_disposition.as_deref(),
+        Some("attachment")
+    );
+    assert_eq!(attachment.content, content);
 }
 
 #[tokio::test]

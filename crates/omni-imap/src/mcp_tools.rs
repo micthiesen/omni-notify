@@ -23,23 +23,12 @@ use crate::archive_store::{
     ArchiveAction, ArchiveActionError, ArchiveActionStatus, ArchivePatch, get_archive_action,
     queue_archive_action, update_archive_action,
 };
-use crate::attachments::{MAX_ATTACHMENT_BYTES, safe_attachment_filename};
+pub use crate::attachments::AttachmentReader;
+use crate::attachments::{MAX_ATTACHMENT_BYTES, is_pdf_attachment, safe_attachment_filename};
 use crate::compose::{ComposeRequest, ComposeService};
+use crate::compose_attachments::{OutgoingAttachmentReference, validate_references};
 use crate::ops::archive::ArchiveIdentity;
 use crate::transport::{DownloadedAttachment, ImapTransport};
-
-/// The attachment reader seam (the transport in production).
-pub trait AttachmentReader: Send + Sync {
-    fn available(&self) -> bool {
-        true
-    }
-    fn fetch_attachment<'a>(
-        &'a self,
-        message_id: &'a str,
-        attachment_id: &'a str,
-        max_bytes: usize,
-    ) -> BoxFuture<'a, Result<Option<DownloadedAttachment>, crate::protocol::ImapError>>;
-}
 
 impl AttachmentReader for ImapTransport {
     fn available(&self) -> bool {
@@ -151,6 +140,13 @@ fn normalize(kind: Kind, mut input: Value) -> Value {
             trim_string(map, "subject");
             trim_string(map, "inReplyTo");
             trim_list(map, "references");
+            if let Some(Value::Array(items)) = map.get_mut("attachments") {
+                for item in items {
+                    if let Some(reference) = item.as_object_mut() {
+                        trim_string(reference, "messageId");
+                    }
+                }
+            }
         }
         Kind::SendStatus | Kind::SentCopyRepair | Kind::ArchiveQueue => {
             trim_string(map, "idempotencyKey")
@@ -193,6 +189,21 @@ struct ComposeFields {
     in_reply_to: Option<String>,
     #[serde(default)]
     references: Option<Vec<String>>,
+    #[serde(default)]
+    attachments: Option<Vec<OutgoingAttachmentReference>>,
+}
+
+impl ComposeFields {
+    /// The zod refinements and the empty-list transform on `attachments`.
+    fn request(input: Value) -> Result<ComposeRequest, ToolError> {
+        let mut fields: ComposeFields = decode(input)?;
+        if let Some(references) = &fields.attachments {
+            validate_references(references).map_err(ToolError::input)?;
+        }
+        // An empty list keeps the attachment-free fingerprint and Message-ID.
+        fields.attachments = fields.attachments.filter(|list| !list.is_empty());
+        Ok(fields.into())
+    }
 }
 
 impl From<ComposeFields> for ComposeRequest {
@@ -209,6 +220,7 @@ impl From<ComposeFields> for ComposeRequest {
             text: fields.text,
             in_reply_to: fields.in_reply_to,
             references: fields.references,
+            attachments: fields.attachments,
         }
     }
 }
@@ -287,7 +299,7 @@ impl Handler {
         let deps = self.deps.clone();
         let value: Value = match self.kind {
             Kind::DraftCreate => {
-                let request: ComposeRequest = decode::<ComposeFields>(input)?.into();
+                let request = ComposeFields::request(input)?;
                 let out = deps
                     .compose
                     .create_draft(&request)
@@ -296,7 +308,7 @@ impl Handler {
                 serde_json::to_value(out).map_err(|e| ToolError::output(e.to_string()))?
             }
             Kind::Send => {
-                let request: ComposeRequest = decode::<ComposeFields>(input)?.into();
+                let request = ComposeFields::request(input)?;
                 let compose = deps.compose.clone();
                 // An SMTP submission and its receipt complete even if the caller goes away.
                 let out = omni_core::spawn::must_complete(&deps.tracker, async move {
@@ -411,9 +423,7 @@ impl Handler {
                 "Attachment exceeds the requested byte limit",
             ));
         }
-        if !attachment.mime_type.eq_ignore_ascii_case("application/pdf")
-            || !attachment.data.starts_with(b"%PDF-")
-        {
+        if !is_pdf_attachment(&attachment.mime_type, &attachment.data) {
             return Err(ToolError::execute(
                 "Attachment is not a PDF with matching MIME type and PDF header",
             ));
@@ -434,9 +444,15 @@ impl Handler {
         );
         metadata.insert("mimeType".to_owned(), Value::from("application/pdf"));
         metadata.insert("size".to_owned(), Value::from(attachment.data.len()));
+        let sha256 = hex::encode(Sha256::digest(&attachment.data));
+        metadata.insert("sha256".to_owned(), Value::from(sha256.clone()));
         metadata.insert(
-            "sha256".to_owned(),
-            Value::from(hex::encode(Sha256::digest(&attachment.data))),
+            "attachmentReference".to_owned(),
+            json!({
+                "messageId": input.message_id,
+                "attachmentId": input.attachment_id,
+                "sha256": sha256,
+            }),
         );
         let mut structured = metadata.clone();
         structured.insert("blob".to_owned(), Value::from(blob.clone()));

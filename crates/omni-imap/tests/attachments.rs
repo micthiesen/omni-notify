@@ -283,5 +283,9 @@ fn sanitizes_path_controls_and_bidi_filenames_without_interpreting_sender_paths(
         "offer.pdf"
     );
     assert_eq!(safe_attachment_filename(Some("..\u{0}")), "attachment");
+    assert_eq!(
+        safe_attachment_filename(Some("\u{feff}scan\u{200b}\u{85}\u{61c}.pdf")),
+        "scan.pdf"
+    );
     assert_eq!(safe_attachment_filename(Some(&"a".repeat(300))).len(), 180);
 }

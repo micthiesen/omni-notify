@@ -19,6 +19,7 @@ use omni_config::Config;
 use omni_http::SideEffectMode;
 
 pub use omni_config::OUTGOING_EMAIL_FROM;
+pub use omni_core::email::OutgoingEmailAttachment;
 
 pub mod templates;
 
@@ -137,6 +138,8 @@ pub struct ComposeInput {
     pub text: String,
     pub in_reply_to: Option<String>,
     pub references: Vec<String>,
+    /// Verified PDF bytes; every entry becomes an `attachment` part.
+    pub attachments: Vec<OutgoingEmailAttachment>,
 }
 
 /// The same identity, body and date for SMTP (`wire`, no Bcc) and the private
@@ -231,10 +234,24 @@ fn compose(
     if !references.is_empty() {
         builder = builder.references(MessageId::new_list(references.iter().map(|r| bare_id(r))));
     }
-    builder
-        .text_body(input.text.clone())
+    with_attachments(builder.text_body(input.text.clone()), &input.attachments)
         .write_to_vec()
         .map_err(|e| MailError::Mime(e.to_string()))
+}
+
+/// `composerAttachmentOptions`: verified bytes as `attachment` parts (the
+/// message becomes `multipart/mixed`); never paths or URLs.
+pub fn with_attachments<'x>(
+    builder: MessageBuilder<'x>,
+    attachments: &[OutgoingEmailAttachment],
+) -> MessageBuilder<'x> {
+    attachments.iter().fold(builder, |builder, attachment| {
+        builder.attachment(
+            attachment.content_type.clone(),
+            attachment.filename.clone(),
+            attachment.content.clone(),
+        )
+    })
 }
 
 /// Verifies the fixed identity of prebuilt MIME: exactly one `From` address,

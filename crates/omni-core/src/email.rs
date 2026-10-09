@@ -78,6 +78,16 @@ pub struct DownloadedAttachment {
     pub data: Vec<u8>,
 }
 
+/// Verified bytes re-read from the mailbox by stable identity, never
+/// caller-supplied (`OutgoingEmailAttachment`). `content_type` is always
+/// `application/pdf`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutgoingEmailAttachment {
+    pub filename: String,
+    pub content_type: String,
+    pub content: Vec<u8>,
+}
+
 /// `EmailLinkMetadata` from `src/email/linkMetadata.ts`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

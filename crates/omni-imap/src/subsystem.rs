@@ -127,6 +127,11 @@ pub fn subsystem(
         transport
             .clone()
             .map(|t| Arc::new(t) as Arc<dyn ComposeMailbox>),
+    )
+    .with_attachment_reader(
+        transport
+            .clone()
+            .map(|t| Arc::new(t) as Arc<dyn AttachmentReader>),
     );
     let tools = email_tools(ToolDeps {
         compose: compose.clone(),
