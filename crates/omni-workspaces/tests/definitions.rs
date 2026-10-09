@@ -1,5 +1,5 @@
-//! Port of `src/workspaces/definitions.test.ts`, plus a verbatim check of the
-//! definitions against JSON exported from the TS module.
+//! Workspace definitions, plus a verbatim check against the committed
+//! definitions JSON.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashSet;
@@ -42,7 +42,7 @@ fn keeps_marketplace_selling_user_driven_and_listing_complete() {
 }
 
 #[test]
-fn definitions_match_the_typescript_module_verbatim() {
+fn definitions_match_the_committed_json_verbatim() {
     let expected = omni_testkit::golden("definitions.json");
     let actual = serde_json::to_value(workspace_definitions("0 0 9 * * 0")).unwrap();
     assert_eq!(actual, expected);

@@ -1,11 +1,11 @@
-//! Cross-subsystem ports. Each port is set once during wiring (WP14) and read
+//! Cross-subsystem ports. Each port is set once during wiring and read
 //! through its accessor; a consumer must handle an unset port (the providing
-//! subsystem is disabled or not yet ported).
+//! subsystem is disabled by configuration).
 //!
 //! Payloads that are DTOs owned by another package's `omni-api` module cross
 //! as `serde_json::Value` produced by serializing that DTO; the consumer
-//! deserializes into the same `omni-api` type. This keeps ports stable while
-//! WP04/05/08/11 define their DTOs.
+//! deserializes into the same `omni-api` type, so this crate needs no
+//! dependency on subsystem DTOs.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -26,7 +26,6 @@ pub enum PortError {
     Failed { message: String, transient: bool },
 }
 
-/// `EmailSearchOptions`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailSearch {
@@ -63,8 +62,8 @@ pub struct EmailReaderHealth {
     pub drafts_available: bool,
 }
 
-/// Implemented by WP01; used by WP02 (retry, reprocess, MCP email tools), WP03
-/// (attachment download) and WP11.
+/// Implemented by `omni-imap`; used by `omni-email` (retry, reprocess, MCP email
+/// tools), `omni-calendar` (attachment download) and `omni-workspaces`.
 pub trait EmailReader: Send + Sync {
     /// Re-fetches one email by stable id; `None` when it is gone.
     fn fetch_by_id<'a>(
@@ -77,7 +76,7 @@ pub trait EmailReader: Send + Sync {
         q: &'a EmailSearch,
     ) -> BoxFuture<'a, Result<Vec<FetchedEmail>, PortError>>;
     fn health(&self) -> EmailReaderHealth;
-    /// `downloadAttachmentEffect`: the attachment's bytes by its folder/UID
+    /// The attachment's bytes by its folder/UID
     /// handle; `None` when the message or part is no longer available.
     fn download_attachment<'a>(
         &'a self,
@@ -85,9 +84,9 @@ pub trait EmailReader: Send + Sync {
     ) -> BoxFuture<'a, Result<Option<DownloadedAttachment>, PortError>>;
 }
 
-/// Implemented by WP01 (`omni_imap::transport::StoreArchiveEcho`, which needs only
-/// the store); used by WP12 to suppress mailbox events caused by its own archive
-/// moves. WP14 must set it whenever MCP events are enabled: the MCP package fails
+/// Implemented by `omni_imap::transport::StoreArchiveEcho`, which needs only
+/// the store; used by `omni-mcp` to suppress mailbox events caused by its own
+/// archive moves. Wiring must set it whenever MCP events are enabled: the MCP package fails
 /// boot without it rather than publishing duplicate `email.received` events.
 pub trait ArchiveEcho: Send + Sync {
     fn is_archive_action_message<'a>(
@@ -97,12 +96,11 @@ pub trait ArchiveEcho: Send + Sync {
     ) -> BoxFuture<'a, Result<bool, PortError>>;
 }
 
-/// Implemented by WP14 wiring; used by WP02 retry/reprocess to find a pipeline's handler.
+/// Implemented by app wiring; used by `omni-email` retry/reprocess to find a pipeline's handler.
 pub trait EmailRetryHandlers: Send + Sync {
     fn handler(&self, pipeline: &str) -> Option<Arc<dyn EmailHandler>>;
 }
 
-/// `WorkspaceCalendarEventPayload`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventInput {
@@ -140,7 +138,8 @@ pub struct CalendarWriterStatus {
     pub provider: Option<String>,
 }
 
-/// Implemented by WP03; used by WP11 (UID `workspace-<actionId>@omni-notify`).
+/// Implemented by `omni-calendar`; used by `omni-workspaces` (UID
+/// `workspace-<actionId>@omni-notify`).
 pub trait CalendarWriter: Send + Sync {
     fn create_event<'a>(
         &'a self,
@@ -150,14 +149,15 @@ pub trait CalendarWriter: Send + Sync {
     fn status(&self) -> CalendarWriterStatus;
 }
 
-/// Implemented by WP04; used by WP05, WP12 and WP14. Values are serialized
+/// Implemented by `omni-live`; used by `omni-live-intel`, `omni-mcp` and the
+/// dashboard snapshot. Values are serialized
 /// `omni_api::streamers` DTOs.
 pub trait LiveDirectory: Send + Sync {
     /// Configured streamers (`channels.json` order).
     fn streamers(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
     /// Current aggregate statuses.
     fn statuses(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
-    /// `serializeStreamersForDisplay` (dashboard snapshot and `/api/streamers`).
+    /// Streamers serialized for display (dashboard snapshot and `/api/streamers`).
     fn display(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
     fn details<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<Option<Value>, PortError>>;
 }
@@ -170,7 +170,7 @@ pub struct LiveTransition {
     pub at_ms: i64,
 }
 
-/// One streamer polled live this tick (TS `LiveObservation`): sent for the
+/// One streamer polled live this tick: sent for the
 /// went-live edge and every still-live poll, never for a streamer whose poll
 /// failed or was not due (background tier).
 #[derive(Clone, Debug, PartialEq)]
@@ -184,10 +184,11 @@ pub struct LiveObservation {
     pub at_ms: i64,
 }
 
-/// Implemented by WP05; used by WP04 (task hooks, routes) and WP12. Values are
+/// Implemented by `omni-live-intel`; used by `omni-live` (task hooks, routes)
+/// and `omni-mcp`. Values are
 /// serialized `omni_api::intelligence` DTOs.
 pub trait LiveIntelligence: Send + Sync {
-    /// `observeLive`: a streamer polled live this tick.
+    /// A streamer polled live this tick.
     fn observe_live<'a>(&'a self, observation: &'a LiveObservation) -> BoxFuture<'a, ()>;
     /// Runs after every live-check tick.
     fn after_tick(&self) -> BoxFuture<'_, ()>;
@@ -202,13 +203,13 @@ pub trait LiveIntelligence: Send + Sync {
     fn record_feedback(&self, input: Value) -> BoxFuture<'_, Result<Value, PortError>>;
 }
 
-/// Implemented by WP08; used by WP14 (snapshot). Values are serialized
+/// Implemented by `omni-media`; used by the dashboard snapshot. Values are serialized
 /// `omni_api::media::OnDeckItem`s.
 pub trait OnDeckSource: Send + Sync {
     fn on_deck(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
 }
 
-/// Implemented by WP11; used by WP12 (`briefings_list`). Values are serialized
+/// Implemented by `omni-briefings`; used by `omni-mcp` (`briefings_list`). Values are serialized
 /// `omni_api::briefings` history entries, newest first.
 pub trait BriefingsReader: Send + Sync {
     fn histories(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
@@ -224,7 +225,7 @@ pub struct ClaudeTurnStarted {
     pub revision: f64,
 }
 
-/// Implemented by WP12's `claude.session.turn_finished` watcher; used by the
+/// Implemented by the `omni-mcp` `claude.session.turn_finished` watcher; used by the
 /// Claude session tools so a turn that ends before the next poll still
 /// produces an event. Failures are the implementation's to log.
 pub trait ClaudeSessionNotifier: Send + Sync {
@@ -292,8 +293,8 @@ impl HostError {
 }
 
 /// The Claude Code host link: status plus bounded command execution.
-/// Implemented by WP12's device link (`omni_device_link::DeviceLinkService`, the
-/// outbound long-poll relay); used by WP12's Claude session tools, activity
+/// Implemented by `omni_device_link::DeviceLinkService` (the outbound
+/// long-poll relay); used by the `omni-mcp` Claude session tools, activity
 /// routes and session watcher.
 pub trait ClaudeHost: Send + Sync {
     fn status(&self) -> HostLinkStatus;

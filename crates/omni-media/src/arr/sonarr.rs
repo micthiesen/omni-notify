@@ -60,7 +60,7 @@ fn find_by(items: &[MediaItem], matches: impl Fn(&ExternalIds) -> bool) -> Optio
         .find(|item| item.external_ids.as_ref().is_some_and(&matches))
 }
 
-/// `addSonarrSeries`: existing (by TMDB) → lookup → existing (by TVDB) → add
+/// Existing (by TMDB) → lookup → existing (by TVDB) → add
 /// (search on) → verify by TVDB. The slug always comes from Sonarr's own list.
 pub async fn add_sonarr_series(
     http: &ArrHttp,

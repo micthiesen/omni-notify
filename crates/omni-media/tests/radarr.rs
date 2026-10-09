@@ -1,5 +1,4 @@
-//! Port of `src/recommendations/arr/radarr.spec.ts` (wiremock and a raw
-//! socket stand in for `fetch` doubles; nothing leaves localhost).
+//! Radarr acquisition (wiremock and a raw socket; nothing leaves localhost).
 #![allow(clippy::expect_used)]
 
 mod common;

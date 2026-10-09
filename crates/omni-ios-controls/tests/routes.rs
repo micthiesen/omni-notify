@@ -1,4 +1,4 @@
-//! Port of `src/ios-controls/routes.spec.ts`, plus the 503/400 paths and a
+//! Signed iOS control routes, including the 503/400 paths and a
 //! percent-encoded path signature.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

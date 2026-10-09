@@ -1,4 +1,4 @@
-//! Port of `src/reset-alerts/task.spec.ts` (all cases kept), plus the
+//! The one-minute reset alert task, plus the
 //! Codex/Claude snapshot readers against stubbed sources.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

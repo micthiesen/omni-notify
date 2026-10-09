@@ -1,5 +1,5 @@
-//! Server iCloud Reminders (WP10): `src/reminders/**`, `src/icloud/**` and
-//! `src/mcp/tools/reminders.ts`.
+//! Server iCloud Reminders: the Apple client, CloudKit codec, encrypted store,
+//! administration page and MCP tools.
 //!
 //! Independent of Mac EventKit, IMAP and CalDAV. Disabled (never failing boot)
 //! without the complete `ICLOUD_REMINDERS_*` configuration. The `/reminders` page has

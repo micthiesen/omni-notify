@@ -1,7 +1,7 @@
 //! Narration sections and TTS-sized chunks.
 //!
-//! Lengths are JS string lengths (UTF-16 units), as in TS, so chunk
-//! boundaries and checkpoint keys match the TS implementation.
+//! Lengths are JS string lengths (UTF-16 units), so chunk boundaries and
+//! checkpoint keys match existing checkpoints.
 
 use std::sync::LazyLock;
 
@@ -150,7 +150,7 @@ pub fn split_chunk_for_retry(text: &str, depth: usize) -> Option<Vec<String>> {
 
 #[cfg(test)]
 mod text_chunking_spec {
-    //! Ports `src/press-pods/speech/textChunking.spec.ts`.
+    //! Section and chunk splitting cases.
     use super::*;
 
     fn section(title: Option<&str>, body: &str) -> NarrationSection {

@@ -156,19 +156,7 @@ pub fn local_ms(tz: &TimeZone, datetime: civil::DateTime) -> Option<i64> {
         .map(|z| z.timestamp().as_millisecond())
 }
 
-/// `logTimestamp`: `2026-03-16T14-30-05` in local time.
-pub fn log_timestamp(ms: i64, tz: &TimeZone) -> String {
-    let z = zoned(ms, tz);
-    format!(
-        "{:04}-{:02}-{:02}T{:02}-{:02}-{:02}",
-        z.year(),
-        z.month(),
-        z.day(),
-        z.hour(),
-        z.minute(),
-        z.second()
-    )
-}
+pub use omni_core::clock::log_timestamp;
 
 #[cfg(test)]
 mod tests {

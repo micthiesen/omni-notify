@@ -1,4 +1,4 @@
-//! `capture-golden`: read-only fixture capture from a running TS service (WP00 F4).
+//! `capture-golden`: read-only fixture capture from a running service.
 //!
 //! Captures hold production data, so they are written only to the gitignored
 //! `.local/golden-capture/`; `golden-synthesize` derives the committed fixtures.

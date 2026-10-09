@@ -1,4 +1,4 @@
-//! Relational tables beside `blobs` (mitools `Table`): `pets` and
+//! Relational tables beside `blobs`: `pets` and
 //! `pet_weight_history`, created idempotently and accessed with
 //! `INSERT OR IGNORE` / `INSERT OR REPLACE` / `SELECT * ... WHERE`.
 
@@ -139,8 +139,7 @@ impl<T: TableRow> Table<T> {
     }
 }
 
-/// The pet tracker tables, with the DDL
-/// mitools `Table.make` generates for them.
+/// The pet tracker tables, with the DDL the existing databases already use.
 pub mod pets {
     use super::{Deserialize, Row, Serialize, SqlValue, TableRow};
 

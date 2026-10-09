@@ -1,4 +1,4 @@
-//! Port of `src/mcp/tools/email-reprocess.spec.ts`, plus `reprocess_activity`.
+//! The `email_reprocess` tool and `reprocess_activity`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

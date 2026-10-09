@@ -1,7 +1,7 @@
 //! Every `arr-recovery-state` and `observer-repair-state` row of a production
 //! copy decodes through the typed models, recomputes its primary key, and
-//! re-encodes to the same JS value (explicit `undefined` properties, which TS
-//! reads like absent ones, are the only allowed difference).
+//! re-encodes to the same value (explicit `undefined` properties, which read
+//! like absent ones, are the only allowed difference).
 //!
 //! Ignored by default. Run with
 //! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-arr --test prod_copy -- --ignored --nocapture`.

@@ -1,5 +1,4 @@
-//! Port of `src/email/imap/readCoherence.spec.ts` (read cache coherence).
-//! The Effect `TestClock.adjust` becomes `TestClock::set` on the shared clock.
+//! Read cache coherence, driven by `TestClock::set` on the shared clock.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -52,7 +51,7 @@ fn advance(h: &common::Harness, ms: i64) {
 }
 
 #[tokio::test]
-async fn expires_search_snapshots_on_the_effect_clock_while_retaining_immutable_parsed_bodies() {
+async fn expires_search_snapshots_on_the_test_clock_while_retaining_immutable_parsed_bodies() {
     let (server, _) = fixture();
     let h = common::harness(server).await;
     h.transport.search_emails(&inbox()).await.unwrap();

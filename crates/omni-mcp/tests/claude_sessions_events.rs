@@ -1,4 +1,4 @@
-//! Port of `src/mcp/events/claudeSessions.spec.ts` (all cases kept).
+//! The `claude.session.turn_finished` watcher.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

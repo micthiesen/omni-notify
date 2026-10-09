@@ -1,10 +1,10 @@
-//! `Date.parse` parity: every expectation was produced by node (V8) with
+//! `Date.parse` semantics: every expectation was produced by node (V8) with
 //! `TZ=America/Vancouver`, covering the RFC 2822 and loose forms podcast feeds
 //! use, V8's legacy-parser quirks, and DST gaps/overlaps for zone-less input.
 #![allow(clippy::unwrap_used, clippy::unreadable_literal)]
 
 use jiff::tz::TimeZone;
-use omni_podcasts::js::parse_date;
+use omni_core::js::date_parse;
 
 #[test]
 fn matches_node_date_parse_for_feed_date_shapes() {
@@ -81,6 +81,6 @@ fn matches_node_date_parse_for_feed_date_shapes() {
         ),
     ];
     for (input, expected) in cases {
-        assert_eq!(parse_date(input, &tz), *expected, "{input}");
+        assert_eq!(date_parse(input, &tz), *expected, "{input}");
     }
 }

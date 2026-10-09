@@ -1,11 +1,11 @@
-//! Personal services (WP13): Whisker pet weights, the LAN printer, the Hister
+//! Personal services: Whisker pet weights, the LAN printer, the Hister
 //! browser-history archive, and Codex / Claude Code reset alerts.
 //!
 //! [`subsystem`] builds the routes (`/api/pets`, CSV export), the tasks
 //! (`PetTracker`, `CodexResets`, `ClaudeResets`), the MCP tools (`pets_read`,
 //! `costs_read`, printer and browser-history tools) and the entity
 //! descriptors (`codex-reset-delivery`, `claude-reset-delivery`,
-//! `printer-accepted-job`) for WP14 to wire.
+//! `printer-accepted-job`) for app wiring.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +18,6 @@ use omni_tasks::Task;
 pub mod claude_resets;
 pub mod codex_resets;
 pub mod hister;
-pub mod js;
 pub mod mcp;
 pub mod pets;
 pub mod printer;
@@ -154,7 +153,7 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
         )?));
     }
     let notifier = PushoverNotifier::new(ctx.pushover.clone());
-    // Both `PUSHOVER_USER` and `PUSHOVER_TOKEN`, as the TS registration requires.
+    // Reset alert tasks need both `PUSHOVER_USER` and `PUSHOVER_TOKEN`.
     if notifier.enabled() {
         let notifier: Arc<dyn ResetNotifier> = Arc::new(notifier);
         tasks.push(Arc::new(codex_reset_task(

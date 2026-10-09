@@ -1,4 +1,4 @@
-//! Karakeep bookmarking (mitools `Karakeep.addBookmark`), best-effort.
+//! Karakeep bookmarking, best-effort.
 //!
 //! Submissions are bookmarked (archived, tagged `PressPods`). The client is
 //! disabled without `KARAKEEP_URL` and `KARAKEEP_API_KEY`, and in

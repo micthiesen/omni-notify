@@ -1,18 +1,13 @@
-//! Cron parity: croner (Rust scheduler) against Effect `Cron.next` (the TS
-//! scheduler) for every schedule in the task map, evaluated in
+//! Scheduler fire times for every schedule in the task map against committed
+//! reference times (`tests/golden/cron-parity.json`), evaluated in
 //! America/Vancouver. Slow schedules cover all of 2026; sub-hourly ones cover
-//! the 2026 DST transitions. Fixture: the committed
-//! `tests/golden/cron-parity.json`, generated from Effect before the TS
-//! scheduler was retired.
+//! the 2026 DST transitions.
 //!
-//! Known divergences are asserted explicitly in `EFFECT_SPRING_FORWARD_BUG`
-//! so that a change on either side is noticed: when Effect computes the next
-//! fire from a time before the spring-forward transition, its DST adjustment
-//! fires the first time-of-day match after it one hour late (04:00 PDT is
-//! reported as 05:00 PDT). croner fires at the correct wall time; the TS bug
-//! is deliberately not mirrored. Every other occurrence, including wall times
-//! inside the gap (shifted forward like Effect) and the repeated fall-back
-//! hour, is identical.
+//! The reference fires the first time-of-day match after a spring-forward
+//! transition one hour late (04:00 PDT is recorded as 05:00 PDT); those entries
+//! are listed in `REFERENCE_SPRING_FORWARD_BUG` and the scheduler fires at the
+//! correct wall time. Every other occurrence, including wall times inside the
+//! gap (shifted forward) and the repeated fall-back hour, is identical.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
@@ -22,8 +17,8 @@ use jiff::tz::TimeZone;
 use omni_tasks::CronSchedule;
 use serde::Deserialize;
 
-/// `(expression, croner fire, Effect fire)`, one hour apart.
-const EFFECT_SPRING_FORWARD_BUG: &[(&str, &str, &str)] = &[
+/// `(expression, scheduler fire, reference fire)`, one hour apart.
+const REFERENCE_SPRING_FORWARD_BUG: &[(&str, &str, &str)] = &[
     (
         "0 */6 * * *",
         "2026-03-08T13:00:00.000Z",
@@ -87,7 +82,7 @@ fn rust_sequence(schedule: &CronSchedule, start: i64, end: i64) -> Vec<i64> {
 }
 
 #[test]
-fn croner_matches_effect_cron_for_the_task_map() {
+fn scheduler_matches_the_reference_fires_for_the_task_map() {
     let raw = include_str!("golden/cron-parity.json");
     let fixture: BTreeMap<String, Vec<Window>> = serde_json::from_str(raw).unwrap();
     let tz = TimeZone::get("America/Vancouver").unwrap();
@@ -101,7 +96,7 @@ fn croner_matches_effect_cron_for_the_task_map() {
                 .filter(|t| !window.next.contains(t))
                 .map(|t| omni_core::js::to_iso_string(*t))
                 .collect();
-            let only_effect: Vec<String> = window
+            let only_reference: Vec<String> = window
                 .next
                 .iter()
                 .filter(|t| !ours.contains(t))
@@ -109,22 +104,22 @@ fn croner_matches_effect_cron_for_the_task_map() {
                 .collect();
             assert_eq!(
                 only_ours.len(),
-                only_effect.len(),
+                only_reference.len(),
                 "{expr}: fire counts differ"
             );
-            for (croner, effect) in only_ours.into_iter().zip(only_effect) {
-                divergences.push((expr.clone(), croner, effect));
+            for (croner, reference) in only_ours.into_iter().zip(only_reference) {
+                divergences.push((expr.clone(), croner, reference));
             }
         }
     }
-    let expected: Vec<(String, String, String)> = EFFECT_SPRING_FORWARD_BUG
+    let expected: Vec<(String, String, String)> = REFERENCE_SPRING_FORWARD_BUG
         .iter()
         .map(|(e, c, f)| ((*e).to_owned(), (*c).to_owned(), (*f).to_owned()))
         .collect();
     assert_eq!(divergences, expected);
-    for (_, croner, effect) in &divergences {
+    for (_, croner, reference) in &divergences {
         let croner: Timestamp = croner.parse().unwrap();
-        let effect: Timestamp = effect.parse().unwrap();
-        assert_eq!(effect.as_second() - croner.as_second(), 3600);
+        let reference: Timestamp = reference.parse().unwrap();
+        assert_eq!(reference.as_second() - croner.as_second(), 3600);
     }
 }

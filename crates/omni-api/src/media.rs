@@ -1,9 +1,8 @@
-//! Media recommendations, the media taste profile and dashboard on-deck items
-//! (owned by WP08; `src/server.ts` serializers and `frontend/src/api.ts`).
+//! Media recommendations, the media taste profile and dashboard on-deck items.
 //!
-//! JS numbers that TS stores as plain `number` are `f64` here and serialize as
-//! JSON integers when integral (see [`js_number`]), so payloads stay
-//! value- and byte-identical to `JSON.stringify` output.
+//! Stored numbers are `f64` here and serialize as JSON integers when integral
+//! (see [`js_number`]), so payloads stay value- and byte-identical to
+//! `JSON.stringify` output.
 
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -90,7 +89,6 @@ impl RecommendationFeedback {
     }
 }
 
-/// `WatchlistWriteResult`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WatchlistResult {
@@ -133,7 +131,7 @@ pub struct RecommendationLinks {
     pub manager: String,
 }
 
-/// `serializeRecommendation` in `src/server.ts`.
+/// One media recommendation as the API serves it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Recommendation {
@@ -294,7 +292,6 @@ pub struct SourcePerformance {
     pub not_for_me: u64,
 }
 
-/// `BehavioralStats`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TasteBehaviorStats {
@@ -408,7 +405,7 @@ pub struct TasteProfileResponse {
     pub profile: Option<TasteProfile>,
 }
 
-/// One dashboard "On Deck" entry (`buildOnDeck` in `src/server.ts`).
+/// One dashboard "On Deck" entry.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnDeckItem {

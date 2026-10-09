@@ -1,4 +1,4 @@
-//! Completed live sessions (`sessions.ts`, entity `streamer-sessions`).
+//! Completed live sessions (entity `streamer-sessions`).
 
 use omni_store::Store;
 use omni_store::cbor::Extra;

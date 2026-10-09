@@ -1,6 +1,6 @@
 //! The server-rendered `/reminders` administration page.
 //!
-//! No framework and no WebAssembly, so the page keeps the strict TypeScript-era CSP
+//! No framework and no WebAssembly, so the page keeps a strict CSP
 //! (`script-src 'self'` without `'wasm-unsafe-eval'`). The page has no extra login;
 //! it only exposes the bounded controls under `/api/reminders/*`.
 
@@ -9,7 +9,7 @@ use axum::http::{HeaderName, HeaderValue, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
-/// The `/reminders` CSP (unchanged from the TypeScript service).
+/// The `/reminders` CSP.
 pub const REMINDERS_PAGE_CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 const PAGE_HTML: &str = include_str!("../assets/reminders.html");

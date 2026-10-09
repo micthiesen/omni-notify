@@ -123,7 +123,7 @@ impl AlertThrottle {
     }
 }
 
-/// `alertKey`: logger name plus the whitespace-normalized, lowercased title
+/// Logger name plus the whitespace-normalized, lowercased title
 /// (first 200 UTF-16 units).
 pub fn alert_key(logger_name: &str, title: &str) -> String {
     // JS `\s` is Unicode White_Space plus U+FEFF.
@@ -137,7 +137,7 @@ pub fn alert_key(logger_name: &str, title: &str) -> String {
     format!("{logger_name}|{normalized}")
 }
 
-/// `formatElapsed`: "1m", "45m", "2h", "2h15m".
+/// "1m", "45m", "2h", "2h15m".
 pub fn format_elapsed(ms: i64) -> String {
     #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     let minutes = (ms as f64 / 60_000.0).round() as i64;

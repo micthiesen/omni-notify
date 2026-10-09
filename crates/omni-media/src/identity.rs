@@ -155,7 +155,7 @@ async fn resolve_via_network(
             Err(error) => {
                 tracing::warn!(
                     target: LOG,
-                    error = error.effect_message(),
+                    error = error.cause_message(),
                     "TMDB find failed for \"{}\" ({}={id})",
                     item.title,
                     source.as_str()
@@ -180,7 +180,7 @@ async fn resolve_via_network(
         Err(error) => {
             tracing::warn!(
                 target: LOG,
-                error = error.effect_message(),
+                error = error.cause_message(),
                 "TMDB search failed for \"{}\"",
                 item.title
             );

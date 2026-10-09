@@ -288,7 +288,7 @@ fn search_result(document: WireSearchDocument) -> SearchResult {
     }
 }
 
-/// `dateToUnix`: a real calendar date, as Unix seconds at its UTC start (or end).
+/// A real calendar date, as Unix seconds at its UTC start (or end).
 fn date_to_unix(value: &str, end: bool) -> Option<i64> {
     let date: jiff::civil::Date = value.parse().ok()?;
     if date.to_string() != value {

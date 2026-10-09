@@ -1,5 +1,5 @@
-//! Email routes (`src/server.ts` 505-576, 1393-1625): activity, activity
-//! logs, reprocess, sender rules and feedback.
+//! Email routes: activity, activity logs, reprocess, sender rules and
+//! feedback.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -55,7 +55,6 @@ pub fn router(state: EmailRoutesState) -> Router {
         .with_state(state)
 }
 
-/// `serializeEmailActivity`.
 pub fn serialize_activity(a: &EmailActivityData) -> EmailActivity {
     EmailActivity {
         activity_id: a.activity_id.clone(),
@@ -97,7 +96,7 @@ pub fn serialize_feedback(row: &EmailFeedbackData) -> EmailFeedback {
     }
 }
 
-/// `TaskRunLogLine` as served by the API.
+/// A task-run log line as served by the API.
 pub fn serialize_log_line(line: &LogLine) -> RunLogLine {
     RunLogLine {
         t: line.t,

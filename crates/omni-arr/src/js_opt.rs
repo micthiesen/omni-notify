@@ -20,7 +20,7 @@ impl<T> JsonOpt<T> {
         matches!(self, JsonOpt::Absent)
     }
 
-    /// The value, treating absent and `null` alike (TS `?? undefined`).
+    /// The value, treating absent and `null` alike.
     pub fn as_option(&self) -> Option<&T> {
         match self {
             JsonOpt::Value(value) => Some(value),

@@ -1,4 +1,4 @@
-//! Port of `src/emails/client.spec.ts`.
+//! SMTP setting resolution from explicit SMTP fields or iCloud credentials.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_mailer::{

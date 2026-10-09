@@ -127,7 +127,7 @@ async fn structured_output_records_one_priced_cost_event_per_call() {
                "cacheWriteTokens": 0.0, "outputTokens": 100.0, "reasoningTokens": 40.0, "requests": 1.0})
     );
 
-    // The stored row has TS key order and `runId: undefined`, like rows TS writes outside a run.
+    // Outside a run the stored row has no `runId`.
     let pk = omni_store::entity::pk::<CostEventData>(&event.event_id).unwrap();
     let raw = h
         .store
@@ -138,24 +138,8 @@ async fn structured_output_records_one_priced_cost_event_per_call() {
     let JsValue::Object(fields) = raw else {
         panic!("cost event is not an object");
     };
-    let keys: Vec<&str> = fields.keys().map(String::as_str).collect();
-    assert_eq!(
-        keys,
-        [
-            "category",
-            "feature",
-            "operation",
-            "service",
-            "model",
-            "costCents",
-            "priceStatus",
-            "usage",
-            "eventId",
-            "incurredAt",
-            "runId"
-        ]
-    );
-    assert_eq!(fields["runId"], JsValue::Undefined);
+    assert!(!fields.contains_key("runId"));
+    assert_eq!(fields["eventId"], JsValue::String(event.event_id.clone()));
 }
 
 #[tokio::test]
@@ -256,7 +240,7 @@ struct Scored {
 }
 
 #[tokio::test]
-async fn structured_output_is_validated_against_its_schema_like_zod() {
+async fn structured_output_is_validated_against_its_schema() {
     let h = harness().await;
     h.fakes.script(
         ModelRole::Triage,

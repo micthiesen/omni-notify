@@ -1,4 +1,4 @@
-//! `/api/recommendations*` routes (`src/server.ts` media sections).
+//! `/api/recommendations*` routes.
 
 use std::sync::Arc;
 
@@ -12,13 +12,12 @@ use omni_api::media::{
     RecommendationResponse, RecommendationStatus, RecommendationsResponse, RunResponse,
     ShortlistScores, TasteProfileResponse, WatchlistResult,
 };
-use omni_core::js::encode_uri_component;
+use omni_core::js::{encode_uri_component, trim};
 use omni_server_kit::{ApiError, JsonBody, api_error};
 use omni_tasks::{RunNowError, TaskRegistry};
 use serde_json::Value;
 
 use crate::error::max_recommendations_message;
-use crate::js::js_trim;
 use crate::persistence::{
     FeedbackInput, RecommendationData, get_all_recommendations, get_recommendation,
     set_recommendation_feedback,
@@ -40,7 +39,7 @@ pub fn router(state: RouteState) -> Router {
     Router::new()
         .route("/api/recommendations", get(list))
         .route("/api/recommendations/taste-profile", get(taste_profile))
-        // Hono matched `GET /run` against `/:id`; keep that 404 instead of a 405.
+        // `GET /run` is treated as `GET /:id` and answers 404, not 405.
         .route("/api/recommendations/run", post(run).get(get_run_as_id))
         .route("/api/recommendations/{id}", get(get_one))
         .route("/api/recommendations/{id}/feedback", post(feedback))
@@ -81,7 +80,7 @@ fn num(value: i64) -> f64 {
     value as f64
 }
 
-/// `serializeRecommendation` in `src/server.ts`.
+/// A recommendation row as the API serves it.
 pub fn serialize_recommendation(rec: &RecommendationData) -> Recommendation {
     Recommendation {
         recommendation_id: rec.recommendation_id.clone(),
@@ -134,7 +133,7 @@ pub fn serialize_recommendation(rec: &RecommendationData) -> Recommendation {
     }
 }
 
-/// `buildOnDeck` item.
+/// An On Deck item.
 pub fn serialize_on_deck(rec: &RecommendationData) -> OnDeckItem {
     OnDeckItem {
         recommendation_id: rec.recommendation_id.clone(),
@@ -219,7 +218,7 @@ async fn feedback(
     let note = input
         .note
         .as_deref()
-        .map(js_trim)
+        .map(trim)
         .filter(|n| !n.is_empty())
         .map(str::to_owned);
     if input.feedback.is_none() && note.is_none() {
@@ -277,7 +276,7 @@ async fn run(State(state): State<RouteState>, JsonBody(body): JsonBody<Value>) -
             tracing::info!(
                 target: LOG,
                 "Manual recommendation run requested for up to {} item(s)",
-                crate::js::number(max)
+                omni_core::js::number_to_string(max)
             );
             (StatusCode::ACCEPTED, Json(RunResponse { run_id })).into_response()
         }
@@ -291,7 +290,7 @@ fn max_value(max: f64) -> Value {
     Value::from(max as i64)
 }
 
-/// `taskRunErrorResponse` with the TS messages.
+/// The error response for a refused manual run.
 pub fn run_now_error(error: RunNowError) -> Response {
     match error {
         RunNowError::NotFound { .. } => api_error(StatusCode::NOT_FOUND, error.to_string()),

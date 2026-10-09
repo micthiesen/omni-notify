@@ -73,7 +73,7 @@ impl CarrierDirectory {
         }
     }
 
-    /// `getCarrierCodesForPromptEffect`: `code: name` lines (empty when unavailable).
+    /// `code: name` lines (empty when unavailable).
     pub async fn prompt_codes(&self) -> String {
         self.carriers()
             .await
@@ -84,7 +84,7 @@ impl CarrierDirectory {
             .join("\n")
     }
 
-    /// `getValidCarrierCodesEffect`: `None` when the list is unavailable
+    /// `None` when the list is unavailable
     /// (fetch failed and nothing cached).
     pub async fn valid_codes(&self) -> Option<HashSet<String>> {
         self.carriers()
@@ -92,7 +92,7 @@ impl CarrierDirectory {
             .map(|carriers| carriers.into_iter().map(|c| c.code).collect())
     }
 
-    /// `getCarrierNamePatternsEffect`: case-insensitive word-boundary patterns.
+    /// Case-insensitive word-boundary patterns.
     pub async fn name_patterns(&self) -> Vec<Regex> {
         self.carriers()
             .await
@@ -157,8 +157,8 @@ pub fn carrier_name_pattern(name: &str) -> Option<Regex> {
     }
 }
 
-/// `Schema.Record(String, Union(String, Struct({name?: String})))`, then the
-/// blacklist filter and the usable-name filter.
+/// Decodes `{code: name | {name?}}`, then applies the blacklist filter and the
+/// usable-name filter.
 pub fn decode_carriers(value: &Value) -> Result<Vec<CarrierEntry>, String> {
     let object = value
         .as_object()

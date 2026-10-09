@@ -1,5 +1,5 @@
-//! The relational `pets` and `pet_weight_history` tables,
-//! with mitools' exact DDL.
+//! The relational `pets` and `pet_weight_history` tables, with the DDL the
+//! existing databases use.
 
 use std::collections::HashMap;
 
@@ -74,7 +74,7 @@ impl PetStore {
     }
 
     /// Readings whose timestamp text sorts at or after `now - days`
-    /// (an ISO string comparison, as TS does).
+    /// (an ISO string comparison).
     pub async fn recent_weight_history(
         &self,
         pet_id: &str,

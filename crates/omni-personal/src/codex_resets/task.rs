@@ -5,13 +5,13 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use jiff::tz::TimeZone;
 use omni_core::clock::SharedClock;
+use omni_core::js::date_parse;
 use omni_http::public::PublicHttpClient;
 use serde_json::{Map, Value};
 
 use super::history::add_completed_history_alerts;
 use super::policy::{is_fresh_feed, select_reset_alerts};
 use super::source::{AlertFeed, ResetHistory, read_reset_sources};
-use crate::js::parse_date;
 use crate::reset_alerts::delivery::Codex;
 use crate::reset_alerts::{
     ResetAlertTask, ResetDeliveryLedger, ResetSnapshot, ResetSourceError, SnapshotSource,
@@ -37,7 +37,7 @@ pub fn interpret(
     let mut newest_items: Vec<_> = feed.items.iter().collect();
     // Descending by publication time (schema-validated, so every time parses).
     newest_items.sort_by_key(|item| {
-        std::cmp::Reverse(parse_date(&item.published_at, tz).unwrap_or(i64::MIN))
+        std::cmp::Reverse(date_parse(&item.published_at, tz).unwrap_or(i64::MIN))
     });
     let newest = newest_items.first();
     let mut metadata = Map::new();

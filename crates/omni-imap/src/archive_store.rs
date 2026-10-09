@@ -213,7 +213,7 @@ fn history_key(message_id: &str) -> String {
     format!("email-archive:history:{}", sha256_hex(message_id))
 }
 
-/// `archiveActionId`: sha256 hex of the idempotency key.
+/// Sha256 hex of the idempotency key.
 pub fn archive_action_id(idempotency_key: &str) -> String {
     sha256_hex(idempotency_key)
 }

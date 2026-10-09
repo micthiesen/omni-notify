@@ -15,7 +15,7 @@ pub struct LiveMessage {
 }
 
 /// Sends live notifications. `token: None` uses the default application
-/// token (`PUSHOVER_TOKEN`), as mitools `notify` does without a token.
+/// token (`PUSHOVER_TOKEN`).
 pub trait LiveNotifier: Send + Sync {
     fn send<'a>(
         &'a self,

@@ -1,4 +1,4 @@
-//! Ports `src/press-pods/retrievers/jina.spec.ts` against a local mock of the
+//! The Jina retriever against a local mock of the
 //! Jina Reader API.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

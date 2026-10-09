@@ -1,7 +1,7 @@
-//! Port of `src/device-link/service.spec.ts` (all cases kept).
+//! The long-poll job relay: claims, withdrawals, results and timeouts.
 //!
-//! Effect fibers become spawned tokio tasks and `TestClock.adjust` becomes
-//! `tokio::time::advance` on a paused runtime; the service's wall clock is an
+//! Tests run on a paused tokio runtime and advance it with
+//! `tokio::time::advance`; the service's wall clock is an
 //! `omni_core::clock::TestClock` that follows paused time.
 
 #![allow(clippy::unwrap_used)]

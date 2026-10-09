@@ -115,7 +115,7 @@ impl DeliveryPipeline {
         }
     }
 
-    /// `handleEmailsEffect`. Filter-phase store failures fail the batch (the
+    /// Handles a batch of emails. Filter-phase store failures fail the batch (the
     /// dispatcher then keeps its cursor); per-candidate failures are recorded
     /// as `error` activity and, when transient, enqueued for retry.
     pub async fn handle_emails(&self, emails: &[FetchedEmail]) -> Result<(), StoreError> {

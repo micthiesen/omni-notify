@@ -1,6 +1,6 @@
-//! The raw imap-proto client against a scripted server, including the port of
-//! `src/email/imap/uidExpunge.spec.ts` (a lone `UID EXPUNGE <uid>`, never a
-//! mailbox-wide EXPUNGE). Also covers what async-imap 0.11.3 could not
+//! The raw imap-proto client against a scripted server, including a lone
+//! `UID EXPUNGE <uid>` (never a mailbox-wide EXPUNGE). Also covers what
+//! async-imap 0.11.3 could not
 //! provide: COPYUID from untagged (MOVE) and tagged (COPY) OK codes, plus
 //! capability re-read after LOGIN, literals, IDLE and modified UTF-7 names.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

@@ -34,7 +34,7 @@ fn stringify(value: &Value) -> String {
     omni_core::js::json_stringify(&omni_core::js::normalize_numbers(value.clone()))
 }
 
-/// `collectRunLogs`: the live buffer of an in-flight run, else the persisted
+/// The live buffer of an in-flight run, else the persisted
 /// row, else nothing.
 async fn collect(ctx: &AppContext, run_id: &str) -> Result<(Vec<LogLine>, u64), StoreError> {
     if let Some(active) = ctx.run_logs().active(run_id) {

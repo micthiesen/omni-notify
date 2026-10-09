@@ -1,4 +1,4 @@
-//! Port of `src/live-check/outage.spec.ts`.
+//! Platform outage detection and alerts.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_live::outage::{OutageAlert, OutageAlerter, OutageKind, UnknownStreak};

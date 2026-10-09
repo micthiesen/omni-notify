@@ -1,4 +1,4 @@
-//! `BriefingAgentTask` behavior (no TS spec exists for the task itself): the
+//! Briefing agent task behavior: the
 //! `send_notification` tool reserves before pushing, suppresses duplicates,
 //! releases on a confirmed failure, and the run backfills its cost.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

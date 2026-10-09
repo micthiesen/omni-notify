@@ -1,4 +1,4 @@
-//! Port of `src/live-check/metrics/windows.spec.ts` (system time
+//! Daily buckets and rolling windows (system time
 //! 2024-06-15T12:00:00Z passed explicitly; local zone America/Vancouver).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

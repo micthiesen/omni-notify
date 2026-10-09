@@ -1,7 +1,5 @@
-//! Port of `src/email/imap/attachments.spec.ts` (stable read-only attachments).
-//!
-//! Lock assertions become selection assertions: every attachment read selects
-//! its mailbox read-only (EXAMINE) and fetches with `BODY.PEEK[]<0.N>`.
+//! Stable read-only attachments: every attachment read selects its mailbox
+//! read-only (EXAMINE) and fetches with `BODY.PEEK[]<0.N>`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

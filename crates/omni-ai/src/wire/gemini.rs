@@ -1,7 +1,7 @@
 //! Gemini `models/{model}:generateContent` (used only when a `google:` model is
 //! configured). Structured output uses `responseMimeType: application/json` with
 //! `responseJsonSchema`; tools use `parametersJsonSchema`; the reasoning effort maps to
-//! `thinkingConfig.thinkingLevel` (the TS briefing agent's `thinkingLevel: "high"`).
+//! `thinkingConfig.thinkingLevel` (the briefing agent uses `"high"`).
 //! Model turns are replayed verbatim so thought signatures survive tool steps.
 
 use serde_json::{Map, Value, json};
@@ -189,7 +189,7 @@ pub fn parse_response(body: &[u8]) -> Result<GenerateResponse, AiError> {
     })
 }
 
-/// `convertGoogleUsage`: output total = candidates + thoughts.
+/// Output total = candidates + thoughts.
 pub fn parse_usage(usage: &Value) -> Usage {
     let prompt = u64_at(usage, "/promptTokenCount");
     let cached = u64_at(usage, "/cachedContentTokenCount");

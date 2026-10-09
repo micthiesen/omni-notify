@@ -1,10 +1,10 @@
-//! JSON helpers that reproduce zod's observable effects on tool values.
+//! JSON projections of tool values onto their schemas.
 //!
-//! The TS SDK parses tool input with zod (applying defaults, emitting keys in
-//! schema order) before the callback runs, and `defineTool` parses output with
-//! zod (schema order, unknown keys stripped) before it is serialized into the
-//! `text` content block. The golden JSON schemas carry the same shapes, so the
-//! endpoint applies these projections to every tool, whichever package owns it.
+//! Tool input gets defaults applied and keys emitted in schema order before the
+//! handler runs; tool output is put in schema order with unknown keys stripped
+//! before it is serialized into the `text` content block. The endpoint applies
+//! these projections to every tool, whichever package owns it, so served
+//! values keep their established shape.
 
 use serde_json::{Map, Value};
 
@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 /// fraction (`6`, not `6.0`), like `JSON.stringify`.
 pub use omni_core::js::number_value as js_number;
 
-/// zod's `parsedType` name of a JSON value (`undefined` when absent).
+/// The type name reported in validation issues (`undefined` when absent).
 pub fn received_type(value: Option<&Value>) -> &'static str {
     match value {
         None => "undefined",
@@ -52,7 +52,7 @@ fn type_matches(schema: &Value, value: &Value) -> bool {
 }
 
 /// Whether every `const` property of an object branch matches the value
-/// (the discriminator of a zod discriminated union).
+/// (the discriminator of a discriminated union).
 fn discriminators_match(schema: &Value, value: &Value) -> bool {
     let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
         return true;
@@ -80,7 +80,7 @@ fn branch<'a>(schema: &'a Value, value: &Value) -> &'a Value {
     schema
 }
 
-/// zod output parsing: object keys in schema order, unknown keys dropped where
+/// Output projection: object keys in schema order, unknown keys dropped where
 /// the schema forbids them, recursively through arrays, records and unions.
 pub fn order_by_schema(value: Value, schema: &Value) -> Value {
     let schema = branch(schema, &value);
@@ -125,7 +125,7 @@ fn order_object(mut map: Map<String, Value>, schema: &Value) -> Map<String, Valu
     out
 }
 
-/// zod input parsing: defaults applied for absent keys, keys in schema order.
+/// Input projection: defaults applied for absent keys, keys in schema order.
 pub fn apply_defaults(value: Value, schema: &Value) -> Value {
     let schema = branch(schema, &value);
     let Value::Object(mut map) = value else {

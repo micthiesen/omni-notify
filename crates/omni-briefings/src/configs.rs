@@ -91,7 +91,7 @@ pub fn parse_briefing(name: &str, raw: &str, tz: &TimeZone) -> Result<BriefingCo
     })
 }
 
-/// `loadBriefingConfigs`. Files are read in name order (node's `readdirSync`
+/// Loads briefing configs. Files are read in name order (node's `readdirSync`
 /// order is the filesystem's).
 pub fn load_briefing_configs(
     briefings_path: Option<&str>,

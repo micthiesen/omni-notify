@@ -76,7 +76,7 @@ pub struct PreparedMessage {
     pub extra: Extra,
 }
 
-/// `retainedMime`: `{from, date}` plus the private copy when it is still needed.
+/// `{from, date}` plus the private copy when it is still needed.
 fn retained_mime(prepared: PreparedMessage, keep_content: bool) -> PreparedMessage {
     PreparedMessage {
         from: prepared.from,
@@ -154,7 +154,7 @@ impl From<SentCopyState> for SentCopyReport {
     }
 }
 
-/// A compose failure. Display is the TS `EmailComposeError.message`; the
+/// A compose failure. Display is the stored and reported message; the
 /// source chain ends at the innermost cause, which MCP errors report.
 #[derive(Debug, thiserror::Error)]
 #[error("{message}")]
@@ -183,7 +183,7 @@ impl EmailComposeError {
     }
 }
 
-/// `failWith`: MCP error text reports only the innermost cause, so the
+/// MCP error text reports only the innermost cause, so the
 /// guidance and the cause's message are flattened into one message.
 fn fail_with<E: std::fmt::Display>(message: String) -> impl FnOnce(E) -> EmailComposeError {
     move |cause| EmailComposeError::new(format!("{message}: {cause}"))
@@ -196,7 +196,7 @@ pub trait ComposeSender: Send + Sync {
 
 /// The mailbox side (implemented by the IMAP transport).
 pub trait ComposeMailbox: Send + Sync {
-    /// False until the transport has started (TS `emailControls.transport` unset).
+    /// False until the transport has started.
     fn available(&self) -> bool {
         true
     }
@@ -245,7 +245,7 @@ impl ComposeSender for MailerSender {
     }
 }
 
-/// Normalized tool input (zod output: trimmed strings, `to` as a list).
+/// Normalized tool input (trimmed strings, `to` as a list).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ComposeRequest {
     pub idempotency_key: String,
@@ -261,8 +261,9 @@ pub struct ComposeRequest {
 }
 
 impl ComposeRequest {
-    /// The zod-parsed object (schema key order, absent optionals omitted)
-    /// plus `from`, as `JSON.stringify` sees it.
+    /// The normalized input (schema key order, absent optionals omitted)
+    /// plus `from`, as `JSON.stringify` renders it; stored reservations depend
+    /// on this exact text.
     fn fingerprint_json(&self, from: &str) -> String {
         let mut map = Map::new();
         map.insert(
@@ -380,7 +381,7 @@ enum Reservation {
     Mismatch,
 }
 
-/// `existingReservation`: how a stored receipt settles a repeated key.
+/// How a stored receipt settles a repeated key.
 fn existing_reservation(prior: StoredAttempt, fingerprint: &str) -> Reservation {
     if prior.fingerprint != fingerprint {
         return Reservation::Mismatch;
@@ -1045,9 +1046,9 @@ impl ComposeMailbox for crate::transport::ImapTransport {
 mod tests {
     use super::*;
 
-    /// Reference value from zod + `JSON.stringify` + sha256 in node.
+    /// Pinned reference value of a stored fingerprint.
     #[test]
-    fn fingerprint_matches_the_ts_zod_output() {
+    fn fingerprint_matches_the_stored_value() {
         let request = ComposeRequest {
             idempotency_key: "k1".to_owned(),
             to: vec!["a@example.test".to_owned()],

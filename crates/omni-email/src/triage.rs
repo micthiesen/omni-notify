@@ -118,7 +118,7 @@ impl Inner {
     }
 }
 
-/// `EmailTriageService`; cheap to clone.
+/// The email triage service; cheap to clone.
 #[derive(Clone)]
 pub struct EmailTriage {
     inner: Arc<Inner>,
@@ -205,7 +205,7 @@ impl EmailTriage {
     }
 }
 
-/// `buildTriagePrompt` given the two feedback digests.
+/// The triage prompt given the two feedback digests.
 pub fn build_triage_prompt(
     email: &TriageEmail,
     parcel_digest: &str,

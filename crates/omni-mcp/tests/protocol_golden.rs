@@ -1,6 +1,5 @@
-//! Replays every raw HTTP exchange the former TS MCP handler produced
-//! (`tests/golden/protocol.json`, a committed offline capture) against the
-//! Rust endpoint and compares
+//! Replays every captured raw HTTP exchange (`tests/golden/protocol.json`, a
+//! committed offline capture) against the endpoint and compares
 //! status, content type, the security headers and every JSON-RPC message.
 //!
 //! The services match the capture: the same MCP token (so subscription ids,
@@ -10,7 +9,7 @@
 //!
 //! Normalized before comparing: ISO timestamps (`refreshBefore` depends on
 //! the wall clock) and the detail after "Invalid arguments for tool <name>:"
-//! (zod's issue wording versus the JSON Schema validator's).
+//! (the captured issue wording versus the JSON Schema validator's).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -101,7 +100,7 @@ fn essence(content_type: Option<&str>) -> Option<String> {
 }
 
 #[tokio::test(start_paused = true)]
-async fn rust_endpoint_reproduces_every_captured_ts_exchange() {
+async fn endpoint_reproduces_every_captured_exchange() {
     let golden: Value = serde_json::from_str(include_str!("golden/protocol.json")).unwrap();
     let clock = clock();
     let store = test_store(&clock).await;

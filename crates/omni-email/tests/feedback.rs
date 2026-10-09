@@ -1,4 +1,4 @@
-//! Port of `src/email/feedback.spec.ts`.
+//! Email triage feedback.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

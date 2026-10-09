@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 use super::types::{
     ArrKind, Decision, DecisionSource, Evidence, Grab, ImportFile, QueueItem, Target,
 };
-use crate::{js_text, paths};
+use crate::paths;
 
 type Pattern = LazyLock<Option<Regex>>;
 
@@ -95,7 +95,7 @@ fn is_sample_rejection(text: &str) -> bool {
     test(&SAMPLE_REJECTION, text, false)
 }
 
-/// `normalizedEnum`: lower case with everything but `[a-z0-9]` removed.
+/// Lower case with everything but `[a-z0-9]` removed.
 pub fn normalized_enum(value: &str) -> String {
     value
         .to_lowercase()
@@ -114,7 +114,7 @@ fn has_substantive_messages(item: &QueueItem) -> bool {
     item.status_messages
         .iter()
         .flat_map(|message| &message.messages)
-        .any(|message| omni_core::js::utf16_len(js_text::trim(message)) >= 5)
+        .any(|message| omni_core::js::utf16_len(omni_core::js::trim(message)) >= 5)
 }
 
 fn is_normal_import_failure(item: &QueueItem) -> bool {
@@ -203,11 +203,11 @@ pub fn observation_fingerprint(items: &[QueueItem]) -> String {
                     let mut lines: Vec<String> = message
                         .messages
                         .iter()
-                        .map(|line| js_text::trim(line).to_owned())
+                        .map(|line| omni_core::js::trim(line).to_owned())
                         .filter(|line| !line.is_empty())
                         .collect();
                     lines.sort_by(|a, b| js_default_cmp(a, b));
-                    json!({ "title": js_text::trim(&message.title), "messages": lines })
+                    json!({ "title": omni_core::js::trim(&message.title), "messages": lines })
                 })
                 .collect();
             sort_by_json_locale(&mut messages);
@@ -345,7 +345,7 @@ fn exact_target_mapping(evidence: &Evidence) -> bool {
     mapped.len() == intended.len()
 }
 
-/// `normalizeTitle`: NFKD without combining marks, lower case, `&` as "and",
+/// NFKD without combining marks, lower case, `&` as "and",
 /// non-alphanumerics collapsed to single spaces.
 pub fn normalize_title(value: &str) -> String {
     let decomposed = icu_normalizer::DecomposingNormalizerBorrowed::new_nfkd().normalize(value);

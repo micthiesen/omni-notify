@@ -913,7 +913,7 @@ impl ArchiveService {
 
         for planned in scheduled {
             self.with_workflow(async {
-                // A receipt read failure fails the sweep (and the task run), like TS.
+                // A receipt read failure fails the sweep (and the task run).
                 let Some(action) = get_archive_action(&self.store, &planned.action_id).await? else {
                     return Ok::<(), ArchiveActionError>(());
                 };

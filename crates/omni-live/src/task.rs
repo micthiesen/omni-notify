@@ -1,7 +1,7 @@
 //! `LiveCheckTask`: one tick polls every due streamer, decides
 //! aggregate transitions and notifies only on aggregate edges.
 //!
-//! Ordering guarantees carried from TS:
+//! Ordering guarantees:
 //! - went-live persists the observed edge before notifying, so a delivery
 //!   failure never makes the next tick rediscover and resend it;
 //! - went-offline notifies before recording the session and writing the
@@ -74,7 +74,7 @@ pub trait IntelligenceObserver: Send + Sync {
     fn after_tick(&self) -> BoxFuture<'_, ()>;
 }
 
-/// Forwards to the `LiveIntelligence` port when WP05 has set it: every live
+/// Forwards to the `LiveIntelligence` port when it is set: every live
 /// observation (`observe_live`, with the streamer and status serialized as the
 /// `LiveDirectory` DTOs), aggregate edges (`on_transition`) and `after_tick`.
 #[derive(Clone, Default)]

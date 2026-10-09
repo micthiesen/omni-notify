@@ -83,7 +83,6 @@ async fn tasks(State(state): State<OpsState>) -> Response {
     }
 }
 
-/// `taskRunErrorResponse`.
 pub fn run_now_error_response(error: RunNowError) -> Response {
     match error {
         RunNowError::NotFound { .. } => error_response(StatusCode::NOT_FOUND, &error),
@@ -191,7 +190,7 @@ async fn data_entity(State(state): State<OpsState>, Path(slug): Path<String>) ->
     }
 }
 
-/// `readJsonBody` with the 64 KiB cap; invalid JSON reads as `null`.
+/// Reads a JSON body with the 64 KiB cap; invalid JSON reads as `null`.
 async fn read_body(request: Request) -> Result<Value, Response> {
     let too_large = || error(StatusCode::PAYLOAD_TOO_LARGE, "Request body too large");
     let declared = request
@@ -255,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn cost_ranges_follow_the_ts_rule() {
+    fn cost_ranges_follow_the_range_rule() {
         assert_eq!(cost_range(None), Some(CostRange::Days(30)));
         assert_eq!(cost_range(Some("all")), Some(CostRange::All));
         assert_eq!(cost_range(Some("7")), Some(CostRange::Days(7)));

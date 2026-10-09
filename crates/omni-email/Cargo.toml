@@ -38,7 +38,6 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-mail-parser.workspace = true
 omni-testkit.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

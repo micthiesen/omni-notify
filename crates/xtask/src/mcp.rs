@@ -1,89 +1,79 @@
-//! The MCP policy inventory rendered from the committed golden tool metadata
-//! (`crates/omni-mcp-kit/golden`), which is the source of truth for every tool's
-//! name, description, schemas and policy.
+//! The MCP snapshots generated from the Rust tool definitions.
+//!
+//! Each tool's contract is a `ToolDef` in its package's `defs` module; the
+//! committed `crates/omni-mcp-kit/golden/tools-list.json`, both copies of the
+//! policy inventory and the `tools/list` results inside
+//! `crates/omni-mcp/tests/golden/protocol.json` are rendered from them by the
+//! `omni-mcp` test `mcp_golden`, the only crate that sees every package's tools.
+//! `mcp-golden` runs that test in write mode; `--check` runs it as a check.
 
 use anyhow::{Context, Result, bail};
-use omni_mcp_kit::golden::golden_tools;
-use serde_json::{Value, json};
 
 use crate::repo_root;
 
-/// The two copies of the inventory: the published one and the golden copy that
-/// `omni-mcp-kit` embeds for policy metadata.
-const POLICY_PATHS: [&str; 2] = [
-    "docs/mcp-policy.json",
-    "crates/omni-mcp-kit/golden/mcp-policy.json",
-];
-
-/// Tools sorted by `localeCompare` on name, pretty JSON with two-space indent and a
-/// trailing newline.
-pub fn render_policy() -> Result<String> {
-    let golden = golden_tools().context("loading golden MCP metadata")?;
-    let mut metas: Vec<_> = golden.metas.iter().collect();
-    metas.sort_by(|a, b| omni_core::js::locale_compare(&a.name, &b.name));
-    let tools: Vec<Value> = metas
-        .into_iter()
-        .map(|meta| {
-            json!({
-                "name": meta.name,
-                "title": meta.title,
-                "description": meta.description,
-                "annotations": meta.annotations,
-                "sideEffects": meta.policy.side_effects,
-                "cost": meta.policy.cost,
-                "recommendedExecutorPolicy": meta.policy.recommended_policy,
-            })
-        })
-        .collect();
-    let inventory = json!({
-        "schemaVersion": 1,
-        "generatedFrom": "omni-mcp tool definitions",
-        "tools": tools,
-    });
-    Ok(format!(
-        "{}\n",
-        omni_core::js::json_stringify_pretty2(&inventory)
-    ))
-}
-
-/// Writes both inventory copies, or with `check` fails when either differs.
-pub fn mcp_policy(check: bool) -> Result<()> {
-    let rendered = render_policy()?;
-    let root = repo_root();
-    let mut stale = Vec::new();
-    for relative in POLICY_PATHS {
-        let path = root.join(relative);
-        if check {
-            let current = std::fs::read_to_string(&path)
-                .with_context(|| format!("reading {}", path.display()))?;
-            if current != rendered {
-                stale.push(relative);
-            }
-        } else {
-            std::fs::write(&path, &rendered)
-                .with_context(|| format!("writing {}", path.display()))?;
-            println!("mcp-policy: wrote {relative}");
-        }
-    }
-    if !stale.is_empty() {
-        bail!("{stale:?} differ from the golden tool metadata; run `cargo xtask mcp-policy`");
-    }
+/// Regenerates the snapshots, or with `check` fails when any differs.
+pub fn mcp_golden(check: bool) -> Result<()> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut command = std::process::Command::new(cargo);
+    command
+        .args(["test", "--locked", "-p", "omni-mcp", "--test", "mcp_golden"])
+        .args(["--", "--nocapture"])
+        .current_dir(repo_root());
     if check {
-        println!("mcp-policy: both inventory copies match");
+        command.env_remove("OMNI_MCP_GOLDEN");
+    } else {
+        command.env("OMNI_MCP_GOLDEN", "write");
     }
+    let status = command.status().context("starting cargo test")?;
+    if !status.success() {
+        if check {
+            bail!("MCP snapshots differ from the tool definitions; run `cargo xtask mcp-golden`");
+        }
+        bail!("generating the MCP snapshots failed ({status})");
+    }
+    println!(
+        "mcp-golden: snapshots {}",
+        if check { "match" } else { "are up to date" }
+    );
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::*;
 
+    /// The published policy inventory and the golden copy.
+    const POLICY_PATHS: [&str; 2] = [
+        "docs/mcp-policy.json",
+        "crates/omni-mcp-kit/golden/mcp-policy.json",
+    ];
+
+    fn read(relative: &str) -> Value {
+        let text = std::fs::read_to_string(repo_root().join(relative)).unwrap();
+        serde_json::from_str(&text).unwrap()
+    }
+
+    /// The registry check lives in `omni-mcp`; this keeps the committed copies
+    /// consistent with each other without building every subsystem.
     #[test]
-    fn both_policy_copies_match_the_golden_tool_metadata() {
-        let rendered = render_policy().unwrap();
-        for relative in POLICY_PATHS {
-            let current = std::fs::read_to_string(repo_root().join(relative)).unwrap();
-            assert_eq!(rendered, current, "{relative}");
-        }
+    fn snapshots_agree_with_each_other() {
+        let [docs, golden] =
+            POLICY_PATHS.map(|p| std::fs::read_to_string(repo_root().join(p)).unwrap());
+        assert_eq!(docs, golden);
+        let policy = read(POLICY_PATHS[0]);
+        let list = read("crates/omni-mcp-kit/golden/tools-list.json");
+        let names = |value: &Value, key: &str| -> Vec<String> {
+            let mut names: Vec<String> = value[key]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|tool| tool["name"].as_str().unwrap().to_owned())
+                .collect();
+            names.sort();
+            names
+        };
+        assert_eq!(names(&policy, "tools"), names(&list, "tools"));
     }
 }

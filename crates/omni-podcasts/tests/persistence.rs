@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/persistence.spec.ts`, plus store-backed
+//! Podcast recommendation persistence, plus store-backed
 //! feedback and voice-cursor checks.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

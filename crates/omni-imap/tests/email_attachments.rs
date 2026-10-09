@@ -1,5 +1,4 @@
-//! Port of `src/mcp/tools/email-attachments.spec.ts` (private email PDF MCP
-//! retrieval) with a scripted attachment reader.
+//! Private email PDF retrieval through MCP, with a scripted attachment reader.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::{Arc, Mutex};

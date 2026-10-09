@@ -1,4 +1,4 @@
-//! Port of `src/calendar-events/persistence.spec.ts`, plus store round trips
+//! Tracked calendar event persistence, plus store round trips
 //! for the tracked-event operations.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -263,7 +263,7 @@ fn treats_identical_recurrence_and_null_vs_undefined_as_unchanged() {
     };
     let same = recurring.clone();
     assert!(!has_event_changed(&recurring, &EventFields::from(&same)));
-    // TS `null` and absent both decode to `None`.
+    // `null` and absent both decode to `None`.
     assert!(!has_event_changed(&b, &EventFields::from(&b.clone())));
 }
 
@@ -611,13 +611,14 @@ async fn cancelling_keeps_unknown_fields_and_field_order() {
             "calendarEventId",
             "title",
             "startDate",
-            "startTime",
             "allDay",
             "futureField",
             "createdAt",
             "status"
         ]
     );
+    // The `undefined` startTime is not written.
+    assert_eq!(stored.get("startTime"), None);
     assert_eq!(stored.get("futureField"), Some(&JsValue::Int(7)));
 }
 

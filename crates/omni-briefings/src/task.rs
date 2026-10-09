@@ -1,4 +1,4 @@
-//! `BriefingAgentTask`: a web-researching agent that pushes at most a few
+//! A web-researching agent that pushes at most a few
 //! notifications per run.
 
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ use crate::persistence::{
 use crate::placeholders::resolve_all_placeholders;
 
 const LOG: &str = "Briefings";
-/// `stopWhen: isStepCount(20)`.
+/// Tool-loop step limit per run.
 pub const MAX_STEPS: u32 = 20;
 
 /// Delivers a briefing push (a seam so tests can fail or observe deliveries).
@@ -219,7 +219,7 @@ async fn write_section(file: &LogFile, heading: &str, content: &str) {
     }
 }
 
-/// `onStepFinish`: console lines plus log-file sections.
+/// Console lines plus log-file sections.
 fn report_step(step: &StepRecord, sections: &mpsc::UnboundedSender<(String, String)>) {
     let section = |heading: String, content: String| {
         // The writer only stops after the agent future (which owns this sender) ends.

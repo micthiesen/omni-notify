@@ -1,5 +1,5 @@
-//! Markdown run logs under `LOGS_PATH/briefings/` (mitools `LogFile` in
-//! overwrite mode plus `codeBlock`).
+//! Markdown run logs under `LOGS_PATH/briefings/`, overwritten each run, with
+//! fenced code blocks.
 
 use std::path::{Path, PathBuf};
 

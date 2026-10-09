@@ -1,5 +1,5 @@
-//! Owned by WP11: briefing notification history (`GET /api/briefings` and the
-//! `BriefingsReader` port payload that WP12's `briefings_list` consumes).
+//! Briefing notification history (`GET /api/briefings` and the
+//! `BriefingsReader` port payload that the MCP `briefings_list` tool consumes).
 
 use serde::{Deserialize, Serialize};
 

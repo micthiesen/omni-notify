@@ -1,5 +1,4 @@
-//! The email REST routes (`src/server.ts` email sections) through the
-//! subsystem router.
+//! The email REST routes through the subsystem router.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

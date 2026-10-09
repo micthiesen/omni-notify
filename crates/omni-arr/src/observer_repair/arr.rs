@@ -59,7 +59,7 @@ impl ArrRepairError {
     }
 }
 
-/// A positive integer id (`Schema.isInt()` and `> 0`).
+/// A positive integer id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "f64", into = "i64")]
 pub struct Id(pub i64);

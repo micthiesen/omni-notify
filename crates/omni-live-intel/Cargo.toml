@@ -46,10 +46,8 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["process", "io-util", "time", "sync", "rt", "fs"] }
 tokio-util.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 
 [dev-dependencies]
 omni-testkit.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util", "macros", "rt", "rt-multi-thread"] }
-tower.workspace = true

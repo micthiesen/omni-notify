@@ -1,14 +1,12 @@
-//! The MCP streamable-HTTP protocol layer (both eras), replacing the TS SDK's
-//! `createMcpHandler` for Omni's endpoint.
+//! The MCP streamable-HTTP protocol layer (both eras) for Omni's endpoint.
 //!
-//! rmcp cannot serve the `events/*` custom methods with the TS error codes,
+//! rmcp cannot serve the `events/*` custom methods with their error codes,
 //! advertise `capabilities.events`, or read the delegated-owner headers per
 //! request, so this module implements the slice of the protocol Omni serves,
-//! matched against `tests/golden/protocol.json` (raw exchanges captured from
-//! the TS handler):
+//! matched against `tests/golden/protocol.json` (captured raw exchanges):
 //!
 //! - entry checks: non-POST `405`, non-JSON `415`, unparseable `400 -32700`;
-//! - era classification (`classifyInboundRequest`): `initialize`, batches and
+//! - era classification: `initialize`, batches and
 //!   envelope-less requests are legacy; a `_meta` protocol-version claim is
 //!   modern, with the header/body cross-checks (`-32020`, `-32602`, `-32022`);
 //! - legacy (2024/2025 revisions): stateless, `Accept` must allow JSON and SSE,
@@ -31,7 +29,6 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::Response;
 use base64::Engine as _;
 use futures::FutureExt as _;
-use omni_mcp_kit::golden::golden_tools;
 use omni_mcp_kit::registry::ToolRegistry;
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolOutput, ToolPhase};
 use serde_json::{Map, Value, json};
@@ -41,6 +38,7 @@ use crate::activity::{ActivityRecorder, CallOutcome};
 use crate::events::rpc::{EVENT_METHODS, handle_event_method};
 use crate::events::service::McpEventService;
 use crate::json::{apply_defaults, order_by_schema, received_type};
+use crate::tools::TOOL_ORDER;
 
 const LOG: &str = "MCP";
 pub const MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
@@ -57,7 +55,7 @@ const CLIENT_CAPABILITIES_META_KEY: &str = "io.modelcontextprotocol/clientCapabi
 const CLIENT_INFO_META_KEY: &str = "io.modelcontextprotocol/clientInfo";
 const SERVER_INFO_META_KEY: &str = "io.modelcontextprotocol/serverInfo";
 const LOG_LEVEL_META_KEY: &str = "io.modelcontextprotocol/logLevel";
-/// Request bodies above this are rejected (the TS entry had no explicit cap).
+/// Request bodies above this are rejected.
 pub const MAX_REQUEST_BYTES: usize = 4 * 1024 * 1024;
 
 /// A JSON-RPC error.
@@ -183,39 +181,34 @@ struct ProtocolInner {
 pub enum ProtocolSetupError {
     #[error(transparent)]
     Registry(#[from] omni_mcp_kit::registry::RegistryError),
-    #[error("invalid golden MCP metadata: {0}")]
-    Golden(String),
+    #[error("invalid MCP metadata: {0}")]
+    Metadata(String),
 }
 
 impl McpProtocol {
-    /// Serves `tools` (every package's) in golden order; fails when the set
-    /// differs from the golden tool list.
+    /// Serves `tools` (every package's) in [`TOOL_ORDER`]; fails when the set
+    /// differs from it.
     pub fn new(
         tools: Vec<McpTool>,
         recorder: ActivityRecorder,
         events: Option<McpEventService>,
     ) -> Result<Self, ProtocolSetupError> {
-        let registry = ToolRegistry::new(tools)?;
-        registry.verify_complete()?;
-        let golden = golden_tools().map_err(|e| ProtocolSetupError::Golden(e.to_string()))?;
+        let registry = ToolRegistry::new(tools, &TOOL_ORDER)?;
         let mut order = Vec::new();
         let mut entries = HashMap::new();
         for tool in registry.tools() {
             let name = tool.meta.name.clone();
-            let (_, raw) = golden
-                .get(&name)
-                .ok_or_else(|| ProtocolSetupError::Golden(format!("no golden tool {name}")))?;
             let input_schema = Value::Object((*tool.meta.input_schema).clone());
             let validator = jsonschema::options()
                 .should_validate_formats(true)
                 .build(&input_schema)
-                .map_err(|e| ProtocolSetupError::Golden(format!("{name}: {e}")))?;
+                .map_err(|e| ProtocolSetupError::Metadata(format!("{name}: {e}")))?;
             order.push(name.clone());
             entries.insert(
                 name,
                 ToolEntry {
                     tool: tool.clone(),
-                    listed: Value::Object(raw.clone()),
+                    listed: Value::Object(tool.meta.listed()),
                     output_schema: Value::Object((*tool.meta.output_schema).clone()),
                     input_schema,
                     validator,
@@ -226,7 +219,8 @@ impl McpProtocol {
             inner: Arc::new(ProtocolInner {
                 order,
                 tools: entries,
-                handshake: Handshake::load(events.is_some()).map_err(ProtocolSetupError::Golden)?,
+                handshake: Handshake::load(events.is_some())
+                    .map_err(ProtocolSetupError::Metadata)?,
                 recorder,
                 events,
             }),
@@ -479,9 +473,9 @@ impl McpProtocol {
         }
     }
 
-    /// `tools/call`: input validated against the golden schema (invalid input
-    /// is an `isError` result and is not recorded), zod defaults applied, the
-    /// call recorded, and the output projected onto the golden schema.
+    /// `tools/call`: input validated against the tool's schema (invalid input
+    /// is an `isError` result and is not recorded), defaults applied, the
+    /// call recorded, and the output projected onto the output schema.
     async fn call_tool(&self, params: Map<String, Value>) -> Result<Map<String, Value>, RpcError> {
         let Some(Value::String(name)) = params.get("name") else {
             return Err(RpcError::invalid_params(format!(
@@ -557,9 +551,9 @@ impl McpProtocol {
                 result.insert("structuredContent".into(), Value::Object(structured));
                 Ok(result)
             }
-            // An input-phase failure is a zod schema refinement the TS SDK
-            // checks before the tool runs: not recorded, reported like any
-            // other argument validation failure.
+            // An input-phase failure is a schema refinement checked before
+            // the tool runs: not recorded, reported like any other argument
+            // validation failure.
             Err(error) if error.phase == ToolPhase::Input => {
                 call.discard().await;
                 Ok(failed_result(&format!(
@@ -574,7 +568,7 @@ impl McpProtocol {
         }
     }
 
-    /// zod's output projection, with whole-number doubles printed as JS does.
+    /// The output projection, with whole-number doubles printed as JS does.
     fn project(&self, entry: &ToolEntry, structured: Map<String, Value>) -> Map<String, Value> {
         let structured = omni_core::js::normalize_numbers(Value::Object(structured));
         match order_by_schema(structured, &entry.output_schema) {
@@ -593,7 +587,6 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
         .unwrap_or_else(|| "Tool call failed".to_owned())
 }
 
-/// `failedToolResult`.
 fn failed_result(message: &str) -> Map<String, Value> {
     let mut result = Map::new();
     result.insert(
@@ -643,7 +636,7 @@ fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
         .map(|v| v.trim_matches([' ', '\t']))
 }
 
-/// `isJsonContentType`: the media-type essence is `application/json`.
+/// The media-type essence is `application/json`.
 fn is_json_content_type(headers: &HeaderMap) -> bool {
     header(headers, CONTENT_TYPE.as_str()).is_some_and(|value| {
         value
@@ -722,7 +715,7 @@ const RESERVED_ENVELOPE_META_KEYS: [&str; 4] = [
 /// Multi-round-trip driver members reserved on client requests.
 const RETRY_PARAMS_KEYS: [&str; 2] = ["inputResponses", "requestState"];
 
-/// `liftWireOnlyMaterial` for a request in either era: the reserved envelope
+/// Lifts wire-only material for a request in either era: the reserved envelope
 /// keys leave `_meta` (which is dropped once empty) and the retry members leave
 /// `params`, so handlers see the 2025-era shape. Other `_meta` keys stay, and
 /// the strict `events/*` schemas reject them exactly as the SDK does.
@@ -858,7 +851,7 @@ impl Rejection {
     }
 }
 
-/// `classifyInboundRequest` for a POST with a JSON body.
+/// Classifies a POST with a JSON body.
 fn classify(headers: &HeaderMap, body: &Value) -> Result<Route, Rejection> {
     let header_version = header(headers, "mcp-protocol-version");
     let method_header = header(headers, "mcp-method");
@@ -1038,7 +1031,7 @@ fn decode_param_value(value: &str) -> Option<String> {
     }
 }
 
-/// `validateStandardRequestHeaders` (SEP-2243) for modern requests.
+/// Standard request header checks (SEP-2243) for modern requests.
 fn standard_header_check(headers: &HeaderMap, body: &Value) -> Result<(), Rejection> {
     if !is_request(body) {
         return Ok(());

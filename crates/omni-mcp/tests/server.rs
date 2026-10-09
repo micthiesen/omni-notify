@@ -1,15 +1,11 @@
-//! Port of `src/mcp/server.spec.ts` over the Rust `/mcp` endpoint.
+//! The `/mcp` endpoint.
 //!
 //! Tools owned by other packages (email attachments, Hister, podcasts,
 //! printer) are served here by closure-backed handlers: the cases check the
 //! protocol layer this package owns (auth, listing, input validation and
-//! defaults, custom content, failed results). Dropped cases:
-//! - "bounds email body output and returns useful tool errors" and "browses
-//!   recent Inbox mail without invented criteria and forwards freshness" test
-//!   `email_get` / `email_search` handler behavior, which WP02 owns and ports.
-//! - "closes cleanly after initialization": the Rust endpoint is stateless and
-//!   has no per-handler `close()`; the case instead checks that an
-//!   initialize/initialized handshake leaves nothing behind.
+//! defaults, custom content, failed results). Email handler behavior is
+//! tested in `omni-email`. The endpoint is stateless, so an
+//! initialize/initialized handshake must leave nothing behind.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -24,7 +20,7 @@ use common::*;
 use omni_api::tasks::TaskInfo;
 use omni_core::clock::SharedClock;
 use omni_mcp::tools::system::{ConfiguredFeatures, SystemDeps, system_tools};
-use omni_mcp_kit::{McpTool, ToolError, ToolOutput, golden_meta, raw_tool};
+use omni_mcp_kit::{McpTool, ToolError, ToolOutput, raw_tool};
 use omni_runtime::ports::Ports;
 use serde_json::{Map, Value, json};
 
@@ -46,7 +42,7 @@ fn fn_tool<F>(name: &str, f: F) -> McpTool
 where
     F: Fn(Value) -> Result<ToolOutput, ToolError> + Send + Sync + 'static,
 {
-    raw_tool(name, Arc::new(FnTool(f))).unwrap()
+    raw_tool(def(name), Arc::new(FnTool(f))).unwrap()
 }
 
 async fn list_tools(router: &axum::Router) -> Vec<Value> {
@@ -276,7 +272,7 @@ async fn serves_the_production_hono_route_over_real_http_with_auth_and_clean_shu
             .as_array()
             .unwrap()
             .len(),
-        omni_mcp_kit::golden::golden_tools().unwrap().metas.len()
+        omni_mcp::tools::TOOL_ORDER.len()
     );
     shutdown.cancel();
     unconfigured.await.unwrap();
@@ -330,10 +326,7 @@ async fn initializes_and_lists_the_complete_typed_tool_surface_with_the_official
         .as_array()
         .cloned()
         .unwrap();
-    assert_eq!(
-        tools.len(),
-        omni_mcp_kit::golden::golden_tools().unwrap().metas.len()
-    );
+    assert_eq!(tools.len(), omni_mcp::tools::TOOL_ORDER.len());
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     for expected in ["email_search", "email_draft_create", "email_send"] {
         assert!(names.contains(&expected));
@@ -446,7 +439,7 @@ async fn paginates_reads_rejects_malformed_bounds_and_preserves_policy_semantics
         task_run["annotations"],
         json!({"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true})
     );
-    let policy = &golden_meta("task_run").unwrap().policy;
+    let policy = &meta("task_run").policy;
     assert_eq!(
         policy.recommended_policy,
         omni_mcp_kit::ExecutorPolicy::RequireApproval
@@ -457,12 +450,7 @@ async fn paginates_reads_rejects_malformed_bounds_and_preserves_policy_semantics
             .iter()
             .any(|s| s == "Queues task execution")
     );
-    assert!(
-        golden_meta("email_rules_delete")
-            .unwrap()
-            .annotations
-            .destructive_hint
-    );
+    assert!(meta("email_rules_delete").annotations.destructive_hint);
 }
 
 #[tokio::test]
@@ -496,10 +484,7 @@ async fn runs_a_mocked_consequential_podcast_account_mutation_without_external_e
         vec![json!({"action": "dequeue", "episodeGuid": "episode-guid-1"})]
     );
     assert_eq!(
-        golden_meta("podcast_account_update")
-            .unwrap()
-            .policy
-            .recommended_policy,
+        meta("podcast_account_update").policy.recommended_policy,
         omni_mcp_kit::ExecutorPolicy::RequireApproval
     );
 }
@@ -567,7 +552,7 @@ async fn exposes_guarded_printer_status_and_physical_printing_through_a_mocked_s
             "allowDuplicate": false,
         })
     );
-    let annotations = golden_meta("print_document").unwrap().annotations;
+    let annotations = meta("print_document").annotations;
     assert!(!annotations.read_only_hint && !annotations.destructive_hint);
     assert!(!annotations.idempotent_hint && annotations.open_world_hint);
     let malformed = call_tool(

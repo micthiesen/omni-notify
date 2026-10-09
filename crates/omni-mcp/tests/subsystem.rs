@@ -1,4 +1,4 @@
-//! The WP14 wiring contract of `McpPackage` over a test `AppContext`.
+//! The wiring contract of `McpPackage` over a test `AppContext`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -70,7 +70,7 @@ async fn serves_every_tool_and_registers_tasks_entities_and_the_email_handler() 
             ("requireArchiveEcho", BootPhase::Migrate),
         ]
     );
-    // Events are enabled, so boot fails until WP14 sets the ArchiveEcho port.
+    // Events are enabled, so boot fails until wiring sets the ArchiveEcho port.
     let require_echo = subsystem.boot_steps.remove(1);
     let error = (require_echo.run)(app.ctx.clone()).await.unwrap_err();
     assert_eq!(error.step, "requireArchiveEcho");

@@ -1,16 +1,14 @@
-//! Port of `packages/executor-events-adapter/test/native.node-test.mjs`.
-//!
-//! The TS case paired the TS SDK's legacy server with the MCP 2 client. Here the
+//! The adapter against a real legacy MCP server. The
 //! legacy Executor is rmcp's Streamable HTTP server (an independent MCP
 //! implementation, in legacy session mode) and the modern client's two rounds
 //! (`tools/call` returning `input_required`, then the reply carrying
 //! `requestState` and `inputResponses`) are sent by hand, since no Rust MCP 2
 //! client exists.
 //!
-//! `legacy_elicitation_on_the_standalone_stream_completes` is Rust-only: the TS
-//! fake server issued its elicitation outside the tool request, which the TS
-//! SDK delivers on the standalone GET stream; rmcp associates it with the
-//! request stream, so a hand-written server covers the GET path.
+//! `legacy_elicitation_on_the_standalone_stream_completes` covers an
+//! elicitation issued outside the tool request, which arrives on the
+//! standalone GET stream; rmcp associates it with the request stream, so a
+//! hand-written server covers the GET path.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

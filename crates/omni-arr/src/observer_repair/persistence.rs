@@ -96,7 +96,7 @@ impl Entity for ObserverRepairState {
     }
 }
 
-/// `ObserverRepairPersistenceError`: `"<operation>: <cause>"`.
+/// `"<operation>: <cause>"`.
 #[derive(Debug, thiserror::Error)]
 #[error("{operation}: {cause}")]
 pub struct RepairPersistenceError {

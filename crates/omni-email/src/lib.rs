@@ -1,4 +1,4 @@
-//! Email pipeline core (WP02): dispatcher, durable retry queue and task,
+//! Email pipeline core: dispatcher, durable retry queue and task,
 //! watchdog, activity and activity logs, shared LLM triage, sender rules,
 //! feedback, link metadata, HTML to text, REST routes and MCP tools.
 //!
@@ -7,7 +7,7 @@
 //! [`activity_logs::with_capture`], [`triage::EmailTriage`] and
 //! [`sender_rules::find_sender_rule`].
 //!
-//! Wiring (WP14): build one [`triage::EmailTriage`] and hand it to every
+//! App wiring: build one [`triage::EmailTriage`] and hand it to every
 //! pipeline; register [`subsystem`]; start the dispatcher with
 //! [`dispatcher::service`] once the mail source and the ordered handlers
 //! (McpEvents, ParcelTracker, CalendarEvents, Workspaces) exist; set the
@@ -54,7 +54,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
     ]
 }
 
-/// Data manager rows, in `src/data-manager.ts` order.
+/// Data manager rows, in display order.
 pub fn managed_entities() -> Vec<ManagedEntity> {
     let managed = |entity: EntityDescriptor,
                    label: &'static str,

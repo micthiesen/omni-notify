@@ -1,6 +1,5 @@
-//! mailparser parity corpus: every `tests/golden/mime/*.eml` is parsed with
-//! the Rust parser and compared with the committed JSON the former TS reference
-//! produced (mailparser `simpleParser` plus `mapParsedMessage`).
+//! mailparser reference corpus: every `tests/golden/mime/*.eml` is parsed and
+//! compared with the committed JSON that mailparser `simpleParser` produced.
 //!
 //! Compared: Message-ID normalization, In-Reply-To, References, subject, Date,
 //! address lists, the HTML body, the plain-text body of messages without HTML,
@@ -100,7 +99,7 @@ fn actual(parsed: &ParsedMail) -> Value {
 }
 
 #[test]
-fn mailparser_corpus_matches_ts_reference() {
+fn mailparser_corpus_matches_the_reference() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden/mime");
     let mut fixtures: Vec<PathBuf> = std::fs::read_dir(&dir)
         .unwrap()

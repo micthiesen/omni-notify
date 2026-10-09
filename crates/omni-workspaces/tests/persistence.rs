@@ -1,5 +1,5 @@
-//! Port of `src/workspaces/persistence.test.ts`, plus repository semantics the
-//! engine and routes rely on.
+//! Workspace persistence and the repository semantics the engine and routes
+//! rely on.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 pub use client::{HttpConnector, LEGACY_PROTOCOL_VERSIONS};
 
-/// Default per-request timeout of the TS MCP SDK.
+/// Default per-request timeout (the MCP SDK's default).
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// Connection (initialize handshake) deadline.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);

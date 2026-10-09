@@ -20,13 +20,16 @@ changes, run:
 ```bash
 cargo xtask gate                         # hygiene, fmt --check, clippy -D warnings
                                          # (native and wasm32), deps-check, tests
+                                         # (cargo-nextest when installed)
 cargo deny --locked check                # advisories, licenses, bans, sources
 (cd crates/omni-web && trunk build --release)   # when the frontend changed
 ```
 
-`cargo xtask gate` is the local equivalent of CI's lint-and-test job, except
+`cargo xtask gate` is the local equivalent of CI's lint and test jobs, except
 `cargo deny` (install with `cargo install --locked cargo-deny@0.20.2`, the CI
-pin). trunk, wasm-bindgen and wasm-opt versions are pinned in
+pin). Tests run under cargo-nextest (`.config/nextest.toml`; CI pins
+`cargo-nextest@0.9.143` and uses `--profile ci`) and fall back to `cargo test`
+when it is missing. trunk, wasm-bindgen and wasm-opt versions are pinned in
 `deploy/web-tools/install.sh` and `crates/omni-web/Trunk.toml`; wasm-bindgen
 must equal the workspace `wasm-bindgen` pin. `cargo fmt --all` fixes formatting.
 
@@ -98,15 +101,18 @@ change; reuse authorization already given in the conversation.
 - **Side effects:** every mutating external adapter honors `SideEffectMode`. In
   `Record` mode (tests, shadow runs, `--preview`) it records instead of sending.
   New adapters must do the same.
-- **Persisted data:** the docstore format is shared with existing production
-  rows. Payloads use the node-cbor-compatible codec in `omni-store`; entity
-  structs keep unknown fields in `#[serde(flatten)] extra: Extra`; use
-  `Option` with `skip_serializing_if` for absent fields and a plain `Option` for
-  stored nulls. Values derived with JS semantics and then persisted or hashed
-  (UTF-16 lengths, `JSON.stringify`, `Number#toString`, `localeCompare`, date
-  parsing) go through `omni_core::js` only. Each subsystem lists its
-  `EntityDescriptor`s; boot runs `migrate_all` over them, and
-  `omni-notify compat-audit` checks a production copy against them.
+- **Persisted data:** the docstore holds rows written by earlier versions of
+  the service; the `omni-store` CBOR decoder must keep reading every existing format
+  (node-cbor rows, tag 1 dates, explicit `undefined`), while the encoder only
+  has to write CBOR it reads back as the same value. Entity structs keep
+  unknown fields in `#[serde(flatten)] extra: Extra`; use `Option` with
+  `skip_serializing_if` for absent fields and a plain `Option` for stored
+  nulls. Never change how keys, hashes, fingerprints, ids or idempotency keys
+  are derived: values derived with JS semantics and then persisted, hashed or
+  compared with stored rows (UTF-16 lengths, `JSON.stringify`,
+  `Number#toString`, `localeCompare`) go through `omni_core::js` only. Each
+  subsystem lists its `EntityDescriptor`s; boot runs `migrate_all` over them,
+  and `omni-notify compat-audit` decodes a production copy against them.
 - **Validation:** decode untrusted external, persisted, environment, AI and
   protocol values into typed serde structs before use. MCP tool inputs and model
   structured outputs are also checked against their JSON schemas (`jsonschema`).
@@ -116,10 +122,10 @@ change; reuse authorization already given in the conversation.
 
 ## Crate map
 
-- `omni-core`: clock, ids, `js` compat helpers, digests, email model and handler
+- `omni-core`: clock, ids, `js` semantics for stored derivations, digests, email model and handler
   trait, `spawn_tracked`/`must_complete`.
 - `omni-config`: typed environment config, validation, redaction, defaults.
-- `omni-store`: SQLite docstore actor, node-cbor codec, entities, `migrate_all`,
+- `omni-store`: SQLite docstore actor, CBOR codec, entities, `migrate_all`,
   relational tables.
 - `omni-tasks`: cron scheduler, task registry, durable run history, run log
   capture, catch-up, event buses.
@@ -129,7 +135,7 @@ change; reuse authorization already given in the conversation.
 - `omni-mailer`: outgoing SMTP and MIME with the fixed sender identity.
 - `omni-ai`: model registry, provider clients, tool loop, cost accounting.
 - `omni-server-kit`: axum helpers (body caps, errors, origin guard, SSE, SPA).
-- `omni-mcp-kit`: MCP tool interface and golden tool metadata.
+- `omni-mcp-kit`: MCP tool interface, schema derivation and generated snapshots.
 - `omni-runtime`: `AppContext`, `Subsystem`, boot steps, services, ports.
 - `omni-api`: wire DTOs shared by backend and frontend (serde only).
 - `omni-testkit`: temp stores, test clock, recorders, fake models, no-network
@@ -167,8 +173,7 @@ change; reuse authorization already given in the conversation.
 - `omni-web`, `omni-web-kit`, `omni-web-pages`: the Leptos CSR frontend (app
   shell and ops pages, shared kit, domain pages), built by trunk.
 - `omni-events-adapter`: the `executor-events-adapter` sidecar binary.
-- `xtask`: gate, hygiene, deps-check, golden capture and synthesis, MCP policy,
-  compat and API diff tooling.
+- `xtask`: gate, hygiene, deps-check, golden capture and synthesis, MCP snapshots.
 
 The frontend is Leptos 0.8 client-side rendering built by trunk into
 `crates/omni-web/dist` and served from `OMNI_WEB_DIST`. It talks only to the
@@ -358,10 +363,15 @@ than the delegated token's expiry, hold events as `withheld` until a refresh
 stores a valid token or the subscription ends, and never extend access to
 deliver sooner. See `docs/mcp-events.md`.
 
-MCP tool metadata (names, descriptions, schemas, annotations, policy) is
-committed in `crates/omni-mcp-kit/golden/`. After changing a tool's contract,
-run `cargo xtask mcp-policy` so `docs/mcp-policy.json` matches; tests fail on
-drift.
+Each MCP tool's contract (name, title, description, annotations, policy, and
+input/output schemas derived from `schemars::JsonSchema` types) is a `ToolDef`
+in its package's `defs` module next to the handler; `omni-mcp`'s `TOOL_ORDER`
+sets the serving order. `crates/omni-mcp-kit/golden/tools-list.json`, both
+`mcp-policy.json` copies and the `tools/list` results in
+`crates/omni-mcp/tests/golden/protocol.json` are generated snapshots: after
+changing a definition run `cargo xtask mcp-golden` and review the JSON diff;
+tests fail on drift. Served schemas must stay byte-identical unless the contract
+change is intended.
 
 Private PDF attachment MCP reads bind exact Message-ID to actual MIME part IDs,
 revalidate identity, and cap source and decoded bytes. Preserve read-only/PEEK

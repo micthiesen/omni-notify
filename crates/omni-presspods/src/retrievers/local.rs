@@ -1,13 +1,11 @@
-//! The HTML-parsing retrievers (`postlight.ts`, `readability.ts`, `extractus.ts`,
-//! `fetch.ts`).
+//! The HTML-parsing retrievers.
 //!
-//! The Node extractors have no Rust equivalents, so each retriever keeps its
-//! persisted name and is reimplemented with a deliberately different strategy;
-//! the metadata model rates every result and the best one wins, so diversity
-//! between them is what matters:
+//! Each retriever keeps its persisted name and uses a deliberately different
+//! strategy; the metadata model rates every result and the best one wins, so
+//! diversity between them is what matters:
 //!
 //! - `readability`: Mozilla Readability (`dom_smoothie`, a faithful port),
-//!   lead image from `og:image`, as before.
+//!   lead image from `og:image`.
 //! - `postlight`: Mercury-style. Strips page chrome, ads and social widgets
 //!   first (Mercury's generic cleaners), runs the Readability scorer on what is
 //!   left, and takes Mercury's metadata order (meta tags, JSON-LD, then byline
@@ -57,7 +55,7 @@ fn non_empty(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
-/// `retrieveArticleFetch`: the whole page, cleaned.
+/// The whole page, cleaned.
 pub struct FetchRetriever(pub Arc<RetrieverContext>);
 
 impl ArticleRetriever for FetchRetriever {
@@ -121,7 +119,7 @@ fn readability_parse(
     ))
 }
 
-/// `retrieveArticleReadability`: Mozilla Readability.
+/// Mozilla Readability.
 pub struct ReadabilityRetriever(pub Arc<RetrieverContext>);
 
 impl ArticleRetriever for ReadabilityRetriever {
@@ -167,7 +165,7 @@ impl ArticleRetriever for ReadabilityRetriever {
     }
 }
 
-/// `retrieveArticlePostlight`: Mercury-style cleanup, scoring and metadata.
+/// Mercury-style cleanup, scoring and metadata.
 pub struct PostlightRetriever(pub Arc<RetrieverContext>);
 
 impl ArticleRetriever for PostlightRetriever {
@@ -266,7 +264,7 @@ fn densest_container_html(document: &Html) -> Option<String> {
     (!out.trim().is_empty()).then_some(out)
 }
 
-/// `retrieveArticleExtractus`: structured data first, then content density.
+/// Structured data first, then content density.
 pub struct ExtractusRetriever(pub Arc<RetrieverContext>);
 
 impl ArticleRetriever for ExtractusRetriever {

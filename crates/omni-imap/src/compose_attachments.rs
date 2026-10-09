@@ -1,5 +1,5 @@
 //! PDFs attached to `email_send` and `email_draft_create` by pinned
-//! reference (`src/mcp/tools/email-compose-attachments.ts`).
+//! reference.
 //!
 //! Callers never upload bytes: they pass the `attachmentReference` returned by
 //! `email_attachment_get`, and Omni re-reads each PDF fresh, refusing bytes
@@ -23,7 +23,7 @@ const MIB: usize = 1024 * 1024;
 const PDF: &str = "application/pdf";
 
 /// `{messageId, attachmentId, sha256}` exactly as `email_attachment_get`
-/// returned it. Field order is the zod schema's (it feeds the fingerprint).
+/// returned it. Field order is the schema's (it feeds the fingerprint).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OutgoingAttachmentReference {
@@ -32,7 +32,7 @@ pub struct OutgoingAttachmentReference {
     pub sha256: String,
 }
 
-/// The zod refinements the JSON Schema cannot express: an exact RFC
+/// The refinements the JSON Schema cannot express: an exact RFC
 /// Message-ID per reference and each attachment referenced only once.
 pub fn validate_references(references: &[OutgoingAttachmentReference]) -> Result<(), String> {
     if references

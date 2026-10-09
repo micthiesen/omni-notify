@@ -1,7 +1,7 @@
 //! Exact MPEG audio duration, as music-metadata computes it for the episode
 //! row (`durationSeconds`).
 //!
-//! TS stored `frames * samplesPerFrame / sampleRate` with full float
+//! The row stores `frames * samplesPerFrame / sampleRate` with full float
 //! precision (for example `168.6465306122449` = 6456 frames at 44.1 kHz):
 //! the frame count comes from the Xing/Info (or VBRI) header the final
 //! encode writes (`-write_xing 1`), and without one every frame is counted.

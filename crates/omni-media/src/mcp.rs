@@ -1,15 +1,17 @@
-//! Media MCP tools (`src/mcp/tools/media.ts`, `media-shared.ts`).
+//! Media MCP tools.
+
+pub mod defs;
 
 use std::sync::Arc;
 
 use omni_api::media::{
     MediaType, RecommendationFeedback, RecommendationStatus, TasteProfile, js_number, js_number_opt,
 };
+use omni_core::js::trim;
 use omni_mcp_kit::{McpTool, Page, ToolError, ToolMetaError, paginate, typed_tool};
 use serde::{Deserialize, Serialize};
 
 use crate::error::IntegrationError;
-use crate::js::js_trim;
 use crate::persistence::{
     FeedbackInput, RecommendationData, get_all_recommendations, get_recommendation,
     set_recommendation_feedback,
@@ -38,14 +40,13 @@ fn default_page() -> i64 {
 }
 
 fn integration(error: &IntegrationError) -> ToolError {
-    ToolError::execute(error.effect_message())
+    ToolError::execute(error.cause_message())
 }
 
 fn store_error(error: &omni_store::StoreError) -> ToolError {
     ToolError::execute_from(error)
 }
 
-/// `requireAvailable`.
 fn require_available<T>(result: FetchResult<T>) -> Result<T, ToolError> {
     match result {
         FetchResult::Ok(value) => Ok(value),
@@ -53,9 +54,9 @@ fn require_available<T>(result: FetchResult<T>) -> Result<T, ToolError> {
     }
 }
 
-/// A trimmed string that must stay non-empty (zod `.trim().min(1)`).
+/// A trimmed string that must stay non-empty.
 fn non_empty_trimmed(value: &str, field: &str) -> Result<String, ToolError> {
-    let trimmed = js_trim(value);
+    let trimmed = trim(value);
     if trimmed.is_empty() {
         Err(ToolError::input(format!(
             "{field}: Too small: expected string to have >=1 characters"
@@ -172,7 +173,7 @@ fn filter_items(
     query: Option<&str>,
 ) -> Vec<ToolMediaItem> {
     let needle = query
-        .map(js_trim)
+        .map(trim)
         .filter(|q| !q.is_empty())
         .map(str::to_lowercase);
     items
@@ -471,7 +472,7 @@ enum TasteReadOutput {
 pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMetaError> {
     let s = services;
     Ok(vec![
-        typed_tool("media_catalog_search", {
+        typed_tool(&defs::MEDIA_CATALOG_SEARCH, {
             let s = s.clone();
             move |input: CatalogSearchInput, _cx| {
                 let s = s.clone();
@@ -490,7 +491,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_catalog_get", {
+        typed_tool(&defs::MEDIA_CATALOG_GET, {
             let s = s.clone();
             move |input: CatalogGetInput, _cx| {
                 let s = s.clone();
@@ -509,7 +510,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_catalog_browse", {
+        typed_tool(&defs::MEDIA_CATALOG_BROWSE, {
             let s = s.clone();
             move |input: CatalogBrowseInput, _cx| {
                 let s = s.clone();
@@ -551,7 +552,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_library_list", {
+        typed_tool(&defs::MEDIA_LIBRARY_LIST, {
             let s = s.clone();
             move |input: LibraryListInput, _cx| {
                 let s = s.clone();
@@ -577,7 +578,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_watchlist_list", {
+        typed_tool(&defs::MEDIA_WATCHLIST_LIST, {
             let s = s.clone();
             move |input: WatchlistListInput, _cx| {
                 let s = s.clone();
@@ -591,7 +592,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_watchlist_add", {
+        typed_tool(&defs::MEDIA_WATCHLIST_ADD, {
             let s = s.clone();
             move |input: WatchlistAddInput, _cx| {
                 let s = s.clone();
@@ -614,7 +615,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_recommendations_list", {
+        typed_tool(&defs::MEDIA_RECOMMENDATIONS_LIST, {
             let s = s.clone();
             move |input: RecommendationsListInput, _cx| {
                 let s = s.clone();
@@ -644,7 +645,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_recommendation_get", {
+        typed_tool(&defs::MEDIA_RECOMMENDATION_GET, {
             let s = s.clone();
             move |input: RecommendationGetInput, _cx| {
                 let s = s.clone();
@@ -659,7 +660,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_recommendation_feedback", {
+        typed_tool(&defs::MEDIA_RECOMMENDATION_FEEDBACK, {
             let s = s.clone();
             move |input: RecommendationFeedbackInput, _cx| {
                 let s = s.clone();
@@ -673,7 +674,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                         &input.recommendation_id,
                         FeedbackInput {
                             feedback: input.feedback,
-                            note: input.note.as_deref().map(|n| js_trim(n).to_owned()),
+                            note: input.note.as_deref().map(|n| trim(n).to_owned()),
                         },
                     )
                     .await
@@ -685,7 +686,7 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                 }
             }
         })?,
-        typed_tool("media_taste_read", {
+        typed_tool(&defs::MEDIA_TASTE_READ, {
             let s = s.clone();
             move |input: TasteReadInput, _cx| {
                 let s = s.clone();

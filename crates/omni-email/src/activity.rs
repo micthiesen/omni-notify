@@ -15,7 +15,7 @@ pub const KEEP_PER_PIPELINE: usize = 1000;
 
 pub use omni_api::email::{AdmitTier, EmailActivityOutcome, EmailPipelineName};
 
-/// `deriveItemsOutcome`: outcome from per-item success flags (empty is `no_matches`).
+/// Outcome from per-item success flags (empty is `no_matches`).
 /// A fully rejected submission is `failed`, never `processed`.
 pub fn derive_items_outcome(items_ok: &[bool]) -> EmailActivityOutcome {
     if items_ok.is_empty() {
@@ -31,7 +31,7 @@ pub fn derive_items_outcome(items_ok: &[bool]) -> EmailActivityOutcome {
     }
 }
 
-/// LLM cost attributed to an activity row (TS `number | null | undefined`).
+/// LLM cost attributed to an activity row: a number, `null`, or absent.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum LlmCost {
     /// No attributable call ran (`undefined`; the field is omitted).
@@ -62,7 +62,7 @@ impl LlmCost {
     }
 }
 
-/// `sumCostCents`: `None` parts are dropped; all `None` gives `None`; any
+/// `None` parts are dropped; all `None` gives `None`; any
 /// `Unpriced` part makes the total `Unpriced`.
 pub fn sum_cost_cents(parts: &[LlmCost]) -> LlmCost {
     let known: Vec<&LlmCost> = parts.iter().filter(|p| !p.is_none()).collect();
@@ -199,7 +199,7 @@ pub fn parse_js_date_ms(value: &str) -> Option<i64> {
     omni_core::js::date_parse(value, &jiff::tz::TimeZone::UTC)
 }
 
-/// `selectActivityToPrune`: rows beyond the newest `keep` for one pipeline.
+/// Rows beyond the newest `keep` for one pipeline.
 pub fn select_activity_to_prune(
     all: &[EmailActivityData],
     pipeline: EmailPipelineName,
@@ -210,7 +210,7 @@ pub fn select_activity_to_prune(
     rows.into_iter().skip(keep).cloned().collect()
 }
 
-/// `recordEmailActivity`: upserts the row and prunes the pipeline's history
+/// Upserts the row and prunes the pipeline's history
 /// (activity rows and their logs) in one transaction.
 pub async fn record(store: &Store, entry: NewActivity) -> Result<EmailActivityData, StoreError> {
     let now = store.clock().now_ms();
@@ -245,7 +245,6 @@ pub async fn record(store: &Store, entry: NewActivity) -> Result<EmailActivityDa
     Ok(written)
 }
 
-/// `getEmailActivity`.
 pub async fn get(
     store: &Store,
     activity_id: &str,
@@ -256,7 +255,7 @@ pub async fn get(
         .await
 }
 
-/// `getRecentEmailActivity`: newest first, optionally one pipeline, at most `limit`.
+/// Newest first, optionally one pipeline, at most `limit`.
 pub async fn recent(
     store: &Store,
     pipeline: Option<EmailPipelineName>,
@@ -335,7 +334,7 @@ mod activity_spec {
     }
 
     #[test]
-    fn sums_costs_like_ts() {
+    fn sums_costs() {
         assert_eq!(
             sum_cost_cents(&[LlmCost::None, LlmCost::None]),
             LlmCost::None

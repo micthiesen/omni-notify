@@ -1,4 +1,4 @@
-//! Workspace REST routes (`src/server.ts` 188-204, 1669-1923): statuses,
+//! Workspace REST routes: statuses,
 //! error bodies and payload shapes.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

@@ -1,4 +1,4 @@
-//! Address headers: a port of nodemailer `addressparser` plus mailparser's
+//! Address headers, parsed like nodemailer `addressparser` plus mailparser's
 //! `decodeAddresses` (encoded-word names, encoded-word address rejection,
 //! punycode domains).
 

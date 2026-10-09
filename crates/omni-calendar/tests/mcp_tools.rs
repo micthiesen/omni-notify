@@ -1,5 +1,4 @@
-//! Calendar MCP tools (`src/mcp/tools/calendar.ts` has no spec file): golden
-//! metadata, input refinements, and the create/update/delete flows against a
+//! Calendar MCP tools: metadata, input refinements, and the create/update/delete flows against a
 //! mock CalDAV server.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -48,7 +47,7 @@ fn dentist() -> Value {
 }
 
 #[tokio::test]
-async fn registers_the_seven_tools_in_ts_order_from_golden_metadata() {
+async fn registers_the_seven_tools_in_serving_order() {
     let app = TestApp::new().await;
     let server = MockServer::start().await;
     let names: Vec<&str> = tools(&app, &server)
@@ -93,7 +92,7 @@ async fn preview_renders_ics_without_state_changes() {
 }
 
 #[tokio::test]
-async fn rejects_inputs_zod_refinements_reject() {
+async fn rejects_inputs_the_schema_refinements_reject() {
     let app = TestApp::new().await;
     let server = MockServer::start().await;
     let t = tools(&app, &server);
@@ -348,7 +347,7 @@ async fn legacy_rows_without_all_day_list_as_timed_and_need_all_day_to_update() 
     )
     .await
     .unwrap_err();
-    // TS re-parses the merged event inside `execute`.
+    // The merged event is re-validated during execution.
     assert_eq!(phase, ToolPhase::Execute);
     assert_eq!(message, "allDay: Required");
 }
@@ -393,7 +392,7 @@ async fn update_reports_an_invalid_merged_event_as_an_execute_error() {
 }
 
 #[tokio::test]
-async fn list_rejects_a_blank_query_like_zod_trim_min() {
+async fn list_rejects_a_blank_query() {
     let app = TestApp::new().await;
     let server = MockServer::start().await;
     let t = tools(&app, &server);

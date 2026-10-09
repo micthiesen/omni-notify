@@ -1,9 +1,6 @@
-//! Port of `src/hister/service.spec.ts` against a wiremock Hister.
-//!
-//! All cases are kept. "times out hanging requests on the Effect clock" runs on
-//! tokio's paused clock; "aborts an in-flight request when interrupted" checks
-//! that dropping the call (Rust's interruption) cancels it promptly, since a
-//! reqwest future aborts its request when dropped.
+//! The Hister service against a wiremock Hister. Timeouts run on tokio's
+//! paused clock; dropping a call cancels its request promptly, since a reqwest
+//! future aborts its request when dropped.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::time::Duration;
@@ -215,7 +212,7 @@ async fn cancels_an_oversized_response_body() {
 }
 
 #[tokio::test]
-async fn times_out_hanging_requests_on_the_effect_clock() {
+async fn times_out_hanging_requests_on_the_paused_clock() {
     let server = mock_server().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(60)))

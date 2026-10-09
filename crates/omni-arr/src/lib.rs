@@ -1,6 +1,5 @@
 //! Sonarr/Radarr import recovery (`ArrRecovery`) and Observer issue repair
-//! (`ObserverRepair`), ported from `src/arr-recovery`, `src/observer` and
-//! `src/observer-repair`.
+//! (`ObserverRepair`).
 //!
 //! Both tasks reserve every mutation durably before the HTTP call, verify the
 //! outcome against Arr or Observer before reporting success, and never repeat
@@ -9,7 +8,6 @@
 
 pub mod arr_recovery;
 pub mod js_opt;
-pub mod js_text;
 mod json_api;
 pub mod observer;
 pub mod observer_repair;
@@ -33,7 +31,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
     ]
 }
 
-/// The WP09 subsystem: the `ArrRecovery` and `ObserverRepair` tasks when
+/// The Arr subsystem: the `ArrRecovery` and `ObserverRepair` tasks when
 /// their configuration is complete. No routes, MCP tools or services.
 pub fn subsystem(ctx: &AppContext) -> Subsystem {
     let side_effects = SideEffects::new(ctx.side_effects);

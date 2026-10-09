@@ -1,8 +1,4 @@
-//! Port of `src/podcast-recs/taste.spec.ts`.
-//!
-//! Dropped case: "aborts the in-flight read when interrupted" — the Rust read
-//! is a tokio future, and dropping it is the cancellation; there is no
-//! AbortSignal to observe.
+//! Reading the podcast taste seed.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::taste::{TasteSeedFailure, check_seed, load_taste_seed};

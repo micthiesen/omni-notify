@@ -1,9 +1,6 @@
-//! Port of `src/calendar-events/caldav/ics.spec.ts` ("buildICalendar recurrence").
-//!
-//! Dropped assertion: `generateUid(1234, 0.5) === "ya-i@omni-notify"` in the
-//! first case. Every Rust caller passes an explicit deterministic UID (pipeline
-//! `omni-<sha256>`, MCP `mcp-<sha256>`, workspaces `workspace-<actionId>`), so
-//! the random-UID fallback was not ported.
+//! iCalendar bodies with recurrence. Every caller passes an explicit
+//! deterministic UID (pipeline `omni-<sha256>`, MCP `mcp-<sha256>`, workspaces
+//! `workspace-<actionId>`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_calendar::caldav::ics::build_icalendar;
@@ -90,7 +87,7 @@ fn emits_a_date_format_until_for_all_day_recurring_events() {
 
 #[test]
 fn emits_no_rrule_when_recurrence_is_absent_or_null() {
-    // TS `null` and absent are both `None` after decoding.
+    // `null` and absent are both `None` after decoding.
     let lines = ics_lines(&evt());
     assert!(!lines.iter().any(|l| l.starts_with("RRULE")));
 }

@@ -67,7 +67,7 @@ pub struct ParsedMailView<'a> {
     pub header_lines: &'a [HeaderLine],
 }
 
-/// `safeUrl`: keeps usable URL text unchanged, or rejects it.
+/// Keeps usable URL text unchanged, or rejects it.
 fn safe_url(raw: &str) -> Option<String> {
     if utf16_len(raw) > URL_LIMIT || UNSAFE_CHARS.is_match(raw) {
         return None;
@@ -147,7 +147,6 @@ impl LinkCollector {
     }
 }
 
-/// `extractEmailLinkMetadata`.
 pub fn extract_email_link_metadata(parsed: ParsedMailView<'_>) -> EmailLinkMetadata {
     let mut collector = LinkCollector {
         links: Vec::new(),

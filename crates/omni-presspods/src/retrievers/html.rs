@@ -3,7 +3,7 @@
 
 use scraper::{ElementRef, Html, Selector};
 
-/// `extractTitleFromHtml`: the raw `<title>` text (not entity-decoded), trimmed.
+/// The raw `<title>` text (not entity-decoded), trimmed.
 pub fn extract_title_from_html(html: &str) -> Option<String> {
     static TITLE: std::sync::LazyLock<Option<regex::Regex>> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"(?i)<title>([^<]*)</title>").ok());
@@ -11,7 +11,7 @@ pub fn extract_title_from_html(html: &str) -> Option<String> {
     (!title.is_empty()).then(|| title.to_owned())
 }
 
-/// `extractDomain`: the URL's hostname.
+/// The URL's hostname.
 pub fn extract_domain(url: &str) -> Option<String> {
     url::Url::parse(url)
         .ok()
@@ -296,7 +296,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn title_extraction_matches_the_ts_regex() {
+    fn title_extraction_cases() {
         assert_eq!(
             extract_title_from_html("<html><TITLE>  Hello &amp; bye </TITLE>").as_deref(),
             Some("Hello &amp; bye")

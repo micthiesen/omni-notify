@@ -1,5 +1,5 @@
-//! Port of `src/arr-recovery/nzbget.spec.ts`: the scripted `fetch` is a wiremock
-//! server answering successive JSON-RPC calls in order.
+//! NZBGet health checks against a wiremock server answering successive
+//! JSON-RPC calls in order.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Mutex;

@@ -49,10 +49,10 @@ pub const DENOISE_MODEL_ASSET: &str = "press-pods/denoise.rnnn";
 pub const FIZZ_SHELF: &str =
     "firequalizer=gain='if(lt(f,9600),0,if(gt(f,10300),-30,-30*(f-9600)/700))'";
 
-/// Upper bound on one ffmpeg/ffprobe invocation (TS had none).
+/// Upper bound on one ffmpeg/ffprobe invocation.
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const STDOUT_CAP: usize = 1024 * 1024;
-/// `execFile`'s `maxBuffer` in TS.
+/// Captured stderr cap per process.
 const STDERR_CAP: usize = 128 * 1024 * 1024;
 
 static LOUDNORM_JSON: LazyLock<Option<Regex>> =
@@ -526,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn higgs_chunk_filter_matches_ts_exactly() {
+    fn higgs_chunk_filter_is_pinned() {
         assert_eq!(
             chunk_edge_filter(Some("assets/press-pods/denoise.rnnn")),
             "atempo=1.1,highpass=f=80,aresample=48000:filter_size=256:cutoff=0.95,\
@@ -586,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn manifest_and_silence_arguments_match_ts() {
+    fn manifest_and_silence_arguments_are_pinned() {
         assert_eq!(
             concat_manifest(&[Path::new("/tmp/a.wav"), Path::new("/tmp/it's.wav")]),
             "file '/tmp/a.wav'\nfile '/tmp/it'\\''s.wav'"

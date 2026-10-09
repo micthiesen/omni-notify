@@ -181,7 +181,6 @@ fn iso_ms(value: &str) -> Option<i64> {
         .map(|t| t.as_millisecond())
 }
 
-/// `searchCacheKey`.
 fn search_cache_key(options: &EmailSearch) -> String {
     let trimmed = |v: &Option<String>| v.as_deref().map(str::trim).unwrap_or("").to_owned();
     let folder = match options.folder {
@@ -274,7 +273,7 @@ impl ImapTransport {
         "IMAP"
     }
 
-    /// True once the first start succeeded (TS `emailControls.transport` set).
+    /// True once the first start succeeded.
     pub fn is_active(&self) -> bool {
         self.inner.active.load(Ordering::SeqCst)
     }
@@ -343,8 +342,7 @@ impl ImapTransport {
     }
 
     /// Installs an already-connected client without the IDLE loop and marks
-    /// the transport active (tests drive operations directly, like the TS
-    /// specs that inject an imapflow mock).
+    /// the transport active (tests drive operations directly).
     #[cfg(feature = "testing")]
     pub async fn attach_client(&self, client: Box<dyn ImapClient>) {
         *self.inner.conn.lock().await = Some(client);
@@ -1795,7 +1793,7 @@ impl EmailReader for ImapTransport {
     }
 }
 
-/// `isArchiveActionMessage` over the archive receipts.
+/// Archive-action detection over the archive receipts.
 pub struct StoreArchiveEcho {
     store: Store,
 }

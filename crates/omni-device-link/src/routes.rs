@@ -38,7 +38,6 @@ pub fn router(service: DeviceLinkService, token: &str) -> Router {
         })
 }
 
-/// `unauthorizedMcpResponse()`.
 pub fn unauthorized() -> Response {
     let mut response = (
         StatusCode::UNAUTHORIZED,
@@ -67,7 +66,7 @@ fn no_store(body: Value) -> Response {
     response
 }
 
-/// `readJsonBody`: a declared length over the cap or an oversized body fails.
+/// A declared length over the cap or an oversized body fails.
 async fn read_json(headers: &HeaderMap, body: Body, max: usize) -> Option<Value> {
     let declared = headers
         .get(CONTENT_LENGTH)

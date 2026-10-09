@@ -1,5 +1,5 @@
-//! Port of `src/live-check/dgg.spec.ts`. The websocket cases run against an
-//! in-process tungstenite server instead of a fake socket object.
+//! Destiny.gg discovery. The websocket cases run against an in-process
+//! tungstenite server.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::{HashMap, HashSet};

@@ -3,15 +3,11 @@
 
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, ToSpan, Zoned};
+use omni_core::js::math_round;
 
 const MINUTES_IN_DAY: f64 = 1_440.0;
 const MINUTES_IN_ALMOST_TWO_DAYS: f64 = 2_520.0;
 const MINUTES_IN_MONTH: f64 = 43_200.0;
-
-/// JS `Math.round` (halves round toward +infinity).
-pub(crate) fn js_round(value: f64) -> f64 {
-    (value + 0.5).floor()
-}
 
 #[allow(clippy::cast_possible_truncation)]
 fn as_int(value: f64) -> i64 {
@@ -86,7 +82,7 @@ pub fn format_distance(a_ms: i64, b_ms: i64, tz: &TimeZone) -> String {
     let seconds = ((later - earlier) / 1_000) as f64;
     #[allow(clippy::cast_precision_loss)]
     let offset_seconds = ((tz_offset_ms(later, tz) - tz_offset_ms(earlier, tz)) / 1_000) as f64;
-    let minutes = js_round((seconds - offset_seconds) / 60.0);
+    let minutes = math_round((seconds - offset_seconds) / 60.0);
 
     if minutes < 2.0 {
         return if minutes == 0.0 {
@@ -102,22 +98,22 @@ pub fn format_distance(a_ms: i64, b_ms: i64, tz: &TimeZone) -> String {
         return "about 1 hour".to_owned();
     }
     if minutes < MINUTES_IN_DAY {
-        let hours = as_int(js_round(minutes / 60.0));
+        let hours = as_int(math_round(minutes / 60.0));
         return format!("about {}", plural(hours, "hour"));
     }
     if minutes < MINUTES_IN_ALMOST_TWO_DAYS {
         return "1 day".to_owned();
     }
     if minutes < MINUTES_IN_MONTH {
-        return plural(as_int(js_round(minutes / MINUTES_IN_DAY)), "day");
+        return plural(as_int(math_round(minutes / MINUTES_IN_DAY)), "day");
     }
     if minutes < MINUTES_IN_MONTH * 2.0 {
-        let months = as_int(js_round(minutes / MINUTES_IN_MONTH));
+        let months = as_int(math_round(minutes / MINUTES_IN_MONTH));
         return format!("about {}", plural(months, "month"));
     }
     let months = difference_in_months(later, earlier, tz);
     if months < 12 {
-        return plural(as_int(js_round(minutes / MINUTES_IN_MONTH)), "month");
+        return plural(as_int(math_round(minutes / MINUTES_IN_MONTH)), "month");
     }
     let since_start_of_year = months % 12;
     let years = months / 12;

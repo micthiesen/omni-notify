@@ -1,4 +1,4 @@
-//! Data manager (WP14): `/api/data/entities` and `/api/data/entities/:slug`.
+//! Data manager: `/api/data/entities` and `/api/data/entities/:slug`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};

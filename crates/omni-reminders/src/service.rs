@@ -473,7 +473,7 @@ impl RemindersService {
     }
 
     /// Reserves the notification durably before delivery; uncertain delivery is not
-    /// repeated. A failed reservation surfaces as a storage error (as in TS).
+    /// repeated. A failed reservation surfaces as a storage error.
     async fn notify_once(&self) -> Result<(), ServiceError> {
         let enabled = self.enabled()?;
         if enabled.private.get(|s| s.notified) {
@@ -485,8 +485,8 @@ impl RemindersService {
         Ok(())
     }
 
-    /// `recordFailure`: updates the public status. Like the TS `tapError`, a failure
-    /// to reserve the notification replaces the original error.
+    /// Updates the public status. A failure to reserve the notification replaces
+    /// the original error.
     async fn record_failure(&self, error: Recorded<'_>) -> Result<(), ServiceError> {
         match error {
             Recorded::Apple(error) => {

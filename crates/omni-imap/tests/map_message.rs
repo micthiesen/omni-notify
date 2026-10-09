@@ -1,7 +1,6 @@
-//! Port of `src/email/imap/mapMessage.spec.ts`.
-//!
-//! The link metadata itself is omni-email's (`extractEmailLinkMetadata`); here
-//! the stand-in enricher proves the root header lines reach it intact.
+//! Mapping parsed messages to the pipeline shape. The link metadata itself is
+//! omni-email's; the stand-in enricher proves the root header lines reach it
+//! intact.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

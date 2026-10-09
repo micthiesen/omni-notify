@@ -1,4 +1,4 @@
-//! Port of `src/arr-recovery/boundaries.spec.ts`.
+//! Arr recovery boundary checks on paths and identities.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

@@ -29,7 +29,7 @@ async fn call(tools: &[McpTool], name: &str, input: Value) -> Result<Value, Tool
 }
 
 #[tokio::test]
-async fn registers_the_six_golden_tools_in_ts_order() {
+async fn registers_the_six_tools_in_serving_order() {
     let (_h, tools) = setup().await;
     let names: Vec<&str> = tools.iter().map(|t| t.meta.name.as_str()).collect();
     assert_eq!(

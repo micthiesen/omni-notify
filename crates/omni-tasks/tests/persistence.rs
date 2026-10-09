@@ -1,5 +1,5 @@
-//! Port of `src/task-runs/persistence.spec.ts` (the `selectRunsToPrune` cases
-//! are unit tests in `src/persistence.rs`).
+//! Run history persistence (prune selection is unit-tested in
+//! `src/persistence.rs`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

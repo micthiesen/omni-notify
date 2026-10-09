@@ -1,6 +1,5 @@
-//! Port of `src/parcel-tracker/carriers/carrierMap.effect.spec.ts`. The TS
-//! spec injects a fake streaming request; here a local wiremock server serves
-//! the carrier list through the bounded public client.
+//! Carrier list fetching: a local wiremock server serves the carrier list
+//! through the bounded public client.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;

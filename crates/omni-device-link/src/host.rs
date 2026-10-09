@@ -1,5 +1,5 @@
 //! The `omni_runtime::ports::ClaudeHost` port over the relay: the only way MCP
-//! tools, activity routes and the session watcher (WP12) reach the host.
+//! tools, activity routes and the session watcher reach the host.
 
 use std::time::Duration;
 

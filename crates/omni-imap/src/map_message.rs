@@ -1,7 +1,7 @@
 //! Parsed message to the pipeline shape.
 //!
 //! The HTML-to-text rendering, interesting-link extraction and link metadata
-//! are owned by the email pipeline (WP02, `omni-email`), which this crate may
+//! are owned by the email pipeline (`omni-email`), which this crate may
 //! not depend on. They enter through [`BodyEnricher`], which the binary wires
 //! to omni-email's implementations.
 
@@ -26,7 +26,7 @@ pub struct LinkMetadataInput<'a> {
     pub header_lines: &'a [HeaderLine],
 }
 
-/// Body enrichment owned by the email pipeline (`htmlToText.ts`, `linkMetadata.ts`).
+/// Body enrichment owned by the email pipeline (HTML to text, link metadata).
 pub trait BodyEnricher: Send + Sync {
     /// `htmlToText(html)`.
     fn html_to_text(&self, html: &str) -> String;
@@ -98,7 +98,7 @@ pub fn decode_message_id(id: &str) -> Option<MessageCoords> {
     })
 }
 
-/// `mapParsedMessage`. The id is the RFC Message-ID when present (stable
+/// Maps a parsed message. The id is the RFC Message-ID when present (stable
 /// across folder moves), else the folder coordinates.
 pub fn map_parsed_message(
     parsed: &ParsedMail,

@@ -1,6 +1,6 @@
 //! The `TasteReflection` task end to end over fakes:
 //! an unavailable history skips the run, a full run resolves completed
-//! watches, persists evidence and a profile, and reports the TS summaries.
+//! watches, persists evidence and a profile, and reports its run summaries.
 #![allow(clippy::expect_used)]
 
 mod common;

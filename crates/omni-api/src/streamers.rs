@@ -1,4 +1,4 @@
-//! Streamers, viewer metrics, sessions and trigger channels (WP04).
+//! Streamers, viewer metrics, sessions and trigger channels.
 //!
 //! `GET /api/streamers`, the `streamers` array of the dashboard snapshot,
 //! `GET /api/trigger-channels`, `GET /api/streamers/:id/metrics` and
@@ -96,7 +96,7 @@ pub struct LiveStreamerView {
     pub sources: Vec<LiveSourceView>,
     pub category: Option<String>,
     pub primary: StreamerBinding,
-    /// The raw `livestream-intelligence` document (WP05 owns its shape).
+    /// The raw `livestream-intelligence` document (`omni-live-intel` owns its shape).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<serde_json::Value>,
 }
@@ -296,7 +296,7 @@ pub struct LivestreamDetails {
     pub sessions: Vec<StreamSessionView>,
 }
 
-/// Path builders for the WP04 routes.
+/// Path builders for the streamer routes.
 pub mod paths {
     use super::encode_uri_component;
 

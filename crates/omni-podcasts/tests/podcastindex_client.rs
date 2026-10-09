@@ -1,6 +1,5 @@
-//! Port of `src/podcast-recs/podcastindex/client.spec.ts` (named
-//! `podcastindex_client`: the Castro client spec shares the `client` stem),
-//! plus the bounded search request against a local mock.
+//! The Podcast Index client, plus the bounded search request against a local
+//! mock.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::podcastindex::{

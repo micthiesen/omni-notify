@@ -1,59 +1,57 @@
 //! Wire DTOs for every REST/SSE contract.
 //!
 //! `serde` + `serde_json` only; must compile for `wasm32-unknown-unknown`.
-//! Serde rules: `rename_all = "camelCase"`; TS `T | null` is `Option<T>` and is
-//! always serialized; TS `field?: T` is
+//! Serde rules: `rename_all = "camelCase"`; a nullable field is `Option<T>` and is
+//! always serialized; an optional field is
 //! `#[serde(default, skip_serializing_if = "Option::is_none")]`; string unions
 //! are enums with explicit `rename`; never `deny_unknown_fields`.
-//!
-//! Each module file is owned by exactly one work package (listed per module).
 
-/// WP00: error body, pagination, path builders.
+/// Error body, pagination, path builders.
 pub mod common;
-/// WP00: `/api/costs`.
+/// `/api/costs`.
 pub mod costs;
-/// WP00: task runs, run logs and the run-log SSE frames.
+/// Task runs, run logs and the run-log SSE frames.
 pub mod runs;
-/// WP00: `/api/tasks`.
+/// `/api/tasks`.
 pub mod tasks;
 
-/// WP14: data manager.
+/// Data manager.
 pub mod data;
-/// WP14: dashboard snapshot (`/api/snapshot`, `/api/events`).
+/// Dashboard snapshot (`/api/snapshot`, `/api/events`).
 pub mod snapshot;
 
-/// WP04: iOS live controls.
+/// iOS live controls.
 pub mod ios;
-/// WP04: streamers, metrics, sessions, trigger channels.
+/// Streamers, metrics, sessions, trigger channels.
 pub mod streamers;
 
-/// WP05: livestream intelligence details and feedback.
+/// Livestream intelligence details and feedback.
 pub mod intelligence;
 
-/// WP02: email activity, logs, rules, feedback.
+/// Email activity, logs, rules, feedback.
 pub mod email;
 
-/// WP06: PressPods episodes, jobs, details.
+/// PressPods episodes, jobs, details.
 pub mod presspods;
 
-/// WP07: podcast recommendations and taste profile.
+/// Podcast recommendations and taste profile.
 pub mod podcasts;
 
-/// WP08: media recommendations, taste profile, on-deck items.
+/// Media recommendations, taste profile, on-deck items.
 pub mod media;
 
-/// WP11: briefings.
+/// Briefings.
 pub mod briefings;
-/// WP11: workspaces.
+/// Workspaces.
 pub mod workspaces;
 
-/// WP12: Claude activity, sessions and transcripts.
+/// Claude activity, sessions and transcripts.
 pub mod claude;
-/// WP12: MCP activity.
+/// MCP activity.
 pub mod mcp_activity;
 
-/// WP10: Reminders public status.
+/// Reminders public status.
 pub mod reminders;
 
-/// WP13: pets.
+/// Pets.
 pub mod pets;

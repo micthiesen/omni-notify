@@ -1,8 +1,6 @@
-//! Port of `src/email/imap/transportSent.spec.ts`.
-//!
-//! imapflow lock (`getMailboxLock`) and restore (`mailboxOpen`) calls are both
-//! `select` here, so the expected lock sequence `[Sent, INBOX, Archive, Sent]`
-//! appears with the INBOX restores interleaved.
+//! Sent copies through the transport. Locks and restores are both `select`,
+//! so the sequence `[Sent, INBOX, Archive, Sent]` appears with the INBOX
+//! restores interleaved.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

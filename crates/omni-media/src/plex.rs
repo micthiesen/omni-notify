@@ -17,7 +17,7 @@ use crate::js::present;
 use crate::types::{ExternalIds, InProgressItem, MediaItem, MediaType, WatchedItem};
 
 const PLEX_TIMEOUT: Duration = Duration::from_secs(15);
-/// got's default `retry.limit` override in TS.
+/// Retries per Plex request.
 const PLEX_RETRIES: u32 = 2;
 /// Plex pages are bounded (100 history rows, 500 library rows per request).
 const PLEX_MAX_BYTES: usize = 32 * 1024 * 1024;
@@ -161,7 +161,7 @@ fn js_number_id(digits: &str) -> Option<i64> {
     )
 }
 
-/// `parseExternalIds`: modern `Guid` arrays and legacy agent GUIDs; later
+/// Modern `Guid` arrays and legacy agent GUIDs; later
 /// GUIDs win.
 pub fn parse_external_ids(metadata: &PlexMetadata) -> Option<ExternalIds> {
     let mut ids = ExternalIds::default();
@@ -608,7 +608,7 @@ impl PlexClient {
 }
 
 /// The production [`PlexGet`]: JSON GETs with the Plex token, a 15 s timeout
-/// and got's two retries for transient failures.
+/// and two retries for transient failures.
 pub struct HttpPlexGet {
     http: HttpClient,
     base_url: String,
@@ -635,8 +635,8 @@ impl HttpPlexGet {
     }
 }
 
-/// got's retryable statuses.
-fn got_retryable(error: &omni_http::HttpError) -> bool {
+/// Timeouts, network failures and transient statuses.
+fn transient(error: &omni_http::HttpError) -> bool {
     match error {
         omni_http::HttpError::Timeout | omni_http::HttpError::Network(_) => true,
         omni_http::HttpError::Status { status, .. } => {
@@ -665,7 +665,7 @@ impl PlexGet for HttpPlexGet {
             loop {
                 match self.get_once(&url).await {
                     Ok(value) => return Ok(value),
-                    Err(error) if attempt < PLEX_RETRIES && got_retryable(&error) => {
+                    Err(error) if attempt < PLEX_RETRIES && transient(&error) => {
                         attempt += 1;
                         tokio::time::sleep(Duration::from_millis(1000 * (1 << (attempt - 1))))
                             .await;

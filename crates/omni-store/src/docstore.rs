@@ -1,11 +1,11 @@
 //! The `blobs` docstore: one connection on a dedicated thread, reads and
-//! `BEGIN IMMEDIATE` writes as jobs (better-sqlite3 parity, section 4.1).
+//! `BEGIN IMMEDIATE` writes as jobs.
 //!
 //! Every read observes the latest commit because all jobs run in order on the
 //! same connection. Reads hide expired rows (`expires_at <= now`) except
 //! [`DocOps::get_raw_rows_by_prefix`]; prefix matches use `LIKE ... ESCAPE '\'`
 //! with `%`, `_` and `\` escaped, which keeps SQLite's ASCII case-insensitive
-//! matching exactly as mitools does.
+//! matching.
 
 use std::any::Any;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
@@ -24,7 +24,7 @@ use crate::table::{Table, TableRow};
 
 const LOG: &str = "Docstore";
 
-/// Payloads above this size are written but warned about (mitools parity).
+/// Payloads above this size are written but warned about.
 const LARGE_DOC_WARN_BYTES: usize = 256 * 1024;
 
 /// Stack for the store thread; CBOR decoding recurses up to `cbor::MAX_DEPTH`.
@@ -77,8 +77,8 @@ pub(crate) fn sqlite_err(e: rusqlite::Error) -> StoreError {
 }
 
 impl Store {
-    /// Opens (creating if needed) the database: WAL, `synchronous=NORMAL`,
-    /// `initializeSchema` parity.
+    /// Opens (creating if needed) the database: WAL, `synchronous=NORMAL`, and
+    /// the schema of [`initialize_schema`].
     pub async fn open(path: &Path, opts: StoreOptions) -> Result<Store, StoreError> {
         let (jobs, receiver) = mpsc::channel::<Job>();
         let (opened_tx, opened_rx) = oneshot::channel();
@@ -232,7 +232,7 @@ fn open_connection(path: &Path, busy_timeout: Duration) -> Result<Connection, St
     Ok(conn)
 }
 
-/// mitools `initializeSchema`: full schema for fresh files, additive `ALTER`s
+/// Full schema for fresh files, additive `ALTER`s
 /// (tolerating a concurrent "duplicate column") for old ones, both indexes.
 fn initialize_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(
@@ -283,7 +283,7 @@ fn initialize_schema(conn: &Connection) -> Result<(), StoreError> {
     Ok(())
 }
 
-/// mitools `likePrefix`: `%`, `_` and `\` match literally, then `%`.
+/// A `LIKE` prefix pattern: `%`, `_` and `\` match literally, then `%`.
 pub fn like_prefix(prefix: &str) -> String {
     let mut out = String::with_capacity(prefix.len() + 1);
     for c in prefix.chars() {
@@ -390,7 +390,7 @@ impl RawRow {
     }
 }
 
-/// `decodeDoc` with the failure attributed to `pk`.
+/// Decodes a payload with the failure attributed to `pk`.
 pub(crate) fn decode_payload(pk: &str, data: Option<&[u8]>) -> Result<JsValue, StoreError> {
     let bytes = data.ok_or_else(|| StoreError::CorruptRow {
         pk: pk.to_owned(),

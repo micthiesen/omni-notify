@@ -26,6 +26,21 @@ pub fn timestamp_from_ms(ms: i64) -> jiff::Timestamp {
     })
 }
 
+/// The UTC calendar date `YYYY-MM-DD` of an instant (the date stamp stored
+/// in run, recommendation and history rows).
+pub fn utc_date_stamp(ms: i64) -> String {
+    let iso = crate::js::to_iso_string(ms);
+    iso.get(..10).unwrap_or(&iso).to_owned()
+}
+
+/// A filesystem-safe local timestamp, `YYYY-MM-DDTHH-MM-SS`, for log file names.
+pub fn log_timestamp(ms: i64, tz: &jiff::tz::TimeZone) -> String {
+    timestamp_from_ms(ms)
+        .to_zoned(tz.clone())
+        .strftime("%Y-%m-%dT%H-%M-%S")
+        .to_string()
+}
+
 /// The operating-system clock.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemClock;
@@ -95,6 +110,14 @@ impl Clock for TestClock {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn date_and_log_stamps() {
+        assert_eq!(utc_date_stamp(1_784_091_600_000), "2026-07-15");
+        assert_eq!(utc_date_stamp(-1), "1969-12-31");
+        let tz = jiff::tz::TimeZone::fixed(jiff::tz::offset(-7));
+        assert_eq!(log_timestamp(1_784_091_600_000, &tz), "2026-07-14T22-00-00");
+    }
 
     #[tokio::test(start_paused = true)]
     async fn test_clock_follows_paused_time() {

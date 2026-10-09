@@ -1,7 +1,8 @@
-//! MCP tools: compose, archive and
-//! PDF attachments. Metadata is golden; handlers
-//! apply zod's trims before validating against the golden input schema, so
-//! inputs TS accepted after trimming are accepted here too.
+//! MCP tools: compose, archive and PDF attachments. Each tool's contract is
+//! declared in [`defs`]; handlers trim inputs before validating against the
+//! derived input schema, so inputs valid after trimming are accepted.
+
+pub mod defs;
 
 use std::sync::Arc;
 
@@ -9,8 +10,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use futures::future::BoxFuture;
 use omni_mcp_kit::{
-    Content, McpTool, SchemaValidator, ToolContext, ToolError, ToolHandler, ToolMetaError,
-    ToolOutput, golden_meta, raw_tool,
+    Content, McpTool, SchemaValidator, ToolContext, ToolDefinition, ToolError, ToolHandler,
+    ToolMetaError, ToolOutput, raw_tool,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -86,16 +87,16 @@ enum Kind {
 }
 
 impl Kind {
-    const ALL: [(Kind, &'static str); 9] = [
-        (Kind::DraftCreate, "email_draft_create"),
-        (Kind::Send, "email_send"),
-        (Kind::SendStatus, "email_send_status"),
-        (Kind::SentCopyRepair, "email_sent_copy_repair"),
-        (Kind::ArchiveQueue, "email_archive_queue"),
-        (Kind::ArchiveStatus, "email_archive_status"),
-        (Kind::ArchiveCancel, "email_archive_cancel"),
-        (Kind::ArchiveRestore, "email_archive_restore"),
-        (Kind::AttachmentGet, "email_attachment_get"),
+    const ALL: [(Kind, &'static dyn ToolDefinition); 9] = [
+        (Kind::DraftCreate, &defs::EMAIL_DRAFT_CREATE),
+        (Kind::Send, &defs::EMAIL_SEND),
+        (Kind::SendStatus, &defs::EMAIL_SEND_STATUS),
+        (Kind::SentCopyRepair, &defs::EMAIL_SENT_COPY_REPAIR),
+        (Kind::ArchiveQueue, &defs::EMAIL_ARCHIVE_QUEUE),
+        (Kind::ArchiveStatus, &defs::EMAIL_ARCHIVE_STATUS),
+        (Kind::ArchiveCancel, &defs::EMAIL_ARCHIVE_CANCEL),
+        (Kind::ArchiveRestore, &defs::EMAIL_ARCHIVE_RESTORE),
+        (Kind::AttachmentGet, &defs::EMAIL_ATTACHMENT_GET),
     ];
 }
 
@@ -126,7 +127,7 @@ fn trim_list(map: &mut Map<String, Value>, key: &str) {
     }
 }
 
-/// zod transforms applied before validation.
+/// Input transforms applied before validation.
 fn normalize(kind: Kind, mut input: Value) -> Value {
     let Some(map) = input.as_object_mut() else {
         return input;
@@ -194,7 +195,7 @@ struct ComposeFields {
 }
 
 impl ComposeFields {
-    /// The zod refinements and the empty-list transform on `attachments`.
+    /// The schema refinements and the empty-list transform on `attachments`.
     fn request(input: Value) -> Result<ComposeRequest, ToolError> {
         let mut fields: ComposeFields = decode(input)?;
         if let Some(references) = &fields.attachments {
@@ -266,7 +267,6 @@ struct AttachmentInput {
     max_bytes: usize,
 }
 
-/// `serializeAction`.
 pub fn serialize_action(action: &ArchiveAction) -> Value {
     json!({
         "actionId": action.action_id,
@@ -492,20 +492,20 @@ impl ToolHandler for Handler {
     }
 }
 
-/// The nine WP01 tools in `src/mcp/tools/index.ts` group order
+/// The nine mail transport tools in serving group order
 /// (email-compose, email-archive, email-attachments).
 pub fn email_tools(deps: ToolDeps) -> Result<Vec<McpTool>, ToolMetaError> {
     Kind::ALL
         .iter()
-        .map(|(kind, name)| {
-            let meta = golden_meta(name)?;
+        .map(|&(kind, def)| {
+            let meta = def.meta()?;
             let handler = Handler {
-                kind: *kind,
-                input: SchemaValidator::new(name, &meta.input_schema)?,
-                output: SchemaValidator::new(name, &meta.output_schema)?,
+                kind,
+                input: SchemaValidator::new(&meta.name, &meta.input_schema)?,
+                output: SchemaValidator::new(&meta.name, &meta.output_schema)?,
                 deps: deps.clone(),
             };
-            raw_tool(name, Arc::new(handler))
+            raw_tool(def, Arc::new(handler))
         })
         .collect()
 }

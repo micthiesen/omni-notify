@@ -75,7 +75,7 @@ pub fn is_pdf_attachment(mime_type: &str, data: &[u8]) -> bool {
 
 /// The stable attachment reader seam (the IMAP transport in production).
 pub trait AttachmentReader: Send + Sync {
-    /// False until the transport has started (TS `emailControls.transport` unset).
+    /// False until the transport has started.
     fn available(&self) -> bool {
         true
     }

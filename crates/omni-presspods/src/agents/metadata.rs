@@ -49,7 +49,7 @@ For shortSummary: Create a one-sentence description of what this article is abou
 Other webpages (blog posts, wiki pages, forum threads, documentation) should be treated as valid articles.
 X Articles and connected same-author X threads are valid articles. Judge completeness against the article body or connected self-thread, not against unrelated replies. Prefer explicit source metadata for their title, author, publication (X), publication date, and lead image instead of inferring replacements."#;
 
-/// `rawMetadataInfoSchema`: every field required, most nullable.
+/// Every field required, most nullable.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RawMetadataInfo {
@@ -82,7 +82,6 @@ fn strip_urls(text: &str) -> String {
         .to_owned()
 }
 
-/// `transformMetadataInfo`.
 pub(crate) fn transform_metadata(raw: RawMetadataInfo, tz: &jiff::tz::TimeZone) -> MetadataInfo {
     MetadataInfo {
         is_valid_article: raw.is_valid_article,
@@ -178,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn transforms_raw_model_output_like_ts() {
+    fn transforms_raw_model_output() {
         let tz = jiff::tz::TimeZone::UTC;
         let info = transform_metadata(raw(), &tz);
         assert_eq!(info.author, None);

@@ -6,6 +6,7 @@
 use std::collections::{HashMap, HashSet};
 
 use omni_ai::{AiError, ModelRole};
+use omni_core::clock::utc_date_stamp;
 use omni_store::cbor::Extra;
 use omni_store::{Store, StoreError};
 use schemars::JsonSchema;
@@ -25,7 +26,6 @@ use super::types::{
     PodcastTasteProfileContent, PodcastTasteProfileData,
 };
 use crate::account::ListenedEpisode;
-use crate::js::to_date_stamp;
 use crate::models::{Models, Refine, in_range};
 use crate::persistence::{PodcastFeedback, PodcastRecommendationData, PodcastRecommendationStatus};
 
@@ -422,7 +422,7 @@ fn compact_evidence(item: &PodcastTasteEvidenceData) -> Value {
     }
     out.insert(
         "observed_at".into(),
-        Value::String(to_date_stamp(item.observed_at)),
+        Value::String(utc_date_stamp(item.observed_at)),
     );
     if let Some(completion) = item.completion {
         out.insert("completion".into(), Value::from(completion));

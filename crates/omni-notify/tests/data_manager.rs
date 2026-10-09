@@ -1,5 +1,4 @@
-//! Port of `src/data-manager.spec.ts`, plus the `/api/data/entities/:slug`
-//! route contract.
+//! The data manager, plus the `/api/data/entities/:slug` route contract.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -209,7 +208,7 @@ async fn isolates_malformed_blobs_and_allows_exact_raw_key_deletion() {
 }
 
 #[tokio::test]
-async fn routes_answer_like_the_ts_server() {
+async fn routes_answer_with_the_documented_bodies() {
     let app = omni_testkit::TestApp::new().await;
     upsert(&app.ctx.store, row("a", "1", "ready", 1.0)).await;
     let manager = DataManager::new(app.ctx.store.clone(), vec![managed(None, None)]);

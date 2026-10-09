@@ -1,11 +1,11 @@
 //! A cookie jar with tough-cookie 6 semantics and its `serializeSync()` JSON format.
 //!
 //! The Apple session persists `JSON.stringify(jar.serializeSync())`; this module reads
-//! and writes the same document so the TypeScript service and this port can share
-//! `/data/reminders-private` (rollback in both directions). Matching follows
+//! and writes that document unchanged, so the stored session in
+//! `/data/reminders-private` stays valid. Matching follows
 //! tough-cookie's `getCookies` (host-only and domain matching, `pathMatch`, secure
 //! contexts, lazy expiry with `lastAccessed`-relative Max-Age) and ordering follows
-//! `cookieCompare`.
+//! tough-cookie's `cookieCompare`.
 //!
 //! Deliberate simplification: tough-cookie rejects cookie domains that are public
 //! suffixes using the full Public Suffix List. Requests here only reach the Apple
@@ -628,7 +628,6 @@ impl CookieJar {
         Value::Object(obj)
     }
 
-    /// `removeAllCookiesSync()`.
     pub fn clear(&mut self) {
         self.cookies.clear();
     }
@@ -642,7 +641,7 @@ impl CookieJar {
         self.cookies.is_empty()
     }
 
-    /// `putCookie`: replaces `(domain, path, key)` in place, else appends.
+    /// Replaces `(domain, path, key)` in place, else appends.
     fn put(&mut self, cookie: Cookie) {
         match self
             .cookies

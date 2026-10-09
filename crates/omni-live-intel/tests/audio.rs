@@ -1,7 +1,5 @@
-//! Port of `src/live-check/intelligence/audio.spec.ts`, plus capture through
-//! fake `yt-dlp` / `ffmpeg` executables (no network).
-//!
-//! The TS cases drive `node -e`; these use `sh -c`. The timeout case runs on
+//! Audio capture through fake `yt-dlp` / `ffmpeg` executables (`sh -c`, no
+//! network). The timeout case runs on
 //! real time (25 ms) because tokio's paused clock cannot advance while a real
 //! child process is awaited.
 #![cfg(unix)]

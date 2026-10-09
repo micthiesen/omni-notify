@@ -1,4 +1,4 @@
-//! Scheduler acceptance tests (WP00): no overlap, fires skipped during a
+//! Scheduler acceptance tests: no overlap, fires skipped during a
 //! run, jitter bounds, startup trigger mapping, uninterruptible runs on
 //! shutdown, and the ERROR log for failed runs. These run on real time with
 //! an every-second schedule, because the store thread defeats paused-time

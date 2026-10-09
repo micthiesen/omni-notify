@@ -31,7 +31,6 @@ pub const EXECUTE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Every failure the repair pass can see.
 #[derive(Debug, thiserror::Error)]
 pub enum RepairError {
-    /// `ObserverRepairError`.
     #[error("{operation}: {cause}")]
     Operation { operation: String, cause: String },
     #[error(transparent)]
@@ -102,7 +101,7 @@ fn repair_marker(issue_id: i64) -> String {
     format!("[Omni repair {issue_id}/")
 }
 
-/// `issueRevision`: sha256 (first 24 hex) of the JS JSON of the report scope,
+/// Sha256 (first 24 hex) of the JS JSON of the report scope,
 /// media identity and human comments (Omni's own repair comments excluded).
 pub fn issue_revision(issue: &ObserverIssue) -> String {
     let mut value = Map::new();
@@ -146,7 +145,7 @@ pub fn issue_revision(issue: &ObserverIssue) -> String {
     digest[..24].to_owned()
 }
 
-/// `failureMessage`: never copies API bodies or model output into notifications/comments.
+/// Never copies API bodies or model output into notifications/comments.
 pub fn failure_message(error: &RepairError) -> String {
     let operation = error.operation_name().unwrap_or("repair operation");
     format!(

@@ -42,7 +42,7 @@ pub async fn main(command: Command) -> u8 {
         }
         Command::Healthcheck => healthcheck().await,
         Command::Doctor { image } => doctor(image).await,
-        Command::CompatAudit(args) => compat_audit(&args).await,
+        Command::CompatAudit(args) => compat_audit(&args),
         Command::RunTaskUsage => {
             stderr_line("Usage: --run-task <TaskName>");
             EXIT_FAILURE
@@ -245,7 +245,7 @@ where
     code
 }
 
-/// `HEALTHCHECK`: `GET /api/health` on `FRONTEND_PORT`.
+/// `GET /api/health` on `FRONTEND_PORT`.
 async fn healthcheck() -> u8 {
     let config = match load_config() {
         Ok(config) => config,
@@ -307,9 +307,9 @@ async fn doctor(image: bool) -> u8 {
     }
 }
 
-async fn compat_audit(args: &crate::compat_audit::AuditArgs) -> u8 {
+fn compat_audit(args: &crate::compat_audit::AuditArgs) -> u8 {
     let now = omni_core::clock::Clock::now_ms(&SystemClock);
-    match crate::compat_audit::run(args, now).await {
+    match crate::compat_audit::run(args, now) {
         Ok((clean, report)) => {
             stdout_text(&report);
             if clean { 0 } else { EXIT_FAILURE }

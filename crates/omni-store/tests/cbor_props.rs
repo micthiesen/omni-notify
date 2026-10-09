@@ -1,6 +1,5 @@
-//! Property tests: every encodable value decodes, and decoding then
-//! re-encoding is a fixed point (the byte-identity the production audit relies
-//! on); entity keys never collide.
+//! Property tests: every encodable value decodes back to the same JS value,
+//! re-encoding a decoded value is a fixed point, and entity keys never collide.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use indexmap::IndexMap;
@@ -43,10 +42,12 @@ fn value() -> impl Strategy<Value = JsValue> {
 
 proptest! {
     #[test]
-    fn decode_then_encode_is_a_fixed_point(v in value()) {
+    fn encoded_values_read_back(v in value()) {
         let bytes = cbor::encode(&v);
         let decoded = cbor::decode(&bytes).expect("own output decodes");
         let again = cbor::encode(&decoded);
+        let reread = cbor::decode(&again).expect("decodes");
+        prop_assert!(cbor::same_value(&reread, &decoded), "{:?} != {:?}", reread, decoded);
         prop_assert_eq!(&again, &cbor::encode(&cbor::decode(&again).expect("decodes")));
         let via_serde = cbor::to_value(&cbor::from_value::<JsValue>(decoded).expect("serde in")).expect("serde out");
         prop_assert_eq!(cbor::encode(&via_serde), again);
@@ -92,9 +93,9 @@ enum Tagged {
     Item { note: Option<String> },
 }
 
-/// TS writes explicit `undefined` properties; serde's buffered paths
+/// Older stored rows hold explicit `undefined` properties; serde's buffered paths
 /// (`#[serde(flatten)]`, internally tagged enums) read them as absent options,
-/// and unknown `undefined`s survive a round trip as `undefined`, not `null`.
+/// and unknown `undefined`s never turn into `null`.
 #[test]
 fn explicit_undefined_reads_through_buffered_serde_paths() {
     let doc = JsValue::Object(IndexMap::from([

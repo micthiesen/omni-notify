@@ -1,4 +1,4 @@
-//! Streamer routes (`server.ts` 720-778, 309-397), the `LiveDirectory` port
+//! Streamer routes, the `LiveDirectory` port
 //! and subsystem assembly.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -79,7 +79,7 @@ async fn seed(app: &omni_testkit::TestApp) {
     upsert_status(store, StreamerStatus::Offline(offline))
         .await
         .unwrap();
-    // A raw WP05 intelligence document with a Date and an undefined member.
+    // A raw intelligence document with a Date and an undefined member.
     let doc = JsValue::Object(
         [
             ("streamerId".to_owned(), JsValue::String("destiny".into())),

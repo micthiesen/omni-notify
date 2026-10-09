@@ -1,7 +1,5 @@
-//! Port of `src/mcp/tools/claude-sessions.spec.ts` (all cases kept).
-//!
-//! The TS harness fakes `noteTurnStarted`; here a real watcher records the
-//! turn and the case reads the `mcp-claude-session-watch` row it wrote.
+//! Claude session tools. A real watcher records each turn and the cases read
+//! the `mcp-claude-session-watch` row it wrote.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

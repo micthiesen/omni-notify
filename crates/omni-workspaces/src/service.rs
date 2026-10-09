@@ -84,7 +84,6 @@ impl WorkspaceService {
         &self.inner.definitions
     }
 
-    /// `getWorkspaceDefinition`.
     pub fn definition(&self, id: &str) -> Option<&WorkspaceDefinition> {
         self.inner.definitions.iter().find(|d| d.id == id)
     }

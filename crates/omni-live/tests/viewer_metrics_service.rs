@@ -1,5 +1,4 @@
-//! Port of `src/live-check/metrics/ViewerMetricsService.spec.ts` over a real
-//! temporary docstore (the TS mocked the persistence module).
+//! The viewer metrics service over a real temporary docstore.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -145,7 +144,7 @@ async fn does_not_notify_while_a_peak_is_still_climbing() {
 }
 
 #[tokio::test]
-async fn uses_the_effect_clock_for_bucket_and_confirmed_peak_timestamps() {
+async fn uses_the_test_clock_for_bucket_and_confirmed_peak_timestamps() {
     let (store, service, _notifier) = service(42_000).await;
     service
         .record_viewer_count(

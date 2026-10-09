@@ -75,7 +75,7 @@ pub async fn update_stage(
         .await
 }
 
-/// `RecordLivestreamEventInput`: id and time default to a new UUID and now.
+/// Id and time default to a new UUID and now.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NewLivestreamEvent {
     pub streamer_id: String,
@@ -237,7 +237,7 @@ pub async fn record_feedback(
         return Ok(None);
     };
     let note = note
-        .map(|n| crate::js_math::js_trim(n).to_owned())
+        .map(|n| omni_core::js::trim(n).to_owned())
         .filter(|n| !n.is_empty());
     let alert_type = alert.alert_type;
     let feedback_note = note.clone();

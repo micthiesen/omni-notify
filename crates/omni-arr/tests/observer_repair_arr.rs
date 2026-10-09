@@ -1,5 +1,5 @@
-//! Port of `src/observer-repair/arr.spec.ts` (planning is pure; inspection and
-//! mutation run against wiremock), plus a record-mode case.
+//! Scoped Arr repairs (planning is pure; inspection and mutation run against
+//! wiremock), plus a record-mode case.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::SideEffects;

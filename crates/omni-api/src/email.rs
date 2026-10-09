@@ -1,6 +1,6 @@
-//! Owned by WP02: email activity, activity logs, sender rules and feedback
-//! (`src/server.ts` email routes). The string unions are shared with the
-//! persisted entities in `omni-email`, which re-exports them.
+//! Email activity, activity logs, sender rules and feedback. The string unions
+//! are shared with the persisted entities in `omni-email`, which re-exports
+//! them.
 
 use serde::{Deserialize, Serialize};
 
@@ -105,7 +105,6 @@ impl EmailActivityOutcome {
     }
 }
 
-/// `EmailRuleScope`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuleScope {
@@ -124,7 +123,6 @@ impl RuleScope {
     }
 }
 
-/// `EmailRuleVerdict`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuleVerdict {
@@ -152,7 +150,7 @@ pub enum EmailFeedbackVerdict {
     Missed,
 }
 
-/// `serializeEmailActivity()`: optional fields are explicit `null`s.
+/// Optional fields are explicit `null`s.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailActivity {
@@ -299,7 +297,7 @@ pub struct EmailFeedbackListResponse {
     pub feedback: Vec<EmailFeedback>,
 }
 
-/// Path builders for the WP02 routes.
+/// Path builders for the email routes.
 pub mod paths {
     use crate::common::encode_uri_component;
 

@@ -1,5 +1,4 @@
-//! Port of `src/recommendations/plex/client.spec.ts` (a closure-backed
-//! `PlexGet` replaces the mocked transport).
+//! The Plex client over a closure-backed `PlexGet`.
 #![allow(clippy::expect_used)]
 
 use std::sync::{Arc, Mutex};

@@ -1,7 +1,7 @@
 //! omni_core::js and omni_core::digest against V8 reference output.
 //!
 //! The committed `tests/golden/js.json` was captured from node 24 (default
-//! locale en-US) and the former TS fingerprint code.
+//! locale en-US).
 #![allow(clippy::expect_used)]
 
 use std::cmp::Ordering;
@@ -148,7 +148,7 @@ fn digest_matches_node() {
 }
 
 #[test]
-fn fingerprint_evidence_matches_ts() {
+fn fingerprint_evidence_matches_the_golden() {
     for case in section("fingerprint") {
         let items = case["items"].as_array().expect("items");
         let actual = fingerprint_evidence(items, |item| {
@@ -161,7 +161,7 @@ fn fingerprint_evidence_matches_ts() {
 
 #[test]
 fn fingerprint_spec_pinned_value() {
-    // src/utils/fingerprint.spec.ts: "produces a pinned, byte-stable fingerprint".
+    // A pinned, byte-stable fingerprint.
     let b = serde_json::json!({"evidenceId": "b", "kind": "listen", "showTitle": "Show B", "observedAt": 200});
     let a = serde_json::json!({"evidenceId": "a", "kind": "listen", "showTitle": "Show A", "observedAt": 100, "starred": true});
     fn id(v: &Value) -> &str {

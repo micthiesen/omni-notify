@@ -1,5 +1,4 @@
-//! Run history entities with the exact TS shapes and the store operations of
-//! `src/task-runs/persistence.ts`.
+//! Run history entities in their exact stored shapes, and their store operations.
 
 use omni_store::cbor::{self, Extra};
 use omni_store::entity::{self, Entity, EntityOps as _, EntityWrite as _, ModifyOpts, UpsertOpts};
@@ -108,7 +107,6 @@ pub struct RunLogsData {
     pub dropped: u64,
 }
 
-/// `makeRunId`.
 pub fn make_run_id(task_name: &str) -> String {
     format!("{task_name}:{}", omni_core::ids::uuid_v4())
 }
@@ -127,7 +125,7 @@ pub struct RunStart {
     pub started_at: i64,
 }
 
-/// `recordRunStart`: upserts a `running` row and prunes the task's history,
+/// Upserts a `running` row and prunes the task's history,
 /// without touching the catch-up cursor.
 pub async fn record_run_start(
     store: &Store,
@@ -176,7 +174,7 @@ fn new_run(
     }
 }
 
-/// `recordRunStartAndMarkSchedule`: the run row, the catch-up cursor and the
+/// The run row, the catch-up cursor and the
 /// 50-run prune in one transaction, so a crash can never advance the cursor
 /// without a corresponding run row.
 pub async fn record_run_start_and_mark_schedule(
@@ -210,7 +208,7 @@ pub async fn record_run_start_and_mark_schedule(
 
 /// Deletes the runs (and their log rows) beyond the newest
 /// [`KEEP_PER_TASK`] for `task_name`. Reads raw rows including expired ones
-/// and skips undecodable rows, like the TS collection reads.
+/// and skips undecodable rows.
 fn prune_in(tx: &mut omni_store::Tx<'_>, task_name: &str) -> Result<(), StoreError> {
     let prefix = entity::prefix::<TaskRunData>(&[])?;
     let mut runs = Vec::new();
@@ -243,7 +241,7 @@ pub struct RunEnd {
     pub finished_at: i64,
 }
 
-/// `recordRunEnd`: patches status, error, summary and `finishedAt`. Returns
+/// Patches status, error, summary and `finishedAt`. Returns
 /// the settled run, or `None` when the row no longer exists.
 pub async fn record_run_end(
     store: &Store,
@@ -268,7 +266,7 @@ pub async fn record_run_end(
         .await
 }
 
-/// `markInterruptedRuns`: flips runs left `running` by a crashed process to
+/// Flips runs left `running` by a crashed process to
 /// errors. Returns how many were repaired.
 pub async fn mark_interrupted_runs(store: &Store, now: i64) -> Result<usize, StoreError> {
     store
@@ -296,7 +294,7 @@ pub async fn mark_interrupted_runs(store: &Store, now: i64) -> Result<usize, Sto
         .await
 }
 
-/// `getRuns`: newest first, optionally for one task.
+/// Newest first, optionally for one task.
 pub async fn get_runs(
     store: &Store,
     task_name: Option<&str>,
@@ -321,7 +319,6 @@ pub async fn get_runs(
     Ok(runs)
 }
 
-/// `getLastRun`.
 pub async fn get_last_run(
     store: &Store,
     task_name: &str,
@@ -332,7 +329,6 @@ pub async fn get_last_run(
         .next())
 }
 
-/// `getRun`.
 pub async fn get_run(store: &Store, run_id: &str) -> Result<Option<TaskRunData>, StoreError> {
     let run_id = run_id.to_owned();
     store
@@ -340,7 +336,6 @@ pub async fn get_run(store: &Store, run_id: &str) -> Result<Option<TaskRunData>,
         .await
 }
 
-/// `getTaskScheduleState`.
 pub async fn get_task_schedule_state(
     store: &Store,
     task_name: &str,
@@ -351,7 +346,6 @@ pub async fn get_task_schedule_state(
         .await
 }
 
-/// `markScheduleEvaluated`.
 pub async fn mark_schedule_evaluated(
     store: &Store,
     task_name: &str,
@@ -369,7 +363,7 @@ pub async fn mark_schedule_evaluated(
         .await
 }
 
-/// `saveRunLogs`: one compressed row per run; nothing for a silent run.
+/// One compressed row per run; nothing for a silent run.
 pub async fn save_run_logs(store: &Store, data: RunLogsData) -> Result<(), StoreError> {
     if data.lines.is_empty() && data.dropped == 0 {
         return Ok(());
@@ -387,7 +381,7 @@ pub async fn save_run_logs(store: &Store, data: RunLogsData) -> Result<(), Store
         .await
 }
 
-/// `getRunLogs`: reads compressed or legacy rows. An unreadable row (for
+/// Reads compressed or legacy rows. An unreadable row (for
 /// example one half-written when the container was killed) is deleted with a
 /// warning and treated as no logs, so the endpoint cannot fail forever.
 pub async fn get_run_logs(store: &Store, run_id: &str) -> Result<Option<RunLogsData>, StoreError> {
@@ -424,7 +418,7 @@ pub async fn get_run_logs(store: &Store, run_id: &str) -> Result<Option<RunLogsD
     }
 }
 
-/// `selectRunsToPrune`: the runs beyond the newest `keep` for `task_name`.
+/// The runs beyond the newest `keep` for `task_name`.
 pub fn select_runs_to_prune<'a>(
     runs: &'a [TaskRunData],
     task_name: &str,
@@ -437,7 +431,6 @@ pub fn select_runs_to_prune<'a>(
 }
 
 impl From<&TaskRunData> for omni_api::runs::Run {
-    /// `serializeRun()`.
     fn from(run: &TaskRunData) -> Self {
         use omni_api::runs::{RunStatus, RunTrigger};
         omni_api::runs::Run {

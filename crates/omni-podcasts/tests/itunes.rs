@@ -1,5 +1,4 @@
-//! Port of `src/podcast-recs/itunes.spec.ts`. The streamed-response cases run
-//! against a local mock server (the TS spec injected a fake stream).
+//! iTunes search. The streamed-response cases run against a local mock server.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_http::public::PublicHttpClient;

@@ -1,4 +1,4 @@
-//! One loop per task (mitools `Scheduler.ts` on Effect `Schedule.cron`).
+//! One loop per task.
 //!
 //! Each loop sleeps until the first cron match after the previous run
 //! completed, so a fire that lands during a run is skipped. A uniform jitter

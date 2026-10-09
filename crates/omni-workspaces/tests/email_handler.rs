@@ -1,5 +1,4 @@
-//! Port of `src/workspaces/emailHandler.test.ts` against a real store and a
-//! fake run trigger.
+//! The `Workspaces` email handler against a real store and a fake run trigger.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

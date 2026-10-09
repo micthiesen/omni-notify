@@ -6,10 +6,10 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use futures::future::BoxFuture;
+use omni_core::clock::log_timestamp;
 use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 use serde_json::Value;
 
-use crate::js::log_timestamp;
 use crate::log_file::LogFile;
 use crate::pipeline::{
     PipelineError, PodcastDeps, PodcastPipelineOptions, range_error, run_podcast_pipeline,
@@ -72,7 +72,7 @@ impl PodcastRecommendationTask {
     }
 }
 
-/// `parseMaxRecommendations`: an integer 1..=5 under `maxRecommendations`.
+/// An integer 1..=5 under `maxRecommendations`.
 pub fn parse_max_recommendations(input: &Value) -> Result<i64, String> {
     let value = input.get("maxRecommendations").and_then(Value::as_f64);
     match value {

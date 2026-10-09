@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/filters.spec.ts`.
+//! Candidate eligibility filters.
 #![allow(clippy::expect_used)]
 
 use std::collections::HashSet;

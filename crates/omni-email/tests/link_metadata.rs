@@ -1,6 +1,5 @@
-//! Port of `src/email/linkMetadata.spec.ts`. The TS spec parses each fixture
-//! with mailparser; here the fixture is split the way mailparser reports it
-//! (`headerLines` with folded continuations joined, the HTML or text body).
+//! Link metadata extraction. Each fixture is split into header lines (folded
+//! continuations joined) and the HTML or text body.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_core::email::{EmailLink, EmailLinkSource, ListUnsubscribe};

@@ -1,4 +1,4 @@
-//! `omni-notify --preview [--port N]` (replaces `src/tools/preview-server.ts`):
+//! `omni-notify --preview [--port N]`:
 //! the real HTTP server, subsystems and registry over a throwaway database
 //! seeded with fake streamers, statuses, viewer history, runs,
 //! recommendations, briefings, email activity and a pet, plus fake tasks that
@@ -223,7 +223,7 @@ fn viewer_metrics(now: i64, streamer_id: &str, base: f64, days: i64) -> Value {
     })
 }
 
-/// Seed documents as `(entity, JSON payload)` in TS shapes.
+/// Seed documents as `(entity, JSON payload)` in their stored shapes.
 pub fn seed_documents(now: i64) -> Vec<(&'static str, Value)> {
     let mut docs = vec![
         (

@@ -1,4 +1,4 @@
-//! Calendar events from email (WP03): candidate filter, AI extraction and
+//! Calendar events from email: candidate filter, AI extraction and
 //! sanitization, iCloud CalDAV discovery (RFC 6764) and writes, tracked-event
 //! persistence, the `CalendarEvents` email handler, the calendar MCP tools and
 //! the `CalendarWriter` port.
@@ -72,7 +72,7 @@ pub fn caldav(ctx: &AppContext) -> Caldav {
     )
 }
 
-/// The `CalendarWriter` port implementation (WP14 sets it on `ctx.ports`).
+/// The `CalendarWriter` port implementation (wiring sets it on `ctx.ports`).
 pub fn calendar_writer(ctx: &AppContext) -> Arc<dyn CalendarWriter> {
     Arc::new(writer::CaldavCalendarWriter::new(caldav(ctx)))
 }

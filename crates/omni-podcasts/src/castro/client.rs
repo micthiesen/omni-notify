@@ -13,6 +13,7 @@ use futures::future::BoxFuture;
 use jiff::tz::TimeZone;
 use moka::future::Cache;
 use omni_core::clock::SharedClock;
+use omni_core::js::date_parse;
 
 use super::api::{CastroFailure, CastroRequestError, CastroTransport};
 use super::fractional::generate_key_between;
@@ -26,7 +27,6 @@ use crate::account::{
     PodcastEpisodeSearchResult, PodcastQueuePosition, PodcastSearchResult, PodcastSubscription,
     PodcastWriteResult, QueuedEpisode, SubscribeToShowRequest, Unavailable,
 };
-use crate::js::parse_date;
 use crate::titles::normalize_title;
 use crate::types::normalize_feed_url;
 
@@ -259,7 +259,7 @@ impl CastroClient {
                     .iter()
                     .filter_map(move |episode_state| {
                         let played = episode_state.last_played.as_deref()?;
-                        let listened_at = parse_date(played, &TimeZone::UTC)?;
+                        let listened_at = date_parse(played, &TimeZone::UTC)?;
                         (listened_at >= cutoff).then_some((podcast, episode_state, listened_at))
                     })
             })
@@ -542,7 +542,7 @@ impl CastroClient {
     }
 }
 
-/// `Effect.forEach(..., { concurrency: 8 })`: ordered results, first error wins.
+/// Eight at a time: ordered results, first error wins.
 async fn ordered<T>(
     futures: Vec<BoxFuture<'_, Result<T, ClientError>>>,
 ) -> Result<Vec<T>, ClientError> {
@@ -636,7 +636,7 @@ impl PodcastAccount for CastroClient {
                     title: r.title,
                     show_title: r.podcast_name,
                     author: r.author,
-                    published_at: parse_date(&r.published_at, &TimeZone::UTC),
+                    published_at: date_parse(&r.published_at, &TimeZone::UTC),
                     artwork_url: r.artwork_url.or(r.podcast_artwork_url),
                 })
                 .collect())

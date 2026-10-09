@@ -1,4 +1,4 @@
-//! Ports `src/press-pods/retrievers/x.spec.ts` against a local mock of the
+//! The X retriever against a local mock of the
 //! FxTwitter API.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

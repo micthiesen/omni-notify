@@ -1,8 +1,6 @@
-//! Port of `src/emails/send.spec.ts` against an in-process fake SMTP server.
-//!
-//! Case mapping: "returns false when SMTP ... is unavailable" is the `None`
-//! from `resolve_compose_values` (no `Mailer` exists), covered in
-//! `client.rs`; here a partial RCPT rejection is an error, never success.
+//! SMTP sending against an in-process fake SMTP server. A partial RCPT
+//! rejection is an error, never success. Missing SMTP configuration (no
+//! `Mailer`) is covered in `client.rs`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::{Arc, Mutex};

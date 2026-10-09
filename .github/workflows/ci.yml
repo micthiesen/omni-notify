@@ -18,16 +18,22 @@ permissions:
 
 # Actions are pinned to full commit SHAs; the comment names the release.
 #
-# The image build starts beside lint-and-test instead of after it: it is the
-# longest job and needs nothing from the tests. It writes its layers to the
-# GitHub Actions cache without pushing. `publish` runs only after both pass and
+# The checks run as two parallel jobs, lint and test, so neither waits on the
+# other's compile. Each keeps its own Rust cache: clippy writes check metadata
+# (native and wasm32) while tests write full debug builds, and one shared entry
+# would hold whichever job saved first and leave the other cold.
+#
+# The image build starts beside them instead of after: it is the longest job and
+# needs nothing from the checks. It writes its layers to the GitHub Actions cache
+# without pushing. `publish` runs only after lint, test and image all pass and
 # repeats the same build, which is then fully cached, to push the image; nothing
 # untested reaches the registry. Pull requests build the image to prove the
 # Dockerfile but neither push nor write the shared caches.
 
 jobs:
-  lint-and-test:
+  lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -39,22 +45,22 @@ jobs:
           rustup toolchain install
           rustup target add wasm32-unknown-unknown
 
+      - name: Check formatting
+        run: cargo fmt --all --check
+
       - name: Cache Cargo build
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          # One entry holds both the native debug artifacts (clippy, tests) and the
-          # wasm32 clippy artifacts of the web crates; the key already covers the
-          # rustc version, Cargo.lock and rust-toolchain.toml.
-          shared-key: native-and-wasm32
+          # Native and wasm32 clippy artifacts of this job only; the key already
+          # covers the rustc version, Cargo.lock and rust-toolchain.toml.
+          shared-key: lint
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fetch the verified sherpa-onnx static library
+        # Clippy runs build scripts too, including sherpa-onnx-sys's, which reads it.
         run: |
           deploy/sherpa-onnx/fetch-static-lib.sh "$RUNNER_TEMP/sherpa-onnx"
           echo "SHERPA_ONNX_ARCHIVE_DIR=$RUNNER_TEMP/sherpa-onnx" >> "$GITHUB_ENV"
-
-      - name: Check formatting
-        run: cargo fmt --all --check
 
       - name: Lint
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -64,6 +70,9 @@ jobs:
           cargo clippy -p omni-web -p omni-web-kit -p omni-web-pages
           --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
 
+      - name: Check crate dependency direction
+        run: cargo xtask deps-check
+
       - name: Install pinned cargo-deny
         uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
@@ -72,14 +81,44 @@ jobs:
       - name: Check advisories, licenses, bans and sources
         run: cargo deny --locked check
 
-      - name: Check crate dependency direction
-        run: cargo xtask deps-check
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the pinned Rust toolchain
+        # rust-toolchain.toml selects the version and components. Tests run on
+        # the host target only, so wasm32 is not installed here.
+        run: rustup toolchain install
+
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # Native test builds of this job only.
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Fetch the verified sherpa-onnx static library
+        run: |
+          deploy/sherpa-onnx/fetch-static-lib.sh "$RUNNER_TEMP/sherpa-onnx"
+          echo "SHERPA_ONNX_ARCHIVE_DIR=$RUNNER_TEMP/sherpa-onnx" >> "$GITHUB_ENV"
+
+      - name: Install pinned cargo-nextest
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-nextest@0.9.143
 
       - name: Run tests
-        run: cargo test --workspace --locked
+        # The ci profile in .config/nextest.toml: no retries, no fail-fast, and
+        # hung tests are terminated. The workspace has no doctests, which nextest
+        # would skip; add `cargo test --workspace --locked --doc` if that changes.
+        run: cargo nextest run --workspace --locked --profile ci
 
   # The image's web stage runs the release trunk build with the pinned tools, so
-  # the frontend build is checked here rather than in lint-and-test.
+  # the frontend build is checked here rather than in lint or test.
   image:
     runs-on: ubuntu-latest
 
@@ -102,7 +141,7 @@ jobs:
 
   publish:
     runs-on: ubuntu-latest
-    needs: [lint-and-test, image]
+    needs: [lint, test, image]
     if: github.event_name != 'pull_request'
 
     permissions:
@@ -144,12 +183,12 @@ jobs:
 
   notify:
     runs-on: ubuntu-latest
-    needs: [lint-and-test, image, publish]
+    needs: [lint, test, image, publish]
     if: >-
       always() &&
       github.ref == 'refs/heads/main' &&
-      (needs.lint-and-test.result == 'failure' || needs.image.result == 'failure' ||
-      needs.publish.result == 'failure')
+      (needs.lint.result == 'failure' || needs.test.result == 'failure' ||
+      needs.image.result == 'failure' || needs.publish.result == 'failure')
 
     steps:
       - name: Send CI failure notification
@@ -159,7 +198,8 @@ jobs:
         run: |
           TITLE="omni-notify CI failed"
           FAILED=""
-          [ "${{ needs.lint-and-test.result }}" = "failure" ] && FAILED="lint-and-test"
+          [ "${{ needs.lint.result }}" = "failure" ] && FAILED="lint"
+          [ "${{ needs.test.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }test"
           [ "${{ needs.image.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }image"
           [ "${{ needs.publish.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }publish"
           MESSAGE="Failed jobs: ${FAILED}"

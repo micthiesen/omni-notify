@@ -1,5 +1,5 @@
 //! Weekly podcast taste reflection from listen history and recommendation
-//! outcomes (`src/podcast-recs/reflection/*`).
+//! outcomes.
 
 pub mod core;
 pub mod evidence;

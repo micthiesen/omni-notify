@@ -1,4 +1,4 @@
-//! Port of `src/live-check/sessions.spec.ts`. The ISO-string case decodes a
+//! Completed live sessions. The ISO-string case decodes a
 //! status whose `startedAt` is a string (the typed `JsDate` accepts it).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

@@ -113,7 +113,7 @@ fn tail_500(text: &str) -> String {
     omni_core::js::utf16_slice(text, len.saturating_sub(500), len).into_owned()
 }
 
-/// `runAudioProcess`: runs `command args` with stdin closed.
+/// Runs `command args` with stdin closed.
 pub async fn run_audio_process(
     command: &str,
     args: &[String],

@@ -1,25 +1,25 @@
-//! `src/workspaces/errors.ts`.
+//! Workspace errors.
 
 use omni_core::BoxError;
 
-/// Workspace failures. Each displays as its TS `message`.
+/// Workspace failures. Each displays as its user-facing message.
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
-    /// `WorkspaceValidationError`: rejected input or model output.
+    /// Rejected input or model output.
     #[error("{message}")]
     Validation {
         message: String,
         #[source]
         source: Option<BoxError>,
     },
-    /// `WorkspaceOperationError`: `"<operation> failed: <cause>"`.
+    /// `"<operation> failed: <cause>"`.
     #[error("{operation} failed: {source}")]
     Operation {
         operation: &'static str,
         #[source]
         source: BoxError,
     },
-    /// `WorkspaceActionError`: an approval or rejection that cannot proceed.
+    /// An approval or rejection that cannot proceed.
     #[error("{message}")]
     Action {
         action_id: String,

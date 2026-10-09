@@ -1,4 +1,4 @@
-//! `GET /api/briefings` (`src/server.ts` 1641-1668) and the `BriefingsReader` port.
+//! `GET /api/briefings` and the `BriefingsReader` port.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use axum::http::StatusCode;

@@ -1,9 +1,8 @@
-//! PressPods errors (`src/press-pods/effect.ts`, `errors.ts`, `httpError.ts`).
+//! PressPods errors.
 //!
 //! One error type for the whole pipeline. Every variant names the operation
-//! that failed (TS `PressPodsError.operation`) and keeps enough of its cause
-//! to classify it: the durable job queue retries only transient failures
-//! (`isRetryableError`) and stores a short summary (`summarizeError`).
+//! that failed and keeps enough of its cause to classify it: the durable job
+//! queue retries only transient failures and stores a short summary.
 
 use omni_ai::AiError;
 use omni_core::process::ProcessError;
@@ -58,20 +57,19 @@ pub enum PressPodsError {
         #[source]
         source: Option<ProcessError>,
     },
-    /// Data that failed validation (`InvalidPressPodsDataError`).
+    /// Data that failed validation.
     #[error("{operation}: {message}")]
     InvalidData { operation: String, message: String },
-    /// Any other expected failure (`new Error(message)` causes).
+    /// Any other expected failure.
     #[error("{operation}: {message}")]
     Failed {
         operation: String,
         message: String,
-        /// Explicit retry hint (`PressPodsError.retryable`); `None` defers to classification.
+        /// Explicit retry hint; `None` defers to classification.
         retryable: Option<bool>,
     },
-    /// The operation exceeded its deadline (Effect `timeout`). Like Effect's
-    /// `TimeoutError` in TS, this is not a transient-network signal and does
-    /// not trigger the job queue's backoff retry.
+    /// The operation exceeded its deadline. This is not a transient-network
+    /// signal and does not trigger the job queue's backoff retry.
     #[error("{operation}: timed out")]
     Timeout { operation: String },
 }
@@ -152,7 +150,7 @@ impl PressPodsError {
         }
     }
 
-    /// The cause's own message, without the operation (TS `errorCause(e).message`).
+    /// The cause's own message, without the operation.
     pub fn cause_message(&self) -> String {
         match self {
             PressPodsError::Http { source, .. } => source.to_string(),
@@ -187,11 +185,11 @@ impl PressPodsError {
         }
     }
 
-    /// `isRetryableError(errorCause(e))`: provider errors use the AI SDK rule,
-    /// HTTP statuses retry on 429 and 5xx, network failures and HTTP timeouts
-    /// (got's `ETIMEDOUT`) retry, and everything else (bad article, extraction
-    /// failure, invalid data, local I/O, an Effect-style deadline) fails
-    /// permanently.
+    /// Whether the job queue retries this failure: provider errors use the
+    /// model client's rule, HTTP statuses retry on 429 and 5xx, network
+    /// failures and HTTP timeouts retry, and everything else (bad article,
+    /// extraction failure, invalid data, local I/O, an operation deadline)
+    /// fails permanently.
     pub fn is_retryable(&self) -> bool {
         match self {
             PressPodsError::Ai { source, .. } => source.is_retryable(),
@@ -210,12 +208,11 @@ impl PressPodsError {
         }
     }
 
-    /// `summarizeError(errorCause(e))`: `"<status>: <body or message>"` when
-    /// the cause itself carries a status (TTS/STT status errors, AI SDK
-    /// `APICallError`), else `"<name>: <message>"` capped at 300 UTF-16 units.
-    /// HTTP client failures read like got's errors (`HTTPError: Response code
-    /// 503 (Service Unavailable)`, `RequestError: ...`), whose status lives on
-    /// the response rather than the error.
+    /// The stored failure summary: `"<status>: <body or message>"` when the
+    /// cause itself carries a status (TTS/STT status errors, provider errors),
+    /// else `"<name>: <message>"` capped at 300 UTF-16 units. HTTP client
+    /// failures keep the established wording (`HTTPError: Response code 503
+    /// (Service Unavailable)`, `RequestError: ...`).
     pub fn summary(&self) -> String {
         match self {
             PressPodsError::Status { status, body, .. } => {
@@ -227,7 +224,7 @@ impl PressPodsError {
                 };
                 return format!("{status}: {detail}");
             }
-            // `APICallError` carries `statusCode` and its own message.
+            // A provider error carries its status and its own message.
             PressPodsError::Ai {
                 source: AiError::Provider { status, message },
                 ..
@@ -263,7 +260,8 @@ impl PressPodsError {
         }
     }
 
-    /// The JS error name the TS summary would print for this cause.
+    /// The error name the stored summary prints for this cause (consistent
+    /// with existing rows).
     fn cause_name(&self) -> &'static str {
         match self {
             PressPodsError::Http { source, .. } => match source {
@@ -287,9 +285,7 @@ pub fn is_retryable_status(status: u16) -> bool {
 
 #[cfg(test)]
 mod errors_spec {
-    //! Ports `src/press-pods/errors.spec.ts`. The TS cases build ad-hoc JS
-    //! error shapes (`statusCode`, `response.statusCode`, `name`, `code`); here
-    //! each shape is the typed variant that carries the same information.
+    //! Retry classification and summaries for each typed error variant.
     use super::*;
 
     fn with_status(status: u16) -> PressPodsError {
@@ -320,7 +316,7 @@ mod errors_spec {
     }
 
     #[test]
-    fn recognizes_got_response_status_codes() {
+    fn recognizes_http_client_status_codes() {
         assert!(with_response_status(429).is_retryable());
         assert!(with_response_status(503).is_retryable());
         assert!(!with_response_status(400).is_retryable());
@@ -357,12 +353,12 @@ mod errors_spec {
     }
 
     #[test]
-    fn deadline_timeouts_are_permanent_like_effect_timeout_errors() {
+    fn deadline_timeouts_are_permanent() {
         assert!(!PressPodsError::timeout("rate article").is_retryable());
     }
 
     #[test]
-    fn http_client_failures_summarize_like_got_errors() {
+    fn http_client_failures_keep_their_summary_wording() {
         assert_eq!(
             with_response_status(503).summary(),
             "HTTPError: Response code 503 (Service Unavailable)"

@@ -5,9 +5,9 @@
 use std::collections::HashSet;
 
 use jiff::tz::TimeZone;
+use omni_core::js::date_parse;
 
 use super::source::{AlertFeed, FeedItem, ResetHistory};
-use crate::js::parse_date;
 use crate::reset_alerts::presentation::{ALERT_LOOKBACK_MS, CLOCK_SKEW_MS};
 
 /// Appends a synthetic `action_claimed` item for each recent, explicitly
@@ -34,7 +34,7 @@ pub fn add_completed_history_alerts(
         let Some(announced_raw) = event.announced_at.as_deref().filter(|s| !s.is_empty()) else {
             continue;
         };
-        let Some(announced_at) = parse_date(announced_raw, tz) else {
+        let Some(announced_at) = date_parse(announced_raw, tz) else {
             continue;
         };
         if announced_at < now - ALERT_LOOKBACK_MS || announced_at > now + CLOCK_SKEW_MS {

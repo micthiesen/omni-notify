@@ -38,7 +38,6 @@ const ALIEXPRESS_ORDER_STATUS_PHRASES: &[&str] = &[
     "awaiting payment",
 ];
 
-/// `isAliexpressOrderStatus`.
 pub fn is_aliexpress_order_status(from_lower: &str, subject: &str) -> bool {
     if !from_lower.contains("aliexpress") {
         return false;
@@ -113,7 +112,6 @@ fn is_blacklisted_sender(from_lower: &str, self_address: Option<&str>) -> bool {
     self_address.is_some_and(|own| from_lower.contains(&own.to_lowercase()))
 }
 
-/// `filterTrackingCandidateEffect`.
 pub async fn filter_tracking_candidate(
     deps: &FilterDeps<'_>,
     email: &TriageEmail,

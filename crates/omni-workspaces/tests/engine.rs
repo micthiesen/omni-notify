@@ -1,5 +1,5 @@
-//! Port of `src/workspaces/engine.test.ts`, against a real store instead of a
-//! mocked transaction (the plan-then-commit guarantee is checked on real rows).
+//! The workspace engine against a real store (the plan-then-commit guarantee
+//! is checked on real rows).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

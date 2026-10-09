@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/types.spec.ts`.
+//! Show identity keys and episode ids.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::types::{make_episode_id, make_show_id, normalize_feed_url};

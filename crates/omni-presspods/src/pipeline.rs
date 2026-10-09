@@ -25,7 +25,7 @@ pub use omni_core::js::to_fixed as js_to_fixed;
 
 const LOG: &str = "PressPods";
 
-/// mitools `getTitleFromUrl`: `"Host - Path / Segments"`.
+/// A fallback title from a URL: `"Host - Path / Segments"`.
 pub fn title_from_url(url: &str) -> String {
     let Ok(parsed) = url::Url::parse(url) else {
         return "Untitled".to_owned();
@@ -64,7 +64,7 @@ pub fn title_from_url(url: &str) -> String {
     title
 }
 
-/// mitools `formatDuration`: `m:ss`, `"0:00"` when unknown or zero.
+/// `m:ss`, `"0:00"` when unknown or zero.
 pub fn format_duration(seconds: Option<f64>) -> String {
     match seconds.filter(|s| *s != 0.0 && !s.is_nan()) {
         None => "0:00".to_owned(),
@@ -344,7 +344,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn titles_from_urls_match_mitools() {
+    fn titles_from_urls() {
         assert_eq!(
             title_from_url("https://www.example.com/some-long-story/part-2"),
             "Example.com - Some Long Story / Part 2"
@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn durations_format_like_mitools() {
+    fn durations_format() {
         assert_eq!(format_duration(None), "0:00");
         assert_eq!(format_duration(Some(0.0)), "0:00");
         assert_eq!(format_duration(Some(523.9)), "8:43");

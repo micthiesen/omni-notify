@@ -6,10 +6,10 @@ use std::collections::HashMap;
 
 use indexmap::IndexMap;
 use jiff::tz::TimeZone;
+use omni_core::js::date_parse;
 use omni_http::Url;
 
 use super::source::{AlertFeed, FeedItem, HistoryEvent, ResetHistory};
-use crate::js::parse_date;
 use crate::reset_alerts::ResetAlert;
 use crate::reset_alerts::presentation::{
     ALERT_LOOKBACK_MS, CLOCK_SKEW_MS, compact_summary, pacific_time,
@@ -20,7 +20,7 @@ pub const FEED_MAX_AGE_MS: i64 = 45 * 60_000;
 
 /// The feed was generated within the last 45 minutes (5 minutes of skew allowed).
 pub fn is_fresh_feed(feed: &AlertFeed, now: i64, tz: &TimeZone) -> bool {
-    let Some(generated) = parse_date(&feed.generated_at, tz) else {
+    let Some(generated) = date_parse(&feed.generated_at, tz) else {
         return false;
     };
     let age = now - generated;
@@ -137,7 +137,7 @@ pub fn select_reset_alerts(
     let event_for = |item: &FeedItem| -> Option<&HistoryEvent> {
         truthy(item.post_id.as_deref()).and_then(|post| by_post.get(post).copied())
     };
-    let date = |value: &str| parse_date(value, tz);
+    let date = |value: &str| date_parse(value, tz);
 
     let mut candidates: Vec<ResetAlert> = Vec::new();
     for item in &live_items {

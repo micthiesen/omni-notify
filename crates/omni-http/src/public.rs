@@ -71,7 +71,7 @@ fn in_v6(ip: Ipv6Addr, (network, prefix): (Ipv6Addr, u8)) -> bool {
 }
 
 /// IPv4-mapped (`::ffff:a.b.c.d`) and two-group IPv4-compatible (`::x:y`)
-/// addresses are judged as the embedded IPv4 address, as in TS.
+/// addresses are judged as the embedded IPv4 address.
 fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     let s = ip.segments();
     let zero_prefix = s[..5].iter().all(|seg| *seg == 0);
@@ -86,7 +86,7 @@ fn embedded_v4(ip: Ipv6Addr) -> Option<Ipv4Addr> {
     }
 }
 
-/// `isPublicAddress`: IPv4 outside the special-purpose blocks, or IPv6 in
+/// IPv4 outside the special-purpose blocks, or IPv6 in
 /// `2000::/3` outside the special-purpose blocks.
 pub fn is_public_address(ip: IpAddr) -> bool {
     match ip {
@@ -105,7 +105,7 @@ fn allowed(ip: IpAddr, policy: AddressPolicy) -> bool {
     is_public_address(ip) || (policy == AddressPolicy::AllowLoopback && ip.is_loopback())
 }
 
-/// `createPublicDnsLookup`: every answer must be allowed; an empty or mixed
+/// Every answer must be allowed; an empty or mixed
 /// answer is rejected whole. Returns the answers in resolver order.
 pub fn filter_dns_answers(
     answers: Vec<IpAddr>,
@@ -117,13 +117,13 @@ pub fn filter_dns_answers(
     Ok(answers)
 }
 
-/// `assertPublicHttpUrlSyntax`: http(s), no credentials, a non-localhost host,
+/// Http(s), no credentials, a non-localhost host,
 /// and a public address when the host is an IP literal.
 pub fn assert_public_http_url_syntax(u: &str) -> Result<Url, HttpError> {
     check_url(u, AddressPolicy::PublicOnly)
 }
 
-/// `assertPublicHttpUrl`: the syntax rules plus the host's current DNS
+/// The syntax rules plus the host's current DNS
 /// answers, checked before work is accepted. Connection-time DNS is still
 /// gated by the transport.
 pub async fn assert_public_http_url(u: &str) -> Result<Url, HttpError> {
@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn address_rules_match_ts() {
+    fn address_rules() {
         assert!(public("8.8.8.8"));
         assert!(!public("10.1.2.3"));
         assert!(!public("100.64.0.1"));

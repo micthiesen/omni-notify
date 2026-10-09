@@ -1,10 +1,9 @@
-//! Owned by WP11: workspace definitions, dossiers, actions and papercuts
-//! (`src/workspaces/types.ts`, `src/workspaces/persistence.ts`, the
+//! Workspace definitions, dossiers, actions and papercuts, for the
 //! `/api/workspaces*`, `/api/workspace-actions/*` and `/api/workspace-papercuts*`
-//! routes of `src/server.ts`).
+//! routes.
 //!
-//! Timestamps are epoch milliseconds. Optional TS fields (`field?: T`) are
-//! omitted when absent; `T | null` fields are always present.
+//! Timestamps are epoch milliseconds. Optional fields are omitted when absent;
+//! nullable fields are always present.
 
 use serde::{Deserialize, Serialize};
 
@@ -75,7 +74,6 @@ pub struct WorkspaceDefinition {
     pub artifacts: Vec<WorkspaceArtifactDefinition>,
 }
 
-/// `WorkspaceSubjectData`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSubject {
@@ -90,7 +88,6 @@ pub struct WorkspaceSubject {
     pub last_researched_at: Option<Ms>,
 }
 
-/// `WorkspaceArtifactRevisionData`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceArtifactRevision {
@@ -125,7 +122,6 @@ impl WorkspaceMessageRole {
     }
 }
 
-/// `WorkspaceMessageData`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceMessage {
@@ -148,7 +144,6 @@ pub enum WorkspaceSourceKind {
     Email,
 }
 
-/// `WorkspaceSourceData`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceSource {
@@ -198,7 +193,7 @@ impl WorkspaceActionStatus {
     }
 }
 
-/// `WorkspaceActionData`; `payload` is the JSON string compared byte for byte
+/// A workspace action; `payload` is the JSON string compared byte for byte
 /// when deduplicating proposals.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -221,7 +216,7 @@ pub struct WorkspaceAction {
     pub run_id: Option<String>,
 }
 
-/// `WorkspaceEmailScopePayload` (also the subject route's `emailScope`).
+/// A workspace email scope (also the subject route's `emailScope`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceEmailScope {
@@ -265,7 +260,7 @@ pub enum WorkspacePapercutStatus {
     Dismissed,
 }
 
-/// `WorkspacePapercutData` as the REST API serves it (fingerprint included).
+/// A workspace papercut as the REST API serves it (fingerprint included).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspacePapercut {

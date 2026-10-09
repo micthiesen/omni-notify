@@ -16,7 +16,7 @@ pub fn strict_schema<T: schemars::JsonSchema>() -> Value {
     value
 }
 
-/// Parses a structured-output response (AI SDK `NoObjectGeneratedError` on failure).
+/// Parses a structured-output response (a "No object generated" schema error on failure).
 pub fn parse_object<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, crate::AiError> {
     if text.trim().is_empty() {
         return Err(crate::AiError::Schema(
@@ -27,15 +27,14 @@ pub fn parse_object<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, cra
         .map_err(|e| crate::AiError::Schema(format!("No object generated: {e}")))
 }
 
-/// AI SDK `NoObjectGeneratedError` message for text that is not JSON.
+/// Schema error message for text that is not JSON.
 pub const NOT_PARSED: &str = "No object generated: could not parse the response.";
-/// AI SDK `NoObjectGeneratedError` message for JSON that fails the schema.
+/// Schema error message for JSON that fails the schema.
 pub const SCHEMA_MISMATCH: &str = "No object generated: response did not match schema.";
 
-/// AI SDK structured output: the text must parse as JSON and validate against
-/// `schema` (zod's role in TS), and is then decoded. Integral floats decode into
-/// integer fields. Failures carry the AI SDK's exact messages and are not
-/// retried, as in `generateText` with `Output.object`; the details are logged.
+/// Structured output: the text must parse as JSON and validate against
+/// `schema`, and is then decoded. Integral floats decode into integer fields.
+/// Failures carry fixed messages and are not retried; the details are logged.
 pub fn parse_validated<T: serde::de::DeserializeOwned>(
     text: &str,
     schema: &Value,

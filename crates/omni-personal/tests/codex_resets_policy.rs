@@ -1,4 +1,4 @@
-//! Port of `src/codex-resets/policy.spec.ts` (all cases kept).
+//! Codex reset alert policy.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use jiff::tz::TimeZone;

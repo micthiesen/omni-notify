@@ -43,7 +43,7 @@ pub struct EmailActivityLogData {
     pub dropped: u64,
 }
 
-/// `saveEmailActivityLogs`: an empty capture deletes any stale row.
+/// An empty capture deletes any stale row.
 pub async fn save(store: &Store, data: EmailActivityLogData) -> Result<(), StoreError> {
     if data.lines.is_empty() && data.dropped == 0 {
         let key = data.activity_id;
@@ -63,7 +63,7 @@ pub async fn save(store: &Store, data: EmailActivityLogData) -> Result<(), Store
         .await
 }
 
-/// `getEmailActivityLogs`: an unreadable row is deleted (with a warning) and
+/// An activity's captured logs. An unreadable row is deleted (with a warning) and
 /// reported as absent rather than failing the logs endpoint forever.
 pub async fn get(
     store: &Store,
@@ -117,7 +117,7 @@ impl Drop for CaptureGuard {
     }
 }
 
-/// `withEmailLogCaptureEffect`: runs `work` with every log line attributed to
+/// Runs `work` with every log line attributed to
 /// this email's activity, then persists the capture. A persistence failure is
 /// only warned about: the work's own result (success or failure) is returned
 /// unchanged.

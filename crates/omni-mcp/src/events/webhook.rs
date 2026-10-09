@@ -59,7 +59,7 @@ impl WebhookError {
     }
 }
 
-/// `validateCallbackUrl`: a public-syntax HTTPS URL without a fragment, at most
+/// A public-syntax HTTPS URL without a fragment, at most
 /// 2048 UTF-16 units. Returns the parsed URL (its `as_str` is JS `href`).
 pub fn validate_callback_url(value: &str) -> Option<Url> {
     let url = omni_http::public::assert_public_http_url_syntax(value).ok()?;
@@ -67,7 +67,7 @@ pub fn validate_callback_url(value: &str) -> Option<Url> {
     (url.scheme() == "https" && !fragment && omni_core::js::utf16_len(value) <= 2048).then_some(url)
 }
 
-/// `validateSigningSecret`: `whsec_` plus canonical base64 of 24-64 bytes.
+/// `whsec_` plus canonical base64 of 24-64 bytes.
 pub fn validate_signing_secret(value: &str) -> Option<Vec<u8>> {
     let encoded = value.strip_prefix("whsec_")?;
     let body = encoded.trim_end_matches('=');
@@ -80,8 +80,8 @@ pub fn validate_signing_secret(value: &str) -> Option<Vec<u8>> {
     {
         return None;
     }
-    // Node's decoder ignores a trailing partial group; the canonical
-    // re-encoding check below rejects such input exactly as TS does.
+    // A trailing partial group is ignored when decoding; the canonical
+    // re-encoding check below rejects such input.
     let usable = if body.len() % 4 == 1 {
         body.len() - 1
     } else {
@@ -142,7 +142,7 @@ fn signature(secret: &str, id: &str, seconds: i64, body: &str) -> Option<String>
     ))
 }
 
-/// `webhookHeaders`: Standard Webhooks signature over `id.seconds.body`,
+/// Standard Webhooks signature over `id.seconds.body`,
 /// signing with both keys during a secret rotation.
 pub fn webhook_headers(
     destination: &WebhookDestination,
@@ -262,7 +262,6 @@ pub trait WebhookPort: Send + Sync {
     ) -> BoxFuture<'a, Result<u16, WebhookError>>;
 }
 
-/// `createWebhookClient`.
 #[derive(Clone)]
 pub struct WebhookClient {
     transport: Arc<dyn WebhookTransport>,

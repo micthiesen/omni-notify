@@ -7,6 +7,7 @@ use omni_api::media::{
     CommitmentAssessment, CommitmentPreference, CommitmentPreferences, MediaType,
     RecommendationFeedback, RecommendationStatus, TasteBehaviorStats, TasteClaim, TasteProfile,
 };
+use omni_core::clock::utc_date_stamp;
 use omni_core::js::{json_stringify_pretty2, locale_compare};
 use omni_store::Store;
 use schemars::JsonSchema;
@@ -24,7 +25,6 @@ use super::types::{
     CanonicalWatchObservation, TasteEvidenceData, TasteEvidenceKind, TasteProfileData,
 };
 use crate::error::{IntegrationError, RecommendationError};
-use crate::js::to_date_stamp;
 use crate::persistence::RecommendationData;
 
 pub const TASTE_PROMPT_VERSION: &str = "taste-reflection-v1";
@@ -96,7 +96,7 @@ pub struct RawProfile {
 }
 
 impl RawProfile {
-    /// The zod bounds the AI SDK enforced on parse.
+    /// Bounds beyond the JSON schema, checked on parse.
     fn validate(&self) -> Result<(), String> {
         let lists: [(&str, &Vec<RawClaim>, usize); 6] = [
             ("stable_preferences", &self.stable_preferences, 10),
@@ -537,7 +537,7 @@ fn compact_evidence(item: &TasteEvidenceData) -> Value {
     );
     put(
         "observed_at",
-        Some(Value::String(to_date_stamp(item.observed_at))),
+        Some(Value::String(utc_date_stamp(item.observed_at))),
     );
     put("view_count", item.view_count.map(Value::from));
     put("completion", item.completion.map(Value::from));

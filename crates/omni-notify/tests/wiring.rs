@@ -1,6 +1,6 @@
 //! The production wiring over a `TestApp` context: every subsystem builds,
 //! every port is set, routes merge without conflicts, the MCP endpoint serves
-//! the golden tool set, and the data manager lists every TS managed entity.
+//! the committed tool set, and the data manager lists every managed entity.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use omni_notify::boot;
-use omni_notify::data_manager::TS_ORDER;
+use omni_notify::data_manager::MANAGED_ORDER;
 use omni_testkit::TestApp;
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
@@ -58,7 +58,7 @@ async fn every_port_is_set_and_email_tasks_need_a_transport() {
     assert!(names.contains("ClaudeSessionEvents"));
     assert!(names.contains("RemindersSession"));
     assert!(names.contains("WorkspaceNotifications"));
-    // `/api/tasks` lists them in `src/index.ts` order.
+    // `/api/tasks` lists them in registration order.
     let mut ordered: Vec<String> = names.into_iter().collect();
     ordered.sort_by_key(|n| omni_notify::wiring::task_rank(n));
     assert_eq!(
@@ -82,18 +82,18 @@ async fn the_entity_catalog_matches_the_wired_subsystems() {
 }
 
 #[tokio::test]
-async fn the_data_manager_lists_every_ts_entity_in_order() {
+async fn the_data_manager_lists_every_entity_in_order() {
     let (app, mut wired) = wired().await;
     let (router, ops) = boot::app_router(
         &app.ctx,
         &mut wired.subsystems,
         std::path::Path::new("/nonexistent"),
     );
-    assert_eq!(ops.data.slugs(), TS_ORDER.to_vec());
+    assert_eq!(ops.data.slugs(), MANAGED_ORDER.to_vec());
     let (status, body) = app.get_json(&router, "/api/data/entities").await;
     assert_eq!(status, StatusCode::OK);
     let entities = body["entities"].as_array().unwrap();
-    assert_eq!(entities.len(), TS_ORDER.len());
+    assert_eq!(entities.len(), MANAGED_ORDER.len());
     assert_eq!(entities[2]["slug"], "task-run");
     assert_eq!(entities[2]["primaryKey"], json!(["runId"]));
     assert_eq!(

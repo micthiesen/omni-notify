@@ -1,4 +1,4 @@
-//! WP01: iCloud IMAP transport, exact archive actions, drafts, Sent copies and
+//! iCloud IMAP transport, exact archive actions, drafts, Sent copies and
 //! the compose/archive/attachment MCP tools.
 //!
 //! Layout: [`protocol`] (IMAP client seam, raw imap-proto client, TLS
@@ -6,7 +6,7 @@
 //! parsing), [`ops`] (mailbox workflows), [`transport`] (the connection
 //! actor, polling, reads, caches), [`archive_store`] / [`archive_service`]
 //! (durable archive receipts and workflow), [`compose`] (durable draft/send
-//! receipts), [`mcp_tools`], [`task`] and [`subsystem`] (WP14 wiring).
+//! receipts), [`mcp_tools`], [`task`] and [`subsystem`] (app wiring).
 
 pub mod archive_service;
 pub mod archive_store;

@@ -1,4 +1,4 @@
-//! Shared reset alert infrastructure (`src/reset-alerts/`): bounded source
+//! Shared reset alert infrastructure: bounded source
 //! reads, durable delivery, presentation and the one-minute task.
 
 pub mod delivery;

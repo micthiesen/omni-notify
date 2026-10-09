@@ -1,10 +1,10 @@
-//! Error helpers and the edge-adapter errors of `src/effect/errors.ts`.
+//! Error helpers and the errors raised where external APIs are adapted.
 
 use crate::BoxError;
 
 /// A failure raised while adapting a foreign (async) API at an infrastructure
-/// edge: TS `IntegrationError`, produced by `fromPromise`. Displays as
-/// `"<operation> failed: <cause>"`, which is what TS persists as run errors.
+/// edge. Displays as `"<operation> failed: <cause>"`, which is what run errors
+/// persist.
 #[derive(Debug, thiserror::Error)]
 #[error("{operation} failed: {source}")]
 pub struct IntegrationError {
@@ -22,8 +22,8 @@ impl IntegrationError {
     }
 }
 
-/// A failure raised while adapting synchronous persistence code: TS
-/// `PersistenceError`, produced by `fromSync`. Same message shape.
+/// A failure raised while adapting synchronous persistence code. Same message
+/// shape as [`IntegrationError`].
 #[derive(Debug, thiserror::Error)]
 #[error("{operation} failed: {source}")]
 pub struct PersistenceError {
@@ -41,9 +41,8 @@ impl PersistenceError {
     }
 }
 
-/// The message of the innermost cause in `e`'s source chain (the `McpToolError`
-/// rule from `src/mcp/tool.ts`): wrappers are skipped so callers see the leaf
-/// failure.
+/// The message of the innermost cause in `e`'s source chain: wrappers are
+/// skipped so callers (such as MCP tool errors) see the leaf failure.
 pub fn chain_message(e: &dyn std::error::Error) -> String {
     let mut current = e;
     while let Some(next) = current.source() {

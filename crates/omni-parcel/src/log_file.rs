@@ -1,5 +1,5 @@
-//! Markdown diagnostic log files under `LOGS_PATH/parcel-tracker` (mitools
-//! `LogFile`): `## heading` sections, serialized writes, append or
+//! Markdown diagnostic log files under `LOGS_PATH/parcel-tracker`:
+//! `## heading` sections, serialized writes, append or
 //! overwrite-on-first-write. Diagnostics never fail processing: write errors
 //! are warned about and dropped.
 
@@ -71,7 +71,7 @@ impl LogFile {
     }
 }
 
-/// `codeBlock`: a fence that does not collide with the content.
+/// A fence that does not collide with the content.
 pub fn code_block(content: &str, lang: Option<&str>) -> String {
     let mut fence = "```".to_owned();
     while content.contains(&fence) {
@@ -80,13 +80,7 @@ pub fn code_block(content: &str, lang: Option<&str>) -> String {
     format!("{fence}{}\n{content}\n{fence}", lang.unwrap_or_default())
 }
 
-/// `logTimestamp`: local `YYYY-MM-DDTHH-mm-ss`.
-pub fn log_timestamp(now_ms: i64, tz: &jiff::tz::TimeZone) -> String {
-    omni_core::clock::timestamp_from_ms(now_ms)
-        .to_zoned(tz.clone())
-        .strftime("%Y-%m-%dT%H-%M-%S")
-        .to_string()
-}
+pub use omni_core::clock::log_timestamp;
 
 #[cfg(test)]
 mod tests {

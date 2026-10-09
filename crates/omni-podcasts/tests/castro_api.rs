@@ -1,12 +1,7 @@
-//! Port of `src/podcast-recs/castro/api.spec.ts` against a local mock server.
-//!
-//! Adaptations: "cancels a chunked oversized response" sends an over-limit
-//! body (wiremock always sets Content-Length; the streamed count itself is
-//! covered by omni-http's bounded-read tests), and "aborts an in-flight
-//! request" asserts that dropping the request future frees its pacing permit
-//! for the next request (Rust cancellation is drop, not an AbortSignal).
-//! Castro specs carry a `castro_` prefix: the `auth` and `client` stems collide
-//! with the Podcast Index specs.
+//! The Castro HTTP API against a local mock server. Oversized responses send
+//! an over-limit body (wiremock always sets Content-Length; the streamed count
+//! is covered by omni-http's bounded-read tests), and dropping a request
+//! future frees its pacing permit for the next request.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
@@ -133,7 +128,7 @@ async fn cancels_a_chunked_oversized_response() {
 }
 
 #[tokio::test]
-async fn aborts_an_in_flight_request_when_its_effect_is_interrupted() {
+async fn aborts_an_in_flight_request_when_dropped() {
     let (server, api) = api(SideEffectMode::Live, 1024).await;
     Mock::given(method("GET"))
         .and(path("/profile/sync/queue"))

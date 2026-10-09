@@ -1,7 +1,5 @@
-//! Port of `src/email/imap/sent.spec.ts` (Sent copy reconciliation).
-//!
-//! Lock release counts have no Rust equivalent (selection is exclusive
-//! `&mut` access); the cases assert the selections and writes instead.
+//! Sent copy reconciliation. Selection is exclusive `&mut` access, so the
+//! cases assert the selections and writes.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use futures::FutureExt as _;

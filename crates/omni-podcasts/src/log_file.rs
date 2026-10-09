@@ -1,4 +1,4 @@
-//! mitools `LogFile`: a markdown run log of `## heading` sections, written
+//! A markdown run log of `## heading` sections, written
 //! serially (overwrite mode truncates on the first section). Used for the
 //! per-run `LOGS_PATH/podcast-recs/<local timestamp>.md` file.
 
@@ -78,7 +78,7 @@ pub async fn section(
     }
 }
 
-/// mitools `codeBlock`: a fence that cannot collide with the content.
+/// A Markdown code block whose fence cannot collide with the content.
 pub fn code_block(content: &str, lang: Option<&str>) -> String {
     let mut fence = "```".to_owned();
     while content.contains(&fence) {

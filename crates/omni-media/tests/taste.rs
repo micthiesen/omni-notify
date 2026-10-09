@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/taste/taste.spec.ts`, plus scripted
+//! Taste evidence and profiles, plus scripted
 //! reflection runs (created, then unchanged without a model call).
 #![allow(clippy::expect_used)]
 

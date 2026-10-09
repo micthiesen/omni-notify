@@ -15,7 +15,7 @@ use futures::future::BoxFuture;
 use jiff::tz::TimeZone;
 use omni_alerts::{Pushover, PushoverChannel, PushoverMessage};
 use omni_config::Config;
-use omni_core::clock::SharedClock;
+use omni_core::clock::{SharedClock, utc_date_stamp};
 use omni_store::cbor::Extra;
 use omni_store::{Store, StoreError};
 
@@ -28,7 +28,6 @@ use crate::discovery::discover_episodes;
 use crate::filters::{PodcastFilterContext, PodcastFilterResult, filter_eligible_episodes};
 use crate::guest_selection::select_guest_appearances;
 use crate::guests::{GuestSources, discover_guest_appearances};
-use crate::js::to_date_stamp;
 use crate::log_file::{self, LogFile, LogFileError};
 use crate::models::Models;
 use crate::outcomes::decide_episode_outcomes;
@@ -55,7 +54,7 @@ const FINALISTS_PER_REQUESTED_PICK: usize = 2;
 /// Cushion before the oldest open delivery, for timestamp skew.
 const LISTEN_HISTORY_BUFFER_MS: i64 = 24 * 60 * 60 * 1000;
 
-/// `PodcastPipelineError`: the message is the cause's message.
+/// The message is the cause's message.
 #[derive(Debug, thiserror::Error)]
 pub enum PipelineError {
     #[error("{0}")]
@@ -523,7 +522,7 @@ async fn commit(
             source_url: candidate.source_url.clone(),
             matched_voices: candidate.matched_voices.clone(),
             shortlist_scores,
-            run_date: to_date_stamp(recommended_at),
+            run_date: utc_date_stamp(recommended_at),
             recommended_at,
             notified_at: None,
             queue_result: None,

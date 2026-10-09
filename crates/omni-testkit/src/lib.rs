@@ -6,8 +6,8 @@
 //! refuse DNS, Pushover and SMTP run in `SideEffectMode::Record`, and models
 //! are scripted.
 //!
-//! `TestStore` and `TestApp` need the real `Store::open` and `Config::from_env`
-//! (WP00 F1); setup failures panic with the step name.
+//! `TestStore` and `TestApp` use the real `Store::open` and `Config::from_env`;
+//! setup failures panic with the step name.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};

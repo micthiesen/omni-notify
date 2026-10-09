@@ -1,5 +1,4 @@
-//! Scheduling, run history and run log capture,
-//! carrying mitools `Scheduler.ts` and `src/task-runs/*` semantics.
+//! Scheduling, run history and run log capture.
 //!
 
 use std::time::Duration;
@@ -115,13 +114,11 @@ pub struct DuplicateTaskError(pub String);
 /// three map to 404 / 409 / 400.
 #[derive(Debug, thiserror::Error)]
 pub enum RunNowError {
-    /// `TaskNotFoundError`.
     #[error("Unknown task \"{name}\"")]
     NotFound { name: String },
-    /// `TaskAlreadyRunningError`.
     #[error("Task \"{name}\" is already running")]
     AlreadyRunning { name: String },
-    /// `TaskManualInputUnsupportedError`.
+    /// The task takes no manual input.
     #[error("Task \"{name}\" does not accept manual input")]
     ManualInputUnsupported { name: String },
     #[error(transparent)]

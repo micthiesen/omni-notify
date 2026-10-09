@@ -2,9 +2,9 @@
 //! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-presspods --test prod_copy -- --ignored --nocapture`.
 //!
 //! Every `press-pods-episode` and `press-pods-job` row must decode into the
-//! typed entities, recompute its primary key, and re-encode to the same JS
-//! value (modulo explicit `undefined` fields, which TS writes for absent
-//! optionals and Rust omits; node reads both identically). Byte identity is
+//! typed entities, recompute its primary key, and re-encode to the same
+//! value (modulo explicit `undefined` fields in older rows, which read like
+//! omitted ones). Byte identity is
 //! reported for information. The feed and list payloads are also built from
 //! the copy to prove the read paths accept every row.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
@@ -114,7 +114,7 @@ async fn production_presspods_rows_decode_and_round_trip() {
     assert_eq!(typed.len() as u64, live);
 
     // URL identity drives dedup, replace-on-resubmit and checkpoint ids:
-    // every canonical URL TS stored must be what the Rust normalizer derives.
+    // every stored canonical URL must be what the normalizer derives.
     let jobs_typed: Vec<PressPodsJob> = copy
         .store
         .read(|docs| omni_store::EntityOps::get_all::<PressPodsJob>(docs))
@@ -137,10 +137,10 @@ async fn production_presspods_rows_decode_and_round_trip() {
     let feed = omni_presspods::rss::build_feed("https://pods.example.test", &newest_first, 0);
     assert_eq!(feed.matches("<item>").count(), newest_first.len().min(50));
 
-    // With OMNI_PROD_RSS (a feed of the same copy saved from the former TS
-    // service) the Rust feed must match it byte for byte.
-    if let Ok(ts_feed) = std::env::var("OMNI_PROD_RSS") {
-        let expected = std::fs::read_to_string(ts_feed).unwrap();
+    // With OMNI_PROD_RSS (a saved production feed of the same copy) the built
+    // feed must match it byte for byte.
+    if let Ok(saved_feed) = std::env::var("OMNI_PROD_RSS") {
+        let expected = std::fs::read_to_string(saved_feed).unwrap();
         let start = feed.find("<lastBuildDate>").unwrap() + "<lastBuildDate>".len();
         let end = feed[start..].find("</lastBuildDate>").unwrap() + start;
         let normalized = format!("{}LAST_BUILD_DATE{}", &feed[..start], &feed[end..]);

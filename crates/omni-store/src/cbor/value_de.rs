@@ -49,7 +49,7 @@ impl ValueDeserializer {
         Err(de::Error::invalid_type(self.unexpected(), visitor))
     }
 
-    /// A JS-safe integer, accepting integral floats (TS numbers are doubles).
+    /// A JS-safe integer, accepting integral floats (stored numbers may be doubles).
     fn safe_integer(&self) -> Option<i64> {
         match &self.value {
             JsValue::Int(n) if n.abs() <= MAX_SAFE => i64::try_from(*n).ok(),

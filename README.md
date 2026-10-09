@@ -352,8 +352,8 @@ DB_NAME=/tmp/omni-preview.db cargo run -p omni-notify -- --preview --port 3999 \
 Other `omni-notify` modes: `--server-only` (HTTP without the scheduler),
 `--run-task <Name>` (one task, then exit), `--side-effects=record` (record every
 outgoing mutation instead of sending it), `healthcheck`, `doctor [--image]`, and
-`compat-audit --db <copy> [--rewrite-to <new.db>]`. `cargo xtask help` lists the
-repository tooling (golden fixtures, MCP policy, dependency rules, target
+`compat-audit --db <copy>`. `cargo xtask help` lists the
+repository tooling (golden fixtures, MCP snapshots, dependency rules, target
 hygiene).
 
 Inspired by [youtube_live_alert](https://github.com/your-diary/youtube_live_alert).

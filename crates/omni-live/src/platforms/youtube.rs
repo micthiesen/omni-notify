@@ -74,7 +74,7 @@ fn initial_player_response(html: &str) -> Option<Value> {
     })
 }
 
-/// Effect Schema `Struct` semantics: each present key must hold the
+/// Each present key must hold the
 /// declared shape (objects all the way down, `isLiveNow` a boolean).
 fn valid_player_response(value: &Value) -> bool {
     fn optional_object<'a>(value: &'a Value, key: &str) -> Result<Option<&'a Value>, ()> {

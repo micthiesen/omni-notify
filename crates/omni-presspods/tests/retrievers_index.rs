@@ -1,4 +1,4 @@
-//! Ports `src/press-pods/retrievers/index.spec.ts`.
+//! Running the retrievers and choosing the best article.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

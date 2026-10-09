@@ -1,4 +1,4 @@
-//! The `CalendarWriter` port for workspace action approval (WP11): discover the
+//! The `CalendarWriter` port for workspace action approval: discover the
 //! calendar, then create with the caller's deterministic UID
 //! (`workspace-<actionId>@omni-notify`) so approval replays are idempotent.
 

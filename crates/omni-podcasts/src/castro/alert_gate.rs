@@ -4,11 +4,10 @@
 //! minutes of schedule jitter), judged from durable run history so a restart
 //! cannot reset the streak. A success ends the incident.
 //!
-//! Deviation: the client's per-episode `"Castro inbox clear failed"` ERROR is
-//! gated too. TS let it reach Pushover ungated, so one isolated HTTP 500 or
-//! socket failure during cleanup notified, contrary to the AGENTS.md
-//! invariant. It is logged while the run is still `running`, so the gate
-//! withholds it and the run's own failure alert carries the incident.
+//! The client's per-episode `"Castro inbox clear failed"` ERROR is gated too,
+//! so one isolated HTTP 500 or socket failure during cleanup never notifies.
+//! It is logged while the run is still `running`, so the gate withholds it and
+//! the run's own failure alert carries the incident.
 
 use futures::future::BoxFuture;
 use omni_alerts::AlertGate;

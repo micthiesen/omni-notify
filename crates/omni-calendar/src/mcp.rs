@@ -1,7 +1,9 @@
 //! Calendar MCP tools: bounded reads over the
 //! tracked events plus approval-gated CalDAV writes. Metadata and JSON schemas
-//! come from the golden tool list; the zod refinements JSON Schema cannot
-//! express (trim, real dates, IANA zones, cross-field rules) are checked here.
+//! are declared in [`defs`]; the refinements JSON Schema cannot express
+//! (trim, real dates, IANA zones, cross-field rules) are checked here.
+
+pub mod defs;
 
 use omni_core::clock::SharedClock;
 use omni_core::js::locale_compare;
@@ -35,7 +37,6 @@ fn js_number_opt<S: Serializer>(value: &Option<f64>, s: S) -> Result<S::Ok, S::E
     }
 }
 
-/// `trackedEventSchema`.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackedEventView {
@@ -70,7 +71,7 @@ impl From<&CreatedCalendarEvent> for TrackedEventView {
             start_time: e.start_time.clone(),
             end_date: e.end_date.clone(),
             end_time: e.end_time.clone(),
-            // TS would fail output validation on legacy rows without `allDay`.
+            // Legacy rows without `allDay` read as timed events.
             all_day: e.all_day.unwrap_or(false),
             location: e.location.clone(),
             time_zone: e.time_zone.clone(),
@@ -296,7 +297,7 @@ impl CalendarEventInput {
     }
 }
 
-/// `calendarEventPatchSchema`: absent keeps a field, `null` clears it.
+/// Absent keeps a field, `null` clears it.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarEventPatch {
@@ -448,7 +449,7 @@ fn persistence_error(error: &CalendarPersistenceError) -> ToolError {
     ToolError::execute_from(error)
 }
 
-/// `toolErrorMessage` reports the innermost cause, which for a CalDAV error is
+/// Tool errors report the innermost cause, which for a CalDAV error is
 /// its cause text.
 fn caldav_error(error: &CaldavError) -> ToolError {
     ToolError::execute(error.cause.clone())
@@ -473,7 +474,7 @@ impl CalendarTools {
     }
 
     async fn list(&self, input: ListInput) -> Result<Page<TrackedEventView>, ToolError> {
-        // zod: `query: z.string().trim().min(1).max(200)`.
+        // `query` is trimmed and must be 1 to 200 characters.
         let query = match input.query {
             Some(q) => {
                 let trimmed = q.trim();
@@ -628,8 +629,8 @@ impl CalendarTools {
         if existing.is_cancelled() {
             return Err(ToolError::execute("Cancelled events cannot be updated"));
         }
-        // TS re-parses the merged event inside `execute`, so its failures are
-        // execute-phase errors. A legacy record without `allDay` fails that parse
+        // The merged event is re-validated during execution, so its failures are
+        // execute-phase errors. A legacy record without `allDay` fails that check
         // unless the patch supplies it.
         let as_execute = |error: ToolError| ToolError::execute(error.message);
         if existing.all_day.is_none() && input.changes.all_day.is_none() {
@@ -730,20 +731,20 @@ impl CalendarTools {
     }
 }
 
-/// The seven calendar tools, in `src/mcp/tools/calendar.ts` order.
+/// The seven calendar tools, in serving order.
 pub fn calendar_tools(tools: CalendarTools) -> Result<Vec<McpTool>, ToolMetaError> {
     let t = tools;
     Ok(vec![
         {
             let t = t.clone();
-            typed_tool("calendar_events_list", move |input: ListInput, _cx| {
+            typed_tool(&defs::CALENDAR_EVENTS_LIST, move |input: ListInput, _cx| {
                 let t = t.clone();
                 async move { t.list(input).await }
             })?
         },
         {
             let t = t.clone();
-            typed_tool("calendar_event_get", move |input: HashInput, _cx| {
+            typed_tool(&defs::CALENDAR_EVENT_GET, move |input: HashInput, _cx| {
                 let t = t.clone();
                 async move {
                     Ok(EventEnvelope {
@@ -754,7 +755,7 @@ pub fn calendar_tools(tools: CalendarTools) -> Result<Vec<McpTool>, ToolMetaErro
         },
         {
             let t = t.clone();
-            typed_tool("calendar_status", move |_input: EmptyInput, _cx| {
+            typed_tool(&defs::CALENDAR_STATUS, move |_input: EmptyInput, _cx| {
                 let t = t.clone();
                 async move { t.status().await }
             })?
@@ -762,7 +763,7 @@ pub fn calendar_tools(tools: CalendarTools) -> Result<Vec<McpTool>, ToolMetaErro
         {
             let t = t.clone();
             typed_tool(
-                "calendar_event_preview",
+                &defs::CALENDAR_EVENT_PREVIEW,
                 move |input: EventInputEnvelope, _cx| {
                     let t = t.clone();
                     async move { t.preview(input.event).await }
@@ -772,7 +773,7 @@ pub fn calendar_tools(tools: CalendarTools) -> Result<Vec<McpTool>, ToolMetaErro
         {
             let t = t.clone();
             typed_tool(
-                "calendar_event_create",
+                &defs::CALENDAR_EVENT_CREATE,
                 move |input: EventInputEnvelope, _cx| {
                     let t = t.clone();
                     async move { t.create(input.event).await }
@@ -781,15 +782,21 @@ pub fn calendar_tools(tools: CalendarTools) -> Result<Vec<McpTool>, ToolMetaErro
         },
         {
             let t = t.clone();
-            typed_tool("calendar_event_update", move |input: UpdateInput, _cx| {
-                let t = t.clone();
-                async move { t.update(input).await }
-            })?
+            typed_tool(
+                &defs::CALENDAR_EVENT_UPDATE,
+                move |input: UpdateInput, _cx| {
+                    let t = t.clone();
+                    async move { t.update(input).await }
+                },
+            )?
         },
-        typed_tool("calendar_event_delete", move |input: HashInput, _cx| {
-            let t = t.clone();
-            async move { t.delete(&input.event_hash).await }
-        })?,
+        typed_tool(
+            &defs::CALENDAR_EVENT_DELETE,
+            move |input: HashInput, _cx| {
+                let t = t.clone();
+                async move { t.delete(&input.event_hash).await }
+            },
+        )?,
     ])
 }
 

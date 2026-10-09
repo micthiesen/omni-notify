@@ -1,6 +1,6 @@
-//! Port of `src/codex-resets/delivery.spec.ts` (all cases kept). The TS
-//! `Pushover` layer becomes a scripted `ResetNotifier`; a `PushoverError` with
-//! a 4xx status is `NotifyError::Rejected`, one without a status `Uncertain`.
+//! Codex reset alert delivery through a scripted `ResetNotifier`; a
+//! `PushoverError` with a 4xx status is `NotifyError::Rejected`, one without a
+//! status `Uncertain`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

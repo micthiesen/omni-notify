@@ -52,12 +52,11 @@ pub fn encode_castro_query_value(value: &str) -> String {
 /// Why a Castro request failed.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum CastroFailure {
-    /// Network failures and timeouts (got `RequestError`/`TimeoutError`).
+    /// Network failures and timeouts.
     #[error("{0}")]
     Http(String),
     /// Local failures with no HTTP status: oversized bodies, blocked or
-    /// invalid URLs, unserializable bodies. Never retried, like the plain
-    /// `Error`s the TS reader throws.
+    /// invalid URLs, unserializable bodies. Never retried.
     #[error("{0}")]
     Local(String),
     #[error("HTTP {status}{}", body.as_ref().map(|b| format!(": {b}")).unwrap_or_default())]
@@ -67,7 +66,7 @@ pub enum CastroFailure {
 }
 
 impl CastroFailure {
-    /// `isTransientHttpError`: 429, 5xx, and network/timeouts.
+    /// 429, 5xx, and network/timeouts.
     pub fn is_transient(&self) -> bool {
         match self {
             CastroFailure::Http(_) => true,

@@ -248,7 +248,7 @@ pub async fn gather_evidence<C: ArrClient>(
     })
 }
 
-/// `currentEvidenceKey` equality: target, preview, grabs and health unchanged.
+/// Evidence key equality: target, preview, grabs and health unchanged.
 fn same_evidence(a: &Evidence, b: &Evidence) -> bool {
     a.target == b.target
         && a.files == b.files
@@ -313,7 +313,6 @@ fn batch_ranges(actions: &[&RecoveryAction]) -> Vec<Range<usize>> {
     ranges
 }
 
-/// `notificationBatches`.
 pub fn notification_batches(actions: &[RecoveryAction]) -> Vec<Vec<RecoveryAction>> {
     let refs: Vec<&RecoveryAction> = actions.iter().collect();
     batch_ranges(&refs)

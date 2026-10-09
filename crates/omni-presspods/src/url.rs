@@ -123,7 +123,7 @@ pub fn normalize_url(raw: &str) -> String {
 
 #[cfg(test)]
 mod url_spec {
-    //! Ports `src/press-pods/url.spec.ts`.
+    //! URL normalization cases.
     use super::normalize_url;
 
     #[test]

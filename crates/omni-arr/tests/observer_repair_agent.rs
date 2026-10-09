@@ -1,5 +1,5 @@
-//! Port of `src/observer-repair/agent.spec.ts`, plus the agent loop against a
-//! scripted model and tools.
+//! Observer repair decisions, plus the agent loop against a scripted model and
+//! tools.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;

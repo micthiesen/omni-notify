@@ -100,7 +100,7 @@ fn decode_error(operation: &'static str, error: StoreError) -> PressPodsError {
     }
 }
 
-/// The PressPods docstore API (TS `PressPodsPersistence`).
+/// The PressPods docstore API.
 #[derive(Clone)]
 pub struct Persistence {
     store: Store,

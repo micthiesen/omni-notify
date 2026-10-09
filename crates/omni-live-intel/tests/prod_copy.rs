@@ -1,11 +1,11 @@
-//! Typed decode and re-encode of every WP05 row in a production docstore copy.
+//! Typed decode and re-encode of every livestream intelligence row in a production docstore copy.
 //!
 //! Ignored by default. Run with
 //! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-live-intel --test prod_copy -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first; the original is never opened.
 //! For each entity: every row must decode into the typed model, recompute its
-//! primary key, and re-encode to the same JS value (fields stored as JS
-//! `undefined` compare as absent, as node reads them).
+//! primary key, and re-encode to the same value (fields stored as JS
+//! `undefined` compare as absent).
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout)]
 
 use std::sync::Arc;
@@ -175,5 +175,5 @@ async fn every_wp05_row_decodes_and_round_trips() {
             || !report.value_mismatches.is_empty()
             || !report.dto_failures.is_empty();
     }
-    assert!(!failed, "WP05 rows did not round-trip");
+    assert!(!failed, "livestream intelligence rows did not round-trip");
 }

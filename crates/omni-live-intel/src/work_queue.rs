@@ -1,4 +1,4 @@
-//! Bounded work queues with graceful close (`EffectWorkQueue` in `service.ts`).
+//! Bounded work queues with graceful close.
 //!
 //! `run` awaits a job under a permit; `fork` detaches it onto the app's task
 //! tracker. `close` stops admission, waits up to 30 s for admitted work, then

@@ -6,6 +6,8 @@
 //! of `start`, `send` and `stop`, never inside the session, so a background
 //! session never stalls on a permission prompt. Do not add a permission mode.
 
+pub mod defs;
+
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -52,7 +54,7 @@ pub fn records(value: Option<&Value>) -> Vec<Map<String, Value>> {
         .unwrap_or_default()
 }
 
-/// `toSession`: one session-client summary in the MCP shape.
+/// One session-client summary in the MCP shape.
 pub fn to_session(raw: &Map<String, Value>) -> ClaudeSession {
     let started_at = raw
         .get("started_at")
@@ -77,7 +79,7 @@ pub fn to_session(raw: &Map<String, Value>) -> ClaudeSession {
     }
 }
 
-/// `toItem`: one transcript item, text and tool input bounded.
+/// One transcript item, text and tool input bounded.
 pub fn to_item(raw: &Map<String, Value>) -> ClaudeTranscriptItem {
     let text = str_of(raw.get("text")).map(|text| truncate(&text, ITEM_TEXT_LIMIT));
     let input = raw
@@ -153,7 +155,7 @@ fn replace_host_name(text: &str, host: &str) -> String {
     out
 }
 
-/// `scrubHostDetails`: removes the host name and home directories from every
+/// Removes the host name and home directories from every
 /// string in a result, transcript text included.
 pub fn scrub_host_details(value: &Value, host: Option<&str>) -> Value {
     let host = host.filter(|h| h.chars().count() >= 3);
@@ -177,7 +179,7 @@ pub fn scrub_host_details(value: &Value, host: Option<&str>) -> Value {
     }
 }
 
-/// `publicError`: generic wording for the kill switch, scrubbed detail otherwise.
+/// Generic wording for the kill switch, scrubbed detail otherwise.
 fn public_error(error: HostError, host: Option<&str>) -> HostError {
     let detail = if error.code == "disabled" {
         DISABLED_DETAIL.to_owned()
@@ -198,7 +200,7 @@ pub struct ClaudeDeps {
     pub watcher: Option<Arc<dyn ClaudeSessionNotifier>>,
 }
 
-/// Arguments without the keys TS leaves `undefined`.
+/// Arguments with absent values omitted.
 fn args(entries: &[(&str, Option<Value>)]) -> Map<String, Value> {
     entries
         .iter()
@@ -350,7 +352,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
     let link_status = {
         let deps = deps.clone();
         typed_tool(
-            "claude_link_status",
+            &defs::CLAUDE_LINK_STATUS,
             move |_: EmptyInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -408,7 +410,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
     let list = {
         let deps = deps.clone();
         typed_tool(
-            "claude_sessions_list",
+            &defs::CLAUDE_SESSIONS_LIST,
             move |input: ListInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -436,7 +438,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
     let get = {
         let deps = deps.clone();
         typed_tool(
-            "claude_session_get",
+            &defs::CLAUDE_SESSION_GET,
             move |input: GetInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -504,7 +506,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
     let read = {
         let deps = deps.clone();
         typed_tool(
-            "claude_session_read",
+            &defs::CLAUDE_SESSION_READ,
             move |input: ReadInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -538,7 +540,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
     let start = {
         let deps = deps.clone();
         typed_tool(
-            "claude_session_start",
+            &defs::CLAUDE_SESSION_START,
             move |input: StartInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -578,7 +580,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
     let send = {
         let deps = deps.clone();
         typed_tool(
-            "claude_session_send",
+            &defs::CLAUDE_SESSION_SEND,
             move |input: SendInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -614,7 +616,7 @@ pub fn claude_session_tools(deps: &ClaudeDeps) -> Result<Vec<McpTool>, ToolMetaE
     let stop = {
         let deps = deps.clone();
         typed_tool(
-            "claude_session_stop",
+            &defs::CLAUDE_SESSION_STOP,
             move |input: StopInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {

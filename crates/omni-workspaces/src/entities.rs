@@ -1,6 +1,5 @@
-//! Persisted workspace rows. Field order
-//! follows the object literals the TS engine writes; every row keeps unknown
-//! fields in `extra` so read-modify-write never drops them.
+//! Persisted workspace rows. Field order matches the stored rows; every row
+//! keeps unknown fields in `extra` so read-modify-write never drops them.
 
 use omni_api::workspaces::{
     WorkspaceAction, WorkspaceActionStatus, WorkspaceActionType, WorkspaceArtifactKind,

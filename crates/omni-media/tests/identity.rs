@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/identity.spec.ts`, plus store-backed
+//! Media identity resolution, plus store-backed
 //! resolution cases for the alias cache.
 #![allow(clippy::expect_used)]
 

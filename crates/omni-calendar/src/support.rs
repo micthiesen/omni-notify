@@ -1,11 +1,11 @@
-//! What the calendar pipeline needs from the email pipeline core (WP02) and the
-//! mail transport (WP01).
+//! What the calendar pipeline needs from the email pipeline core and the
+//! mail transport.
 //!
 //! The pipeline is written against these traits so tests can record what it
 //! does. [`crate::email_core::OmniEmailSupport`] implements [`EmailSupport`]
 //! with the `omni_email` library (activity, retry, sender rules, triage,
 //! activity log capture); the binary supplies an [`AttachmentSource`] backed by
-//! the mail transport. Shapes mirror the TS functions they stand for.
+//! the mail transport.
 
 use futures::future::BoxFuture;
 use omni_core::email::{EmailAttachment, FetchedEmail};
@@ -56,7 +56,7 @@ pub enum ActivityOutcome {
     Error,
 }
 
-/// `deriveItemsOutcome`: empty → `no_matches`, all ok → `processed`,
+/// Empty → `no_matches`, all ok → `processed`,
 /// none ok → `failed`, else `partial`.
 pub fn derive_items_outcome(items_ok: &[bool]) -> ActivityOutcome {
     if items_ok.is_empty() {
@@ -72,11 +72,11 @@ pub fn derive_items_outcome(items_ok: &[bool]) -> ActivityOutcome {
     }
 }
 
-/// An attributable LLM cost (`number | null | undefined` in TS): `None` means no
+/// An attributable LLM cost: `None` means no
 /// call is attributable, `Some(None)` a call on an unpriced model.
 pub type CostCents = Option<Option<f64>>;
 
-/// `sumCostCents`: absent parts drop out; any unpriced part makes the total
+/// Absent parts drop out; any unpriced part makes the total
 /// unpriced; all absent stays absent.
 pub fn sum_cost_cents(parts: &[CostCents]) -> CostCents {
     let known: Vec<Option<f64>> = parts.iter().filter_map(|p| *p).collect();
@@ -148,7 +148,7 @@ pub struct TriageVerdict {
 /// Work run under per-email log capture (the email's processing phase).
 pub type CapturedWork<'a> = BoxFuture<'a, Result<(), PipelineError>>;
 
-/// The email pipeline core (WP02 `omni_email`).
+/// The email pipeline core (`omni_email`).
 pub trait EmailSupport: Send + Sync {
     /// `findSenderRule(from, "calendar")`.
     fn find_sender_rule<'a>(
@@ -160,9 +160,9 @@ pub trait EmailSupport: Send + Sync {
         &'a self,
         email: &'a FetchedEmail,
     ) -> BoxFuture<'a, Result<TriageVerdict, SupportError>>;
-    /// `getTriageCostCents`: `None` when unknown or unpriced (TS `null`).
+    /// The triage cost of `email_id`: `None` when unknown or unpriced.
     fn triage_cost_cents(&self, email_id: &str) -> Option<f64>;
-    /// `recordEmailActivity` (upsert + per-pipeline prune).
+    /// Records an email activity (upsert + per-pipeline prune).
     fn record_activity(&self, entry: ActivityEntry) -> BoxFuture<'_, Result<(), SupportError>>;
     /// `EmailRetryPersistence.enqueue`.
     fn enqueue_retry<'a>(
@@ -185,7 +185,7 @@ pub trait EmailSupport: Send + Sync {
 /// A downloaded attachment (`DownloadedAttachment`).
 pub use omni_core::email::DownloadedAttachment;
 
-/// The mail transport's attachment download (WP01 `downloadAttachmentEffect`).
+/// The mail transport's attachment download.
 pub trait AttachmentSource: Send + Sync {
     fn download<'a>(
         &'a self,

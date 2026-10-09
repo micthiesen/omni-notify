@@ -1,6 +1,8 @@
 //! Podcast MCP tools: bounded adapters over the
-//! account client, recommendation rows and taste data. Metadata and schemas
-//! come from the golden tool list.
+//! account client, recommendation rows and taste data. Metadata and schemas are
+//! declared in [`defs`].
+
+pub mod defs;
 
 use std::sync::Arc;
 
@@ -49,7 +51,7 @@ fn store_error(e: omni_store::StoreError) -> ToolError {
     ToolError::execute_from(&e)
 }
 
-/// `matchesQuery`: case-insensitive substring on title/showTitle/episodeTitle.
+/// Case-insensitive substring on title/showTitle/episodeTitle.
 fn matches_query(texts: &[Option<&str>], query: Option<&str>) -> bool {
     let Some(query) = query.filter(|q| !q.is_empty()) else {
         return true;
@@ -352,7 +354,7 @@ async fn account_update(
     })
 }
 
-/// The MCP recommendation shape (`serializePodcastRecommendation` in podcasts.ts).
+/// The MCP recommendation shape.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct McpRecommendation {
@@ -653,36 +655,37 @@ async fn taste_read(state: McpState, input: TasteReadInput) -> Result<TasteReadO
     }
 }
 
-/// The seven podcast tools in `src/mcp/tools/podcasts.ts` order.
+/// The seven podcast tools, in serving order.
 pub fn tools(state: McpState) -> Result<Vec<McpTool>, ToolMetaError> {
     let s = state;
     Ok(vec![
-        typed_tool("podcast_account_list", {
+        typed_tool(&defs::PODCAST_ACCOUNT_LIST, {
             let s = s.clone();
             move |input: AccountListInput, _cx| account_list(s.clone(), input)
         })?,
-        typed_tool("podcast_account_search", {
+        typed_tool(&defs::PODCAST_ACCOUNT_SEARCH, {
             let s = s.clone();
             move |input: AccountSearchInput, _cx| account_search(s.clone(), input)
         })?,
-        typed_tool("podcast_account_update", {
+        typed_tool(&defs::PODCAST_ACCOUNT_UPDATE, {
             let s = s.clone();
             move |input: AccountUpdateInput, _cx| account_update(s.clone(), input)
         })?,
-        typed_tool("podcast_recommendations_list", {
+        typed_tool(&defs::PODCAST_RECOMMENDATIONS_LIST, {
             let s = s.clone();
             move |input: RecommendationsListInput, _cx| recommendations_list(s.clone(), input)
         })?,
-        typed_tool("podcast_recommendation_get", {
+        typed_tool(&defs::PODCAST_RECOMMENDATION_GET, {
             let s = s.clone();
             move |input: RecommendationGetInput, _cx| recommendation_get(s.clone(), input)
         })?,
-        typed_tool("podcast_recommendation_feedback", {
+        typed_tool(&defs::PODCAST_RECOMMENDATION_FEEDBACK, {
             let s = s.clone();
             move |input: RecommendationFeedbackInput, _cx| recommendation_feedback(s.clone(), input)
         })?,
-        typed_tool("podcast_taste_read", move |input: TasteReadInput, _cx| {
-            taste_read(s.clone(), input)
-        })?,
+        typed_tool(
+            &defs::PODCAST_TASTE_READ,
+            move |input: TasteReadInput, _cx| taste_read(s.clone(), input),
+        )?,
     ])
 }

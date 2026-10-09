@@ -20,7 +20,7 @@ fn g() -> BigUint {
     BigUint::from(2u8)
 }
 
-/// `srpBytesFromBigint`: minimal big-endian bytes (`[0]` for zero).
+/// Minimal big-endian bytes (`[0]` for zero).
 fn bytes(n: &BigUint) -> Vec<u8> {
     n.to_bytes_be()
 }

@@ -1,4 +1,4 @@
-//! Port of `src/live-check/titleDebounce.spec.ts`.
+//! Title change debounce.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_live::title_debounce::{DebounceAction, TITLE_CHANGE_COOLDOWN_MS, TitleChangeDebouncer};

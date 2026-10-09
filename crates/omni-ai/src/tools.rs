@@ -1,4 +1,4 @@
-//! Built-in AI tools (`src/ai/tools/*`): Tavily web search and public page fetching.
+//! Built-in AI tools: Tavily web search and public page fetching.
 
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ pub const PUBLIC_TEXT_MAX_BYTES: usize = 10 * 1024 * 1024;
 pub const FETCH_TIMEOUT: Duration = Duration::from_secs(15);
 /// `MAX_OUTPUT_CHARS` (UTF-16 units).
 pub const MAX_OUTPUT_CHARS: usize = 20_000;
-/// got's default redirect limit, which `publicGotStream` keeps.
+/// Redirect limit for fetched pages.
 const MAX_REDIRECTS: u8 = 10;
 
 /// Either the SSRF-guarded public client (production) or a plain client (tests that
@@ -64,7 +64,7 @@ pub enum TimeRange {
     Year,
 }
 
-/// `searchWebEffect` options.
+/// Web search options.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SearchOptions {
     pub query: String,
@@ -146,7 +146,7 @@ impl WebSearch {
         }
     }
 
-    /// `searchWebEffect`: one Tavily basic search, recorded as a `search` cost event.
+    /// One Tavily basic search, recorded as a `search` cost event.
     pub async fn search(&self, options: SearchOptions) -> Result<WebSearchResults, WebSearchError> {
         let url =
             Url::parse(TAVILY_SEARCH_URL).map_err(|e| HttpError::InvalidUrl(e.to_string()))?;
@@ -274,7 +274,6 @@ pub struct FetchUrlError {
     pub source: HttpError,
 }
 
-/// `HtmlToMarkdownResult`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct HtmlToMarkdown {
     pub title: Option<String>,
@@ -302,7 +301,7 @@ impl FetchUrl {
         }
     }
 
-    /// `fetchUrlEffect`: GET (redirects followed and revalidated), 10 MiB cap, non-2xx is
+    /// GET (redirects followed and revalidated), 10 MiB cap, non-2xx is
     /// an error, then [`html_to_markdown`].
     pub async fn fetch(&self, url: &str) -> Result<HtmlToMarkdown, FetchUrlError> {
         let fail = |source| FetchUrlError {
@@ -369,7 +368,7 @@ impl AiTool for FetchUrl {
     }
 }
 
-/// `htmlToMarkdown`: Readability when the page looks readerable, otherwise the
+/// Readability when the page looks readerable, otherwise the
 /// `<main>`/`<article>`/`<body>` of the page with chrome removed; markdown via turndown
 /// rules (ATX headings, fenced code); a `# title` heading; truncated to
 /// [`MAX_OUTPUT_CHARS`] UTF-16 units.
@@ -418,7 +417,7 @@ pub fn html_to_markdown(html: &str) -> HtmlToMarkdown {
     }
 }
 
-/// `fallbackExtract` plus the `<title>` text: drops script/style/nav/footer/header/
+/// Fallback extraction plus the `<title>` text: drops script/style/nav/footer/header/
 /// aside/svg, then prefers `main`, `article`, `[role=main]`, else the body.
 fn fallback_extract(html: &str) -> (String, Option<String>) {
     let document = scraper::Html::parse_document(html);

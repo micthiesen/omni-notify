@@ -1,4 +1,4 @@
-//! Log levels as persisted in run logs (mitools `LogLevel`).
+//! Log levels as persisted in run logs.
 
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ impl LogLevel {
         }
     }
 
-    /// Parses the wire name (exact, lowercase), as the TS `Schema.Enum(LogLevel)` does.
+    /// Parses the wire name (exact, lowercase).
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "debug" => Some(LogLevel::Debug),

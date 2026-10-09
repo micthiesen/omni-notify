@@ -1,4 +1,4 @@
-//! Port of `src/claude-resets/source.spec.ts` (all cases kept).
+//! Reset Radar catalog decoding and bounded reads.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use jiff::tz::TimeZone;

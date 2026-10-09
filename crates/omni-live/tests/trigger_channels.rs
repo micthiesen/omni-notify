@@ -1,4 +1,4 @@
-//! Port of `src/live-check/triggerChannels.spec.ts`.
+//! Trigger channels.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_api::streamers::{StreamerTier, TriggerChannel, TriggerChannelType};

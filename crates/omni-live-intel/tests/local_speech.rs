@@ -1,5 +1,4 @@
-//! Port of `src/live-check/intelligence/localSpeech.spec.ts`, plus the speaker
-//! windowing and threshold logic over a fake backend (the native sherpa models
+//! Local speech: the speaker windowing and threshold logic over a fake backend (the native sherpa models
 //! are not available to tests).
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -172,7 +171,7 @@ fn without_a_voiceprint_nothing_is_checked() {
 }
 
 #[test]
-fn cosine_similarity_matches_the_ts_edge_cases() {
+fn cosine_similarity_edge_cases() {
     assert_eq!(cosine_similarity(&[], &[]), -1.0);
     assert_eq!(cosine_similarity(&[1.0], &[1.0, 2.0]), -1.0);
     assert!((cosine_similarity(&[1.0, 0.0], &[1.0, 0.0]) - 1.0).abs() < 1e-12);
@@ -180,7 +179,7 @@ fn cosine_similarity_matches_the_ts_edge_cases() {
 }
 
 #[test]
-fn voiceprint_files_round_trip_in_the_ts_format() {
+fn voiceprint_files_round_trip_in_the_stored_format() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("destiny.json");
     let file = voiceprint(vec![vec![0.25, -0.5], vec![1.0, 0.000_001]]);

@@ -1,10 +1,9 @@
-//! Port of `src/live-check/task.spec.ts`, plus end-to-end checks of the
-//! notification invariants (title debounce, offline text, background mute,
-//! outage alerts, dashboard updates, reconcile isolation).
+//! `LiveCheckTask`, with end-to-end checks of the notification invariants
+//! (title debounce, offline text, background mute, outage alerts, dashboard
+//! updates, reconcile isolation).
 //!
-//! Persistence failures are produced by dropping the `blobs` table; the TS
-//! mocked a single `Entity.upsert`/`getAll` call. Interruption is a dropped
-//! (aborted) future.
+//! Persistence failures are produced by dropping the `blobs` table.
+//! Interruption is a dropped (aborted) future.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -680,7 +679,7 @@ async fn retries_an_offline_alert_before_durably_closing_the_session() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn uses_the_effect_clock_for_transition_timestamps() {
+async fn uses_the_test_clock_for_transition_timestamps() {
     let f = fixture(120_000).await;
     let roster = Roster::new(vec![streamer(
         "clocked-live",

@@ -1,8 +1,8 @@
 //! Production-copy round trip (ignored; run with `OMNI_PROD_COPY=<copy of
 //! docstore.db> cargo test -p omni-live --test prod_copy -- --ignored --nocapture`).
-//! Every WP04 row must decode into its typed entity, recompute its primary
-//! key, and re-encode to the same JS value (explicit `undefined` members
-//! removed, which node reads identically).
+//! Every livestream row must decode into its typed entity, recompute its primary
+//! key, and re-encode to the same value (explicit `undefined` members
+//! removed, which read identically).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use omni_live::identity::ProfileIdentityLink;
@@ -78,5 +78,5 @@ async fn prod_copy_round_trips_every_wp04_row() {
     total += check::<ViewerMetrics>(&store).await.0;
     total += check::<PlatformViewerMetrics>(&store).await.0;
     total += check::<ProfileIdentityLink>(&store).await.0;
-    assert!(total > 0, "the copy has WP04 rows");
+    assert!(total > 0, "the copy has livestream rows");
 }

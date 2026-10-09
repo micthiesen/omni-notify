@@ -1,6 +1,5 @@
-//! Structured-output calls (AI SDK `generateText` + `Output.object`) with the
-//! zod refinements re-checked after decoding: an out-of-range value fails the
-//! call like a schema mismatch did in TS.
+//! Structured-output calls with refinements re-checked after decoding: an
+//! out-of-range value fails the call like a schema mismatch.
 
 use std::sync::Arc;
 

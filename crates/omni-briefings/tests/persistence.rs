@@ -1,4 +1,4 @@
-//! Port of `src/briefing-agent/persistence.spec.ts`.
+//! Briefing notification history, delivery reservations and run costs.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_briefings::format::local_ms;

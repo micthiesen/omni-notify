@@ -275,7 +275,6 @@ struct NormalizedInput {
     job_name: String,
 }
 
-/// `assertHttpsDocumentUrl`.
 pub fn assert_https_document_url(value: &str, subject: &str) -> Result<Url, String> {
     if value.is_empty() {
         return Err(format!("{subject} must be a public HTTPS URL"));
@@ -300,7 +299,7 @@ fn normalize_input(input: &PrintPdfInput) -> Result<NormalizedInput, PrinterErro
     let trimmed = input
         .job_name
         .as_deref()
-        .map(crate::js::trim)
+        .map(omni_core::js::trim)
         .filter(|name| !name.is_empty())
         .unwrap_or("MCP print job");
     if utf16_len(trimmed) > 80 || trimmed.chars().any(|c| c <= '\u{1f}' || c == '\u{7f}') {
@@ -324,7 +323,7 @@ fn validate_pdf(download: &DownloadedFile) -> Result<Bytes, String> {
         .content_type
         .as_deref()
         .and_then(|t| t.split(';').next())
-        .map(|t| crate::js::trim(t).to_lowercase());
+        .map(|t| omni_core::js::trim(t).to_lowercase());
     if !matches!(
         kind.as_deref(),
         Some("application/pdf" | "application/octet-stream")
@@ -343,7 +342,7 @@ fn validate_pdf(download: &DownloadedFile) -> Result<Bytes, String> {
     Ok(body.clone())
 }
 
-/// `parsePdfInfo`: refuses encrypted PDFs and more than 25 pages.
+/// Refuses encrypted PDFs and more than 25 pages.
 pub fn parse_pdf_info(stdout: &str) -> Result<u32, String> {
     let lines = || stdout.split('\n').map(|line| line.trim_end_matches('\r'));
     let field = |line: &str, name: &str| -> Option<String> {
@@ -352,7 +351,7 @@ pub fn parse_pdf_info(stdout: &str) -> Result<u32, String> {
     };
     if lines().any(|line| {
         field(line, "Encrypted").is_some_and(|value| {
-            let value = value.trim_start_matches(crate::js::is_js_whitespace);
+            let value = value.trim_start_matches(omni_core::js::is_js_whitespace);
             value
                 .get(..3)
                 .is_some_and(|head| head.eq_ignore_ascii_case("yes"))
@@ -363,7 +362,7 @@ pub fn parse_pdf_info(stdout: &str) -> Result<u32, String> {
     let pages = lines()
         .filter_map(|line| field(line, "Pages"))
         .find_map(|value| {
-            let digits = crate::js::trim(&value);
+            let digits = omni_core::js::trim(&value);
             (!digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()))
                 .then(|| digits.parse::<u64>().ok())
                 .flatten()

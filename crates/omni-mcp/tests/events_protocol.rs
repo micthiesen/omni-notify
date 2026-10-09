@@ -1,4 +1,4 @@
-//! Port of `src/mcp/events/protocol.spec.ts`: the modern-era client flow
+//! The modern-era client flow
 //! (server/discover, events/list, events/subscribe, events/unsubscribe) with
 //! delegated-owner headers on the authenticated endpoint.
 

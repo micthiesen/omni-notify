@@ -1,14 +1,12 @@
-//! Article text formatting (`src/press-pods/formatting/*`).
+//! Article text formatting.
 //!
-//! `clean_text` replaces the `html-to-text` call TS made with an in-house
-//! converter over `scraper`'s DOM. It keeps what the narration pipeline relies
-//! on: links reduced to their text, images, rules and tables dropped, `h1`-`h3`
-//! in their original case and `h4`-`h6` uppercased (html-to-text's default,
-//! which TS overrode only for `h1`-`h3`), paragraphs separated by a blank line, list items
-//! prefixed `" * "` / `"1. "`, and blockquote lines prefixed `"> "` (the cleaner
-//! prompt and the RSS show notes both key off that prefix). The output is
-//! model input, so exact whitespace parity with `html-to-text` is not a goal
-//! (html-to-text drift is accepted for prompts).
+//! `clean_text` is a converter over `scraper`'s DOM. It keeps what the
+//! narration pipeline relies on: links reduced to their text, images, rules
+//! and tables dropped, `h1`-`h3` in their original case and `h4`-`h6`
+//! uppercased, paragraphs separated by a blank line, list items prefixed
+//! `" * "` / `"1. "`, and blockquote lines prefixed `"> "` (the cleaner prompt
+//! and the RSS show notes both key off that prefix). The output is model
+//! input, so exact whitespace is not part of the contract.
 
 use std::sync::LazyLock;
 
@@ -29,7 +27,7 @@ fn is_html_space(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\r' | '\n' | '\x0c' | '\u{200b}')
 }
 
-/// `cleanText`: HTML to narration-ready plain text. Fails on input shorter than
+/// HTML to narration-ready plain text. Fails on input shorter than
 /// 200 UTF-16 units (`"Article is too short: <input>"`).
 pub fn clean_text(dirty: &str) -> Result<String, PressPodsError> {
     if omni_core::js::utf16_len(dirty) < 200 {
@@ -76,7 +74,7 @@ fn line_info(line: Option<&String>) -> LineInfo {
     }
 }
 
-/// `removeExtraEmptyLines`: drops empty quote lines, leading and trailing
+/// Drops empty quote lines, leading and trailing
 /// empty lines, and collapses runs of empty lines between prose to one.
 pub fn remove_extra_empty_lines(lines: &[String]) -> Vec<String> {
     lines
@@ -112,7 +110,7 @@ pub struct FinalTextInput<'a> {
     pub tz: &'a TimeZone,
 }
 
-/// `buildFinalText`: `"<Title>. By <Author>[ and <co>, <co>]. [Published <Month d, yyyy>[ on <domain>]. ]\n\n<text>"`.
+/// `"<Title>. By <Author>[ and <co>, <co>]. [Published <Month d, yyyy>[ on <domain>]. ]\n\n<text>"`.
 pub fn build_final_text(input: &FinalTextInput<'_>) -> String {
     let mut out = String::new();
     if let Some(title) = input.title.filter(|t| !t.is_empty()) {
@@ -447,7 +445,7 @@ pub fn html_to_text(html: &str) -> String {
 
 #[cfg(test)]
 mod line_filtering_spec {
-    //! Ports `src/press-pods/formatting/lineFiltering.spec.ts`.
+    //! Empty-line filtering cases.
     use super::remove_extra_empty_lines;
 
     fn lines(items: &[&str]) -> Vec<String> {

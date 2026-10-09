@@ -1,13 +1,8 @@
-//! Port of `src/recommendations/pipeline.spec.ts`.
-//!
-//! The TS spec replaces every collaborator module with mocks. Here the real
-//! pipeline runs over a temp store with in-process fakes for Plex, Arr, TMDB,
-//! Tavily and Pushover and scripted models, so the assertions observe
-//! persisted rows, recorded pushes and model prompts instead of mock calls.
-//! Mapping: `filterEligible`/`enrichCandidates` argument checks become
-//! shortlist-prompt checks; the `patch` that throws on `status: "notified"`
-//! becomes a notifier hook that leaves the row undecodable, so the final
-//! patch fails exactly where the TS mock threw.
+//! The recommendation pipeline over a temp store with in-process fakes for
+//! Plex, Arr, TMDB, Tavily and Pushover and scripted models, so the assertions
+//! observe persisted rows, recorded pushes and model prompts. A notifier hook
+//! that leaves the row undecodable makes the final patch fail after
+//! notification.
 #![allow(clippy::expect_used)]
 
 mod common;

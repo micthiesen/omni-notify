@@ -1,8 +1,6 @@
-//! Port of `src/mcp/tools/reminders.spec.ts` (server Reminders MCP boundary).
-//!
-//! The TS spec stubs `runtime.reminders.snapshot`; here the tools run over a real
-//! [`RemindersService`] whose CloudKit fake serves the same 8-list fixture (CloudKit
-//! already excludes soft-deleted reminders, so the extra deleted entry is implicit).
+//! The server Reminders MCP boundary. The tools run over a real
+//! [`RemindersService`] whose CloudKit fake serves an 8-list fixture (CloudKit
+//! already excludes soft-deleted reminders).
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 mod common;
@@ -270,7 +268,7 @@ async fn rejects_unsupported_list_writes_and_missing_rule_concurrency_identity_a
 }
 
 #[test]
-fn exposes_exactly_the_golden_reminders_tools_in_ts_order() {
+fn exposes_exactly_the_reminders_tools_in_serving_order() {
     let tools = reminders_tools(service(false)).unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t.meta.name.as_str()).collect();
     assert_eq!(

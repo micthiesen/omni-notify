@@ -80,7 +80,7 @@ fn extract_address(from: &str) -> &str {
     js_trim(bracketed.unwrap_or(from))
 }
 
-/// `matchesWorkspaceEmail`: exact sender address, domain (optional leading
+/// Exact sender address, domain (optional leading
 /// `@`), or case-insensitive subject/body keyword.
 pub fn matches_workspace_email(email: &FetchedEmail, scope: &EmailScopeRow) -> bool {
     let from = js_trim(&email.from).to_lowercase();
@@ -106,7 +106,7 @@ pub fn matches_workspace_email(email: &FetchedEmail, scope: &EmailScopeRow) -> b
             .any(|v| body.contains(&v.to_lowercase()))
 }
 
-/// The `Workspaces` email handler (registered last by WP14).
+/// The `Workspaces` email handler (registered last by app wiring).
 pub struct WorkspaceEmailHandler {
     repo: WorkspaceRepo,
     trigger: Arc<dyn EmailRunTrigger>,
@@ -117,7 +117,6 @@ impl WorkspaceEmailHandler {
         Self { repo, trigger }
     }
 
-    /// `handleEmailsEffect`.
     pub async fn handle_emails(&self, emails: &[FetchedEmail]) -> Result<(), WorkspaceError> {
         let scopes = self
             .repo

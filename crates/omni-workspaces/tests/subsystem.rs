@@ -1,4 +1,4 @@
-//! The subsystem WP14 wires: tasks, tools, entities, data-manager rows and the
+//! The subsystem app wiring receives: tasks, tools, entities, data-manager rows and the
 //! email handler.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

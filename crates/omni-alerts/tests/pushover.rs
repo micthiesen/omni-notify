@@ -33,7 +33,7 @@ fn pushover(server: &MockServer, mode: SideEffectMode) -> Pushover {
 }
 
 #[tokio::test]
-async fn posts_the_form_fields_mitools_sends() {
+async fn posts_the_pushover_form_fields() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/1/messages.json"))

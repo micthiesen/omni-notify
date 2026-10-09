@@ -1,4 +1,4 @@
-//! Port of `src/reminders/store.spec.ts` (encrypted Reminders store).
+//! The encrypted Reminders store.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 use std::os::unix::fs::PermissionsExt as _;
@@ -107,9 +107,8 @@ async fn reads_a_missing_file_as_empty_state() {
     assert_eq!(store.read().await.unwrap(), empty_reminders_state());
 }
 
-/// Rust-only: a ledger entry whose confirmed result is `null` (valid under the TS
-/// `Schema.optional(Schema.Unknown)`) keeps it through decode and rewrite, and an
-/// absent result stays absent.
+/// A ledger entry whose confirmed result is `null` keeps it through decode and
+/// rewrite, and an absent result stays absent.
 #[test]
 fn preserves_null_and_absent_ledger_results() {
     let document = json!({

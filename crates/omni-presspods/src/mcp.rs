@@ -1,5 +1,7 @@
-//! PressPods MCP tools. Metadata (names,
-//! schemas, annotations, policy) comes from the golden tool list.
+//! PressPods MCP tools. Metadata (names, schemas, annotations, policy) is
+//! declared in [`defs`].
+
+pub mod defs;
 
 use omni_mcp_kit::{McpTool, ToolError, ToolMetaError, paginate, truncate_utf16, typed_tool};
 use serde::{Deserialize, Serialize};
@@ -12,7 +14,7 @@ use crate::service::PressPods;
 use crate::storage::checkpoint_work_id;
 use crate::submit::first_line_public_url;
 
-/// `serializeEpisode` for MCP (no audio file name or lead image).
+/// An episode for MCP (no audio file name or lead image).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpEpisode {
@@ -80,7 +82,7 @@ fn default_limit() -> usize {
     25
 }
 
-/// `{resource, items, nextCursor, total}` in TS key order.
+/// `{resource, items, nextCursor, total}`, in this key order.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ListOutput {
@@ -174,7 +176,7 @@ fn contains_ci(value: Option<&str>, needle: &str) -> bool {
 pub fn tools(service: &PressPods) -> Result<Vec<McpTool>, ToolMetaError> {
     let list = {
         let service = service.clone();
-        typed_tool("presspods_list", move |input: ListInput, _cx| {
+        typed_tool(&defs::PRESSPODS_LIST, move |input: ListInput, _cx| {
             let service = service.clone();
             async move {
                 let needle = input
@@ -238,26 +240,29 @@ pub fn tools(service: &PressPods) -> Result<Vec<McpTool>, ToolMetaError> {
 
     let episode_get = {
         let service = service.clone();
-        typed_tool("presspods_episode_get", move |input: EpisodeInput, _cx| {
-            let service = service.clone();
-            async move {
-                let episode = service
-                    .persistence()
-                    .get_episode(&input.episode_id)
-                    .await
-                    .map_err(|e| execute(&e))?
-                    .ok_or_else(|| ToolError::execute("PressPods episode not found"))?;
-                Ok(EpisodeOutput {
-                    episode: mcp_episode(&episode),
-                })
-            }
-        })?
+        typed_tool(
+            &defs::PRESSPODS_EPISODE_GET,
+            move |input: EpisodeInput, _cx| {
+                let service = service.clone();
+                async move {
+                    let episode = service
+                        .persistence()
+                        .get_episode(&input.episode_id)
+                        .await
+                        .map_err(|e| execute(&e))?
+                        .ok_or_else(|| ToolError::execute("PressPods episode not found"))?;
+                    Ok(EpisodeOutput {
+                        episode: mcp_episode(&episode),
+                    })
+                }
+            },
+        )?
     };
 
     let transcript = {
         let service = service.clone();
         typed_tool(
-            "presspods_transcript_read",
+            &defs::PRESSPODS_TRANSCRIPT_READ,
             move |input: TranscriptInput, _cx| {
                 let service = service.clone();
                 async move {
@@ -293,7 +298,7 @@ pub fn tools(service: &PressPods) -> Result<Vec<McpTool>, ToolMetaError> {
 
     let submit = {
         let service = service.clone();
-        typed_tool("presspods_submit", move |input: SubmitInput, _cx| {
+        typed_tool(&defs::PRESSPODS_SUBMIT, move |input: SubmitInput, _cx| {
             let service = service.clone();
             async move {
                 let url = first_line_public_url(&input.url).map_err(ToolError::input)?;
@@ -310,7 +315,7 @@ pub fn tools(service: &PressPods) -> Result<Vec<McpTool>, ToolMetaError> {
 
     let retry = {
         let service = service.clone();
-        typed_tool("presspods_retry", move |input: ResourceInput, _cx| {
+        typed_tool(&defs::PRESSPODS_RETRY, move |input: ResourceInput, _cx| {
             let service = service.clone();
             async move {
                 let persistence = service.persistence();
@@ -357,7 +362,7 @@ pub fn tools(service: &PressPods) -> Result<Vec<McpTool>, ToolMetaError> {
 
     let delete = {
         let service = service.clone();
-        typed_tool("presspods_delete", move |input: ResourceInput, _cx| {
+        typed_tool(&defs::PRESSPODS_DELETE, move |input: ResourceInput, _cx| {
             let service = service.clone();
             async move {
                 let persistence = service.persistence();

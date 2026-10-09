@@ -1,5 +1,4 @@
-//! IPP/2.0 over HTTP for the fixed LAN printer (the `@pnosolutions/ipp`
-//! `Printer` the TS service used): `Get-Printer-Attributes`, `Print-Job` and
+//! IPP/2.0 over HTTP for the fixed LAN printer: `Get-Printer-Attributes`, `Print-Job` and
 //! `Get-Job-Attributes`. Requests are encoded and responses parsed with the
 //! `ipp` crate; transport is the shared HTTP client.
 
@@ -22,7 +21,7 @@ use omni_http::{HttpClient, Method, SideEffectMode, Url};
 const MAX_IPP_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const REQUESTING_USER: &str = "ipp-client";
 
-/// A decoded attribute value, as the TS IPP library exposed it.
+/// A decoded attribute value.
 #[derive(Clone, Debug, PartialEq)]
 pub enum IppRaw {
     Number(f64),
@@ -40,7 +39,7 @@ impl IppRaw {
         }
     }
 
-    /// `rawNumber`: the first value when it is a finite number.
+    /// The first value when it is a finite number.
     pub fn number(&self) -> Option<f64> {
         match self.first() {
             IppRaw::Number(n) if n.is_finite() => Some(*n),
@@ -48,7 +47,7 @@ impl IppRaw {
         }
     }
 
-    /// `firstRawValue` as a boolean.
+    /// The first raw value as a boolean.
     pub fn boolean(&self) -> Option<bool> {
         match self.first() {
             IppRaw::Bool(b) => Some(*b),
@@ -56,7 +55,7 @@ impl IppRaw {
         }
     }
 
-    /// `rawStrings`: every string value.
+    /// Every string value.
     pub fn strings(&self) -> Vec<String> {
         match self {
             IppRaw::Array(items) => items
@@ -81,7 +80,6 @@ impl IppRaw {
         }
     }
 
-    /// `strArray()`.
     fn str_array(&self) -> Vec<String> {
         match self {
             IppRaw::Array(items) => items.iter().map(IppRaw::str).collect(),
@@ -143,7 +141,7 @@ impl IppResponse {
         out
     }
 
-    /// `getAttribute` across all groups.
+    /// An attribute looked up across all groups.
     pub fn attribute(&self, name: &str) -> Option<&IppRaw> {
         self.groups
             .iter()
@@ -237,7 +235,7 @@ pub trait PrinterClient: Send + Sync {
     ) -> Option<BoxFuture<'a, Result<JobStatus, String>>>;
 }
 
-/// RFC 8011 status-code names, as the TS IPP library reports them.
+/// RFC 8011 status-code names.
 fn status_name(code: u16) -> &'static str {
     match code {
         0x0000 => "ok",
@@ -338,7 +336,7 @@ pub fn ipp_http_url(uri: &str) -> Result<Url, String> {
     Ok(http)
 }
 
-/// `resolveAuthorization`: URL userinfo becomes Basic credentials, never part
+/// URL userinfo becomes Basic credentials, never part
 /// of the request URL.
 fn url_credentials(uri: &str) -> Result<Option<(String, String)>, String> {
     let url = Url::parse(uri).map_err(|e| format!("Invalid printer URL: {e}"))?;

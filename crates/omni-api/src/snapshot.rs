@@ -1,5 +1,5 @@
-//! Dashboard snapshot (WP14): `GET /api/snapshot` and every `snapshot` frame of
-//! the `/api/events` SSE stream (`buildSnapshot` in `src/server.ts`).
+//! Dashboard snapshot: `GET /api/snapshot` and every `snapshot` frame of
+//! the `/api/events` SSE stream.
 
 use serde::{Deserialize, Serialize};
 

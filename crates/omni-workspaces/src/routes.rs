@@ -1,4 +1,4 @@
-//! Workspace REST routes (`src/server.ts` lines 188-204 and 1669-1923).
+//! Workspace REST routes.
 
 use std::collections::HashMap;
 

@@ -1,4 +1,4 @@
-//! Port of `src/briefing-agent/configs.spec.ts`.
+//! Briefing config loading from `BRIEFINGS_PATH` Markdown files.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_briefings::load_briefing_configs;

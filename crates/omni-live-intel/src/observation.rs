@@ -1,6 +1,6 @@
 //! The live-check view the intelligence service consumes: a streamer and its
 //! current live status, decoded from the `LiveDirectory` port's values
-//! (`src/live-check/streamers.ts`, `src/live-check/persistence.ts`).
+//! (streamer summaries and status views).
 
 use serde::{Deserialize, Deserializer};
 
@@ -46,7 +46,7 @@ impl Platform {
 pub struct PlatformBinding {
     pub platform: Platform,
     pub username: String,
-    /// `urlOverride` in persisted TS statuses; the `LiveDirectory` views carry
+    /// `urlOverride` in persisted statuses; the `LiveDirectory` views carry
     /// the resolved watch URL (`urlOverride ?? live page`) as `url`, which
     /// yields the same notification and capture URL.
     #[serde(default, alias = "url")]
@@ -73,7 +73,7 @@ impl PlatformBinding {
     }
 }
 
-/// `tier` (`entry.tier ?? "primary"` in TS, so an absent tier is primary).
+/// `tier`; an absent tier is primary.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 pub enum StreamerTier {
     #[default]
@@ -117,7 +117,6 @@ pub struct SourceObservation {
     pub viewer_count: Option<f64>,
 }
 
-/// `StreamerStatusLive`.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LiveStatus {
@@ -125,7 +124,7 @@ pub struct LiveStatus {
     pub primary: PlatformBinding,
     #[serde(default)]
     pub primary_title: String,
-    /// Epoch ms; TS rows hold a Date (ISO string over JSON) or epoch ms.
+    /// Epoch ms; stored rows hold a Date (ISO string over JSON) or epoch ms.
     #[serde(deserialize_with = "epoch_ms")]
     pub started_at: i64,
     #[serde(default)]
@@ -152,7 +151,7 @@ impl LiveObservation {
     }
 }
 
-/// `viewerCountForAnomaly`: the sticky primary's own count, never a sum of
+/// The sticky primary's own count, never a sum of
 /// overlapping bindings; the aggregate only for rows without sources.
 pub fn viewer_count_for_anomaly(status: &LiveStatus) -> Option<f64> {
     let Some(sources) = &status.sources else {

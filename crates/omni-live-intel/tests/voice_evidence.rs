@@ -1,4 +1,4 @@
-//! Port of `src/live-check/intelligence/voiceEvidence.spec.ts`.
+//! Destiny voice evidence accumulation.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use omni_live_intel::voice_evidence::{VoiceEvidenceDecision as D, VoiceEvidenceTracker};

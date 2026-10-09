@@ -1,10 +1,6 @@
-//! Port of `src/reminders/routes.spec.ts` (Reminders admin routes), plus the
-//! `/reminders` page headers.
-//!
-//! Dropped cases: "rejects arbitrary diagnostic labels" injects labels outside the
-//! TS union; the Rust status type cannot represent them, so only the HTTP-status
-//! half of that case is ported. Extra secret fields on the status object likewise
-//! cannot exist in the typed DTO.
+//! Reminders admin routes and the `/reminders` page headers. The typed status
+//! cannot carry arbitrary diagnostic labels or secret fields, so only bounded
+//! HTTP statuses are checked.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};

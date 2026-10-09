@@ -37,7 +37,7 @@ impl PlexLibrary {
         Self { client: Ok(client) }
     }
 
-    /// `createPlexClient` failed (missing configuration).
+    /// The Plex client could not be created (missing configuration).
     pub fn unconfigured(reason: impl Into<String>) -> Self {
         Self {
             client: Err(reason.into()),

@@ -6,7 +6,7 @@
 //! omni-notify --preview [--port N]
 //! omni-notify healthcheck
 //! omni-notify doctor [--image]
-//! omni-notify compat-audit --db COPY [--rewrite-to NEW.db]
+//! omni-notify compat-audit --db COPY
 //! ```
 //!
 //! `OMNI_SIDE_EFFECTS=record` selects record mode for shadow runs like the
@@ -66,7 +66,7 @@ pub const USAGE: &str = "usage:
   omni-notify --preview [--port N] [--web-dist DIR]
   omni-notify healthcheck
   omni-notify doctor [--image]
-  omni-notify compat-audit --db COPY [--rewrite-to NEW.db]
+  omni-notify compat-audit --db COPY
 ";
 
 fn side_effects(value: &str) -> Result<SideEffectMode, CliError> {
@@ -112,7 +112,6 @@ pub fn parse(args: &[String], env: impl Fn(&str) -> Option<String>) -> Result<Co
         }
         Some("compat-audit") => {
             let mut db = None;
-            let mut rewrite_to = None;
             let mut rest = args[1..].iter();
             while let Some(arg) = rest.next() {
                 let (flag, inline) = match arg.split_once('=') {
@@ -121,14 +120,11 @@ pub fn parse(args: &[String], env: impl Fn(&str) -> Option<String>) -> Result<Co
                 };
                 match flag {
                     "--db" => db = Some(PathBuf::from(value("--db", inline, &mut rest)?)),
-                    "--rewrite-to" => {
-                        rewrite_to = Some(PathBuf::from(value("--rewrite-to", inline, &mut rest)?));
-                    }
                     other => return Err(CliError::Unknown(other.to_owned())),
                 }
             }
             let db = db.ok_or(CliError::MissingValue("--db"))?;
-            return Ok(Command::CompatAudit(AuditArgs { db, rewrite_to }));
+            return Ok(Command::CompatAudit(AuditArgs { db }));
         }
         _ => {}
     }
@@ -245,14 +241,17 @@ mod tests {
             Ok(Command::Doctor { image: true })
         );
         assert_eq!(
+            parse(&args(&["compat-audit", "--db=a.db"]), no_env),
+            Ok(Command::CompatAudit(AuditArgs {
+                db: PathBuf::from("a.db"),
+            }))
+        );
+        assert!(
             parse(
                 &args(&["compat-audit", "--db", "a.db", "--rewrite-to=b.db"]),
                 no_env
-            ),
-            Ok(Command::CompatAudit(AuditArgs {
-                db: PathBuf::from("a.db"),
-                rewrite_to: Some(PathBuf::from("b.db")),
-            }))
+            )
+            .is_err()
         );
         assert!(parse(&args(&["compat-audit"]), no_env).is_err());
         assert!(parse(&args(&["--bogus"]), no_env).is_err());

@@ -1,5 +1,4 @@
-//! Port of `src/live-check/platforms/twitch.spec.ts`, plus the escaped-login
-//! query (the TS interpolated the username raw).
+//! Twitch live status, including the escaped-login query.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

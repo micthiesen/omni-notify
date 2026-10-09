@@ -1,4 +1,4 @@
-//! Parcel tracker email pipeline (WP02): candidate filter, tracking-number
+//! Parcel tracker email pipeline: candidate filter, tracking-number
 //! extraction, carrier validation against the live Parcel list, durable
 //! dedup with reservation before submission, and the delivery-forget route.
 
@@ -83,7 +83,7 @@ async fn forget_delivery(
     Ok(Json(DeletedResponse { deleted: true }))
 }
 
-/// `createParcelHandler`: `None` (logged) without `PARCEL_API_KEY`.
+/// `None` (logged) without `PARCEL_API_KEY`.
 pub fn handler(
     ctx: &AppContext,
     triage: EmailTriage,

@@ -1,5 +1,4 @@
-//! Port of `src/briefing-agent/placeholders.spec.ts`. The TS cases pin the
-//! system time to local `2026-02-06T14:30:00`; here "now" is that wall time in
+//! Prompt placeholder expansion. "Now" is the wall time `2026-02-06T14:30:00` in
 //! America/Vancouver, the production `TZ`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

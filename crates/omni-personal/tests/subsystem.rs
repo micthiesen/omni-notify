@@ -1,6 +1,5 @@
-//! The assembled subsystem: pet routes (`src/server.ts` 1926-1987), the MCP
-//! tools of `src/mcp/tools/personal.ts`, and task/tool/entity registration.
-//! No TS spec covers these; cases mirror the TS handlers.
+//! The assembled subsystem: pet routes, the personal MCP tools, and
+//! task/tool/entity registration.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use axum::body::Body;

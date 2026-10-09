@@ -1,4 +1,4 @@
-//! Durable profile identity links (`identityLinks.ts`, entity
+//! Durable profile identity links (entity
 //! `live-profile-identity-link`): a DGG-discovered account resolved to a
 //! configured account through verified platform evidence.
 

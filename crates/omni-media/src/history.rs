@@ -1,6 +1,8 @@
 //! Ground-truth watch history for taste inputs.
 
-use crate::js::{math_round, number, to_date_stamp};
+use omni_core::clock::utc_date_stamp;
+use omni_core::js::{math_round, number_to_string};
+
 use crate::outcomes::WATCHED_COMPLETION_THRESHOLD;
 use crate::types::{InProgressItem, MediaType, WatchedItem};
 
@@ -56,7 +58,7 @@ pub fn format_history_digest(watched: &[WatchedItem], in_progress: &[InProgressI
                 item.item.title,
                 year_suffix(item.item.year),
                 item.item.media_type.as_str(),
-                to_date_stamp(item.viewed_at)
+                utc_date_stamp(item.viewed_at)
             ));
         }
     }
@@ -69,7 +71,7 @@ pub fn format_history_digest(watched: &[WatchedItem], in_progress: &[InProgressI
                 item.item.title,
                 year_suffix(item.item.year),
                 item.item.media_type.as_str(),
-                number(math_round(item.progress * 100.0))
+                number_to_string(math_round(item.progress * 100.0))
             ));
         }
     }

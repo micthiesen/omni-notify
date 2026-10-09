@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/tmdb/types.spec.ts`.
+//! TMDB payload decoding and normalization.
 #![allow(clippy::expect_used)]
 
 use omni_media::tmdb::types::{
@@ -147,7 +147,7 @@ fn normalizes_tv_series_size_and_uses_the_median_episode_runtime() {
 }
 
 #[test]
-fn details_serialize_in_ts_key_order_without_absent_fields() {
+fn details_serialize_in_wire_key_order_without_absent_fields() {
     let movie = TmdbTitleDetails {
         genres: vec!["Drama".to_owned()],
         runtime_minutes: Some(110.0),

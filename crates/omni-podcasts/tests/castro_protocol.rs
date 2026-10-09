@@ -1,6 +1,4 @@
-//! Port of `src/podcast-recs/castro/protocol.spec.ts`.
-//! Castro specs carry a `castro_` prefix: the `auth` and `client` stems collide
-//! with the Podcast Index specs.
+//! Castro sync protocol decoding.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::castro::protocol::{

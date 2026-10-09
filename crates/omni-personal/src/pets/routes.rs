@@ -1,4 +1,4 @@
-//! `GET /api/pets` and `GET /api/pets/:petId/export.csv` (`src/server.ts` 1926-1987).
+//! `GET /api/pets` and `GET /api/pets/:petId/export.csv`.
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
@@ -8,12 +8,13 @@ use axum::routing::get;
 use jiff::tz::TimeZone;
 use omni_api::pets::{DailyVisit, Pet, WeightEntry};
 use omni_core::clock::SharedClock;
-use omni_core::js::{json_stringify, number_to_string, string_to_number};
+use omni_core::js::{
+    MAX_DATE_MS, date_parse, json_stringify, math_round, number_to_string, string_to_number,
+};
 use omni_server_kit::{ApiError, json_response};
 use serde::Deserialize;
 
 use super::persistence::PetStore;
-use crate::js::{MAX_DATE_MS, math_round, parse_date};
 
 #[derive(Clone)]
 struct PetsState {
@@ -98,7 +99,7 @@ async fn export_csv(
             history.retain(|row| {
                 // `new Date(timestamp) >= cutoff`: an invalid date on either side is false.
                 cutoff_valid
-                    && parse_date(&row.timestamp, &state.tz).is_some_and(|at| {
+                    && date_parse(&row.timestamp, &state.tz).is_some_and(|at| {
                         #[allow(clippy::cast_precision_loss)]
                         let at = at as f64;
                         at >= cutoff

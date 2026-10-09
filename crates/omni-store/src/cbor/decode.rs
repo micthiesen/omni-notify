@@ -1,6 +1,7 @@
-//! `Decoder.decodeFirstSync` parity (node-cbor 10.0.12, default options).
+//! A decoder that accepts exactly what node-cbor 10.0.12 `Decoder.decodeFirstSync`
+//! (default options) accepts, because stored rows were written by node-cbor.
 //!
-//! The result is the JS value node hands to TS, modelled as [`JsValue`]:
+//! The result is the JS value node-cbor would produce, modelled as [`JsValue`]:
 //! integers stay [`JsValue::Int`] (beyond 2^53 node yields a BigInt, which
 //! re-encodes the same way), floats of every width become [`JsValue::Float`],
 //! tags node converts (0/1 dates, 2/3 bignums, 258 sets, 64-87 typed arrays)
@@ -333,7 +334,7 @@ fn build_map(entries: Vec<(JsValue, JsValue)>) -> JsValue {
     JsValue::Map(map)
 }
 
-/// `TimeClip`: NaN outside ±8.64e15, otherwise truncated toward zero (no -0).
+/// NaN outside ±8.64e15, otherwise truncated toward zero (no -0).
 pub(crate) fn time_clip(ms: f64) -> f64 {
     if !ms.is_finite() || ms.abs() > MAX_TIME_MS {
         f64::NAN

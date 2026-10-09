@@ -1,4 +1,4 @@
-//! Media taste evidence, profile reflection and stats (`src/recommendations/taste/`).
+//! Media taste evidence, profile reflection and stats.
 
 pub mod evidence;
 pub mod persistence;

@@ -75,7 +75,7 @@ pub struct ComposeValues {
     pub icloud_app_password: Option<String>,
 }
 
-/// `resolveComposeEmailConfiguration` over [`Config`].
+/// Compose settings resolved from [`Config`].
 pub fn resolve_compose_config(c: &Config) -> Option<SmtpConfig> {
     resolve_compose_values(&ComposeValues {
         smtp_host: c.smtp_host.clone(),
@@ -87,7 +87,7 @@ pub fn resolve_compose_config(c: &Config) -> Option<SmtpConfig> {
     })
 }
 
-/// `resolveComposeEmailConfiguration`: complete explicit settings win; any
+/// Complete explicit settings win; any
 /// partial `SMTP_*` disables sending; with none set, iCloud credentials are used.
 /// A `SMTP_PORT` that is not a valid TCP port also disables sending.
 pub fn resolve_compose_values(c: &ComposeValues) -> Option<SmtpConfig> {
@@ -128,7 +128,7 @@ fn valid_port(port: f64) -> Option<u16> {
     Some(port as u16)
 }
 
-/// `ComposedEmailParams`: a composed message (the sender is never an input).
+/// A composed message (the sender is never an input).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ComposeInput {
     pub to: Vec<String>,
@@ -153,7 +153,7 @@ pub struct PreparedEmail {
     pub message_id: String,
 }
 
-/// `prepareComposedEmailEffect`: builds the SMTP wire MIME (no `Bcc`
+/// Builds the SMTP wire MIME (no `Bcc`
 /// header) and the private Sent copy (with `Bcc`) from the same identity,
 /// body, date and Message-ID. With `in_reply_to`, it is appended to
 /// `references` (deduplicated) to extend the reply chain.
@@ -239,7 +239,7 @@ fn compose(
         .map_err(|e| MailError::Mime(e.to_string()))
 }
 
-/// `composerAttachmentOptions`: verified bytes as `attachment` parts (the
+/// Verified bytes as `attachment` parts (the
 /// message becomes `multipart/mixed`); never paths or URLs.
 pub fn with_attachments<'x>(
     builder: MessageBuilder<'x>,
@@ -412,7 +412,7 @@ impl Mailer {
             .clone()
     }
 
-    /// `sendEmailEffect`: an HTML + text notification (log digests) from the
+    /// An HTML + text notification (log digests) from the
     /// fixed identity.
     pub async fn send_notification(
         &self,
@@ -437,7 +437,7 @@ impl Mailer {
         Ok(())
     }
 
-    /// `sendComposedEmailEffect`: composes `input` and submits the Bcc-free
+    /// Composes `input` and submits the Bcc-free
     /// wire form to every To, Cc and Bcc recipient (deduplicated).
     pub async fn send_composed(
         &self,

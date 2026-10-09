@@ -11,7 +11,7 @@ pub const CATALOG_URL: &str = "https://resetradar.com/data/events.json";
 const MAX_EVENTS: usize = 5_000;
 const MAX_LABELS: usize = 50;
 
-/// `ClaudeResetSourceSchema`; unrelated catalog metadata is discarded.
+/// A decoded catalog report; unrelated catalog metadata is discarded.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct ClaudeResetSource {
     pub updated: String,

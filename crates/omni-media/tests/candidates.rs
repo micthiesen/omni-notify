@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/candidates.spec.ts`.
+//! Recommendation candidate gathering.
 #![allow(clippy::expect_used)]
 
 use omni_media::candidates::{

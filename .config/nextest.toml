@@ -1,0 +1,21 @@
+# cargo-nextest runs each test in its own process, in parallel across every
+# test binary. The workspace has no doctests (doc comments only hold `text`
+# blocks), so nextest covers everything `cargo test` would run.
+
+[profile.default]
+# Report every failure in one run instead of stopping at the first.
+fail-fast = false
+# Flag a test as slow after 60s; never kill it locally.
+slow-timeout = { period = "60s" }
+
+[profile.ci]
+# A flaky test should fail CI, not pass on a retry.
+retries = 0
+fail-fast = false
+# Flag slow tests every 60s and terminate one that hangs past 5 minutes, so a
+# deadlock fails the job quickly instead of running to the job timeout.
+slow-timeout = { period = "60s", terminate-after = 5 }
+# Print failures again at the end so they are not buried in the log.
+failure-output = "immediate-final"
+status-level = "slow"
+final-status-level = "slow"

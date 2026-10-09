@@ -1,6 +1,6 @@
-//! Port of `src/mcp/auth.spec.ts` (all cases kept). The token rules live in
-//! `omni-config` (boot validation) and the bearer check in `omni-server-kit`;
-//! this spec exercises them as the MCP endpoint relies on them.
+//! MCP authentication. The token rules live in `omni-config` (boot validation)
+//! and the bearer check in `omni-server-kit`; these cases exercise them as the
+//! MCP endpoint relies on them.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

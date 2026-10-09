@@ -13,6 +13,7 @@ use futures::StreamExt;
 use indexmap::IndexMap;
 use omni_ai::ModelRole;
 use omni_api::media::{RecommendationStatus, WatchlistResult};
+use omni_core::clock::utc_date_stamp;
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
 
 use crate::candidates::{
@@ -22,7 +23,7 @@ use crate::error::{IntegrationError, RecommendationError, max_recommendations_me
 use crate::filters::{FilterContext, filter_eligible};
 use crate::history::{completed_watches, format_history_digest};
 use crate::identity::resolve_identity;
-use crate::js::{slice_utf16, to_date_stamp};
+use crate::js::slice_utf16;
 use crate::outcomes::{OutcomeInputs, ProgressState, WatchedState, decide_outcomes};
 use crate::persistence::{
     NotificationState, Patch, RecommendationData, ShortlistScoresData, format_feedback_digest,
@@ -673,7 +674,7 @@ async fn build_seeds(
             Err(error) => {
                 tracing::warn!(
                     target: LOG,
-                    error = error.effect_message(),
+                    error = error.cause_message(),
                     "Genre lookup failed for {canonical_id}"
                 );
                 Vec::new()
@@ -741,7 +742,7 @@ async fn commit_recommendation(
             risks: scored.risks.clone(),
             extra: Default::default(),
         }),
-        run_date: to_date_stamp(now),
+        run_date: utc_date_stamp(now),
         recommended_at: now,
         was_backup: Some(was_backup),
         ..RecommendationData::default()

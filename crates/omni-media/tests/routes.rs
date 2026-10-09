@@ -1,4 +1,4 @@
-//! `/api/recommendations*` routes (`src/server.ts` media sections) and the
+//! `/api/recommendations*` routes and the
 //! on-deck port.
 #![allow(clippy::expect_used)]
 
@@ -107,7 +107,7 @@ async fn lists_recommendations_newest_first_with_links_and_js_numbers() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body, json!({"error": "Recommendation not found"}));
-    // `GET /run` and `POST /taste-profile/feedback` reach the `:id` routes as in Hono.
+    // `GET /run` and `POST /taste-profile/feedback` reach the `:id` routes.
     let (status, body) = h.app.get_json(&router, "/api/recommendations/run").await;
     assert_eq!(status, StatusCode::NOT_FOUND);
     assert_eq!(body, json!({"error": "Recommendation not found"}));

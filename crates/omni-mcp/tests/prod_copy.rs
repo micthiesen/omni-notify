@@ -128,7 +128,7 @@ async fn every_wp12_entity_row_decodes_and_round_trips() {
     total += check::<EventDelivery>(&store).await;
     total += check::<EventRequest>(&store).await;
     total += check::<ClaudeSessionWatch>(&store).await;
-    println!("total WP12 rows: {total}");
+    println!("total MCP rows: {total}");
 
     let events = EventStore::new(store.clone());
     events.subscriptions().await.unwrap();

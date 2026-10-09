@@ -1,5 +1,5 @@
-//! Port of `src/observer-repair/service.spec.ts` with in-memory dependencies
-//! over a file-backed store.
+//! The Observer repair service with in-memory dependencies over a file-backed
+//! store.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::{Arc, Mutex};

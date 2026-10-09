@@ -64,7 +64,7 @@ pub struct Harness {
     pub tracker: TaskTracker,
 }
 
-/// A transport with a fake client attached (no IDLE loop, like the TS specs).
+/// A transport with a fake client attached (no IDLE loop).
 pub async fn harness(server: FakeServer) -> Harness {
     let clock = TestClock::new(NOW_MS);
     let shared: SharedClock = clock.clone();

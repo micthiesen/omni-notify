@@ -24,7 +24,7 @@ pub struct LiveRoutesState {
     pub roster: Roster,
 }
 
-/// Logged once (at ERROR) by `ApiError`, rendered as Hono's opaque 500.
+/// Logged once (at ERROR) by `ApiError`, rendered as the opaque 500.
 fn internal(error: LiveError) -> ApiError {
     ApiError::internal(error)
 }

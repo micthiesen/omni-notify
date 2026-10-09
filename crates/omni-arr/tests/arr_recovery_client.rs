@@ -1,5 +1,5 @@
-//! Port of `src/arr-recovery/client.spec.ts` against a wiremock Sonarr/Radarr,
-//! plus a record-mode case (mutations are captured, never sent).
+//! The Arr client against a wiremock Sonarr/Radarr, plus a record-mode case
+//! (mutations are captured, never sent).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::SideEffects;

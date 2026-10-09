@@ -6,9 +6,7 @@ use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
 
-mod api_diff;
 mod capture;
-mod compat;
 mod deps;
 mod golden_synth;
 mod mcp;
@@ -24,20 +22,16 @@ const COMMANDS: &[(&str, &str)] = &[
         "[--from DIR] [--check]: derive the committed synthetic HTTP fixtures (no personal data) from the raw capture",
     ),
     (
+        "mcp-golden",
+        "[--check]: regenerate the MCP snapshots (tools-list.json, protocol.json tools/list copies, both mcp-policy.json copies) from the Rust tool definitions",
+    ),
+    (
         "mcp-policy",
-        "[--check]: render docs/mcp-policy.json and its golden copy from the committed MCP tool metadata",
+        "[--check]: same as mcp-golden (the policy inventory is generated with the other MCP snapshots)",
     ),
     (
         "golden-check",
-        "verify mcp-policy and that committed golden fixtures are unchanged",
-    ),
-    (
-        "compat-audit",
-        "--db COPY: per-entity counts, CBOR decode failures, legacy rows and Rust re-encode parity",
-    ),
-    (
-        "api-diff",
-        "--ts URL --rust URL [--route PATH]... [--shape]: diff JSON values (or shapes) of read routes",
+        "verify the MCP snapshots match the tool definitions and that committed golden fixtures are unchanged",
     ),
     ("deps-check", "enforce the crate dependency direction rules"),
     (
@@ -46,7 +40,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "gate",
-        "local pre-push gate: hygiene, fmt --check, workspace and wasm32 clippy -D warnings, deps-check, workspace tests --no-fail-fast",
+        "local pre-push gate: hygiene, fmt --check, workspace and wasm32 clippy -D warnings, deps-check, workspace tests --no-fail-fast (cargo-nextest when installed)",
     ),
 ];
 
@@ -67,6 +61,18 @@ fn cargo(args: &[&str]) -> Result<()> {
         bail!("cargo {} exited with {status}", args.join(" "));
     }
     Ok(())
+}
+
+/// Whether `cargo nextest` runs. The workspace has no doctests, so nextest covers
+/// every test `cargo test` would run.
+fn nextest_installed() -> bool {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    std::process::Command::new(cargo)
+        .args(["nextest", "--version"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 /// Build-directory hygiene, then the checks CI runs, plus wasm32 Clippy for the
@@ -98,7 +104,18 @@ fn gate() -> Result<()> {
     ]);
     cargo(&wasm)?;
     deps::deps_check()?;
-    cargo(&["test", "--workspace", "--locked", "--no-fail-fast"])?;
+    if nextest_installed() {
+        cargo(&[
+            "nextest",
+            "run",
+            "--workspace",
+            "--locked",
+            "--no-fail-fast",
+        ])?;
+    } else {
+        println!("gate: cargo-nextest not installed; falling back to cargo test");
+        cargo(&["test", "--workspace", "--locked", "--no-fail-fast"])?;
+    }
     println!("gate: ok");
     Ok(())
 }
@@ -132,15 +149,13 @@ fn run(command: &str, args: &[String]) -> Result<()> {
     match command {
         "capture-golden" => capture::capture_golden(args),
         "golden-synthesize" => golden_synth::golden_synthesize(args),
-        "mcp-policy" => mcp::mcp_policy(check),
+        "mcp-golden" | "mcp-policy" => mcp::mcp_golden(check),
         "golden-check" => {
-            mcp::mcp_policy(true)?;
+            mcp::mcp_golden(true)?;
             capture::committed_fixtures_unchanged()?;
             println!("golden-check: ok");
             Ok(())
         }
-        "compat-audit" => compat::compat_audit(args),
-        "api-diff" => api_diff::api_diff(args),
         "deps-check" => deps::deps_check(),
         "hygiene" => target_hygiene::maintain(&repo_root()),
         "gate" => gate(),

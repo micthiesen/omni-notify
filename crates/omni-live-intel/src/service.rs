@@ -2,7 +2,7 @@
 //! Destiny voice presence, rolling summaries and alerts.
 //!
 //! In-memory state (anomaly samples, voice evidence, cooldowns, schedules)
-//! resets on restart, as in TS. The state mutex is never held across an await.
+//! resets on restart. The state mutex is never held across an await.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -13,6 +13,7 @@ use omni_alerts::{Pushover, PushoverChannel, PushoverError, PushoverMessage};
 use omni_api::costs::{CostCategory, CostPriceStatus, CostUsage};
 use omni_config::Config;
 use omni_core::clock::SharedClock;
+use omni_core::js::math_round;
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::EntityOps as _;
 use omni_store::{Store, StoreError};
@@ -27,7 +28,7 @@ use crate::classifier::{
     AssessmentError, TranscriptAssessment, TranscriptAssessmentInput, TranscriptClassifier,
     livestream_spend_cents,
 };
-use crate::js_math::{js_min, js_round};
+use crate::js_math::js_min;
 use crate::observation::{LiveObservation, Streamer, StreamerTier, viewer_count_for_anomaly};
 use crate::persistence::{
     DESTINY_CONFIRMED_EVENT_TITLE, NewLivestreamEvent, build_feedback_digest, get_diagnostics,
@@ -189,7 +190,6 @@ pub struct RuntimeIntervals {
     pub summary_seconds: u32,
 }
 
-/// `LivestreamRuntimeDiagnostics`.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeDiagnostics {
@@ -204,7 +204,7 @@ pub struct RuntimeDiagnostics {
 }
 
 /// Clears a pending marker when the job ends or is interrupted, if it is
-/// still the job's own session (TS `Effect.ensuring`).
+/// still the job's own session.
 struct PendingGuard {
     inner: Arc<Inner>,
     streamer_id: String,
@@ -279,7 +279,7 @@ fn stage(status: PipelineStatus) -> StageDiagnostic {
 }
 
 fn percent(value: f64) -> String {
-    omni_core::js::number_to_string(js_round(value * 100.0))
+    omni_core::js::number_to_string(math_round(value * 100.0))
 }
 
 /// An alert to consider sending.
@@ -1353,7 +1353,7 @@ impl LivestreamIntelligenceService {
         let spent =
             livestream_spend_cents(&self.deps().store, finished_at, &self.settings().tz).await?;
         let cost_cents = (spent - cost_before).max(0.0);
-        let audio_seconds = js_round(duration_seconds);
+        let audio_seconds = math_round(duration_seconds);
         let mut done = self.finished_stage(
             PipelineStatus::Success,
             started_at,
@@ -1413,7 +1413,7 @@ impl LivestreamIntelligenceService {
             )
             .into_owned(),
             updated_at: now,
-            window_seconds: js_round(duration_seconds),
+            window_seconds: math_round(duration_seconds),
             extra: Extra::new(),
         });
         let same_topic = current
@@ -1482,7 +1482,7 @@ impl LivestreamIntelligenceService {
                 price_status: CostPriceStatus::Free,
                 usage: CostUsage {
                     requests: Some(1.0),
-                    characters: Some(js_round(seconds)),
+                    characters: Some(math_round(seconds)),
                     ..CostUsage::default()
                 },
                 event_id: None,

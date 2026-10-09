@@ -1,6 +1,5 @@
-//! Chunk verification, adaptive re-splitting and checkpoint resume
-//! (`src/press-pods/speech/synthesize.ts`, which had no spec) over a fake
-//! verified provider, an echo STT and a recording fake ffmpeg.
+//! Chunk verification, adaptive re-splitting and checkpoint resume over a
+//! fake verified provider, an echo STT and a recording fake ffmpeg.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

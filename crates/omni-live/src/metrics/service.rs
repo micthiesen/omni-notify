@@ -3,7 +3,7 @@
 //! A new peak becomes a record only after the count falls 5 percent below
 //! it (hysteresis), or when the stream goes offline (flush). Every window is
 //! tracked and persisted; the record scope only narrows which confirmations
-//! may notify. Pending peaks are in memory, as in TS.
+//! may notify. Pending peaks are in memory.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
@@ -91,7 +91,7 @@ impl ViewerMetricsService {
         let count = observation.viewer_count;
         // Window maxima come from the buckets as they stood before this
         // observation. Measuring after it would include `count` itself, so a
-        // windowed record could never start (TS had this bug). Earlier
+        // windowed record could never start. Earlier
         // observations today still count, so a peak confirmed today, or one
         // observed before a restart, is not reported again at a lower value.
         let prior_buckets = metrics.daily_buckets.clone();

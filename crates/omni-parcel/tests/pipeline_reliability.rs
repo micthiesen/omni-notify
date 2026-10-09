@@ -1,12 +1,12 @@
-//! Port of `src/parcel-tracker/pipeline.reliability.spec.ts`, plus the
-//! submission flow (dedup, near-duplicates, ranked fallbacks, terminal
-//! rejections, transient failures) against the real store.
+//! Parcel pipeline reliability and the submission flow (dedup,
+//! near-duplicates, ranked fallbacks, terminal rejections, transient
+//! failures) against the real store.
 //!
-//! The TS spec mocks the filter, activity, retry and persistence modules;
-//! here they are real, with the candidate admitted by a stub triage and a
-//! post-acceptance crash injected as a SQLite trigger on the confirmation
-//! write. In Rust that crash is a typed persistence failure, so the email is
-//! also recorded as `error` and enqueued for retry (TS logged a defect).
+//! The filter, activity, retry and persistence modules are real, with the
+//! candidate admitted by a stub triage and a post-acceptance crash injected as
+//! a SQLite trigger on the confirmation write. That crash is a typed
+//! persistence failure, so the email is also recorded as `error` and enqueued
+//! for retry.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

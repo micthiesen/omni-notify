@@ -1,4 +1,4 @@
-//! Typed entities over the docstore (mitools `Entity`, section 4.2).
+//! Typed entities over the docstore.
 //!
 //! Primary keys are `$<name>#` plus `#`-joined parts (`s<utf16 len>:<value>`,
 //! `n<Number#toString>`, `b1`/`b0`). Typed reads and writes run inside the
@@ -121,10 +121,10 @@ pub trait Entity: Serialize + DeserializeOwned + Send + Sync + 'static {
     }
 }
 
-/// `encodeKeyPart`: `s<utf16 len>:<value>`, `n<Number#toString>`, `b1`/`b0`.
+/// `s<utf16 len>:<value>`, `n<Number#toString>`, `b1`/`b0`.
 fn encode_part(entity: &str, part: &KeyPart) -> Result<String, StoreError> {
     match part {
-        KeyPart::Str(s) => Ok(format!("s{}:{s}", cbor::js_len(s))),
+        KeyPart::Str(s) => Ok(format!("s{}:{s}", omni_core::js::utf16_len(s))),
         KeyPart::Num(n) if n.is_finite() => Ok(format!("n{}", omni_core::js::number_to_string(*n))),
         KeyPart::Num(n) => Err(StoreError::InvalidKey(format!(
             "{entity}: non-finite number key part {n}"
@@ -373,7 +373,7 @@ pub struct EntityDescriptor {
     pub version: i64,
     pub recompute_pk: fn(&JsValue) -> Result<String, String>,
     pub migrate: fn(JsValue, i64) -> Result<JsValue, String>,
-    /// Typed round trip `decode -> E -> encode` (compat audit, `--rewrite-to`).
+    /// Typed round trip `decode -> E -> encode` (compat audit).
     pub roundtrip: fn(&JsValue) -> Result<JsValue, String>,
 }
 
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn keys_match_mitools_encoding() {
+    fn keys_match_the_stored_encoding() {
         assert_eq!(
             pk::<Pair>(&("a#b😀".to_owned(), 1.5)).ok().as_deref(),
             Some("$pair#s5:a#b😀#n1.5")

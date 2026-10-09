@@ -1,4 +1,4 @@
-//! Subsystem wiring: what WP14 receives with and without CalDAV credentials,
+//! Subsystem wiring: what the app receives with and without CalDAV credentials,
 //! and the `CalendarWriter` port.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

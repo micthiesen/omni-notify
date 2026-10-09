@@ -7,7 +7,7 @@
 //! - subscription id: `sub_` + the first 40 hex digits of
 //!   `HMAC-SHA256(key, JSON.stringify([owner, url, name, canonicalArgs]))`.
 //!
-//! Rotating the token therefore invalidates every stored credential, as in TS.
+//! Rotating the token therefore invalidates every stored credential.
 
 use aes_gcm::aead::{Aead as _, KeyInit as _};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -82,7 +82,7 @@ impl EventCrypto {
         STANDARD.encode(out)
     }
 
-    /// `openSafe`: the plaintext, or `None` for a value sealed with another key.
+    /// The plaintext, or `None` for a value sealed with another key.
     pub fn open(&self, value: &str) -> Option<String> {
         let bytes = STANDARD.decode(value).ok()?;
         if bytes.len() < 28 {
@@ -115,7 +115,7 @@ impl EventCrypto {
     }
 }
 
-/// `ownerLabel`: a short, non-secret label that distinguishes delegated clients.
+/// A short, non-secret label that distinguishes delegated clients.
 pub fn owner_label(owner: &str) -> String {
     if owner.starts_with("executor:") {
         owner.chars().take(21).collect()
@@ -147,7 +147,7 @@ mod tests {
     }
 
     /// Sealed by node's `createCipheriv("aes-256-gcm", key, nonce=7×12)` with
-    /// the TS key derivation, so stored production values open in Rust.
+    /// the same key derivation, so stored production values open.
     #[test]
     fn opens_values_sealed_by_node() {
         let crypto = EventCrypto::new("test-omni-bearer");

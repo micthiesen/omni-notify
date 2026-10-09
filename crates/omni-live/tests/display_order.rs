@@ -1,4 +1,4 @@
-//! Port of `src/live-check/displayOrder.spec.ts`.
+//! Streamer display order.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_api::streamers::StreamerTier::{Background, Primary};

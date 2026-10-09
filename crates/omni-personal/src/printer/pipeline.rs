@@ -146,7 +146,7 @@ async fn run(
         .map_err(|e| format!("{executable} failed: {e}"))?;
     if output.status != 0 {
         let detail = String::from_utf8_lossy(&output.stderr);
-        let detail = crate::js::trim(&detail);
+        let detail = omni_core::js::trim(&detail);
         return Err(if detail.is_empty() {
             format!("{executable} failed")
         } else {

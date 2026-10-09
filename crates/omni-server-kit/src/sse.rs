@@ -30,7 +30,7 @@ impl SnapshotFrame {
     }
 }
 
-/// `enqueueInitialSnapshotFrame`: builds a new client's snapshot and
+/// Builds a new client's snapshot and
 /// enqueues it while holding `lock`, the same lock every broadcast takes, so
 /// a newer broadcast can never be overwritten by an older initial frame.
 /// `enqueue` should register the client and queue the frame in one step.
@@ -86,8 +86,7 @@ pub fn ping(clock: &SharedClock) -> Event {
         .data(clock.now_ms().to_string())
 }
 
-/// [`with_ping`] that also sends one ping before anything else, as TS's
-/// `Effect.repeat(..., Schedule.spaced(...))` heartbeat does on connect.
+/// [`with_ping`] that also sends one ping before anything else, on connect.
 pub fn with_ping_immediately(
     stream: impl Stream<Item = Event> + Send + 'static,
     every: Duration,
@@ -103,9 +102,8 @@ mod tests {
     use omni_core::clock::TestClock;
     use std::sync::{Arc, Mutex};
 
-    /// Port of `sse.spec.ts` "prevents a newer broadcast from being
-    /// overwritten by the initial frame". The `awaitSseWriter` case is
-    /// dropped: axum drives the event stream, so a failed socket write drops
+    /// A newer broadcast is never overwritten by the initial frame. A failed
+    /// socket write needs no test: axum drives the event stream, so it drops
     /// the stream and its subscriptions by ownership.
     #[tokio::test]
     async fn prevents_a_newer_broadcast_from_being_overwritten_by_the_initial_frame() {

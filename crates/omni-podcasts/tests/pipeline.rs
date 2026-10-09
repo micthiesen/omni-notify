@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/pipeline.spec.ts`, plus end-to-end runs with
+//! The podcast recommendation pipeline, with end-to-end runs using
 //! scripted models and fakes that pin the commit sequence
 //! (pending row → Castro enqueue → `queueResult` → notify → `notified`) and
 //! the three-state subscription rule.

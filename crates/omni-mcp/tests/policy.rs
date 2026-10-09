@@ -1,9 +1,7 @@
-//! Port of `src/mcp/policy.spec.ts` (all cases kept).
-//!
-//! The registered tool set is this package's tools plus every other golden
-//! tool; metadata comes from the golden list either way, so the inventory is
-//! the same one the TS generator writes. The machine-word lint runs over the
-//! golden JSON schemas the endpoint serves (TS rendered them from zod).
+//! The MCP policy inventory. The registered tool set is this package's tools
+//! plus every other package's definitions, so the inventory is the committed
+//! one. The machine-word lint runs over the derived JSON schemas the endpoint
+//! serves.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

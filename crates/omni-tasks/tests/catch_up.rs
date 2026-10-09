@@ -1,4 +1,4 @@
-//! Port of `src/task-runs/catchUp.spec.ts` (local times in America/Vancouver).
+//! Startup catch-up of missed scheduled runs (local times in America/Vancouver).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use jiff::Timestamp;

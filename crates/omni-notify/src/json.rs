@@ -1,6 +1,5 @@
-//! JSON responses with JS semantics: Hono's `c.json` is `JSON.stringify`, so
-//! integral numbers print without `.0` and stored values convert the way
-//! node-cbor's decoded JS values stringify.
+//! JSON responses with `JSON.stringify` semantics: integral numbers print
+//! without `.0` and stored values convert the way decoded JS values stringify.
 
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};

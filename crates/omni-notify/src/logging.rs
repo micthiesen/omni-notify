@@ -5,9 +5,9 @@
 //! and run spans even when `LOG_LEVEL=info`.
 //!
 //! - console: `HH:mm:ss.mmm [LEVEL] <target> msg`, debug/info to stdout and
-//!   warn/error to stderr, at `LOG_LEVEL` (mitools `formatConsoleLine`);
+//!   warn/error to stderr, at `LOG_LEVEL`;
 //! - optional daily file under `LOGS_PATH` (`omni-notify-YYYY-MM-DD.log`, local
-//!   date, 14-day retention swept on the first write; mitools `dailyFileSink`);
+//!   date, 14-day retention swept on the first write);
 //! - [`RunLogLayer`] (unfiltered; attribution by span);
 //! - [`AlertLayer`] (ERROR only, gated and throttled by its worker).
 
@@ -98,14 +98,14 @@ fn console_prefix(level: LogLevel) -> &'static str {
     }
 }
 
-/// `formatConsoleLine`: `HH:mm:ss.mmm [LEVEL] <name> message` (UTC time).
+/// `HH:mm:ss.mmm [LEVEL] <name> message` (UTC time).
 pub fn format_console_line(ms: i64, level: LogLevel, name: &str, text: &str) -> String {
     let iso = omni_core::js::to_iso_string(ms);
     let time = iso.get(11..23).unwrap_or(&iso);
     format!("{time} {} <{name}> {text}", console_prefix(level))
 }
 
-/// `sanitizeControl`: control bytes other than tab and newline become U+FFFD.
+/// Control bytes other than tab and newline become U+FFFD.
 pub fn sanitize_control(text: &str) -> String {
     text.chars()
         .map(|c| match c {
@@ -116,7 +116,7 @@ pub fn sanitize_control(text: &str) -> String {
         .collect()
 }
 
-/// `formatFileLine`: `<ISO> <LEVEL> <name> <message>`, continuation lines indented.
+/// `<ISO> <LEVEL> <name> <message>`, continuation lines indented.
 pub fn format_file_line(ms: i64, level: LogLevel, name: &str, text: &str) -> String {
     let level = format!(
         "{:<width$}",
@@ -336,7 +336,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn console_line_matches_mitools() {
+    fn console_line_format() {
         // 2026-10-09T12:34:56.789Z
         let ms = 1_791_549_296_789;
         assert_eq!(

@@ -1,4 +1,4 @@
-//! A port of `@zone-eu/mailsplit`'s `MessageSplitter` over a complete message:
+//! `@zone-eu/mailsplit`'s `MessageSplitter` semantics over a complete message:
 //! line-based boundary detection (a node's own boundary and its parent's),
 //! header blocks, inline `message/rfc822` embedding, and body bytes with the
 //! line ending before a boundary removed. Node emission order and each node's

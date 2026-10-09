@@ -1,6 +1,6 @@
 //! Typed round trip of every media row of a production docstore copy, plus
-//! JS-parity checks of the persisted derivations (taste evidence ids and the
-//! evidence fingerprint).
+//! checks that the persisted derivations (taste evidence ids and the evidence
+//! fingerprint) reproduce the stored values.
 //!
 //! Ignored by default (needs a database). Run with
 //! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-media --test prod_copy -- --ignored --nocapture`.
@@ -183,8 +183,8 @@ async fn every_media_row_decodes_and_reencodes_to_the_same_js_value() {
         }
     }
 
-    // Evidence ids: every outcome/feedback id Rust derives for the current
-    // recommendation rows that TS also derived must match exactly.
+    // Evidence ids: every outcome/feedback id derived for the current
+    // recommendation rows that is also stored must match exactly.
     let stored_ids: HashSet<&str> = evidence.iter().map(|e| e.evidence_id.as_str()).collect();
     let derived = derive_recommendation_evidence(&recommendations);
     let matched = derived
@@ -200,7 +200,7 @@ async fn every_media_row_decodes_and_reencodes_to_the_same_js_value() {
         "no derived evidence id matches a TS-written id"
     );
 
-    // Every TS-written recommendation evidence row is reproduced when its
+    // Every stored recommendation evidence row is reproduced when its
     // recommendation still has the same derived state.
     let derived_ids: HashSet<&str> = derived.iter().map(|e| e.evidence_id.as_str()).collect();
     let rec_ids: HashSet<&str> = recommendations
@@ -225,7 +225,7 @@ async fn every_media_row_decodes_and_reencodes_to_the_same_js_value() {
     );
 
     // Watch evidence ids: rebuild each stored plex_watch observation (its
-    // metadata fields are the TMDB details TS hashed) and re-derive the id.
+    // metadata fields are the hashed TMDB details) and re-derive the id.
     let watch_rows: Vec<&TasteEvidenceData> = evidence
         .iter()
         .filter(|e| e.kind == TasteEvidenceKind::PlexWatch)

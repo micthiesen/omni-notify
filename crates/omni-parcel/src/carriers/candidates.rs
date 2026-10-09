@@ -11,7 +11,7 @@ pub struct CandidateSelection {
     pub invalid: Vec<String>,
 }
 
-/// `selectValidCandidates`: splits ranked candidates against the live carrier
+/// Splits ranked candidates against the live carrier
 /// list, preserving rank order and dropping duplicates and blanks.
 pub fn select_valid_candidates(
     candidates: &[String],

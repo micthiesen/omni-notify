@@ -1,5 +1,5 @@
-//! System tools over fake ports (no TS spec covers these handlers directly).
-//! Every output passes the golden output-schema validation of `typed_tool`.
+//! System tools over fake ports.
+//! Every output passes the output-schema validation of `typed_tool`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

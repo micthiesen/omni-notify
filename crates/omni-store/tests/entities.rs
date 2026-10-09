@@ -1,5 +1,4 @@
-//! Typed entities, serde bridge, migrate_all and relational tables (ports
-//! mitools `entities.spec.ts` and `table.spec.ts`).
+//! Typed entities, serde bridge, migrate_all and relational tables.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::sync::Arc;
@@ -143,7 +142,7 @@ async fn round_trips_and_stamps_entity_metadata() {
         ),
         (Some("test-session"), 2, None, T0)
     );
-    // `note` (TS `note?`) is omitted; `costCents` (TS `T | null`) is written as null.
+    // Optional `note` is omitted; nullable `costCents` is written as null.
     let JsValue::Object(map) = row.decode().expect("decode") else {
         panic!("object")
     };
@@ -311,7 +310,8 @@ async fn patch_and_update_modify_in_place_and_cannot_move_the_row() {
         .expect("update")
         .expect("present");
     assert_eq!(updated.viewers, 42);
-    assert_eq!(updated.extra.get("unknownField"), Some(&JsValue::Undefined));
+    // An `undefined` property is not written, so the stored row lacks it.
+    assert_eq!(updated.extra.get("unknownField"), None);
 
     let mut moving = JsObjectPatch::new();
     moving.insert(
@@ -337,7 +337,7 @@ async fn patch_and_update_modify_in_place_and_cannot_move_the_row() {
 }
 
 #[tokio::test]
-async fn ttl_rules_follow_mitools() {
+async fn ttl_rules() {
     let (store, clock, _dir) = open().await;
     let delivery = |id: &str| Delivery {
         id: id.to_owned(),

@@ -1,6 +1,9 @@
-//! JS-exact semantics for values that were persisted or hashed by the former
-//! TypeScript service. Everything that must match V8 byte for byte goes through
-//! here.
+//! JS semantics that stored data and external contracts depend on: docstore
+//! keys (UTF-16 lengths, `Number#toString`), dedup hashes and fingerprints
+//! (`JSON.stringify`, `localeCompare`), values compared against existing rows,
+//! lenient `Date.parse` for MIME headers and feeds, and `encodeURIComponent`
+//! for URLs sent to services. Derivations that must keep producing the values
+//! already stored go through here.
 //!
 //! `tests/js_golden.rs` checks every function against committed V8 output
 //! (`tests/golden/js.json`).
@@ -78,6 +81,16 @@ pub fn utf16_slice(s: &str, start: usize, end: usize) -> Cow<'_, str> {
 pub fn number_to_string(n: f64) -> String {
     let mut buffer = ryu_js::Buffer::new();
     buffer.format(n).to_owned()
+}
+
+/// `Math.round`: the nearest integer, halves toward positive infinity
+/// (`-2.5` rounds to `-2`; `f64::round` gives `-3`).
+pub fn math_round(x: f64) -> f64 {
+    if !x.is_finite() {
+        return x;
+    }
+    let floor = x.floor();
+    if x - floor >= 0.5 { floor + 1.0 } else { floor }
 }
 
 /// `Number(s)` for a string (ECMA-262 `StringToNumber`): surrounding JS
@@ -551,6 +564,15 @@ mod tests {
         assert_eq!(number_to_string(1.5e-7), "1.5e-7");
         assert_eq!(number_to_string(f64::NAN), "NaN");
         assert_eq!(number_to_string(f64::INFINITY), "Infinity");
+    }
+
+    #[test]
+    fn math_round_ties_up() {
+        assert_eq!(math_round(2.5), 3.0);
+        assert_eq!(math_round(-2.5), -2.0);
+        assert_eq!(math_round(0.499_999_999_999_999_94), 0.0);
+        assert_eq!(math_round(70.67), 71.0);
+        assert!(math_round(f64::NAN).is_nan());
     }
 
     #[test]

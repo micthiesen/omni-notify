@@ -155,7 +155,7 @@ fn openai_response_items_are_parsed_and_replayed_by_reference() {
         response.tool_calls[0].arguments,
         json!({"url": "https://a.test"})
     );
-    // Same numbers as a production cost-event row written by TS.
+    // Same numbers as a stored production cost-event row.
     assert_eq!(
         response.usage,
         Usage {

@@ -48,7 +48,7 @@ pub struct NewFeedback {
     pub note: Option<String>,
 }
 
-/// `recordEmailFeedback`: upserts (re-recording the same email overwrites).
+/// Upserts (re-recording the same email overwrites).
 pub async fn record(store: &Store, entry: NewFeedback) -> Result<EmailFeedbackData, StoreError> {
     let row = EmailFeedbackData {
         activity_id: activity_id(entry.pipeline, &entry.email_id),
@@ -68,7 +68,7 @@ pub async fn record(store: &Store, entry: NewFeedback) -> Result<EmailFeedbackDa
     Ok(written)
 }
 
-/// `deleteEmailFeedback`: `true` when the row existed.
+/// `true` when the row existed.
 pub async fn delete(store: &Store, activity_id: &str) -> Result<bool, StoreError> {
     let key = activity_id.to_owned();
     store
@@ -76,7 +76,7 @@ pub async fn delete(store: &Store, activity_id: &str) -> Result<bool, StoreError
         .await
 }
 
-/// `listEmailFeedback`: newest first, optionally one pipeline, capped.
+/// Newest first, optionally one pipeline, capped.
 pub async fn list(
     store: &Store,
     pipeline: Option<EmailPipelineName>,
@@ -123,7 +123,7 @@ pub fn digest_lines(rows: &[EmailFeedbackData]) -> String {
         .join("\n")
 }
 
-/// `formatFeedbackDigest`: compact correction lines for prompt injection;
+/// Compact correction lines for prompt injection;
 /// empty when the pipeline has no feedback.
 pub async fn format_digest(
     store: &Store,

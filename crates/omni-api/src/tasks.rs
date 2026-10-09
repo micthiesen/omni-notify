@@ -1,4 +1,4 @@
-//! `/api/tasks` (WP00).
+//! `/api/tasks`.
 
 use serde::{Deserialize, Serialize};
 

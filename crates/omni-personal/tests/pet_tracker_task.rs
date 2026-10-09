@@ -1,4 +1,4 @@
-//! Port of `src/pet-tracker/task.spec.ts` (all cases kept), plus a full sync
+//! The `PetTracker` task, plus a full sync
 //! against stubbed Cognito and Whisker endpoints and the log line format.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

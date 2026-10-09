@@ -1,9 +1,9 @@
-//! `omni_runtime::ports::LiveIntelligence` for WP04 (task hooks, routes) and
-//! WP12 (`livestream_get`).
+//! `omni_runtime::ports::LiveIntelligence` for `omni-live` (task hooks, routes)
+//! and `omni-mcp` (`livestream_get`).
 //!
-//! WP04 calls `observe_live` for every streamer it polled live this tick (the
+//! The live-check task calls `observe_live` for every streamer it polled live this tick (the
 //! went-live edge and each still-live poll; background streamers only on their
-//! due ticks), `on_transition` with `live: false` for `observeOffline`, and
+//! due ticks), `on_transition` with `live: false` when a streamer goes offline, and
 //! `after_tick` once per tick for voice-target scheduling.
 
 use futures::future::BoxFuture;

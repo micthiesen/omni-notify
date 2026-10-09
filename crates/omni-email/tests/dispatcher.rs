@@ -1,7 +1,5 @@
-//! Port of `src/email/dispatcher.spec.ts`, plus source-event forwarding.
-//!
-//! The TS spec mocks `saveLastDispatchedAtEffect`; here the watermark is read
-//! back from the store instead.
+//! The email dispatcher, plus source-event forwarding. The dispatch watermark
+//! is read back from the store.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

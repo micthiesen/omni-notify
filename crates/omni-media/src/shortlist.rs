@@ -3,11 +3,14 @@
 use std::collections::HashMap;
 
 use omni_ai::{Ai, CostTag, GenerateRequest, LanguageModel, ModelRole};
+use omni_core::js::{number_to_string, to_fixed};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::error::IntegrationError;
-use crate::js::{code_block, collapse_whitespace, number, slice_utf16, to_fixed};
+use crate::js::code_block;
+use crate::js::collapse_whitespace;
+use crate::js::slice_utf16;
 use crate::run_log::{self, RunLogFile};
 use crate::types::{Candidate, MediaType};
 
@@ -34,7 +37,7 @@ pub struct CandidateScore {
 }
 
 impl ScoreOutput {
-    /// The zod bounds the AI SDK enforced on parse.
+    /// Bounds beyond the JSON schema, checked on parse.
     fn validate(&self) -> Result<(), String> {
         for score in &self.scores {
             let in_range = |v: f64, max: f64| (0.0..=max).contains(&v);
@@ -152,10 +155,10 @@ pub async fn shortlist_candidates(
                 "{} {} (taste={} novelty={} effort={} conf={})",
                 to_fixed(s.composite, 1),
                 s.candidate.title,
-                number(s.taste_match),
-                number(s.novelty),
-                number(s.effort_fit),
-                number(s.confidence)
+                number_to_string(s.taste_match),
+                number_to_string(s.novelty),
+                number_to_string(s.effort_fit),
+                number_to_string(s.confidence)
             )
         })
         .collect::<Vec<_>>()
@@ -188,7 +191,7 @@ fn build_prompt(candidates: &[&Candidate], history_digest: &str) -> String {
                 year_suffix(c.year),
                 c.media_type.as_str(),
                 to_fixed(c.vote_average, 1),
-                number(c.vote_count),
+                number_to_string(c.vote_count),
                 c.source.as_str(),
                 format_candidate_details(c, false)
             )
@@ -224,15 +227,15 @@ pub fn format_candidate_details(candidate: &Candidate, include_creative_context:
     let mut details: Vec<String> = Vec::new();
     if let Some(runtime) = truthy(candidate.runtime_minutes) {
         details.push(match candidate.media_type {
-            MediaType::Tv => format!("{} min/episode", number(runtime)),
-            MediaType::Movie => format!("{} min", number(runtime)),
+            MediaType::Tv => format!("{} min/episode", number_to_string(runtime)),
+            MediaType::Movie => format!("{} min", number_to_string(runtime)),
         });
     }
     if let Some(seasons) = truthy(candidate.season_count) {
-        details.push(format!("{} seasons", number(seasons)));
+        details.push(format!("{} seasons", number_to_string(seasons)));
     }
     if let Some(episodes) = truthy(candidate.episode_count) {
-        details.push(format!("{} episodes", number(episodes)));
+        details.push(format!("{} episodes", number_to_string(episodes)));
     }
     if let Some(status) = candidate.series_status.as_deref().filter(|s| !s.is_empty()) {
         details.push(status.to_owned());

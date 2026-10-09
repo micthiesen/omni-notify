@@ -1,4 +1,4 @@
-//! Port of `src/live-check/intelligence/alertPolicy.spec.ts`.
+//! Livestream intelligence alert policy.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use indexmap::IndexMap;

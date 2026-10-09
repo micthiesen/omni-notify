@@ -58,7 +58,7 @@ struct HubState {
 
 struct Inner {
     ctx: AppContext,
-    /// `broadcastSemaphore`: serializes broadcasts and initial frames.
+    /// Serializes broadcasts and initial frames.
     lock: tokio::sync::Mutex<()>,
     state: Mutex<HubState>,
     next_id: AtomicU64,
@@ -96,7 +96,7 @@ impl Dashboard {
         state.clients.len()
     }
 
-    /// `buildSnapshot`: `{tasks, streamers, runs, onDeck}`.
+    /// `{tasks, streamers, runs, onDeck}`.
     pub async fn snapshot(&self) -> Result<Value, SnapshotError> {
         let ctx = &self.inner.ctx;
         let tasks = serde_json::to_value(ctx.tasks.list().await?)?;
@@ -130,7 +130,6 @@ impl Dashboard {
         self.inner.next_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    /// `broadcastEffect`.
     pub async fn broadcast(&self) {
         let _held = self.inner.lock.lock().await;
         let now = Instant::now();
@@ -253,7 +252,7 @@ pub async fn snapshot_route(State(state): State<OpsState>) -> Response {
     }
 }
 
-/// Like TS `streamSSE`, the response starts at once: a `ping` goes out
+/// The response starts at once: a `ping` goes out
 /// immediately, then the client's own initial snapshot, then broadcasts. A
 /// failed initial snapshot is logged and ends the stream (the frontend keeps
 /// polling and reconnects).

@@ -1,4 +1,4 @@
-//! Shared fixtures for the ported specs.
+//! Shared test fixtures.
 #![allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
 
 use omni_podcasts::persistence::{PodcastRecommendationData, PodcastRecommendationStatus};
@@ -7,7 +7,7 @@ use omni_store::cbor::Extra;
 pub const NOW: i64 = 1_784_160_000_000; // Date.UTC(2026, 6, 16)
 pub const DAY: i64 = 24 * 60 * 60 * 1000;
 
-/// The `rec()` fixture of the TS specs (notified, three days old).
+/// A notified recommendation, three days old.
 pub fn rec() -> PodcastRecommendationData {
     PodcastRecommendationData {
         recommendation_id: "r1".into(),
@@ -173,7 +173,7 @@ use omni_podcasts::itunes::ItunesShow;
 use omni_podcasts::rss::FeedEpisode;
 use omni_podcasts::sources::ShowDirectory;
 
-/// A scripted iTunes + RSS directory (the TS specs mocked both modules).
+/// A scripted iTunes + RSS directory.
 #[derive(Default)]
 pub struct FakeDirectory {
     pub shows: Vec<ItunesShow>,

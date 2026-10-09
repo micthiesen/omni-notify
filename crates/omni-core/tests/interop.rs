@@ -1,6 +1,5 @@
-//! Port of `src/effect/interop.spec.ts`. `fromPromise` / `fromSync` become a
-//! leaf `map_err` into `IntegrationError` / `PersistenceError`; the spec checks
-//! the error's tag and its `"<operation> failed: <cause>"` message.
+//! A leaf `map_err` into `IntegrationError` / `PersistenceError` keeps the
+//! error type and its `"<operation> failed: <cause>"` message.
 
 use omni_core::error::{IntegrationError, PersistenceError};
 

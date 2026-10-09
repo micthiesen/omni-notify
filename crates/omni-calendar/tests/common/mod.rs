@@ -248,7 +248,7 @@ pub fn pipeline(
 
 /// The structured output for a list of events. A strict-mode model returns
 /// every key, so optional fields a test leaves out are filled with `null` (the
-/// schema rejects absent keys, as zod's `.nullable()` does).
+/// schema rejects absent keys).
 pub fn extraction(mut events: serde_json::Value) -> omni_ai::GenerateResponse {
     const NULLABLE: [&str; 10] = [
         "eventId",

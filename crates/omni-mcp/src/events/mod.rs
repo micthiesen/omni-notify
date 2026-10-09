@@ -1,4 +1,4 @@
-//! MCP Events (`src/mcp/events/**`, `docs/mcp-events.md`): the catalog, the
+//! MCP Events (`docs/mcp-events.md`): the catalog, the
 //! shared durable outbox, webhook signing and delivery, Executor delegated
 //! authorization, the `events/*` methods and the Claude session watcher.
 

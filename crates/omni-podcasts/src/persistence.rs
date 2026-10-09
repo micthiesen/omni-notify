@@ -3,12 +3,12 @@
 
 use std::collections::{HashMap, HashSet};
 
+use omni_core::clock::utc_date_stamp;
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityOps as _, EntityWrite as _, ModifyOpts, UpsertOpts};
 use omni_store::{Store, StoreError};
 use serde::{Deserialize, Serialize};
 
-use crate::js::to_date_stamp;
 use crate::types::{CanonicalEpisodeId, CanonicalShowId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -388,7 +388,7 @@ pub fn format_recent_recommendations_digest_from(
             "- {} — {} ({})",
             r.show_title,
             r.episode_title,
-            to_date_stamp(r.recommended_at)
+            utc_date_stamp(r.recommended_at)
         )
     }));
     lines.join("\n")

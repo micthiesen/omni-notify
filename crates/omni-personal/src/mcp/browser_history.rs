@@ -1,13 +1,15 @@
 //! Hister tools. Results are untrusted
 //! archived evidence; only `set_browser_page_label` writes, and it verifies.
 
+pub mod defs;
+
 use std::sync::Arc;
 
+use omni_core::js::trim;
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
 use serde::Deserialize;
 
 use crate::hister::{BrowseInput, HisterError, HisterService, PageInput, SearchInput};
-use crate::js::trim;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,7 +75,7 @@ fn require(hister: Option<&Arc<HisterService>>) -> Result<&Arc<HisterService>, T
 pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMetaError> {
     let h = hister.clone();
     let search = typed_tool(
-        "search_browser_history",
+        &defs::SEARCH_BROWSER_HISTORY,
         move |input: SearchToolInput, _cx: ToolContext| {
             let hister = h.clone();
             async move {
@@ -106,7 +108,7 @@ pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMet
     )?;
     let h = hister.clone();
     let browse = typed_tool(
-        "browse_browser_history",
+        &defs::BROWSE_BROWSER_HISTORY,
         move |input: BrowseToolInput, _cx: ToolContext| {
             let hister = h.clone();
             async move {
@@ -131,7 +133,7 @@ pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMet
     )?;
     let h = hister.clone();
     let page = typed_tool(
-        "get_browser_page",
+        &defs::GET_BROWSER_PAGE,
         move |input: PageToolInput, _cx: ToolContext| {
             let hister = h.clone();
             async move {
@@ -150,7 +152,7 @@ pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMet
         },
     )?;
     let label = typed_tool(
-        "set_browser_page_label",
+        &defs::SET_BROWSER_PAGE_LABEL,
         move |input: LabelToolInput, _cx: ToolContext| {
             let hister = hister.clone();
             async move {

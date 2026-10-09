@@ -1,7 +1,7 @@
 //! Twitch live status over the public GQL endpoint.
 //!
 //! The username is escaped as a JSON string literal before interpolation into
-//! the GraphQL document (the TS port interpolated it raw, a known defect).
+//! the GraphQL document.
 
 use omni_http::public::PublicHttpClient;
 use serde::Deserialize;

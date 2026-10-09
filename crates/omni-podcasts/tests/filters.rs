@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/filters.spec.ts`.
+//! Podcast candidate filters.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashSet;

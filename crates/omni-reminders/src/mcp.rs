@@ -1,14 +1,18 @@
 //! Server Reminders MCP tools.
 //!
 //! Bounded adapters over [`RemindersService`] under the existing MCP bearer
-//! authentication. Metadata (names, schemas, annotations, policy) comes from the
-//! golden tool list. Inputs are validated against the golden schema, then decoded the
-//! way zod would (integral floats accepted as integers by `typed_tool`, unknown keys
-//! stripped from nested `daysOfWeek` items). List creation and deletion are not exposed.
+//! authentication. Each tool's contract (name, schemas, annotations, policy) is
+//! declared in [`defs`]. Inputs are validated against the derived schema, then decoded
+//! (integral floats accepted as integers by `typed_tool`, unknown
+//! keys stripped from nested `daysOfWeek` items). List creation and deletion are not
+//! exposed.
+
+pub mod defs;
 
 use std::future::Future;
 
-use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, paginate, typed_tool};
+use omni_mcp_kit::{McpTool, ToolContext, ToolDef, ToolError, ToolMetaError, paginate, typed_tool};
+use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -19,14 +23,16 @@ use crate::recurring_completion::RecurringCompletionTarget;
 use crate::service::RemindersService;
 
 /// A typed tool over a handler that ignores the call context. `typed_tool`
-/// validates against the golden schemas and reads integral floats as integers.
-fn tool<I, F, Fut>(name: &str, f: F) -> Result<McpTool, ToolMetaError>
+/// validates against the derived schemas and reads integral floats as integers.
+fn tool<S, O, I, F, Fut>(def: &'static ToolDef<S, O>, f: F) -> Result<McpTool, ToolMetaError>
 where
+    S: JsonSchema,
+    O: JsonSchema,
     I: DeserializeOwned + Send + 'static,
     F: Fn(I) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<Value, ToolError>> + Send + 'static,
 {
-    typed_tool(name, move |input: I, _cx: ToolContext| f(input))
+    typed_tool(def, move |input: I, _cx: ToolContext| f(input))
 }
 
 fn execute(error: impl std::fmt::Display) -> ToolError {
@@ -70,7 +76,7 @@ struct ListRename {
     title: String,
 }
 
-/// `recurrenceValue` after zod parsing (nested unknown keys stripped).
+/// The recurrence value after decoding (nested unknown keys stripped).
 #[derive(Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RuleInput {
@@ -190,22 +196,25 @@ fn object(value: Value) -> Map<String, Value> {
     }
 }
 
-/// Every Reminders tool, in `src/mcp/tools/reminders.ts` order.
+/// Every Reminders tool, in serving order.
 pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMetaError> {
     let s = service;
     let mut tools = Vec::new();
 
     let svc = s.clone();
-    tools.push(tool("list_reminder_lists", move |input: Pagination| {
-        let svc = svc.clone();
-        async move {
-            let snapshot = svc.snapshot().await.map_err(execute)?;
-            to_value(&paginate(snapshot.lists, input.cursor, input.limit))
-        }
-    })?);
+    tools.push(tool(
+        &defs::LIST_REMINDER_LISTS,
+        move |input: Pagination| {
+            let svc = svc.clone();
+            async move {
+                let snapshot = svc.snapshot().await.map_err(execute)?;
+                to_value(&paginate(snapshot.lists, input.cursor, input.limit))
+            }
+        },
+    )?);
 
     let svc = s.clone();
-    tools.push(tool("get_reminder_list", move |input: IdInput| {
+    tools.push(tool(&defs::GET_REMINDER_LIST, move |input: IdInput| {
         let svc = svc.clone();
         async move {
             let list = svc.get_list(&input.id).await.map_err(execute)?;
@@ -214,27 +223,33 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
     })?);
 
     let svc = s.clone();
-    tools.push(tool("update_reminder_list", move |input: ListRename| {
-        let svc = svc.clone();
-        async move {
-            let t = input.target;
-            let list = svc
-                .update_list(&t.idempotency_key, &t.id, &t.change_tag, &input.title)
-                .await
-                .map_err(execute)?;
-            Ok(json!({"list": list}))
-        }
-    })?);
-
-    let svc = s.clone();
-    tools.push(tool("get_reminder_recurrence", move |input: IdInput| {
-        let svc = svc.clone();
-        async move { to_value(&svc.get_recurrences(&input.id).await.map_err(execute)?) }
-    })?);
+    tools.push(tool(
+        &defs::UPDATE_REMINDER_LIST,
+        move |input: ListRename| {
+            let svc = svc.clone();
+            async move {
+                let t = input.target;
+                let list = svc
+                    .update_list(&t.idempotency_key, &t.id, &t.change_tag, &input.title)
+                    .await
+                    .map_err(execute)?;
+                Ok(json!({"list": list}))
+            }
+        },
+    )?);
 
     let svc = s.clone();
     tools.push(tool(
-        "create_reminder_recurrence",
+        &defs::GET_REMINDER_RECURRENCE,
+        move |input: IdInput| {
+            let svc = svc.clone();
+            async move { to_value(&svc.get_recurrences(&input.id).await.map_err(execute)?) }
+        },
+    )?);
+
+    let svc = s.clone();
+    tools.push(tool(
+        &defs::CREATE_REMINDER_RECURRENCE,
         move |input: CreateRecurrence| {
             let svc = svc.clone();
             async move {
@@ -249,7 +264,7 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
 
     let svc = s.clone();
     tools.push(tool(
-        "update_reminder_recurrence",
+        &defs::UPDATE_REMINDER_RECURRENCE,
         move |input: UpdateRecurrence| {
             let svc = svc.clone();
             async move {
@@ -274,7 +289,7 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
 
     let svc = s.clone();
     tools.push(tool(
-        "remove_reminder_recurrence",
+        &defs::REMOVE_REMINDER_RECURRENCE,
         move |input: RuleTarget| {
             let svc = svc.clone();
             async move {
@@ -294,7 +309,7 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
 
     let svc = s.clone();
     tools.push(tool(
-        "complete_recurring_reminder",
+        &defs::COMPLETE_RECURRING_REMINDER,
         move |input: CompleteRecurring| {
             let svc = svc.clone();
             async move {
@@ -316,7 +331,7 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
     )?);
 
     let svc = s.clone();
-    tools.push(tool("list_reminders", move |input: ListReminders| {
+    tools.push(tool(&defs::LIST_REMINDERS, move |input: ListReminders| {
         let svc = svc.clone();
         async move {
             let snapshot = svc.snapshot().await.map_err(execute)?;
@@ -344,7 +359,7 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
     })?);
 
     let svc = s.clone();
-    tools.push(tool("get_reminder", move |input: IdInput| {
+    tools.push(tool(&defs::GET_REMINDER, move |input: IdInput| {
         let svc = svc.clone();
         async move {
             let reminder = svc.get(&input.id).await.map_err(execute)?;
@@ -353,36 +368,45 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
     })?);
 
     let svc = s.clone();
-    tools.push(tool("create_reminder", move |input: CreateReminder| {
-        let svc = svc.clone();
-        async move {
-            let reminder = svc
-                .create(&input.idempotency_key, input.fields)
-                .await
-                .map_err(execute)?;
-            Ok(json!({"reminder": reminder}))
-        }
-    })?);
+    tools.push(tool(
+        &defs::CREATE_REMINDER,
+        move |input: CreateReminder| {
+            let svc = svc.clone();
+            async move {
+                let reminder = svc
+                    .create(&input.idempotency_key, input.fields)
+                    .await
+                    .map_err(execute)?;
+                Ok(json!({"reminder": reminder}))
+            }
+        },
+    )?);
 
     let svc = s.clone();
-    tools.push(tool("update_reminder", move |input: UpdateReminder| {
-        let svc = svc.clone();
-        async move {
-            if input.patch.is_empty() {
-                return Err(ToolError::input("patch: Provide a field to update"));
+    tools.push(tool(
+        &defs::UPDATE_REMINDER,
+        move |input: UpdateReminder| {
+            let svc = svc.clone();
+            async move {
+                if input.patch.is_empty() {
+                    return Err(ToolError::input("patch: Provide a field to update"));
+                }
+                let t = input.target;
+                let reminder = svc
+                    .update(&t.idempotency_key, &t.id, &t.change_tag, input.patch)
+                    .await
+                    .map_err(execute)?;
+                Ok(json!({"reminder": reminder}))
             }
-            let t = input.target;
-            let reminder = svc
-                .update(&t.idempotency_key, &t.id, &t.change_tag, input.patch)
-                .await
-                .map_err(execute)?;
-            Ok(json!({"reminder": reminder}))
-        }
-    })?);
+        },
+    )?);
 
-    for (name, completed) in [("complete_reminder", true), ("reopen_reminder", false)] {
+    for (def, completed) in [
+        (&defs::COMPLETE_REMINDER, true),
+        (&defs::REOPEN_REMINDER, false),
+    ] {
         let svc = s.clone();
-        tools.push(tool(name, move |input: Target| {
+        tools.push(tool(def, move |input: Target| {
             let svc = svc.clone();
             async move {
                 let patch = ReminderPatch {
@@ -399,7 +423,7 @@ pub fn reminders_tools(service: RemindersService) -> Result<Vec<McpTool>, ToolMe
     }
 
     let svc = s;
-    tools.push(tool("delete_reminder", move |input: Target| {
+    tools.push(tool(&defs::DELETE_REMINDER, move |input: Target| {
         let svc = svc.clone();
         async move {
             svc.delete(&input.idempotency_key, &input.id, &input.change_tag)
@@ -416,7 +440,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decodes_like_zod_for_ledger_fingerprints() {
+    fn decodes_inputs_for_ledger_fingerprints() {
         let input: CreateReminder =
             serde_json::from_value(omni_core::js::normalize_numbers(json!({
                 "idempotencyKey": "fixture-key-123456",
@@ -430,7 +454,7 @@ mod tests {
             .unwrap();
         let mut fields = object(serde_json::to_value(&input.fields).unwrap());
         fields.insert("operation".into(), json!("create"));
-        // The same input fingerprinted by the TypeScript service (tests/golden/codec.json).
+        // The pinned fingerprint of this input (tests/golden/codec.json).
         assert_eq!(
             crate::service::fingerprint(&Value::Object(fields)),
             "c7b3ba23ce6571ec76e1bb32f661e7a3828d3a4abc1c8cd70c440e0a1ec4e5db"

@@ -1,9 +1,6 @@
-//! Port of `src/recommendations/mediaLibrary.spec.ts`.
-//!
-//! The TS spec mocks the Plex client module and rejects with a bare
-//! `Error("Plex timed out")`; here the failure travels through the real
-//! client, so the unavailable reason carries the operation prefix exactly as
-//! production TS reports it (`<operation> failed: <cause>`).
+//! The Plex media library snapshot. Failures travel through the real client,
+//! so the unavailable reason carries the operation prefix
+//! (`<operation> failed: <cause>`).
 #![allow(clippy::expect_used)]
 
 use std::sync::Arc;

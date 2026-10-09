@@ -159,7 +159,7 @@ impl CkPath {
     }
 }
 
-/// The operations the service needs (a test seam, like the TS `Pick<...>`).
+/// The operations the service needs (a test seam).
 pub trait AppleApi: Send + Sync {
     fn begin(&self) -> BoxFuture<'_, Result<AppleBeginResult, AppleRemindersError>>;
     fn verify(&self) -> BoxFuture<'_, Result<bool, AppleRemindersError>>;
@@ -188,10 +188,9 @@ pub struct AppleClientOptions {
 struct ClientState {
     session: Option<AppleSession>,
     jar: CookieJar,
-    sms: Option<(Value, String)>,
 }
 
-/// `requestRaw` results.
+/// Raw request results.
 struct Exchange {
     status: u16,
     data: Value,
@@ -225,7 +224,7 @@ fn apple_url(raw: &str) -> Option<Url> {
         .then_some(url)
 }
 
-/// `stringField`: a non-empty string.
+/// A non-empty string.
 fn string_field(value: &Value) -> Option<String> {
     value.as_str().filter(|s| !s.is_empty()).map(str::to_owned)
 }
@@ -438,7 +437,7 @@ impl AppleRemindersClient {
         headers
     }
 
-    /// `requestRaw`: one exchange, cookies applied, redirects and oversize rejected.
+    /// One exchange, cookies applied, redirects and oversize rejected.
     async fn request_raw(
         &self,
         raw_url: &str,
@@ -891,54 +890,8 @@ impl AppleRemindersClient {
         Ok(AppleBeginResult::MfaRequired)
     }
 
-    /// Requests an SMS code for the trusted phone (kept for parity; the admin page
-    /// uses device codes).
-    pub async fn request_sms_code(&self) -> Result<(), AppleRemindersError> {
-        self.load().await?;
-        let options = self.mfa_options().await?;
-        if options.status != 200 {
-            return Err(fail(
-                "MFA options",
-                "Apple challenge unavailable",
-                Some(options.status),
-            ));
-        }
-        let phone = as_record(field(as_record(&options.data), "trustedPhoneNumber"));
-        let id = field(phone, "id");
-        if !(id.is_number() || id.is_string()) {
-            return Err(fail("SMS request", "trusted phone unavailable", None));
-        }
-        let mut phone_number = serde_json::Map::new();
-        phone_number.insert("id".into(), id.clone());
-        if let Value::Bool(non_fteu) = field(phone, "nonFTEU") {
-            phone_number.insert("nonFTEU".into(), Value::Bool(*non_fteu));
-        }
-        let phone_number = Value::Object(phone_number);
-        let response = self
-            .request(
-                "SMS request",
-                &format!("{AUTH_ROOT}verify/phone"),
-                Method::PUT,
-                Body::Json(json!({"phoneNumber": phone_number, "mode": "sms"})),
-                Self::auth_headers(&self.session()),
-                self.default_timeout(),
-            )
-            .await?;
-        if response.status != 200 && response.status != 204 {
-            return Err(fail(
-                "SMS request",
-                "Apple rejected request",
-                Some(response.status),
-            ));
-        }
-        let mode =
-            string_field(field(as_record(&response.data), "mode")).unwrap_or_else(|| "sms".into());
-        self.with_state(|s| s.sms = Some((phone_number, mode)));
-        Ok(())
-    }
-
-    /// Verifies a six-digit code (`submit2fa(code, channel)`).
-    pub async fn submit_code(&self, code: &str, sms: bool) -> Result<(), AppleRemindersError> {
+    /// Verifies a six-digit trusted-device code.
+    pub async fn submit_code(&self, code: &str) -> Result<(), AppleRemindersError> {
         if code.len() != 6 || !code.bytes().all(|b| b.is_ascii_digit()) {
             return Err(fail("MFA verify", "invalid six-digit code", None));
         }
@@ -948,27 +901,12 @@ impl AppleRemindersClient {
         {
             return Err(fail("MFA verify", "MFA challenge missing", None));
         }
-        let sms_state = self.with_state(|s| s.sms.clone());
-        let (endpoint, body) = if sms {
-            let Some((phone_number, mode)) = sms_state else {
-                return Err(fail("MFA verify", "request SMS code first", None));
-            };
-            (
-                "verify/phone/securitycode",
-                json!({"phoneNumber": phone_number, "securityCode": {"code": code}, "mode": mode}),
-            )
-        } else {
-            (
-                "verify/trusteddevice/securitycode",
-                json!({"securityCode": {"code": code}}),
-            )
-        };
         let response = self
             .request(
                 "MFA verify",
-                &format!("{AUTH_ROOT}{endpoint}"),
+                &format!("{AUTH_ROOT}verify/trusteddevice/securitycode"),
                 Method::POST,
-                Body::Json(body),
+                Body::Json(json!({"securityCode": {"code": code}})),
                 Self::auth_headers(&session),
                 self.default_timeout(),
             )
@@ -1205,7 +1143,7 @@ impl AppleApi for AppleRemindersClient {
     }
 
     fn submit_2fa<'a>(&'a self, code: &'a str) -> BoxFuture<'a, Result<(), AppleRemindersError>> {
-        Box::pin(self.submit_code(code, false))
+        Box::pin(self.submit_code(code))
     }
 
     fn request_pcs_access(&self) -> BoxFuture<'_, Result<ProtectedAccess, AppleRemindersError>> {

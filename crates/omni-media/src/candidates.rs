@@ -107,7 +107,7 @@ pub async fn fetch_candidate_buckets(
     let top_genres: Vec<i64> = rank_genres(seeds).into_iter().take(3).collect();
     let trending = async {
         catalog.trending().await.unwrap_or_else(|error| {
-            tracing::warn!(target: LOG, error = error.effect_message(), "TMDB trending fetch failed");
+            tracing::warn!(target: LOG, error = error.cause_message(), "TMDB trending fetch failed");
             Vec::new()
         })
     };
@@ -150,7 +150,7 @@ async fn fetch_similar(catalog: &dyn Catalog, seeds: &[WatchSeed]) -> Vec<TmdbTi
                     Err(error) => {
                         tracing::warn!(
                             target: LOG,
-                            error = error.effect_message(),
+                            error = error.cause_message(),
                             "TMDB recommendations fetch failed for {}",
                             seed.canonical_id
                         );
@@ -182,7 +182,7 @@ async fn discover_both(
             Err(error) => {
                 tracing::warn!(
                     target: LOG,
-                    error = error.effect_message(),
+                    error = error.cause_message(),
                     "{label} ({})",
                     media_type.as_str()
                 );
@@ -303,7 +303,7 @@ pub async fn enrich_candidates(
                     Err(error) => {
                         tracing::warn!(
                             target: LOG,
-                            error = error.effect_message(),
+                            error = error.cause_message(),
                             "TMDB details fetch failed for {}",
                             candidate.canonical_id
                         );

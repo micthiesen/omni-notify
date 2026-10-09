@@ -278,7 +278,7 @@ impl Inner {
     }
 }
 
-/// The long-lived dispatcher service for WP14 (`startEmailFeatures`): starts
+/// The long-lived dispatcher service that app wiring starts: it starts
 /// the dispatcher over `source` with the ordered `handlers`, runs until
 /// shutdown, then stops it. A failed start ends the future at ERROR so the
 /// service's 30 s to 300 s restart policy retries it.

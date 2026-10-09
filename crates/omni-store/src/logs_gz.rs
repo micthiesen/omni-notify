@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::StoreError;
 
-/// `TaskRunLogLine`: one captured log line.
+/// One captured log line.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogLine {
     /// Epoch ms of the log call.

@@ -1,11 +1,12 @@
 //! Streamable HTTP MCP client for Executor's legacy endpoint.
 //!
-//! Mirrors the TS SDK 1.29 client the adapter used: `initialize` with protocol
+//! Behaves like the TypeScript MCP SDK 1.29 client that Executor's legacy
+//! endpoint was built against: `initialize` with protocol
 //! 2025-11-25, `notifications/initialized`, an optional standalone GET event
 //! stream, requests answered by JSON or by a per-request event stream, and
 //! server-to-client requests (`elicitation/create`, `ping`) answered by POST.
 //! Results are passed through as raw JSON. Closing aborts every stream without
-//! a session DELETE, as the TS client did.
+//! a session DELETE.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -29,7 +30,7 @@ use super::{
 };
 use crate::config::USER_AGENT as ADAPTER_USER_AGENT;
 
-/// Protocol versions the TS SDK client accepted from `initialize`.
+/// Protocol versions accepted from `initialize` (those SDK 1.29 accepts).
 pub const LEGACY_PROTOCOL_VERSIONS: [&str; 5] = [
     "2025-11-25",
     "2025-06-18",
@@ -438,7 +439,7 @@ impl Inner {
     }
 
     /// Opens the optional standalone GET stream (a 405 means the server has
-    /// none). The TS client never waited for it; waiting briefly makes an early
+    /// none). Waiting briefly for it makes an early
     /// server request less likely to be lost, without letting a server that
     /// delays the stream's headers block the connection.
     async fn open_standalone_stream(self: &Arc<Self>) {
@@ -524,7 +525,7 @@ impl Inner {
     }
 }
 
-/// The TS SDK's client-side checks before an elicitation reaches the handler.
+/// The SDK's client-side checks before an elicitation reaches the handler.
 fn validate_elicitation(
     params: &Map<String, Value>,
     support: ElicitationSupport,

@@ -1,5 +1,5 @@
 //! iCalendar bodies, byte-for-byte: CRLF
-//! line endings, no line folding, and the TS escape set (`\`, `;`, `,`, LF).
+//! line endings, no line folding, and the escape set `\`, `;`, `,`, LF.
 
 use jiff::Timestamp;
 use jiff::civil::{Date, DateTime};
@@ -126,7 +126,7 @@ fn format_utc(ms: i64) -> String {
 }
 
 /// RRULE UNTIL for a timed event: the event's wall-clock start time on the until
-/// date, converted to UTC. Mirrors the TS algorithm exactly: the zone offset is
+/// date, converted to UTC. The zone offset is
 /// taken at the instant obtained by reading the wall-clock time as UTC, and an
 /// unresolvable zone treats the wall-clock time as UTC.
 fn format_utc_until(until_date: &str, start_time: &str, time_zone: &str) -> String {
@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_set_matches_ts() {
+    fn escapes_backslash_semicolon_comma_and_newline() {
         assert_eq!(escape_ical("a\\b;c,d\ne\r"), "a\\\\b\\;c\\,d\\ne\r");
     }
 

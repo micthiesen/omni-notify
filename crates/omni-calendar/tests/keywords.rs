@@ -1,9 +1,9 @@
-//! Port of `src/calendar-events/filter/keywords.spec.ts`.
+//! The calendar candidate keyword filter.
 //!
 //! User rules come from `omni_email` in production; here the recording
-//! `FakeSupport` answers rule lookups for the calendar scope only, so the TS
-//! case "parcel-scoped rules do not affect the calendar filter" is expressed
-//! as "no calendar-scoped rule matched".
+//! `FakeSupport` answers rule lookups for the calendar scope only, so
+//! "parcel-scoped rules do not affect the calendar filter" is expressed as
+//! "no calendar-scoped rule matched".
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

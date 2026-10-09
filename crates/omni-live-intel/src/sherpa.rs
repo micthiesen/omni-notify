@@ -1,6 +1,6 @@
-//! The sherpa-onnx backend (safe wrapper only), configured exactly as the TS
-//! `sherpa-onnx-node` runtime: Silero VAD, 3D-Speaker CAM++ embeddings and the
-//! Parakeet TDT 0.6B v3 int8 transducer, all on CPU.
+//! The sherpa-onnx backend (safe wrapper only): Silero VAD, 3D-Speaker CAM++
+//! embeddings and the Parakeet TDT 0.6B v3 int8 transducer, all on CPU,
+//! configured so embeddings match the enrolled voiceprints.
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -98,8 +98,8 @@ impl SherpaSpeaker {
         let stream = extractor.create_stream().ok_or_else(|| {
             SpeechRecognitionError::new("prepare speaker embedding", "stream creation failed")
         })?;
-        // As the Node addon: no input_finished, so embeddings stay comparable
-        // with voiceprints enrolled by the TS tool.
+        // No input_finished, so embeddings stay comparable with the enrolled
+        // voiceprints.
         stream.accept_waveform(SAMPLE_RATE_I32, samples);
         if !extractor.is_ready(&stream) {
             return Err(SpeechRecognitionError::new(

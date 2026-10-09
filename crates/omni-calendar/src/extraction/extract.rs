@@ -83,7 +83,7 @@ fn current_date(now_ms: i64, time_zone: &str) -> String {
         .unwrap_or_default()
 }
 
-/// The exact TS prompt text.
+/// The extraction prompt text.
 pub fn build_prompt(input: &ExtractionInput<'_>) -> String {
     let body = utf16_slice(input.email.text_body, 0, MAX_BODY_CHARS);
     let mut text = String::with_capacity(8_192 + body.len());
@@ -288,7 +288,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn existing_events_render_like_ts() {
+    fn existing_events_render_in_the_prompt_layout() {
         let base = ExistingEventContext {
             id: "evt_1".to_owned(),
             title: "🦷 Dentist".to_owned(),
@@ -317,7 +317,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_has_ts_layout() {
+    fn prompt_has_the_pinned_layout() {
         let input = ExtractionInput {
             email: EmailContent {
                 subject: "Appointment",

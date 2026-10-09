@@ -1,6 +1,5 @@
-//! Port of `src/ios-controls/service.spec.ts`. The "retries one transport
-//! error" and interruption cases use the `ApnsSender` seam (the TS mocked
-//! the client object).
+//! The controls-changed push service. Transport retries and interruption go
+//! through the `ApnsSender` seam.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

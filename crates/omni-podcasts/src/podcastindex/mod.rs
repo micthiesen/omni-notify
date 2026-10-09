@@ -1,4 +1,4 @@
-//! Podcast Index `search/byperson` (`src/podcast-recs/podcastindex/*`).
+//! Podcast Index `search/byperson`.
 
 use std::time::Duration;
 
@@ -32,7 +32,7 @@ pub fn podcast_index_auth_hash(key: &str, secret: &str, auth_date_seconds: &str)
     ))
 }
 
-/// The four auth headers, in TS order (`X-Auth-Key`, `X-Auth-Date`,
+/// The four auth headers, in order (`X-Auth-Key`, `X-Auth-Date`,
 /// `Authorization`, `User-Agent`).
 pub fn podcast_index_auth_headers(
     creds: &PodcastIndexCredentials,
@@ -103,7 +103,7 @@ fn js_round(x: f64) -> i64 {
     (x + 0.5).floor() as i64
 }
 
-/// `mapEpisode`: `None` (skip) when feed URL, enclosure, publish date or guid
+/// `None` (skip) when feed URL, enclosure, publish date or guid
 /// is missing; the guid forms the episode identity.
 pub fn map_episode(raw: &RawPodcastIndexEpisode) -> Option<PodcastIndexEpisode> {
     let feed_url = non_empty(&raw.feed_url)?;
@@ -174,7 +174,7 @@ impl PodcastIndexClient {
         }
     }
 
-    /// `createPodcastIndexClient`: `None` without both credentials (one half warns).
+    /// `None` without both credentials (one half warns).
     pub fn from_config(
         config: &omni_config::Config,
         http: PublicHttpClient,
@@ -212,7 +212,7 @@ impl PodcastIndexClient {
             .timeout(REQUEST_TIMEOUT);
         for (header, value) in podcast_index_auth_headers(&self.credentials, self.clock.now_ms()) {
             if header == "User-Agent" {
-                // The shared public UA overrides the auth helper's, as in TS.
+                // The shared public UA overrides the auth helper's.
                 continue;
             }
             request = request.header(header, value);

@@ -206,7 +206,7 @@ impl ResetNotifier for PushoverNotifier {
     }
 }
 
-/// `ResetAlertDeliveryError` plus the ledger's storage failures.
+/// A reset alert delivery failure, or a ledger storage failure.
 #[derive(Debug, thiserror::Error)]
 pub enum DeliveryError {
     #[error("Reset alert {key} delivery failed: {cause}")]

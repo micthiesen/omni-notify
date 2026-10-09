@@ -133,7 +133,7 @@ fn is_secret_key(key: &str) -> bool {
     .any(|needle| lower.contains(needle))
 }
 
-/// `boundValue`: caps strings, arrays and depth; hides secret-looking keys.
+/// Caps strings, arrays and depth; hides secret-looking keys.
 pub fn bound_value(value: &Value, string_limit: usize) -> Value {
     bound_at(value, string_limit, 0)
 }
@@ -425,7 +425,6 @@ pub async fn mark_interrupted_calls(store: &Store, now: i64) -> Result<usize, St
     Ok(marked)
 }
 
-/// `McpActivityQuery`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ActivityQuery {
     pub limit: usize,
@@ -435,7 +434,7 @@ pub struct ActivityQuery {
     pub tool_prefix: Option<String>,
 }
 
-/// `summarizeCalls`: the pure view over stored calls for the activity pages.
+/// The pure view over stored calls for the activity pages.
 pub fn summarize_calls(
     stored: &[McpCallData],
     query: &ActivityQuery,
@@ -539,7 +538,6 @@ pub fn summarize_calls(
     }
 }
 
-/// `getMcpActivity`.
 pub async fn get_mcp_activity(
     store: &Store,
     query: &ActivityQuery,

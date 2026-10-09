@@ -1,6 +1,5 @@
-//! Port of `src/email/archive/service.spec.ts` (durable email archive
-//! actions). Each case runs on its own temporary store (the TS spec shares
-//! one in-memory docstore); the mailbox is a scripted [`ArchiveMailbox`].
+//! Durable email archive actions. Each case runs on its own temporary store;
+//! the mailbox is a scripted [`ArchiveMailbox`].
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::{Arc, Mutex};
@@ -104,7 +103,7 @@ struct Mock {
     expunge: Reply<bool>,
 }
 
-/// The TS spec's default `transport()`.
+/// The default scripted transport.
 fn transport() -> Mock {
     Mock {
         calls: Arc::new(Mutex::new(Vec::new())),

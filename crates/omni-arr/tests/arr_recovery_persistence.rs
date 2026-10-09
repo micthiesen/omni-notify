@@ -1,4 +1,4 @@
-//! Port of `src/arr-recovery/persistence.spec.ts` against a file-backed test store.
+//! Arr recovery state and reservations against a file-backed test store.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::arr_recovery::ArrKind;

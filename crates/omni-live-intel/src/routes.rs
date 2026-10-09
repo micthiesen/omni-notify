@@ -1,5 +1,5 @@
 //! `GET /api/streamers/:id/intelligence-details` and
-//! `POST /api/streamers/:id/intelligence-feedback` (`server.ts` 779-848).
+//! `POST /api/streamers/:id/intelligence-feedback`.
 
 use std::sync::{Arc, OnceLock};
 
@@ -122,7 +122,7 @@ async fn details(
     Ok(js_json(StatusCode::OK, &body))
 }
 
-/// Effect `Schema.isUUID()`: an RFC 9562 UUID (version 1-8, variant 10xx), or
+/// An RFC 9562 UUID (version 1-8, variant 10xx), or
 /// the nil or max UUID, in either case.
 fn is_uuid(value: &str) -> bool {
     const NIL: &str = "00000000-0000-0000-0000-000000000000";
@@ -149,7 +149,7 @@ pub struct FeedbackInput {
     pub note: Option<String>,
 }
 
-/// `livestreamFeedbackSchema`: `alertId` UUID, `verdict` literal, `note` <= 500 chars.
+/// `alertId` UUID, `verdict` literal, `note` <= 500 chars.
 pub fn parse_feedback(body: &Value) -> Result<FeedbackInput, String> {
     let Some(object) = body.as_object() else {
         return Err("Expected an object".to_owned());
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn uuids_follow_the_effect_schema_pattern() {
+    fn uuids_follow_the_validation_pattern() {
         assert!(is_uuid("0B9F8C56-1C7C-4A43-9B8E-2F43C1A0D3E1"));
         assert!(is_uuid("00000000-0000-0000-0000-000000000000"));
         assert!(is_uuid("FFFFFFFF-ffff-FFFF-ffff-FFFFFFFFFFFF"));

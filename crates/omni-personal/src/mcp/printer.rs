@@ -1,5 +1,7 @@
 //! `get_printer_status` and `print_document`.
 
+pub mod defs;
+
 use std::sync::Arc;
 
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
@@ -45,7 +47,7 @@ fn require(printer: Option<&Arc<PrinterService>>) -> Result<&Arc<PrinterService>
 pub fn tools(printer: Option<Arc<PrinterService>>) -> Result<Vec<McpTool>, ToolMetaError> {
     let for_status = printer.clone();
     let status = typed_tool(
-        "get_printer_status",
+        &defs::GET_PRINTER_STATUS,
         move |_input: EmptyInput, _cx: ToolContext| {
             let printer = for_status.clone();
             async move {
@@ -59,14 +61,14 @@ pub fn tools(printer: Option<Arc<PrinterService>>) -> Result<Vec<McpTool>, ToolM
         },
     )?;
     let print = typed_tool(
-        "print_document",
+        &defs::PRINT_DOCUMENT,
         move |input: PrintDocumentInput, _cx: ToolContext| {
             let printer = printer.clone();
             async move {
-                // zod `.trim().min(1)` on jobName.
+                // `jobName` is trimmed and must stay non-empty.
                 let job_name = match input.job_name {
                     Some(name) => {
-                        let trimmed = crate::js::trim(&name);
+                        let trimmed = omni_core::js::trim(&name);
                         if trimmed.is_empty() {
                             return Err(ToolError::input(
                                 "jobName: String must contain at least 1 character(s)",

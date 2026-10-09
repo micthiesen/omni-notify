@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use anyhow::{Context as _, bail};
 use omni_core::clock::{Clock as _, SystemClock};
+use omni_core::js::to_fixed;
 use omni_live_intel::audio::{LivestreamAudioCapture, SAMPLE_RATE};
 use omni_live_intel::enroll::{
     MIN_ENROLLMENT_WINDOWS, SourcedEmbedding, select_cross_source_cluster,
 };
-use omni_live_intel::js_math::js_to_fixed;
 use omni_live_intel::speech::{DEFAULT_SPEAKER_THRESHOLD, VOICEPRINT_MODEL, VoiceprintFile};
 
 const DEFAULT_OUTPUT: &str = "/data/livestream-intelligence/destiny.json";
@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
         writeln!(
             stdout,
             "Captured {}s from {}, {} speech windows",
-            js_to_fixed(audio.duration_seconds, 1),
+            to_fixed(audio.duration_seconds, 1),
             source.url,
             windows.len()
         )?;

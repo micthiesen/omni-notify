@@ -1,4 +1,4 @@
-//! `/api/costs` (WP00): `summarizeCosts()` output in `src/costs/summary.ts`.
+//! `/api/costs`: the cost summary.
 
 use std::collections::BTreeMap;
 

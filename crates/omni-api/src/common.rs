@@ -1,4 +1,4 @@
-//! Shared wire pieces (WP00).
+//! Shared wire pieces.
 
 use serde::{Deserialize, Serialize};
 
@@ -42,7 +42,7 @@ pub fn encode_uri_component(s: &str) -> String {
     out
 }
 
-/// Path builders for the WP00-owned routes (the frontend uses these).
+/// Path builders for the core task and run routes (the frontend uses these).
 pub mod paths {
     use super::encode_uri_component;
 

@@ -1,4 +1,4 @@
-//! The per-run markdown log under `LOGS_PATH/recommendations/` (mitools `LogFile`).
+//! The per-run markdown log under `LOGS_PATH/recommendations/`.
 
 use std::path::{Path, PathBuf};
 

@@ -1,4 +1,4 @@
-//! Ports `src/press-pods/submit.spec.ts`, plus the dedup paths of the shared
+//! Article submission, plus the dedup paths of the shared
 //! submission flow.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

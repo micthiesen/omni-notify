@@ -1,5 +1,5 @@
-//! Ports `src/press-pods/pipeline.effect.spec.ts`, plus end-to-end runs of
-//! the pipeline over in-process fakes (retrievers, models, TTS, ffmpeg).
+//! The PressPods pipeline, with end-to-end runs over in-process fakes
+//! (retrievers, models, TTS, ffmpeg).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

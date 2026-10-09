@@ -125,7 +125,7 @@ pub(crate) fn data_url(mime_type: &str, data_b64: &str) -> String {
     format!("data:{mime_type};base64,{data_b64}")
 }
 
-/// AI SDK tool output encoding: strings are sent as-is, everything else as JSON.
+/// Tool output encoding: strings are sent as-is, everything else as JSON.
 pub(crate) fn tool_output_text(output: &Value) -> String {
     match output {
         Value::String(text) => text.clone(),

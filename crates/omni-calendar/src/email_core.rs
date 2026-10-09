@@ -1,6 +1,6 @@
-//! [`EmailSupport`] over the `omni_email` library (WP02): `recordEmailActivity`,
-//! `EmailRetryPersistence.enqueue`, `findSenderRule(from, "calendar")`, the
-//! shared `EmailTriageService` and `withEmailLogCaptureEffect`.
+//! [`EmailSupport`] over the `omni_email` library: activity recording, the
+//! retry queue, calendar-scoped sender rules, the shared triage and activity log
+//! capture.
 
 use futures::future::BoxFuture;
 use omni_core::email::FetchedEmail;

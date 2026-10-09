@@ -150,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn bearer_shape_matches_the_ts_pattern() {
+    fn bearer_shape_pattern() {
         assert!(is_bearer("Bearer abc.DEF_~+/-=="));
         assert!(!is_bearer("Bearer "));
         assert!(!is_bearer("Bearer ="));

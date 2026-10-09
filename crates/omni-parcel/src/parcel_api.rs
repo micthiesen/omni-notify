@@ -29,7 +29,7 @@ pub enum SubmitResult {
     Error,
 }
 
-/// `shouldTryNextCandidate`: a 4xx rejection other than auth or rate limit
+/// A 4xx rejection other than auth or rate limit
 /// plausibly means the wrong carrier was picked.
 pub fn should_try_next_candidate(result: SubmitResult) -> bool {
     match result {

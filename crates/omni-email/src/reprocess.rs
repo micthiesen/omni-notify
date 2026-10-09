@@ -1,5 +1,5 @@
-//! Manual reprocessing (`src/mcp/tools/email-reprocess.ts` and the reprocess
-//! route): re-fetch the email and rerun its pipeline. A queued retry is
+//! Manual reprocessing (the `email_reprocess` tool and the reprocess route):
+//! re-fetch the email and rerun its pipeline. A queued retry is
 //! cleared only after the handler succeeds, so a failed reprocess keeps it.
 
 use std::future::Future;
@@ -13,7 +13,6 @@ use crate::retry;
 
 const LOG: &str = "Main:Server";
 
-/// `EmailReprocessError`.
 #[derive(Debug, thiserror::Error)]
 pub enum ReprocessError {
     #[error("{source}")]
@@ -30,7 +29,7 @@ pub enum ReprocessError {
     },
 }
 
-/// `handleEmailThenClearRetryEffect`: runs the handler, then (only on success)
+/// Runs the handler, then (only on success)
 /// clears the scheduled retry.
 pub async fn handle_then_clear_retry<C, Fut>(
     handler: &dyn EmailHandler,

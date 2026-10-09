@@ -1,4 +1,4 @@
-//! Port of `src/icloud/protectedAccess.spec.ts`.
+//! Protected-data access (PCS) workflows.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 use std::sync::Mutex;

@@ -1,5 +1,4 @@
-//! The extraction prompt text, generated verbatim from
-//! `src/calendar-events/extraction/extractEvents.ts` (template literal pieces).
+//! The extraction prompt text.
 
 /// From the start through the timezone guideline's fixed part.
 pub(crate) const HEAD: &str = r#"Extract calendar events from this email that the recipient would want on their personal calendar. Return an empty events array if no actionable events are found.

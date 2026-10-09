@@ -31,9 +31,9 @@ const LOG: &str = "PressPods";
 /// Mobile Safari, which most sites serve their simplest markup to.
 pub const USER_AGENT: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15A372 Safari/604.1";
 
-/// The operation of a rating outcome fanned out to a retriever: TS stores
-/// the rating cause itself (`"Invalid article"`, the model error), not a
-/// `PressPodsError`, so its persisted attempt error has no operation prefix.
+/// The operation of a rating outcome fanned out to a retriever. The stored
+/// attempt error is the rating cause itself (`"Invalid article"`, the model
+/// error), with no operation prefix.
 pub const RATING_OPERATION: &str = "rate retrieved PressPods article";
 
 /// Per-retriever (and per-rating) deadline.
@@ -64,7 +64,7 @@ pub struct RetrieverContext {
     pub tz: TimeZone,
 }
 
-/// `isXStatusUrl`: an X/Twitter status permalink (any username, `i/web`).
+/// An X/Twitter status permalink (any username, `i/web`).
 pub fn is_x_status_url(raw: &str) -> bool {
     let Ok(url) = url::Url::parse(raw) else {
         return false;
@@ -79,7 +79,7 @@ pub fn is_x_status_url(raw: &str) -> bool {
     PREFIX.as_ref().is_some_and(|re| re.is_match(url.path()))
 }
 
-/// `getArticleRetrievers`: the X retriever alone for status URLs, else the
+/// The X retriever alone for status URLs, else the
 /// generic set (plus Jina when its key is configured).
 pub fn article_retrievers(
     ctx: &Arc<RetrieverContext>,

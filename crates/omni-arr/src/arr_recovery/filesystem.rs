@@ -33,7 +33,7 @@ impl DirLister for LocalDirs {
     }
 }
 
-/// `verifyDownloadRemoved`: `true` when the parent directory was read and no
+/// `true` when the parent directory was read and no
 /// longer contains the download; an error when the path is outside the
 /// mounts or the parent cannot be read.
 pub async fn verify_download_removed(output_path: &str, dirs: &impl DirLister) -> ArrResult<bool> {

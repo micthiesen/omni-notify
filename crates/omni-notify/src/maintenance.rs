@@ -1,6 +1,6 @@
-//! `StoreMaintenance` (new in Rust): hourly at minute 17,
+//! `StoreMaintenance`: hourly at minute 17,
 //! deletes up to 1000 expired docstore rows. Reads already hide expired rows,
-//! so this is invisible to TS. It is a hidden service, not a registry task: it
+//! so this changes no visible state. It is a hidden service, not a registry task: it
 //! never appears in `/api/tasks` or run history.
 
 use omni_runtime::{AppContext, BackgroundService};

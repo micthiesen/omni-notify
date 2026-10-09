@@ -65,7 +65,7 @@ impl Foundation {
     }
 }
 
-/// Filesystem layout derived like TS.
+/// Filesystem layout derived from the configuration.
 pub fn app_paths(config: &Config, web_dist: PathBuf) -> AppPaths {
     let db_path = config.db_path();
     let data_dir = db_path

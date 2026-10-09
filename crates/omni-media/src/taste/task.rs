@@ -185,7 +185,7 @@ pub async fn build_canonical_watch_evidence(
                         Err(error) => {
                             tracing::warn!(
                                 target: LOG,
-                                error = error.effect_message(),
+                                error = error.cause_message(),
                                 "Taste metadata lookup failed for {canonical_id}"
                             );
                             None

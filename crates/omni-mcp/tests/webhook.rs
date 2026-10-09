@@ -1,4 +1,4 @@
-//! Port of `src/mcp/events/webhook.spec.ts` (all cases kept), plus the
+//! Webhook signing and delivery, plus the
 //! `SideEffectMode::Record` contract of the production transport.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]

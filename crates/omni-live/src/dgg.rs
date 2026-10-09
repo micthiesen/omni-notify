@@ -77,7 +77,7 @@ impl DggFeedError {
     }
 }
 
-// --- payload validation (zod schemas with passthrough) ---------------------
+// --- payload validation (unknown fields pass through) ----------------------
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -18,10 +18,10 @@ pub mod public;
 use public::{AddressPolicy, PublicResolver};
 
 /// Every client identifies as this (AGENTS.md); the Reminders Apple client
-/// (WP10) is the only documented exception.
+/// (`omni-reminders`) is the only documented exception.
 pub const USER_AGENT: &str = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 
-/// Redirects followed by default by the public client (got's default).
+/// Redirects followed by default by the public client.
 pub const DEFAULT_PUBLIC_REDIRECTS: u8 = 10;
 
 /// Client construction options.
@@ -65,7 +65,7 @@ pub struct HttpOverrides {
 }
 
 /// The shared outgoing client. No default request timeout: every call site
-/// sets its own, as in TS.
+/// sets its own.
 #[derive(Clone, Debug)]
 pub struct HttpClient {
     inner: reqwest::Client,
@@ -174,7 +174,7 @@ fn rewrite(overrides: &HttpOverrides, url: Url) -> Url {
 /// How a request treats a 3xx response.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RedirectRule {
-    /// A redirect is an error (default; matches got's `followRedirect: false` + status check).
+    /// A redirect is an error (default).
     Error,
     /// Return the 3xx response as-is.
     None,

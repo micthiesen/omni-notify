@@ -1,5 +1,5 @@
-//! Request timeout behavior, plus a parity check of every role against the committed
-//! model-helper table (code-default model, feature, default operation) that the
+//! Request timeout behavior, plus a check of every role against the committed
+//! model table (code-default model, feature, default operation) that the
 //! production configuration was built from.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -62,8 +62,7 @@ async fn times_out_and_aborts_a_hanging_model_request() {
     );
 }
 
-/// One `get*Model()` helper of the former TypeScript registry, in declaration order
-/// (`fixtures/registry-helpers.json`).
+/// One model role in registry order (`fixtures/registry-helpers.json`).
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Helper {

@@ -1,10 +1,5 @@
-//! Port of `src/live-check/profileLinks.spec.ts`.
-//!
-//! Dropped cases: "cancels and releases the response reader when reading
-//! fails" and "... when interrupted". They assert WHATWG stream reader
-//! bookkeeping (`cancel`/`releaseLock`); reqwest owns the body and releases
-//! the connection when the response or the future is dropped, so there is no
-//! reader to leak. A redirect-refusal case is added instead.
+//! Profile link extraction and fetching, including redirect refusal. reqwest
+//! releases the connection when the response or the future is dropped.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

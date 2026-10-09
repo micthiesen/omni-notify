@@ -35,7 +35,7 @@ use crate::service::WorkspaceService;
 use crate::text::{js_len, js_prefix, js_trim, truncate_marked};
 
 const LOG: &str = "Workspaces";
-/// `stopWhen: isStepCount(12)`.
+/// Tool-loop step limit per run.
 pub const MAX_STEPS: u32 = 12;
 
 /// What started a run (`WorkspaceRunRequest["trigger"]`).
@@ -57,7 +57,6 @@ impl RunTrigger {
     }
 }
 
-/// `WorkspaceRunRequest`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunRequest {
     pub trigger: RunTrigger,
@@ -65,7 +64,6 @@ pub struct RunRequest {
     pub subject_id: Option<String>,
 }
 
-/// `WorkspaceRunResult`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunResult {
     pub summary: String,
@@ -171,7 +169,7 @@ pub struct NotificationOutput {
     pub artifact_key: Option<String>,
 }
 
-/// `workspaceOutputSchema`: the agent's structured output.
+/// The agent's structured output.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkspaceOutput {
     pub response: String,
@@ -186,7 +184,7 @@ pub fn workspace_output_schema() -> Value {
     omni_ai::schema::strict_schema::<WorkspaceOutput>()
 }
 
-/// `normalizeWorkspaceWebUrl`: only `http:` / `https:` links, normalized.
+/// Only `http:` / `https:` links, normalized.
 pub fn normalize_web_url(value: Option<&str>) -> Option<String> {
     let value = value.filter(|v| !v.is_empty())?;
     let url = url::Url::parse(value).ok()?;
@@ -205,7 +203,6 @@ fn is_new_label(requested: &str) -> bool {
     }
 }
 
-/// `resolveSubjectId`.
 fn resolve_subject_id(
     requested: &str,
     ids: &mut IndexMap<String, String>,
@@ -246,7 +243,7 @@ pub struct OutputPlan {
     pub notification: Option<(String, NotificationOutput)>,
 }
 
-/// `planWorkspaceOutput`: validates everything before anything is written.
+/// Validates everything before anything is written.
 pub fn plan_output(
     definition: &WorkspaceDefinition,
     output: &WorkspaceOutput,
@@ -758,7 +755,6 @@ impl AiTool for ReportPapercut {
 }
 
 impl WorkspaceService {
-    /// `buildWorkspacePrompt`.
     pub async fn build_prompt(
         &self,
         definition: &WorkspaceDefinition,
@@ -872,7 +868,7 @@ impl WorkspaceService {
         ))
     }
 
-    /// `runWorkspaceEffect`: one agent run. The user message is persisted
+    /// One agent run. The user message is persisted
     /// before the model runs, so a failed run never loses it.
     pub async fn run_workspace(
         &self,
@@ -972,7 +968,7 @@ impl WorkspaceService {
         Ok(applied)
     }
 
-    /// `applyWorkspaceOutputEffect`: plan and validate, commit once, then deliver.
+    /// Plan and validate, commit once, then deliver.
     pub async fn apply_output(
         &self,
         definition: &WorkspaceDefinition,

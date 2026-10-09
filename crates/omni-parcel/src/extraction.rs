@@ -1,4 +1,4 @@
-//! Tracking-number extraction (`src/parcel-tracker/extraction/*`). The prompt
+//! Tracking-number extraction. The prompt
 //! separates order numbers from tracking numbers and asks for up to three
 //! ranked carrier codes from the live carrier list.
 
@@ -32,14 +32,13 @@ pub struct ExtractedDelivery {
     pub description: String,
 }
 
-/// `deliveryExtractionSchema`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DeliveryExtraction {
     pub deliveries: Vec<ExtractedDelivery>,
 }
 
 impl DeliveryExtraction {
-    /// The zod contract beyond the JSON shape: every delivery names at least
+    /// The contract beyond the JSON shape: every delivery names at least
     /// one carrier candidate.
     pub fn validate(&self) -> Result<(), String> {
         match self

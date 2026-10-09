@@ -18,9 +18,9 @@ use serde_json::{Map, Value};
 
 use crate::json::{BigIntNotSerializable, js_value_to_json};
 
-/// `MANAGED_ENTITIES` order in `src/data-manager.ts`. Slugs a subsystem adds
-/// beyond this list follow in registration order.
-pub const TS_ORDER: &[&str] = &[
+/// Display order of the managed entities. Slugs a subsystem adds beyond this
+/// list follow in registration order.
+pub const MANAGED_ORDER: &[&str] = &[
     "cost-event",
     "cost-migration",
     "task-run",
@@ -64,7 +64,7 @@ pub const TS_ORDER: &[&str] = &[
     "workspace-notification",
 ];
 
-/// Orders managed entities like `src/data-manager.ts`; the first occurrence of
+/// Orders managed entities by [`MANAGED_ORDER`]; the first occurrence of
 /// a slug wins.
 pub fn order_managed(entities: Vec<ManagedEntity>) -> Vec<ManagedEntity> {
     let mut seen = std::collections::HashSet::new();
@@ -73,7 +73,7 @@ pub fn order_managed(entities: Vec<ManagedEntity>) -> Vec<ManagedEntity> {
         .filter(|e| seen.insert(e.slug))
         .collect();
     let rank = |slug: &str| {
-        TS_ORDER
+        MANAGED_ORDER
             .iter()
             .position(|s| *s == slug)
             .unwrap_or(usize::MAX)
@@ -284,7 +284,6 @@ impl DataManager {
         }
     }
 
-    /// `listManagedEntities`.
     pub async fn list(&self) -> Result<Vec<ManagedEntitySummary>, DataError> {
         let slugs = self.slugs();
         let stats = self
@@ -309,7 +308,6 @@ impl DataManager {
             .collect())
     }
 
-    /// `getManagedDataSummary`.
     pub async fn storage(
         &self,
         entities: &[ManagedEntitySummary],
@@ -321,7 +319,7 @@ impl DataManager {
         })
     }
 
-    /// `getManagedEntity`: `None` for an unknown slug.
+    /// `None` for an unknown slug.
     pub async fn rows(&self, slug: &str) -> Result<Option<EntityRowsResponse>, DataError> {
         let Some(entity) = self.entity(slug) else {
             return Ok(None);
@@ -355,7 +353,7 @@ impl DataManager {
         }))
     }
 
-    /// `deleteManagedEntityRow`: `None` for an unknown slug.
+    /// `None` for an unknown slug.
     pub async fn delete(
         &self,
         slug: &str,

@@ -1,10 +1,8 @@
-//! Port of `src/calendar-events/caldav/api.spec.ts` ("CalDAV writes"), plus the
-//! cross-calendar move (403) fallback and record mode.
+//! CalDAV writes, plus the cross-calendar move (403) fallback and record mode.
 //!
 //! The interruption cases assert that aborting the task drops the in-flight
-//! request (Rust cancellation replaces the TS AbortSignal). "bounds update and
-//! delete requests" cannot observe a signal object; the bound is the shared
-//! 15 s request timeout, asserted in `http.rs`, and this port checks the outcomes.
+//! request. Update and delete requests are bounded by the shared 15 s request
+//! timeout, asserted in `http.rs`; these cases check the outcomes.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -48,7 +46,7 @@ async fn wait_for_requests(server: &MockServer, n: usize) {
 }
 
 #[tokio::test]
-async fn aborts_an_in_flight_put_when_its_effect_is_interrupted() {
+async fn aborts_an_in_flight_put_when_dropped() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .respond_with(ResponseTemplate::new(201).set_delay(Duration::from_secs(60)))
@@ -65,7 +63,7 @@ async fn aborts_an_in_flight_put_when_its_effect_is_interrupted() {
 }
 
 #[tokio::test]
-async fn aborts_an_in_flight_delete_when_its_effect_is_interrupted() {
+async fn aborts_an_in_flight_delete_when_dropped() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
         .respond_with(ResponseTemplate::new(204).set_delay(Duration::from_secs(60)))

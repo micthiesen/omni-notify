@@ -87,7 +87,7 @@ async fn seed(h: &Harness) -> (String, String) {
 }
 
 #[tokio::test]
-async fn registers_the_ten_tools_in_ts_order() {
+async fn registers_the_ten_tools_in_serving_order() {
     let h = Harness::new().await;
     let names: Vec<String> = omni_workspaces::mcp::tools(&h.service)
         .unwrap()

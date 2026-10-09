@@ -13,7 +13,7 @@ use crate::{
     ToolCall, Usage,
 };
 
-/// `isReasoningModel`: o-series, or `gpt-<major>` with major >= 5 that is not a chat model.
+/// O-series, or `gpt-<major>` with major >= 5 that is not a chat model.
 pub fn is_reasoning_model(model: &str) -> bool {
     let bytes = model.as_bytes();
     if bytes.first() == Some(&b'o') && bytes.get(1).is_some_and(u8::is_ascii_digit) {
@@ -296,7 +296,6 @@ pub fn parse_response(body: &[u8]) -> Result<GenerateResponse, AiError> {
     })
 }
 
-/// `convertOpenAIResponsesUsage`.
 pub fn parse_usage(usage: &Value) -> Usage {
     let input = u64_at(usage, "/input_tokens");
     let cached = u64_at(usage, "/input_tokens_details/cached_tokens");

@@ -54,7 +54,7 @@ fn papercut_order(a: &PapercutRow, b: &PapercutRow) -> Ordering {
         .then(b.last_seen_at.cmp(&a.last_seen_at))
 }
 
-/// `upsertWorkspaceSubject` input: timestamps default from the prior row and now.
+/// Subject upsert input: timestamps default from the prior row and now.
 #[derive(Clone, Debug)]
 pub struct SubjectUpsert {
     pub workspace_id: String,
@@ -67,7 +67,7 @@ pub struct SubjectUpsert {
     pub last_researched_at: Option<i64>,
 }
 
-/// `addWorkspaceMessage` input.
+/// New message input.
 #[derive(Clone, Debug)]
 pub struct NewMessage {
     pub workspace_id: String,
@@ -77,7 +77,7 @@ pub struct NewMessage {
     pub run_id: Option<String>,
 }
 
-/// `addWorkspaceSource` input; id and time default to a new UUID and now.
+/// New source input; id and time default to a new UUID and now.
 #[derive(Clone, Debug)]
 pub struct NewSource {
     pub source_id: Option<String>,
@@ -91,7 +91,7 @@ pub struct NewSource {
     pub run_id: Option<String>,
 }
 
-/// `reportWorkspacePapercut` input.
+/// Papercut report input.
 #[derive(Clone, Debug)]
 pub struct NewPapercut {
     pub workspace_id: String,
@@ -103,7 +103,7 @@ pub struct NewPapercut {
     pub related_tool: Option<String>,
 }
 
-/// `addWorkspaceAction` input (preview seeding).
+/// New action input (preview seeding).
 #[derive(Clone, Debug)]
 pub struct NewAction {
     pub workspace_id: String,
@@ -115,7 +115,7 @@ pub struct NewAction {
     pub run_id: Option<String>,
 }
 
-/// `addWorkspaceArtifactRevision` input (preview seeding).
+/// New artifact revision input (preview seeding).
 #[derive(Clone, Debug)]
 pub struct NewArtifactRevision {
     pub workspace_id: String,
@@ -185,7 +185,7 @@ impl WorkspaceRepo {
             .await
     }
 
-    /// `upsertWorkspaceSubject`: keeps the prior `createdAt` and
+    /// Keeps the prior `createdAt` and
     /// `lastResearchedAt` (unless given) and any unknown stored fields.
     pub async fn upsert_subject(&self, input: SubjectUpsert) -> Result<SubjectRow, StoreError> {
         let now = self.now_ms();
@@ -263,7 +263,7 @@ impl WorkspaceRepo {
             .await
     }
 
-    /// `addWorkspaceArtifactRevision`: `None` when the content is unchanged.
+    /// `None` when the content is unchanged.
     pub async fn add_artifact_revision(
         &self,
         input: NewArtifactRevision,
@@ -422,7 +422,7 @@ impl WorkspaceRepo {
         Ok(rows)
     }
 
-    /// `addWorkspaceAction`: reuses an identical pending proposal.
+    /// Reuses an identical pending proposal.
     pub async fn add_action(&self, input: NewAction) -> Result<(ActionRow, bool), StoreError> {
         let now = self.now_ms();
         self.store
@@ -489,7 +489,7 @@ impl WorkspaceRepo {
             .await
     }
 
-    /// `setWorkspaceActionResult`: `None` when the action is gone.
+    /// `None` when the action is gone.
     pub async fn set_action_result(
         &self,
         action_id: &str,

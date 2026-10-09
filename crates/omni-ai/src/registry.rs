@@ -1,8 +1,8 @@
-//! `src/ai/registry.ts`: per-role cost attribution and the per-call timeout.
+//! Per-role cost attribution and the per-call timeout.
 //!
 //! Code-default models live with the env keys in [`omni_config::ModelRole::default_model`]
-//! (deploys use code defaults; AGENTS.md). This module adds what `resolveModel` passed
-//! alongside each model: the cost feature and the default operation.
+//! (deploys use code defaults; AGENTS.md). This module adds what each role records
+//! alongside its model: the cost feature and the default operation.
 
 use std::time::Duration;
 
@@ -11,7 +11,7 @@ use omni_config::ModelRole;
 /// `LANGUAGE_MODEL_TIMEOUT`: every provider call is bounded by five minutes.
 pub const LANGUAGE_MODEL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
-/// Every role, in `registry.ts` order.
+/// Every role, in registry order.
 pub const ALL_ROLES: [ModelRole; 14] = [
     ModelRole::Briefing,
     ModelRole::LivestreamIntelligence,
@@ -29,8 +29,8 @@ pub const ALL_ROLES: [ModelRole; 14] = [
     ModelRole::PressPodsCleaning,
 ];
 
-/// `(feature, default operation)` as the `get*Model()` helpers pass them to `resolveModel`.
-/// Roles whose TS helper takes an `operation` argument use [`crate::CostTag::with_operation`].
+/// `(feature, default operation)` of each role. Roles whose callers name a specific
+/// operation use [`crate::CostTag::with_operation`].
 pub fn role_cost(role: ModelRole) -> (&'static str, &'static str) {
     match role {
         ModelRole::Briefing => ("briefings", "generate"),

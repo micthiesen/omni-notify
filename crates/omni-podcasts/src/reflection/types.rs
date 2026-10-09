@@ -1,5 +1,4 @@
-//! Taste evidence and profile entities (`reflection/types.ts`,
-//! `reflection/persistence.ts`).
+//! Taste evidence and profile entities.
 
 use omni_store::cbor::Extra;
 use omni_store::entity::Entity;

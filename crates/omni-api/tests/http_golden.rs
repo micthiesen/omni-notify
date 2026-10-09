@@ -1,5 +1,5 @@
-//! Every DTO against the HTTP fixtures captured from the production TS
-//! service (`cargo xtask capture-golden --base <TS URL>`, read-only GETs, raw
+//! Every DTO against the HTTP fixtures captured from the production
+//! service (`cargo xtask capture-golden --base <URL>`, read-only GETs, raw
 //! captures stay in the gitignored `.local/golden-capture/`) and synthesized by
 //! `cargo xtask golden-synthesize`, which keeps routes, shapes, enum values and
 //! edge cases but replaces personal data. Each fixture body must decode into its
@@ -181,12 +181,11 @@ golden! {
     pods_rss_unauthorized: omni_api::common::ApiErrorBody = "pods_rss", 401;
 }
 
-/// Both taste-profile routes return the unrun Effect object in TS
-/// (`{"profile": {"_id": "Effect", ...}}`), a defect the Rust port fixes
-/// deliberately (WP07/WP08 reports): the fixtures pin the TS bytes, and the
-/// DTO decodes the corrected shape instead.
+/// The captured taste-profile fixtures predate a fix: they hold an unevaluated
+/// placeholder (`{"profile": {"_id": "Effect", ...}}`) instead of the profile.
+/// The fixtures keep those bytes, and the DTO decodes the corrected shape.
 #[test]
-fn taste_profile_fixtures_record_the_ts_defect() {
+fn taste_profile_fixtures_predate_the_profile_fix() {
     for slug in [
         "api_recommendations_taste-profile",
         "api_podcast-recommendations_taste-profile",

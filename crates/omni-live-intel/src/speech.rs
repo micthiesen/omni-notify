@@ -1,7 +1,7 @@
 //! Local speech: VAD, speaker embeddings, Destiny voiceprint matching and
 //! transcription.
 //!
-//! [`LocalSpeechRuntime`] holds the TS decision logic (windowing, scoring,
+//! [`LocalSpeechRuntime`] holds the decision logic (windowing, scoring,
 //! thresholds) over a [`SpeechBackend`]; [`crate::sherpa::SherpaBackend`] is the
 //! native backend. The service talks to a [`SpeechEngine`], which runs the
 //! blocking native work on tokio's blocking pool.
@@ -116,7 +116,7 @@ pub struct VoiceprintFile {
 }
 
 impl VoiceprintFile {
-    /// `VoiceprintFileSchema`: version 1, speaker "destiny", at least two
+    /// Version 1, speaker "destiny", at least two
     /// non-empty finite embeddings, non-negative `createdAt`.
     pub fn validate(&self) -> Result<(), String> {
         #[allow(clippy::float_cmp)]
@@ -166,7 +166,7 @@ impl VoiceprintFile {
         Ok(file)
     }
 
-    /// The file as TS writes it: `JSON.stringify(voiceprint)` plus a newline.
+    /// The voiceprint file: `JSON.stringify(voiceprint)` plus a newline.
     pub fn to_json_line(&self) -> Result<String, serde_json::Error> {
         let value = serde_json::to_value(self)?;
         Ok(format!("{}\n", omni_core::js::json_stringify(&value)))
@@ -278,7 +278,7 @@ impl<B: SpeechBackend> LocalSpeechRuntime<B> {
 
     /// Trimmed transcript.
     pub fn transcribe(&self, samples: &[f32]) -> Result<String, SpeechRecognitionError> {
-        Ok(crate::js_math::js_trim(&self.backend.transcribe(samples)?).to_owned())
+        Ok(omni_core::js::trim(&self.backend.transcribe(samples)?).to_owned())
     }
 }
 

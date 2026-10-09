@@ -1,5 +1,5 @@
 //! `hygiene`: keep Cargo's build directories from silently growing until builds slow
-//! down (ported from deadpan's `cargo xtask gate`).
+//! down.
 //!
 //! Cargo never deletes superseded artifacts: every feature set, profile, target and
 //! source change leaves dependency objects and incremental sessions behind, and a

@@ -133,7 +133,7 @@ impl AiTool for HistoricalIssues {
     }
 }
 
-/// `repairDependencies`: Observer, Sonarr/Radarr, Luna and Pushover.
+/// Observer, Sonarr/Radarr, Luna and Pushover.
 pub struct LiveRepairDependencies {
     observer: ObserverClient,
     tv: Option<ArrRepairClient>,

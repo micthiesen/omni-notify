@@ -19,7 +19,7 @@ use crate::public_http::{PRESS_PODS_IMAGE_MAX_BYTES, PublicGet, fetch_public_buf
 
 const LOG: &str = "PressPods";
 
-/// `getDuration`: the MP3's duration in seconds (exact frame arithmetic, see
+/// The MP3's duration in seconds (exact frame arithmetic, see
 /// [`crate::mp3`]), or `None` (logged at ERROR) when it cannot be read.
 pub fn audio_duration_seconds(audio: &[u8]) -> Option<f64> {
     let duration = crate::mp3::duration_seconds(audio);
@@ -154,7 +154,7 @@ pub fn write_tags(
     Ok(Some(out))
 }
 
-/// `tagEpisodeAudio`: album art and chapters; never fails.
+/// Album art and chapters; never fails.
 pub async fn tag_episode_audio(
     client: &PublicHttpClient,
     audio: Vec<u8>,

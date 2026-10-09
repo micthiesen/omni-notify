@@ -1,4 +1,4 @@
-//! Daily buckets and rolling windows (`metrics/windows.ts`, `metrics/types.ts`).
+//! Daily buckets and rolling windows.
 
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, ToSpan};
@@ -67,10 +67,7 @@ impl MetricWindow {
     }
 }
 
-/// `new Date(ms).toISOString().slice(0, 10)`.
-pub fn to_date_stamp(ms: i64) -> String {
-    omni_core::js::to_iso_string(ms).chars().take(10).collect()
-}
+pub use omni_core::clock::utc_date_stamp as to_date_stamp;
 
 /// `d = new Date(at); d.setDate(d.getDate() - days); toDateStamp(d)`:
 /// calendar days back in the local zone, then the UTC date.

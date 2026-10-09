@@ -1,10 +1,9 @@
-//! The sherpa-onnx parity spike: the Rust bindings must reproduce the former TS
-//! (`sherpa-onnx-node`) speech path on the same audio, so voiceprints enrolled
-//! by the TS tool keep matching at the 0.62 threshold.
+//! The sherpa-onnx bindings must reproduce the reference speaker path on the
+//! same audio, so enrolled voiceprints keep matching at the 0.62 threshold.
 //!
 //! Ignored by default (needs the Docker image's VAD and speaker models and a
-//! reference JSON previously produced with `sherpa-onnx-node`; that generator
-//! was retired with the Node tooling). To run:
+//! reference JSON produced with `sherpa-onnx-node`, which this repository no
+//! longer generates). To run:
 //!
 //! 1. Put `silero_vad.int8.onnx` and
 //!    `3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx` (Dockerfile URLs and

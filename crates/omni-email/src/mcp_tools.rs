@@ -1,6 +1,8 @@
 //! Email MCP tools: mailbox search/get through the
 //! `EmailReader` port, health, pipeline activity, reprocess, sender rules,
-//! feedback and the retry queue. Metadata comes from the golden tool list.
+//! feedback and the retry queue. Each tool's contract is declared in [`defs`].
+
+pub mod defs;
 
 use std::sync::Arc;
 
@@ -94,7 +96,6 @@ fn bounded_list(values: Option<&Vec<String>>, max_items: usize, max_chars: usize
         .unwrap_or_default()
 }
 
-/// `serializeEmail`.
 fn serialize_email(email: &FetchedEmail, max_excerpt_chars: usize) -> EmailSummary {
     let (excerpt, excerpt_truncated) = truncate_utf16(&email.text_body, max_excerpt_chars);
     let references = email.references.as_ref().map_or_else(Vec::new, |refs| {
@@ -142,7 +143,7 @@ fn serialize_email(email: &FetchedEmail, max_excerpt_chars: usize) -> EmailSumma
     }
 }
 
-/// `activitySchema` as served by the tools.
+/// An activity as served by the tools.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ActivitySummary {
@@ -225,7 +226,7 @@ async fn activity_or_error(
         .ok_or_else(|| ToolError::execute(format!("Unknown email activity: {activity_id}")))
 }
 
-/// `new Date(value)` for the zod `datetime({offset: true})` strings.
+/// Epoch milliseconds of an RFC 3339 date-time with an offset.
 fn parse_date_time(value: Option<&str>) -> Result<Option<i64>, ToolError> {
     value
         .map(|value| {
@@ -237,7 +238,7 @@ fn parse_date_time(value: Option<&str>) -> Result<Option<i64>, ToolError> {
         .transpose()
 }
 
-/// zod `.trim().min(1)` on an optional field.
+/// Trims an optional field, which must stay non-empty.
 fn trimmed_field(value: Option<String>, field: &str) -> Result<Option<String>, ToolError> {
     value
         .map(|value| {
@@ -768,70 +769,76 @@ impl EmailTools {
 }
 
 macro_rules! tool {
-    ($tools:expr, $name:literal, |$this:ident, $input:ident: $ty:ty| $body:expr) => {{
+    ($tools:expr, $def:expr, |$this:ident, $input:ident: $ty:ty| $body:expr) => {{
         let state = $tools.clone();
-        typed_tool($name, move |$input: $ty, _cx: ToolContext| {
+        typed_tool($def, move |$input: $ty, _cx: ToolContext| {
             let $this = state.clone();
             async move { $body }
         })?
     }};
 }
 
-/// The email tools in `src/mcp/tools/email.ts` order.
+/// The email tools, in serving order.
 pub fn tools(state: &EmailTools) -> Result<Vec<McpTool>, ToolMetaError> {
     Ok(vec![
-        tool!(state, "email_search", |this, input: SearchInput| this
+        tool!(state, &defs::EMAIL_SEARCH, |this, input: SearchInput| this
             .search(input)
             .await),
-        tool!(state, "email_get", |this, input: GetInput| this
+        tool!(state, &defs::EMAIL_GET, |this, input: GetInput| this
             .get(input)
             .await),
-        tool!(state, "email_health", |this, _input: EmptyInput| Ok::<
+        tool!(state, &defs::EMAIL_HEALTH, |this, _input: EmptyInput| Ok::<
             _,
             ToolError,
         >(
             this.health()
         )),
-        tool!(state, "email_activity_list", |this, input: PageInput| this
-            .activity_list(input)
-            .await),
         tool!(
             state,
-            "email_activity_get",
+            &defs::EMAIL_ACTIVITY_LIST,
+            |this, input: PageInput| this.activity_list(input).await
+        ),
+        tool!(
+            state,
+            &defs::EMAIL_ACTIVITY_GET,
             |this, input: ActivityGetInput| this.activity_get(input).await
         ),
-        tool!(state, "email_reprocess", |this, input: ActivityIdInput| {
-            this.reprocess(input).await
-        }),
-        tool!(state, "email_rules_list", |this, _input: EmptyInput| this
-            .rules_list()
-            .await),
         tool!(
             state,
-            "email_rules_upsert",
+            &defs::EMAIL_REPROCESS,
+            |this, input: ActivityIdInput| this.reprocess(input).await
+        ),
+        tool!(
+            state,
+            &defs::EMAIL_RULES_LIST,
+            |this, _input: EmptyInput| this.rules_list().await
+        ),
+        tool!(
+            state,
+            &defs::EMAIL_RULES_UPSERT,
             |this, input: RuleUpsertInput| this.rules_upsert(input).await
         ),
         tool!(
             state,
-            "email_rules_delete",
+            &defs::EMAIL_RULES_DELETE,
             |this, input: RuleDeleteInput| this.rules_delete(input).await
         ),
         tool!(
             state,
-            "email_feedback_list",
+            &defs::EMAIL_FEEDBACK_LIST,
             |this, input: FeedbackListInput| this.feedback_list(input).await
         ),
         tool!(
             state,
-            "email_feedback_set",
+            &defs::EMAIL_FEEDBACK_SET,
             |this, input: FeedbackSetInput| this.feedback_set(input).await
         ),
-        tool!(state, "email_retry_list", |this, input: PageInput| this
-            .retry_list(input)
-            .await),
+        tool!(state, &defs::EMAIL_RETRY_LIST, |this, input: PageInput| {
+            this.retry_list(input).await
+        }),
         tool!(
             state,
-            "email_retry_clear",
+            &defs::EMAIL_RETRY_CLEAR,
             |this, input: RetryClearInput| this.retry_clear(input).await
         ),
     ])

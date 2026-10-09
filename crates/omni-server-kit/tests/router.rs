@@ -1,5 +1,5 @@
 //! Router composition: SPA fallback and cache headers, JSON 404 for unknown
-//! `/api/*`, the same-origin guard on composed routes, and Hono's 500 for
+//! `/api/*`, the same-origin guard on composed routes, and the opaque 500 for
 //! handler failures and panics.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

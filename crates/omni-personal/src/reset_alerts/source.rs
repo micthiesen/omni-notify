@@ -3,13 +3,11 @@
 use std::time::Duration;
 
 use jiff::tz::TimeZone;
-use omni_core::js::utf16_len;
+use omni_core::js::{date_parse, utf16_len};
 use omni_http::public::PublicHttpClient;
 use omni_http::{Method, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer};
-
-use crate::js::parse_date;
 
 /// Free text bound (`resetText`).
 pub const MAX_TEXT: usize = 16_384;
@@ -53,7 +51,7 @@ impl Check<'_> {
     }
 
     pub fn timestamp(&self, path: &str, value: &str) -> Result<(), String> {
-        parse_date(value, self.tz)
+        date_parse(value, self.tz)
             .map(|_| ())
             .ok_or_else(|| format!("{path}: expected a valid timestamp, got {value:?}"))
     }
@@ -90,7 +88,7 @@ fn max_len(path: &str, value: &str, max: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// A required field that may be `null` (Effect `Schema.NullOr`): missing is an error.
+/// A required field that may be `null`: missing is an error.
 pub fn required_nullable<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -99,7 +97,7 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
-/// An optional field that must not be `null` (`Schema.optional`); use with `default`.
+/// An optional field that must not be `null`; use with `default`.
 pub fn optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
     D: Deserializer<'de>,
@@ -119,7 +117,7 @@ where
     Ok(decoded)
 }
 
-/// `readResetSource`: GET with a 20 s timeout and a 2 MiB cap, then JSON
+/// GET with a 20 s timeout and a 2 MiB cap, then JSON
 /// parse and schema decode. No retries.
 pub async fn read_json(
     http: &PublicHttpClient,

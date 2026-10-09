@@ -1,4 +1,4 @@
-//! Port of `src/mcp/events/executorAuth.spec.ts` (all cases kept) against a
+//! Executor delegated authorization against a
 //! wiremock session endpoint reached through the offline client's rewrite.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]

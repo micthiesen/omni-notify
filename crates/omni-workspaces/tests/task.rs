@@ -1,4 +1,4 @@
-//! Port of `src/workspaces/task.test.ts`, driving the real engine with a
+//! The workspace task, driving the real engine with a
 //! scripted workspace model.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

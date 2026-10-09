@@ -89,7 +89,7 @@ pub(crate) fn request_failure(operation: &str, error: &HttpError) -> String {
     format!("{operation}: {detail}")
 }
 
-/// Sends with the TS got semantics: non-2xx is an error.
+/// Sends `request`; a non-2xx status is an error.
 pub(crate) async fn fetch_text(
     request: RequestBuilder,
     max_bytes: usize,
@@ -114,7 +114,7 @@ pub struct PlatformRequestError {
     pub message: String,
 }
 
-/// `fetchGQL`: POST `{query}` with a client id, bounded, decoded into `T`.
+/// POST `{query}` with a client id, bounded, decoded into `T`.
 pub async fn fetch_gql<T: serde::de::DeserializeOwned>(
     http: &PublicHttpClient,
     url: &str,
@@ -135,7 +135,7 @@ pub async fn fetch_gql<T: serde::de::DeserializeOwned>(
     serde_json::from_str(&body).map_err(|e| fail(format!("{operation}: {e}")))
 }
 
-/// `fetchPageHtml`: GET a public page, bounded.
+/// GET a public page, bounded.
 pub async fn fetch_page_html(
     http: &PublicHttpClient,
     url: &str,

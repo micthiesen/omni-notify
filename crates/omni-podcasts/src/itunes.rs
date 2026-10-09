@@ -76,7 +76,6 @@ pub fn parse_itunes_response(
         .collect())
 }
 
-/// `searchItunesPodcastsEffect`.
 pub async fn search_itunes_podcasts(
     http: &PublicHttpClient,
     term: &str,

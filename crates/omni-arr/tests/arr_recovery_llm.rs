@@ -1,7 +1,5 @@
-//! Port of `src/arr-recovery/llm.spec.ts`, plus `assess_with_llm` against a
-//! scripted model (request bounds and schema-checked verdicts).
-//!
-//! The `it.each` import cases run as one test over the five overrides.
+//! The model assessment prompt and verdict rules, plus `assess_with_llm`
+//! against a scripted model (request bounds and schema-checked verdicts).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_ai::{GenerateResponse, ModelRole};
@@ -354,8 +352,8 @@ async fn assess_with_llm_skips_the_model_when_safeguards_prohibit_an_action() {
 
 #[tokio::test]
 async fn assess_with_llm_fails_on_output_outside_the_strict_schema() {
-    // The AI SDK validates `llmOutputSchema` (zod `.strict()`); a violation fails
-    // the assessment so the next pass retries it, rather than recording a defer.
+    // A strict-schema violation fails the assessment so the next pass retries
+    // it, rather than recording a defer.
     for output in [
         verdict(json!({ "extra": true })),
         verdict(json!({ "reason": "x".repeat(501) })),

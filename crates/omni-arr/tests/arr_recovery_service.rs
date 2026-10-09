@@ -1,9 +1,7 @@
-//! Port of `src/arr-recovery/service.spec.ts` with an in-memory Arr client, a
-//! scripted assessor and a recording notifier over a file-backed store.
-//!
-//! The TS clock is Effect's `TestClock`; here a `TestClock` shared with the
-//! store is set explicitly. The import settle delay is shortened to 10 ms
-//! (TS advances its test clock by the 2 s delay).
+//! The Arr recovery service with an in-memory Arr client, a scripted assessor
+//! and a recording notifier over a file-backed store. A `TestClock` shared
+//! with the store is set explicitly, and the import settle delay is shortened
+//! to 10 ms.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

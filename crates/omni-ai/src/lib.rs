@@ -1,13 +1,11 @@
 //! Language models, tools and cost accounting.
 //!
-//! Ports `src/ai/registry.ts` (model resolution, the five-minute per-call timeout and
-//! per-call cost recording), the AI SDK `generateText` behaviour the TS code relies on
-//! (structured output, retries, the multi-step tool loop) and three thin provider wire
+//! Model resolution, the five-minute per-call timeout, per-call cost recording,
+//! structured output, retries, the multi-step tool loop and three thin provider wire
 //! clients: [`wire::openai_responses`], [`wire::anthropic_messages`] and [`wire::gemini`].
 //!
 //! Cost events are recorded by the [`Ai`] helpers once per successful provider call
-//! (`requests: 1`), exactly where the TS `wrapGenerate` middleware recorded them. Calling
-//! [`LanguageModel::generate`] directly records nothing.
+//! (`requests: 1`). Calling [`LanguageModel::generate`] directly records nothing.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -105,7 +103,7 @@ pub enum ContentPart {
         mime_type: String,
         data_b64: String,
     },
-    /// An inline file (AI SDK `type: "file"`); image media types are sent as images.
+    /// An inline file; image media types are sent as images.
     File {
         mime_type: String,
         data_b64: String,
@@ -161,7 +159,7 @@ pub struct OutputSpec {
 }
 
 impl OutputSpec {
-    /// The AI SDK `Output.object` default: name `response`, the strict schema of `T`.
+    /// The default output: name `response`, the strict schema of `T`.
     pub fn of<T: schemars::JsonSchema>() -> Self {
         Self {
             name: "response".to_owned(),
@@ -204,7 +202,7 @@ pub struct GenerateRequest {
     pub output: Option<OutputSpec>,
     pub max_output_tokens: Option<u32>,
     pub reasoning_effort: Option<ReasoningEffort>,
-    /// Retries of retryable provider failures (AI SDK `maxRetries`). Default 2.
+    /// Retries of retryable provider failures. Default 2.
     pub max_retries: u32,
     /// Per provider call (`LANGUAGE_MODEL_TIMEOUT`). Default 5 minutes.
     pub timeout: Duration,
@@ -226,7 +224,7 @@ impl Default for GenerateRequest {
 }
 
 impl GenerateRequest {
-    /// A request with one user text message (AI SDK `prompt`).
+    /// A request with one user text message.
     pub fn prompt(text: impl Into<String>) -> Self {
         Self {
             messages: vec![Message::user_text(text)],
@@ -235,7 +233,7 @@ impl GenerateRequest {
     }
 }
 
-/// AI SDK `LanguageModelUsage` flattened: totals include cached and reasoning tokens.
+/// Token usage: totals include cached and reasoning tokens.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u64,
@@ -324,13 +322,13 @@ pub trait LanguageModel: Send + Sync {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CostTag {
     /// Static feature; `None` uses the model role's feature. Either way the current
-    /// run's task name takes precedence ([`costs::current_cost_feature`]), as in TS.
+    /// run's task name takes precedence ([`costs::current_cost_feature`]).
     pub feature: Option<&'static str>,
     pub operation: &'static str,
 }
 
 impl CostTag {
-    /// The `src/ai/registry.ts` feature and default operation of `role`.
+    /// The cost feature and default operation of `role`.
     pub fn for_role(role: ModelRole) -> Self {
         let (feature, operation) = registry::role_cost(role);
         Self {
@@ -397,15 +395,15 @@ pub struct StepRecord {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LoopResult {
-    /// The last step's text (AI SDK `result.text`).
+    /// The last step's text.
     pub text: String,
     pub steps: u32,
-    /// Summed over all steps (AI SDK `result.usage`).
+    /// Summed over all steps.
     pub usage: Usage,
     /// The full conversation including every assistant and tool message.
     pub messages: Vec<Message>,
     /// The loop ended because `max_steps` was reached while the model was still calling
-    /// tools (AI SDK `stopWhen: isStepCount(n)`); no final answer exists.
+    /// tools; no final answer exists.
     pub stopped_at_step_limit: bool,
 }
 
@@ -439,8 +437,8 @@ pub enum AiError {
 }
 
 impl AiError {
-    /// AI SDK `APICallError.isRetryable`: 408, 409, 429, 5xx and network failures.
-    /// The per-call timeout is not retried (TS wraps it in a non-retryable error).
+    /// Retryable: 408, 409, 429, 5xx and network failures. The per-call timeout
+    /// is not retried.
     pub fn is_retryable(&self) -> bool {
         match self {
             AiError::Provider { status, .. } => {
@@ -452,7 +450,7 @@ impl AiError {
     }
 }
 
-/// First retry delay (AI SDK `retryWithExponentialBackoff`: 2 s, doubling).
+/// First retry delay (2 s, doubling).
 pub const RETRY_INITIAL_DELAY: Duration = Duration::from_secs(2);
 
 /// Model factory and generation helpers; cheap to clone.
@@ -560,10 +558,9 @@ impl Ai {
         self.resolve(Some(role), &ModelId::parse(cfg.model(role))?)
     }
 
-    /// Strict structured output (AI SDK `generateText` + `Output.object`); records cost.
+    /// Strict structured output; records cost.
     /// `req.output` defaults to [`OutputSpec::of::<T>`]; the response must validate
-    /// against that schema, as the AI SDK validates with zod, and a mismatch fails
-    /// without a retry.
+    /// against that schema, and a mismatch fails without a retry.
     pub async fn generate_object<T: DeserializeOwned + schemars::JsonSchema>(
         &self,
         m: &dyn LanguageModel,
@@ -603,7 +600,7 @@ impl Ai {
         self.step(m, req, cost).await
     }
 
-    /// AI SDK `generateText({ tools, stopWhen: isStepCount(max_steps) })`: each step's
+    /// Runs a tool loop: each step's
     /// tool calls run concurrently and their results (errors included, as error text the
     /// model sees) feed the next step, until a step makes no tool calls or `max_steps`
     /// steps have run. Tools offered are `tools`; `req.tools` is ignored.
@@ -745,7 +742,7 @@ impl Ai {
     }
 }
 
-/// `callLanguageModelEffect` + AI SDK retries: every attempt is bounded by
+/// A model call with retries: every attempt is bounded by
 /// `req.timeout` (dropping the request future aborts the HTTP call); retryable
 /// failures are retried `req.max_retries` times with 2 s, 4 s, ... delays.
 pub async fn call_with_retries(

@@ -1,9 +1,9 @@
-//! Livestream monitoring (WP04): `channels.json`, aggregate streamer state
+//! Livestream monitoring: `channels.json`, aggregate streamer state
 //! over platform bindings, edge notifications, viewer metrics and sessions,
 //! Destiny.gg discovery with durable profile identity links, the
 //! `LiveCheckTask`, the streamer routes and the `LiveDirectory` port.
 //!
-//! Wiring (WP14):
+//! App wiring:
 //! ```text
 //! let live = omni_live::LiveModule::load(&ctx)?;              // fails boot on a bad channels.json
 //! let ios = omni_ios_controls::IosControls::new(&ctx, live.roster()).await;
@@ -85,7 +85,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
     ]
 }
 
-/// Data manager rows, in `data-manager.ts` order.
+/// Data manager rows, in display order.
 pub fn managed_entities() -> Vec<ManagedEntity> {
     let managed = |slug, label, description, warning, entity, primary_key| ManagedEntity {
         slug,

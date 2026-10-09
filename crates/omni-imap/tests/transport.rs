@@ -1,10 +1,7 @@
-//! Port of `src/email/imap/transport.spec.ts` (mailbox serialization).
-//!
-//! Mapping notes: imapflow `getMailboxLock` and `mailboxOpen` are both
-//! `select` calls here (restores select INBOX read-only), so lock/open counts
-//! become selection sequences. "closes the local client ..." cases assert that
-//! no client is installed; a dropped Rust client closes its socket on drop, so
-//! the interrupted-connect cases need no explicit close call.
+//! Mailbox serialization. Locks and restores are both `select` calls
+//! (restores select INBOX read-only), so cases assert selection sequences.
+//! A dropped client closes its socket, so interrupted-connect cases assert
+//! only that no client is installed.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

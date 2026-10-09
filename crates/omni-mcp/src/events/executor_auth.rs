@@ -35,7 +35,7 @@ pub trait EventAuthorizer: Send + Sync {
     ) -> BoxFuture<'a, Result<Option<i64>, ExecutorAuthError>>;
 }
 
-/// `executorOwnerId`: `executor:` + sha256hex(`JSON.stringify([userId, clientId])`).
+/// `executor:` + sha256hex(`JSON.stringify([userId, clientId])`).
 pub fn executor_owner_id(user_id: &str, client_id: &str) -> String {
     let material = omni_core::js::json_stringify(&serde_json::json!([user_id, client_id]));
     format!("executor:{}", omni_core::digest::sha256_hex(material))
@@ -51,7 +51,7 @@ pub fn is_executor_owner(owner: &str) -> bool {
     })
 }
 
-/// `^Bearer [^\s]{1,8192}$` (case-sensitive scheme, as in TS).
+/// `^Bearer [^\s]{1,8192}$` (case-sensitive scheme).
 pub fn is_bearer_authorization(value: &str) -> bool {
     value.strip_prefix("Bearer ").is_some_and(|token| {
         !token.is_empty()
@@ -75,13 +75,13 @@ enum Expiry {
     Text(String),
 }
 
-/// `createExecutorEventAuthorizer` over Executor's MCP session endpoint.
+/// The event authorizer over Executor's MCP session endpoint.
 #[derive(Clone)]
 pub struct ExecutorEventAuthorizer {
     http: HttpClient,
     endpoint: Url,
     clock: SharedClock,
-    /// The zone `Date.parse` reads zone-less expiries in (the process zone in TS).
+    /// The zone `Date.parse` reads zone-less expiries in (the configured `TZ`).
     tz: jiff::tz::TimeZone,
 }
 

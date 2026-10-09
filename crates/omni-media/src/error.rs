@@ -27,8 +27,8 @@ impl IntegrationError {
         }
     }
 
-    /// `effectMessage`: the cause message without the operation prefix.
-    pub fn effect_message(&self) -> &str {
+    /// The cause message without the operation prefix.
+    pub fn cause_message(&self) -> &str {
         &self.cause
     }
 }
@@ -38,20 +38,16 @@ impl IntegrationError {
 pub enum RecommendationError {
     #[error(transparent)]
     Integration(#[from] IntegrationError),
-    /// `RecommendationInputError`.
     #[error("{0}")]
     Input(String),
-    /// `RecommendationPersistenceError`.
     #[error("{operation} failed: {source}")]
     Persistence {
         operation: &'static str,
         #[source]
         source: StoreError,
     },
-    /// `RecommendationCommitError`.
     #[error("{0}")]
     Commit(String),
-    /// `TasteReflectionOutputError`.
     #[error("{0}")]
     TasteReflectionOutput(String),
 }
@@ -62,8 +58,8 @@ impl RecommendationError {
     }
 }
 
-/// `effectMessage` for any error: integration errors unwrap to their cause.
-pub fn effect_message(error: &RecommendationError) -> String {
+/// The cause message of any error: integration errors unwrap to their cause.
+pub fn cause_message(error: &RecommendationError) -> String {
     match error {
         RecommendationError::Integration(e) => e.cause.clone(),
         other => other.to_string(),

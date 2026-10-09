@@ -1,6 +1,8 @@
 //! `events_status`: the MCP Events lifecycle Omni
 //! has observed, without secrets, tokens, callback paths or message content.
 
+pub mod defs;
+
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -37,13 +39,16 @@ pub async fn events_status(events: Option<&McpEventService>) -> Result<Value, To
             },
         }),
     };
-    conform("events_status", value)
+    conform(&defs::EVENTS_STATUS, value)
 }
 
 pub fn event_tools(events: Option<McpEventService>) -> Result<Vec<McpTool>, ToolMetaError> {
-    let tool = typed_tool("events_status", move |_: EmptyInput, _: ToolContext| {
-        let events = events.clone();
-        async move { events_status(events.as_ref()).await }
-    })?;
+    let tool = typed_tool(
+        &defs::EVENTS_STATUS,
+        move |_: EmptyInput, _: ToolContext| {
+            let events = events.clone();
+            async move { events_status(events.as_ref()).await }
+        },
+    )?;
     Ok(vec![tool])
 }

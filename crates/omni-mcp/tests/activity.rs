@@ -1,9 +1,8 @@
-//! Port of `src/mcp/activity.spec.ts` (all cases kept) plus the Rust-specific
-//! cancellation and pruning paths and the activity routes.
+//! MCP call recording, cancellation and pruning, and the activity routes.
 //!
-//! The TS recording cases build ad-hoc tool definitions; these use the golden
-//! metadata of `claude_session_start` (require_approval) and `email_search`
-//! (allow), so the email row's policy is `allow`.
+//! Recording cases use the real metadata of `claude_session_start`
+//! (require_approval) and `email_search` (allow), so the email row's policy is
+//! `allow`.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -14,7 +13,7 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use common::{clock, send, test_store};
+use common::{clock, meta, send, test_store};
 use futures::future::BoxFuture;
 use omni_api::mcp_activity::{McpCallStatus, RecommendedPolicy};
 use omni_core::clock::Clock as _;
@@ -24,7 +23,6 @@ use omni_mcp::activity::{
 };
 use omni_mcp::activity_routes;
 use omni_mcp::host::{ClaudeHost, HostCommand, HostError, HostLinkStatus};
-use omni_mcp_kit::golden_meta;
 use omni_store::Store;
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::{EntityOps, EntityWrite, UpsertOpts};
@@ -94,7 +92,7 @@ async fn records_successful_claude_calls_with_their_output_and_others_without() 
     let recorder = ActivityRecorder::new(db.store.clone(), clock.clone(), TaskTracker::new());
     let claude = recorder
         .start(
-            golden_meta("claude_session_start").unwrap(),
+            meta("claude_session_start"),
             &json!({"project": "omni-notify", "prompt": "Do it", "idempotencyKey": "k"}),
         )
         .await;
@@ -107,10 +105,7 @@ async fn records_successful_claude_calls_with_their_output_and_others_without() 
         )))
         .await;
     let email = recorder
-        .start(
-            golden_meta("email_search").unwrap(),
-            &json!({"query": "invoice"}),
-        )
+        .start(meta("email_search"), &json!({"query": "invoice"}))
         .await;
     email
         .finish(CallOutcome::Ok(Some(
@@ -154,10 +149,7 @@ async fn records_failures_without_changing_them() {
     let db = test_store(&clock).await;
     let recorder = ActivityRecorder::new(db.store.clone(), clock.clone(), TaskTracker::new());
     let recorded = recorder
-        .start(
-            golden_meta("claude_session_send").unwrap(),
-            &json!({"session": "abcd"}),
-        )
+        .start(meta("claude_session_send"), &json!({"session": "abcd"}))
         .await;
     recorded
         .finish(CallOutcome::Error(
@@ -212,10 +204,7 @@ async fn a_dropped_call_is_recorded_as_interrupted() {
     let tracker = TaskTracker::new();
     let recorder = ActivityRecorder::new(db.store.clone(), clock.clone(), tracker.clone());
     let recorded = recorder
-        .start(
-            golden_meta("claude_session_get").unwrap(),
-            &json!({"session": "abcd"}),
-        )
+        .start(meta("claude_session_get"), &json!({"session": "abcd"}))
         .await;
     drop(recorded);
     tracker.close();

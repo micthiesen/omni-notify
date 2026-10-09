@@ -1,6 +1,5 @@
-//! Port of the store-backed cases of `src/email/senderRules.spec.ts`
-//! (`matchesSenderPattern` and `normalizeRulePattern` cases are unit tests in
-//! `src/sender_rules.rs`).
+//! Store-backed sender rules (pattern matching and normalization are unit
+//! tests in `src/sender_rules.rs`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

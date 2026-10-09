@@ -45,7 +45,7 @@ pub struct RepairDecision {
     pub reason: String,
 }
 
-/// Why a decision was refused (messages match the TS errors).
+/// Why a decision was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct DecisionError(pub String);
@@ -54,7 +54,7 @@ fn invalid(message: impl Into<String>) -> DecisionError {
     DecisionError(message.into())
 }
 
-/// `issueEvidence`: the report as Luna sees it (comments capped at 2,000 UTF-16 units).
+/// The report as Luna sees it (comments capped at 2,000 UTF-16 units).
 pub fn issue_evidence(issue: &ObserverIssue) -> Value {
     let mut evidence = Map::new();
     evidence.insert("id".into(), json!(issue.id));
@@ -85,10 +85,6 @@ pub fn issue_evidence(issue: &ObserverIssue) -> Value {
         );
     }
     Value::Object(evidence)
-}
-
-fn js_len(value: &str) -> usize {
-    omni_core::js::utf16_len(value)
 }
 
 /// `decisionJson.parse`: the strict output schema, including its bounds.
@@ -128,11 +124,11 @@ fn parse_decision(value: &Value) -> Result<RepairDecision, DecisionError> {
     if decision
         .scope_comment
         .as_deref()
-        .is_some_and(|c| js_len(c) > 2000)
+        .is_some_and(|c| omni_core::js::utf16_len(c) > 2000)
     {
         return Err(invalid("Invalid agent decision: scopeComment is too long"));
     }
-    let reason_len = js_len(&decision.reason);
+    let reason_len = omni_core::js::utf16_len(&decision.reason);
     if reason_len == 0 || reason_len > 700 {
         return Err(invalid(
             "Invalid agent decision: reason must be 1 to 700 characters",
@@ -220,7 +216,7 @@ pub fn output_schema() -> Value {
     })
 }
 
-/// The system prompt, verbatim from TS.
+/// The system prompt.
 pub const SYSTEM_PROMPT: &str = "You repair Observer (Overseerr) media issue reports. Use the available read tools in a standard agent loop when useful, then return a structured decision. Actions are executed and verified by code after your decision. You have 16 steps. No web research, manual release selection, adding titles, or complex infrastructure fixes.
 Use replace for wrong content, corrupt/unplayable files, and broken audio/video that a fresh download can reasonably fix. It blocklists and deletes existing files/downloads in scope then starts an automatic search. Use search_missing for missing episodes/files; it preserves existing files and searches only missing targets. If a report says missing but the requested file now exists, choose cannot_handle and explain that it is present and may need a library/player check. Unsupported codec/HDR/DoVi compatibility or player settings call for cannot_handle with useful advice, not repeated replacement. Ambiguous identities, unsupported 4K-specific requests, contradictory scopes or unavailable targets also call for cannot_handle. Never claim a new download has finished: completion means an automatic replacement search was accepted.
 Default to the reported scope: movie, series, season, or episode. season=null means series/movie, episodes=[] means all in that scope. Overseerr problemSeason=0 means all seasons and problemEpisode=0 means all episodes. A comment specifying a narrower episode list overrides the report selector; quote the exact supporting comment in scopeComment. Never broaden the report's scope or touch another title. Prefer all listed missing episodes when a comment gives a list or range. reason is a short diagnosis for the user, without invented results.
@@ -231,7 +227,7 @@ pub fn empty_parameters() -> Value {
     json!({ "type": "object", "properties": {}, "additionalProperties": false })
 }
 
-/// `assessIssue`: the agent loop over `tools` (which must offer `inspect_target`
+/// The agent loop over `tools` (which must offer `inspect_target`
 /// and `historical_issues`), seeded with the current Arr evidence.
 pub async fn assess_issue(
     ai: &Ai,

@@ -48,8 +48,8 @@ pub struct StoredOperation {
     pub fingerprint: String,
     pub record_id: String,
     pub state: OperationState,
-    /// `Schema.optional(Schema.Unknown)`: absent stays absent, a stored `null` stays
-    /// `Some(Value::Null)` so a rewrite keeps the TypeScript document unchanged.
+    /// Absent stays absent, a stored `null` stays `Some(Value::Null)`, so a
+    /// rewrite keeps the stored document unchanged.
     #[serde(
         default,
         deserialize_with = "present_value",
@@ -64,7 +64,7 @@ fn present_value<'de, D: serde::Deserializer<'de>>(
     Value::deserialize(deserializer).map(Some)
 }
 
-/// The decrypted document; `session` is the Apple session (`Schema.Unknown`).
+/// The decrypted document; `session` is the Apple session (any JSON).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StoredState {
     pub version: StateVersion,
@@ -105,7 +105,6 @@ impl Default for StoredState {
     }
 }
 
-/// `emptyRemindersState()`.
 pub fn empty_reminders_state() -> StoredState {
     StoredState::default()
 }

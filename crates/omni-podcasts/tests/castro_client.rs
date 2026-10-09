@@ -1,7 +1,4 @@
-//! Port of `src/podcast-recs/castro/client.spec.ts` with a fake
-//! [`CastroTransport`] in place of the TS `vi.fn` API object.
-//! Castro specs carry a `castro_` prefix: the `auth` and `client` stems collide
-//! with the Podcast Index specs.
+//! The Castro client over a fake [`CastroTransport`].
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashMap;

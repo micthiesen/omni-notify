@@ -17,20 +17,20 @@ pub fn sha256_hex(bytes: impl AsRef<[u8]>) -> String {
     out
 }
 
-/// `digest()` from `src/utils/fingerprint.ts`: SHA-256 hex truncated to 24 chars.
+/// SHA-256 hex truncated to 24 chars.
 pub fn digest(s: &str) -> String {
     let mut hex = sha256_hex(s.as_bytes());
     hex.truncate(24);
     hex
 }
 
-/// `fingerprintEvidence()`: items in `localeCompare` order of their id, each
+/// Items in `localeCompare` order of their id, each
 /// serialized as `JSON.stringify` of its top-level fields sorted by
 /// `localeCompare`, joined by `\n`, then [`digest`].
 ///
-/// TS drops `undefined` fields; Rust callers model optional fields with
-/// `#[serde(skip_serializing_if = "Option::is_none")]` so absent fields stay
-/// absent (a serialized `null` is kept, as in JS).
+/// Stored fingerprints omit absent fields, so callers model optional fields with
+/// `#[serde(skip_serializing_if = "Option::is_none")]`; a serialized `null` is
+/// kept.
 ///
 /// Fails when an item does not serialize to a JSON object.
 pub fn fingerprint_evidence<T: Serialize>(

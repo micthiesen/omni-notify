@@ -115,7 +115,7 @@ impl TmdbClient {
         }
     }
 
-    /// `tmdbGet`: v4 read tokens (JWTs) as bearer, v3 keys in the query; up to
+    /// V4 read tokens (JWTs) as bearer, v3 keys in the query; up to
     /// two retries with exponential backoff for 429/5xx and network failures.
     async fn get<T: DeserializeOwned>(
         &self,
@@ -195,7 +195,7 @@ impl TmdbClient {
     }
 }
 
-/// `isTransientHttpError`: 429, 5xx, network failures and timeouts.
+/// 429, 5xx, network failures and timeouts.
 fn is_transient(error: &HttpError) -> bool {
     match error {
         HttpError::Timeout | HttpError::Network(_) => true,

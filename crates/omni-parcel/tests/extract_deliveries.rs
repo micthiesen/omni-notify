@@ -1,6 +1,5 @@
-//! Port of `src/parcel-tracker/extraction/extractDeliveries.spec.ts` (the
-//! extraction schema), plus the model-backed extractor with scripted
-//! responses.
+//! The delivery extraction schema, plus the model-backed extractor with
+//! scripted responses.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;

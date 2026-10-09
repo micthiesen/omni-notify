@@ -25,7 +25,7 @@ let_underscore_future = "deny"  # no silently dropped futures
 large_futures = "warn"
 
 [workspace.dependencies]
-# Internal crates (foundation, WP00). Subsystem packages append their own lines.
+# Internal crates.
 omni-core = { path = "crates/omni-core" }
 omni-config = { path = "crates/omni-config" }
 omni-store = { path = "crates/omni-store" }
@@ -42,10 +42,26 @@ omni-testkit = { path = "crates/omni-testkit" }
 omni-email = { path = "crates/omni-email" }
 omni-parcel = { path = "crates/omni-parcel" }
 omni-imap = { path = "crates/omni-imap" }
-ego-tree = "=0.11.0"  # WP02: scraper DOM traversal for html_to_text
+omni-live-intel = { path = "crates/omni-live-intel" }
+omni-media = { path = "crates/omni-media" }
+omni-arr = { path = "crates/omni-arr" }
+omni-calendar = { path = "crates/omni-calendar" }
+omni-reminders = { path = "crates/omni-reminders" }
+omni-personal = { path = "crates/omni-personal" }
+omni-live = { path = "crates/omni-live" }
+omni-ios-controls = { path = "crates/omni-ios-controls" }
+omni-podcasts = { path = "crates/omni-podcasts" }
+omni-workspaces = { path = "crates/omni-workspaces" }
+omni-briefings = { path = "crates/omni-briefings" }
+omni-mcp = { path = "crates/omni-mcp" }
+omni-device-link = { path = "crates/omni-device-link" }
+omni-web-kit = { path = "crates/omni-web-kit" }
+omni-web-pages = { path = "crates/omni-web-pages" }
+omni-presspods = { path = "crates/omni-presspods" }
 
 # Exact pins (see AGENTS.md, Rust conventions). Every version was published on or
 # before 2026-09-25 and resolves together (checked with cargo generate-lockfile).
+ego-tree = "=0.11.0"  # scraper DOM traversal for html_to_text
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "process", "fs", "net", "io-util"] }
 tokio-util = { version = "=0.7.19", features = ["rt", "io"] }
 tokio-stream = { version = "=0.1.19", features = ["sync"] }
@@ -57,42 +73,35 @@ reqwest = { version = "=0.13.5", default-features = false, features = ["rustls",
 rustls = "=0.23.45"
 tokio-rustls = "=0.26.5"
 rustls-platform-verifier = "=0.7.1"
-hickory-resolver = "=0.26.3"
 tokio-tungstenite = { version = "=0.30.0", features = ["rustls-tls-native-roots"] }
-cookie_store = { version = "=0.22.1", features = ["serde_json"] }
 rusqlite = { version = "=0.40.2", features = ["bundled", "backup", "limits"] }
 serde = { version = "=1.0.229", features = ["derive"] }
 serde_json = { version = "=1.0.151", features = ["float_roundtrip", "preserve_order"] }
 serde_with = "=3.23.0"
-serde_path_to_error = "=0.1.20"
-indexmap = { version = "=2.13.0", features = ["serde"] }
-ryu-js = "=1.0.1"
-icu_collator = { version = "=2.2.1", features = ["compiled_data"] }
+indexmap = { version = "=2.14.2", features = ["serde"] }
+ryu-js = "=1.0.3"
+icu_collator = { version = "=2.3.1", features = ["compiled_data"] }
 schemars = "=1.2.2"
 jsonschema = { version = "=0.58.0", default-features = false }
 jiff = { version = "=0.2.37", features = ["serde", "tzdb-bundle-always"] }
 croner = { version = "=4.0.0", default-features = false, features = ["jiff"] }
 tracing = "=0.1.44"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt", "registry", "std"] }
-tracing-appender = "=0.2.5"
-thiserror = "=2.0.20"
+thiserror = "=2.0.21"
 anyhow = "=1.0.104"
 rmcp = { version = "=3.4.1", default-features = false, features = ["base64", "server", "transport-streamable-http-server"] }
-async-imap = { version = "=0.11.3", default-features = false, features = ["runtime-tokio"] }
 imap-proto = "=0.16.7"
 mail-parser = { version = "=0.11.9", features = ["full_encoding"] }
 mail-builder = "=1.0.0"
 lettre = { version = "=0.11.23", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-platform-verifier", "aws-lc-rs", "builder"] }
-html2text = "=0.17.1"
 scraper = "=0.27.0"
 htmd = "=0.5.5"
-dom_smoothie = "=0.18.1"
+dom_smoothie = "=0.18.2"
 quick-xml = { version = "=0.42.0", features = ["serialize"] }
-rss = { version = "=2.1.2", features = ["builders"] }
 id3 = "=1.17.2"
-sherpa-onnx = "=1.13.6"
-# Pins the native library to the sherpa-onnx-node 1.13.6 build TS enrolled voiceprints with.
-sherpa-onnx-sys = "=1.13.6"
+sherpa-onnx = "=1.13.8"
+# Must equal the static archive version in deploy/sherpa-onnx/fetch-static-lib.sh.
+sherpa-onnx-sys = "=1.13.8"
 ipp = { version = "=7.0.0", default-features = false, features = ["async-client-rustls"] }
 aws-cognito-srp = "=0.2.5"
 jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
@@ -113,13 +122,7 @@ regex = "=1.13.1"
 bytes = "=1.12.1"
 http = "=1.5.0"
 moka = { version = "=0.12.16", features = ["future"] }
-backon = "=1.6.0"
-num-format = "=0.4.4"
 leptos = { version = "=0.8.20", features = ["csr"] }
-leptos_router = "=0.8.15"
-leptos_meta = "=0.8.6"
-leptos-use = { version = "=0.19.0", default-features = false, features = ["use_resize_observer", "use_document_visibility", "use_interval", "use_interval_fn"] }
-reactive_stores = "=0.4.3"
 gloo-net = { version = "=0.7.0", features = ["http", "eventsource"] }
 gloo-timers = { version = "=0.4.0", features = ["futures"] }
 wasm-bindgen = "=0.2.129"
@@ -129,42 +132,13 @@ wasm-bindgen-futures = "=0.4.79"
 wasm-bindgen-test = "=0.3.79"
 console_error_panic_hook = "=0.1.7"
 pulldown-cmark = { version = "=0.13.4", default-features = false }
-insta = { version = "=1.48.0", features = ["json", "yaml"] }
 wiremock = "=0.6.5"
 tempfile = "=3.27.0"
 proptest = "=1.11.0"
-# WP05 (omni-live-intel)
-omni-live-intel = { path = "crates/omni-live-intel" }
-icu_normalizer = { version = "=2.2.0", features = ["compiled_data"] }
-# WP08 (omni-media)
-omni-media = { path = "crates/omni-media" }
-# WP09 (omni-arr)
-omni-arr = { path = "crates/omni-arr" }
-# WP03 (omni-calendar)
-omni-calendar = { path = "crates/omni-calendar" }
-# WP10 (omni-reminders)
-omni-reminders = { path = "crates/omni-reminders" }
-num-bigint = "=0.4.8"
+icu_normalizer = { version = "=2.3.0", features = ["compiled_data"] }
+num-bigint = "=0.5.1"
 libc = "=0.2.190"
-# WP13 (omni-personal)
-omni-personal = { path = "crates/omni-personal" }
-# WP04 (omni-live, omni-ios-controls)
-omni-live = { path = "crates/omni-live" }
-omni-ios-controls = { path = "crates/omni-ios-controls" }
 html-escape = "=0.2.15"
-# WP07 (omni-podcasts)
-omni-podcasts = { path = "crates/omni-podcasts" }
-# WP11 (omni-workspaces, omni-briefings)
-omni-workspaces = { path = "crates/omni-workspaces" }
-omni-briefings = { path = "crates/omni-briefings" }
-# WP12 (omni-mcp, omni-device-link)
-omni-mcp = { path = "crates/omni-mcp" }
-omni-device-link = { path = "crates/omni-device-link" }
-# WP15 (omni-web-kit, omni-web) and WP16 (omni-web-pages)
-omni-web-kit = { path = "crates/omni-web-kit" }
-omni-web-pages = { path = "crates/omni-web-pages" }
-# WP14 (omni-notify)
-omni-presspods = { path = "crates/omni-presspods" }
 
 [profile.dev]
 debug = "line-tables-only"

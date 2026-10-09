@@ -1,6 +1,6 @@
 //! The observed Castro Tentacles sync protocol. Decoding
-//! is serde plus the zod refinements that mattered (UUIDs, URLs, ranges): a
-//! response that fails them is a request error, exactly as in TS.
+//! is serde plus refinements (UUIDs, URLs, ranges): a response that fails
+//! them is a request error.
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -223,12 +223,12 @@ pub struct CastroProgressEventData {
     pub seconds: f64,
 }
 
-/// A protocol payload that failed decoding or a zod refinement.
+/// A protocol payload that failed decoding or a refinement.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct ProtocolError(pub String);
 
-/// zod 4 `z.string().uuid()`: RFC 9562 layout with version 1-8 and the RFC
+/// An RFC 9562 layout with version 1-8 and the RFC
 /// variant, or the nil/max UUID.
 pub fn is_uuid(value: &str) -> bool {
     let bytes = value.as_bytes();
@@ -255,7 +255,7 @@ pub fn is_uuid(value: &str) -> bool {
         && matches!(bytes[19].to_ascii_lowercase(), b'8' | b'9' | b'a' | b'b')
 }
 
-/// zod `z.string().url()`: anything the WHATWG URL parser accepts.
+/// Anything the WHATWG URL parser accepts.
 pub fn is_url(value: &str) -> bool {
     url::Url::parse(value).is_ok()
 }
@@ -426,7 +426,7 @@ pub fn decode_str<T: DeserializeOwned + Validate>(body: &str) -> Result<T, Proto
     decode(value)
 }
 
-/// `parseCastroEventData`: the action's string-encoded `event_data`.
+/// The action's string-encoded `event_data`.
 pub fn parse_castro_event_data<T: DeserializeOwned + Validate>(
     action: &CastroAction,
 ) -> Result<T, ProtocolError> {

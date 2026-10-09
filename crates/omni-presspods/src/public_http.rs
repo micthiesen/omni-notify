@@ -4,11 +4,8 @@
 //! [`PublicHttpClient`]: the URL, every DNS answer and every redirect hop
 //! must be public. Bodies are size-bounded before parsing.
 //!
-//! TS passed `retry: { limit: 2 }` to these requests, but they ran through
-//! `got.stream`, which only retries when the caller listens for its `retry`
-//! event; the bounded readers never did, so no PressPods public fetch was
-//! ever retried. Every call site therefore uses `retries: 0`; the option stays
-//! for callers that genuinely want transient retries (got's 1 s, 2 s backoff).
+//! Every call site uses `retries: 0`; the option stays for callers that
+//! genuinely want transient retries (1 s, 2 s backoff).
 
 use std::time::Duration;
 
@@ -109,7 +106,7 @@ pub async fn fetch_public_json(
     })
 }
 
-/// `fetchPublicHtml`: the retrievers' page fetch.
+/// The retrievers' page fetch.
 pub async fn fetch_public_html(
     client: &PublicHttpClient,
     url: &str,
@@ -135,13 +132,9 @@ pub async fn fetch_public_html(
 
 #[cfg(test)]
 mod public_http_spec {
-    //! Ports `src/press-pods/publicHttp.spec.ts`. The address and URL rules
-    //! are the shared guard in `omni_http::public` (re-exported by TS); the
-    //! DNS cases check its answer filter directly because there is no Node
-    //! `lookup` callback shape to preserve (the "single shape" and "all-address
-    //! shape" cases collapse into one filter returning every answer in order).
-    //! Byte-limit cases use a loopback mock server instead of an injected
-    //! stream.
+    //! The address and URL rules are the shared guard in `omni_http::public`;
+    //! the DNS cases check its answer filter, which returns every answer in
+    //! order. Byte-limit cases use a loopback mock server.
     use std::net::IpAddr;
 
     use omni_http::public::{

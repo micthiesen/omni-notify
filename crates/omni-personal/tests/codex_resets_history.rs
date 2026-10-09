@@ -1,4 +1,4 @@
-//! Port of `src/codex-resets/history.spec.ts` (all cases kept).
+//! Reset Beacon history decoding.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use jiff::tz::TimeZone;

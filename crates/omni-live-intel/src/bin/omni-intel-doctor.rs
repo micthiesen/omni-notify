@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
     let captured = started.elapsed().as_secs_f64();
     let audio_seconds = audio.duration_seconds;
     let (transcript, matched, transcribed, finished) = tokio::task::spawn_blocking(move || {
-        // As TS, the transcription timing includes loading the runtime.
+        // The transcription timing includes loading the runtime.
         let transcription_started = Instant::now();
         let speech = omni_live_intel::load_speech_runtime(
             &model_dir,

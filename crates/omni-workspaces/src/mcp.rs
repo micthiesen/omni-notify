@@ -1,5 +1,7 @@
-//! Workspace MCP tools, in TS order. Metadata
-//! (descriptions, schemas, annotations, policy) comes from the golden tool list.
+//! Workspace MCP tools, in serving order. Each tool's contract (descriptions, schemas,
+//! annotations, policy) is declared in [`defs`].
+
+pub mod defs;
 
 use std::future::Future;
 
@@ -10,10 +12,11 @@ use omni_api::workspaces::{
     WorkspaceSubjectStatus,
 };
 use omni_mcp_kit::{
-    McpTool, ToolContext, ToolError, ToolMetaError, paginate, truncate_utf16, typed_tool,
+    McpTool, ToolContext, ToolDef, ToolError, ToolMetaError, paginate, truncate_utf16, typed_tool,
 };
 use omni_runtime::ports::CalendarEventInput;
 use omni_tasks::RunNowError;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -25,48 +28,58 @@ use crate::text::{js_len, js_prefix, js_trim};
 /// Every workspace tool in `createWorkspaceTools` order.
 pub fn tools(service: &WorkspaceService) -> Result<Vec<McpTool>, ToolMetaError> {
     Ok(vec![
-        tool(service, "workspaces_list", workspaces_list)?,
-        tool(service, "workspace_get", workspace_get)?,
-        tool(service, "workspace_search", workspace_search)?,
-        tool(service, "workspace_message", workspace_message)?,
+        tool(service, &defs::WORKSPACES_LIST, workspaces_list)?,
+        tool(service, &defs::WORKSPACE_GET, workspace_get)?,
+        tool(service, &defs::WORKSPACE_SEARCH, workspace_search)?,
+        tool(service, &defs::WORKSPACE_MESSAGE, workspace_message)?,
         tool(
             service,
-            "workspace_subject_set_status",
+            &defs::WORKSPACE_SUBJECT_SET_STATUS,
             workspace_subject_set_status,
         )?,
-        tool(service, "workspace_actions_list", workspace_actions_list)?,
         tool(
             service,
-            "workspace_action_approve",
+            &defs::WORKSPACE_ACTIONS_LIST,
+            workspace_actions_list,
+        )?,
+        tool(
+            service,
+            &defs::WORKSPACE_ACTION_APPROVE,
             workspace_action_approve,
         )?,
-        tool(service, "workspace_action_reject", workspace_action_reject)?,
         tool(
             service,
-            "workspace_papercuts_list",
+            &defs::WORKSPACE_ACTION_REJECT,
+            workspace_action_reject,
+        )?,
+        tool(
+            service,
+            &defs::WORKSPACE_PAPERCUTS_LIST,
             workspace_papercuts_list,
         )?,
         tool(
             service,
-            "workspace_papercut_resolve",
+            &defs::WORKSPACE_PAPERCUT_RESOLVE,
             workspace_papercut_resolve,
         )?,
     ])
 }
 
-fn tool<I, O, F, Fut>(
+fn tool<S, R, I, O, F, Fut>(
     service: &WorkspaceService,
-    name: &str,
+    def: &'static ToolDef<S, R>,
     f: F,
 ) -> Result<McpTool, ToolMetaError>
 where
+    S: JsonSchema,
+    R: JsonSchema,
     I: for<'de> Deserialize<'de> + Send + 'static,
     O: Serialize + Send + 'static,
     F: Fn(WorkspaceService, I) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<O, ToolError>> + Send + 'static,
 {
     let service = service.clone();
-    typed_tool(name, move |input: I, _cx: ToolContext| {
+    typed_tool(def, move |input: I, _cx: ToolContext| {
         f(service.clone(), input)
     })
 }
@@ -75,7 +88,7 @@ fn execute(error: impl std::error::Error) -> ToolError {
     ToolError::execute_from(&error)
 }
 
-/// zod `.trim().min(n)`: the schema checks the raw length, the trimmed value
+/// Trims `value`: the schema checks the raw length, the trimmed value
 /// must still satisfy the minimum.
 fn trimmed(field: &str, value: &str, min: usize) -> Result<String, ToolError> {
     let value = js_trim(value);
@@ -595,7 +608,7 @@ fn find_u16(haystack: &[u16], needle: &[u16]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// `searchSnippet`: the window around the first case-insensitive match.
+/// The window around the first case-insensitive match.
 pub fn search_snippet(value: &str, query: &str, max_chars: usize) -> String {
     let length = js_len(value);
     if length <= max_chars {
@@ -792,7 +805,7 @@ struct SubjectOut {
     subject: WorkspaceSubject,
 }
 
-/// Keeps the subject's `updatedAt` (TS spreads the stored row into the upsert).
+/// Keeps the subject's stored `updatedAt`.
 async fn workspace_subject_set_status(
     service: WorkspaceService,
     input: SetStatusInput,

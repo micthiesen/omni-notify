@@ -1,4 +1,4 @@
-//! Port of `src/observer-repair/persistence.spec.ts` against a file-backed test store.
+//! Observer repair state and reservations against a file-backed test store.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::observer_repair::persistence::{

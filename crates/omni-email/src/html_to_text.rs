@@ -1,7 +1,8 @@
 //! HTML bodies to plain text.
 //!
-//! [`html_to_text`] ports the html-to-text 10 block/inline text builder for the
-//! exact options TS uses: `wordwrap: false`, entities decoded, anchors without
+//! [`html_to_text`] reproduces the html-to-text 10 block/inline text builder,
+//! which produced the stored bodies, with these options: `wordwrap: false`,
+//! entities decoded, anchors without
 //! hrefs, images and horizontal rules skipped, h1-h3 not uppercased (h4-h6
 //! are, the library default), and tables rendered as plain blocks (no data
 //! tables are configured, so `colSpacing` never applies). With wrapping off,
@@ -36,7 +37,7 @@ static INTERESTING_LINK: LazyLock<Regex> = LazyLock::new(|| {
 static BODY_TAG: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)<body[\s>/]").expect("static regex"));
 
-/// `extractInterestingLinks`: shipment/booking-shaped hrefs (tracking numbers
+/// Shipment/booking-shaped hrefs (tracking numbers
 /// often exist only inside link URLs, which the text conversion drops).
 pub fn extract_interesting_links(html: &str) -> Vec<String> {
     let mut links: Vec<String> = Vec::new();
@@ -64,7 +65,7 @@ fn is_html_space(c: char) -> bool {
     matches!(c, ' ' | '\t' | '\r' | '\n' | '\u{000C}' | '\u{200B}')
 }
 
-/// `InlineTextBuilder` with wrapping disabled.
+/// An inline text builder with wrapping disabled.
 #[derive(Default)]
 struct Inline {
     lines: Vec<Vec<String>>,
@@ -150,7 +151,7 @@ enum Kind {
     },
 }
 
-/// `BlockStackItem` and its list subclasses.
+/// A block stack item and its list variants.
 struct Item {
     kind: Kind,
     leading_line_breaks: usize,
@@ -172,7 +173,6 @@ impl Item {
         }
     }
 
-    /// `getText`.
     fn text(&self) -> String {
         if self.inline.is_empty() {
             self.raw_text.clone()
@@ -181,7 +181,6 @@ impl Item {
         }
     }
 
-    /// `addText`.
     fn add_text(&mut self, text: &str, leading: usize, trailing: usize) {
         let parent_text = self.text();
         let line_breaks = self.stashed_line_breaks.max(leading);
@@ -196,7 +195,7 @@ impl Item {
     }
 }
 
-/// `BlockTextBuilder` (only the block, list and inline operations the
+/// The block text builder (only the block, list and inline operations the
 /// configured formatters use).
 struct Builder {
     stack: Vec<Item>,
@@ -348,7 +347,6 @@ fn trim_newlines(s: &str) -> &str {
     s.trim_matches('\n')
 }
 
-/// `numberToLetterSequence`.
 fn letter_sequence(num: i64, base_char: char) -> String {
     let mut digits = Vec::new();
     let mut n = num;
@@ -368,7 +366,7 @@ fn letter_sequence(num: i64, base_char: char) -> String {
         .collect()
 }
 
-/// `numberToRoman` (1..=3999).
+/// Roman numerals (1..=3999).
 fn roman(num: i64) -> String {
     const I: [&str; 4] = ["I", "X", "C", "M"];
     const V: [&str; 3] = ["V", "L", "D"];
@@ -419,7 +417,7 @@ fn walk_children(node: NodeRef<'_, Node>, builder: &mut Builder) {
     }
 }
 
-/// `recursiveWalk`: text nodes are added inline, elements formatted; comments,
+/// Text nodes are added inline, elements formatted; comments,
 /// doctypes, `script` and `style` (not `tag` nodes in htmlparser2) are skipped.
 fn walk(node: NodeRef<'_, Node>, builder: &mut Builder) {
     match node.value() {
@@ -492,7 +490,6 @@ fn format_element(node: NodeRef<'_, Node>, name: &str, builder: &mut Builder) {
     }
 }
 
-/// `formatList`.
 fn format_list(
     node: NodeRef<'_, Node>,
     builder: &mut Builder,
@@ -538,7 +535,6 @@ fn format_list(
     builder.close_list(if is_nested { 1 } else { 2 });
 }
 
-/// `htmlToText`.
 pub fn html_to_text(html: &str) -> String {
     let html = if utf16_len(html) > MAX_INPUT_LENGTH {
         utf16_slice(html, 0, MAX_INPUT_LENGTH)

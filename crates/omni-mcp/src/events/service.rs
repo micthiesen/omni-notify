@@ -696,8 +696,8 @@ impl McpEventService {
     }
 
     /// Runs a delivery pass whenever an event is queued, until `shutdown` is
-    /// cancelled. A pass already under way completes first (TS interrupted the
-    /// fiber, but every claim is durable before network I/O either way).
+    /// cancelled. A pass already under way completes first (every claim is
+    /// durable before network I/O).
     pub async fn delivery_worker(&self, shutdown: tokio_util::sync::CancellationToken) {
         loop {
             tokio::select! {

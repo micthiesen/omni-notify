@@ -1,13 +1,9 @@
-//! Port of `src/live-check/intelligence/service.spec.ts`.
+//! The livestream intelligence service and its work queue.
 //!
-//! Dropped/adapted cases:
-//! - "cannot leak admission when fork is interrupted during startup": Rust
-//!   `WorkQueue::fork` admits synchronously (there is no await between the
-//!   admission check and the spawn), so there is no startup window to
-//!   interrupt; the case asserts the same invariant (no leaked admission after
-//!   fork, release and close).
-//! - The service cases run on a fixed clock instead of `Date.now` spies, and
-//!   wait for detached work by polling the Pushover recorder (`vi.waitFor`).
+//! `WorkQueue::fork` admits synchronously (there is no await between the
+//! admission check and the spawn), so the admission case asserts that nothing
+//! leaks after fork, release and close. The service cases run on a fixed clock
+//! and wait for detached work by polling the Pushover recorder.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::sync::Arc;

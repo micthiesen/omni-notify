@@ -1,7 +1,7 @@
-//! Persisted PressPods shapes (`src/press-pods/types.ts`, `persistence.ts`).
+//! Persisted PressPods shapes.
 //!
-//! Field order follows the TS object literals that write each row, so a row
-//! written by Rust encodes like one written by TS. Every struct carries
+//! Field order matches the stored rows, so a new row encodes like an existing
+//! one. Every struct carries
 //! `extra` so read-modify-write never drops fields a newer writer added.
 
 use indexmap::IndexMap;

@@ -1,14 +1,11 @@
 //! Cron expressions evaluated in the configured time zone (croner + jiff).
 //!
 //! Five-field (`m h dom mon dow`) and six-field (`s m h dom mon dow`)
-//! expressions are accepted, like Effect `Cron.parse` used by the TS
-//! scheduler. Matches have one-second resolution.
+//! expressions are accepted. Matches have one-second resolution.
 //!
 //! DST: a wall time skipped by a spring-forward gap fires shifted forward by
-//! the gap (02:30 becomes 03:30), like Effect; repeated fall-back wall times
-//! follow the absolute time line. Effect also fires the first time-of-day
-//! match after a spring-forward one hour late; that bug is not mirrored (see
-//! `tests/cron_parity.rs`).
+//! the gap (02:30 becomes 03:30); repeated fall-back wall times follow the
+//! absolute time line (see `tests/cron_parity.rs`).
 
 use croner::Cron;
 use croner::parser::{CronParser, Seconds, Year};
@@ -39,7 +36,7 @@ pub enum InvalidScheduleError {
 
 impl CronSchedule {
     /// Parses 5- or 6-field cron; rejects expressions that never match
-    /// (for example `0 0 0 30 2 *`), which Effect only discovers at run time.
+    /// (for example `0 0 0 30 2 *`).
     pub fn parse(expr: &str, tz: &TimeZone) -> Result<Self, InvalidScheduleError> {
         let invalid = |reason: String| InvalidScheduleError::Invalid {
             expr: expr.to_owned(),
@@ -62,7 +59,7 @@ impl CronSchedule {
         };
         // An expression can parse yet never match (e.g. `0 0 0 30 2 *`);
         // croner's bounded search then fails, so probe once now instead of
-        // inside the scheduler loop (mitools `register` does the same).
+        // inside the scheduler loop.
         let probe = Timestamp::UNIX_EPOCH.to_zoned(tz.clone());
         if schedule.cron.find_next_occurrence(&probe, false).is_err() {
             return Err(InvalidScheduleError::NeverMatches {
@@ -72,7 +69,7 @@ impl CronSchedule {
         Ok(schedule)
     }
 
-    /// First match strictly after `t` (Effect `Cron.next`).
+    /// First match strictly after `t`.
     pub fn next_after(&self, t: Timestamp) -> Option<Timestamp> {
         let zoned = t.to_zoned(self.tz.clone());
         let found = self.cron.find_next_occurrence(&zoned, false).ok()?;
@@ -81,7 +78,7 @@ impl CronSchedule {
         }
         // croner resolved a wall time inside a DST gap to the instant the gap
         // ends (and does so even for times before the gap). Resolve the
-        // skipped wall time the way Effect does instead: shifted forward by
+        // skipped wall time instead: shifted forward by
         // the gap length (jiff's `compatible` disambiguation).
         self.gap_walk(t, Direction::Forward)
     }

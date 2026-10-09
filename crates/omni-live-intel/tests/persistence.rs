@@ -1,4 +1,4 @@
-//! Port of `src/live-check/intelligence/persistence.spec.ts`, plus timeline pruning.
+//! Livestream intelligence persistence, including timeline pruning.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use omni_live_intel::persistence::{

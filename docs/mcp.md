@@ -322,18 +322,48 @@ machine-readable contract is [`docs/mcp-policy.json`](mcp-policy.json). Each
 entry contains the actual annotations, side effects, cost characteristics, and
 one recommended Executor policy: `allow`, `require_approval`, or `block`.
 
-Tool metadata (names, descriptions, input schemas, annotations and policy) is
-committed in `crates/omni-mcp-kit/golden/` (`tools-list.json`,
-`mcp-policy.json`, `handshake.json`) and embedded at build time. Edit those files
-deliberately when a tool's public contract changes, then regenerate the inventory:
+## Tool definitions and snapshots
+
+Each tool's public contract is a `ToolDef` static in its package's `defs`
+module, next to the handler (for example `crates/omni-media/src/mcp/defs.rs`):
+name, title, description, annotations and policy, plus input and output schema
+types that derive `schemars::JsonSchema`. `omni_mcp_kit::schema` derives the
+served JSON Schemas from those types and normalizes them to the dialect clients
+have always received (the JSON Schema dialect zod 4 emits, key order
+included), so `tools/list` stays byte-stable:
+
+- Field attributes carry descriptions, bounds (`length`, `range`), `pattern`,
+  `email`, `url` and defaults (`extend("default" = ...)`). Unsigned integers
+  imply `minimum: 0`; every integer gets the safe-integer bounds unless narrowed.
+- In input types `Option<T>` is optional; in output types (serialize contract)
+  `Option<T>` is a required nullable field and `skip_serializing_if` makes it
+  optional. `transform = nullable` keeps `null` on an optional field or, with
+  `required`, makes an input field required and nullable.
+- The helpers `positive`, `uuid`, `date`, `date_time`, `lead_description`,
+  `Literal` (with a `Lit` field), `NumberLiterals` and `one_of` (on an untagged
+  enum) cover the remaining constructs. Anything outside the dialect, such as
+  a recursive type or an unknown keyword, fails metadata construction.
+
+`typed_tool` validates input against the derived input schema before decoding it
+into the handler's own type, and validates the handler's result against the
+derived output schema. `omni_mcp::tools::TOOL_ORDER` is the `tools/list` order;
+the endpoint refuses to start when the registered set differs from it.
+
+The committed `crates/omni-mcp-kit/golden/tools-list.json`,
+[`docs/mcp-policy.json`](mcp-policy.json) with its golden copy, and the
+`tools/list` results in `crates/omni-mcp/tests/golden/protocol.json` are
+generated from the definitions. To change a tool, edit its Rust types or
+`ToolDef`, then regenerate and review the JSON diff:
 
 ```bash
-cargo xtask mcp-policy
+cargo xtask mcp-golden
 ```
 
-`cargo xtask mcp-policy --check` and `crates/omni-mcp/tests/policy.rs` compare
-the committed inventory with the definitions registered by the server, so policy
-drift fails the suite.
+`cargo xtask mcp-golden --check` (also `golden-check`) and the `omni-mcp` test
+`mcp_golden` fail when a definition and a snapshot differ, and the protocol
+replay test fails if the served `tools/list` changes. `cargo xtask mcp-policy`
+remains as an alias. `crates/omni-mcp-kit/golden/handshake.json` is still
+maintained by hand.
 
 ## Deployment boundary
 

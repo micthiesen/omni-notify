@@ -1,4 +1,4 @@
-//! Port of `src/live-check/platforms/kick.spec.ts`, plus the token cache and
+//! Kick live status, plus the token cache and
 //! 401 refresh.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

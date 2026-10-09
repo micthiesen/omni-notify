@@ -1,9 +1,8 @@
 //! Minimal CalDAV multistatus parsing.
 //!
-//! Regex-based on purpose, like TS: iCloud emits simple, flat PROPFIND
+//! Regex-based on purpose: iCloud emits simple, flat PROPFIND
 //! responses whose namespace prefixes vary (`d:`, `D:`, none, `A:`, ...), so
-//! matching is prefix-agnostic. The patterns are the TS ones with the single
-//! lookahead rewritten as an equivalent alternation.
+//! matching is prefix-agnostic.
 
 use std::sync::LazyLock;
 

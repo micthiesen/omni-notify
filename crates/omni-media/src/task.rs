@@ -5,10 +5,10 @@ use std::sync::Mutex;
 
 use futures::future::BoxFuture;
 use omni_ai::ModelRole;
+use omni_core::clock::log_timestamp;
 use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 
 use crate::error::RecommendationError;
-use crate::js::log_timestamp;
 use crate::pipeline::{PipelineOptions, run_recommendation_pipeline, validate_max_recommendations};
 use crate::run_log::RunLogFile;
 use crate::services::{MediaServices, configured, provider_credential};
@@ -119,7 +119,7 @@ impl MediaRecommendationTask {
         tracing::info!(
             target: LOG,
             "Recommendation run requested up to {} item(s)",
-            crate::js::number(max_recommendations)
+            omni_core::js::number_to_string(max_recommendations)
         );
         let summary = run_recommendation_pipeline(
             &self.services,
@@ -139,7 +139,7 @@ impl MediaRecommendationTask {
     }
 }
 
-/// `decodeManualInput`: `{ maxRecommendations: integer 1..=10 }`.
+/// `{ maxRecommendations: integer 1..=10 }`.
 pub fn decode_manual_input(input: &serde_json::Value) -> Result<f64, RecommendationError> {
     let value = input
         .get("maxRecommendations")

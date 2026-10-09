@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/arr/sonarr.spec.ts`.
+//! Sonarr acquisition.
 #![allow(clippy::expect_used)]
 
 mod common;

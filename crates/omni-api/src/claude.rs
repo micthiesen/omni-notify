@@ -1,4 +1,4 @@
-//! Claude Code host observability (WP12): `/api/claude/*`.
+//! Claude Code host observability: `/api/claude/*`.
 //!
 //! These read-only routes are for Omni's own UI, which may show the host name.
 

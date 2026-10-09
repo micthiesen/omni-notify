@@ -1,8 +1,6 @@
-//! Port of `src/printer/service.spec.ts` (all cases kept), plus IPP encoding
-//! against a stub printer and the durable `printer-accepted-job` store.
-//!
-//! "rejects an HTTPS redirect that downgrades to HTTP" drives the real public
-//! downloader through a wiremock redirect instead of a got hook.
+//! The printer service, plus IPP encoding against a stub printer and the
+//! durable `printer-accepted-job` store. The HTTPS-downgrade case drives the
+//! real public downloader through a wiremock redirect.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::{HashMap, VecDeque};
@@ -663,11 +661,11 @@ async fn durable_store_prunes_records_at_the_window() {
     assert_eq!(durable.get("new").await.unwrap().unwrap().job_id, None);
 }
 
-/// The durable `printer-accepted-job` key matches what the TS service wrote:
-/// `sha256(pdf || JSON.stringify({paper, sides, copies, jobName}))`, computed in
-/// node for the fixture PDF and the default options.
+/// The durable `printer-accepted-job` key matches the stored keys:
+/// `sha256(pdf || JSON.stringify({paper, sides, copies, jobName}))`, pinned
+/// for the fixture PDF and the default options.
 #[tokio::test]
-async fn durable_fingerprint_matches_the_ts_service() {
+async fn durable_fingerprint_matches_stored_keys() {
     let mut f = Fixture::new();
     let memory = Arc::new(MemoryStore::default());
     f.accepted = memory.clone();
@@ -841,11 +839,11 @@ fn letter_options() -> PrintOptions {
     }
 }
 
-/// `@pnosolutions/ipp` parity: URL credentials become Basic auth (never part of
+/// URL credentials become Basic auth (never part of
 /// the request URL), job fields fall back to any group, and an operation error
 /// without `status-message` names the status code.
 #[tokio::test]
-async fn ipp_client_matches_the_ts_library_edges() {
+async fn ipp_client_edges() {
     use ipp::value::IppValue;
     let server = mock_server().await;
     wiremock::Mock::given(wiremock::matchers::method("POST"))

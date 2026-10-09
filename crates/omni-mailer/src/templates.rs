@@ -1,8 +1,8 @@
-//! `src/emails/templates.ts`: the log digest email.
+//! The log digest email.
 
 use omni_core::LogLevel;
 
-/// One log entry for [`render_log_email`] (mitools `LogItem`).
+/// One log entry for [`render_log_email`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct LogEmailItem {
     pub level: LogLevel,
@@ -18,7 +18,6 @@ pub struct EmailContent {
     pub text: String,
 }
 
-/// `renderLogEmail`.
 pub fn render_log_email(subject: &str, logs: &[LogEmailItem]) -> EmailContent {
     let html_lines: Vec<String> = logs
         .iter()

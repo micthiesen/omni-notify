@@ -1,4 +1,4 @@
-//! Foundation primitives shared by every omni crate: the clock seam, JS-exact
+//! Foundation primitives shared by every omni crate: the clock seam, JS
 //! semantics for persisted derivations, digests, ids, the email model and the
 //! sanctioned helpers for background work.
 

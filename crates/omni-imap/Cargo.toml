@@ -1,6 +1,6 @@
 [package]
 name = "omni-imap"
-description = "iCloud IMAP transport, exact archive actions, drafts, Sent copies and compose tools (WP01)."
+description = "iCloud IMAP transport, exact archive actions, drafts, Sent copies and compose tools."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -34,6 +34,7 @@ rand.workspace = true
 regex.workspace = true
 rustls.workspace = true
 rustls-platform-verifier.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -46,5 +47,4 @@ tracing.workspace = true
 [dev-dependencies]
 omni-imap = { path = ".", features = ["testing"] }
 omni-testkit.workspace = true
-tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

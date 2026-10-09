@@ -1,5 +1,4 @@
-//! Port of `src/podcast-recs/reflection/reflection.spec.ts`, plus evidence-id
-//! and fingerprint golden values computed by the TS implementation, and a
+//! Podcast taste reflection, pinned evidence-id and fingerprint values, and a
 //! store-backed reflection run with scripted models.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -147,7 +146,7 @@ fn changes_when_evidence_changes() {
 }
 
 #[test]
-fn evidence_ids_and_fingerprint_match_the_ts_implementation() {
+fn evidence_ids_and_fingerprint_match_stored_values() {
     let listens = [
         listen(),
         ListenedEpisode {

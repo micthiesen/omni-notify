@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use futures::future::BoxFuture;
 use omni_ai::ModelRole;
 use omni_ai::tools::SearchOptions;
+use omni_core::clock::utc_date_stamp;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::discovery::{collapse_whitespace, format_results};
-use crate::js::to_date_stamp;
 use crate::log_file::{self, LogFile, code_block};
 use crate::models::{Models, Refine, in_range};
 use crate::pipeline::PipelineError;
@@ -183,7 +183,7 @@ fn build_prompt(
                 c.episode_id,
                 c.show_title,
                 c.episode_title,
-                to_date_stamp(c.published_at),
+                utc_date_stamp(c.published_at),
                 c.discovered_via
             )
         })

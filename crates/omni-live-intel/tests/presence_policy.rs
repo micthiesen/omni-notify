@@ -1,4 +1,4 @@
-//! Port of `src/live-check/intelligence/presencePolicy.spec.ts`.
+//! Destiny presence policy.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use omni_live_intel::presence_policy::{VoiceMatchAction, decide_voice_match_action};

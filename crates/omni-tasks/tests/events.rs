@@ -1,6 +1,5 @@
-//! Port of `src/task-runs/events.spec.ts`. A broken TS listener threw; a Rust
-//! subscriber can only stop receiving (drop) or fall behind (lag). Neither
-//! may affect emitters or other subscribers.
+//! The run event bus. A subscriber can only stop receiving (drop) or fall
+//! behind (lag); neither may affect emitters or other subscribers.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_tasks::{EventBus, TaskRunEvent, TaskRunEventKind};

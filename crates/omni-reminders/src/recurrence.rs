@@ -329,7 +329,7 @@ fn day(value: &Value) -> Result<DayOfWeek, Invalid> {
     })
 }
 
-/// `Schema.decodeUnknownResult(RecurrenceRuleSchema, {onExcessProperty: "error"})`.
+/// Decodes a recurrence rule strictly; excess properties are an error.
 fn decode_rule_schema(input: &Value) -> Result<RecurrenceRule, Invalid> {
     const KEYS: [&str; 11] = [
         "frequency",
@@ -586,10 +586,7 @@ fn selector_json<'a, T: Serialize>(wire: &'a str, value: &Opt<T>) -> SelectorJso
 
 #[cfg(test)]
 mod recurrence_spec {
-    //! Port of `src/reminders/recurrence.spec.ts`.
-    //!
-    //! Dropped inputs: `endDate: Infinity` and `Frequency: undefined` cannot be
-    //! expressed in JSON; the range checks and the missing-`Frequency` case cover them.
+    //! Recurrence rule decoding, validation and tags.
     use super::*;
     use serde_json::json;
 

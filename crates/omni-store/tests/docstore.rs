@@ -1,4 +1,4 @@
-//! Docstore behavior (ports mitools `docstore.spec.ts` and `sqlite.spec.ts`).
+//! Docstore behavior: reads, writes, expiry, prefix matching and schema setup.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::sync::Arc;
@@ -97,7 +97,9 @@ async fn stores_retrieves_and_deletes_documents() {
     ]);
     f.put("k1", doc.clone(), DocMeta::default()).await;
     let read = f.store.read(|d| d.get_doc("k1")).await.expect("read");
-    assert_eq!(read, Some(doc));
+    // `undefined` properties are not written; the value reads back the same.
+    assert_eq!(read, Some(obj(&[("a", s("x")), ("n", JsValue::Int(1))])));
+    assert!(read.is_some_and(|read| cbor::same_value(&read, &doc)));
     assert_eq!(
         f.store.read(|d| d.get_doc("missing")).await.expect("read"),
         None
@@ -350,7 +352,7 @@ async fn like_metacharacters_are_literal_and_ascii_matching_is_case_insensitive(
     assert_eq!(keys("50%").await, vec!["50%:x"]);
     assert_eq!(keys("a_").await, vec!["a_b"]);
     assert_eq!(keys(r"back\").await, vec![r"back\slash"]);
-    // SQLite LIKE folds ASCII case only (preserved from mitools).
+    // SQLite LIKE folds ASCII case only.
     assert_eq!(keys("$pair#").await, vec!["$Pair#s1:x", "$pair#s1:y"]);
     assert_eq!(keys("é").await, vec!["éb"]);
 }

@@ -1,4 +1,4 @@
-//! Pet weights from the Whisker litter-box scale (`src/pet-tracker/`).
+//! Pet weights from the Whisker litter-box scale.
 
 pub mod api;
 pub mod auth;

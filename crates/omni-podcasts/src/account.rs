@@ -25,7 +25,7 @@ impl Unavailable {
     }
 }
 
-/// TS `FetchResult<T>`: `Ok` or `{status: "unavailable", reason}`.
+/// `Ok`, or unavailable with a reason.
 pub type FetchResult<T> = Result<T, Unavailable>;
 
 /// A subscribed show.
@@ -176,7 +176,7 @@ pub struct SubscribeToShowRequest {
     pub itunes_id: Option<i64>,
 }
 
-/// `PodcastAccountClient`. Writes report their idempotent outcome and never fail.
+/// The podcast account client. Writes report their idempotent outcome and never fail.
 pub trait PodcastAccount: Send + Sync {
     /// Human-readable client name for logs (e.g. "Castro").
     fn name(&self) -> &str;

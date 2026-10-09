@@ -3,6 +3,8 @@
 //! owning packages through `LiveDirectory`, `LiveIntelligence` and
 //! `BriefingsReader`; none of these tools polls a platform.
 
+pub mod defs;
+
 use std::sync::Arc;
 
 use omni_api::briefings::BriefingHistory;
@@ -66,7 +68,7 @@ fn decode<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, ToolError> {
     serde_json::from_value(value).map_err(|e| ToolError::execute(e.to_string()))
 }
 
-/// `taskRunSchema`: optional fields omitted rather than `null`.
+/// Optional fields omitted rather than `null`.
 fn run_json(run: &TaskRunData) -> Value {
     let mut out = Map::new();
     out.insert("runId".into(), json!(run.run_id));
@@ -101,7 +103,7 @@ fn api_run_json(run: &Run) -> Value {
 #[derive(Deserialize)]
 struct EmptyInput {}
 
-/// zod defaults, for callers that bypass the endpoint's default filling.
+/// Schema defaults, for callers that bypass the endpoint's default filling.
 mod defaults {
     pub fn limit() -> usize {
         25
@@ -200,7 +202,7 @@ struct BriefingsInput {
     max_message_chars: usize,
 }
 
-/// zod `.trim().min(1)` on an already length-checked string.
+/// Trims an already length-checked string, which must stay non-empty.
 fn trimmed(value: &str, field: &str) -> Result<String, ToolError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -213,7 +215,7 @@ fn trimmed(value: &str, field: &str) -> Result<String, ToolError> {
 
 /// The MCP livestream shape from a `LivestreamSummary` value.
 fn livestream_json(summary: Value) -> Result<Value, ToolError> {
-    conform("livestreams_list", json!({ "livestreams": [summary] }))?
+    conform(&defs::LIVESTREAMS_LIST, json!({ "livestreams": [summary] }))?
         .get_mut("livestreams")
         .and_then(Value::as_array_mut)
         .and_then(|items| items.pop())
@@ -227,89 +229,100 @@ fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
     let status = {
         let deps = deps.clone();
-        typed_tool("system_status", move |_: EmptyInput, _: ToolContext| {
-            let deps = deps.clone();
-            async move {
-                let names: Vec<String> = deps
-                    .tasks
-                    .list()
-                    .await
-                    .map_err(ToolError::execute)?
-                    .into_iter()
-                    .map(|task| task.name)
-                    .collect();
-                let livestreams = match deps.ports.live_directory() {
-                    Some(directory) => !directory.streamers().await.map_err(port_error)?.is_empty(),
-                    None => false,
-                };
-                let features = deps.features;
-                Ok::<_, ToolError>(json!({
-                    "capabilities": {
-                        "taskControls": !names.is_empty(),
-                        "livestreams": livestreams,
-                        "livestreamIntelligence": deps.ports.live_intelligence().is_some(),
-                        "briefings": features.briefings,
-                        "iCloudEmail": deps.ports.email_reader().is_some() && features.icloud,
-                        "iCloudCalendar": features.icloud,
-                        "webSearch": features.web_search,
-                        "iosControls": features.ios_controls,
-                        "printing": features.printing,
-                        "workspaces": WORKSPACE_TASKS.iter().any(|t| names.iter().any(|n| n == t)),
-                    }
-                }))
-            }
-        })?
+        typed_tool(
+            &defs::SYSTEM_STATUS,
+            move |_: EmptyInput, _: ToolContext| {
+                let deps = deps.clone();
+                async move {
+                    let names: Vec<String> = deps
+                        .tasks
+                        .list()
+                        .await
+                        .map_err(ToolError::execute)?
+                        .into_iter()
+                        .map(|task| task.name)
+                        .collect();
+                    let livestreams = match deps.ports.live_directory() {
+                        Some(directory) => {
+                            !directory.streamers().await.map_err(port_error)?.is_empty()
+                        }
+                        None => false,
+                    };
+                    let features = deps.features;
+                    Ok::<_, ToolError>(json!({
+                        "capabilities": {
+                            "taskControls": !names.is_empty(),
+                            "livestreams": livestreams,
+                            "livestreamIntelligence": deps.ports.live_intelligence().is_some(),
+                            "briefings": features.briefings,
+                            "iCloudEmail": deps.ports.email_reader().is_some() && features.icloud,
+                            "iCloudCalendar": features.icloud,
+                            "webSearch": features.web_search,
+                            "iosControls": features.ios_controls,
+                            "printing": features.printing,
+                            "workspaces": WORKSPACE_TASKS.iter().any(|t| names.iter().any(|n| n == t)),
+                        }
+                    }))
+                }
+            },
+        )?
     };
 
     let tasks_list = {
         let deps = deps.clone();
-        typed_tool("tasks_list", move |input: PageInput, _: ToolContext| {
-            let deps = deps.clone();
-            async move {
-                let tasks = deps.tasks.list().await.map_err(ToolError::execute)?;
-                let page = paginate(tasks, input.cursor, input.limit);
-                let items: Vec<Value> = page
-                    .items
-                    .iter()
-                    .map(|task| {
-                        json!({
-                            "name": task.name,
-                            "displayName": task.display_name,
-                            "schedule": task.schedule,
-                            "running": task.running,
-                            "nextRuns": task.next_runs,
-                            "lastRun": task.last_run.as_ref().map(api_run_json),
+        typed_tool(
+            &defs::TASKS_LIST,
+            move |input: PageInput, _: ToolContext| {
+                let deps = deps.clone();
+                async move {
+                    let tasks = deps.tasks.list().await.map_err(ToolError::execute)?;
+                    let page = paginate(tasks, input.cursor, input.limit);
+                    let items: Vec<Value> = page
+                        .items
+                        .iter()
+                        .map(|task| {
+                            json!({
+                                "name": task.name,
+                                "displayName": task.display_name,
+                                "schedule": task.schedule,
+                                "running": task.running,
+                                "nextRuns": task.next_runs,
+                                "lastRun": task.last_run.as_ref().map(api_run_json),
+                            })
                         })
-                    })
-                    .collect();
-                Ok::<_, ToolError>(json!({
-                    "tasks": items,
-                    "nextCursor": page.next_cursor,
-                    "total": page.total,
-                }))
-            }
-        })?
+                        .collect();
+                    Ok::<_, ToolError>(json!({
+                        "tasks": items,
+                        "nextCursor": page.next_cursor,
+                        "total": page.total,
+                    }))
+                }
+            },
+        )?
     };
 
     let task_run = {
         let deps = deps.clone();
-        typed_tool("task_run", move |input: TaskRunInput, _: ToolContext| {
-            let deps = deps.clone();
-            async move {
-                let name = trimmed(&input.task_name, "taskName")?;
-                let run_id = deps
-                    .tasks
-                    .run_now(&name, input.input.map(Value::Object))
-                    .map_err(ToolError::execute)?;
-                Ok::<_, ToolError>(json!({ "runId": run_id, "taskName": name, "queued": true }))
-            }
-        })?
+        typed_tool(
+            &defs::TASK_RUN,
+            move |input: TaskRunInput, _: ToolContext| {
+                let deps = deps.clone();
+                async move {
+                    let name = trimmed(&input.task_name, "taskName")?;
+                    let run_id = deps
+                        .tasks
+                        .run_now(&name, input.input.map(Value::Object))
+                        .map_err(ToolError::execute)?;
+                    Ok::<_, ToolError>(json!({ "runId": run_id, "taskName": name, "queued": true }))
+                }
+            },
+        )?
     };
 
     let task_runs_list = {
         let deps = deps.clone();
         typed_tool(
-            "task_runs_list",
+            &defs::TASK_RUNS_LIST,
             move |input: TaskRunsInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -340,7 +353,7 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
     let task_run_get = {
         let deps = deps.clone();
         typed_tool(
-            "task_run_get",
+            &defs::TASK_RUN_GET,
             move |input: TaskRunGetInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -383,7 +396,7 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
     let livestreams_list = {
         let deps = deps.clone();
         typed_tool(
-            "livestreams_list",
+            &defs::LIVESTREAMS_LIST,
             move |input: LivestreamsInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -423,7 +436,7 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
     let livestream_get = {
         let deps = deps.clone();
         typed_tool(
-            "livestream_get",
+            &defs::LIVESTREAM_GET,
             move |input: LivestreamGetInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {
@@ -484,7 +497,7 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
                             .map_err(|e| ToolError::execute(e.to_string()))?,
                     )?;
                     conform(
-                        "livestream_get",
+                        &defs::LIVESTREAM_GET,
                         json!({
                             "livestream": livestream,
                             "metrics": metrics,
@@ -500,7 +513,7 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
     let briefings_list = {
         let deps = deps.clone();
         typed_tool(
-            "briefings_list",
+            &defs::BRIEFINGS_LIST,
             move |input: BriefingsInput, _: ToolContext| {
                 let deps = deps.clone();
                 async move {

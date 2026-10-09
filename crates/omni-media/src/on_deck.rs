@@ -1,4 +1,4 @@
-//! The dashboard "On Deck" strip (`buildOnDeck` in `src/server.ts`).
+//! The dashboard "On Deck" strip.
 
 use futures::future::BoxFuture;
 use omni_api::media::OnDeckItem;
@@ -18,7 +18,7 @@ pub async fn build_on_deck(store: &Store) -> Result<Vec<OnDeckItem>, StoreError>
         .collect())
 }
 
-/// [`OnDeckSource`] over the recommendation store (wired by WP14).
+/// [`OnDeckSource`] over the recommendation store (set by app wiring).
 #[derive(Clone)]
 pub struct MediaOnDeck {
     store: Store,

@@ -1,10 +1,10 @@
-//! Port of `src/calendar-events/caldav/http.spec.ts` ("CalDAV HTTP safety").
+//! CalDAV HTTP safety: timeouts, cancellation and response size limits.
 //!
 //! "cancels a chunked response as soon as it exceeds the XML limit" runs
 //! against a raw local server streaming endless 1 MiB chunks; it asserts the
 //! read stops with the limit error and the server sees the connection close
 //! after a bounded number of chunks (socket buffers make the exact count
-//! platform dependent, so the bound is looser than the TS `pulls <= 4`).
+//! platform dependent, so the bound is loose).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -27,7 +27,7 @@ fn root() -> Url {
 }
 
 #[tokio::test]
-async fn aborts_an_in_flight_propfind_when_its_effect_is_interrupted() {
+async fn aborts_an_in_flight_propfind_when_dropped() {
     let server = MockServer::start().await;
     Mock::given(method("PROPFIND"))
         .respond_with(ResponseTemplate::new(207).set_delay(Duration::from_secs(60)))

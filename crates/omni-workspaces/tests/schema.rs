@@ -1,4 +1,4 @@
-//! Port of `src/workspaces/schema.test.ts`.
+//! The workspace model response schema.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_workspaces::WorkspaceOutput;

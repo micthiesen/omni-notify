@@ -1,5 +1,5 @@
-//! Per-email Markdown run log under `LOGS_PATH/calendar-events/` (mitools
-//! `LogFile` in overwrite mode): `## heading` sections, the first write
+//! Per-email Markdown run log under `LOGS_PATH/calendar-events/`, overwritten
+//! per email: `## heading` sections, the first write
 //! truncates. Failures to write are warned about and never fail the pipeline.
 
 use std::path::{Path, PathBuf};
@@ -15,18 +15,9 @@ pub struct RunLogFile {
     started: Mutex<bool>,
 }
 
-/// `logTimestamp`: local `YYYY-MM-DDTHH-MM-SS`.
-pub fn log_timestamp(now_ms: i64, tz: &jiff::tz::TimeZone) -> String {
-    jiff::Timestamp::from_millisecond(now_ms)
-        .map(|ts| {
-            ts.to_zoned(tz.clone())
-                .strftime("%Y-%m-%dT%H-%M-%S")
-                .to_string()
-        })
-        .unwrap_or_default()
-}
+pub use omni_core::clock::log_timestamp;
 
-/// `codeBlock`: a fence that does not collide with the content.
+/// A fence that does not collide with the content.
 pub fn code_block(content: &str, lang: Option<&str>) -> String {
     let mut fence = "```".to_owned();
     while content.contains(&fence) {

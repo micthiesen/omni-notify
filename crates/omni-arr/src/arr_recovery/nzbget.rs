@@ -144,7 +144,7 @@ impl NzbGetClient {
         Ok(Some(item.status))
     }
 
-    /// `downloadHealth`: the terminal NZBGet status of exactly this Arr download
+    /// The terminal NZBGet status of exactly this Arr download
     /// (category and directory must match), or `None` when it cannot corroborate.
     pub async fn download_health(
         &self,

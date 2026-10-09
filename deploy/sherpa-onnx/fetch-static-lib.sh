@@ -8,18 +8,18 @@
 # The version must equal the workspace's sherpa-onnx-sys pin (Cargo.toml).
 set -eu
 
-VERSION=1.13.6
+VERSION=1.13.8
 DEST=${1:?usage: fetch-static-lib.sh <archive-dir> [x86_64|aarch64]}
 ARCH=${2:-$(uname -m)}
 
 case "$ARCH" in
   x86_64 | amd64)
     ASSET_ARCH=x64
-    SHA256=fe4968c3cd2ad3dfd1ea925500e5542aef70dd7119847257ffde95d6260cd629
+    SHA256=e1fdc5b67530e15741ef897fa5ffff297056f3bf0c6d829a27af9225a4c4b5a6
     ;;
   aarch64 | arm64)
     ASSET_ARCH=aarch64
-    SHA256=4a602cf8b5158df9667f459bb13574eb297d8df82060e113ac75feb7ad51a420
+    SHA256=77983e3cf29aa60f2e531d249dbd01d15596530550c8db2e9e02fc6a655da6bb
     ;;
   *)
     echo "Unsupported architecture: $ARCH" >&2

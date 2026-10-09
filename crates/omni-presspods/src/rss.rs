@@ -1,9 +1,8 @@
-//! The PressPods podcast feed (`src/press-pods/rss.ts`, `rssText.ts`).
+//! The PressPods podcast feed.
 //!
-//! TS built the feed with the `podcast` npm package (over `rss` and `xml`).
 //! The output is a public contract read by podcast clients and frozen by
-//! `tests/golden/rss.xml`, so this module reproduces that serializer's exact
-//! bytes: element order, CDATA use, self-closing empty elements, entity
+//! `tests/golden/rss.xml` (the `podcast` npm package's serialization), so this
+//! module writes exact bytes: element order, CDATA use, self-closing empty elements, entity
 //! escaping and the attribute order of the `<rss>` root. A general RSS
 //! library would produce an equivalent but not identical document.
 
@@ -29,7 +28,7 @@ static HEADING_RE: LazyLock<Option<Regex>> =
 static QUOTE_START_RE: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"(?i)^\s*(&gt;)+\s*").ok());
 
-/// mitools `escapeXml`.
+/// Escapes `&`, `<`, `>`, `"` and `'` for XML text and attributes.
 pub fn escape_xml(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -54,12 +53,12 @@ fn escape_for_xml(s: &str) -> String {
     out
 }
 
-/// `isBlockQuote`: an already-escaped line starting with `&gt;`.
+/// An already-escaped line starting with `&gt;`.
 pub fn is_block_quote(line: &str) -> bool {
     QUOTE_START_RE.as_ref().is_some_and(|re| re.is_match(line))
 }
 
-/// `prepareTextForRss`: escapes narration for HTML show notes, rendering
+/// Escapes narration for HTML show notes, rendering
 /// `## Heading` chapter markers bold and blockquote lines italic.
 pub fn prepare_text_for_rss(text: Option<&str>) -> String {
     let Some(text) = text.filter(|t| !t.is_empty()) else {
@@ -88,7 +87,7 @@ pub fn prepare_text_for_rss(text: Option<&str>) -> String {
         .join("<br>")
 }
 
-/// mitools `truncate(str, length)`: UTF-16 units with a `"..."` suffix.
+/// Truncates to `length` UTF-16 units with a `"..."` suffix.
 pub fn truncate(s: &str, length: usize) -> String {
     const SUFFIX: &str = "...";
     if omni_core::js::utf16_len(s) > length {
@@ -343,7 +342,7 @@ pub fn feed_etag(episodes: &[PressPodsEpisode]) -> String {
 
 #[cfg(test)]
 mod rss_text_spec {
-    //! Ports `src/press-pods/rssText.spec.ts`.
+    //! Feed text helper cases.
     use super::*;
 
     #[test]

@@ -1,6 +1,5 @@
-//! Configuration parity: every case in the committed `tests/golden/config.json`
-//! (produced by the former TypeScript `loadConfigEffect`) must decode to the
-//! same values, or fail.
+//! Configuration fixtures: every case in the committed `tests/golden/config.json`
+//! must decode to the recorded values, or fail as recorded.
 
 use std::collections::BTreeMap;
 
@@ -8,7 +7,7 @@ use serde_json::Value;
 
 use super::*;
 
-/// Variables Rust reads that `config.ts` does not (read elsewhere in TS).
+/// Variables the fixture cases do not record.
 const RUST_ONLY: &[&str] = &["OMNI_DEBUG", "FFMPEG_PATH", "YT_DLP_PATH"];
 
 fn env(case: &Value) -> BTreeMap<String, String> {
@@ -20,7 +19,7 @@ fn env(case: &Value) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// The TS value of `key` as the summary renders it (derived fields applied).
+/// Each key's value as the summary renders it (derived fields applied).
 fn rust_view(config: &Config) -> BTreeMap<&'static str, String> {
     let mut view: BTreeMap<&'static str, String> = config.entries().into_iter().collect();
     let derived = [
@@ -63,7 +62,7 @@ fn rust_view(config: &Config) -> BTreeMap<&'static str, String> {
     view
 }
 
-fn ts_view(config: &Value) -> BTreeMap<String, String> {
+fn fixture_view(config: &Value) -> BTreeMap<String, String> {
     config
         .as_object()
         .expect("config object")
@@ -82,7 +81,7 @@ fn ts_view(config: &Value) -> BTreeMap<String, String> {
 }
 
 #[test]
-fn every_golden_case_matches_typescript() {
+fn every_golden_case_matches_its_fixture() {
     let cases: Vec<Value> =
         serde_json::from_str(include_str!("../tests/golden/config.json")).expect("golden");
     assert!(cases.len() > 70);
@@ -91,22 +90,24 @@ fn every_golden_case_matches_typescript() {
         let name = case["name"].as_str().expect("name");
         let result = Config::from_env(&env(case));
         match (case["ok"].as_bool().expect("ok"), result) {
-            (false, Ok(_)) => failures.push(format!("{name}: TS rejects, Rust accepts")),
-            (true, Err(e)) => failures.push(format!("{name}: TS accepts, Rust rejects: {e}")),
+            (false, Ok(_)) => failures.push(format!("{name}: fixture rejects, parser accepts")),
+            (true, Err(e)) => {
+                failures.push(format!("{name}: fixture accepts, parser rejects: {e}"))
+            }
             (false, Err(_)) => {}
             (true, Ok(config)) => {
-                let expected = ts_view(&case["config"]);
+                let expected = fixture_view(&case["config"]);
                 let actual = rust_view(&config);
                 for key in CONFIG_KEYS.iter().filter(|k| !RUST_ONLY.contains(k)) {
                     let want = expected.get(*key).map_or("undefined", String::as_str);
                     let got = actual.get(key).map_or("undefined", String::as_str);
                     if want != got {
-                        failures.push(format!("{name}: {key} TS {want:?} Rust {got:?}"));
+                        failures.push(format!("{name}: {key} expected {want:?} got {got:?}"));
                     }
                 }
                 for key in expected.keys() {
                     if !CONFIG_KEYS.contains(&key.as_str()) {
-                        failures.push(format!("{name}: TS key {key} missing in Rust"));
+                        failures.push(format!("{name}: expected key {key} missing"));
                     }
                 }
                 if let Some(whisker) = case["config"].get("WHISKER_CREDENTIALS") {

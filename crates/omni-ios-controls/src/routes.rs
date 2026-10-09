@@ -207,7 +207,7 @@ async fn diagnostics(State(state): State<IosRoutesState>) -> Response {
     }
 }
 
-/// `Schema.String.check(isTrimmed, minLength, maxLength)` (UTF-16 lengths).
+/// A string without surrounding whitespace, within `min..=max` UTF-16 units.
 fn bounded_string(value: Option<&Value>, min: usize, max: usize) -> Option<String> {
     let text = value?.as_str()?;
     let length = omni_core::js::utf16_len(text);
@@ -280,9 +280,8 @@ async fn not_found() -> Response {
 }
 
 /// The signed routes with state applied, nested at `/api/ios-controls`. The
-/// authentication layer covers every path under the prefix (as Hono's
-/// `app.use("/api/ios-controls/*")` did), so an unknown path or method is
-/// 401 until signed and 404/405 only afterwards.
+/// authentication layer covers every path under the prefix, so an unknown path
+/// or method is 401 until signed and 404/405 only afterwards.
 pub fn router(state: IosRoutesState) -> Router {
     let signed = Router::new()
         .route("/slots/{slot}", get(slot))

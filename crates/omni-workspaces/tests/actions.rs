@@ -1,4 +1,4 @@
-//! Port of `src/workspaces/actions.test.ts` against a real store and a fake
+//! Workspace action proposals and approvals against a real store and a fake
 //! `CalendarWriter` port.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

@@ -119,7 +119,7 @@ fn domain_matches(sender_domain: &str, domain: &str) -> bool {
             .is_some_and(|prefix| prefix.ends_with('.'))
 }
 
-/// `matchesSenderPattern`: `@host` matches the host and its subdomains,
+/// `@host` matches the host and its subdomains,
 /// `local@host` matches the exact address, a legacy bare domain matches the
 /// host and its subdomains.
 pub fn matches_sender_pattern(from_lower: &str, pattern: &str) -> bool {
@@ -132,7 +132,7 @@ pub fn matches_sender_pattern(from_lower: &str, pattern: &str) -> bool {
     domain_matches(sender_domain(from_lower), pattern)
 }
 
-/// `normalizeRulePattern`: strips display-name wrappers, turns a bare domain
+/// Strips display-name wrappers, turns a bare domain
 /// into `@host`, collapses repeated `@`, keeps full addresses.
 pub fn normalize_rule_pattern(input: &str) -> String {
     let mut p = js_trim(input).to_lowercase();
@@ -172,7 +172,6 @@ pub fn select_sender_rule<'a>(
         .copied()
 }
 
-/// `findSenderRule`.
 pub async fn find_sender_rule(
     store: &Store,
     from: &str,
@@ -182,7 +181,6 @@ pub async fn find_sender_rule(
     Ok(select_sender_rule(&rules, from, target).cloned())
 }
 
-/// `getSenderRuleVerdict`.
 pub async fn sender_rule_verdict(
     store: &Store,
     from: &str,
@@ -193,14 +191,14 @@ pub async fn sender_rule_verdict(
         .map(|r| r.verdict))
 }
 
-/// `listEmailRules`: newest first.
+/// Newest first.
 pub async fn list(store: &Store) -> Result<Vec<EmailRuleData>, StoreError> {
     let mut rules = store.read(|docs| docs.get_all::<EmailRuleData>()).await?;
     rules.sort_by_key(|a| std::cmp::Reverse(a.created_at));
     Ok(rules)
 }
 
-/// `upsertEmailRule` (raw; user-facing creation uses [`upsert_checked`]).
+/// Upserts a rule (raw; user-facing creation uses [`upsert_checked`]).
 pub async fn upsert(
     store: &Store,
     pattern: &str,
@@ -230,7 +228,7 @@ pub async fn upsert(
         .await
 }
 
-/// `deleteEmailRule`: `true` when the rule existed.
+/// `true` when the rule existed.
 pub async fn delete(store: &Store, rule_id: &str) -> Result<bool, StoreError> {
     let key = rule_id.to_owned();
     store
@@ -248,7 +246,7 @@ pub struct RuleCoverage {
     pub matches: Vec<EmailRuleData>,
 }
 
-/// `getSenderRuleCoverage` over a rule list.
+/// Pattern coverage over a rule list.
 pub fn coverage(rules: &[EmailRuleData], pattern: &str) -> RuleCoverage {
     let normalized = js_trim(pattern).to_lowercase();
     let matches: Vec<EmailRuleData> = rules
@@ -309,7 +307,7 @@ fn new_rule(
     }
 }
 
-/// `planRuleAdd`: pure decision over the current rules.
+/// Pure decision over the current rules.
 pub fn plan_rule_add(
     rules: &[EmailRuleData],
     pattern: &str,
@@ -386,7 +384,6 @@ pub fn plan_rule_add(
     )))
 }
 
-/// `UpsertEmailRuleCheckedResult`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CheckedUpsert {
     pub rule: EmailRuleData,
@@ -396,7 +393,7 @@ pub struct CheckedUpsert {
     pub already_exists: bool,
 }
 
-/// `upsertEmailRuleChecked`: plans and applies in one transaction. The
+/// Plans and applies in one transaction. The
 /// superseding `both` row is written before the single-scope rows are deleted.
 pub async fn upsert_checked(
     store: &Store,
@@ -453,7 +450,7 @@ fn rule_sample_senders(pattern: &str) -> Vec<String> {
     }
 }
 
-/// `matchesBuiltinBlock`: a block rule is redundant when a built-in
+/// A block rule is redundant when a built-in
 /// blacklist already covers every sender it targets.
 pub fn matches_builtin_block(pattern: &str, scope: RuleScope) -> bool {
     let samples = rule_sample_senders(pattern);

@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/persistence.spec.ts`, plus store-backed
+//! Recommendation persistence, plus store-backed
 //! feedback cases.
 #![allow(clippy::expect_used)]
 

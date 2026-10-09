@@ -1,6 +1,5 @@
-//! Builds every subsystem, sets every port and assembles the email pipeline
-//! (`src/index.ts` `buildTasks`, `startEmailFeatures` and the service wiring
-//! of `startServer`).
+//! Builds every subsystem, sets every port, assembles the email pipeline and
+//! wires the background services.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -34,8 +33,8 @@ macro_rules! wire {
     };
 }
 
-/// omni-email's body rendering for the IMAP transport (`htmlToText.ts`,
-/// `extractInterestingLinks`, `linkMetadata.ts`).
+/// omni-email's body rendering for the IMAP transport (HTML to text and link
+/// metadata).
 pub struct EmailBodyEnricher;
 
 /// mailsplit `_decodeHeaderValue`: UTF-8 when valid, else latin1.
@@ -93,8 +92,7 @@ impl EmailRetryHandlers for RetryHandlers {
     }
 }
 
-/// Tasks that only exist with an email transport (`src/index.ts` registers
-/// them inside the iCloud credentials branch).
+/// Tasks that only exist with an email transport (iCloud credentials set).
 const EMAIL_TASKS: &[&str] = &["EmailArchive", "EmailWatchdog", "EmailRetry"];
 
 /// The wired application.
@@ -217,7 +215,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     })
 }
 
-/// `src/index.ts` registration order: internal tasks, then `buildTasks`, then
+/// Registration order: internal tasks, then the scheduled feature tasks, then
 /// the email tasks. Names not listed (briefings, whose names come from their
 /// files) sort right after `PetTracker`.
 pub const TASK_ORDER: &[&str] = &[

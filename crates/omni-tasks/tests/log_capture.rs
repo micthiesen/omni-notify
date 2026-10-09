@@ -1,6 +1,5 @@
-//! Port of `src/task-runs/logCapture.spec.ts`. Mitools "sub-loggers" are
-//! nested spans, other targets and spawned work instrumented with the run
-//! span in Rust.
+//! Run log capture, including nested spans, other targets and spawned work
+//! instrumented with the run span.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

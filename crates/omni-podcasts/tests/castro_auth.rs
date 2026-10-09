@@ -1,5 +1,4 @@
-//! Port of `src/podcast-recs/castro/auth.spec.ts` (named `castro_auth` because
-//! the Podcast Index auth spec shares the `auth` stem).
+//! Castro authentication.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use base64::Engine as _;

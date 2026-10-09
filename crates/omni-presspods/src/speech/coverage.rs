@@ -113,7 +113,7 @@ pub fn is_content_complete_with(result: &CoverageResult, bounds: &ContentBounds)
 
 #[cfg(test)]
 mod coverage_spec {
-    //! Ports `src/press-pods/speech/coverage.spec.ts`.
+    //! Transcript coverage cases.
     use super::*;
 
     const COMPLETE: &str = "I strongly believe that written text should be from humans to

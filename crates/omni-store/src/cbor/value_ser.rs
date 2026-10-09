@@ -1,4 +1,4 @@
-//! serde `Serializer` producing [`JsValue`] (the JS value TS would build).
+//! serde `Serializer` producing [`JsValue`].
 
 use indexmap::IndexMap;
 use serde::Serialize;

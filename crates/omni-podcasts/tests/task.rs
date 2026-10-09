@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/task.spec.ts`, plus manual-input parsing.
+//! The `PodcastRecs` task, plus manual-input parsing.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::task::parse_max_recommendations;

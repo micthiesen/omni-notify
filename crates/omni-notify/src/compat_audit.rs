@@ -1,17 +1,15 @@
-//! `omni-notify compat-audit --db <copy> [--rewrite-to <new.db>]`
-//! (see docs/architecture.md, "Data compatibility"): typed per-entity compatibility of a
-//! production copy.
+//! `omni-notify compat-audit --db <copy>` (see docs/architecture.md, "Data
+//! compatibility"): a read-only decode and health audit of a docstore copy.
 //!
-//! Per entity: rows, expired rows, CBOR decode failures, typed decode
-//! failures, `recompute_pk(data) != pk` mismatches, and the typed round trip
-//! `decode -> typed -> encode -> decode`, which must equal the original JS
-//! value once `undefined` object fields are removed (byte-identical re-encodes
-//! are reported for information). Rows whose entity no subsystem declares and
-//! legacy `$` rows with a NULL entity column are listed separately.
+//! Per entity: rows, expired rows, NULL payloads, CBOR decode failures, typed
+//! decode failures, `recompute_pk(data) != pk` mismatches, and the typed round
+//! trip `decode -> typed -> encode -> decode`, which must read back as the
+//! original JS value ([`cbor::same_value`]). Rows whose entity no subsystem
+//! declares and legacy `$` rows with a NULL entity column are listed
+//! separately.
 //!
 //! The source is copied into a temporary directory first; the given file is
-//! never opened. `--rewrite-to` writes every row, re-encoded through its typed
-//! model (other rows byte for byte), into a fresh database.
+//! never opened.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -74,27 +72,25 @@ pub struct EntityAudit {
     pub cbor_failures: u64,
     pub typed_failures: u64,
     pub pk_mismatches: u64,
-    /// Typed re-encode decodes to a different JS value (ignoring `undefined` fields).
+    /// Typed re-encode reads back as a different JS value.
     pub value_diffs: u64,
-    pub byte_identical: u64,
 }
 
 /// The audit of one database.
 #[derive(Clone, Debug, Default)]
 pub struct Audit {
     pub entities: BTreeMap<String, EntityAudit>,
-    /// Entity names present in the database that no code reads (TS
-    /// leftovers such as `jmap-email-state`); informational.
+    /// Entity names present in the database that no code reads (retired
+    /// entities such as `jmap-email-state`); informational.
     pub orphans: BTreeMap<String, u64>,
     pub legacy_null_entity: u64,
     /// Up to 20 example failures (`pk: reason`).
     pub samples: Vec<String>,
-    pub rewritten: u64,
 }
 
 impl Audit {
-    /// Failures that block a cutover: CBOR and typed decode failures, key
-    /// mismatches and value diffs.
+    /// Rows the running service would fail on or corrupt: CBOR and typed
+    /// decode failures, key mismatches and value diffs.
     pub fn blocking(&self) -> u64 {
         self.entities
             .values()
@@ -105,20 +101,14 @@ impl Audit {
     /// A plain-text report.
     pub fn report(&self) -> String {
         let mut out = String::from(
-            "entity                              rows  expired  cbor  typed  pk  diffs  byte-identical\n",
+            "entity                              rows  expired  null  cbor  typed  pk  diffs\n",
         );
         for (name, e) in &self.entities {
-            let pct = if e.rows == e.null_data {
-                100.0
-            } else {
-                #[allow(clippy::cast_precision_loss)]
-                let pct = e.byte_identical as f64 * 100.0 / (e.rows - e.null_data) as f64;
-                pct
-            };
             out.push_str(&format!(
-                "{name:<34} {:>6} {:>8} {:>5} {:>6} {:>3} {:>6} {pct:>13.1}%\n",
+                "{name:<34} {:>6} {:>8} {:>5} {:>5} {:>6} {:>3} {:>6}\n",
                 e.rows,
                 e.expired,
+                e.null_data,
                 e.cbor_failures,
                 e.typed_failures,
                 e.pk_mismatches,
@@ -134,9 +124,6 @@ impl Audit {
             "legacy NULL-entity $ rows: {}\n",
             self.legacy_null_entity
         ));
-        if self.rewritten > 0 {
-            out.push_str(&format!("rewritten rows: {}\n", self.rewritten));
-        }
         for sample in &self.samples {
             out.push_str(&format!("  {sample}\n"));
         }
@@ -145,68 +132,11 @@ impl Audit {
     }
 }
 
-/// Removes `undefined` object fields recursively (TS reads absent and
-/// `undefined` identically).
-pub fn strip_undefined(value: &JsValue) -> JsValue {
-    match value {
-        JsValue::Object(map) => JsValue::Object(
-            map.iter()
-                .filter(|(_, v)| !matches!(v, JsValue::Undefined))
-                .map(|(k, v)| (k.clone(), strip_undefined(v)))
-                .collect(),
-        ),
-        JsValue::Array(items) => JsValue::Array(items.iter().map(strip_undefined).collect()),
-        JsValue::Map(entries) => JsValue::Map(
-            entries
-                .iter()
-                .map(|(k, v)| (strip_undefined(k), strip_undefined(v)))
-                .collect(),
-        ),
-        JsValue::Set(items) => JsValue::Set(items.iter().map(strip_undefined).collect()),
-        JsValue::Tagged(tag, inner) => JsValue::Tagged(*tag, Box::new(strip_undefined(inner))),
-        other => other.clone(),
-    }
-}
-
-/// JS value equality where numbers compare as JS numbers (CBOR int `3` and
-/// float `3.0` are the same JS value).
-pub fn js_equal(a: &JsValue, b: &JsValue) -> bool {
-    #[allow(clippy::cast_precision_loss)]
-    let number = |v: &JsValue| match v {
-        JsValue::Int(i) => Some(*i as f64),
-        JsValue::Float(f) => Some(*f),
-        _ => None,
-    };
-    match (a, b) {
-        (JsValue::Object(x), JsValue::Object(y)) => {
-            x.len() == y.len()
-                && x.iter()
-                    .all(|(k, v)| y.get(k).is_some_and(|w| js_equal(v, w)))
-        }
-        (JsValue::Array(x), JsValue::Array(y)) | (JsValue::Set(x), JsValue::Set(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(v, w)| js_equal(v, w))
-        }
-        (JsValue::Map(x), JsValue::Map(y)) => {
-            x.len() == y.len()
-                && x.iter()
-                    .zip(y)
-                    .all(|((k1, v1), (k2, v2))| js_equal(k1, k2) && js_equal(v1, v2))
-        }
-        (JsValue::Tagged(t1, v1), JsValue::Tagged(t2, v2)) => t1 == t2 && js_equal(v1, v2),
-        _ => match (number(a), number(b)) {
-            (Some(x), Some(y)) => x == y || (x.is_nan() && y.is_nan()),
-            _ => a == b,
-        },
-    }
-}
-
 struct Row {
     pk: String,
     data: Option<Vec<u8>>,
     entity: Option<String>,
-    version: rusqlite::types::Value,
     expires_at: rusqlite::types::Value,
-    updated_at: rusqlite::types::Value,
 }
 
 fn integer(value: &rusqlite::types::Value) -> Option<i64> {
@@ -219,69 +149,46 @@ fn integer(value: &rusqlite::types::Value) -> Option<i64> {
 }
 
 fn read_rows(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<Row>> {
-    let mut statement = conn.prepare(
-        "SELECT pk, data, entity, version, expires_at, updated_at FROM blobs ORDER BY pk",
-    )?;
+    let mut statement =
+        conn.prepare("SELECT pk, data, entity, expires_at FROM blobs ORDER BY pk")?;
     let rows = statement.query_map([], |row| {
         Ok(Row {
             pk: row.get("pk")?,
             data: row.get("data")?,
             entity: row.get("entity")?,
-            version: row.get("version")?,
             expires_at: row.get("expires_at")?,
-            updated_at: row.get("updated_at")?,
         })
     })?;
     rows.collect()
 }
 
-/// Audits `conn` (a copy) and, with `rewrite`, writes re-encoded rows there.
+/// Audits `conn` (a copy).
 pub fn audit(
     conn: &rusqlite::Connection,
     catalog: &[EntityDescriptor],
     now_ms: i64,
-    rewrite: Option<&rusqlite::Connection>,
 ) -> anyhow::Result<Audit> {
     let mut audit = Audit::default();
     for row in read_rows(conn)? {
         if row.entity.is_none() && row.pk.starts_with('$') {
             audit.legacy_null_entity += 1;
         }
-        let mut out_bytes = row.data.clone();
-        if let Some(name) = row.entity.as_deref() {
-            match catalog.iter().find(|d| d.name == name) {
-                None if RAW_COLLECTIONS.contains(&name) => {
-                    let stats = audit.entities.entry(name.to_owned()).or_default();
-                    audit_raw_row(stats, &mut audit.samples, name, &row, now_ms);
-                }
-                None => *audit.orphans.entry(name.to_owned()).or_default() += 1,
-                Some(descriptor) => {
-                    let stats = audit
-                        .entities
-                        .entry(descriptor.name.to_owned())
-                        .or_default();
-                    if let Some(bytes) =
-                        audit_row(stats, &mut audit.samples, descriptor, &row, now_ms)
-                    {
-                        out_bytes = Some(bytes);
-                    }
-                }
+        let Some(name) = row.entity.as_deref() else {
+            continue;
+        };
+        match catalog.iter().find(|d| d.name == name) {
+            None if RAW_COLLECTIONS.contains(&name) => {
+                let stats = audit.entities.entry(name.to_owned()).or_default();
+                audit_raw_row(stats, &mut audit.samples, name, &row, now_ms);
             }
-        }
-        if let Some(target) = rewrite {
-            target.execute(
-                "INSERT INTO blobs (pk, data, entity, version, expires_at, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                rusqlite::params![
-                    row.pk,
-                    out_bytes,
-                    row.entity,
-                    row.version,
-                    row.expires_at,
-                    row.updated_at
-                ],
-            )?;
-            audit.rewritten += 1;
+            None => *audit.orphans.entry(name.to_owned()).or_default() += 1,
+            Some(descriptor) => {
+                let stats = audit
+                    .entities
+                    .entry(descriptor.name.to_owned())
+                    .or_default();
+                audit_row(stats, &mut audit.samples, descriptor, &row, now_ms);
+            }
         }
     }
     Ok(audit)
@@ -309,8 +216,8 @@ fn decode_raw(entity: &str, pk: &str, value: JsValue) -> Result<(), String> {
     }
 }
 
-/// Audits one row of a raw collection: CBOR decode, re-encode, and a typed
-/// decode with omni-imap's reader (rows stay byte-for-byte as stored).
+/// Audits one row of a raw collection: CBOR decode and a typed decode with
+/// omni-imap's reader.
 fn audit_raw_row(
     stats: &mut EntityAudit,
     samples: &mut Vec<String>,
@@ -328,9 +235,6 @@ fn audit_raw_row(
     };
     match cbor::decode(bytes) {
         Ok(value) => {
-            if cbor::encode(&value) == *bytes {
-                stats.byte_identical += 1;
-            }
             if let Err(error) = decode_raw(entity, &row.pk, value) {
                 stats.typed_failures += 1;
                 sample(samples, &row.pk, format!("typed: {error}"));
@@ -343,34 +247,34 @@ fn audit_raw_row(
     }
 }
 
-/// Audits one row of a known entity; returns the typed re-encoding.
 fn sample(samples: &mut Vec<String>, pk: &str, reason: impl std::fmt::Display) {
     if samples.len() < 20 {
         samples.push(format!("{pk}: {reason}"));
     }
 }
 
+/// Audits one row of a known entity.
 fn audit_row(
     stats: &mut EntityAudit,
     samples: &mut Vec<String>,
     descriptor: &EntityDescriptor,
     row: &Row,
     now_ms: i64,
-) -> Option<Vec<u8>> {
+) {
     stats.rows += 1;
     if integer(&row.expires_at).is_some_and(|at| at <= now_ms) {
         stats.expired += 1;
     }
     let Some(bytes) = &row.data else {
         stats.null_data += 1;
-        return None;
+        return;
     };
     let original = match cbor::decode(bytes) {
         Ok(value) => value,
         Err(error) => {
             stats.cbor_failures += 1;
             sample(samples, &row.pk, format!("cbor: {error}"));
-            return None;
+            return;
         }
     };
     let typed = match (descriptor.roundtrip)(&original) {
@@ -378,7 +282,7 @@ fn audit_row(
         Err(error) => {
             stats.typed_failures += 1;
             sample(samples, &row.pk, format!("typed: {error}"));
-            return None;
+            return;
         }
     };
     match (descriptor.recompute_pk)(&original) {
@@ -392,60 +296,32 @@ fn audit_row(
             sample(samples, &row.pk, format!("key: {error}"));
         }
     }
-    let encoded = cbor::encode(&typed);
-    if &encoded == bytes {
-        stats.byte_identical += 1;
-    }
-    let reread = cbor::decode(&encoded).unwrap_or(JsValue::Undefined);
-    if !js_equal(&strip_undefined(&reread), &strip_undefined(&original)) {
+    let reads_back = cbor::decode(&cbor::encode(&typed))
+        .is_ok_and(|reread| cbor::same_value(&reread, &original));
+    if !reads_back {
         stats.value_diffs += 1;
         sample(samples, &row.pk, "typed round trip changed the value");
     }
-    Some(encoded)
 }
 
 /// Parsed `compat-audit` arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuditArgs {
     pub db: PathBuf,
-    pub rewrite_to: Option<PathBuf>,
 }
 
-/// Runs the subcommand; `Ok(false)` when blocking issues were found.
-pub async fn run(args: &AuditArgs, now_ms: i64) -> anyhow::Result<(bool, String)> {
+/// Runs the subcommand: `(clean, report)`, where `clean` is false when
+/// blocking issues were found.
+pub fn run(args: &AuditArgs, now_ms: i64) -> anyhow::Result<(bool, String)> {
     use anyhow::Context as _;
     let dir = tempfile_dir()?;
     let copy = dir.join("audit-copy.db");
-    copy_database(&args.db, &copy)?;
-    let conn = rusqlite::Connection::open(&copy).context("opening the copy")?;
-    let rewrite = match &args.rewrite_to {
-        Some(path) => {
-            if path.exists() {
-                anyhow::bail!(
-                    "{} already exists; --rewrite-to needs a new file",
-                    path.display()
-                );
-            }
-            // Store::open creates the blobs schema exactly like mitools.
-            let store = omni_store::Store::open(
-                path,
-                omni_store::StoreOptions::new(std::sync::Arc::new(omni_core::clock::SystemClock)),
-            )
-            .await
-            .context("creating the rewrite database")?;
-            drop(store);
-            Some(rusqlite::Connection::open(path).context("opening the rewrite database")?)
-        }
-        None => None,
-    };
-    if let Some(target) = &rewrite {
-        target.execute_batch("BEGIN")?;
-    }
-    let audit = audit(&conn, &entity_catalog(), now_ms, rewrite.as_ref())?;
-    if let Some(target) = &rewrite {
-        target.execute_batch("COMMIT")?;
-    }
+    let result = copy_database(&args.db, &copy).and_then(|()| {
+        let conn = rusqlite::Connection::open(&copy).context("opening the copy")?;
+        audit(&conn, &entity_catalog(), now_ms)
+    });
     let _ = std::fs::remove_dir_all(&dir);
+    let audit = result?;
     Ok((audit.blocking() == 0, audit.report()))
 }
 
@@ -472,19 +348,91 @@ fn copy_database(from: &Path, to: &Path) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indexmap::IndexMap;
 
     #[test]
-    fn undefined_fields_and_number_widths_do_not_count_as_diffs() {
-        let mut a = IndexMap::new();
-        a.insert("n".to_owned(), JsValue::Int(3));
-        a.insert("gone".to_owned(), JsValue::Undefined);
-        let mut b = IndexMap::new();
-        b.insert("n".to_owned(), JsValue::Float(3.0));
-        assert!(js_equal(
-            &strip_undefined(&JsValue::Object(a)),
-            &strip_undefined(&JsValue::Object(b))
-        ));
+    fn audits_typed_raw_orphan_and_corrupt_rows() {
+        use omni_store::Entity as _;
+        use omni_tasks::persistence::TaskScheduleState;
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE blobs (pk TEXT PRIMARY KEY, data BLOB, entity TEXT, \
+             version INTEGER, expires_at INTEGER, updated_at INTEGER);",
+        )
+        .unwrap();
+        let insert =
+            |pk: &str, data: Option<Vec<u8>>, entity: Option<&str>, expires: Option<i64>| {
+                conn.execute(
+                    "INSERT INTO blobs (pk, data, entity, version, expires_at, updated_at) \
+                 VALUES (?1, ?2, ?3, 0, ?4, 0)",
+                    rusqlite::params![pk, data, entity, expires],
+                )
+                .unwrap();
+            };
+        let catalog = entity_catalog();
+        let schedule = catalog
+            .iter()
+            .find(|d| d.name == TaskScheduleState::NAME)
+            .unwrap();
+        let state = JsValue::Object(
+            [
+                ("taskName".to_owned(), JsValue::String("T".to_owned())),
+                (
+                    "schedule".to_owned(),
+                    JsValue::String("0 * * * *".to_owned()),
+                ),
+                ("evaluatedThrough".to_owned(), JsValue::Int(5)),
+                ("future".to_owned(), JsValue::Undefined),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let good_pk = (schedule.recompute_pk)(&state).unwrap();
+        insert(
+            &good_pk,
+            Some(cbor::encode(&state)),
+            Some(schedule.name),
+            None,
+        );
+        insert(
+            "$task-schedule-state#s1:U",
+            Some(cbor::encode(&state)),
+            Some(schedule.name),
+            None,
+        );
+        insert("$x#bad", Some(vec![0xff, 0x00]), Some(schedule.name), None);
+        insert("$x#null", None, Some(schedule.name), Some(1));
+        let message = omni_imap::archive_store::MESSAGE_ENTITY;
+        insert(
+            "$m#1",
+            Some(cbor::encode(&JsValue::String("id".to_owned()))),
+            Some(message),
+            None,
+        );
+        insert(
+            "$gone#1",
+            Some(cbor::encode(&JsValue::Null)),
+            Some("gone"),
+            None,
+        );
+        insert("$legacy", Some(cbor::encode(&JsValue::Null)), None, None);
+
+        let audit = audit(&conn, &catalog, 10).unwrap();
+        let stats = &audit.entities[schedule.name];
+        assert_eq!(stats.rows, 4);
+        assert_eq!(
+            (stats.cbor_failures, stats.null_data, stats.expired),
+            (1, 1, 1)
+        );
+        assert_eq!(
+            (stats.typed_failures, stats.pk_mismatches, stats.value_diffs),
+            (0, 1, 0)
+        );
+        assert_eq!(audit.entities[message].rows, 1);
+        assert_eq!(audit.entities[message].typed_failures, 0);
+        assert_eq!(audit.orphans["gone"], 1);
+        assert_eq!(audit.legacy_null_entity, 1);
+        assert_eq!(audit.blocking(), 2);
+        assert!(audit.report().contains("blocking issues: 2"));
     }
 
     #[test]

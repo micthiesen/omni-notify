@@ -1,5 +1,4 @@
-//! RFC 6764 iCloud discovery (`src/calendar-events/caldav/icloud.ts` has no
-//! spec file): principal → calendar home → VEVENT collection, following the
+//! RFC 6764 iCloud discovery: principal → calendar home → VEVENT collection, following the
 //! shard redirect, never assuming a `pXX` host, resolving relative hrefs
 //! against the URL that answered.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

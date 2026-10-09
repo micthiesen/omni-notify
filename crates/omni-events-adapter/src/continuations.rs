@@ -315,8 +315,8 @@ impl Shared {
         match outcome {
             Outcome::Result(result) => {
                 self.close(entry).await;
-                // The TS SDK client rejected a non-object result and defaulted a
-                // missing `content` to `[]`.
+                // A non-object result is rejected and a missing `content`
+                // defaults to `[]`, as MCP clients expect.
                 let Value::Object(mut result) = result else {
                     return Err(ContinuationError::Upstream);
                 };
@@ -453,7 +453,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn answers_follow_the_ts_rules() {
+    fn answers_follow_the_elicitation_rules() {
         let form = json!({"method": "elicitation/create", "params": {"message": "m"}});
         let url = json!({"method": "elicitation/create", "params": {"mode": "url"}});
         let accept = json!({"action": "accept"});

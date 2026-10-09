@@ -144,7 +144,7 @@ Do not propose email scopes or calendar events unless the user explicitly asks f
     }
 }
 
-/// Every workspace, in TS order.
+/// Every workspace, in display order.
 pub fn workspace_definitions(schedule: &str) -> Vec<WorkspaceDefinition> {
     vec![purchase_research(schedule), marketplace_selling(schedule)]
 }

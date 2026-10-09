@@ -1,4 +1,4 @@
-//! Cost events, pricing and the `/api/costs` summary (`src/costs/*`, `src/ai/cost.ts`).
+//! Cost events, pricing and the `/api/costs` summary.
 
 use std::collections::BTreeMap;
 
@@ -20,8 +20,7 @@ use crate::Usage;
 const LOG: &str = "Costs";
 const DAY_MS: i64 = 86_400_000;
 
-/// `cost-event`, keyed by `eventId`. Field order follows the object `recordCostEvent`
-/// builds (`{...input, eventId, incurredAt, runId}`), so new rows encode like TS rows.
+/// `cost-event`, keyed by `eventId`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CostEventData {
@@ -37,21 +36,11 @@ pub struct CostEventData {
     pub usage: CostUsage,
     pub event_id: String,
     pub incurred_at: i64,
-    /// `runId?: string`, written as JS `undefined` outside a run (TS `context?.runId`).
-    #[serde(default, serialize_with = "serialize_or_undefined")]
+    /// The task run that incurred the cost; absent outside a run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
-}
-
-fn serialize_or_undefined<S: serde::Serializer>(
-    value: &Option<String>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    match value {
-        Some(value) => serializer.serialize_str(value),
-        None => serializer.serialize_unit_struct(omni_store::cbor::UNDEFINED_TOKEN),
-    }
 }
 
 impl Entity for CostEventData {
@@ -62,7 +51,7 @@ impl Entity for CostEventData {
     }
 }
 
-/// `RecordCostEventInput`: id, time and run default to a new UUID, now and
+/// Id, time and run default to a new UUID, now and
 /// the current run.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NewCostEvent {
@@ -80,7 +69,7 @@ pub struct NewCostEvent {
 }
 
 impl NewCostEvent {
-    /// `recordCostEvent`: fills id, time and the current run.
+    /// Fills id, time and the current run.
     pub fn into_event(self, now_ms: i64) -> CostEventData {
         CostEventData {
             category: self.category,
@@ -113,7 +102,7 @@ impl CostRecorder {
         Self { store, clock }
     }
 
-    /// `recordCostEventSafely`: a failed write is logged, never returned, so
+    /// A failed write is logged, never returned, so
     /// telemetry cannot turn a paid provider call into a retry.
     pub async fn record(&self, e: NewCostEvent) {
         let event = e.into_event(self.clock.now_ms());
@@ -201,7 +190,7 @@ pub const TTS_CHARACTER_CENTS: &[(&str, f64)] = &[
     ("voxtral-mini-tts-2603", 0.0016),
 ];
 
-/// `bareModelId`: the part after the last `:`.
+/// The part after the last `:`.
 pub fn bare_model_id(model: &str) -> &str {
     model.rsplit(':').next().unwrap_or(model)
 }
@@ -215,7 +204,7 @@ fn price_of(model: &str) -> Option<ModelPrice> {
 }
 
 /// Cost of one LLM call in USD cents; `None` when the model has no price
-/// (TS `hasPrice` false, recorded as `costCents: null`, `priceStatus: "unknown"`).
+/// (recorded as `costCents: null`, `priceStatus: "unknown"`).
 pub fn llm_cost_cents(model: &str, u: &Usage) -> Option<f64> {
     let price = price_of(model)?;
     #[allow(clippy::cast_precision_loss)]
@@ -224,7 +213,7 @@ pub fn llm_cost_cents(model: &str, u: &Usage) -> Option<f64> {
     Some(cents)
 }
 
-/// `currentCostFeature`: attribute by the current run's task name, else `fallback`.
+/// Attribute by the current run's task name, else `fallback`.
 pub fn current_cost_feature(fallback: &'static str) -> &'static str {
     let Some(run) = omni_tasks::current_run() else {
         return fallback;
@@ -269,7 +258,7 @@ impl Entity for CostMigrationData {
 /// The one historical import version.
 pub const HISTORICAL_IMPORT_VERSION: &str = "historical-v1";
 
-/// Read-only view of `briefing-history` rows (owned by WP11) for the import.
+/// Read-only view of `briefing-history` rows (owned by `omni-briefings`) for the import.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LegacyBriefingHistory {
@@ -305,7 +294,7 @@ impl Entity for LegacyBriefingHistory {
     }
 }
 
-/// Read-only view of `press-pods-episode` rows (owned by WP06) for the import.
+/// Read-only view of `press-pods-episode` rows (owned by `omni-presspods`) for the import.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LegacyPressPodsEpisode {
@@ -351,7 +340,7 @@ fn ms(value: f64) -> i64 {
     value as i64
 }
 
-/// `importHistoricalCosts`: seeds the ledger once from briefing notifications and
+/// Seeds the ledger once from briefing notifications and
 /// PressPods episodes that predate automatic capture. Returns the number of events
 /// imported (0 when `historical-v1` already ran). Runs in one transaction.
 pub async fn import_historical_costs(store: &Store) -> Result<u64, StoreError> {
@@ -498,7 +487,7 @@ fn day_key(ms: i64, tz: &TimeZone) -> String {
         .to_string()
 }
 
-/// `summarizeCosts` for `GET /api/costs`.
+/// The cost summary for `GET /api/costs`.
 pub fn summarize(
     events: &[CostEventData],
     days: CostRange,

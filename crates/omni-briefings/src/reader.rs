@@ -1,4 +1,4 @@
-//! The `BriefingsReader` port (WP12 `briefings_list`) and the `/api/briefings` view.
+//! The `BriefingsReader` port (MCP `briefings_list`) and the `/api/briefings` view.
 
 use futures::future::BoxFuture;
 use omni_api::briefings::{BriefingHistory, BriefingNotification, BriefingSummary};

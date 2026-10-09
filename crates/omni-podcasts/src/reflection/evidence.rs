@@ -3,13 +3,12 @@
 //! observation always maps to the same append-only row.
 
 use omni_core::digest::digest;
-use omni_core::js::{json_stringify, number_to_string};
+use omni_core::js::{json_stringify, number_to_string, to_fixed};
 use omni_store::cbor::Extra;
 use serde_json::{Map, Value};
 
 use super::types::{PodcastTasteEvidenceData, PodcastTasteEvidenceKind};
 use crate::account::ListenedEpisode;
-use crate::js::to_fixed;
 use crate::persistence::{PodcastFeedback, PodcastRecommendationData};
 
 /// Trimmed, lowercased show title.
@@ -17,7 +16,7 @@ pub fn normalize_show_key(show_title: &str) -> String {
     show_title.trim().to_lowercase()
 }
 
-/// `fingerprintEvidence`: order-independent digest of the evidence set.
+/// Order-independent digest of the evidence set.
 pub fn fingerprint_evidence(
     evidence: &[PodcastTasteEvidenceData],
 ) -> Result<String, serde_json::Error> {

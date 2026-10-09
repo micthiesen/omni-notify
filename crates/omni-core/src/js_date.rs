@@ -141,7 +141,7 @@ pub fn date_parse(input: &str, tz: &TimeZone) -> Option<i64> {
     (ms.abs() <= MAX_DATE_MS).then_some(ms)
 }
 
-/// `ParseES5DateTime`: `[('-'|'+')yy]yyyy[-MM[-DD]][THH:mm[:ss[.sss]][Z|(+|-)hh[:]mm]]`.
+/// `[('-'|'+')yy]yyyy[-MM[-DD]][THH:mm[:ss[.sss]][Z|(+|-)hh[:]mm]]`.
 /// Returns the first token it did not handle (`End` after a complete ES5 string),
 /// or `Invalid` once a `T` committed it to ISO and the rest does not fit.
 fn parse_es5(
@@ -487,7 +487,7 @@ fn is_millisecond(n: i64) -> bool {
     (0..1000).contains(&n)
 }
 
-/// `ReadMilliseconds`: the first three significant digits of the numeral.
+/// The first three significant digits of the numeral.
 fn read_milliseconds(token: Token) -> i64 {
     let Token::Number { value, length } = token else {
         return 0;

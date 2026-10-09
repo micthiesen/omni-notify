@@ -3,9 +3,10 @@
 
 use std::collections::HashMap;
 
+use omni_core::js::to_fixed;
+
 use crate::account::ListenedEpisode;
 use crate::castro::client::normalize_media_url;
-use crate::js::to_fixed;
 use crate::persistence::{PodcastRecommendationData, PodcastRecommendationStatus};
 use crate::titles::normalize_title;
 

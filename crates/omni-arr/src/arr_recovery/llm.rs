@@ -38,7 +38,7 @@ enum Diagnosis {
     UnsafeFailure,
 }
 
-/// `LlmVerdictSchema` (unknown properties ignored, as Effect Schema does).
+/// The model's verdict (unknown properties ignored).
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LlmVerdict {
@@ -55,7 +55,7 @@ fn defer(reason: impl Into<String>) -> Decision {
     Decision::defer(reason, DecisionSource::Llm)
 }
 
-/// `exactSet`: both lists are duplicate-free and contain the same values.
+/// Both lists are duplicate-free and contain the same values.
 fn exact_set<T: Ord + Clone>(actual: &[T], expected: &[T]) -> bool {
     let actual_set: BTreeSet<T> = actual.iter().cloned().collect();
     let expected_set: BTreeSet<T> = expected.iter().cloned().collect();
@@ -83,7 +83,7 @@ pub fn validate_llm_decision(evidence: &Evidence, raw_verdict: &Value) -> Decisi
     let Ok(verdict) = LlmVerdict::deserialize(raw_verdict) else {
         return defer(INVALID);
     };
-    let reason = crate::js_text::trim(&verdict.reason).to_owned();
+    let reason = omni_core::js::trim(&verdict.reason).to_owned();
     if reason.is_empty()
         || omni_core::js::utf16_len(&reason) > 500
         || !(0.0..=1.0).contains(&verdict.confidence)
@@ -281,7 +281,7 @@ Evidence JSON:
     )
 }
 
-/// The strict JSON schema of `llmOutputSchema` (zod `.strict()`).
+/// The strict JSON schema of the model output.
 pub fn output_schema() -> Value {
     json!({
         "type": "object",
@@ -325,8 +325,8 @@ fn array_within(value: &Value, max: usize, item: impl Fn(&Value) -> bool) -> boo
         .is_some_and(|items| items.len() <= max && items.iter().all(item))
 }
 
-/// `llmOutputSchema` (zod `.strict()`): the AI SDK rejects output that violates
-/// it, so the assessment fails (and is retried next pass) instead of deferring.
+/// The strict output checks: output that violates them fails the assessment
+/// (and is retried next pass) instead of deferring.
 pub fn check_strict_output(output: &Value) -> Result<(), String> {
     const KEYS: [&str; 7] = [
         "action",
@@ -373,7 +373,7 @@ pub fn check_strict_output(output: &Value) -> Result<(), String> {
     }
 }
 
-/// `assessWithLlm`: one bounded Luna call, then [`validate_llm_decision`].
+/// One bounded Luna call, then [`validate_llm_decision`].
 pub async fn assess_with_llm(
     ai: &Ai,
     model: &dyn LanguageModel,
@@ -405,11 +405,11 @@ pub async fn assess_with_llm(
             AiError::Timeout => {
                 ArrRecoveryError::new(OPERATION, ArrCause::Timeout(LLM_TIMEOUT.as_secs()))
             }
-            // The AI SDK's `NoObjectGeneratedError` message, unprefixed.
+            // The schema failure message, unprefixed.
             AiError::Schema(message) => ArrRecoveryError::message(OPERATION, message),
             other => ArrRecoveryError::new(OPERATION, ArrCause::Ai(other)),
         })?;
-    // zod's checks beyond JSON Schema: UTF-16 string lengths and safe integers.
+    // Checks beyond JSON Schema: UTF-16 string lengths and safe integers.
     check_strict_output(&output).map_err(|message| {
         ArrRecoveryError::message(OPERATION, format!("No object generated: {message}"))
     })?;

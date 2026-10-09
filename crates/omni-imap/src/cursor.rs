@@ -64,7 +64,7 @@ pub async fn save_folder_cursor(
 
 /// The email pipeline's dispatch watermark (`jmap-email-dispatch` singleton,
 /// owned by omni-email). Read here only for UIDVALIDITY recovery; the row
-/// layout is a persisted contract shared with TS.
+/// layout is a persisted contract.
 pub const DISPATCH_WATERMARK_PK: &str = "$jmap-email-dispatch#s9:singleton";
 
 pub async fn last_dispatched_at(store: &Store) -> Result<Option<i64>, StoreError> {

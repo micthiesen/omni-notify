@@ -1,4 +1,4 @@
-//! Port of `src/alerts/throttle.spec.ts`. The `throttleLogHook` case is
+//! Alert keys, cooldown backoff and key eviction. The log-hook chaining case is
 //! `chains_the_hook_and_drops_immediate_repeats` in `alert_layer.rs`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

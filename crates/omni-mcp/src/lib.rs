@@ -1,4 +1,4 @@
-//! MCP server, MCP Events and MCP activity (WP12).
+//! MCP server, MCP Events and MCP activity.
 //!
 //! - [`endpoint`] / [`rpc`]: the authenticated `ALL /mcp` endpoint serving
 //!   every package's tools in both protocol eras, plus `events/*`;
@@ -9,7 +9,7 @@
 //! - [`tools`]: the `system`, `events` and `claude-sessions` tool groups;
 //! - [`policy`]: the `docs/mcp-policy.json` inventory from registered tools.
 //!
-//! # Wiring (WP14)
+//! # Wiring
 //!
 //! 1. Build `omni_device_link::DeviceLink::from_context` first (it sets the
 //!    [`host::ClaudeHost`] port when `OMNI_DEVICE_LINK_TOKEN` is set), set the
@@ -18,8 +18,8 @@
 //! 2. Register [`McpPackage::email_handler`] first on the email dispatcher.
 //! 3. Collect every other subsystem's `mcp_tools`, append
 //!    [`McpPackage::tools`], and call [`McpPackage::subsystem`]; it serves
-//!    them in golden order and fails when the set differs from the golden
-//!    tool list. The returned subsystem carries the routes, tasks, entities,
+//!    them in [`tools::TOOL_ORDER`] and fails when the set differs from that
+//!    list. The returned subsystem carries the routes, tasks, entities,
 //!    boot step and delivery worker; its `mcp_tools` is empty because the
 //!    endpoint already serves every tool.
 
@@ -110,7 +110,7 @@ pub struct McpPackage {
 }
 
 impl McpPackage {
-    /// Fails like the TS boot when `OMNI_EVENTS_EXECUTOR_AUTH_URL` is not a
+    /// Fails boot when `OMNI_EVENTS_EXECUTOR_AUTH_URL` is not a
     /// credential-free HTTP(S) URL, and when a configured device link has not
     /// set the `ClaudeHost` port yet.
     pub fn new(ctx: &AppContext) -> Result<Self, McpSetupError> {

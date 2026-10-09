@@ -1,5 +1,3 @@
-//! `extractBetweenTags`.
-
 use regex::RegexBuilder;
 
 /// The text a model wrapped in `<tag>…</tag>`.
@@ -31,14 +29,14 @@ pub fn extract_between_tags(text: &str, tag: &str) -> Option<String> {
     (!tail.is_empty()).then_some(tail)
 }
 
-/// The error message TS threw when no content was found.
+/// The error message when no content was found between the tags.
 pub fn missing_tags_message(tag: &str) -> String {
     format!("Failed to extract content between <{tag}> tags")
 }
 
 #[cfg(test)]
 mod parsing_spec {
-    //! Ports `src/press-pods/agents/parsing.spec.ts`.
+    //! Tag extraction cases.
     use super::extract_between_tags;
 
     #[test]

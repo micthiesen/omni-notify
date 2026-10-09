@@ -1,7 +1,7 @@
-//! Wire details found in the parity review that the TS specs do not pin:
-//! the SDK's `liftWireOnlyMaterial` before strict `events/*` params checks,
-//! zod's safe-integer issues on `ttlMs`, and schema refinements (input-phase
-//! tool errors) answered like SDK argument validation without being recorded.
+//! Wire details: wire-only material lifted out of `events/*` params before the
+//! strict checks, safe-integer issues on `ttlMs`, and schema refinements
+//! (input-phase tool errors) answered like argument validation without being
+//! recorded.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -185,14 +185,14 @@ async fn schema_refinements_fail_like_argument_validation_and_are_not_recorded()
     let clock = clock();
     let db = test_store(&clock).await;
     let refined = raw_tool(
-        "email_search",
+        def("email_search"),
         Arc::new(FnTool(|_: Value| -> Result<ToolOutput, ToolError> {
             Err(ToolError::input("before must be later than since"))
         })),
     )
     .unwrap();
     let failing = raw_tool(
-        "tasks_list",
+        def("tasks_list"),
         Arc::new(FnTool(|_: Value| -> Result<ToolOutput, ToolError> {
             Err(ToolError::execute("registry unavailable"))
         })),

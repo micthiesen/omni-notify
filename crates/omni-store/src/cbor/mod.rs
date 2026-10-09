@@ -1,9 +1,11 @@
-//! node-cbor 10.0.12 compatible codec (section 4.3).
+//! The docstore's CBOR codec.
 //!
-//! [`encode`] follows node's `Encoder` defaults and [`decode`] follows
-//! `Decoder.decodeFirstSync`; `tests/cbor_golden.rs` checks both against
-//! committed vectors produced by node-cbor. [`to_value`] and
-//! [`from_value`] bridge serde types and [`JsValue`].
+//! [`decode`] reads every payload the store holds, including older rows
+//! written by node-cbor, into [`JsValue`]; [`encode`]
+//! writes plain CBOR that [`decode`] reads back as the same value
+//! ([`same_value`]). `tests/cbor_golden.rs` checks the decoder against
+//! committed node-cbor vectors. [`to_value`] and [`from_value`] bridge serde
+//! types and [`JsValue`].
 //!
 //! # Serde protocol
 //! JS-only values travel through serde under reserved names:
@@ -36,7 +38,6 @@ mod value_de;
 mod value_ser;
 
 use indexmap::IndexMap;
-use omni_core::js::utf16_len;
 use serde::de::{self, DeserializeOwned, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq, SerializeTupleStruct};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -57,7 +58,7 @@ pub const SIMPLE_TOKEN: &str = "$omni::cbor::Simple";
 /// Reserved serde name for any other tagged value.
 pub const TAGGED_TOKEN: &str = "$omni::cbor::Tagged";
 
-/// A decoded document as node-cbor hands it to JS.
+/// A decoded document, modelled on the JS values the store has always held.
 #[derive(Clone, Debug, PartialEq)]
 pub enum JsValue {
     Undefined,
@@ -70,8 +71,7 @@ pub enum JsValue {
     String(String),
     Bytes(Vec<u8>),
     Array(Vec<JsValue>),
-    /// Text-keyed map (a JS object), insertion ordered. Encoding writes
-    /// canonical array-index keys first, like `Object.keys`.
+    /// Text-keyed map (a JS object), insertion ordered.
     Object(IndexMap<String, JsValue>),
     /// Map with at least one non-text key (or a `__proto__` key): a JS `Map`.
     Map(Vec<(JsValue, JsValue)>),
@@ -204,9 +204,52 @@ pub(crate) fn same_value_zero(a: &JsValue, b: &JsValue) -> bool {
     }
 }
 
+/// Whether two documents hold the same JS value: numbers compare by value
+/// (CBOR int `3` and float `3.0` are one JS number, `NaN` equals `NaN`),
+/// object key order is ignored, and an object property holding `undefined`
+/// equals an absent one. [`encode`] then [`decode`] preserves this equality.
+pub fn same_value(a: &JsValue, b: &JsValue) -> bool {
+    #[allow(clippy::cast_precision_loss)]
+    let number = |v: &JsValue| match v {
+        JsValue::Int(i) if i.unsigned_abs() <= MAX_SAFE_INTEGER_U128 => Some(*i as f64),
+        JsValue::Float(f) => Some(*f),
+        _ => None,
+    };
+    let defined = |map: &IndexMap<String, JsValue>| {
+        map.values().filter(|v| **v != JsValue::Undefined).count()
+    };
+    match (a, b) {
+        (JsValue::Object(x), JsValue::Object(y)) => {
+            defined(x) == defined(y)
+                && x.iter()
+                    .filter(|(_, v)| **v != JsValue::Undefined)
+                    .all(|(k, v)| y.get(k).is_some_and(|w| same_value(v, w)))
+        }
+        (JsValue::Array(x), JsValue::Array(y)) | (JsValue::Set(x), JsValue::Set(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(v, w)| same_value(v, w))
+        }
+        (JsValue::Map(x), JsValue::Map(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .zip(y)
+                    .all(|((k1, v1), (k2, v2))| same_value(k1, k2) && same_value(v1, v2))
+        }
+        (JsValue::Tagged(t1, v1), JsValue::Tagged(t2, v2)) => t1 == t2 && same_value(v1, v2),
+        (JsValue::Int(x) | JsValue::BigInt(x), JsValue::Int(y) | JsValue::BigInt(y))
+            if number(a).is_none() && number(b).is_none() =>
+        {
+            x == y
+        }
+        (JsValue::Date(x), JsValue::Date(y)) => x == y || (x.is_nan() && y.is_nan()),
+        _ => match (number(a), number(b)) {
+            (Some(x), Some(y)) => x == y || (x.is_nan() && y.is_nan()),
+            _ => a == b,
+        },
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Encoder (node `Encoder` defaults: non-canonical, dateType "number",
-// collapseBigIntegers false, omitUndefinedProperties false).
+// Encoder: definite lengths, shortest integer heads, insertion-ordered maps.
 
 const MT_POS: u8 = 0;
 const MT_NEG: u8 = 1;
@@ -218,7 +261,12 @@ const MT_TAG: u8 = 6;
 const MT_SIMPLE: u8 = 7;
 const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
-/// Encodes `v` exactly as node-cbor's `encodeDoc` would encode the JS value.
+/// Encodes `v` as CBOR that [`decode`] reads back as the same JS value.
+///
+/// Integral numbers use integer heads, other numbers 64-bit floats (`NaN` as
+/// the canonical half float). Object entries holding `undefined` are omitted,
+/// since an absent property and an `undefined` one read the same; arrays keep
+/// `undefined` items so positions survive.
 pub fn encode(v: &JsValue) -> Vec<u8> {
     let mut out = Vec::new();
     push_value(&mut out, v);
@@ -248,54 +296,22 @@ fn push_len(out: &mut Vec<u8>, major: u8, len: usize) {
     push_head(out, major, u64::try_from(len).unwrap_or(u64::MAX));
 }
 
-/// `_pushFloat` (non-canonical): f32 when `Math.fround(x) === x`, else f64.
-fn push_float(out: &mut Vec<u8>, x: f64) {
-    #[allow(clippy::cast_possible_truncation)]
-    let narrowed = x as f32;
-    if f64::from(narrowed) == x {
-        out.push(0xfa);
-        out.extend_from_slice(&narrowed.to_be_bytes());
+/// A JS number: an integer head when it is integral and within the safe
+/// range (so it reads back as the same number), otherwise a float.
+fn push_number(out: &mut Vec<u8>, x: f64) {
+    if x.is_nan() {
+        out.extend_from_slice(&[0xf9, 0x7e, 0x00]);
+    } else if x.fract() == 0.0 && x.abs() <= MAX_SAFE_INTEGER && !(x == 0.0 && x.is_sign_negative())
+    {
+        #[allow(clippy::cast_possible_truncation)]
+        push_int(out, x as i128);
     } else {
         out.push(0xfb);
         out.extend_from_slice(&x.to_be_bytes());
     }
 }
 
-/// `_pushNumber`: NaN/Infinity halves, -0, integers up to MAX_SAFE_INTEGER, floats.
-fn push_number(out: &mut Vec<u8>, x: f64) {
-    if x.is_nan() {
-        out.extend_from_slice(&[0xf9, 0x7e, 0x00]);
-    } else if x.is_infinite() {
-        out.extend_from_slice(if x < 0.0 {
-            &[0xf9, 0xfc, 0x00]
-        } else {
-            &[0xf9, 0x7c, 0x00]
-        });
-    } else if x.round() == x {
-        if x == 0.0 && x.is_sign_negative() {
-            out.extend_from_slice(&[0xf9, 0x80, 0x00]);
-        } else if x >= 0.0 {
-            if x <= MAX_SAFE_INTEGER {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                push_head(out, MT_POS, x as u64);
-            } else {
-                push_float(out, x);
-            }
-        } else {
-            let magnitude = -x - 1.0;
-            if magnitude <= MAX_SAFE_INTEGER - 1.0 {
-                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                push_head(out, MT_NEG, magnitude as u64);
-            } else {
-                push_float(out, x);
-            }
-        }
-    } else {
-        push_float(out, x);
-    }
-}
-
-/// `_pushJSBigint` with `collapseBigIntegers: false`: always tag 2/3 + bytes.
+/// Tag 2/3 over the big-endian magnitude (RFC 8949 bignum).
 fn push_bigint(out: &mut Vec<u8>, n: i128) {
     let (tag, magnitude) = if n < 0 {
         (3, (-(n + 1)).unsigned_abs())
@@ -312,59 +328,22 @@ fn push_bigint(out: &mut Vec<u8>, n: i128) {
     out.extend_from_slice(&bytes[first..]);
 }
 
+/// Major type 0/1 when the value fits a 64-bit head, a bignum otherwise.
 fn push_int(out: &mut Vec<u8>, n: i128) {
-    // Integers within the safe range came from (and go back to) JS numbers.
-    // Larger 64-bit values are BigInts in node-cbor's decoder, so they are
-    // re-encoded the way node encodes a BigInt.
-    const SAFE: i128 = 9_007_199_254_740_991;
-    if (0..=SAFE).contains(&n) {
-        push_head(out, MT_POS, u64::try_from(n).unwrap_or(0));
-    } else if (-SAFE..0).contains(&n) {
-        push_head(out, MT_NEG, u64::try_from(-(n + 1)).unwrap_or(0));
+    let head = if n >= 0 {
+        u64::try_from(n).ok().map(|m| (MT_POS, m))
     } else {
-        push_bigint(out, n);
+        u64::try_from(-(n + 1)).ok().map(|m| (MT_NEG, m))
+    };
+    match head {
+        Some((major, magnitude)) => push_head(out, major, magnitude),
+        None => push_bigint(out, n),
     }
 }
 
 fn push_text(out: &mut Vec<u8>, s: &str) {
     push_len(out, MT_TEXT, s.len());
     out.extend_from_slice(s.as_bytes());
-}
-
-/// Canonical array index (`"0"` or no leading zero, below 2^32 - 1).
-fn array_index(key: &str) -> Option<u32> {
-    if key.is_empty() || key.len() > 10 || (key.len() > 1 && key.starts_with('0')) {
-        return None;
-    }
-    if !key.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    key.parse::<u64>()
-        .ok()
-        .filter(|n| *n < u64::from(u32::MAX))
-        .and_then(|n| u32::try_from(n).ok())
-}
-
-/// Canonical array index keys first (ascending), then insertion order: the
-/// order `Object.keys` yields and node-cbor writes.
-pub(crate) fn js_key_order(map: &IndexMap<String, JsValue>) -> Vec<(&String, &JsValue)> {
-    let mut indexed: Vec<(u32, &String, &JsValue)> = Vec::new();
-    let mut named = Vec::new();
-    for (key, value) in map {
-        match array_index(key) {
-            Some(i) => indexed.push((i, key, value)),
-            None => named.push((key, value)),
-        }
-    }
-    if indexed.is_empty() {
-        return named;
-    }
-    indexed.sort_by_key(|(i, _, _)| *i);
-    indexed
-        .into_iter()
-        .map(|(_, k, v)| (k, v))
-        .chain(named)
-        .collect()
 }
 
 fn push_value(out: &mut Vec<u8>, v: &JsValue) {
@@ -386,8 +365,12 @@ fn push_value(out: &mut Vec<u8>, v: &JsValue) {
             }
         }
         JsValue::Object(map) => {
-            push_len(out, MT_MAP, map.len());
-            for (key, value) in js_key_order(map) {
+            let defined = || {
+                map.iter()
+                    .filter(|(_, value)| **value != JsValue::Undefined)
+            };
+            push_len(out, MT_MAP, defined().count());
+            for (key, value) in defined() {
                 push_text(out, key);
                 push_value(out, value);
             }
@@ -419,8 +402,7 @@ fn push_value(out: &mut Vec<u8>, v: &JsValue) {
     }
 }
 
-/// Serializes `t` into the JS value TS would have built: struct fields in
-/// declaration order, `None` as `null` unless skipped, unit variants as
+/// Serializes `t` into a [`JsValue`]: struct fields in declaration order, `None` as `null` unless skipped, unit variants as
 /// strings, maps with only string keys as objects.
 pub fn to_value<T: Serialize + ?Sized>(t: &T) -> Result<JsValue, EncodeError> {
     t.serialize(value_ser::ValueSerializer)
@@ -429,11 +411,6 @@ pub fn to_value<T: Serialize + ?Sized>(t: &T) -> Result<JsValue, EncodeError> {
 /// Self-describing deserialization of a decoded document into `T`.
 pub fn from_value<T: DeserializeOwned>(v: JsValue) -> Result<T, DecodeError> {
     T::deserialize(value_de::ValueDeserializer::new(v))
-}
-
-/// The JS string length of a value's text, used by key encoding.
-pub(crate) fn js_len(s: &str) -> usize {
-    utf16_len(s)
 }
 
 // ---------------------------------------------------------------------------
@@ -704,38 +681,47 @@ mod tests {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
-    // Expected bytes produced with node: require("cbor").encode(...) (cbor 10.0.12).
+    fn round_trips(v: &JsValue) -> bool {
+        decode(&encode(v)).is_ok_and(|back| same_value(&back, v))
+    }
+
     #[test]
-    fn numbers_follow_node_rules() {
+    fn numbers_use_integer_heads_or_doubles() {
         assert_eq!(hex(&encode(&JsValue::Float(0.0))), "00");
-        assert_eq!(hex(&encode(&JsValue::Float(-0.0))), "f98000");
         assert_eq!(hex(&encode(&JsValue::Float(23.0))), "17");
         assert_eq!(hex(&encode(&JsValue::Float(24.0))), "1818");
         assert_eq!(hex(&encode(&JsValue::Float(-1.0))), "20");
-        assert_eq!(hex(&encode(&JsValue::Float(1.5))), "fa3fc00000");
-        assert_eq!(hex(&encode(&JsValue::Float(0.1))), "fb3fb999999999999a");
+        assert_eq!(hex(&encode(&JsValue::Float(1.5))), "fb3ff8000000000000");
         assert_eq!(hex(&encode(&JsValue::Float(f64::NAN))), "f97e00");
-        assert_eq!(hex(&encode(&JsValue::Float(f64::NEG_INFINITY))), "f9fc00");
-        assert_eq!(
-            hex(&encode(&JsValue::Float(9_007_199_254_740_991.0))),
-            "1b001fffffffffffff"
-        );
-        assert_eq!(
-            hex(&encode(&JsValue::Float(9_007_199_254_740_992.0))),
-            "fa5a000000"
-        );
         assert_eq!(
             hex(&encode(&JsValue::Float(1_760_000_000_123.0))),
             "1b00000199c82cc07b"
         );
         assert_eq!(
-            hex(&encode(&JsValue::Float(-9_007_199_254_740_991.0))),
-            "3b001ffffffffffffe"
+            hex(&encode(&JsValue::Int(18_446_744_073_709_551_615))),
+            "1bffffffffffffffff"
         );
-        assert_eq!(
-            hex(&encode(&JsValue::Float(-9_007_199_254_740_992.0))),
-            "fada000000"
-        );
+        for x in [
+            -0.0,
+            0.1,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            9_007_199_254_740_991.0,
+            9_007_199_254_740_992.0,
+            -9_007_199_254_740_992.0,
+            f64::MAX,
+        ] {
+            let back = decode(&encode(&JsValue::Float(x))).expect("decodes");
+            let back = back.as_f64().expect("number");
+            assert_eq!(back.to_bits(), x.to_bits(), "{x}");
+        }
+        for n in [
+            i128::from(u64::MAX) + 1,
+            -i128::from(u64::MAX) - 2,
+            1 << 100,
+        ] {
+            assert!(round_trips(&JsValue::Int(n)), "{n}");
+        }
     }
 
     #[test]
@@ -744,12 +730,12 @@ mod tests {
         object.insert("b".to_owned(), JsValue::Undefined);
         object.insert("1".to_owned(), JsValue::Null);
         object.insert("a".to_owned(), JsValue::String("é".to_owned()));
-        assert_eq!(
-            hex(&encode(&JsValue::Object(object))),
-            "a36131f66162f7616162c3a9"
-        );
+        let object = JsValue::Object(object);
+        assert_eq!(hex(&encode(&object)), "a26131f6616162c3a9");
+        assert!(round_trips(&object));
         assert_eq!(hex(&encode(&JsValue::Date(1_000.0))), "c101");
-        assert_eq!(hex(&encode(&JsValue::Date(1_500.0))), "c1fa3fc00000");
+        assert!(round_trips(&JsValue::Date(1_500.0)));
+        assert!(round_trips(&JsValue::Date(-1.0)));
         assert_eq!(
             hex(&encode(&JsValue::Set(vec![JsValue::Bool(true)]))),
             "d9010281f5"
@@ -758,6 +744,26 @@ mod tests {
         assert_eq!(hex(&encode(&JsValue::BigInt(-1))), "c34100");
         assert_eq!(hex(&encode(&JsValue::Simple(16))), "f0");
         assert_eq!(hex(&encode(&JsValue::Simple(255))), "f8ff");
+        assert!(round_trips(&JsValue::Array(vec![JsValue::Undefined])));
+    }
+
+    #[test]
+    fn same_value_ignores_widths_order_and_undefined_fields() {
+        let a = JsValue::Object(IndexMap::from([
+            ("n".to_owned(), JsValue::Int(3)),
+            ("gone".to_owned(), JsValue::Undefined),
+            ("s".to_owned(), JsValue::String("x".to_owned())),
+        ]));
+        let b = JsValue::Object(IndexMap::from([
+            ("s".to_owned(), JsValue::String("x".to_owned())),
+            ("n".to_owned(), JsValue::Float(3.0)),
+        ]));
+        assert!(same_value(&a, &b));
+        assert!(!same_value(&a, &JsValue::Object(IndexMap::new())));
+        assert!(!same_value(
+            &JsValue::Array(vec![JsValue::Undefined]),
+            &JsValue::Array(vec![])
+        ));
     }
 
     #[test]

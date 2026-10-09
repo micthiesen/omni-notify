@@ -1,4 +1,4 @@
-//! Boot order with stub subsystems (`src/index.ts` order), server-only mode,
+//! Boot order with stub subsystems, server-only mode,
 //! and a clean shutdown.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
@@ -112,7 +112,7 @@ async fn boot(server_only: bool) -> (Vec<String>, Vec<String>, Vec<String>) {
 }
 
 #[tokio::test]
-async fn boots_in_ts_order_and_shuts_down() {
+async fn boots_in_order_and_shuts_down() {
     let (events, steps, tasks) = boot(false).await;
     assert_eq!(
         events,

@@ -1,7 +1,7 @@
 //! Background services: started once after boot on the app tracker; a service
 //! with a [`RetryPolicy`] is started again when its future ends before
-//! shutdown, after a jittered exponential delay (mitools `exponentialBackoff`:
-//! `min(exponential(base), spaced(max))`, jittered by 0.8 to 1.2).
+//! shutdown, after a jittered exponential delay
+//! (`min(exponential(base), max)`, jittered by 0.8 to 1.2).
 
 use std::time::Duration;
 
@@ -21,7 +21,7 @@ pub fn backoff_delay(policy: RetryPolicy, attempt: u32) -> Duration {
         .min(policy.max)
 }
 
-/// Effect's `Schedule.jittered`: a uniform factor in `[0.8, 1.2)`.
+/// Scales `delay` by a uniform factor in `[0.8, 1.2)`.
 pub fn jittered(delay: Duration) -> Duration {
     delay.mul_f64(rand::random_range(0.8..1.2))
 }

@@ -1,4 +1,4 @@
-//! The briefings subsystem WP14 wires.
+//! The briefings subsystem as app wiring receives it.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_testkit::TestApp;

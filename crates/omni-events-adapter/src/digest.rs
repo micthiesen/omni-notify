@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 /// Key-sorted compact JSON. Only compared within one process, so it needs to be
-/// deterministic, not byte-identical to the TS rendering.
+/// deterministic, not byte-identical to any other rendering.
 pub fn canonical(value: &Value) -> String {
     let mut out = String::new();
     write(value, &mut out);
@@ -42,7 +42,7 @@ fn write(value: &Value, out: &mut String) {
 }
 
 /// SHA-256 over `{name, arguments ?? {}}`. A missing name is distinct from every
-/// string name (TS renders `undefined`).
+/// string name.
 pub fn args_digest(params: &Map<String, Value>) -> String {
     let name = match params.get("name") {
         Some(value) => canonical(value),

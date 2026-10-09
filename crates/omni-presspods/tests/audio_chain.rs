@@ -1,6 +1,5 @@
-//! Ports `src/press-pods/speech/audioChain.effect.spec.ts` and pins the
-//! ffmpeg arguments (`tests/golden/ffmpeg-args.json`, taken from
-//! `src/press-pods/speech/audioChain.ts`) with a recording fake ffmpeg. The
+//! The audio chain, with the ffmpeg arguments pinned
+//! (`tests/golden/ffmpeg-args.json`) by a recording fake ffmpeg. The
 //! real-ffmpeg run is `#[ignore]` (it needs ffmpeg with arnndn on PATH).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

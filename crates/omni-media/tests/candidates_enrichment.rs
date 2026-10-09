@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/candidates.enrichment.spec.ts`.
+//! Candidate enrichment with TMDB details.
 #![allow(clippy::expect_used)]
 
 mod common;

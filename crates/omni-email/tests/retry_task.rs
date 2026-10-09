@@ -1,4 +1,4 @@
-//! Port of `src/email/retryTask.spec.ts` and `src/email/retry.effect.spec.ts`.
+//! The durable email retry queue and its task.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -200,9 +200,8 @@ async fn defers_while_the_pipelines_are_not_connected() {
     );
 }
 
-/// `retry.effect.spec.ts`.
 #[tokio::test(start_paused = true)]
-async fn uses_the_effect_clock_and_decodes_persisted_rows() {
+async fn uses_the_paused_clock_and_decodes_persisted_rows() {
     let (store, _clock) = store_at(1_800_000_000_000).await;
     retry::enqueue(
         &store.store,

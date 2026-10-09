@@ -1,4 +1,4 @@
-//! Port of `src/ai/tools/fetchUrl.spec.ts` (`htmlToMarkdown`).
+//! The `fetch_url` tool's HTML-to-Markdown conversion.
 
 use omni_ai::tools::{MAX_OUTPUT_CHARS, html_to_markdown};
 

@@ -8,8 +8,7 @@ use std::sync::Arc;
 use jiff::tz::TimeZone;
 use jiff::{Span, Zoned};
 use omni_core::clock::{SharedClock, SystemClock};
-use omni_core::js::to_iso_string;
-use omni_personal::js::math_round;
+use omni_core::js::{math_round, to_iso_string};
 use omni_personal::pets::persistence::{PetRow, PetStore, WeightHistoryRow};
 use omni_store::{Store, StoreOptions};
 

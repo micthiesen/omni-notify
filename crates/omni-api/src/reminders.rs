@@ -1,4 +1,4 @@
-//! Owned by WP10: the public Reminders administration status
+//! The public Reminders administration status
 //! (`GET /api/reminders/status`, `POST /api/reminders/auth/{start,code,verify}`).
 //!
 //! These payloads carry no account data: only a bounded phase, reason, challenge
@@ -87,7 +87,7 @@ pub enum DiagnosticCategory {
     Authentication,
 }
 
-/// `RemindersDiagnostic`; `httpStatus` only within 100..=599.
+/// A Reminders diagnostic; `httpStatus` only within 100..=599.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Diagnostic {
@@ -97,7 +97,6 @@ pub struct Diagnostic {
     pub http_status: Option<u16>,
 }
 
-/// `RemindersPublicStatus`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicStatus {
@@ -159,7 +158,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_round_trips_the_ts_shape() {
+    fn status_round_trips_the_wire_shape() {
         let raw = r#"{"enabled":true,"phase":"transient-outage","reason":"pcs","challengeId":"c","challengeExpiresAt":1800000000000,"diagnostic":{"stage":"sign-in-init","category":"apple-response","httpStatus":503}}"#;
         let status: PublicStatus = serde_json::from_str(raw).unwrap();
         assert_eq!(serde_json::to_string(&status).unwrap(), raw);

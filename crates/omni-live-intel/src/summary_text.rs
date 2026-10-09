@@ -6,10 +6,8 @@ use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use icu_normalizer::ComposingNormalizerBorrowed;
-use omni_core::js::{utf16_len, utf16_slice};
+use omni_core::js::{is_js_whitespace, utf16_len, utf16_slice};
 use regex::Regex;
-
-use crate::js_math::is_js_whitespace;
 
 const SUMMARY_MAX_CHARS: usize = 220;
 const TOPIC_MAX_CHARS: usize = 60;

@@ -54,9 +54,8 @@ pub struct EnvConfig {
 }
 
 impl AdapterOptions {
-    /// Builds options from raw strings, rejecting empty or unparsable values. TS
-    /// rejected empty values at startup and failed per request on a bad URL; both
-    /// now fail boot.
+    /// Builds options from raw strings, rejecting empty or unparsable values so
+    /// a bad configuration fails boot rather than each request.
     pub fn new(
         executor_base_url: &str,
         omni_base_url: &str,
@@ -88,7 +87,7 @@ impl AdapterOptions {
 }
 
 impl EnvConfig {
-    /// Reads the same variables and defaults as the TS adapter.
+    /// Reads the adapter's environment variables, with their defaults.
     pub fn from_env(get: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
         let or = |key: &str, default: &str| get(key).unwrap_or_else(|| default.to_owned());
         let options = AdapterOptions::new(
@@ -103,7 +102,7 @@ impl EnvConfig {
     }
 }
 
-/// `PORT` with the TS default.
+/// `PORT`, with its default.
 pub fn port_from(value: Option<String>) -> Result<u16, ConfigError> {
     match value {
         None => Ok(DEFAULT_PORT),
@@ -126,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_the_ts_adapter() {
+    fn defaults_are_applied() {
         let config = EnvConfig::from_env(env(&[
             ("OMNI_MCP_TOKEN", "t"),
             ("EXECUTOR_ALLOWED_USER_ID", "u"),

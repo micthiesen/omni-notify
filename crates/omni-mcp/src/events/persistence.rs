@@ -80,7 +80,7 @@ pub struct EventSubscription {
 }
 
 impl EventSubscription {
-    /// `decodeSubscription`: stored arguments, else the legacy folder, else none.
+    /// Stored arguments, else the legacy folder, else none.
     pub fn effective_arguments(&self) -> EventArguments {
         match (&self.arguments, &self.folder) {
             (Some(arguments), _) => arguments.clone(),
@@ -123,7 +123,7 @@ impl Entity for EventReceipt {
 }
 
 /// `mcp-event-delivery`: one outbox row per subscription and event. Field
-/// order follows the TS writes (`{...row, ...}` appends the optional keys).
+/// order matches the stored rows (optional keys come last).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventDelivery {
@@ -251,7 +251,7 @@ fn sort_requests(rows: &mut [EventRequest]) {
     });
 }
 
-/// `EventPersistence`: each call is one store job.
+/// Each call is one store job.
 #[derive(Clone)]
 pub struct EventStore {
     store: Store,

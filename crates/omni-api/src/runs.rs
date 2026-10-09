@@ -1,4 +1,4 @@
-//! Task runs and run logs (WP00): `/api/task-runs`, `/api/task-runs/:id/logs`
+//! Task runs and run logs: `/api/task-runs`, `/api/task-runs/:id/logs`
 //! and the `init` / `line` / `done` frames of its SSE stream.
 
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,7 @@ pub enum RunStatus {
     Error,
 }
 
-/// `serializeRun()` in `src/server.ts`: optional fields are explicit `null`s.
+/// One task run; optional fields are explicit `null`s.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {

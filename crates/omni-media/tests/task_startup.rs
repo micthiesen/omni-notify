@@ -1,5 +1,5 @@
-//! Port of `src/recommendations/task-startup.spec.ts`, plus the disabled-task
-//! and manual-input policies of `task.ts`.
+//! Recommendation task startup, plus the disabled-task and manual-input
+//! policies.
 #![allow(clippy::expect_used)]
 
 mod common;

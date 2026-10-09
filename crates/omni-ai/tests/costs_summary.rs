@@ -1,4 +1,4 @@
-//! Port of `src/costs/summary.spec.ts`.
+//! The `/api/costs` summary.
 #![allow(clippy::unwrap_used)]
 
 use jiff::tz::TimeZone;

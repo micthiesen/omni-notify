@@ -6,14 +6,13 @@ use std::sync::Arc;
 use futures::future::BoxFuture;
 use jiff::tz::TimeZone;
 use omni_core::clock::SharedClock;
-use omni_core::js::to_iso_string;
+use omni_core::js::{date_parse, math_round, to_iso_string};
 use omni_tasks::{CronSchedule, InvalidScheduleError, RunContext, Task, TaskError, TaskOptions};
 
 use super::api::{WhiskerApi, WhiskerApiError};
 use super::auth::{WhiskerAuth, WhiskerAuthenticationError};
 use super::math::{Point, linear_regression};
 use super::persistence::{PetRow, PetStore, WeightHistoryRow};
-use crate::js::{math_round, parse_date};
 
 pub const TASK_NAME: &str = "PetTracker";
 pub const SCHEDULE: &str = "0 */10 * * * *";
@@ -163,7 +162,7 @@ impl PetTrackerTask {
         if history.len() < 2 {
             return Ok(format!("{}: {weight}", pet.name));
         }
-        let at = |row: &WeightHistoryRow| parse_date(&row.timestamp, &self.tz);
+        let at = |row: &WeightHistoryRow| date_parse(&row.timestamp, &self.tz);
         #[allow(clippy::cast_precision_loss)]
         let points: Vec<Point> = match at(&history[0]) {
             Some(t0) => history

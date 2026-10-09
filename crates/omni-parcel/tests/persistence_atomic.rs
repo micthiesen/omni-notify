@@ -1,4 +1,4 @@
-//! Port of `src/parcel-tracker/persistence.atomic.spec.ts`.
+//! Atomic delivery reservation and confirmation.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_core::clock::TestClock;

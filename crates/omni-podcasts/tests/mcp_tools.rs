@@ -53,7 +53,7 @@ async fn call(tool: &McpTool, input: Value) -> Result<Map<String, Value>, ToolEr
 }
 
 #[tokio::test]
-async fn registers_the_seven_tools_in_ts_order() {
+async fn registers_the_seven_tools_in_serving_order() {
     let (_store, state) = state(None).await;
     let names: Vec<String> = tools(state)
         .unwrap()

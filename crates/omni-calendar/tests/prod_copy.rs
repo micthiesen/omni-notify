@@ -2,9 +2,9 @@
 //! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-calendar --test prod_copy -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first. Every
 //! `calendar-created-event` row must decode into the typed entity, recompute its
-//! own primary key, re-encode to the stored JS value (modulo `undefined` object
-//! fields, which TS reads like absent ones), and already carry the current
-//! `computeEventHash` key (so the boot reconcile is a no-op).
+//! own primary key, re-encode to the stored value (modulo `undefined` object
+//! fields, which read like absent ones), and already carry the current
+//! event hash key (so the boot reconcile is a no-op).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::sync::Arc;

@@ -1,7 +1,5 @@
-//! Port of `src/effect/errors.spec.ts` (`isTransientHttpError` becomes
-//! `HttpError::is_transient`). The TS "typed adapter error" wrapping is the
-//! `Network` variant here; aborts and programming errors have no variant that
-//! is transient.
+//! `HttpError::is_transient`: transport failures, rate limits and server errors
+//! are retryable; client failures and programming or policy errors are not.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_http::HttpError;

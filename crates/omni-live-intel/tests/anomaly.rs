@@ -1,4 +1,4 @@
-//! Port of `src/live-check/intelligence/anomaly.spec.ts`.
+//! Viewer-surge anomaly detection.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::collections::HashSet;

@@ -16,7 +16,7 @@ pub enum SubmissionStatus {
     Rejected,
 }
 
-/// `SubmittedDeliveryData` (entity `parcel-submitted-delivery`, key `trackingNumber`).
+/// A submitted delivery (entity `parcel-submitted-delivery`, key `trackingNumber`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubmittedDelivery {
@@ -69,14 +69,14 @@ pub async fn get(
         .await
 }
 
-/// `hasSubmittedDelivery`: a terminal row exists.
+/// A terminal row exists.
 pub async fn has_submitted(store: &Store, tracking_number: &str) -> Result<bool, StoreError> {
     Ok(get(store, tracking_number)
         .await?
         .is_some_and(|row| row.is_terminal()))
 }
 
-/// `getAllTrackingNumbers`: every terminal tracking number, in store order
+/// Every terminal tracking number, in store order
 /// (the order `findNearDuplicateTracking` reports its first match from).
 pub async fn all_tracking_numbers(store: &Store) -> Result<Vec<String>, StoreError> {
     Ok(store
@@ -91,7 +91,7 @@ pub async fn all_tracking_numbers(store: &Store) -> Result<Vec<String>, StoreErr
 /// Both strings must be at least this long for a containment match.
 const NEAR_DUPLICATE_MIN_LENGTH: usize = 8;
 
-/// `findNearDuplicateTracking`: an equal known number, or one where both are
+/// An equal known number, or one where both are
 /// at least 8 characters and one contains the other (merchants truncate the
 /// same shipment's number differently, e.g. `P5253806501` vs `P52538065`).
 pub fn find_near_duplicate_tracking<'a, I>(candidate: &str, known_numbers: I) -> Option<&'a str>
@@ -107,7 +107,7 @@ where
     })
 }
 
-/// `recordSubmittedDelivery`: writes a terminal outcome.
+/// Writes a terminal outcome.
 pub async fn record(
     store: &Store,
     attempt: DeliveryAttempt,
@@ -136,7 +136,7 @@ pub async fn record(
         .await
 }
 
-/// `reserveDeliverySubmission`: persists intent (`pending`, attempts + 1)
+/// Persists intent (`pending`, attempts + 1)
 /// atomically before Parcel is called.
 pub async fn reserve(
     store: &Store,

@@ -1,6 +1,5 @@
-//! Port of `src/effect/http.spec.ts` (bounded JSON request bodies). The TS
-//! "keeps oversize failures typed" case is the rejection type here: the
-//! extractor itself answers 413 before the handler runs.
+//! Bounded JSON request bodies. An oversize body is rejected by the extractor
+//! itself, which answers 413 before the handler runs.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;

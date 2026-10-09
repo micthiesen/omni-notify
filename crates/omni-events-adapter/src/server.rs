@@ -240,8 +240,8 @@ const SINGLE_VALUE_HEADERS: [&str; 17] = [
     "user-agent",
 ];
 
-/// A repeated request header as Node presented it to the TS proxy: the first
-/// value of a single-value header, cookies joined with "; ", others with ", ".
+/// A repeated request header folded the way Node does: the first value of a
+/// single-value header, cookies joined with "; ", others with ", ".
 fn node_header_value(headers: &HeaderMap, name: &HeaderName) -> Option<HeaderValue> {
     let mut values = headers.get_all(name).iter();
     let first = values.next()?;
@@ -503,7 +503,7 @@ async fn call_legacy(
             fill_cache_fields(method, &mut body);
             Some(body)
         }
-        // The TS SDK client rejected a result that is not an object.
+        // A result that is not an object is rejected.
         Ok(_) => {
             tracing::warn!(method, "Executor MCP returned a non-object result");
             None
@@ -618,7 +618,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn elicitation_support_matches_the_ts_rules() {
+    fn elicitation_support_rules() {
         let meta = |caps: Value| {
             json!({ CLIENT_CAPABILITIES_KEY: caps })
                 .as_object()

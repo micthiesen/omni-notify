@@ -1,9 +1,9 @@
-//! Media recommendations (WP08): Plex history and library, TMDB catalog,
+//! Media recommendations: Plex history and library, TMDB catalog,
 //! Radarr/Sonarr acquisition, the recommendation pipeline, taste reflection,
 //! `/api/recommendations*` routes, the media MCP tools and the dashboard
-//! on-deck port (`src/recommendations/**`, `src/mcp/tools/media*.ts`).
+//! on-deck port.
 //!
-//! Invariants carried from TS:
+//! Invariants:
 //! - an unavailable Plex history, in-progress view, library or watchlist
 //!   aborts a run (never decide against missing state);
 //! - a commit writes the pending row before the Arr write and reserves the
@@ -134,8 +134,8 @@ pub fn entity_descriptors() -> Vec<EntityDescriptor> {
     ]
 }
 
-/// Data-manager rows, in the order `src/data-manager.ts` lists them (WP14
-/// interleaves the podcast rows between the first and second entries).
+/// Data-manager rows, in display order (wiring interleaves the podcast rows
+/// between the first and second entries).
 pub fn managed_entities() -> Vec<ManagedEntity> {
     let entry = |entity: EntityDescriptor,
                  label: &'static str,

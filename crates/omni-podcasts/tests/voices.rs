@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/voices.spec.ts`.
+//! Voice names parsed from the taste seed's voices section.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::voices::parse_voices;

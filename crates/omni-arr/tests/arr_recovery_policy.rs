@@ -1,7 +1,4 @@
-//! Port of `src/arr-recovery/policy.spec.ts`.
-//!
-//! The `it.each` active-state case runs as one test over all five states.
-//! The two `toMatchObject` partial assertions compare the fields the TS case names.
+//! Arr recovery decision policy.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::arr_recovery::policy::{decide, eligible_queue_item, observation_fingerprint};

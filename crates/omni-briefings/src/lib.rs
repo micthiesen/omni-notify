@@ -1,4 +1,4 @@
-//! Scheduled briefing agents (WP11; `src/briefing-agent/**`).
+//! Scheduled briefing agents.
 //!
 //! One task per `BRIEFINGS_PATH/<Name>.md` (front matter `schedule`, body =
 //! prompt with `{{history:N}}`, `{{date}}`, `{{time}}` placeholders). Each run
@@ -32,7 +32,7 @@ pub use persistence::{BriefingDeliveryData, BriefingHistoryData, BriefingNotific
 pub use reader::StoreBriefingsReader;
 pub use task::{BriefingDeps, BriefingNotifier, BriefingTask, PushoverBriefingNotifier};
 
-/// Subsystem construction failures (boot fails like the TS loader would).
+/// Subsystem construction failures; any of them fails boot.
 #[derive(Debug, thiserror::Error)]
 pub enum BriefingsError {
     #[error(transparent)]
@@ -63,7 +63,7 @@ pub fn managed_entities() -> Vec<ManagedEntity> {
     }]
 }
 
-/// The `BriefingsReader` WP14 installs with `ctx.ports.set_briefings_reader`.
+/// The `BriefingsReader` that app wiring installs with `ctx.ports.set_briefings_reader`.
 pub fn briefings_reader(store: Store) -> Arc<dyn omni_runtime::ports::BriefingsReader> {
     Arc::new(StoreBriefingsReader::new(store))
 }
@@ -112,7 +112,7 @@ pub fn deps(ctx: &AppContext) -> Result<BriefingDeps, BriefingsError> {
 }
 
 /// The briefings subsystem: one task per loaded config (only with
-/// `TAVILY_API_KEY`), the route, entities and the data-manager row. WP14 also
+/// `TAVILY_API_KEY`), the route, entities and the data-manager row. Wiring also
 /// installs [`briefings_reader`] as the `BriefingsReader` port.
 pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, BriefingsError> {
     let deps = deps(ctx)?;

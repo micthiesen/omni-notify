@@ -1,4 +1,4 @@
-//! Owned by WP13: `GET /api/pets`.
+//! `GET /api/pets`.
 //!
 //! Numbers are JS doubles; the backend serializes responses with
 //! `JSON.stringify` semantics so integral weights render as `12`, not `12.0`.

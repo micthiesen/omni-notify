@@ -90,7 +90,7 @@ const CACHEABLE_METHODS: [&str; 5] = [
 /// Fills the required cache fields on a bridged legacy result the way the MCP 2
 /// SDK server does: a valid value Executor sent is kept, otherwise `ttlMs: 0`
 /// and `cacheScope: "private"` (results are per OAuth user). Without them the
-/// MCP 2 client rejects the result. The TS adapter omitted them.
+/// MCP 2 client rejects the result.
 pub fn fill_cache_fields(method: &str, body: &mut Map<String, Value>) {
     if !CACHEABLE_METHODS.contains(&method) {
         return;

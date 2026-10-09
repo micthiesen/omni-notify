@@ -1,4 +1,4 @@
-//! Livestream intelligence (WP05): bounded audio capture through yt-dlp and
+//! Livestream intelligence: bounded audio capture through yt-dlp and
 //! ffmpeg, local speech through sherpa-onnx, viewer-surge detection, Destiny
 //! guest detection, rolling summaries and Pushover alerts.
 //!
@@ -36,7 +36,7 @@ pub mod voice_evidence;
 pub mod voice_targets;
 pub mod work_queue;
 
-/// Log target (TS `Logger.named("Main").extend("LivestreamIntelligence")`).
+/// Log target.
 pub const LOG: &str = "Main:LivestreamIntelligence";
 /// The user agent passed to yt-dlp.
 pub const USER_AGENT: &str = omni_http::USER_AGENT;
@@ -114,7 +114,7 @@ pub fn load_speech_runtime(
     LocalSpeechRuntime::create(model_dir, voiceprint, threshold, SherpaBackend::new)
 }
 
-/// `createLivestreamIntelligenceService`: `None` while disabled; a missing
+/// `None` while disabled; a missing
 /// or corrupt model file or a bad voiceprint is an error (the boot step
 /// logs it and leaves intelligence disabled).
 pub async fn create_service(
@@ -159,7 +159,7 @@ pub async fn create_service(
     Ok(Some(LivestreamIntelligenceService::new(deps)))
 }
 
-/// The WP05 subsystem: routes, entities, data-manager rows and a Services-phase
+/// The livestream intelligence subsystem: routes, entities, data-manager rows and a Services-phase
 /// boot step that loads the speech runtime (when enabled), drains it on
 /// shutdown and installs the `LiveIntelligence` port.
 pub fn subsystem(ctx: &AppContext) -> Subsystem {
@@ -189,9 +189,9 @@ pub fn subsystem(ctx: &AppContext) -> Subsystem {
                         None
                     }
                 };
-                // Disabled: no port, as TS passes no observer to the live-check
-                // task and no diagnostics provider to MCP (whose
-                // `livestreamIntelligence` capability is the port's presence).
+                // Disabled: no port, so the live-check task has no observer and
+                // MCP has no diagnostics provider (its `livestreamIntelligence`
+                // capability is the port's presence).
                 let Some(service) = service else {
                     return Ok(());
                 };

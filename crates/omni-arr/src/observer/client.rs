@@ -37,7 +37,7 @@ pub struct ObserverUser {
     pub display_name: JsonOpt<String>,
 }
 
-/// `MediaInfoSchema`, absent and `null` kept apart.
+/// Observer media info, absent and `null` kept apart.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaInfo {

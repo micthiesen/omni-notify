@@ -1,5 +1,5 @@
-//! `/api/podcast-recommendations` route behavior (`src/server.ts` podcast
-//! sections): serializers, feedback validation and manual runs.
+//! `/api/podcast-recommendations` route behavior: serializers, feedback
+//! validation and manual runs.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -31,7 +31,7 @@ async fn setup() -> (TestApp, axum::Router) {
 }
 
 #[tokio::test]
-async fn lists_recommendations_newest_first_with_ts_serializer_shape() {
+async fn lists_recommendations_newest_first_in_the_wire_shape() {
     let (app, routes) = setup().await;
     insert_podcast_recommendation(&app.ctx.store, rec())
         .await

@@ -1,6 +1,5 @@
-//! The PressPods HTTP surface end to end (status codes, headers and bodies
-//! as `src/press-pods/routes.ts` produces them). `parseByteRange` cases from
-//! `routes.spec.ts` are unit tests in `src/routes.rs`.
+//! The PressPods HTTP surface end to end (status codes, headers and bodies).
+//! Byte-range parsing cases are unit tests in `src/routes.rs`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

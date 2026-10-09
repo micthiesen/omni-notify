@@ -2,8 +2,8 @@
 //! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-tasks --test prod_copy -- --ignored --nocapture`.
 //! The file is copied into a temporary directory first. Every `task-run`,
 //! `task-schedule-state` and `task-run-log` row must decode into its typed entity,
-//! recompute its own primary key, and re-encode to the stored JS value (modulo
-//! `undefined` object fields, which TS reads like absent ones).
+//! recompute its own primary key, and re-encode to the stored value (modulo
+//! `undefined` object fields, which read like absent ones).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::sync::Arc;

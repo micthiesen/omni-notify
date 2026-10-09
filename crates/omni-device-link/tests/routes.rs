@@ -1,10 +1,10 @@
-//! Port of `src/device-link/routes.spec.ts`.
+//! Device link routes: authentication, body validation, the job relay and host
+//! disconnects.
 //!
-//! "stops holding a poll when the Mac disconnects": Hono answers an aborted
-//! request with `{v:1, jobs:[]}`; hyper instead drops the handler future when
-//! the client goes away, so there is no response to read. The Rust case drops
-//! the in-flight request and checks what matters: the poll stops holding (no
-//! job can be claimed by it) and the reported kill-switch state was recorded.
+//! When the host disconnects mid-poll, hyper drops the handler future, so there
+//! is no response to read. That case drops the in-flight request and checks
+//! that the poll stops holding (no job can be claimed by it) and the reported
+//! kill-switch state was recorded.
 
 #![allow(clippy::unwrap_used)]
 

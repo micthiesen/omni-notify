@@ -1,10 +1,10 @@
-//! Owned by WP05: livestream intelligence details and feedback
+//! Livestream intelligence details and feedback
 //! (`GET /api/streamers/:id/intelligence-details`,
 //! `POST /api/streamers/:id/intelligence-feedback`).
 //!
 //! These mirror the persisted documents.
 //! Metric values are `number | string | boolean | null`, carried as JSON values.
-//! TS `field?: T | null` reads as `Option<T>` (absent and null are both `None`).
+//! Optional nullable fields read as `Option<T>` (absent and null are both `None`).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -279,7 +279,7 @@ pub struct RuntimeIntervals {
     pub summary_seconds: u64,
 }
 
-/// `LivestreamRuntimeDiagnostics` (only while the service is enabled).
+/// Livestream runtime diagnostics (only while the service is enabled).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeDiagnostics {

@@ -1,6 +1,5 @@
-//! Port of `src/ai/tools/webSearch.spec.ts`. The TS spec injects a streaming request
-//! function; here a local wiremock server stands in for Tavily (the plain client is
-//! used because the public client refuses loopback addresses).
+//! The `web_search` tool. A local wiremock server stands in for Tavily (the plain
+//! client is used because the public client refuses loopback addresses).
 #![allow(clippy::unwrap_used)]
 
 use omni_ai::AiTool;

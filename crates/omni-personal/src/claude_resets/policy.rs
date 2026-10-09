@@ -5,10 +5,10 @@
 use std::collections::HashSet;
 
 use jiff::tz::TimeZone;
+use omni_core::js::date_parse;
 use omni_http::Url;
 
 use super::source::ClaudeResetSource;
-use crate::js::parse_date;
 use crate::reset_alerts::ResetAlert;
 use crate::reset_alerts::presentation::{
     ALERT_LOOKBACK_MS, CLOCK_SKEW_MS, compact_summary, pacific_time,
@@ -57,7 +57,7 @@ pub fn select_claude_reset_alerts(
 ) -> Vec<ResetAlert> {
     let mut candidates: Vec<ResetAlert> = Vec::new();
     for event in &source.events {
-        let Some(occurred_at) = parse_date(&event.date, tz) else {
+        let Some(occurred_at) = date_parse(&event.date, tz) else {
             continue;
         };
         if event.kind != "counter-reset"

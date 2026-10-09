@@ -1,13 +1,10 @@
-//! PressPods (WP06): turns submitted article URLs into narrated podcast
+//! PressPods: turns submitted article URLs into narrated podcast
 //! episodes and serves them as a private RSS feed.
 //!
 //! Pipeline: durable job queue -> parallel article retrievers rated by the
 //! metadata model -> narration cleaning -> chunked, verified TTS with
 //! checkpoints -> audio chain (ffmpeg) -> ID3 tags -> episode file then row
 //! -> Pushover. See `docs/presspods-audio.md` before touching the audio chain.
-//!
-//! Not ported: `src/tools/tts-bakeoff.ts`, a throwaway provider comparison
-//! script with no production role.
 
 pub mod agents;
 pub mod audio;

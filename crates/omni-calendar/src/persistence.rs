@@ -25,8 +25,8 @@ pub enum EventStatus {
     Cancelled,
 }
 
-/// `calendar-created-event` (`CreatedCalendarEventData`), keyed by `eventHash`.
-/// Field order follows the TS object literals that write it.
+/// `calendar-created-event`, keyed by `eventHash`. Field order matches the
+/// stored rows.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreatedCalendarEvent {

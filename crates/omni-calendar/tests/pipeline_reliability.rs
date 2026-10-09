@@ -1,13 +1,10 @@
-//! Port of `src/calendar-events/pipeline.reliability.spec.ts`
-//! ("CalendarEventPipeline reliability"), plus the fixed TS defect (activity rows
-//! for `error`, `no_matches` and the final outcome are written) and end-to-end
-//! create/cancel/update behavior.
+//! Calendar pipeline reliability (activity rows for `error`, `no_matches` and
+//! the final outcome are written) and end-to-end create/cancel/update behavior.
 //!
-//! TS mocked discovery, extraction, CalDAV writes and persistence module by
-//! module; here the real pipeline runs against a wiremock CalDAV server,
+//! The real pipeline runs against a wiremock CalDAV server,
 //! scripted models (`FakeModels` or a hanging model), a temp store and a
 //! recording `EmailSupport`. "lost create acknowledgement" forces the record
-//! write to fail with an SQLite trigger instead of a mocked throw.
+//! write to fail with an SQLite trigger.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -99,7 +96,7 @@ async fn durably_queues_admitted_email_after_transient_extraction_failure() {
             "Calendar extraction failed: provider error 400: model timeout".to_owned()
         )]
     );
-    // Fixed TS defect: the error activity row is actually written.
+    // The error activity row is written.
     let activity = support.activity();
     assert_eq!(activity.len(), 1);
     assert_eq!(activity[0].outcome, ActivityOutcome::Error);

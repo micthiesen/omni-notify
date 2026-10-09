@@ -1,4 +1,4 @@
-//! The fixed Brother HL-L2370DW monochrome LAN printer (`src/printer/`).
+//! The fixed Brother HL-L2370DW monochrome LAN printer.
 
 pub mod ipp;
 pub mod pipeline;

@@ -1,4 +1,4 @@
-//! Port of `src/emails/mime.spec.ts`, parsed back with mail-parser.
+//! Outgoing MIME rendering, parsed back with mail-parser.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use base64::Engine as _;

@@ -1,6 +1,6 @@
-//! Port of `src/parcel-tracker/filter/keywords.spec.ts`. `EMAIL_SELF_ADDRESS`
-//! is passed through `FilterDeps` instead of mutating global config; the
-//! carrier list comes from a local mock that serves no carriers.
+//! The parcel candidate keyword filter. `EMAIL_SELF_ADDRESS` is passed through
+//! `FilterDeps`; the carrier list comes from a local mock that serves no
+//! carriers.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::{Arc, Mutex};

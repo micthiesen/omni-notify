@@ -14,7 +14,6 @@ pub const HISTORY_URL: &str = "https://resetbeacon.com/api/history";
 const MAX_FEED_ITEMS: usize = 1_000;
 const MAX_HISTORY_ITEMS: usize = 5_000;
 
-/// `AlertFeedSchema`.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlertFeed {
@@ -45,7 +44,6 @@ pub struct FeedItem {
     pub withdrawn: bool,
 }
 
-/// `HistorySchema`.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResetHistory {

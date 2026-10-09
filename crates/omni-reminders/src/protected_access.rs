@@ -127,7 +127,7 @@ async fn decoded<E, T>(
     }))
 }
 
-/// `Schema.optional(Schema.Boolean)` inside a struct: absent, or a boolean.
+/// An optional struct field: absent, or a boolean.
 fn optional_bool(object: &serde_json::Map<String, Value>, key: &str) -> Option<Option<bool>> {
     match object.get(key) {
         None => Some(None),

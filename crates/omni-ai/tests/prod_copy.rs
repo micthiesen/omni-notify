@@ -1,9 +1,7 @@
 //! Manual check against a copy of the production docstore (never the original):
 //! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-ai --test prod_copy -- --ignored`.
 //! Every `cost-event` and `cost-migration` row must decode into the typed entities, and
-//! re-encoding a decoded event must reproduce the stored JS value. Byte identity is
-//! reported only: legacy-import rows (eventId first) and transcription rows
-//! (`usage: {requests, characters}`) use a different key order than the struct.
+//! re-encoding a decoded event must read back as the stored JS value.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use omni_ai::costs::{CostEventData, CostMigrationData};
@@ -17,13 +15,12 @@ async fn production_cost_rows_decode_and_round_trip() {
     let source = std::env::var("OMNI_PROD_COPY").expect("OMNI_PROD_COPY");
     let _clock: SharedClock = test_clock(TEST_EPOCH_MS);
     let copy = TestStore::from_fixture(std::path::Path::new(&source)).await;
-    let (raw, typed, migrations, identical, equal) =
+    let (raw, typed, migrations, equal) =
         copy.store
             .read(|docs| {
                 let raw = docs.get_docs_by_entity("cost-event")?;
                 let typed = docs.get_all::<CostEventData>()?;
                 let migrations = docs.get_all::<CostMigrationData>()?;
-                let mut identical = 0usize;
                 let mut equal = 0usize;
                 for (pk, value) in &raw {
                     let event: CostEventData = omni_store::cbor::from_value(value.clone())
@@ -31,27 +28,18 @@ async fn production_cost_rows_decode_and_round_trip() {
                             pk: pk.clone(),
                             reason: e.to_string(),
                         })?;
-                    let stored = docs.get_raw_row(pk)?.and_then(|row| row.data);
-                    let encoded = omni_store::cbor::to_value(&event)
+                    let reread = omni_store::cbor::to_value(&event)
                         .ok()
-                        .map(|v| omni_store::cbor::encode(&v));
-                    let reread = encoded
-                        .as_deref()
-                        .and_then(|bytes| omni_store::cbor::decode(bytes).ok());
-                    if reread.as_ref() == Some(value) {
+                        .and_then(|v| omni_store::cbor::decode(&omni_store::cbor::encode(&v)).ok());
+                    if reread.is_some_and(|reread| omni_store::cbor::same_value(&reread, value)) {
                         equal += 1;
                     }
-                    if stored.is_some() && stored == encoded {
-                        identical += 1;
-                    }
                 }
-                Ok((raw.len(), typed.len(), migrations.len(), identical, equal))
+                Ok((raw.len(), typed.len(), migrations.len(), equal))
             })
             .await
             .unwrap();
-    println!(
-        "cost-event rows {raw}, typed {typed}, value-equal {equal}, byte-identical {identical}"
-    );
+    println!("cost-event rows {raw}, typed {typed}, value-equal {equal}");
     assert!(raw > 0);
     assert_eq!(raw, typed, "every cost-event row decodes");
     assert_eq!(migrations, 1);

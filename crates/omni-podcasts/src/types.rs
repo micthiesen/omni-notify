@@ -12,7 +12,7 @@ pub type CanonicalEpisodeId = String;
 
 static PROTOCOL: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"(?i)^https?://").ok());
 
-/// `makeShowId`: a truthy iTunes id wins, then a non-empty feed URL.
+/// A truthy iTunes id wins, then a non-empty feed URL.
 pub fn make_show_id(itunes_id: Option<i64>, feed_url: Option<&str>) -> Option<CanonicalShowId> {
     if let Some(id) = itunes_id.filter(|id| *id != 0) {
         return Some(format!("itunes:{id}"));
@@ -22,7 +22,6 @@ pub fn make_show_id(itunes_id: Option<i64>, feed_url: Option<&str>) -> Option<Ca
         .map(|url| format!("feed:{}", normalize_feed_url(url)))
 }
 
-/// `makeEpisodeId`.
 pub fn make_episode_id(show_id: &str, episode_guid: &str) -> CanonicalEpisodeId {
     format!("{show_id}#{episode_guid}")
 }

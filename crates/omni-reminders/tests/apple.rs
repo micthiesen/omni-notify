@@ -1,10 +1,7 @@
-//! Port of `src/reminders/apple.spec.ts` (Apple Reminders transport).
-//!
-//! The TS cases inject `fetch`; here a scripted [`AppleTransport`] records each
-//! request. "Bounds a query stalled after response headers" collapses into the
-//! stalled-before-headers case: the transport returns whole bounded responses and
-//! the client's operation timeout covers headers and body together. "Aborts" checks
-//! that the pending transport future is dropped (reqwest cancels on drop).
+//! The Apple Reminders client over a scripted [`AppleTransport`] that records
+//! each request. The transport returns whole bounded responses, so the client's
+//! operation timeout covers headers and body together. "Aborts" checks that the
+//! pending transport future is dropped (reqwest cancels on drop).
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -657,7 +654,7 @@ async fn handles_push_status_with_challenge_and_options_status() {
             }
         }
         if matches!(push_status, 200 | 202) && options_status == 200 {
-            let submitted = x.instance.submit_code("123456", false).await.unwrap_err();
+            let submitted = x.instance.submit_code("123456").await.unwrap_err();
             assert_eq!(submitted.status, Some(400));
             let calls = x.calls();
             let last = calls.last().unwrap();
@@ -833,7 +830,7 @@ async fn verifies_code_validity_token_trust_and_account() {
         let label = format!(
             "{status} valid={valid:?} token={token} trust {trust_status} account {account_status}"
         );
-        let result = x.instance.submit_code("123456", false).await;
+        let result = x.instance.submit_code("123456").await;
         assert_eq!(result.is_ok(), ready, "{label}: {result:?}");
         let passed = valid != Some(false)
             && (status == 200 || status == 204 || (status == 409 && valid == Some(true) && token));
@@ -868,7 +865,7 @@ async fn never_treats_code_verification_405_as_successful_authentication() {
         |_, _| json_response(405, json!({}), &[]),
         json!({"clientId": "auth-test", "scnt": "challenge", "sessionId": "challenge-id"}),
     );
-    let error = x.instance.submit_code("123456", false).await.unwrap_err();
+    let error = x.instance.submit_code("123456").await.unwrap_err();
     assert_eq!(error.operation, "MFA verify");
     assert_eq!(error.status, Some(405));
     let calls = x.calls();
@@ -929,7 +926,7 @@ async fn rejects_an_mfa_code_without_trusting_the_browser() {
         |_, _| json_response(401, json!({"serviceErrors": [{"code": -21669}]}), &[]),
         initial,
     );
-    assert!(x.instance.submit_code("123456", false).await.is_err());
+    assert!(x.instance.submit_code("123456").await.is_err());
     assert_eq!(x.calls().len(), 1);
 }
 
@@ -995,13 +992,13 @@ async fn record_mode_sends_reads_but_never_mutations() {
 }
 
 #[test]
-fn session_round_trips_the_ts_shape() {
+fn session_round_trips_the_stored_shape() {
     let session: AppleSession = serde_json::from_value(saved()).unwrap();
     assert_eq!(serde_json::to_value(&session).unwrap(), saved());
     assert!(serde_json::from_value::<AppleSession>(json!({"scnt": "x"})).is_err());
 }
 
-/// Rust-only: stored empty strings are falsy as in the TS client, so an empty session
+/// Stored empty strings count as absent, so an empty session
 /// token validates nothing and empty challenge headers are never sent.
 #[tokio::test]
 async fn treats_stored_empty_session_fields_as_absent() {
@@ -1021,7 +1018,7 @@ async fn treats_stored_empty_session_fields_as_absent() {
     stored["scnt"] = json!("");
     stored["sessionId"] = json!("");
     let x = client(|_, _| ok(json!({})), stored);
-    let error = x.instance.submit_code("123456", false).await.unwrap_err();
+    let error = x.instance.submit_code("123456").await.unwrap_err();
     assert_eq!(error.reason, "MFA challenge missing");
     assert!(x.calls().is_empty());
 }

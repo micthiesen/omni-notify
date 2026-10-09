@@ -176,7 +176,7 @@ pub fn app_router(
     (omni_server_kit::app_router(parts, dist), ops)
 }
 
-/// Registers tasks in `src/index.ts` order.
+/// Registers tasks in [`crate::wiring::TASK_ORDER`].
 pub fn track_tasks(ctx: &AppContext, subsystems: &mut [Subsystem]) -> Result<(), AppError> {
     let mut tasks: Vec<Arc<dyn Task>> = Vec::new();
     for subsystem in subsystems.iter_mut() {

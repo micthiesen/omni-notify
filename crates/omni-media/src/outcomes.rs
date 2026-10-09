@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use omni_api::media::RecommendationStatus;
+use omni_core::js::to_fixed;
 
-use crate::js::to_fixed;
 use crate::persistence::RecommendationData;
 use crate::types::MediaType;
 

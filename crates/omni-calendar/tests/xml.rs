@@ -1,4 +1,4 @@
-//! Port of `src/calendar-events/caldav/xml.spec.ts`.
+//! CalDAV multistatus parsing.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_calendar::caldav::xml::{

@@ -1,4 +1,4 @@
-//! Port of `src/claude-resets/policy.spec.ts` (all cases kept).
+//! Claude reset alert policy.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use jiff::tz::TimeZone;

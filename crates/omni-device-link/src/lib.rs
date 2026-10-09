@@ -1,4 +1,4 @@
-//! Device link (WP12): the Claude Code host's outbound long-poll relay.
+//! Device link: the Claude Code host's outbound long-poll relay.
 //!
 //! The host's `omni-link` agent long-polls `POST /device-link/poll` and posts
 //! each job's output to `POST /device-link/result`, both authenticated by
@@ -22,7 +22,7 @@ use std::sync::Arc;
 use omni_runtime::{AppContext, Subsystem};
 
 /// The device link for this process, or `None` when `OMNI_DEVICE_LINK_TOKEN`
-/// is unset (the routes are then not mounted, as in TS) or equals the MCP token.
+/// is unset (the routes are then not mounted) or equals the MCP token.
 /// Building it sets the `ClaudeHost` port, so build it before `omni-mcp`'s
 /// `McpPackage`.
 pub struct DeviceLink {

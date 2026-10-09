@@ -1,8 +1,8 @@
 //! The `events/*` JSON-RPC methods.
 //!
-//! Params are validated like the TS zod schemas (strict objects, same issue
-//! wording) before the delegated-principal headers are read; service errors
-//! map to the TS JSON-RPC codes: `-32001` for an invalid principal, `-32015`
+//! Params are validated as strict objects, with stable issue wording, before
+//! the delegated-principal headers are read; service errors map to fixed
+//! JSON-RPC codes: `-32001` for an invalid principal, `-32015`
 //! `CallbackEndpointError` for callback failures, `-32602` otherwise.
 
 use axum::http::HeaderMap;
@@ -21,7 +21,7 @@ const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 pub const EVENT_METHODS: [&str; 3] = ["events/list", "events/subscribe", "events/unsubscribe"];
 
-/// One zod issue: dotted path and message.
+/// One validation issue: dotted path and message.
 struct Issue {
     path: Vec<String>,
     message: String,
@@ -131,8 +131,8 @@ fn subscribe_input(params: &Map<String, Value>) -> Result<SubscribeInput, RpcErr
     let ttl = params.get("ttlMs");
     match ttl {
         None | Some(Value::Null) => {}
-        // zod `int()` aborts on a fraction and bounds integers to the safe
-        // range; `positive()` still runs after a range issue.
+        // An integer check aborts on a fraction and bounds integers to the
+        // safe range; the positivity check still runs after a range issue.
         Some(Value::Number(n)) => match n.as_f64() {
             Some(x) if x.fract() != 0.0 => {
                 issues.push(
@@ -225,7 +225,7 @@ fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
 
-/// `principalFromHeaders`: both delegated headers or neither.
+/// Both delegated headers or neither.
 fn principal(headers: &HeaderMap) -> Result<Option<EventPrincipal>, RpcError> {
     let owner = header(headers, "x-omni-events-owner").filter(|v| !v.is_empty());
     let authorization = header(headers, "x-omni-events-authorization").filter(|v| !v.is_empty());
@@ -245,7 +245,6 @@ fn principal(headers: &HeaderMap) -> Result<Option<EventPrincipal>, RpcError> {
     }
 }
 
-/// `rpcError`.
 fn service_error(error: EventServiceError) -> RpcError {
     match error {
         EventServiceError::Rejected(reason) => {

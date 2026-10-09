@@ -1,4 +1,4 @@
-//! Port of `src/ios-controls/liveSlots.spec.ts`.
+//! The four live slots and their delivery hash.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -180,7 +180,7 @@ fn hashes_the_js_json_of_the_visible_state() {
         started_at: None,
         updated_at: 5,
     };
-    // Computed with node: the persisted lastDeliveredHash must match TS.
+    // Pinned: the persisted lastDeliveredHash must stay stable across releases.
     assert_eq!(
         live_control_slot_hash(&slot),
         "cfb5bd175d198f96a15bd62ef98b762c26a4b1d97a4a8ac67ba879518356c021"

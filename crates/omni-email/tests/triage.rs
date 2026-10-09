@@ -1,5 +1,5 @@
-//! Port of `src/email/triage.spec.ts`, plus the model-backed classifier with
-//! a scripted `FakeModels` triage response.
+//! Shared email triage, plus the model-backed classifier with a scripted
+//! `FakeModels` triage response.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -78,7 +78,7 @@ fn always(verdict: TriageVerdict) -> Script {
 }
 
 #[tokio::test]
-async fn classifies_through_the_typed_effect_api() {
+async fn classifies_through_the_typed_api() {
     let classifier = ScriptedClassifier::new(always(verdict()));
     let triage = EmailTriage::new(classifier.clone());
     assert_eq!(

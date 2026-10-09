@@ -1,4 +1,4 @@
-//! `ALL /mcp` (`src/mcp/route.ts`, `src/mcp/server.ts`, `src/mcp/auth.ts`).
+//! `ALL /mcp`.
 //!
 //! 503 when no MCP token is configured; otherwise a constant-time bearer
 //! check (SHA-256 digests) answers 401 before any MCP handling, and every MCP
@@ -30,7 +30,6 @@ pub fn json_response(status: StatusCode, value: &Value) -> Response {
     response
 }
 
-/// `unauthorizedMcpResponse()`.
 pub fn unauthorized() -> Response {
     let mut response = json_response(StatusCode::UNAUTHORIZED, &json!({"error": "Unauthorized"}));
     let headers = response.headers_mut();

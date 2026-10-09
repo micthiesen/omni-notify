@@ -1,10 +1,9 @@
 //! Podcast RSS reading.
 //!
-//! The TS version used linkedom's forgiving XML DOM; this one walks quick-xml
-//! events leniently (stray `&`/`<` escaped first as literal text, mismatched
-//! end tags tolerated, parsing stops at the first remaining hard error and
-//! keeps what it read) and reproduces the DOM semantics
-//! the parser relied on: `getElementsByTagName` over each `<item>`'s
+//! Walks quick-xml events leniently, like a forgiving XML DOM (stray `&`/`<`
+//! escaped first as literal text, mismatched end tags tolerated, parsing stops
+//! at the first remaining hard error and keeps what it read), with DOM
+//! semantics: `getElementsByTagName` over each `<item>`'s
 //! descendants, `textContent` concatenation, XML entity decoding followed by
 //! the HTML entity pass.
 
@@ -12,13 +11,13 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use jiff::tz::TimeZone;
+use omni_core::js::date_parse;
 use omni_http::public::PublicHttpClient;
 use omni_http::{Method, Url};
 use quick_xml::Reader;
 use quick_xml::events::{BytesStart, Event};
 use regex::Regex;
 
-use crate::js::parse_date;
 use crate::titles::normalize_title;
 
 const DEFAULT_MAX_EPISODES: usize = 30;
@@ -48,7 +47,6 @@ pub struct FeedRequestError {
     pub detail: String,
 }
 
-/// `fetchFeedEpisodesEffect`.
 pub async fn fetch_feed_episodes(
     http: &PublicHttpClient,
     feed_url: &str,
@@ -178,8 +176,7 @@ fn starts_reference(rest: &str) -> bool {
         && body.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
-/// Escapes the stray `&` and `<` characters a forgiving DOM parser (linkedom's
-/// htmlparser2 in XML mode) reads as literal text, so one `AT&T` or `a < b`
+/// Escapes the stray `&` and `<` characters a forgiving XML DOM parser reads as literal text, so one `AT&T` or `a < b`
 /// in a feed does not end the walk and lose every later item. CDATA sections
 /// and comments are copied verbatim.
 pub fn escape_stray_markup(xml: &str) -> std::borrow::Cow<'_, str> {
@@ -337,8 +334,9 @@ fn is_digits(value: &str) -> bool {
     DIGITS.as_ref().is_some_and(|re| re.is_match(value))
 }
 
-fn js_round(x: f64) -> i64 {
-    (x + 0.5).floor() as i64
+#[allow(clippy::cast_possible_truncation)]
+fn round_minutes(minutes: f64) -> i64 {
+    omni_core::js::math_round(minutes) as i64
 }
 
 /// Plain seconds (`"3720"`), `MM:SS`, and `HH:MM:SS`.
@@ -348,7 +346,7 @@ fn parse_duration_minutes(raw: Option<&str>) -> Option<i64> {
         return None;
     }
     if is_digits(&value) {
-        return Some(js_round(value.parse::<f64>().ok()? / 60.0));
+        return Some(round_minutes(value.parse::<f64>().ok()? / 60.0));
     }
     let parts: Vec<&str> = value.split(':').collect();
     if !(2..=3).contains(&parts.len()) || !parts.iter().all(|p| is_digits(p)) {
@@ -363,7 +361,7 @@ fn parse_duration_minutes(raw: Option<&str>) -> Option<i64> {
         [m, s] => m * 60.0 + s,
         _ => return None,
     };
-    Some(js_round(total / 60.0))
+    Some(round_minutes(total / 60.0))
 }
 
 fn clean_description(raw: &str) -> String {
@@ -407,7 +405,7 @@ pub fn parse_feed_episodes(xml: &str, max_episodes: usize, tz: &TimeZone) -> Vec
         let Some(published_at) = item
             .first_text(&arena, "pubDate")
             .filter(|raw| !raw.is_empty())
-            .and_then(|raw| parse_date(strip_cdata(raw).trim(), tz))
+            .and_then(|raw| date_parse(strip_cdata(raw).trim(), tz))
         else {
             continue;
         };

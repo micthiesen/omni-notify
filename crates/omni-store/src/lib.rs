@@ -1,8 +1,8 @@
-//! The SQLite document store, compatible with rows written by the earlier
-//! TypeScript service (see docs/architecture.md, "Data compatibility").
+//! The SQLite document store (see docs/architecture.md, "Data compatibility").
 //!
-//! The `blobs` table, its key encoding and its CBOR payloads are a contract:
-//! Rust writes must decode in node-cbor to the same JS values TS would write.
+//! The `blobs` table and its key encoding are a contract with the rows already
+//! stored: keys are derived exactly as before, and every stored CBOR payload
+//! must keep decoding.
 
 pub mod cbor;
 mod docstore;

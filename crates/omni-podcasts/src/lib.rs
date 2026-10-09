@@ -1,6 +1,4 @@
-//! Podcast recommendations, taste reflection and the Castro account bridge
-//! (WP07; TS `src/podcast-recs/**`, `src/alerts/castro.ts`,
-//! `src/mcp/tools/podcasts.ts`).
+//! Podcast recommendations, taste reflection and the Castro account bridge.
 //!
 //! [`subsystem`] wires the three tasks (`PodcastRecs`,
 //! `PodcastTasteReflection`, `CastroInboxCleanup`), the
@@ -26,7 +24,6 @@ pub mod filters;
 pub mod guest_selection;
 pub mod guests;
 pub mod itunes;
-pub mod js;
 pub mod log_file;
 pub mod mcp;
 pub mod models;

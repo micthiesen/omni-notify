@@ -180,7 +180,7 @@ impl PressPods {
     }
 }
 
-/// `ffprobe` next to a configured `ffmpeg` path (TS ran both from `PATH`).
+/// `ffprobe` next to a configured `ffmpeg` path.
 pub fn ffprobe_for(ffmpeg: &str) -> String {
     let path = std::path::Path::new(ffmpeg);
     match (path.parent(), path.file_name().and_then(|n| n.to_str())) {

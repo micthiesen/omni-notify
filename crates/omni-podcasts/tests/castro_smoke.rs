@@ -1,4 +1,4 @@
-//! Port of `src/tools/castro-smoke.ts`: the end-to-end Castro enqueue check
+//! The end-to-end Castro enqueue check
 //! against the LIVE account. Never runs in CI; it changes the real queue
 //! (enqueue, verify, dequeue, verify) and reads a public RSS feed:
 //!

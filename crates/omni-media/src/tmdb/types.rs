@@ -1,8 +1,8 @@
 //! TMDB payload schemas and normalization.
 //!
-//! Field rules mirror the zod schemas: unknown keys are ignored, `.optional()`
-//! accepts an absent key but not `null`, `.nullable()` accepts `null`, and
-//! `.default(x)` fills an absent key.
+//! Field rules: unknown keys are ignored, an optional field accepts an absent
+//! key but not `null`, a nullable field accepts `null`, and a defaulted field
+//! fills an absent key.
 
 use serde::{Deserialize, Serialize};
 
@@ -30,7 +30,7 @@ pub struct TmdbTitle {
 }
 
 /// Structured details used to judge fit and viewing commitment. Serialized
-/// in the TS object-literal key order with absent fields omitted (taste
+/// in the stored key order with absent fields omitted (taste
 /// evidence ids hash `JSON.stringify` of this value).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,7 +113,7 @@ pub struct TvList {
 }
 
 /// One trending entry: a movie, a TV show, or anything else (people) that
-/// carries a string `media_type` (zod `union([movie, tv, other])`).
+/// carries a string `media_type`.
 #[derive(Clone, Debug)]
 pub enum TrendingResult {
     Movie(MovieResult),
@@ -287,7 +287,7 @@ pub struct GenreList {
     pub genres: Vec<Genre>,
 }
 
-/// `parseYear`: the leading four digits when they form a year after 1800.
+/// The leading four digits when they form a year after 1800.
 fn parse_year(date: Option<&str>) -> Option<i64> {
     let date = date.filter(|d| !d.is_empty())?;
     let prefix = omni_core::js::utf16_slice(date, 0, 4);
@@ -298,7 +298,7 @@ fn parse_year(date: Option<&str>) -> Option<i64> {
 
 /// Trimmed, or `None` when empty.
 pub fn non_empty(value: Option<&str>) -> Option<String> {
-    let trimmed = crate::js::js_trim(value?);
+    let trimmed = omni_core::js::trim(value?);
     (!trimmed.is_empty()).then(|| trimmed.to_owned())
 }
 

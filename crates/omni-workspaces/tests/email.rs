@@ -1,4 +1,4 @@
-//! Port of `src/workspaces/email.test.ts`.
+//! Workspace email scope matching.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/shortlist.spec.ts`, plus a scripted-model
+//! The candidate shortlist, plus a scripted-model
 //! shortlist run.
 #![allow(clippy::expect_used)]
 

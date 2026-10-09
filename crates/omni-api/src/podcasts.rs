@@ -1,5 +1,4 @@
-//! Podcast recommendations and the podcast taste profile (owned by WP07;
-//! `src/server.ts` podcast serializers and `frontend/src/api.ts`).
+//! Podcast recommendations and the podcast taste profile.
 
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -60,7 +59,7 @@ pub struct PodcastShortlistScores {
     pub risks: Vec<String>,
 }
 
-/// `serializePodcastRecommendation` (REST).
+/// A podcast recommendation (REST).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PodcastRecommendation {

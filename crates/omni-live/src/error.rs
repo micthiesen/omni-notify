@@ -5,7 +5,8 @@ use omni_store::StoreError;
 /// A failure that fails the live-check run (and its route).
 #[derive(Debug, thiserror::Error)]
 pub enum LiveError {
-    /// The docstore failed (`PersistenceError` in TS).
+    /// The docstore failed. The `PersistenceError:` prefix is part of the stored
+    /// run error text.
     #[error("PersistenceError: {operation} failed: {source}")]
     Persistence {
         operation: &'static str,

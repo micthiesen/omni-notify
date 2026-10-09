@@ -31,7 +31,7 @@ enum StrOrNum {
     Num(f64),
 }
 
-/// TS `valueString`: `null`/`undefined` become `""`, numbers JS-formatted.
+/// A status field as text: `null`/`undefined` become `""`, numbers JS-formatted.
 fn value_string(value: Option<&StrOrNum>) -> String {
     match value {
         None => String::new(),
@@ -109,7 +109,7 @@ struct PreviewDto {
     rejections: Option<Vec<RejectionDto>>,
 }
 
-/// `QualityCoreSchema`: the quality object must carry these to be importable.
+/// The quality object must carry these to be importable.
 #[derive(Deserialize)]
 #[allow(dead_code)]
 struct QualityCoreDto {
@@ -223,7 +223,7 @@ struct FileSystemDto {
     files: Vec<PathDto>,
 }
 
-/// `normalizedPath`: forward slashes, no trailing slash, lower case.
+/// Forward slashes, no trailing slash, lower case.
 pub fn normalized_path(value: &str) -> String {
     value
         .replace('\\', "/")
@@ -238,7 +238,6 @@ static VIDEO_EXTENSION: LazyLock<Option<Regex>> = LazyLock::new(|| {
     .ok()
 });
 
-/// `baseNameWithoutExtension`.
 pub fn base_name_without_extension(value: &str) -> String {
     let normalized = normalized_path(value);
     let name = normalized.rsplit('/').next().unwrap_or_default();

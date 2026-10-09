@@ -1,4 +1,4 @@
-//! Port of `src/reminders/recurringCompletion.spec.ts`.
+//! Recurring reminder completion.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 mod common;
@@ -146,7 +146,7 @@ async fn validates_identities_and_explicit_timezone_before_mutation() {
     }
 }
 
-/// Rust-only: the zones Node 24's `Intl.DateTimeFormat` accepts (IANA names in any
+/// The zones Node 24's `Intl.DateTimeFormat` accepts (IANA names in any
 /// case, links, and `±HH`, `±HHMM`, `±HH:MM` offsets) reach Apple unchanged; the
 /// forms it rejects never issue the mutating query.
 #[tokio::test]
@@ -791,11 +791,10 @@ async fn keeps_unexpected_outcomes_uncertain_after_exactly_one_query() {
     }
 }
 
-/// Rust-only: the TS `CompletionRecord` schema does not declare `created`,
-/// `modified` or `reason`, so unexpected shapes there do not make a preview a
-/// protocol failure.
+/// The completion record does not declare `created`, `modified` or `reason`,
+/// so unexpected shapes there do not make a preview a protocol failure.
 #[tokio::test]
-async fn ignores_undeclared_preview_metadata_like_the_ts_schema() {
+async fn ignores_undeclared_preview_metadata() {
     let post = counting(|| {
         let mut record = returned_record();
         record["created"] = json!("opaque");

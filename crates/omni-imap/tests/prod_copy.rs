@@ -1,6 +1,6 @@
 //! Production-copy compatibility (ignored; run with `OMNI_PROD_COPY=<copy of
-//! docstore.db>`). Every WP01 row must decode into its typed model and
-//! re-encode to the same JS value (explicit `undefined` fields excepted).
+//! docstore.db>`). Every mail transport row must decode into its typed model and
+//! re-encode to the same value (explicit `undefined` fields excepted).
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
 use std::path::PathBuf;
@@ -43,7 +43,7 @@ fn same(a: &JsValue, b: &JsValue) -> bool {
 }
 
 /// Persisted original MIME must satisfy the Sent-copy repair preconditions:
-/// exact Message-ID, a Date and a From, parsed by the Rust MIME parser.
+/// exact Message-ID, a Date and a From, parsed by the MIME parser.
 fn check_prepared(pk: &str, attempt: &StoredAttempt, failures: &mut Vec<String>) {
     use base64::Engine as _;
     let (Some(prepared), Some(result)) = (&attempt.prepared, &attempt.result) else {

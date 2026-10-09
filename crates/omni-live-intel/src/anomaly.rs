@@ -8,9 +8,9 @@
 
 use std::collections::HashMap;
 
-use omni_core::js::number_to_string;
+use omni_core::js::{math_round, number_to_string};
 
-use crate::js_math::{js_max, js_min, js_round};
+use crate::js_math::{js_max, js_min};
 use crate::observation::{Streamer, StreamerTier};
 use crate::types::{SemanticMetadata, StreamSession, ViewerTrend};
 
@@ -252,17 +252,17 @@ impl ViewerAnomalyTracker {
         if viewer_surge {
             reasons.push(format!(
                 "viewers up {}% ({} vs {} baseline)",
-                number_to_string(js_round(viewer_percent)),
+                number_to_string(math_round(viewer_percent)),
                 format_count(input.viewers),
-                number_to_string(js_round(viewer_baseline.level)),
+                number_to_string(math_round(viewer_baseline.level)),
             ));
         }
         if dgg_surge {
             reasons.push(format!(
                 "DGG audience up {}% ({} vs {} baseline)",
-                number_to_string(js_round(dgg_percent.unwrap_or(0.0))),
+                number_to_string(math_round(dgg_percent.unwrap_or(0.0))),
                 format_count(input.dgg_viewers),
-                number_to_string(js_round(dgg_baseline.level)),
+                number_to_string(math_round(dgg_baseline.level)),
             ));
         }
         let suppression_reason = if !session_warmed {
@@ -297,7 +297,7 @@ impl ViewerAnomalyTracker {
                 typical_peak.map(|peak| {
                     format!(
                         "Below the typical session peak of {}",
-                        number_to_string(js_round(peak))
+                        number_to_string(math_round(peak))
                     )
                 })
             } else {
@@ -378,5 +378,5 @@ pub fn compute_relevance(
         reasons.push("Destiny detected as a live participant".to_owned());
     }
     reasons.truncate(4);
-    (js_round(js_min(100.0, score)), reasons)
+    (math_round(js_min(100.0, score)), reasons)
 }

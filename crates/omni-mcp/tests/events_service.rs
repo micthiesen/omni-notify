@@ -1,11 +1,9 @@
-//! Port of `src/mcp/events/service.spec.ts` (all cases kept).
+//! The MCP Events service: outbox, delivery, authorization and pruning.
 //!
-//! Effect's `TestClock.adjust` becomes `tokio::time::advance` on a paused
-//! runtime (the service's `TestClock` follows it); `Deferred`s become tokio
-//! channels. The archive-move case uses a fake `ArchiveEcho` port (WP01 owns
-//! the archive persistence the TS spec writes directly). The clock starts at a
-//! real epoch rather than Effect's 0, so the first prune is already due where
-//! the TS case first advances an hour.
+//! Time advances with `tokio::time::advance` on a paused runtime (the
+//! service's `TestClock` follows it). The archive-move case uses a fake
+//! `ArchiveEcho` port (`omni-imap` owns the archive persistence). The clock
+//! starts at a real epoch, so the first prune is already due.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -881,7 +879,7 @@ async fn keeps_previous_queued_deliveries_cancelled_after_resubscribe() {
     );
 }
 
-/// Message-IDs whose archive actions are claimed (WP01's `ArchiveEcho`).
+/// Message-IDs whose archive actions are claimed (the `ArchiveEcho` port).
 #[derive(Default)]
 struct ClaimedMoves(Mutex<HashSet<String>>);
 

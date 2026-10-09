@@ -1,8 +1,5 @@
-//! Port of `src/email/imap/autoRead.spec.ts`.
-//!
-//! "releases the writable lock when marking succeeds or fails": selection is
-//! exclusive `&mut` access in Rust, so the case asserts the writable
-//! selection, the outcome and the warning instead of lock release counts.
+//! Auto-read marking. Selection is exclusive `&mut` access, so cases assert
+//! the writable selection, the outcome and the warning.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashSet;

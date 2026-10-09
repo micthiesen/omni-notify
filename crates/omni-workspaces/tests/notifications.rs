@@ -1,5 +1,5 @@
-//! Port of `src/workspaces/notifications.test.ts` (fake outbox and notifier),
-//! plus the outbox lifecycle against the real store.
+//! Workspace notifications (fake outbox and notifier), plus the outbox
+//! lifecycle against the real store.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

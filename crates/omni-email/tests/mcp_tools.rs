@@ -49,7 +49,7 @@ fn tool_set(app: &TestApp) -> Vec<McpTool> {
 }
 
 #[tokio::test]
-async fn registers_the_thirteen_tools_in_ts_order() {
+async fn registers_the_thirteen_tools_in_serving_order() {
     let app = TestApp::new().await;
     let names: Vec<String> = tool_set(&app).iter().map(|t| t.meta.name.clone()).collect();
     assert_eq!(

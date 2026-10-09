@@ -1,9 +1,8 @@
-//! Port of `src/reminders/service.spec.ts` (Reminders service).
+//! The Reminders service.
 //!
-//! "Registers the background task even if the initiating request is interrupted":
-//! registration is synchronous in Rust (the job is handed to the application's task
-//! tracker before any await), so the case checks that aborting the request after
-//! registration still completes the initial snapshot.
+//! Background registration is synchronous (the job is handed to the application's
+//! task tracker before any await), so the interruption case checks that aborting
+//! the request after registration still completes the initial snapshot.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 mod common;
@@ -682,8 +681,8 @@ async fn reserves_one_notification_across_repeated_checks_and_restart() {
     assert!(x.store.writes.load(Ordering::SeqCst) > 0);
 }
 
-/// Rust-only: as with the TS `notifyOnce`, a failed notification reservation is a
-/// storage failure. Nothing is delivered and the status reports private storage.
+/// A failed notification reservation is a storage failure. Nothing is
+/// delivered and the status reports private storage.
 #[tokio::test]
 async fn reports_storage_when_the_notification_reservation_cannot_be_saved() {
     let diagnostics = Arc::new(Mutex::new(Vec::new()));
@@ -703,7 +702,7 @@ async fn reports_storage_when_the_notification_reservation_cannot_be_saved() {
     };
     assert_eq!(status.diagnostic, Some(storage));
     assert_eq!(*diagnostics.lock().unwrap(), vec![storage]);
-    // As in TS, the unsaved in-memory reservation still suppresses later prompts.
+    // The unsaved in-memory reservation still suppresses later prompts.
     let started = x.service.start_authentication().await.unwrap();
     assert_eq!(started.reason, Some(Reason::Mfa));
     assert_eq!(x.notifications.load(Ordering::SeqCst), 0);
@@ -1038,7 +1037,7 @@ async fn derives_stable_record_ids_from_the_idempotency_key() {
         )
         .await;
     let operation = x.state().operations.into_iter().next().unwrap();
-    // sha256("\"stable-request-key-1\"") and the create fingerprint from the TS golden.
+    // sha256("\"stable-request-key-1\"") and the pinned create fingerprint.
     assert_eq!(
         operation.0,
         "b724a43c29ea75aae3c55291c4ecd8c9390a60064e0061a80031f0b9412a5bc4"

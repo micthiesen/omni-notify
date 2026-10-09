@@ -39,7 +39,7 @@ struct RouteState {
     auth_token: Arc<str>,
 }
 
-/// The router; `None` without `PRESSPODS_AUTH_TOKEN` (TS registered nothing).
+/// The router; `None` without `PRESSPODS_AUTH_TOKEN` (no routes are mounted).
 pub fn router(service: PressPods) -> Option<Router> {
     let token = service
         .config()
@@ -162,7 +162,7 @@ fn costs_dto(c: &Costs) -> api::PressPodsCosts {
     }
 }
 
-/// `serializeEpisode` (list payload).
+/// An episode in the list payload.
 pub fn episode_dto(e: &PressPodsEpisode) -> api::PressPodsEpisode {
     api::PressPodsEpisode {
         episode_id: e.episode_id.clone(),
@@ -195,7 +195,6 @@ pub fn episode_dto(e: &PressPodsEpisode) -> api::PressPodsEpisode {
     }
 }
 
-/// `serializeEpisodeDetail`.
 pub fn episode_detail_dto(e: &PressPodsEpisode) -> api::PressPodsEpisodeDetail {
     api::PressPodsEpisodeDetail {
         episode: episode_dto(e),
@@ -207,7 +206,6 @@ pub fn episode_detail_dto(e: &PressPodsEpisode) -> api::PressPodsEpisodeDetail {
     }
 }
 
-/// `serializeJob`.
 pub fn job_dto(j: &PressPodsJob) -> api::PressPodsJob {
     api::PressPodsJob {
         job_id: j.job_id.clone(),
@@ -386,7 +384,7 @@ pub enum ByteRange {
 
 static RANGE: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"^bytes=(\d*)-(\d*)$").ok());
 
-/// `parseByteRange`: `None` without a header, `Invalid` for a malformed or
+/// `None` without a header, `Invalid` for a malformed or
 /// unsatisfiable range; the end is clamped to the file.
 pub fn parse_byte_range(header: Option<&str>, size: u64) -> Option<ByteRange> {
     let header = header.filter(|h| !h.is_empty())?;
@@ -643,7 +641,7 @@ async fn delete_job(State(state): State<RouteState>, Path(job_id): Path<String>)
 
 #[cfg(test)]
 mod routes_spec {
-    //! Ports `src/press-pods/routes.spec.ts`.
+    //! Byte-range parsing cases.
     use super::*;
 
     fn range(start: u64, end: u64) -> Option<ByteRange> {

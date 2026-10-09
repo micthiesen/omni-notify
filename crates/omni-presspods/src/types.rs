@@ -1,4 +1,4 @@
-//! In-memory pipeline types (`src/press-pods/types.ts`, `agents/metadata.ts`).
+//! In-memory pipeline types.
 
 use serde::Serialize;
 
@@ -60,7 +60,7 @@ impl RetrieverResult {
     }
 }
 
-/// The persisted message of a failed attempt (TS `error.message`): a
+/// The persisted message of a failed attempt: a
 /// retriever's own failure keeps its operation (`"retrieve article with
 /// Wayback: No archived snapshot ..."`), a rating outcome is the bare cause.
 pub fn attempt_error(error: &PressPodsError) -> String {
@@ -71,7 +71,7 @@ pub fn attempt_error(error: &PressPodsError) -> String {
     }
 }
 
-/// `summarizeRetrieverAttempts`: the compact per-retriever outcome persisted
+/// The compact per-retriever outcome persisted
 /// on the episode (full results carry every article text).
 pub fn summarize_retriever_attempts(results: &[RetrieverResult]) -> Vec<RetrieverAttempt> {
     results

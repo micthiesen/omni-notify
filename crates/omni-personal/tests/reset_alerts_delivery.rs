@@ -1,4 +1,4 @@
-//! Port of `src/reset-alerts/delivery.spec.ts` (all cases kept), plus the
+//! Durable reset alert delivery, plus the
 //! Pushover adapter's 4xx/uncertain classification and record mode.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

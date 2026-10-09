@@ -1,15 +1,20 @@
 //! MCP tool registration.
 //!
-//! Tool metadata (name, title, description, schemas, annotations, policy) is
-//! loaded from golden JSON generated from the TS sources ([`golden`]), never
-//! hand-written. [`typed_tool`] validates inputs and outputs against the golden
-//! schemas; [`registry::ToolRegistry`] formats results like `src/mcp/tool.ts` and
-//! serves the tools through rmcp ([`registry::RegistryServer`]).
+//! Each tool's public contract (name, title, description, annotations, policy and
+//! input/output schemas) is a [`ToolDef`] declared next to its handler; the schemas
+//! are derived from `schemars::JsonSchema` types ([`schema`]). [`typed_tool`]
+//! validates inputs and outputs against those schemas; [`registry::ToolRegistry`]
+//! formats results and serves the tools through
+//! rmcp ([`registry::RegistryServer`]). `golden/tools-list.json` and
+//! `golden/mcp-policy.json` are snapshots generated from the definitions by
+//! `cargo xtask mcp-golden`.
 
 use std::future::Future;
-use std::sync::Arc;
+use std::marker::PhantomData;
+use std::sync::{Arc, OnceLock};
 
 use futures::future::BoxFuture;
+use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -17,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 pub mod golden;
 pub mod registry;
+pub mod schema;
 
 /// Recommended Executor policy (`docs/mcp-policy.json`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,7 +52,7 @@ pub struct ToolPolicy {
     pub recommended_policy: ExecutorPolicy,
 }
 
-/// Golden metadata for one tool.
+/// The metadata of one tool, as served by `tools/list` plus its policy.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ToolMeta {
     pub name: String,
@@ -58,28 +64,145 @@ pub struct ToolMeta {
     pub policy: ToolPolicy,
 }
 
+impl ToolMeta {
+    /// The `tools/list` entry: name, title, description, inputSchema, annotations,
+    /// outputSchema, in that order.
+    pub fn listed(&self) -> Map<String, Value> {
+        let mut tool = Map::new();
+        tool.insert("name".into(), Value::String(self.name.clone()));
+        tool.insert("title".into(), Value::String(self.title.clone()));
+        tool.insert(
+            "description".into(),
+            Value::String(self.description.clone()),
+        );
+        tool.insert(
+            "inputSchema".into(),
+            Value::Object((*self.input_schema).clone()),
+        );
+        tool.insert(
+            "annotations".into(),
+            serde_json::to_value(self.annotations).unwrap_or(Value::Null),
+        );
+        tool.insert(
+            "outputSchema".into(),
+            Value::Object((*self.output_schema).clone()),
+        );
+        tool
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ToolMetaError {
-    #[error("no golden metadata for MCP tool {0:?}")]
-    UnknownTool(String),
-    #[error("invalid golden MCP metadata: {0}")]
-    InvalidGolden(String),
-    #[error("invalid golden schema for MCP tool {tool:?}: {reason}")]
+    #[error("invalid schema for MCP tool {tool:?}: {reason}")]
     InvalidSchema { tool: String, reason: String },
+    #[error("invalid golden MCP handshake: {0}")]
+    Handshake(String),
 }
 
-/// Metadata for `name` from `crates/omni-mcp-kit/golden/tools-list.json` and
-/// `golden/mcp-policy.json` (embedded at build time).
-pub fn golden_meta(name: &str) -> Result<&'static ToolMeta, ToolMetaError> {
-    golden::golden_tools()?
-        .get(name)
-        .map(|(meta, _)| meta)
-        .ok_or_else(|| ToolMetaError::UnknownTool(name.to_owned()))
+/// A tool's recommended policy: side effects, cost and Executor policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Policy {
+    pub side_effects: &'static [&'static str],
+    pub cost: &'static str,
+    pub recommended: ExecutorPolicy,
 }
 
-/// A compiled JSON-schema validator (draft 2020-12, formats asserted like zod).
+/// The hand-written part of a tool's contract; [`ToolDef`] adds the schemas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ToolInfo {
+    pub name: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub annotations: Annotations,
+    pub policy: Policy,
+}
+
+/// A tool's complete public contract: [`ToolInfo`] plus the input schema derived
+/// from `I` and the output schema derived from `O`. Declared as a `static` next to
+/// the handler; the metadata is built once on first use.
+pub struct ToolDef<I, O> {
+    info: ToolInfo,
+    meta: OnceLock<Result<ToolMeta, String>>,
+    schemas: PhantomData<fn() -> (I, O)>,
+}
+
+impl<I, O> ToolDef<I, O> {
+    pub const fn new(info: ToolInfo) -> Self {
+        Self {
+            info,
+            meta: OnceLock::new(),
+            schemas: PhantomData,
+        }
+    }
+
+    pub const fn info(&self) -> &ToolInfo {
+        &self.info
+    }
+}
+
+/// A [`ToolDef`] with its schema types erased, for listing a package's tools.
+pub trait ToolDefinition: Sync {
+    fn name(&self) -> &'static str;
+    /// The metadata with derived schemas; fails when a schema leaves the served
+    /// dialect or does not compile as a validator.
+    fn meta(&self) -> Result<&ToolMeta, ToolMetaError>;
+}
+
+impl<I: JsonSchema, O: JsonSchema> ToolDefinition for ToolDef<I, O> {
+    fn name(&self) -> &'static str {
+        self.info.name
+    }
+
+    fn meta(&self) -> Result<&ToolMeta, ToolMetaError> {
+        let name = self.info.name;
+        self.meta
+            .get_or_init(|| {
+                build_meta(
+                    &self.info,
+                    schema::input_schema::<I>,
+                    schema::output_schema::<O>,
+                )
+            })
+            .as_ref()
+            .map_err(|reason| ToolMetaError::InvalidSchema {
+                tool: name.to_owned(),
+                reason: reason.clone(),
+            })
+    }
+}
+
+type SchemaFn = fn() -> Result<Map<String, Value>, schema::SchemaError>;
+
+fn build_meta(info: &ToolInfo, input: SchemaFn, output: SchemaFn) -> Result<ToolMeta, String> {
+    let build = |which: &str, f: SchemaFn| -> Result<Map<String, Value>, String> {
+        let schema = f().map_err(|e| format!("{which} schema {e}"))?;
+        schema::check_dialect(&schema).map_err(|e| format!("{which} schema {e}"))?;
+        SchemaValidator::new(info.name, &schema).map_err(|e| e.to_string())?;
+        Ok(schema)
+    };
+    Ok(ToolMeta {
+        name: info.name.to_owned(),
+        title: info.title.to_owned(),
+        description: info.description.to_owned(),
+        input_schema: Arc::new(build("input", input)?),
+        output_schema: Arc::new(build("output", output)?),
+        annotations: info.annotations,
+        policy: ToolPolicy {
+            side_effects: info
+                .policy
+                .side_effects
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+            cost: info.policy.cost.to_owned(),
+            recommended_policy: info.policy.recommended,
+        },
+    })
+}
+
+/// A compiled JSON-schema validator (draft 2020-12, formats asserted).
 ///
-/// `pattern` keywords follow ECMAScript regex semantics as zod's do: `\d` and `\w`
+/// `pattern` keywords follow ECMAScript regex semantics, as clients read them: `\d` and `\w`
 /// are ASCII-only and `\s` is JS whitespace (U+FEFF but not U+0085). `integer`
 /// accepts integral floats such as `2.0` (JS has one number type).
 pub struct SchemaValidator {
@@ -130,8 +253,7 @@ pub struct ToolContext {
 /// An MCP content block, serialized verbatim (`{"type":"text",...}`, resources, images).
 pub type Content = Map<String, Value>;
 
-/// A tool result: structured content, optionally with a custom content list
-/// (TS `formatResult`).
+/// A tool result: structured content, optionally with a custom content list.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ToolOutput {
     Structured(Map<String, Value>),
@@ -194,7 +316,7 @@ pub trait ToolHandler: Send + Sync {
     ) -> BoxFuture<'a, Result<ToolOutput, ToolError>>;
 }
 
-/// A registered tool: golden metadata plus its handler.
+/// A registered tool: its metadata plus its handler.
 #[derive(Clone)]
 pub struct McpTool {
     pub meta: &'static ToolMeta,
@@ -247,38 +369,53 @@ where
     }
 }
 
-/// Builds a tool whose input is validated against the golden input schema, then
-/// decoded with serde (explicit defaults stand in for zod defaults), and whose output
-/// must serialize to a JSON object that satisfies the golden output schema (TS
-/// `defineTool`). Integral floats in the input decode into integer fields, and
-/// whole-number `f64` output fields serialize without a fraction, as in JS. Fails
-/// when `name` has no golden metadata.
-pub fn typed_tool<I, O, F, Fut>(name: &str, f: F) -> Result<McpTool, ToolMetaError>
+/// Builds a tool from its definition: input is validated against the derived
+/// input schema, then decoded into the handler's `D` with serde (explicit defaults
+/// apply the advertised defaults); the handler's result must serialize to a JSON object
+/// that satisfies the derived output schema. Integral floats in
+/// the input decode into integer fields, and whole-number `f64` output fields
+/// serialize without a fraction, as in JS.
+pub fn typed_tool<I, O, D, R, F, Fut>(
+    def: &'static ToolDef<I, O>,
+    f: F,
+) -> Result<McpTool, ToolMetaError>
 where
-    I: DeserializeOwned + Send + 'static,
-    O: Serialize + Send + 'static,
-    F: Fn(I, ToolContext) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<O, ToolError>> + Send + 'static,
+    I: JsonSchema,
+    O: JsonSchema,
+    D: DeserializeOwned + Send + 'static,
+    R: Serialize + Send + 'static,
+    F: Fn(D, ToolContext) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<R, ToolError>> + Send + 'static,
 {
-    let meta = golden_meta(name)?;
+    let meta = def.meta()?;
     Ok(McpTool {
         meta,
         handler: Arc::new(TypedHandler {
             f,
-            input: Some(SchemaValidator::new(name, &meta.input_schema)?),
-            output: Some(SchemaValidator::new(name, &meta.output_schema)?),
+            input: Some(SchemaValidator::new(&meta.name, &meta.input_schema)?),
+            output: Some(SchemaValidator::new(&meta.name, &meta.output_schema)?),
             _types: std::marker::PhantomData,
         }),
     })
 }
 
 /// A tool with a hand-written handler (custom content via [`ToolOutput::Custom`]);
-/// the handler validates its own input. Fails when `name` has no golden metadata.
-pub fn raw_tool(name: &str, handler: Arc<dyn ToolHandler>) -> Result<McpTool, ToolMetaError> {
+/// the handler validates its own input.
+pub fn raw_tool(
+    def: &'static dyn ToolDefinition,
+    handler: Arc<dyn ToolHandler>,
+) -> Result<McpTool, ToolMetaError> {
     Ok(McpTool {
-        meta: golden_meta(name)?,
+        meta: def.meta()?,
         handler,
     })
+}
+
+/// The metadata of every definition in `defs`, in order.
+pub fn metas(
+    defs: &[&'static dyn ToolDefinition],
+) -> Result<Vec<&'static ToolMeta>, ToolMetaError> {
+    defs.iter().map(|def| def.meta()).collect()
 }
 
 /// `{items, nextCursor | null, total}`.
@@ -315,7 +452,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pagination_matches_ts() {
+    fn pagination_cases() {
         let page = paginate(vec![1, 2, 3, 4, 5], 1, 2);
         assert_eq!(
             page,

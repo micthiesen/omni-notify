@@ -29,14 +29,14 @@ pub struct ArrConfig {
 }
 
 impl ArrConfig {
-    /// `hasArrConnection`: a URL and an API key.
+    /// A URL and an API key.
     pub fn connection(&self) -> Option<(&str, &str)> {
         let url = self.url.as_deref().filter(|u| !u.is_empty())?;
         let key = self.api_key.as_deref().filter(|k| !k.is_empty())?;
         Some((url, key))
     }
 
-    /// `isConfigured`: connection plus root folder and quality profile.
+    /// Connection plus root folder and quality profile.
     pub fn acquisition(&self) -> Option<(&str, u64)> {
         self.connection()?;
         let root = self.root_folder_path.as_deref().filter(|r| !r.is_empty())?;
@@ -91,7 +91,7 @@ impl ArrHttp {
         self.mode
     }
 
-    /// `requestJson`: `<url>/api/v3/<path>` with the API key; any failure,
+    /// `<url>/api/v3/<path>` with the API key; any failure,
     /// timeout or schema mismatch is `Unavailable`, a non-2xx is `HttpError`.
     pub async fn request_json<T: DeserializeOwned>(
         &self,

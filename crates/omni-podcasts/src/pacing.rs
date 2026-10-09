@@ -13,7 +13,7 @@ struct Window {
     used: u32,
 }
 
-/// `takeRatePermit` + `Semaphore.withPermits(1)` from the TS clients.
+/// Serializes requests and spaces them by a rate window.
 #[derive(Debug)]
 pub struct RequestPacer {
     permits: Semaphore,

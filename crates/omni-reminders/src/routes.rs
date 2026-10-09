@@ -24,7 +24,7 @@ use omni_core::clock::SharedClock;
 
 use crate::service::RemindersService;
 
-/// The administration seam (the TS `RemindersControl`); errors carry no details.
+/// The administration seam; errors carry no details.
 pub trait RemindersControl: Send + Sync {
     fn status(&self) -> BoxFuture<'_, Result<PublicStatus, ()>>;
     fn start_authentication(&self) -> BoxFuture<'_, Result<PublicStatus, ()>>;
@@ -223,7 +223,7 @@ async fn status_route(State(state): State<RoutesState>) -> Response {
     }
 }
 
-/// `publicStatus`: drops an out-of-range HTTP status from the diagnostic.
+/// Drops an out-of-range HTTP status from the diagnostic.
 fn public(mut status: PublicStatus) -> PublicStatus {
     if let Some(diagnostic) = status.diagnostic.as_mut() {
         diagnostic.http_status = diagnostic.http_status.filter(|s| (100..=599).contains(s));

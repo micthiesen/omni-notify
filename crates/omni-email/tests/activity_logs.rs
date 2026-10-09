@@ -1,7 +1,5 @@
-//! Port of `src/email/activityLogs.spec.ts`.
-//!
-//! Persistence failures are injected with a SQLite trigger instead of spying on
-//! `EmailActivityLogEntity.upsert`.
+//! Per-activity log capture and persistence. Persistence failures are injected
+//! with a SQLite trigger.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;
@@ -194,7 +192,7 @@ async fn a_dropped_capture_releases_its_live_buffer() {
     );
     let timed_out = tokio::time::timeout(std::time::Duration::from_millis(20), pending).await;
     assert!(timed_out.is_err());
-    // Interrupted work persists nothing (the TS capture never reaches `take`).
+    // Interrupted work persists nothing.
     assert!(
         activity_logs::get(&store.store, "ParcelTracker#e7")
             .await

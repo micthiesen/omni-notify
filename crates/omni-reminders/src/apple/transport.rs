@@ -19,7 +19,7 @@ pub const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 pub struct AppleRequest {
     pub method: Method,
     pub url: Url,
-    /// Header names exactly as the TypeScript client spelled them.
+    /// Header names, spelled exactly as sent.
     pub headers: Vec<(String, String)>,
     pub body: Option<String>,
 }
@@ -85,7 +85,7 @@ impl AppleResponse {
     }
 }
 
-/// Transport failures, classified like the TypeScript client's thrown errors.
+/// Transport failures.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TransportError {
     #[error("network failure")]

@@ -1,4 +1,4 @@
-//! Typed environment configuration, owned by WP00.
+//! Typed environment configuration.
 //!
 //! `Config` has one typed field per variable. Derived fallbacks (Pushover
 //! channel tokens, `EMAIL_SELF_ADDRESS`) are methods so the raw value stays
@@ -287,7 +287,7 @@ config_struct! {
     arr_recovery_local_files: bool = "ARR_RECOVERY_LOCAL_FILES",
     tz: String = "TZ",
     smtp_host: Option<String> = "SMTP_HOST",
-    /// Finite number as in TS (`""` coerces to 0); default 587.
+    /// Finite number (`""` coerces to 0); default 587.
     smtp_port: f64 = "SMTP_PORT",
     smtp_user: Option<String> = "SMTP_USER",
     smtp_pass: Option<String> = "SMTP_PASS",
@@ -295,7 +295,7 @@ config_struct! {
     email_from: Option<String> = "EMAIL_FROM",
     logs_email_to: Option<String> = "LOGS_EMAIL_TO",
     whisker_credentials: Option<WhiskerCredentials> = "WHISKER_CREDENTIALS",
-    /// Finite number as in TS (`""` coerces to 0); default 3000.
+    /// Finite number (`""` coerces to 0); default 3000.
     frontend_port: f64 = "FRONTEND_PORT",
     omni_mcp_token: Option<String> = "OMNI_MCP_TOKEN",
     omni_device_link_token: Option<String> = "OMNI_DEVICE_LINK_TOKEN",
@@ -330,11 +330,11 @@ config_struct! {
     ios_control_apns_key_id: Option<String> = "IOS_CONTROL_APNS_KEY_ID",
     ios_control_apns_key_path: Option<String> = "IOS_CONTROL_APNS_KEY_PATH",
     ios_control_bundle_id: String = "IOS_CONTROL_BUNDLE_ID",
-    /// Process-level debug switch (presence only; read outside config.ts in TS).
+    /// Process-level debug switch (presence only).
     omni_debug: bool = "OMNI_DEBUG",
-    /// `FFMPEG_PATH || "ffmpeg"` (read outside config.ts in TS).
+    /// `FFMPEG_PATH`, falling back to `ffmpeg` when unset or empty.
     ffmpeg_path: Option<String> = "FFMPEG_PATH",
-    /// `YT_DLP_PATH || "yt-dlp"` (read outside config.ts in TS).
+    /// `YT_DLP_PATH`, falling back to `yt-dlp` when unset or empty.
     yt_dlp_path: Option<String> = "YT_DLP_PATH",
 }
 
@@ -351,7 +351,7 @@ const PRIVATE_CONFIG_KEYS: &[&str] = &[
     "LOGS_EMAIL_TO",
 ];
 
-/// mitools `SENSITIVE_KEY_PATTERNS` (case-insensitive).
+/// Key patterns whose values are redacted (case-insensitive).
 static SENSITIVE_KEY_PATTERNS: LazyLock<Option<regex::RegexSet>> = LazyLock::new(|| {
     regex::RegexSetBuilder::new([
         r"api[_-]?key",
@@ -389,7 +389,7 @@ static SENSITIVE_KEY_PATTERNS: LazyLock<Option<regex::RegexSet>> = LazyLock::new
     .ok()
 });
 
-/// mitools `isSensitiveKey`. If the fixed pattern set ever failed to compile,
+/// Whether `key` names a secret. If the fixed pattern set ever failed to compile,
 /// every key is treated as sensitive.
 pub fn is_sensitive_key(key: &str) -> bool {
     SENSITIVE_KEY_PATTERNS
@@ -397,7 +397,7 @@ pub fn is_sensitive_key(key: &str) -> bool {
         .is_none_or(|patterns| patterns.is_match(key))
 }
 
-/// `isStrongMcpToken`: at least 32 chars, no whitespace, 12+ distinct chars.
+/// At least 32 chars, no whitespace, 12+ distinct chars.
 pub fn is_strong_mcp_token(token: &str) -> bool {
     if omni_core::js::utf16_len(token) < MIN_MCP_TOKEN_LENGTH {
         return false;
@@ -425,8 +425,8 @@ pub enum ConfigError {
 
 impl Config {
     /// Decodes an explicit environment without reading process globals; fails
-    /// boot on the first invalid value (in declaration order) like the Effect
-    /// Schema decoder, then applies the MCP token rules of `src/mcp/auth.ts`.
+    /// boot on the first invalid value (in declaration order), then applies the
+    /// MCP and device-link token rules.
     /// Unknown variables are ignored.
     pub fn from_env(vars: &BTreeMap<String, String>) -> Result<Config, ConfigError> {
         let env = Env(vars);
@@ -703,7 +703,7 @@ impl Config {
             .collect()
     }
 
-    /// `DOCKERIZED ? /data/<DB_NAME> : <DB_NAME>` (string concatenation, as in TS).
+    /// `DOCKERIZED ? /data/<DB_NAME> : <DB_NAME>` (string concatenation).
     pub fn db_path(&self) -> PathBuf {
         if self.dockerized {
             PathBuf::from(format!("/data/{}", self.db_name))
@@ -762,7 +762,7 @@ fn invalid(key: &'static str, reason: impl Into<String>) -> ConfigError {
     }
 }
 
-/// The raw environment with the Effect Schema field decoders of `config.ts`.
+/// The raw environment with one decoder per field kind.
 struct Env<'a>(&'a BTreeMap<String, String>);
 
 impl Env<'_> {
@@ -770,12 +770,12 @@ impl Env<'_> {
         self.0.get(key).map(String::as_str)
     }
 
-    /// `Schema.optional(Schema.String)`: present (even empty) or absent.
+    /// Present (even empty) or absent.
     fn opt(&self, key: &str) -> Option<String> {
         self.get(key).map(str::to_owned)
     }
 
-    /// `withDecodingDefaultType`: the default applies only when absent.
+    /// The default applies only when absent.
     fn string(&self, key: &str, default: &str) -> String {
         self.get(key).unwrap_or(default).to_owned()
     }
@@ -790,7 +790,7 @@ impl Env<'_> {
         }
     }
 
-    /// `Schema.FiniteFromString` (JS `Number(s)`, so `""` is 0); `None` when absent.
+    /// A finite number parsed like JS `Number(s)`, so `""` is 0; `None` when absent.
     fn finite(&self, key: &'static str) -> Result<Option<f64>, ConfigError> {
         self.get(key)
             .map(|raw| {
@@ -804,7 +804,7 @@ impl Env<'_> {
             .transpose()
     }
 
-    /// `positiveIntegerFromString` (a finite integer > 0).
+    /// A positive integer (a finite integer > 0).
     fn positive_int(key: &'static str, raw: &str) -> Result<u64, ConfigError> {
         let value = omni_core::js::string_to_number(raw);
         if !value.is_finite()
@@ -831,7 +831,7 @@ impl Env<'_> {
         }
     }
 
-    /// `optionalPositiveInteger`: absent or `""` is `None`.
+    /// Absent or `""` is `None`.
     fn optional_positive_int(&self, key: &'static str) -> Result<Option<u64>, ConfigError> {
         match self.get(key) {
             None | Some("") => Ok(None),
@@ -866,7 +866,7 @@ impl Env<'_> {
         }
     }
 
-    /// `trimmedUrlString`: a valid URL, then trailing slashes trimmed.
+    /// A valid URL, then trailing slashes trimmed.
     fn trimmed_url(&self, key: &'static str, default: &str) -> Result<String, ConfigError> {
         match self.get(key) {
             None => Ok(default.to_owned()),
@@ -900,7 +900,7 @@ fn is_plain_http_url(value: &str) -> bool {
         && url.fragment().is_none_or(str::is_empty)
 }
 
-/// Effect `Schema.isUUID()` (versions 1-8, the nil UUID and the max UUID).
+/// A UUID string: versions 1-8, the nil UUID and the max UUID.
 fn is_uuid(value: &str) -> bool {
     static UUID: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
         regex::Regex::new(
@@ -913,7 +913,7 @@ fn is_uuid(value: &str) -> bool {
     UUID.as_ref().is_some_and(|re| re.is_match(value))
 }
 
-/// `validateMcpTokenConfiguration`: required and strong in production; in
+/// Required and strong in production; in
 /// development an absent token disables MCP, but a present one must be strong.
 fn validate_mcp_token(token: Option<&str>, production: bool) -> Result<(), ConfigError> {
     match token {
@@ -927,7 +927,7 @@ fn validate_mcp_token(token: Option<&str>, production: bool) -> Result<(), Confi
     }
 }
 
-/// `validateDeviceLinkTokenConfiguration`: optional, strong, distinct from the MCP token.
+/// Optional, strong, distinct from the MCP token.
 fn validate_device_link_token(token: Option<&str>, mcp: Option<&str>) -> Result<(), ConfigError> {
     match token {
         None | Some("") => Ok(()),
@@ -1002,7 +1002,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sensitive_keys_match_mitools() {
+    fn sensitive_key_patterns() {
         assert!(is_sensitive_key("OPENAI_API_KEY"));
         assert!(is_sensitive_key("PUSHOVER_LIVE_TOKEN"));
         assert!(is_sensitive_key("WHISKER_CREDENTIALS"));

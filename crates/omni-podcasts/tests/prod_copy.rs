@@ -2,9 +2,9 @@
 //! `OMNI_PROD_COPY=/path/to/copy.db cargo test -p omni-podcasts --test prod_copy -- --ignored --nocapture`.
 //!
 //! The file is copied into a temporary directory first. Every row of the four
-//! WP07 entities must decode into its typed entity, recompute its own primary
-//! key, and re-encode to the stored JS value (modulo `undefined` object
-//! fields, which TS reads like absent ones). The evidence fingerprint and the
+//! podcast entities must decode into its typed entity, recompute its own primary
+//! key, and re-encode to the stored value (modulo `undefined` object
+//! fields, which read like absent ones). The evidence fingerprint and the
 //! MCP/REST serializers are exercised on the real rows too.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stdout)]
 
@@ -157,7 +157,7 @@ async fn production_podcast_rows_decode_and_round_trip() {
 
 #[tokio::test]
 #[ignore = "needs OMNI_PROD_COPY pointing at a copy of the production docstore"]
-async fn production_evidence_ids_fingerprint_and_serializers_match_ts() {
+async fn production_evidence_ids_fingerprint_and_serializers_round_trip() {
     let (_dir, store) = open_copy().await;
     let evidence = store
         .read(|docs| docs.get_all::<PodcastTasteEvidenceData>())

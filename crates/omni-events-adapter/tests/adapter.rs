@@ -1,16 +1,12 @@
-//! Port of `packages/executor-events-adapter/test/adapter.node-test.mjs`.
+//! The events adapter end to end against a fake Executor.
 //!
-//! Every case keeps its TS name in snake_case. Adaptations:
 //! - `the_mcp_2_client_negotiates_the_modern_protocol_against_the_adapter`: there
 //!   is no Rust MCP 2 client, so the test performs the pinned client's
 //!   negotiation by hand (`server/discover` with the pinned version in header
 //!   and metadata) and asserts what the client requires to settle on the
 //!   modern era.
 //! - The continuation cases drive `Continuations` with a scripted legacy
-//!   connector, as the TS cases injected a fake SDK client.
-//!
-//! Cases after the ported ones cover Rust-specific decisions and contract edges
-//! the TS suite left implicit.
+//!   connector.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -534,8 +530,7 @@ async fn legacy_passthrough_keeps_method_query_and_sets_the_project_user_agent()
 
 #[tokio::test]
 async fn tools_call_without_advertised_elicitation_still_runs() {
-    // TS registered an elicitation handler on a client without the capability,
-    // which the SDK rejects, so such calls always failed; the port runs them.
+    // A client that does not advertise elicitation still gets its call run.
     let fake = FakeConnector::new(Arc::new(|_call, elicit| {
         Box::pin(async move {
             assert!(elicit.is_none());

@@ -1,5 +1,5 @@
-//! Port of `src/calendar-events/persistence.atomic.spec.ts` ("Calendar event
-//! transactions"): forced SQLite failures roll back the whole operation.
+//! Calendar event transactions: forced SQLite failures roll back the whole
+//! operation.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_calendar::persistence::{self, CreatedCalendarEvent, compute_event_hash};

@@ -93,17 +93,20 @@ port and continues.
 ## Data compatibility
 
 The production database is the SQLite file at `DB_NAME`
-(`/data/docstore.db` in the container), created by the earlier TypeScript service.
-Its format is a contract:
+(`/data/docstore.db` in the container). It holds rows written since the service
+first ran, so its format is a contract:
 
 - One connection on a dedicated thread, WAL, `synchronous=NORMAL`,
   `busy_timeout=5000`, writes in `BEGIN IMMEDIATE`.
 - The `blobs` table keys are `$<entity>#` plus parts joined by `#`
   (`s<utf16 len>:<value>`, `n<number>`, `b1`/`b0`). Reads hide expired rows.
-- Payloads are CBOR encoded exactly as node-cbor 10 would encode the same JS
-  value (`crates/omni-store/src/cbor/`): shortest integers, f32 when lossless,
-  tag 1 dates, tag 258 sets, definite maps in field order. The committed vectors
-  in `crates/omni-store/tests/golden/cbor.json` freeze that behavior.
+- Payloads are CBOR. The decoder reads every format already stored, including
+  node-cbor 10 rows written by earlier versions (tag 0/1 dates, tag 258 sets,
+  bignums, explicit `undefined`); the committed node vectors in
+  `crates/omni-store/tests/golden/cbor.json` freeze that. The encoder writes
+  definite-length CBOR with integer heads for integral numbers, 64-bit floats
+  otherwise, tag 1 dates, and objects without their `undefined` properties;
+  `cbor::same_value` defines the equality every write must preserve.
 - Every entity struct carries `#[serde(flatten)] extra: Extra`, so a
   read-modify-write never drops fields it does not know.
 - Values derived with JS semantics and then persisted or hashed (UTF-16 lengths,
@@ -113,12 +116,11 @@ Its format is a contract:
   `EntityDescriptor` list. Reproducible data changes are boot migrations, not
   manual edits.
 
-`omni-notify compat-audit --db <copy> [--rewrite-to <new.db>]` checks a copy of
-production: per-entity row counts, CBOR and typed decode failures, primary-key
-recomputation, unknown or legacy rows, and the typed round trip
-`decode -> typed -> encode -> decode`. The source file is copied to a temporary
-directory first and never opened in place. `cargo xtask compat-audit --db <copy>`
-runs the row-level subset that needs only the foundation crates. Take the copy
+`omni-notify compat-audit --db <copy>` is a read-only decode and health audit
+of a copy of production: per-entity row counts, NULL payloads, CBOR and typed
+decode failures, primary-key recomputation, unknown or legacy rows, and the
+typed round trip `decode -> typed -> encode -> decode`. The source file is
+copied to a temporary directory first and never opened in place. Take the copy
 with `sqlite3 docstore.db ".backup /tmp/copy.db"` on boris, keep it mode 600
 outside the repository, and point `OMNI_PROD_COPY` at it to run the ignored
 `prod_copy` tests.
@@ -128,7 +130,8 @@ outside the repository, and point `OMNI_PROD_COPY` at it to run the ignored
 External contracts are frozen by committed fixtures: HTTP JSON responses
 (`crates/omni-api/tests/golden/http/`), MCP `tools/list`, handshake and policy
 (`crates/omni-mcp-kit/golden/`), the PressPods RSS feed and ffmpeg arguments,
-CBOR vectors, MIME parsing, config parsing, cron parity and JS-compat cases.
+CBOR vectors, MIME parsing, config parsing, cron reference times and JS
+semantics cases.
 
 Committed fixtures are synthetic. `cargo xtask capture-golden --base URL`
 captures read-only GETs and the MCP handshake from a running server into the
@@ -139,9 +142,11 @@ free text consistently and failing if any replaced value leaks.
 personal markers. `cargo xtask golden-check` verifies the MCP policy and that
 committed fixtures are unchanged.
 
-MCP tool metadata in `crates/omni-mcp-kit/golden/` is the source of truth for
-each tool's public contract. After changing it, run `cargo xtask mcp-policy` to
-render `docs/mcp-policy.json` and its golden copy.
+Each MCP tool's public contract is a `ToolDef` with `schemars`-derived schema
+types in its package's `defs` module; `crates/omni-mcp-kit/golden/tools-list.json`,
+the policy inventory and the `tools/list` copies in the protocol fixture are
+generated from those definitions. After changing one, run
+`cargo xtask mcp-golden` and review the diff (see `docs/mcp.md`).
 
 ## Frontend
 
@@ -182,12 +187,13 @@ script, so the `/reminders` CSP needs only `'wasm-unsafe-eval'`.
 The Rust stages rely on cargo-chef layers, not cache mounts, because the GitHub
 Actions cache exports layers but not mounts.
 
-CI (`.github/workflows/ci.yml`): `lint-and-test` runs fmt, native and wasm32
-clippy with `-D warnings`, `cargo deny --locked check`, `cargo xtask deps-check`
-and `cargo test --workspace --locked`, using `Swatinem/rust-cache`. `image` builds
-the Dockerfile in parallel with `type=gha,mode=max` layer caching. `publish`
-pushes `ghcr.io/micthiesen/omni-notify:latest` and `:<sha>` after both pass, from
-the fully cached build. The `Executor Events Adapter` workflow builds and
+CI (`.github/workflows/ci.yml`) runs three jobs in parallel, using
+`Swatinem/rust-cache` for the Rust ones. `lint` runs fmt, native and wasm32
+clippy with `-D warnings`, `cargo xtask deps-check` and `cargo deny --locked
+check`. `test` runs `cargo nextest run --workspace --locked --profile ci`.
+`image` builds the Dockerfile with `type=gha,mode=max` layer caching. `publish`
+pushes `ghcr.io/micthiesen/omni-notify:latest` and `:<sha>` after all three
+pass, from the fully cached build. The `Executor Events Adapter` workflow builds and
 publishes the sidecar image from `deploy/executor-events/Dockerfile`.
 
 On boris, `omni-notify-deploy.timer` pulls `:latest` every minute, recreates the

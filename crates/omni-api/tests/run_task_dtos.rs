@@ -1,6 +1,5 @@
-//! Wire shapes of the WP00 DTOs against the TS serializers (`serializeRun`,
-//! `TaskRegistry.list`, the run-log routes). Golden fixtures from production
-//! (`xtask capture-golden`) replace these hand-written bodies once captured.
+//! Wire shapes of the task, run and run-log DTOs, including key order and
+//! explicit nulls.
 
 use omni_api::runs::{
     LogLevel, Run, RunLogLine, RunLogStreamFrame, RunLogsResponse, RunStatus, RunTrigger,
@@ -22,7 +21,7 @@ fn run() -> Run {
 }
 
 #[test]
-fn run_serializes_every_optional_field_as_null_in_ts_key_order() {
+fn run_serializes_every_optional_field_as_null_in_wire_key_order() {
     assert_eq!(
         serde_json::to_string(&run()).unwrap(),
         r#"{"runId":"LiveCheckTask:0f8fad5b-d9cb-469f-a165-70867728950e","taskName":"LiveCheckTask","trigger":"schedule","scheduledFor":null,"startedAt":1760000000000,"finishedAt":1760000001000,"status":"success","error":null,"summary":null}"#

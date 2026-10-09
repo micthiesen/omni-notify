@@ -1,4 +1,4 @@
-//! TTS providers (`src/press-pods/speech/providers/*`, `voices.ts`).
+//! TTS providers and voices.
 //!
 //! A provider turns one narration chunk into MP3 bytes; chunking, per-chunk
 //! mastering and stitching are provider-agnostic (`synthesize`). Higgs (the
@@ -47,7 +47,7 @@ pub struct Voice {
     pub name: String,
 }
 
-/// `getVoice`: male authors get the male narrator; female and unknown the
+/// Male authors get the male narrator; female and unknown the
 /// female one (`ELEVENLABS_VOICE_*` override the ids).
 pub fn elevenlabs_voice(config: &Config, gender: Option<AuthorGender>) -> Voice {
     let custom = |id: &Option<String>| {

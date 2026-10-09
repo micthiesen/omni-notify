@@ -1,4 +1,4 @@
-//! Bounded, order-preserving fan-out (`Effect.forEach(..., { concurrency })`).
+//! Bounded, order-preserving fan-out.
 //! Futures are boxed before they are buffered so the stream holds no closure
 //! types (which keeps the surrounding futures `Send` for every lifetime).
 

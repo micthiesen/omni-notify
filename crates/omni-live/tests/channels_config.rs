@@ -1,4 +1,4 @@
-//! Port of `src/live-check/channelsConfig.spec.ts`.
+//! `channels.json` loading and validation.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::path::PathBuf;

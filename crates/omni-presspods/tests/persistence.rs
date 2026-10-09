@@ -1,8 +1,5 @@
-//! Ports `src/press-pods/persistence.spec.ts`.
-//!
-//! Each case runs on its own temporary store, so the TS `beforeEach` row
-//! cleanup (the spec DB persisted on disk) is unnecessary. Times come from
-//! the test clock (`TEST_EPOCH_MS`) instead of `Date.now()`.
+//! PressPods persistence. Each case runs on its own temporary store; times
+//! come from the test clock (`TEST_EPOCH_MS`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

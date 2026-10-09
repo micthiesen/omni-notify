@@ -1,17 +1,11 @@
-//! Port of `src/effect/publicHttp.spec.ts`.
+//! The SSRF-guarded public HTTP client: address checks, redirects and response
+//! size limits.
 //!
-//! Dropped cases (no Rust equivalent):
-//! - "passes AbortSignal to Got and aborts it when interrupted": dropping the
-//!   request future cancels it; `times_out_across_the_whole_request` in
-//!   `http_client.rs` covers bounded waiting.
-//! - "checks late response headers even when the stream has no chunks" and
-//!   "rejects an oversized declared empty body": hyper delivers headers
-//!   before any body read, so the Content-Length precheck always runs first
-//!   (`rejects_an_oversized_fixed_length_response_before_buffering_it`).
-//! - "observes a rejected stream cancellation": no promise rejection exists
-//!   when a Rust body is dropped.
-//!
-//! The chunked overflow cases live in `http_client.rs`.
+//! Cancellation is dropping the request future; `times_out_across_the_whole_request`
+//! in `http_client.rs` covers bounded waiting. hyper delivers headers before any
+//! body read, so the Content-Length precheck always runs first
+//! (`rejects_an_oversized_fixed_length_response_before_buffering_it`). The
+//! chunked overflow cases live in `http_client.rs`.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::net::IpAddr;

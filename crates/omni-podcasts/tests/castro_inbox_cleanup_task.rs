@@ -1,6 +1,4 @@
-//! Port of `src/podcast-recs/castro/inboxCleanupTask.spec.ts`.
-//! Castro specs carry a `castro_` prefix: the `auth` and `client` stems collide
-//! with the Podcast Index specs.
+//! The `CastroInboxCleanup` task.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

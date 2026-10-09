@@ -1,5 +1,5 @@
-//! Port of `src/arr-recovery/filesystem.spec.ts`. The TS mock of `readdir` is a
-//! scripted [`DirLister`]; one extra case reads a real temporary directory.
+//! Download directory inspection through a scripted [`DirLister`]; one case
+//! reads a real temporary directory.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::io;

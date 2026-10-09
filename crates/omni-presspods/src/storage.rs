@@ -24,7 +24,7 @@ pub fn is_audio_file_name(name: &str) -> bool {
     AUDIO_FILE.as_ref().is_some_and(|re| re.is_match(name))
 }
 
-/// `getAudioDir()`: `PRESSPODS_AUDIO_DIR`, else `press-pods-audio` next to the
+/// `PRESSPODS_AUDIO_DIR`, else `press-pods-audio` next to the
 /// database (mirroring the docstore path resolution, including Docker's
 /// `/data/` prefix).
 pub fn resolve_audio_dir(config: &omni_config::Config) -> PathBuf {
@@ -168,10 +168,9 @@ pub(crate) fn random_hex(n: usize) -> String {
 
 #[cfg(test)]
 mod storage_spec {
-    //! Ports `src/press-pods/storage.spec.ts`. `materializeCheckpointWav` has
-    //! no Rust counterpart (resumed checkpoints are materialized as owned
-    //! temporary files by the audio chain, see `speech::audio_chain::TempFile`),
-    //! so its case checks that path instead.
+    //! Episode and checkpoint storage cases. Resumed checkpoints are
+    //! materialized as owned temporary files by the audio chain (see
+    //! `speech::audio_chain::TempFile`).
     use super::*;
 
     fn store() -> (AudioStore, tempfile::TempDir) {

@@ -1,4 +1,4 @@
-//! Port of `src/live-check/transitions.spec.ts`.
+//! Aggregate live transitions.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_live::platform::{FetchedLive, FetchedStatus};

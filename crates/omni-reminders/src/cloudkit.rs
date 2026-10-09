@@ -166,7 +166,7 @@ impl CkRecord {
     }
 }
 
-/// `Schema.optional(Schema.String)`: absent or a string; anything else fails.
+/// Absent or a string; anything else fails.
 fn opt_string(object: &Map<String, Value>, key: &str) -> Result<Option<String>, ()> {
     match object.get(key) {
         None => Ok(None),
@@ -202,13 +202,13 @@ fn opt_timestamp(object: &Map<String, Value>, key: &str) -> Result<Option<f64>, 
     }
 }
 
-/// Decodes a record strictly like the Effect `RecordSchema` of `cloudkit.ts`.
+/// Decodes a record strictly.
 pub(crate) fn decode_record(value: &Value) -> Option<CkRecord> {
     decode_record_with(value, true)
 }
 
-/// Decodes a record like the narrower `RecordSchema` of `cloudkitExtras.ts` and
-/// `recurringCompletion.ts`: `created`, `modified` and `reason` are not validated
+/// Decodes a record for list and recurrence operations: `created`, `modified`
+/// and `reason` are not validated
 /// (and not retained).
 pub(crate) fn decode_lenient_record(value: &Value) -> Option<CkRecord> {
     decode_record_with(value, false)
@@ -313,7 +313,7 @@ pub struct RemindersSnapshot {
     pub reminders: Vec<Reminder>,
 }
 
-/// `ReminderCreateInput` without the record id (the service derives it).
+/// Reminder create input without the record id (the service derives it).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReminderCreateFields {

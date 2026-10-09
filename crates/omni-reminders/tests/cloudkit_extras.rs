@@ -1,4 +1,4 @@
-//! Port of `src/reminders/cloudkitExtras.spec.ts` (verified list and recurrence operations).
+//! Verified list and recurrence operations.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 mod common;

@@ -1,10 +1,7 @@
-//! Port of `src/ios-controls/apns.spec.ts`, plus the HTTP behavior of the
-//! client against a mock APNs origin.
-//!
-//! The TS case "destroys an interrupted request and closes its scoped HTTP/2
-//! session" asserts node `http2` session bookkeeping; reqwest owns the
-//! connection pool, and a dropped request future aborts the stream. It is
-//! replaced by "times out a stalled request as a transport error".
+//! APNs token signing and pushes, plus the HTTP behavior of the client against
+//! a mock APNs origin. reqwest owns the connection pool and a dropped request
+//! future aborts the stream, so stalls are covered by "times out a stalled
+//! request as a transport error".
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

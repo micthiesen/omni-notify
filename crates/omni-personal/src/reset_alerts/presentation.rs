@@ -1,9 +1,7 @@
 //! Shared push presentation.
 
 use jiff::tz::TimeZone;
-use omni_core::js::{utf16_len, utf16_slice};
-
-use crate::js::{is_js_whitespace, trim, trim_end};
+use omni_core::js::{is_js_whitespace, trim, trim_end, utf16_len, utf16_slice};
 
 /// Only signals published within this window are eligible, including on startup.
 pub const ALERT_LOOKBACK_MS: i64 = 48 * 60 * 60_000;

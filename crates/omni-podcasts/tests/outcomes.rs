@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/outcomes.spec.ts`.
+//! Podcast recommendation outcomes.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

@@ -1,7 +1,7 @@
 //! Composition types shared by every subsystem and the binary.
 //!
 //! Each subsystem crate exposes a constructor returning a [`Subsystem`]; the
-//! binary (WP14) merges routers, registers tasks, MCP tools and entities, runs
+//! binary merges routers, registers tasks, MCP tools and entities, runs
 //! boot steps in phase order, starts services and wires [`ports::Ports`].
 
 use std::path::PathBuf;
@@ -107,8 +107,7 @@ impl Default for Subsystem {
 }
 
 impl Subsystem {
-    /// An empty subsystem with a name (WP14 integrates against these until
-    /// the real subsystem lands).
+    /// An empty subsystem with a name, filled in with struct update syntax.
     pub fn named(name: &'static str) -> Self {
         Self {
             name,

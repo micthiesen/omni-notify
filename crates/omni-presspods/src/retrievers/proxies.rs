@@ -1,5 +1,5 @@
-//! Retrievers that go through a third-party service (`wayback.ts`,
-//! `removepaywall.ts`, `jina.ts`).
+//! Retrievers that go through a third-party service (Wayback Machine,
+//! RemovePaywall, Jina Reader).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -56,7 +56,7 @@ struct WaybackSnapshot {
     timestamp: String,
 }
 
-/// `parseWaybackTimestamp`: `YYYYMMDDhhmmss` as local time (`new Date(y, m, d, ...)`).
+/// `YYYYMMDDhhmmss` as local time (`new Date(y, m, d, ...)`).
 pub fn parse_wayback_timestamp(timestamp: &str, tz: &jiff::tz::TimeZone) -> Option<i64> {
     if timestamp.len() < 8 || !timestamp.is_ascii() {
         return None;

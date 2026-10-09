@@ -1,4 +1,4 @@
-//! iOS live controls (WP04): signed routes for the OmniLive app, device
+//! iOS live controls: signed routes for the OmniLive app, device
 //! registrations, the four live slots and APNs "controls changed" pushes
 //! reconciled after every live-check tick.
 

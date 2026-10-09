@@ -1,4 +1,4 @@
-//! Port of `src/recommendations/outcomes.spec.ts`.
+//! Recommendation outcomes.
 #![allow(clippy::expect_used)]
 
 use std::collections::HashMap;

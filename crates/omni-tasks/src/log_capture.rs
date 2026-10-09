@@ -235,8 +235,7 @@ where
     }
 }
 
-/// Whether an event is application logging (the TS `Logger` calls the tap
-/// saw): DEBUG and above from a named logger target (`"LiveCheck"`,
+/// Whether an event is application logging: DEBUG and above from a named logger target (`"LiveCheck"`,
 /// `"Main:TaskRegistry"`) or an `omni_*` module path. TRACE events and
 /// dependency internals (`hyper::proto::h1`, `rustls::client`) are not run
 /// log lines.

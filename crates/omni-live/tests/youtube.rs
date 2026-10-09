@@ -1,4 +1,4 @@
-//! Port of `src/live-check/platforms/youtube.spec.ts`.
+//! YouTube live status.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_live::platform::{FetchedLive, FetchedStatus};

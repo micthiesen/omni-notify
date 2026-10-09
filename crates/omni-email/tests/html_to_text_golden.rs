@@ -1,4 +1,4 @@
-//! `html_to_text` against html-to-text 10 with the former TS options
+//! `html_to_text` against html-to-text 10 output with the production options
 //! (committed `tests/golden/html_to_text.json`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

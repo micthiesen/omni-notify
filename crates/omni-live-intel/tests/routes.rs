@@ -1,4 +1,4 @@
-//! Route behavior for `server.ts` 779-848 (intelligence details and feedback)
+//! Route behavior for intelligence details and feedback
 //! and the `LiveIntelligence` port, over a fake `LiveDirectory`.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
@@ -176,7 +176,7 @@ async fn feedback_is_validated_recorded_and_stale_alerts_are_404() {
 async fn the_port_serves_details_and_feedback() {
     let (app, _router) = app().await;
     // Disabled (the default): no port, so MCP reports the capability as off
-    // and the live-check task has no observer, as in TS.
+    // and the live-check task has no observer.
     assert!(app.ctx.ports.live_intelligence().is_none());
     let port = IntelligencePort::new(IntelState {
         store: app.ctx.store.clone(),

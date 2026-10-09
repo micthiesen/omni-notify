@@ -1,5 +1,4 @@
-//! Port of `src/mcp/tools/email-archive.spec.ts` (email archive receipts),
-//! plus the queue/cancel/status tool flow through golden metadata.
+//! Email archive receipts and the queue/cancel/status tool flow.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_core::clock::{SharedClock, TestClock};
@@ -137,7 +136,7 @@ async fn queue_status_cancel_and_restore_tools_follow_the_receipt() {
     .await
     .unwrap_err();
     assert_eq!(rejected.phase, omni_mcp_kit::ToolPhase::Input);
-    // zod's `\d` is ASCII-only: other Unicode digits are rejected as input.
+    // Schema `\d` is ASCII-only: other Unicode digits are rejected as input.
     let non_ascii = call(
         "email_archive_queue",
         json!({

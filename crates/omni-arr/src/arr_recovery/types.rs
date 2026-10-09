@@ -74,7 +74,7 @@ impl ArrRecoveryError {
         Self::new(operation, ArrCause::Message(message.into()))
     }
 
-    /// Wraps `inner` under a new operation (TS `new ArrRecoveryError({ operation, cause })`).
+    /// Wraps `inner` under a new operation.
     pub fn wrap(operation: impl Into<String>, inner: ArrRecoveryError) -> Self {
         Self::new(operation, ArrCause::Nested(Box::new(inner)))
     }

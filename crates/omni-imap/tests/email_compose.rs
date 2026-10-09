@@ -1,10 +1,9 @@
-//! Port of `src/mcp/tools/email-compose.spec.ts` (compose MCP idempotency and
-//! durable Sent recovery). The handlers run through their golden MCP
-//! metadata; SMTP and the mailbox are scripted fakes.
+//! Compose MCP idempotency and durable Sent recovery. The handlers run through
+//! their tool definitions; SMTP and the mailbox are scripted fakes.
 //!
-//! "keeps uncertain failures pending": TS interrupts the send Effect; here the
-//! fake SMTP submission never completes and the caller times out, which
-//! leaves the same durable `pending` reservation.
+//! "keeps uncertain failures pending": the fake SMTP submission never
+//! completes and the caller times out, which leaves a durable `pending`
+//! reservation.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashMap;
@@ -1039,7 +1038,7 @@ async fn rejects_malformed_references_and_caller_supplied_bytes_before_imap_or_s
             assert_eq!(error.phase, ToolPhase::Input, "{tool} {attachments}");
         }
     }
-    // A messageId that is valid only after trimming is accepted like zod's trim.
+    // A messageId that is valid only after trimming is accepted.
     let mut padded = reference(1, None);
     padded["messageId"] = json!(format!("  {SOURCE} "));
     let error =

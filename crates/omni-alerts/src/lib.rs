@@ -54,7 +54,7 @@ pub enum PushOutcome {
 
 /// The API rejected the message (`status`, with the response `body`), or the
 /// request never completed (`status: None`, `body` is the cause's message).
-/// Displays as mitools `PushoverError.message`, which TS persists and shows.
+/// The display text is what run errors persist and the UI shows.
 #[derive(thiserror::Error, Debug)]
 pub struct PushoverError {
     pub status: Option<u16>,
@@ -221,7 +221,7 @@ impl Pushover {
             .send_bounded(PUSHOVER_MAX_RESPONSE)
             .await
             .map_err(|error| match &error {
-                // mitools keeps an HTTP client error's status and no body.
+                // An HTTP status error keeps its status and no body.
                 omni_http::HttpError::Status { status, .. } => PushoverError {
                     status: Some(*status),
                     body: String::new(),
@@ -240,7 +240,7 @@ impl Pushover {
         Ok(PushOutcome::Sent)
     }
 
-    /// mitools `Pushover.enabled`: a `PUSHOVER_USER` is configured, so messages
+    /// Whether a `PUSHOVER_USER` is configured, so messages
     /// with a token are sent (or recorded).
     pub fn is_configured(&self) -> bool {
         self.inner
@@ -266,7 +266,7 @@ impl Pushover {
     }
 }
 
-/// The form fields mitools `Pushover.notify` sends: empty title, url,
+/// The Pushover form fields: empty title, url,
 /// url title and sound and a zero timestamp are omitted.
 fn pushover_form(token: &str, user: &str, m: &PushoverMessage) -> Vec<(&'static str, String)> {
     let mut form = vec![
@@ -296,13 +296,13 @@ fn pushover_form(token: &str, user: &str, m: &PushoverMessage) -> Vec<(&'static 
     form
 }
 
-/// A notification gate consulted before the throttle (Castro, WP07).
+/// A notification gate consulted before the throttle (used by Castro).
 pub trait AlertGate: Send + Sync {
     fn applies(&self, title: &str) -> bool;
     fn should_notify<'a>(&'a self, title: &'a str) -> BoxFuture<'a, bool>;
 }
 
-/// An ERROR log line headed for Pushover (mitools `LogNotification`).
+/// An ERROR log line headed for Pushover.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlertNotification {
     pub logger_name: String,
@@ -367,7 +367,7 @@ impl Visit for AlertVisitor {
 
 /// Application ERROR logs only: a named logger target (`"Scheduler"`,
 /// `"Main:TaskRegistry"`) or an `omni_*` module path, never dependency
-/// internals (the TS hook saw only `Logger` calls).
+/// internals.
 fn is_app_error(metadata: &tracing::Metadata<'_>) -> bool {
     let target = metadata.target();
     *metadata.level() == Level::ERROR && (!target.contains("::") || target.starts_with("omni_"))
@@ -439,7 +439,6 @@ impl AlertWorker {
         ) else {
             return;
         };
-        // mitools `Pushover.logHook`.
         let message = PushoverMessage {
             title: Some(format!("Error: {}", admitted.title)),
             message: admitted.body,

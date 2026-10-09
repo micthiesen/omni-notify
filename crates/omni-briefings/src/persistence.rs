@@ -318,7 +318,7 @@ pub async fn distribute_run_cost(
         .await
 }
 
-/// `formatNotifications`: the newest `count` as `- title (url) [Feb 6, 2:30 PM]`.
+/// The newest `count` as `- title (url) [Feb 6, 2:30 PM]`.
 pub fn format_notifications(
     notifications: &[BriefingNotificationData],
     count: i64,
@@ -344,7 +344,7 @@ pub fn format_notifications(
         .join("\n")
 }
 
-/// `resolveHistoryPlaceholders`: replaces every `{{history:N}}` with the
+/// Replaces every `{{history:N}}` with the
 /// briefing's newest `N` notifications.
 pub async fn resolve_history_placeholders(
     store: &Store,

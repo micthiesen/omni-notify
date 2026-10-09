@@ -1,4 +1,4 @@
-//! Port of `src/calendar-events/extraction/sanitize.spec.ts`.
+//! Sanitization of extracted calendar events.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_calendar::extraction::sanitize::{

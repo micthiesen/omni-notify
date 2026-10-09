@@ -59,7 +59,7 @@ fn tracks(movies: &[MediaItem], tmdb_id: i64) -> bool {
     })
 }
 
-/// `addRadarrMovie`: existing → lookup → add (search on) → verify by TMDB id.
+/// Adds a movie: existing → lookup → add (search on) → verify by TMDB id.
 /// Success is reported only once the movie is visible in Radarr's list.
 pub async fn add_radarr_movie(
     http: &ArrHttp,

@@ -1,4 +1,5 @@
-//! Byte-identical round trip of every row of a production docstore copy.
+//! Every row of a production docstore copy decodes, and its re-encoding (plain
+//! and through serde) reads back as the same JS value.
 //!
 //! Ignored by default (needs a database). Run with
 //! `OMNI_PROD_COPY=/path/to/docstore.db cargo test -p omni-store --test prod_roundtrip -- --ignored --nocapture`.
@@ -46,7 +47,7 @@ fn tally(v: &JsValue, counts: &mut BTreeMap<&'static str, u64>) {
 
 #[tokio::test]
 #[ignore = "needs OMNI_PROD_COPY pointing at a production docstore copy"]
-async fn every_production_row_round_trips_byte_identically() {
+async fn every_production_row_decodes_and_round_trips() {
     let Ok(source) = std::env::var("OMNI_PROD_COPY") else {
         panic!("set OMNI_PROD_COPY");
     };
@@ -73,7 +74,7 @@ async fn every_production_row_round_trips_byte_identically() {
         .expect("read rows");
 
     let mut decode_failures = Vec::new();
-    let mut byte_mismatches = Vec::new();
+    let mut value_mismatches = Vec::new();
     let mut serde_mismatches = Vec::new();
     let mut kinds = BTreeMap::new();
     let mut by_entity: BTreeMap<String, u64> = BTreeMap::new();
@@ -93,12 +94,13 @@ async fn every_production_row_round_trips_byte_identically() {
             }
         };
         tally(&value, &mut kinds);
-        if cbor::encode(&value) != data {
-            byte_mismatches.push(row.pk.clone());
+        let reread = cbor::decode(&cbor::encode(&value)).expect("own encoding decodes");
+        if !cbor::same_value(&reread, &value) {
+            value_mismatches.push(row.pk.clone());
         }
         let via_serde: JsValue = cbor::from_value(value.clone()).expect("JsValue from_value");
         let back = cbor::to_value(&via_serde).expect("JsValue to_value");
-        if back != value && format!("{back:?}") != format!("{value:?}") {
+        if !cbor::same_value(&back, &value) {
             serde_mismatches.push(row.pk.clone());
         }
     }
@@ -111,15 +113,15 @@ async fn every_production_row_round_trips_byte_identically() {
         decode_failures.len()
     );
     println!(
-        "byte mismatches ({}): {:?}",
-        byte_mismatches.len(),
-        &byte_mismatches[..byte_mismatches.len().min(20)]
+        "value mismatches ({}): {:?}",
+        value_mismatches.len(),
+        &value_mismatches[..value_mismatches.len().min(20)]
     );
     println!(
         "serde round-trip mismatches ({}): {serde_mismatches:?}",
         serde_mismatches.len()
     );
     assert!(decode_failures.is_empty());
-    assert!(byte_mismatches.is_empty());
+    assert!(value_mismatches.is_empty());
     assert!(serde_mismatches.is_empty());
 }

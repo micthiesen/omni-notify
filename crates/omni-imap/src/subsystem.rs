@@ -1,5 +1,5 @@
-//! Composition for WP14: the IMAP transport (when iCloud credentials are set),
-//! the `EmailArchive` task, the nine WP01 MCP tools, the cursor entity, the
+//! Composition for app wiring: the IMAP transport (when iCloud credentials are set),
+//! the `EmailArchive` task, the nine mail transport MCP tools, the cursor entity, the
 //! data-manager row, the post-start archive recovery, and the port
 //! implementations the binary installs.
 
@@ -29,7 +29,7 @@ pub enum ImapSubsystemError {
     Schedule(#[from] omni_tasks::InvalidScheduleError),
 }
 
-/// Handles WP14 wires: ports, the dispatcher's mail source, and services.
+/// Handles app wiring uses: ports, the dispatcher's mail source, and services.
 #[derive(Clone)]
 pub struct ImapHandles {
     /// `None` without `ICLOUD_USERNAME` + `ICLOUD_APP_PASSWORD` (email features disabled).
@@ -176,8 +176,7 @@ pub fn subsystem(
 }
 
 /// After the transport's first successful start, one archive sweep recovers
-/// claims a previous process left unresolved (TS runs it right after
-/// `startEmailFeatures`).
+/// claims a previous process left unresolved.
 fn archive_recovery_service(
     archive: ArchiveService,
     transport: ImapTransport,

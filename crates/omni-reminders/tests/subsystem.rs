@@ -1,4 +1,4 @@
-//! The assembled subsystem (WP14 wiring contract) and the production HTTP transport.
+//! The assembled subsystem (its wiring contract) and the production HTTP transport.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::type_complexity)]
 
 use std::sync::Arc;

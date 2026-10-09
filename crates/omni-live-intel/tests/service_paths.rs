@@ -1,4 +1,4 @@
-//! Service paths the TS spec does not cover: Destiny verification through the
+//! Service paths: Destiny verification through the
 //! classifier, rolling summaries with chapters and semantic alerts, delivery
 //! failure rollback, and the port's per-tick pull from `LiveDirectory`.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
@@ -358,7 +358,7 @@ impl LiveDirectory for Directory {
     fn streamers(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>> {
         Box::pin(async {
             Ok(vec![
-                // `LivestreamSummary` values, as WP04's `LiveDirectory::streamers`.
+                // `LivestreamSummary` values, as `LiveDirectory::streamers` serves them.
                 json!({"id": "guest", "displayName": "Guest", "tier": "background",
                        "bindings": [{"platform": "twitch", "username": "guest", "url": "https://www.twitch.tv/guest"}],
                        "dgg": {"hosted": true, "viewers": 300}, "live": true, "title": "Title",
@@ -383,7 +383,7 @@ impl LiveDirectory for Directory {
     }
 }
 
-/// A `StreamerStatusView` as WP04's `LiveDirectory::statuses` serializes it.
+/// A `StreamerStatusView` as `LiveDirectory::statuses` serializes it.
 fn live_status(id: &str, platform: &str) -> Value {
     json!({"streamerId": id, "isLive": true,
            "primary": {"platform": platform, "username": id, "url": format!("https://example.test/{id}")},
@@ -415,7 +415,7 @@ async fn the_port_observes_pushed_live_streamers_and_ends_sessions() {
         ports,
         service: cell,
     });
-    // WP04 pushes each streamer it polled live this tick, then ends the tick.
+    // The live-check task pushes each streamer it polled live this tick, then ends the tick.
     let streamers = directory.streamers().await.expect("streamers");
     for (streamer, id, platform) in [
         (&streamers[0], "guest", "twitch"),

@@ -1,5 +1,7 @@
 //! `pets_read` and `costs_read`.
 
+pub mod defs;
+
 use jiff::tz::TimeZone;
 use omni_ai::costs::{CostEventData, summarize};
 use omni_api::costs::CostRange;
@@ -168,14 +170,14 @@ pub fn tools(
     tz: TimeZone,
 ) -> Result<Vec<McpTool>, ToolMetaError> {
     let pets_tool = typed_tool(
-        "pets_read",
+        &defs::PETS_READ,
         move |input: PetsReadInput, _cx: ToolContext| {
             let pets = pets.clone();
             async move { pets_read(pets, input).await }
         },
     )?;
     let costs_tool = typed_tool(
-        "costs_read",
+        &defs::COSTS_READ,
         move |input: CostsReadInput, _cx: ToolContext| {
             let store = store.clone();
             let clock = clock.clone();

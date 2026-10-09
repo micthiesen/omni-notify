@@ -1,5 +1,4 @@
-//! Wire views of streamers (`serializeStreamer`, `serializeStreamersForDisplay`
-//! in `server.ts`, and the MCP `serializeStreamer` in `mcp/tools/system.ts`).
+//! Wire views of streamers for the REST API, the dashboard and MCP.
 
 use omni_api::streamers::{
     DailyViewerBucket, LiveSourceView, LiveStreamerView, LivestreamSourceSummary,
@@ -21,7 +20,7 @@ use crate::sessions::StreamSession;
 use crate::status::{LiveSource, StreamerStatus};
 use crate::streamers::{DiscoverySource, Streamer};
 
-/// Key-only view of WP05's `livestream-intelligence` entity: the dashboard
+/// Key-only view of the `livestream-intelligence` entity: the dashboard
 /// embeds its raw document without decoding it.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

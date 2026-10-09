@@ -1,17 +1,16 @@
 //! Deterministic taste evidence.
 //!
 //! Evidence ids hash `JSON.stringify` output with JS key order and number
-//! formatting; they must match the ids TS wrote, or re-polling the same
+//! formatting; they must match the stored ids, or re-polling the same
 //! state would insert duplicates.
 
 use omni_api::media::RecommendationStatus;
 use omni_core::digest::digest;
-use omni_core::js::json_stringify;
+use omni_core::js::{json_stringify, number_to_string, to_fixed};
 use omni_store::cbor::JsValue;
 use serde_json::{Map, Value};
 
 use super::types::{CanonicalWatchObservation, TasteEvidenceData, TasteEvidenceKind};
-use crate::js::{number, to_fixed};
 use crate::persistence::RecommendationData;
 
 fn put<T: serde::Serialize>(map: &mut Map<String, Value>, key: &str, value: Option<&T>) {
@@ -22,7 +21,7 @@ fn put<T: serde::Serialize>(map: &mut Map<String, Value>, key: &str, value: Opti
 
 #[allow(clippy::cast_precision_loss)]
 fn int(value: i64) -> String {
-    number(value as f64)
+    number_to_string(value as f64)
 }
 
 pub fn derive_watch_evidence(observations: &[CanonicalWatchObservation]) -> Vec<TasteEvidenceData> {
@@ -75,7 +74,7 @@ pub fn derive_watch_evidence(observations: &[CanonicalWatchObservation]) -> Vec<
 }
 
 /// The recommendation fields every recommendation evidence row carries, in
-/// TS object-literal order (`recommendationFields`).
+/// the key order the stored evidence ids hash.
 fn recommendation_fields(rec: &RecommendationData) -> Map<String, Value> {
     let mut fields = Map::new();
     put(&mut fields, "canonicalId", Some(&rec.canonical_id));
@@ -193,7 +192,7 @@ pub fn derive_recommendation_evidence(
     evidence
 }
 
-/// `fingerprintEvidence`: sorted ids, sorted keys, `undefined` dropped.
+/// Sorted ids, sorted keys, `undefined` dropped.
 pub fn fingerprint_evidence(evidence: &[TasteEvidenceData]) -> String {
     let cleaned: Vec<TasteEvidenceData> = evidence
         .iter()

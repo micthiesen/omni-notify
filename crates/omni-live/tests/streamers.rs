@@ -1,4 +1,4 @@
-//! Port of `src/live-check/streamers.spec.ts`.
+//! Aggregate streamers over platform bindings.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_api::streamers::StreamerTier;

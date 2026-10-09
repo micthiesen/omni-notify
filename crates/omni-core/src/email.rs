@@ -1,11 +1,12 @@
 //! Transport-agnostic incoming email model, shared by
-//! WP01/02/03/11/12, and the handler trait the dispatcher fans out to.
+//! the mail transport, the email pipelines, workspaces and MCP, and the handler
+//! trait the dispatcher fans out to.
 
 use serde::{Deserialize, Serialize};
 
 use crate::{BoxError, BoxFuture};
 
-/// One fetched message. Field names and optionality follow the TS `FetchedEmail`.
+/// One fetched message. Field names and optionality are its persisted shape.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FetchedEmail {
@@ -64,13 +65,13 @@ pub struct EmailAttachment {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_id: Option<String>,
     pub name: String,
-    /// MIME type (TS field `type`).
+    /// MIME type (wire field `type`).
     #[serde(rename = "type")]
     pub mime_type: String,
     pub size: u64,
 }
 
-/// A downloaded attachment (`DownloadedAttachment` in `src/email/types.ts`).
+/// A downloaded attachment.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DownloadedAttachment {
     pub name: String,
@@ -88,7 +89,7 @@ pub struct OutgoingEmailAttachment {
     pub content: Vec<u8>,
 }
 
-/// `EmailLinkMetadata` from `src/email/linkMetadata.ts`.
+/// Links extracted from a message body.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailLinkMetadata {

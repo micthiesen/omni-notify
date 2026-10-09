@@ -153,7 +153,7 @@ impl WhiskerApi {
             .await
             .map_err(|e| fail(e.to_string()))?;
         if !response.status.is_success() {
-            // got's `HTTPError` message.
+            // The established HTTP error wording.
             return Err(fail(format!(
                 "Response code {} ({})",
                 response.status.as_u16(),
@@ -171,7 +171,7 @@ impl WhiskerApi {
             .ok_or_else(|| fail("GraphQL response missing data".to_owned()))
     }
 
-    /// `fetchPetsByUser`; a null history becomes empty.
+    /// The user's pets; a null history becomes empty.
     pub async fn fetch_pets_by_user(
         &self,
         id_token: &str,
@@ -193,7 +193,6 @@ impl WhiskerApi {
             .collect())
     }
 
-    /// `fetchWeightHistory`.
     pub async fn fetch_weight_history(
         &self,
         id_token: &str,

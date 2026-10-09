@@ -30,7 +30,7 @@ pub fn api_error(status: StatusCode, msg: impl Into<String>) -> Response {
 
 const LOG: &str = "Server";
 
-/// Hono's default error response: 500 `text/plain` "Internal Server Error".
+/// The opaque error response: 500 `text/plain` "Internal Server Error".
 pub fn internal_server_error() -> Response {
     let mut response = Response::new(Body::from("Internal Server Error"));
     *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
@@ -41,9 +41,9 @@ pub fn internal_server_error() -> Response {
     response
 }
 
-/// A handler failure. Expected failures carry the TS status and message and
+/// A handler failure. Expected failures carry their status and message and
 /// render as `{"error": msg}`; [`ApiError::internal`] logs the cause at ERROR
-/// and renders Hono's opaque 500.
+/// and renders the opaque 500.
 #[derive(Debug)]
 pub enum ApiError {
     /// `{"error": message}` with `status`.
@@ -121,7 +121,7 @@ async fn catch_panic_middleware(req: Request, next: Next) -> Response {
     }
 }
 
-/// Converts a panicking handler into Hono's 500 response (logged at ERROR)
+/// Converts a panicking handler into the opaque 500 response (logged at ERROR)
 /// instead of dropping the connection.
 pub fn catch_panic_layer() -> impl Layer<
     Route,

@@ -1,4 +1,4 @@
-//! iOS live controls (WP04): `GET /api/ios-controls/slots/:slot`,
+//! iOS live controls: `GET /api/ios-controls/slots/:slot`,
 //! `GET /api/ios-controls/diagnostics`, `PUT /api/ios-controls/registrations`.
 
 use serde::{Deserialize, Serialize};
@@ -66,7 +66,7 @@ pub struct RegistrationResponse {
     pub registered: u64,
 }
 
-/// Path builders for the WP04 iOS routes.
+/// Path builders for the iOS routes.
 pub mod paths {
     pub const DIAGNOSTICS: &str = "/api/ios-controls/diagnostics";
     pub const REGISTRATIONS: &str = "/api/ios-controls/registrations";

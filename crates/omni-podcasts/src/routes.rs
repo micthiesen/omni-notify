@@ -1,4 +1,4 @@
-//! `/api/podcast-recommendations` routes (`src/server.ts` 279-308, 1315-1392).
+//! `/api/podcast-recommendations` routes.
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -72,7 +72,7 @@ fn queue_dto(result: PodcastQueueResult) -> api::PodcastQueueResult {
     }
 }
 
-/// `serializePodcastRecommendation` (server.ts).
+/// A podcast recommendation as the API serves it.
 pub fn serialize_recommendation(rec: &PodcastRecommendationData) -> api::PodcastRecommendation {
     api::PodcastRecommendation {
         recommendation_id: rec.recommendation_id.clone(),
@@ -167,8 +167,7 @@ async fn list(State(state): State<RoutesState>) -> ApiResult<api::PodcastRecomme
     }))
 }
 
-/// TS handed `c.json` the un-run Effect here; this returns the profile the
-/// frontend's schema expects (documented fix).
+/// The latest taste profile, in the shape the frontend expects.
 async fn taste_profile(
     State(state): State<RoutesState>,
 ) -> ApiResult<api::PodcastTasteProfileResponse> {
@@ -202,7 +201,7 @@ pub struct FeedbackBody {
     pub note: Option<String>,
 }
 
-/// Effect Schema `{feedback?: "good_pick"|"not_for_me", note?: string(max 1000)}`.
+/// `{feedback?: "good_pick"|"not_for_me", note?: string(max 1000)}`.
 pub fn parse_feedback_body(body: &Value) -> Option<FeedbackBody> {
     let object = body.as_object()?;
     let feedback = match object.get("feedback") {

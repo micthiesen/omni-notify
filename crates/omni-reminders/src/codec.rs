@@ -219,7 +219,7 @@ fn is_base64_text(value: &str) -> bool {
 
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
 
-/// `unzipSync` with `maxOutputLength`: gzip or zlib, auto-detected. Like Node, gzip
+/// Bounded decompression: gzip or zlib, auto-detected. Like Node, gzip
 /// input may hold several members and bytes after the last member are ignored, as
 /// are bytes after a zlib stream; truncated or corrupt streams fail.
 fn unzip(compressed: &[u8], max: usize) -> Option<Vec<u8>> {
@@ -263,7 +263,7 @@ pub fn decode_crdt_document(value: &str) -> Result<String, CodecError> {
 
 #[cfg(test)]
 mod codec_spec {
-    //! Port of `src/reminders/codec.spec.ts`.
+    //! CRDT, base64 and compression codec cases.
     use super::*;
     use flate2::write::GzEncoder;
 
@@ -287,7 +287,7 @@ mod codec_spec {
         }
     }
 
-    /// Rust-only: Node's `unzipSync` joins gzip members, ignores trailing bytes, and
+    /// Like Node's `unzipSync`, gzip members are joined, trailing bytes ignored, and
     /// rejects truncated or corrupt streams (falling back to the strict raw parser).
     #[test]
     fn unzips_like_node_for_members_trailing_bytes_and_truncation() {

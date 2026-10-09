@@ -1,7 +1,5 @@
-//! Port of `src/live-check/platforms/common.spec.ts`.
-//!
-//! The TS cases assert `destroy()` on the got stream; here a dropped reqwest
-//! response closes the connection, so the cases assert the typed error only.
+//! Shared platform fetching. A dropped reqwest response closes the
+//! connection, so the cases assert the typed error only.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

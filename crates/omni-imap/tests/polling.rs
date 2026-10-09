@@ -1,4 +1,4 @@
-//! Transport behavior with no single TS spec: per-folder UID cursors committed
+//! Transport polling: per-folder UID cursors committed
 //! only by the poll's commit, the seven-day INTERNALDATE bulk-import guard,
 //! the per-pass cap, UIDVALIDITY recovery from the dispatch watermark,
 //! auto-read protection of archive receipts, `SideEffectMode::Record`, and the

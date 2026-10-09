@@ -199,7 +199,7 @@ impl Task for PressPodsTask {
     fn run<'a>(&'a self, cx: &'a RunContext) -> BoxFuture<'a, Result<(), TaskError>> {
         Box::pin(async move {
             let summary = self.drain(Some(&cx.run_id)).await.map_err(|e| {
-                // Mirrors TS: an unexpected failure fails the run.
+                // An unexpected failure fails the run.
                 TaskError::new(e.to_string())
             })?;
             if let Ok(mut last) = self.last_run_summary.lock() {

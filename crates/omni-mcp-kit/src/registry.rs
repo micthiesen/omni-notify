@@ -1,9 +1,9 @@
-//! The registered tool set: golden-order listing, TS-compatible call results, and an
+//! The registered tool set: ordered listing, formatted call results, and an
 //! rmcp [`ServerHandler`] over them.
 //!
-//! WP12 owns the production MCP endpoint (bearer auth, activity recording, the events
-//! pre-router); it builds a [`ToolRegistry`] from every subsystem's tools and either
-//! serves [`RegistryServer`] or calls [`ToolRegistry::call`] from its own handler.
+//! `omni-mcp` owns the production MCP endpoint (bearer auth, activity recording, the
+//! events pre-router); it builds a [`ToolRegistry`] from every subsystem's tools in
+//! its serving order and calls [`ToolRegistry::call`] from its own handler.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,7 +18,6 @@ use rmcp::service::{RequestContext, RoleServer};
 use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 
-use crate::golden::golden_tools;
 use crate::{McpTool, ToolContext, ToolError, ToolMetaError, ToolOutput};
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
@@ -26,23 +25,23 @@ pub enum RegistryError {
     #[error("Duplicate MCP tool name: {0}")]
     Duplicate(String),
     #[error(
-        "MCP tools differ from the golden tool list: missing {missing:?}, unexpected {unexpected:?}"
+        "MCP tools differ from the serving order: missing {missing:?}, unexpected {unexpected:?}"
     )]
-    GoldenMismatch {
+    OrderMismatch {
         missing: Vec<String>,
         unexpected: Vec<String>,
     },
-    #[error("invalid golden MCP metadata: {0}")]
-    Golden(String),
+    #[error("invalid MCP metadata: {0}")]
+    Metadata(String),
 }
 
 impl From<ToolMetaError> for RegistryError {
     fn from(e: ToolMetaError) -> Self {
-        RegistryError::Golden(e.to_string())
+        RegistryError::Metadata(e.to_string())
     }
 }
 
-/// Every registered tool, listed in golden order.
+/// Every registered tool, listed in serving order.
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: Arc<Vec<McpTool>>,
@@ -51,30 +50,39 @@ pub struct ToolRegistry {
 }
 
 impl ToolRegistry {
-    /// Rejects duplicate names (TS `Duplicate MCP tool name`). Tools are listed in
-    /// golden order regardless of registration order.
-    pub fn new(tools: Vec<McpTool>) -> Result<Self, RegistryError> {
-        let golden = golden_tools()?;
+    /// Rejects duplicate names and lists the tools
+    /// in `order`, which must name exactly the registered tools.
+    pub fn new(tools: Vec<McpTool>, order: &[&str]) -> Result<Self, RegistryError> {
         let mut seen = HashMap::new();
         for (i, tool) in tools.iter().enumerate() {
             if seen.insert(tool.meta.name.clone(), i).is_some() {
                 return Err(RegistryError::Duplicate(tool.meta.name.clone()));
             }
         }
-        let mut ordered: Vec<McpTool> = Vec::with_capacity(tools.len());
-        let mut listed = Vec::with_capacity(tools.len());
-        let mut remaining = tools;
-        for (meta, raw) in golden.metas.iter().zip(&golden.raw) {
-            if let Some(pos) = remaining.iter().position(|t| t.meta.name == meta.name) {
-                ordered.push(remaining.swap_remove(pos));
-                listed.push(rmcp_tool(raw)?);
-            }
+        let missing: Vec<String> = order
+            .iter()
+            .filter(|name| !seen.contains_key(**name))
+            .map(|name| (*name).to_owned())
+            .collect();
+        let unexpected: Vec<String> = tools
+            .iter()
+            .filter(|tool| !order.contains(&tool.meta.name.as_str()))
+            .map(|tool| tool.meta.name.clone())
+            .collect();
+        if !missing.is_empty() || !unexpected.is_empty() {
+            return Err(RegistryError::OrderMismatch {
+                missing,
+                unexpected,
+            });
         }
-        // Tools outside the golden list cannot exist (`golden_meta` fails first), but
-        // keep any defensively at the end.
-        for tool in remaining {
-            listed.push(rmcp_tool(&golden_raw(&tool.meta.name)?)?);
-            ordered.push(tool);
+        let mut slots: Vec<Option<McpTool>> = tools.into_iter().map(Some).collect();
+        let mut ordered = Vec::with_capacity(slots.len());
+        let mut listed = Vec::with_capacity(slots.len());
+        for name in order {
+            if let Some(tool) = seen.get(*name).and_then(|&i| slots[i].take()) {
+                listed.push(rmcp_tool(&tool.meta.listed())?);
+                ordered.push(tool);
+            }
         }
         let by_name = ordered
             .iter()
@@ -88,31 +96,6 @@ impl ToolRegistry {
         })
     }
 
-    /// Boot check: the registered set must equal the golden tool list.
-    pub fn verify_complete(&self) -> Result<(), RegistryError> {
-        let golden = golden_tools()?;
-        let missing: Vec<String> = golden
-            .metas
-            .iter()
-            .filter(|meta| !self.by_name.contains_key(&meta.name))
-            .map(|meta| meta.name.clone())
-            .collect();
-        let unexpected: Vec<String> = self
-            .tools
-            .iter()
-            .filter(|tool| golden.get(&tool.meta.name).is_none())
-            .map(|tool| tool.meta.name.clone())
-            .collect();
-        if missing.is_empty() && unexpected.is_empty() {
-            Ok(())
-        } else {
-            Err(RegistryError::GoldenMismatch {
-                missing,
-                unexpected,
-            })
-        }
-    }
-
     pub fn tools(&self) -> &[McpTool] {
         &self.tools
     }
@@ -121,13 +104,12 @@ impl ToolRegistry {
         self.by_name.get(name).map(|&i| &self.tools[i])
     }
 
-    /// The `tools/list` entries, exactly as the TS server lists them.
+    /// The `tools/list` entries.
     pub fn listed(&self) -> &[Tool] {
         &self.listed
     }
 
-    /// Runs a tool and formats the result like `successfulToolResult` /
-    /// `formatResult` / `failedToolResult`. `None` when no such tool is registered.
+    /// Runs a tool. `None` when no such tool is registered.
     pub async fn call(
         &self,
         name: &str,
@@ -140,19 +122,12 @@ impl ToolRegistry {
     }
 }
 
-fn golden_raw(name: &str) -> Result<Map<String, Value>, RegistryError> {
-    golden_tools()?
-        .get(name)
-        .map(|(_, raw)| raw.clone())
-        .ok_or_else(|| RegistryError::Golden(format!("no golden tool {name:?}")))
-}
-
 fn rmcp_tool(raw: &Map<String, Value>) -> Result<Tool, RegistryError> {
     serde_json::from_value(Value::Object(raw.clone()))
-        .map_err(|e| RegistryError::Golden(format!("tool is not a valid rmcp Tool: {e}")))
+        .map_err(|e| RegistryError::Metadata(format!("tool is not a valid rmcp Tool: {e}")))
 }
 
-/// `successfulToolResult` / `formatResult` / `failedToolResult`.
+/// The MCP result for a tool outcome.
 pub fn call_tool_result(result: Result<ToolOutput, ToolError>) -> CallToolResult {
     let value = match result {
         Ok(ToolOutput::Structured(structured)) => {
@@ -202,9 +177,9 @@ impl RegistryServer {
         let initialize = handshake
             .pointer("/legacy/initialize")
             .cloned()
-            .ok_or_else(|| RegistryError::Golden("handshake has no initialize".to_owned()))?;
+            .ok_or_else(|| RegistryError::Metadata("handshake has no initialize".to_owned()))?;
         let info: ServerConfig = serde_json::from_value(initialize)
-            .map_err(|e| RegistryError::Golden(format!("invalid initialize result: {e}")))?;
+            .map_err(|e| RegistryError::Metadata(format!("invalid initialize result: {e}")))?;
         Ok(Self { registry, info })
     }
 

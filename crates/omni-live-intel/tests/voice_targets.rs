@@ -1,4 +1,4 @@
-//! Port of `src/live-check/intelligence/voiceTargets.spec.ts`.
+//! Voice target scheduling.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use omni_live_intel::observation::{DggPresence, Streamer, StreamerTier};

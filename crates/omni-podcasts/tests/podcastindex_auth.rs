@@ -1,5 +1,4 @@
-//! Port of `src/podcast-recs/podcastindex/auth.spec.ts` (named
-//! `podcastindex_auth`: the Castro auth spec shares the `auth` stem).
+//! Podcast Index authentication headers.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::podcastindex::{

@@ -1,5 +1,5 @@
-//! Port of `src/email/imap/archive.spec.ts` (exact native MOVE, verified
-//! UIDPLUS fallback, identical-bytes duplicate deliveries).
+//! Exact archive moves: native MOVE, verified UIDPLUS fallback,
+//! identical-bytes duplicate deliveries.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Mutex;
@@ -47,7 +47,7 @@ fn fixture(move_supported: bool, uid_plus: bool) -> FakeServer {
         .folder("INBOX", 10, None)
         .folder(ARCHIVE, 20, Some("\\Archive"));
     server.put("INBOX", 7, message());
-    // New Archive UIDs start at 12 (Inbox continues at 8), as in the TS fixture.
+    // New Archive UIDs start at 12 (Inbox continues at 8).
     server.lock().folder_mut(ARCHIVE).unwrap().uid_next = 12;
     server
 }

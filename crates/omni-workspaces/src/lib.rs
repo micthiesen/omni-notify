@@ -1,5 +1,4 @@
-//! Durable conversational workspaces (WP11; `src/workspaces/**`,
-//! `src/mcp/tools/workspaces.ts`).
+//! Durable conversational workspaces and their MCP tools.
 //!
 //! Invariants carried from AGENTS.md:
 //! - workspace rows change only through this service (routes, tools, tasks);
@@ -156,7 +155,7 @@ pub fn service(ctx: &AppContext) -> WorkspaceService {
 
 /// The workspaces subsystem over an existing service: the two workspace tasks
 /// plus `WorkspaceNotifications`, the routes, the ten MCP tools, entities,
-/// data-manager rows and the `Workspaces` email handler (WP14 registers it
+/// data-manager rows and the `Workspaces` email handler (wiring registers it
 /// last, after McpEvents, ParcelTracker and CalendarEvents).
 pub fn subsystem_with(
     service: WorkspaceService,

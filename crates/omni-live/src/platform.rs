@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// A supported streaming platform; serialized lowercase as persisted by TS.
+/// A supported streaming platform; serialized lowercase as persisted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {

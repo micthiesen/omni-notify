@@ -489,7 +489,7 @@ impl Synthesizer {
             .probe_duration_seconds(&self.intro_path)
             .await
             .map_err(|e| match e {
-                // TS rewraps only invalid-data failures; the rest keep their identity.
+                // Only invalid-data failures are rewrapped; the rest keep their identity.
                 PressPodsError::InvalidData { message, .. } => {
                     PressPodsError::failed("probe PressPods intro", message)
                 }

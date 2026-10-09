@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/rss.spec.ts`.
+//! Podcast RSS reading.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use jiff::tz::TimeZone;
@@ -172,7 +172,7 @@ fn tolerates_malformed_markup_and_html_entities() {
 
 #[test]
 fn keeps_every_item_when_a_feed_has_stray_ampersands_or_angle_brackets() {
-    // linkedom reads bare `&` and `<` as text; one must not lose the rest of the feed.
+    // Bare `&` and `<` read as text; one must not lose the rest of the feed.
     let xml = r#"<rss><channel>
 <item><title>First AT&T Story</title><guid>g1</guid><pubDate>Tue, 01 Jul 2025 10:00:00 GMT</pubDate>
 <enclosure url="https://cdn.example.com/a.mp3?x=1&y=2" /></item>

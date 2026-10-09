@@ -1,4 +1,4 @@
-//! Port of `src/podcast-recs/guestSelection.spec.ts`.
+//! Guest selection.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::HashMap;

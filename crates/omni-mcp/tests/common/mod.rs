@@ -2,7 +2,7 @@
 
 #![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use axum::Router;
@@ -15,9 +15,11 @@ use omni_mcp::activity::ActivityRecorder;
 use omni_mcp::endpoint;
 use omni_mcp::events::service::McpEventService;
 use omni_mcp::rpc::McpProtocol;
+use omni_mcp::tools::TOOL_ORDER;
 use omni_mcp::tools::{RunWithLogs, TaskControl};
-use omni_mcp_kit::golden::golden_tools;
-use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolHandler, ToolOutput, raw_tool};
+use omni_mcp_kit::{
+    McpTool, ToolContext, ToolDefinition, ToolError, ToolHandler, ToolMeta, ToolOutput, raw_tool,
+};
 use omni_store::Store;
 use omni_tasks::persistence::TaskRunData;
 use omni_testkit::TestStore;
@@ -52,15 +54,68 @@ impl ToolHandler for Unwired {
     }
 }
 
-/// Every golden tool not in `own`, with a handler that fails.
+/// Every package's tool definitions, in serving order ([`TOOL_ORDER`]).
+pub fn all_defs() -> Vec<&'static dyn ToolDefinition> {
+    let packages: [&[&'static dyn ToolDefinition]; 14] = [
+        &omni_reminders::mcp::defs::TOOLS,
+        &omni_mcp::tools::system::defs::TOOLS,
+        &omni_workspaces::mcp::defs::TOOLS,
+        &omni_email::mcp_tools::defs::TOOLS,
+        &omni_calendar::mcp::defs::TOOLS,
+        &omni_imap::mcp_tools::defs::TOOLS,
+        &omni_mcp::tools::events::defs::TOOLS,
+        &omni_media::mcp::defs::TOOLS,
+        &omni_podcasts::mcp::defs::TOOLS,
+        &omni_presspods::mcp::defs::TOOLS,
+        &omni_personal::mcp::personal::defs::TOOLS,
+        &omni_personal::mcp::printer::defs::TOOLS,
+        &omni_personal::mcp::browser_history::defs::TOOLS,
+        &omni_mcp::tools::claude_sessions::defs::TOOLS,
+    ];
+    let mut by_name: HashMap<&str, &'static dyn ToolDefinition> = HashMap::new();
+    for def in packages.into_iter().flatten() {
+        assert!(
+            by_name.insert(def.name(), *def).is_none(),
+            "duplicate tool {}",
+            def.name()
+        );
+    }
+    let ordered: Vec<&'static dyn ToolDefinition> = TOOL_ORDER
+        .iter()
+        .map(|name| {
+            by_name
+                .remove(name)
+                .unwrap_or_else(|| panic!("no definition for {name}"))
+        })
+        .collect();
+    assert!(
+        by_name.is_empty(),
+        "tools missing from TOOL_ORDER: {:?}",
+        by_name.keys()
+    );
+    ordered
+}
+
+/// The definition of `name`.
+pub fn def(name: &str) -> &'static dyn ToolDefinition {
+    all_defs()
+        .into_iter()
+        .find(|def| def.name() == name)
+        .unwrap_or_else(|| panic!("no tool {name}"))
+}
+
+/// The metadata of `name`.
+pub fn meta(name: &str) -> &'static ToolMeta {
+    def(name).meta().unwrap()
+}
+
+/// Every tool not in `own`, with a handler that fails.
 pub fn other_tools(own: &[McpTool]) -> Vec<McpTool> {
     let names: HashSet<&str> = own.iter().map(|tool| tool.meta.name.as_str()).collect();
-    golden_tools()
-        .unwrap()
-        .metas
-        .iter()
-        .filter(|meta| !names.contains(meta.name.as_str()))
-        .map(|meta| raw_tool(&meta.name, Arc::new(Unwired(meta.name.clone()))).unwrap())
+    all_defs()
+        .into_iter()
+        .filter(|def| !names.contains(def.name()))
+        .map(|def| raw_tool(def, Arc::new(Unwired(def.name().to_owned()))).unwrap())
         .collect()
 }
 

@@ -1,5 +1,5 @@
-//! `omni_podcasts::subsystem` wiring: what WP14 receives with and without the
-//! optional configuration (TS `*.create` gating in `src/index.ts`).
+//! `omni_podcasts::subsystem` wiring: what the app receives with and without
+//! the optional configuration.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;

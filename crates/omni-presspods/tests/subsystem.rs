@@ -1,5 +1,5 @@
 //! Subsystem wiring: what PressPods contributes with and without its
-//! configuration (TS `PressPodsTask.create` and `registerPressPodsRoutes`).
+//! configuration.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;

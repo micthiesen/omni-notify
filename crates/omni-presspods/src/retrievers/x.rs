@@ -80,8 +80,7 @@ pub fn parse_x_status_url(value: &str) -> Result<XStatusUrl, String> {
     })
 }
 
-/// TS read FxTwitter's status fields structurally (`typeof`, optional
-/// chaining), so an unexpected shape in one field never discarded the whole
+/// An unexpected shape in one FxTwitter status field never discards the whole
 /// status. Each optional field decodes on its own: a wrong type is `None`.
 fn lenient<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
@@ -185,7 +184,7 @@ impl XStatus {
     }
 }
 
-/// `isFullStatus`: decodes a thread entry when it is a complete status.
+/// Decodes a thread entry when it is a complete status.
 fn full_status(value: &serde_json::Value) -> Option<XStatus> {
     let object = value.as_object()?;
     let has_strings = object.get("id").is_some_and(serde_json::Value::is_string)
@@ -466,7 +465,6 @@ pub fn parse_fx_twitter_response(
     })
 }
 
-/// `retrieveArticleX`.
 pub struct XRetriever(pub Arc<RetrieverContext>);
 
 impl ArticleRetriever for XRetriever {

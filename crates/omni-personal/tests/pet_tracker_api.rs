@@ -1,4 +1,4 @@
-//! Port of `src/pet-tracker/api.spec.ts` (all cases kept), plus GraphQL error
+//! The Whisker API client, plus GraphQL error
 //! handling and the Cognito SRP sign-in against stubbed endpoints.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

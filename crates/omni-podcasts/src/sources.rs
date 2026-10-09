@@ -9,7 +9,7 @@ use omni_http::public::PublicHttpClient;
 use crate::itunes::{self, ItunesShow};
 use crate::rss::{self, FeedEpisode};
 
-/// `searchWebEffect`; errors are the failure message.
+/// Web search; errors are the failure message.
 pub trait WebSearcher: Send + Sync {
     fn search(&self, options: SearchOptions) -> BoxFuture<'_, Result<WebSearchResults, String>>;
 }

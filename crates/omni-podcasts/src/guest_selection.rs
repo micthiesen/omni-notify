@@ -4,11 +4,11 @@
 use std::collections::{HashMap, HashSet};
 
 use omni_ai::ModelRole;
+use omni_core::clock::utc_date_stamp;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
 use crate::discovery::collapse_whitespace;
-use crate::js::to_date_stamp;
 use crate::log_file::{self, LogFile, code_block};
 use crate::models::{Models, Refine, in_range};
 use crate::pipeline::PipelineError;
@@ -174,7 +174,7 @@ fn build_prompt(candidates: &[EpisodeCandidate], taste_digest: &str, max: usize)
                 c.show_title,
                 c.episode_title,
                 c.matched_voices.clone().unwrap_or_default().join(", "),
-                to_date_stamp(c.published_at)
+                utc_date_stamp(c.published_at)
             )
         })
         .collect();

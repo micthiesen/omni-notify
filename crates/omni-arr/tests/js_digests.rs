@@ -1,6 +1,5 @@
-//! JS-derived identities match values computed by the TypeScript code
-//! (`observationFingerprint`, `issueRevision`) on 2026-10-09, so persisted
-//! fingerprints and revisions written before the Rust port stay comparable.
+//! JS-derived identities (observation fingerprints, issue revisions) match
+//! pinned values, so persisted fingerprints and revisions stay comparable.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::arr_recovery::QueueItem;
@@ -43,7 +42,7 @@ fn q() -> QueueItem {
 }
 
 #[test]
-fn observation_fingerprints_match_typescript() {
+fn observation_fingerprints_match_stored_values() {
     assert_eq!(
         observation_fingerprint(&[q()]),
         "cb3cf50b7e885a51465bbf54c89298867c0ffbd91e87b502fc0b74e25851a155"
@@ -121,7 +120,7 @@ fn issue(overrides: serde_json::Value) -> ObserverIssue {
 }
 
 #[test]
-fn issue_revisions_match_typescript() {
+fn issue_revisions_match_stored_values() {
     assert_eq!(
         issue_revision(&issue(json!({}))),
         "5a681f8483233d3876bce9ba"

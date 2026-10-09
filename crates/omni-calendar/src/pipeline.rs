@@ -3,10 +3,8 @@
 //! Filter every email, discover the calendar once (lazily, cached), then per
 //! candidate: download PDFs, extract events with the model, and create, cancel
 //! or update CalDAV events, recording one activity row per email.
-//!
-//! Fixed TS defect: the `error` (extraction failure), `no_matches` and final
-//! outcome activity rows were built but never written (a missing `yield*`);
-//! here every one of them is recorded.
+//! The `error` (extraction failure), `no_matches` and final outcome activity
+//! rows are all recorded.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

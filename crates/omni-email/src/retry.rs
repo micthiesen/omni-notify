@@ -44,7 +44,7 @@ pub fn retry_key(pipeline: &str, email_id: &str) -> String {
     format!("{pipeline}#{email_id}")
 }
 
-/// `retryDelayMs`: 30 min x 2^(attempts-1); attempt 0 counts as the first.
+/// 30 min x 2^(attempts-1); attempt 0 counts as the first.
 pub fn retry_delay_ms(attempts: i64) -> i64 {
     let exponent = u32::try_from((attempts - 1).max(0))
         .unwrap_or(u32::MAX)
@@ -52,7 +52,7 @@ pub fn retry_delay_ms(attempts: i64) -> i64 {
     BASE_DELAY_MS.saturating_mul(1_i64 << exponent)
 }
 
-/// `planEmailRetryEnqueue`: coalesces repeated signals without consuming
+/// Coalesces repeated signals without consuming
 /// attempts or moving an existing schedule.
 pub fn plan_enqueue(
     existing: Option<&EmailRetryData>,
@@ -83,7 +83,7 @@ pub fn plan_claim(row: &EmailRetryData, now: i64) -> EmailRetryData {
     }
 }
 
-/// `selectDueRetries`: due now, exhausted rows excluded, oldest schedule first.
+/// Due now, exhausted rows excluded, oldest schedule first.
 pub fn select_due(rows: &[EmailRetryData], now: i64) -> Vec<EmailRetryData> {
     let mut due: Vec<EmailRetryData> = rows
         .iter()

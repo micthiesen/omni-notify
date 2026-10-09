@@ -1,9 +1,10 @@
 //! Persisted livestream-intelligence documents.
 //!
-//! Field order follows the object literals TS builds, so rows Rust writes encode
-//! like TS rows. Every struct keeps unknown fields in `extra` so read-modify-write
-//! never drops data. TS `field?: T` is an omitted `Option`; TS `T | null` is an
-//! `Option` that serializes `null`; TS `field?: T | null` is a [`Nullable`].
+//! Field order matches the stored rows, so new rows encode like existing ones.
+//! Every struct keeps unknown fields in `extra` so read-modify-write
+//! never drops data. An optional field is an omitted `Option`; a nullable field
+//! is an `Option` that serializes `null`; an optional nullable field is a
+//! [`Nullable`].
 
 use indexmap::IndexMap;
 use omni_store::cbor::{Extra, JsValue};
@@ -447,7 +448,7 @@ impl Entity for LivestreamIntelligenceEventData {
     }
 }
 
-/// The `streamer-sessions` row (owned by WP04), read for typical peaks.
+/// The `streamer-sessions` row (owned by `omni-live`), read for typical peaks.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamSessionsData {

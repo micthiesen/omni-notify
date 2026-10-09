@@ -22,9 +22,9 @@ use crate::{
     TaskInfo, TaskRunEvent, TaskRunEventKind, Trigger,
 };
 
-/// The TS registry logs through `Logger.named("Main").extend("TaskRegistry")`.
+/// The registry's log target.
 pub(crate) const LOG: &str = "Main:TaskRegistry";
-/// `cronTask.getNextRuns(3)`.
+/// Upcoming fire times listed per task.
 const NEXT_RUNS: usize = 3;
 
 pub(crate) struct Entry {
@@ -185,12 +185,12 @@ impl TaskRegistry {
 
     /// Stops admitting queued runs: runs waiting for their task's permit are
     /// abandoned; runs already started finish. Called by the scheduler on
-    /// shutdown (TS `shutdownEffect`); idempotent.
+    /// shutdown; idempotent.
     pub fn shutdown(&self) {
         self.inner.shutdown.cancel();
     }
 
-    /// `markInterruptedRuns`, once: runs left `running` by a previous process
+    /// Marks interrupted runs, once: runs left `running` by a previous process
     /// become errors.
     pub async fn initialize(&self) -> Result<(), StoreError> {
         if self.inner.initialized.load(Ordering::SeqCst) {

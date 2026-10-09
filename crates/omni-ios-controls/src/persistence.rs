@@ -1,4 +1,4 @@
-//! Control registrations (`persistence.ts`, entity `ios-control-registration`,
+//! Control registrations (entity `ios-control-registration`,
 //! key `<deviceId>:<controlId>`).
 
 use omni_api::ios::ApnsEnvironment;

@@ -1,4 +1,4 @@
-//! Port of `src/observer/client.test.ts` against a wiremock Overseerr.
+//! The Observer client against a wiremock Overseerr.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::SideEffects;

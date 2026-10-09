@@ -16,7 +16,7 @@ pub const NAME: &str = "EmailWatchdog";
 pub const SCHEDULE: &str = "0 0 */6 * * *";
 pub const WATCHDOG_THRESHOLD_MS: i64 = 72 * 60 * 60_000;
 
-/// `shouldWarn`: nothing dispatched within `threshold_ms` of `now`. Without
+/// Nothing dispatched within `threshold_ms` of `now`. Without
 /// any dispatch, boot time stands in for the last dispatch.
 pub fn should_warn(
     last_dispatched_at: Option<i64>,

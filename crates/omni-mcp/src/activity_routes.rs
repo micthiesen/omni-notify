@@ -37,7 +37,7 @@ struct RoutesState {
 
 type Params = Query<HashMap<String, String>>;
 
-/// `boundedInt`: a positive integer `Number(value)`, capped, else the fallback.
+/// A positive integer `Number(value)`, capped, else the fallback.
 fn bounded_int(value: Option<&String>, fallback: usize, max: usize) -> usize {
     let parsed = value.map_or(f64::NAN, |v| omni_core::js::string_to_number(v));
     if parsed.is_finite() && parsed.fract() == 0.0 && parsed > 0.0 {

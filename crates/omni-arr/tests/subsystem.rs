@@ -1,5 +1,5 @@
-//! Subsystem wiring: tasks register only with complete configuration, with the
-//! TS names, schedules and startup flags.
+//! Subsystem wiring: tasks register only with complete configuration, with
+//! their names, schedules and startup flags.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;

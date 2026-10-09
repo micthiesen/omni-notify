@@ -6,11 +6,14 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 use omni_ai::tools::{SearchOptions, WebSearch};
 use omni_ai::{Ai, CostTag, GenerateRequest, LanguageModel, ModelRole};
+use omni_core::js::{number_to_string, to_fixed};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::error::IntegrationError;
-use crate::js::{code_block, collapse_whitespace, number, slice_utf16, to_fixed};
+use crate::js::code_block;
+use crate::js::collapse_whitespace;
+use crate::js::slice_utf16;
 use crate::run_log::{self, RunLogFile};
 use crate::shortlist::{ScoredCandidate, format_candidate_details};
 
@@ -269,7 +272,7 @@ fn build_prompt(
                 c.title,
                 c.media_type.as_str(),
                 to_fixed(c.vote_average, 1),
-                number(c.vote_count),
+                number_to_string(c.vote_count),
                 format_candidate_details(c, true),
                 slice_utf16(&collapse_whitespace(&c.overview), 400),
                 research

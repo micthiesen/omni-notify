@@ -1,5 +1,5 @@
-//! Port of `src/live-check/metrics/persistence.spec.ts`. A write failure is
-//! produced by dropping the `blobs` table (Rust has no module mocking).
+//! Viewer metrics persistence. A write failure is produced by dropping the
+//! `blobs` table.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

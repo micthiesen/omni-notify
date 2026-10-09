@@ -1,4 +1,4 @@
-//! Port of `src/alerts/castro.spec.ts` (the Castro persistent-failure gate),
+//! The Castro persistent-failure alert gate,
 //! plus an end-to-end check through the foundation alert layer.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

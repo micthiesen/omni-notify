@@ -1,6 +1,6 @@
-//! Aggregate streamer state (`persistence.ts`, entity `streamer-status`).
+//! Aggregate streamer state (entity `streamer-status`).
 //!
-//! Dates are JS `Date`s (CBOR tag 1); rows written by TS may carry explicit
+//! Dates are JS `Date`s (CBOR tag 1); older rows may carry explicit
 //! `undefined` fields, which decode as absent.
 
 use omni_store::Store;
@@ -25,7 +25,6 @@ pub struct LiveSource {
     pub category: Option<String>,
 }
 
-/// `StreamerStatusLive`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LiveStatus {
     pub streamer_id: String,
@@ -42,7 +41,6 @@ pub struct LiveStatus {
     pub extra: Extra,
 }
 
-/// `StreamerStatusOffline`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OfflineStatus {
     pub streamer_id: String,
@@ -93,7 +91,7 @@ impl StreamerStatus {
     }
 }
 
-/// The persisted shape; field order is the TS object-literal order of both variants.
+/// The persisted shape; field order matches the stored rows of both variants.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StreamerStatusDoc {

@@ -1,4 +1,4 @@
-//! Port of `src/live-check/intelligence/summaryText.spec.ts`.
+//! Rolling summary text formatting.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use omni_live_intel::summary_text::{

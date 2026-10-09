@@ -1,8 +1,5 @@
-//! Port of `src/email/imap/actions.spec.ts` (`createDraftEffect`).
-//!
-//! "releases the Drafts lock after failures": there is no lock object in
-//! Rust (selection is exclusive `&mut` access), so the case asserts the
-//! failure and that no APPEND happened.
+//! Draft creation. Selection is exclusive `&mut` access, so failure cases
+//! assert the failure and that no APPEND happened.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_imap::fake::{FakeCall, FakeMessage, FakeOp, FakeServer};

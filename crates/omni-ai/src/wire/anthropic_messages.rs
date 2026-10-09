@@ -225,7 +225,7 @@ pub fn parse_response(body: &[u8]) -> Result<GenerateResponse, AiError> {
     })
 }
 
-/// `convertAnthropicUsage`: the input total includes cache reads and writes.
+/// The input total includes cache reads and writes.
 pub fn parse_usage(usage: &Value) -> Usage {
     let input = u64_at(usage, "/input_tokens");
     let cache_write = u64_at(usage, "/cache_creation_input_tokens");

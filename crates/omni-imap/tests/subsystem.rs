@@ -1,4 +1,4 @@
-//! WP14 wiring surface: tools, task, entities, data-manager row and handles.
+//! Wiring surface: tools, task, entities, data-manager row and handles.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 mod common;

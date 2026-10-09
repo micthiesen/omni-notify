@@ -214,7 +214,7 @@ impl Synth {
         synthetic
     }
 
-    /// Free text: one sentence per distinct original, keeping TS truncation markers.
+    /// Free text: one sentence per distinct original, keeping truncation markers.
     fn text(&mut self, s: &str) -> String {
         if is_items_marker(s) {
             return s.to_owned();
@@ -413,7 +413,7 @@ impl Synth {
         }
         let mapped = self.string(&decoded);
         if part.contains('%') {
-            encode_uri_component(&mapped)
+            omni_core::js::encode_uri_component(&mapped)
         } else {
             mapped
         }
@@ -522,7 +522,7 @@ fn is_items_marker(s: &str) -> bool {
         .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// `("text", "… [truncated 40 chars]")` for a TS-truncated string.
+/// `("text", "… [truncated 40 chars]")` for a truncated string.
 fn split_truncation(s: &str) -> (&str, &str) {
     if let Some(at) = s.rfind("… [truncated ")
         && s.ends_with(" chars]")
@@ -629,19 +629,6 @@ fn percent_decode(s: &str) -> String {
         }
     }
     String::from_utf8_lossy(&out).into_owned()
-}
-
-/// JS `encodeURIComponent`.
-fn encode_uri_component(s: &str) -> String {
-    let mut out = String::new();
-    for byte in s.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {
-            out.push(char::from(byte));
-        } else {
-            out.push_str(&format!("%{byte:02X}"));
-        }
-    }
-    out
 }
 
 fn read_capture(dir: &Path) -> Result<Vec<(String, Fixture)>> {

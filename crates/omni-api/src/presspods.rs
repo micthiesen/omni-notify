@@ -1,4 +1,4 @@
-//! PressPods DTOs (WP06): `/api/press-pods/*` and the `/pods/episodes` reply.
+//! PressPods DTOs: `/api/press-pods/*` and the `/pods/episodes` reply.
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -7,9 +7,9 @@ use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// A JSON object kept in its wire order. TS builds the cost detail maps in
-/// insertion order (`DefaultMap.toObject`) and the UI lists them that way, so
-/// a sorted map would reorder the breakdown.
+/// A JSON object kept in its wire order. Stored cost detail maps are in
+/// insertion order and the UI lists them that way, so a sorted map would
+/// reorder the breakdown.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct OrderedMap<V>(pub Vec<(String, V)>);
 
@@ -221,7 +221,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detail_round_trips_the_ts_wire_shape() {
+    fn detail_round_trips_the_wire_shape() {
         let wire = serde_json::json!({
             "episode": {
                 "episodeId": "e1", "title": "T", "author": null, "publication": "P",

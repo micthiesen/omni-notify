@@ -1,4 +1,4 @@
-//! Port of `src/mcp/tools/email-attachment-send.spec.ts`: retrieve, review and
+//! Retrieve, review and
 //! send a received PDF through the real transport over an in-memory mailbox.
 //! SMTP is a recorder and draft APPEND a fake that must never be reached.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

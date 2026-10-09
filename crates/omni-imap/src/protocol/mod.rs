@@ -1,5 +1,5 @@
-//! The IMAP client seam. [`ImapClient`] mirrors the subset of imapflow the TS
-//! transport used (mailbox selection, STATUS, LIST with special-use, UID
+//! The IMAP client seam. [`ImapClient`] covers what the transport needs
+//! (mailbox selection, STATUS, LIST with special-use, UID
 //! SEARCH/FETCH/MOVE/COPY/STORE/EXPUNGE, APPEND, IDLE). The production
 //! implementation is [`raw::RawClient`], a thin client over `imap-proto`;
 //! async-imap 0.11.3 discards COPYUID response codes (its `uid_mv`/`uid_copy`
@@ -20,7 +20,7 @@ mod special_use_names;
 pub(crate) mod utf7;
 
 /// A failed IMAP operation: `"<operation> failed: <cause>"` like
-/// `ImapOperationError`. The source chain ends at the leaf detail, which is
+/// An IMAP operation failure. The source chain ends at the leaf detail, which is
 /// what MCP tool errors surface (`toolErrorMessage` takes the innermost cause).
 #[derive(Clone, Debug, thiserror::Error, PartialEq, Eq)]
 #[error("{operation} failed: {cause}")]
@@ -306,7 +306,7 @@ pub trait ImapClient: Send {
     fn logout(&mut self) -> BoxFuture<'_, ()>;
 }
 
-/// `fetchOne`: the single message or `None` when the UID is gone.
+/// The single message or `None` when the UID is gone.
 pub async fn fetch_one(
     client: &mut dyn ImapClient,
     uid: u32,
