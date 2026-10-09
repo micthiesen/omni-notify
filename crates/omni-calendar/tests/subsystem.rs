@@ -168,9 +168,7 @@ async fn production_deps_wire_the_handler_over_the_email_core() {
     app.ctx.config = Arc::new(config);
     let deps = CalendarDeps::new(
         &app.ctx,
-        omni_tasks::RunLogs::new(omni_tasks::EventBus::new(16), app.ctx.clock.clone()),
         omni_email::triage::EmailTriage::new(Arc::new(UnusedClassifier)),
-        Arc::new(NoAttachments),
     );
     let s = subsystem(&app.ctx, deps).unwrap();
     assert_eq!(s.email_handlers.len(), 1);

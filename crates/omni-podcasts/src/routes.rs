@@ -297,15 +297,13 @@ async fn run(
             )
                 .into_response())
         }
-        Err(RunNowError::NotFound) => {
-            Err(ApiError::not_found(format!("Unknown task \"{TASK_NAME}\"")))
+        Err(error @ RunNowError::NotFound { .. }) => Err(ApiError::not_found(error.to_string())),
+        Err(error @ RunNowError::AlreadyRunning { .. }) => {
+            Err(ApiError::conflict(error.to_string()))
         }
-        Err(RunNowError::AlreadyRunning) => Err(ApiError::conflict(format!(
-            "Task \"{TASK_NAME}\" is already running"
-        ))),
-        Err(RunNowError::ManualInputUnsupported) => Err(ApiError::bad_request(format!(
-            "Task \"{TASK_NAME}\" does not accept manual input"
-        ))),
+        Err(error @ RunNowError::ManualInputUnsupported { .. }) => {
+            Err(ApiError::bad_request(error.to_string()))
+        }
         Err(other) => Err(ApiError::internal(other)),
     }
 }

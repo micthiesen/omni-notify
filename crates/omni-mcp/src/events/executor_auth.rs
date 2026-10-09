@@ -5,7 +5,6 @@
 //! now. Only the expiry leaves this module: the session response may contain
 //! credentials.
 
-use std::str::FromStr as _;
 use std::time::Duration;
 
 use futures::future::BoxFuture;
@@ -76,25 +75,14 @@ enum Expiry {
     Text(String),
 }
 
-/// JS `Date.parse` for the formats Better Auth emits (RFC 3339 / ISO 8601
-/// with an offset, or a UTC calendar date). Anything else is `NaN`.
-fn date_parse(value: &str) -> Option<f64> {
-    if let Ok(ts) = jiff::Timestamp::from_str(value) {
-        #[allow(clippy::cast_precision_loss)]
-        return Some(ts.as_millisecond() as f64);
-    }
-    let date = jiff::civil::Date::from_str(value).ok()?;
-    let ts = date.to_zoned(jiff::tz::TimeZone::UTC).ok()?.timestamp();
-    #[allow(clippy::cast_precision_loss)]
-    Some(ts.as_millisecond() as f64)
-}
-
 /// `createExecutorEventAuthorizer` over Executor's MCP session endpoint.
 #[derive(Clone)]
 pub struct ExecutorEventAuthorizer {
     http: HttpClient,
     endpoint: Url,
     clock: SharedClock,
+    /// The zone `Date.parse` reads zone-less expiries in (the process zone in TS).
+    tz: jiff::tz::TimeZone,
 }
 
 impl ExecutorEventAuthorizer {
@@ -114,7 +102,14 @@ impl ExecutorEventAuthorizer {
             http,
             endpoint,
             clock,
+            tz: jiff::tz::TimeZone::UTC,
         })
+    }
+
+    /// Reads zone-less expiry strings in `tz` (`TZ`), as `Date.parse` does.
+    pub fn with_time_zone(mut self, tz: jiff::tz::TimeZone) -> Self {
+        self.tz = tz;
+        self
     }
 
     async fn check(
@@ -148,7 +143,8 @@ impl ExecutorEventAuthorizer {
         };
         let expiry = match &session.access_token_expires_at {
             Expiry::Number(ms) => Some(*ms),
-            Expiry::Text(text) => date_parse(text),
+            #[allow(clippy::cast_precision_loss)]
+            Expiry::Text(text) => omni_core::js::date_parse(text, &self.tz).map(|ms| ms as f64),
         };
         #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
         Ok(expiry
@@ -182,15 +178,5 @@ mod tests {
         assert!(!is_bearer_authorization("bearer abc"));
         assert!(!is_bearer_authorization("Bearer a b"));
         assert!(!is_bearer_authorization("Bearer "));
-    }
-
-    #[test]
-    fn parses_iso_expiries_like_date_parse() {
-        assert_eq!(
-            date_parse("2020-01-01T00:00:00Z"),
-            Some(1_577_836_800_000.0)
-        );
-        assert_eq!(date_parse("2020-01-01"), Some(1_577_836_800_000.0));
-        assert_eq!(date_parse("not-a-date"), None);
     }
 }

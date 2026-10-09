@@ -123,11 +123,7 @@ async fn pushover_adapter_classifies_rejections_and_sends_the_source_button() {
         .respond_with(ResponseTemplate::new(200).set_body_string("{\"status\":1}"))
         .mount(&server)
         .await;
-    let notifier = PushoverNotifier::new(
-        pushover(&server, omni_http::SideEffectMode::Live),
-        Some("user"),
-        Some("token"),
-    );
+    let notifier = PushoverNotifier::new(pushover(&server, omni_http::SideEffectMode::Live));
     assert!(notifier.enabled());
     assert!(matches!(
         notifier.notify(&alert()).await,
@@ -144,21 +140,20 @@ async fn pushover_adapter_classifies_rejections_and_sends_the_source_button() {
     let body = String::from_utf8_lossy(&requests[2].body).into_owned();
     assert!(body.contains("url_title=View+source"), "{body}");
     assert!(body.contains("token=token"));
-    assert!(
-        !PushoverNotifier::new(
-            pushover(&server, omni_http::SideEffectMode::Live),
-            None,
-            Some("t")
-        )
-        .enabled()
+    let userless = omni_alerts::Pushover::with_credentials(
+        mock_http(&server, &["https://api.pushover.net"]),
+        None,
+        [(omni_alerts::PushoverChannel::General, "t".to_owned())],
+        omni_http::SideEffectMode::Live,
     );
+    assert!(!PushoverNotifier::new(userless).enabled());
 }
 
 #[tokio::test]
 async fn pushover_adapter_records_instead_of_sending_in_record_mode() {
     let server = mock_server().await;
     let push = pushover(&server, omni_http::SideEffectMode::Record);
-    let notifier = PushoverNotifier::new(push.clone(), Some("user"), Some("token"));
+    let notifier = PushoverNotifier::new(push.clone());
     assert_eq!(notifier.notify(&alert()).await, Ok(()));
     assert_eq!(push.recorded().len(), 1);
     assert_eq!(

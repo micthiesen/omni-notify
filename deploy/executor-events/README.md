@@ -12,8 +12,16 @@ that updates Omni. Every minute `bin/deploy_omni_notify.sh` pulls
 `executor-events-adapter:latest`; when the image or the project's Compose config
 hash changed, it recreates only the adapter, waits for its health check and sends
 the same Pushover success or failure notices as Omni. The `Executor Events
-Adapter` workflow publishes the image only when `packages/executor-events-adapter`
-or its workflow changes.
+Adapter` workflow builds the Rust `omni-events-adapter` crate with
+`Dockerfile` in this directory (repository root as context) and publishes the
+image only when that crate, the Dockerfile, the workspace manifest, lock file,
+toolchain or the workflow changes.
+
+The Rust image has no `node`. Its own `HEALTHCHECK` runs
+`executor-events-adapter healthcheck`, so `compose.yml` here no longer overrides
+it. Re-run `install.py` on Boris with this `compose.yml` before the first Rust
+image is published; an installed copy that still overrides the health check
+with `node` marks the new container unhealthy and fails the deploy.
 
 The adapter reads `OMNI_MCP_TOKEN` from Boris's main Compose `.env` by
 interpolation, the same value Omni receives, so a rotated token reaches it on the

@@ -11,7 +11,8 @@ use common::*;
 use futures::future::BoxFuture;
 use omni_mcp::tools::system::{ConfiguredFeatures, SystemDeps, system_tools};
 use omni_runtime::ports::{
-    BriefingsReader, LiveDirectory, LiveIntelligence, LiveTransition, PortError, Ports,
+    BriefingsReader, LiveDirectory, LiveIntelligence, LiveObservation, LiveTransition, PortError,
+    Ports,
 };
 use omni_tasks::persistence::TaskRunData;
 use serde_json::{Value, json};
@@ -84,6 +85,9 @@ impl LiveDirectory for Directory {
 struct Intelligence;
 
 impl LiveIntelligence for Intelligence {
+    fn observe_live<'a>(&'a self, _: &'a LiveObservation) -> BoxFuture<'a, ()> {
+        Box::pin(async {})
+    }
     fn after_tick(&self) -> BoxFuture<'_, ()> {
         Box::pin(async {})
     }

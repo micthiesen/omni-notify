@@ -9,7 +9,7 @@ use serde::de::{
 
 use super::{
     BIGINT_TOKEN, DATE_TOKEN, DecodeError, JsValue, SET_TOKEN, SIMPLE_TOKEN, TAGGED_TOKEN,
-    UNDEFINED_TOKEN, from_value,
+    from_value,
 };
 
 /// JS `Number.MAX_SAFE_INTEGER`.
@@ -104,7 +104,10 @@ impl<'de> Deserializer<'de> for ValueDeserializer {
 
     fn deserialize_any<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, DecodeError> {
         match self.value {
-            JsValue::Undefined => Self::token(visitor, UNDEFINED_TOKEN, JsValue::Null),
+            // `none` (not a token map) so buffered contexts such as
+            // `#[serde(flatten)]` read it into `Option` fields as `None`, while
+            // `JsValue` keeps it apart from `null` (`visit_unit`).
+            JsValue::Undefined => visitor.visit_none(),
             JsValue::Null => visitor.visit_unit(),
             JsValue::Bool(b) => visitor.visit_bool(b),
             JsValue::Int(n) => match (u64::try_from(n), i64::try_from(n)) {

@@ -405,8 +405,11 @@ pub async fn assess_with_llm(
             AiError::Timeout => {
                 ArrRecoveryError::new(OPERATION, ArrCause::Timeout(LLM_TIMEOUT.as_secs()))
             }
+            // The AI SDK's `NoObjectGeneratedError` message, unprefixed.
+            AiError::Schema(message) => ArrRecoveryError::message(OPERATION, message),
             other => ArrRecoveryError::new(OPERATION, ArrCause::Ai(other)),
         })?;
+    // zod's checks beyond JSON Schema: UTF-16 string lengths and safe integers.
     check_strict_output(&output).map_err(|message| {
         ArrRecoveryError::message(OPERATION, format!("No object generated: {message}"))
     })?;

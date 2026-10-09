@@ -246,7 +246,31 @@ pub fn pipeline(
     })
 }
 
-/// The structured output for a list of events.
-pub fn extraction(events: serde_json::Value) -> omni_ai::GenerateResponse {
+/// The structured output for a list of events. A strict-mode model returns
+/// every key, so optional fields a test leaves out are filled with `null` (the
+/// schema rejects absent keys, as zod's `.nullable()` does).
+pub fn extraction(mut events: serde_json::Value) -> omni_ai::GenerateResponse {
+    const NULLABLE: [&str; 10] = [
+        "eventId",
+        "endDate",
+        "startTime",
+        "endTime",
+        "duration",
+        "location",
+        "description",
+        "timeZone",
+        "recurrence",
+        "reminderMinutes",
+    ];
+    if let Some(items) = events.as_array_mut() {
+        for event in items
+            .iter_mut()
+            .filter_map(serde_json::Value::as_object_mut)
+        {
+            for key in NULLABLE {
+                event.entry(key).or_insert(serde_json::Value::Null);
+            }
+        }
+    }
     omni_ai::GenerateResponse::text(serde_json::json!({ "events": events }).to_string())
 }

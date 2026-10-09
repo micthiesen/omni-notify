@@ -153,19 +153,10 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
             tz.clone(),
         )?));
     }
-    let user = ctx
-        .config
-        .pushover_user
-        .as_deref()
-        .filter(|u| !u.is_empty());
-    let token = ctx
-        .config
-        .pushover_token
-        .as_deref()
-        .filter(|t| !t.is_empty());
-    if user.is_some() && token.is_some() {
-        let notifier: Arc<dyn ResetNotifier> =
-            Arc::new(PushoverNotifier::new(ctx.pushover.clone(), user, token));
+    let notifier = PushoverNotifier::new(ctx.pushover.clone());
+    // Both `PUSHOVER_USER` and `PUSHOVER_TOKEN`, as the TS registration requires.
+    if notifier.enabled() {
+        let notifier: Arc<dyn ResetNotifier> = Arc::new(notifier);
         tasks.push(Arc::new(codex_reset_task(
             Arc::new(CodexSource {
                 http: ctx.public_http.clone(),

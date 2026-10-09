@@ -42,11 +42,11 @@ const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "node-readback",
-        "ORIGINAL.db REWRITTEN.db: decode every row of both with node-cbor and diff",
+        "ORIGINAL.db REWRITTEN.db [--strict-order]: decode every row of both with node-cbor and diff values (property-order changes are reported, and fail only with --strict-order)",
     ),
     (
         "api-diff",
-        "--ts URL --rust URL [--route PATH]...: diff JSON values of read routes",
+        "--ts URL --rust URL [--route PATH]... [--shape]: diff JSON values (or shapes) of read routes",
     ),
     ("deps-check", "enforce the crate dependency direction rules"),
 ];
@@ -144,10 +144,17 @@ fn run(command: &str, args: &[String]) -> Result<()> {
         "golden-cbor" => golden_cbor(check),
         "compat-audit" => compat::compat_audit(args),
         "node-readback" => {
-            let [original, rewritten] = args else {
-                bail!("usage: cargo xtask node-readback ORIGINAL.db REWRITTEN.db");
+            let (paths, flags): (Vec<&String>, Vec<&String>) =
+                args.iter().partition(|a| !a.starts_with("--"));
+            let ([original, rewritten], true) = (
+                paths.as_slice(),
+                flags.iter().all(|f| f.as_str() == "--strict-order"),
+            ) else {
+                bail!("usage: cargo xtask node-readback ORIGINAL.db REWRITTEN.db [--strict-order]");
             };
-            run_node("node-readback.ts", &[original, rewritten])
+            let mut node_args = vec![original.as_str(), rewritten.as_str()];
+            node_args.extend(flags.iter().map(|f| f.as_str()));
+            run_node("node-readback.ts", &node_args)
         }
         "api-diff" => api_diff::api_diff(args),
         "deps-check" => deps::deps_check(),

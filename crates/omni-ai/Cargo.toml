@@ -16,6 +16,7 @@ futures.workspace = true
 htmd.workspace = true
 indexmap.workspace = true
 jiff.workspace = true
+jsonschema.workspace = true
 omni-api.workspace = true
 omni-config.workspace = true
 omni-core.workspace = true

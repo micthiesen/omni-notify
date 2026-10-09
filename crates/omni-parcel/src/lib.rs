@@ -24,7 +24,6 @@ use omni_runtime::{AppContext, ManagedEntity, Subsystem};
 use omni_server_kit::ApiError;
 use omni_store::Store;
 use omni_store::entity::EntityDescriptor;
-use omni_tasks::RunLogs;
 
 use crate::carriers::carrier_map::CarrierDirectory;
 use crate::extraction::ModelExtractor;
@@ -87,7 +86,6 @@ async fn forget_delivery(
 /// `createParcelHandler`: `None` (logged) without `PARCEL_API_KEY`.
 pub fn handler(
     ctx: &AppContext,
-    run_logs: RunLogs,
     triage: EmailTriage,
 ) -> Result<Option<Arc<DeliveryPipeline>>, ParcelSetupError> {
     let Some(api_key) = ctx
@@ -105,7 +103,7 @@ pub fn handler(
     )?);
     let deps = PipelineDeps {
         store: ctx.store.clone(),
-        run_logs,
+        run_logs: ctx.run_logs(),
         triage,
         extractor: Arc::new(ModelExtractor::new(
             ctx.ai.clone(),
@@ -136,12 +134,8 @@ pub fn handler(
 /// The parcel subsystem: the forget route, the dedup entity and, when
 /// configured, the `ParcelTracker` email handler (share `triage` with the
 /// calendar pipeline).
-pub fn subsystem(
-    ctx: &AppContext,
-    run_logs: RunLogs,
-    triage: EmailTriage,
-) -> Result<Subsystem, ParcelSetupError> {
-    let handler = handler(ctx, run_logs, triage)?;
+pub fn subsystem(ctx: &AppContext, triage: EmailTriage) -> Result<Subsystem, ParcelSetupError> {
+    let handler = handler(ctx, triage)?;
     Ok(Subsystem {
         router: router(ctx.store.clone()),
         entities: entities(),

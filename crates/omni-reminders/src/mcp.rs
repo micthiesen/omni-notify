@@ -3,17 +3,12 @@
 //! Bounded adapters over [`RemindersService`] under the existing MCP bearer
 //! authentication. Metadata (names, schemas, annotations, policy) comes from the
 //! golden tool list. Inputs are validated against the golden schema, then decoded the
-//! way zod would (integral floats accepted as integers, unknown keys stripped from
-//! nested `daysOfWeek` items). List creation and deletion are not exposed.
+//! way zod would (integral floats accepted as integers by `typed_tool`, unknown keys
+//! stripped from nested `daysOfWeek` items). List creation and deletion are not exposed.
 
 use std::future::Future;
-use std::sync::Arc;
 
-use futures::future::BoxFuture;
-use omni_mcp_kit::{
-    McpTool, SchemaValidator, ToolContext, ToolError, ToolHandler, ToolMetaError, ToolOutput,
-    golden_meta, paginate, raw_tool,
-};
+use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, paginate, typed_tool};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -23,80 +18,15 @@ use crate::recurrence::{DayOfWeek, Frequency, Opt};
 use crate::recurring_completion::RecurringCompletionTarget;
 use crate::service::RemindersService;
 
-/// Rewrites integral floats as integers (JS has one number type).
-fn normalize_numbers(value: Value) -> Value {
-    match value {
-        Value::Number(n) if n.as_i64().is_none() && n.as_u64().is_none() => match n.as_f64() {
-            Some(f) if f.fract() == 0.0 && f.abs() <= crate::json::MAX_SAFE_INTEGER => {
-                Value::from(crate::json::js_to_i64(f))
-            }
-            _ => Value::Number(n),
-        },
-        Value::Array(items) => Value::Array(items.into_iter().map(normalize_numbers).collect()),
-        Value::Object(object) => Value::Object(
-            object
-                .into_iter()
-                .map(|(k, v)| (k, normalize_numbers(v)))
-                .collect(),
-        ),
-        other => other,
-    }
-}
-
-struct Handler<I, F> {
-    input: SchemaValidator,
-    output: SchemaValidator,
-    f: F,
-    _input: std::marker::PhantomData<fn(I)>,
-}
-
-impl<I, F, Fut> ToolHandler for Handler<I, F>
-where
-    I: DeserializeOwned + Send + 'static,
-    F: Fn(I) -> Fut + Send + Sync,
-    Fut: Future<Output = Result<Value, ToolError>> + Send + 'static,
-{
-    fn call<'a>(
-        &'a self,
-        input: Value,
-        _cx: ToolContext,
-    ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
-        let decoded = self
-            .input
-            .check(&input)
-            .map_err(ToolError::input)
-            .and_then(|()| {
-                serde_json::from_value::<I>(normalize_numbers(input))
-                    .map_err(|e| ToolError::input(e.to_string()))
-            });
-        let fut = decoded.map(|input| (self.f)(input));
-        Box::pin(async move {
-            let value = fut?.await?;
-            self.output.check(&value).map_err(ToolError::output)?;
-            match value {
-                Value::Object(map) => Ok(ToolOutput::Structured(map)),
-                _ => Err(ToolError::output("tool output must be a JSON object")),
-            }
-        })
-    }
-}
-
+/// A typed tool over a handler that ignores the call context. `typed_tool`
+/// validates against the golden schemas and reads integral floats as integers.
 fn tool<I, F, Fut>(name: &str, f: F) -> Result<McpTool, ToolMetaError>
 where
     I: DeserializeOwned + Send + 'static,
     F: Fn(I) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<Value, ToolError>> + Send + 'static,
 {
-    let meta = golden_meta(name)?;
-    raw_tool(
-        name,
-        Arc::new(Handler {
-            input: SchemaValidator::new(name, &meta.input_schema)?,
-            output: SchemaValidator::new(name, &meta.output_schema)?,
-            f,
-            _input: std::marker::PhantomData,
-        }),
-    )
+    typed_tool(name, move |input: I, _cx: ToolContext| f(input))
 }
 
 fn execute(error: impl std::fmt::Display) -> ToolError {
@@ -487,16 +417,17 @@ mod tests {
 
     #[test]
     fn decodes_like_zod_for_ledger_fingerprints() {
-        let input: CreateReminder = serde_json::from_value(normalize_numbers(json!({
-            "idempotencyKey": "fixture-key-123456",
-            "listId": "List/a",
-            "title": "Ä b",
-            "dueDate": null,
-            "priority": 5.0,
-            "allDay": true,
-            "description": "x\u{2028}y",
-        })))
-        .unwrap();
+        let input: CreateReminder =
+            serde_json::from_value(omni_core::js::normalize_numbers(json!({
+                "idempotencyKey": "fixture-key-123456",
+                "listId": "List/a",
+                "title": "Ä b",
+                "dueDate": null,
+                "priority": 5.0,
+                "allDay": true,
+                "description": "x\u{2028}y",
+            })))
+            .unwrap();
         let mut fields = object(serde_json::to_value(&input.fields).unwrap());
         fields.insert("operation".into(), json!("create"));
         // The same input fingerprinted by the TypeScript service (tests/golden/codec.json).

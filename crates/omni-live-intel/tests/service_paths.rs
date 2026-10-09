@@ -27,7 +27,10 @@ use omni_live_intel::service::{LivestreamIntelligenceService, ServiceDeps, Servi
 use omni_live_intel::speech::{SpeakerMatch, SpeechEngine, SpeechRecognitionError};
 use omni_live_intel::types::{LivestreamAlertType, PipelineStatus, PresenceState};
 use omni_runtime::Ports;
-use omni_runtime::ports::{LiveDirectory, LiveIntelligence as _, LiveTransition, PortError};
+use omni_runtime::ports::{
+    LiveDirectory, LiveIntelligence as _, LiveObservation as PortObservation, LiveTransition,
+    PortError,
+};
 use omni_store::Store;
 use omni_testkit::TestStore;
 use serde_json::{Value, json};
@@ -390,7 +393,7 @@ fn live_status(id: &str, platform: &str) -> Value {
 }
 
 #[tokio::test]
-async fn the_port_observes_due_live_streamers_and_ends_sessions() {
+async fn the_port_observes_pushed_live_streamers_and_ends_sessions() {
     let harness = Harness::new(Some("user")).await;
     let service = harness.service();
     let ports = Ports::default();
@@ -412,10 +415,33 @@ async fn the_port_observes_due_live_streamers_and_ends_sessions() {
         ports,
         service: cell,
     });
-    // Tick 0: both are due (background polls on every third tick).
+    // WP04 pushes each streamer it polled live this tick, then ends the tick.
+    let streamers = directory.streamers().await.expect("streamers");
+    for (streamer, id, platform) in [
+        (&streamers[0], "guest", "twitch"),
+        (&streamers[1], "main", "kick"),
+    ] {
+        port.observe_live(&PortObservation {
+            streamer: streamer.clone(),
+            status: live_status(id, platform),
+            went_live: true,
+            title_changed: false,
+            at_ms: 1_767_225_600_000,
+        })
+        .await;
+    }
     port.after_tick().await;
     assert!(service.is_active("guest"));
     assert!(service.is_active("main"));
+    // An observation that does not decode is skipped, not fatal.
+    port.observe_live(&PortObservation {
+        streamer: json!({"id": 7}),
+        status: json!({}),
+        went_live: false,
+        title_changed: false,
+        at_ms: 0,
+    })
+    .await;
     let details = port
         .details("guest", 50)
         .await
@@ -429,7 +455,7 @@ async fn the_port_observes_due_live_streamers_and_ends_sessions() {
     assert_eq!(runtime.model, "parakeet-tdt-0.6b-v3-int8");
     assert_eq!(runtime.budget.limit_cents, 300.0);
     assert!(dto.diagnostics.is_some());
-    // The background streamer goes offline; the transition hook ends its session.
+    // Offline edges end each session through the transition hook.
     *directory.statuses.lock().expect("lock") = vec![live_status("main", "kick")];
     port.on_transition(&LiveTransition {
         streamer_id: "guest".into(),
@@ -438,9 +464,14 @@ async fn the_port_observes_due_live_streamers_and_ends_sessions() {
     })
     .await;
     assert!(!service.is_active("guest"));
-    // Main goes offline without a transition call: the next pull ends it.
+    assert!(service.is_active("main"));
     *directory.statuses.lock().expect("lock") = vec![];
-    port.after_tick().await;
+    port.on_transition(&LiveTransition {
+        streamer_id: "main".into(),
+        live: false,
+        at_ms: 0,
+    })
+    .await;
     assert!(!service.is_active("main"));
     service.close().await;
     let events = get_events(&harness.store, Some("guest"), 200)

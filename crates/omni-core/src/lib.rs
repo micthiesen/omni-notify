@@ -8,6 +8,7 @@ pub mod email;
 pub mod error;
 pub mod ids;
 pub mod js;
+mod js_date;
 pub mod log;
 pub mod mail_source;
 pub mod process;

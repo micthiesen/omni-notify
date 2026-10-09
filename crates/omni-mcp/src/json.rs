@@ -10,15 +10,7 @@ use serde_json::{Map, Value};
 
 /// A JS number as JSON: integral values within the safe range print without a
 /// fraction (`6`, not `6.0`), like `JSON.stringify`.
-pub fn js_number(n: f64) -> Value {
-    const MAX_SAFE: f64 = 9_007_199_254_740_991.0;
-    if n.is_finite() && n.fract() == 0.0 && n.abs() <= MAX_SAFE {
-        #[allow(clippy::cast_possible_truncation)]
-        Value::from(n as i64)
-    } else {
-        serde_json::Number::from_f64(n).map_or(Value::Null, Value::Number)
-    }
-}
+pub use omni_core::js::number_value as js_number;
 
 /// zod's `parsedType` name of a JSON value (`undefined` when absent).
 pub fn received_type(value: Option<&Value>) -> &'static str {

@@ -156,15 +156,17 @@ fn service_with(
     }
 }
 
+/// Ports with an `ArchiveEcho` that claims no moves (production always sets one).
+fn echo_ports() -> Ports {
+    let ports = Ports::default();
+    ports
+        .set_archive_echo(Arc::new(ClaimedMoves::default()))
+        .unwrap();
+    ports
+}
+
 fn service(store: &Store, clock: &Arc<TestClock>) -> Harness {
-    service_with(
-        store,
-        clock,
-        "test-omni-bearer",
-        204,
-        None,
-        Ports::default(),
-    )
+    service_with(store, clock, "test-omni-bearer", 204, None, echo_ports())
 }
 
 fn subscribe_input(folder: &str) -> SubscribeInput {
@@ -347,7 +349,7 @@ async fn asks_delegated_subscribers_to_refresh_by_their_token_expiry() {
         "test-omni-bearer",
         204,
         Some(Box::new(|_, _| Ok(true))),
-        Ports::default(),
+        echo_ports(),
     )
     .service;
     let now = clock.now_ms();
@@ -421,7 +423,7 @@ async fn keeps_refresh_before_within_a_nearly_expired_tokens_lifetime() {
             deliver: Box::new(|_| Box::pin(async { Ok(204) })),
         }),
         Some(authorizer.clone()),
-        Ports::default(),
+        echo_ports(),
     );
     let who = principal(
         &format!("executor:{}", "d".repeat(64)),
@@ -477,7 +479,7 @@ async fn withholds_delegated_delivery_until_the_stored_token_validates() {
             checked_log.lock().unwrap().push(bearer.to_owned());
             Ok(bearer == *valid_check.lock().unwrap())
         })),
-        Ports::default(),
+        echo_ports(),
     );
     let events = &harness.service;
     let subscribed = events
@@ -557,7 +559,7 @@ async fn fails_withheld_events_only_when_their_subscription_ends() {
         "test-omni-bearer",
         204,
         Some(Box::new(move |_, _| Ok(*flag.lock().unwrap()))),
-        Ports::default(),
+        echo_ports(),
     );
     harness
         .service
@@ -595,7 +597,7 @@ async fn holds_a_subscription_briefly_when_executor_cannot_authorize() {
         "test-omni-bearer",
         204,
         Some(Box::new(|_, _| Err(()))),
-        Ports::default(),
+        echo_ports(),
     );
     assert!(
         down.service
@@ -618,7 +620,7 @@ async fn holds_a_subscription_briefly_when_executor_cannot_authorize() {
                 Err(())
             }
         })),
-        Ports::default(),
+        echo_ports(),
     );
     flaky
         .service
@@ -728,7 +730,7 @@ async fn records_bounded_event_requests_without_credentials_or_paths() {
         "test-omni-bearer",
         204,
         Some(Box::new(|_, _| Ok(true))),
-        Ports::default(),
+        echo_ports(),
     )
     .service;
     let second = || tokio::time::advance(Duration::from_secs(1));
@@ -822,14 +824,7 @@ async fn keeps_token_rotated_rows_terminal_without_decrypting_with_the_new_key()
         .record_email(&inbox("<one@example.test>"))
         .await
         .unwrap();
-    let rotated = service_with(
-        &db.store,
-        &clock,
-        "rotated-token",
-        204,
-        None,
-        Ports::default(),
-    );
+    let rotated = service_with(&db.store, &clock, "rotated-token", 204, None, echo_ports());
     rotated.service.drain().await.unwrap();
     assert!(rotated.sent.lock().unwrap().is_empty());
     assert_eq!(
@@ -902,6 +897,34 @@ impl ArchiveEcho for ClaimedMoves {
 }
 
 #[tokio::test(start_paused = true)]
+async fn refuses_to_publish_mail_without_the_archive_echo_port() {
+    let clock = clock();
+    let db = test_store(&clock).await;
+    let events = service_with(
+        &db.store,
+        &clock,
+        "test-omni-bearer",
+        204,
+        None,
+        Ports::default(),
+    )
+    .service;
+    events
+        .subscribe(&subscribe_input("inbox"), None)
+        .await
+        .unwrap();
+    let error = events
+        .record_email(&inbox("<one@example.test>"))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "archive echo check failed: ArchiveEcho is unavailable"
+    );
+    assert!(deliveries(&db.store).await.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
 async fn keeps_original_inbox_receipts_and_suppresses_claimed_move_feedback() {
     let clock = clock();
     let db = test_store(&clock).await;
@@ -950,7 +973,7 @@ async fn retries_429_and_5xx_but_terminates_4xx_and_exhausted_claims() {
             "test-omni-bearer",
             status,
             None,
-            Ports::default(),
+            echo_ports(),
         )
         .service;
         events
@@ -1029,7 +1052,7 @@ async fn publishes_while_a_slow_webhook_is_still_in_flight() {
             }),
         }),
         None,
-        Ports::default(),
+        echo_ports(),
     );
     events
         .subscribe(&subscribe_input("inbox"), None)
@@ -1084,11 +1107,15 @@ async fn delivers_as_soon_as_an_event_is_published() {
             }),
         }),
         None,
-        Ports::default(),
+        echo_ports(),
     );
     let worker = {
         let events = events.clone();
-        tokio::spawn(async move { events.delivery_worker().await })
+        tokio::spawn(async move {
+            events
+                .delivery_worker(tokio_util::sync::CancellationToken::new())
+                .await;
+        })
     };
     events
         .subscribe(&subscribe_input("inbox"), None)
@@ -1101,6 +1128,26 @@ async fn delivers_as_soon_as_an_event_is_published() {
     let event_id = receiver.await.unwrap();
     assert_eq!(deliveries(&db.store).await[0].event_id, event_id);
     worker.abort();
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_delivery_worker_stops_when_shutdown_begins() {
+    let clock = clock();
+    let db = test_store(&clock).await;
+    let harness = service(&db.store, &clock);
+    let shutdown = tokio_util::sync::CancellationToken::new();
+    let worker = {
+        let events = harness.service.clone();
+        let shutdown = shutdown.clone();
+        tokio::spawn(async move { events.delivery_worker(shutdown).await })
+    };
+    tokio::task::yield_now().await;
+    assert!(!worker.is_finished());
+    shutdown.cancel();
+    tokio::time::timeout(Duration::from_secs(1), worker)
+        .await
+        .expect("worker stops promptly")
+        .unwrap();
 }
 
 #[tokio::test(start_paused = true)]
@@ -1290,7 +1337,7 @@ async fn publishes_while_a_subscribers_challenge_is_still_in_flight() {
             deliver: Box::new(|_| Box::pin(async { Ok(204) })),
         }),
         None,
-        Ports::default(),
+        echo_ports(),
     );
     events
         .subscribe(&subscribe_input("inbox"), None)

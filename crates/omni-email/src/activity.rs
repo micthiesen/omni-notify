@@ -209,16 +209,10 @@ impl NewActivity {
     }
 }
 
-/// `Date.parse` for the ISO strings transports produce; `None` when unparseable.
+/// `Date.parse` for the ISO strings transports produce (always with an offset,
+/// so the zone for offset-less input does not matter); `None` when unparseable.
 pub fn parse_js_date_ms(value: &str) -> Option<i64> {
-    if let Ok(ts) = value.parse::<jiff::Timestamp>() {
-        return Some(ts.as_millisecond());
-    }
-    // ES date-only forms are UTC midnight.
-    let date = value.parse::<jiff::civil::Date>().ok()?;
-    date.to_zoned(jiff::tz::TimeZone::UTC)
-        .ok()
-        .map(|z| z.timestamp().as_millisecond())
+    omni_core::js::date_parse(value, &jiff::tz::TimeZone::UTC)
 }
 
 /// `selectActivityToPrune`: rows beyond the newest `keep` for one pipeline.

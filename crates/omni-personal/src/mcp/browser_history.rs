@@ -6,7 +6,6 @@ use std::sync::Arc;
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
 use serde::Deserialize;
 
-use super::js_output;
 use crate::hister::{BrowseInput, HisterError, HisterService, PageInput, SearchInput};
 use crate::js::trim;
 
@@ -101,7 +100,7 @@ pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMet
                     })
                     .await
                     .map_err(hister_error)?;
-                js_output(&result)
+                Ok::<_, ToolError>(result)
             }
         },
     )?;
@@ -126,7 +125,7 @@ pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMet
                     })
                     .await
                     .map_err(hister_error)?;
-                js_output(&result)
+                Ok::<_, ToolError>(result)
             }
         },
     )?;
@@ -146,7 +145,7 @@ pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMet
                     })
                     .await
                     .map_err(hister_error)?;
-                js_output(&result)
+                Ok::<_, ToolError>(result)
             }
         },
     )?;
@@ -161,7 +160,7 @@ pub fn tools(hister: Option<Arc<HisterService>>) -> Result<Vec<McpTool>, ToolMet
                     .set_label(&input.url, &label)
                     .await
                     .map_err(hister_error)?;
-                js_output(&result)
+                Ok::<_, ToolError>(result)
             }
         },
     )?;

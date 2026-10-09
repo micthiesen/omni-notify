@@ -52,13 +52,26 @@ pub enum PushOutcome {
     Recorded,
 }
 
-/// The API rejected the message (`status`), or the request never completed
-/// (`status: None`, `body` describes the failure).
+/// The API rejected the message (`status`, with the response `body`), or the
+/// request never completed (`status: None`, `body` is the cause's message).
+/// Displays as mitools `PushoverError.message`, which TS persists and shows.
 #[derive(thiserror::Error, Debug)]
-#[error("pushover {status:?}: {body}")]
 pub struct PushoverError {
     pub status: Option<u16>,
     pub body: String,
+}
+
+impl std::fmt::Display for PushoverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.status {
+            Some(status) => write!(
+                f,
+                "Pushover API returned status code {status}: {}",
+                self.body
+            ),
+            None => write!(f, "Pushover request failed: {}", self.body),
+        }
+    }
 }
 
 impl PushoverError {
@@ -207,12 +220,16 @@ impl Pushover {
             .timeout(PUSHOVER_TIMEOUT)
             .send_bounded(PUSHOVER_MAX_RESPONSE)
             .await
-            .map_err(|error| PushoverError {
-                status: match &error {
-                    omni_http::HttpError::Status { status, .. } => Some(*status),
-                    _ => None,
+            .map_err(|error| match &error {
+                // mitools keeps an HTTP client error's status and no body.
+                omni_http::HttpError::Status { status, .. } => PushoverError {
+                    status: Some(*status),
+                    body: String::new(),
                 },
-                body: format!("Pushover request failed: {error}"),
+                _ => PushoverError {
+                    status: None,
+                    body: error.to_string(),
+                },
             })?;
         if !response.status.is_success() {
             return Err(PushoverError {
@@ -221,6 +238,22 @@ impl Pushover {
             });
         }
         Ok(PushOutcome::Sent)
+    }
+
+    /// mitools `Pushover.enabled`: a `PUSHOVER_USER` is configured, so messages
+    /// with a token are sent (or recorded).
+    pub fn is_configured(&self) -> bool {
+        self.inner
+            .user
+            .as_deref()
+            .is_some_and(|user| !user.is_empty())
+    }
+
+    /// Whether `ch` resolves to a non-empty token (its own or `PUSHOVER_TOKEN`).
+    pub fn has_token(&self, ch: PushoverChannel) -> bool {
+        self.inner.tokens.iter().any(|(channel, token)| {
+            *channel == ch && token.as_deref().is_some_and(|t| !t.is_empty())
+        })
     }
 
     /// Messages captured in `SideEffectMode::Record`, oldest first.

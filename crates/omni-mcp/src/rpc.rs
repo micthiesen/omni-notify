@@ -574,8 +574,10 @@ impl McpProtocol {
         }
     }
 
+    /// zod's output projection, with whole-number doubles printed as JS does.
     fn project(&self, entry: &ToolEntry, structured: Map<String, Value>) -> Map<String, Value> {
-        match order_by_schema(Value::Object(structured), &entry.output_schema) {
+        let structured = omni_core::js::normalize_numbers(Value::Object(structured));
+        match order_by_schema(structured, &entry.output_schema) {
             Value::Object(map) => map,
             _ => Map::new(),
         }

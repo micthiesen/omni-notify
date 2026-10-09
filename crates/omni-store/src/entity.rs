@@ -373,11 +373,18 @@ pub struct EntityDescriptor {
     pub version: i64,
     pub recompute_pk: fn(&JsValue) -> Result<String, String>,
     pub migrate: fn(JsValue, i64) -> Result<JsValue, String>,
+    /// Typed round trip `decode -> E -> encode` (compat audit, `--rewrite-to`).
+    pub roundtrip: fn(&JsValue) -> Result<JsValue, String>,
 }
 
 fn recompute_pk_of<E: Entity>(value: &JsValue) -> Result<String, String> {
     let entity: E = cbor::from_value(value.clone()).map_err(|e| e.to_string())?;
     pk::<E>(&entity.key()).map_err(|e| e.to_string())
+}
+
+fn roundtrip_of<E: Entity>(value: &JsValue) -> Result<JsValue, String> {
+    let entity: E = cbor::from_value(value.clone()).map_err(|e| e.to_string())?;
+    cbor::to_value(&entity).map_err(|e| e.to_string())
 }
 
 impl EntityDescriptor {
@@ -387,6 +394,7 @@ impl EntityDescriptor {
             version: E::VERSION,
             recompute_pk: recompute_pk_of::<E>,
             migrate: E::migrate,
+            roundtrip: roundtrip_of::<E>,
         }
     }
 }

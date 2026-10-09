@@ -9,7 +9,6 @@ use omni_api::email::paths;
 use omni_config::Config;
 use omni_email::triage::EmailTriage;
 use omni_parcel::persistence::{self, DeliveryAttempt, SubmissionStatus};
-use omni_tasks::{EventBus, RunLogs};
 use omni_testkit::{TestApp, test_app_env};
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
@@ -20,10 +19,6 @@ fn triage(app: &TestApp) -> EmailTriage {
         app.ctx.config.clone(),
         app.ctx.store.clone(),
     )
-}
-
-fn run_logs(app: &TestApp) -> RunLogs {
-    RunLogs::new(EventBus::new(16), app.ctx.clock.clone())
 }
 
 async fn delete(router: &axum::Router, path: &str) -> (StatusCode, Value) {
@@ -47,7 +42,7 @@ async fn delete(router: &axum::Router, path: &str) -> (StatusCode, Value) {
 #[tokio::test]
 async fn is_disabled_without_an_api_key_and_registers_the_handler_with_one() {
     let app = TestApp::new().await;
-    let without = omni_parcel::subsystem(&app.ctx, run_logs(&app), triage(&app)).unwrap();
+    let without = omni_parcel::subsystem(&app.ctx, triage(&app)).unwrap();
     assert!(without.email_handlers.is_empty());
     assert_eq!(without.entities[0].name, "parcel-submitted-delivery");
 
@@ -55,7 +50,7 @@ async fn is_disabled_without_an_api_key_and_registers_the_handler_with_one() {
     env.insert("PARCEL_API_KEY".to_owned(), "parcel-key".to_owned());
     let mut ctx = app.ctx.clone();
     ctx.config = Arc::new(Config::from_env(&env).unwrap());
-    let with = omni_parcel::subsystem(&ctx, run_logs(&app), triage(&app)).unwrap();
+    let with = omni_parcel::subsystem(&ctx, triage(&app)).unwrap();
     assert_eq!(with.email_handlers.len(), 1);
     assert_eq!(with.email_handlers[0].name(), "ParcelTracker");
 }
@@ -63,7 +58,7 @@ async fn is_disabled_without_an_api_key_and_registers_the_handler_with_one() {
 #[tokio::test]
 async fn forgets_a_submitted_delivery() {
     let app = TestApp::new().await;
-    let subsystem = omni_parcel::subsystem(&app.ctx, run_logs(&app), triage(&app)).unwrap();
+    let subsystem = omni_parcel::subsystem(&app.ctx, triage(&app)).unwrap();
     let router = app.router(&subsystem);
     persistence::record(
         &app.ctx.store,

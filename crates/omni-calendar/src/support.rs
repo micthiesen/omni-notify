@@ -183,12 +183,7 @@ pub trait EmailSupport: Send + Sync {
 }
 
 /// A downloaded attachment (`DownloadedAttachment`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DownloadedAttachment {
-    pub name: String,
-    pub mime_type: String,
-    pub data: Vec<u8>,
-}
+pub use omni_core::email::DownloadedAttachment;
 
 /// The mail transport's attachment download (WP01 `downloadAttachmentEffect`).
 pub trait AttachmentSource: Send + Sync {
@@ -196,4 +191,35 @@ pub trait AttachmentSource: Send + Sync {
         &'a self,
         attachment: &'a EmailAttachment,
     ) -> BoxFuture<'a, Result<Option<DownloadedAttachment>, SupportError>>;
+}
+
+/// Production [`AttachmentSource`]: the `EmailReader` port, looked up per call
+/// (ports are set after subsystems are built). An unset port fails the
+/// download, which the pipeline warns about and skips.
+pub struct PortAttachments {
+    ports: omni_runtime::Ports,
+}
+
+impl PortAttachments {
+    pub fn new(ports: omni_runtime::Ports) -> Self {
+        Self { ports }
+    }
+}
+
+impl AttachmentSource for PortAttachments {
+    fn download<'a>(
+        &'a self,
+        attachment: &'a EmailAttachment,
+    ) -> BoxFuture<'a, Result<Option<DownloadedAttachment>, SupportError>> {
+        Box::pin(async move {
+            let reader = self
+                .ports
+                .email_reader()
+                .ok_or_else(|| SupportError::new("EmailReader is unavailable"))?;
+            reader
+                .download_attachment(attachment)
+                .await
+                .map_err(|e| SupportError::new(e.to_string()))
+        })
+    }
 }

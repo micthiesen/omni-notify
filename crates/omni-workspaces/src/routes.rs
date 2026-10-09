@@ -237,11 +237,11 @@ async fn post_message(
             axum::Json(WorkspaceMessageAccepted { run_id }),
         )
             .into_response()),
-        Err(RunNowError::AlreadyRunning) => Ok(api_error(
+        Err(RunNowError::AlreadyRunning { .. }) => Ok(api_error(
             StatusCode::CONFLICT,
             "Workspace agent is already running",
         )),
-        Err(RunNowError::NotFound) => Ok(api_error(
+        Err(RunNowError::NotFound { .. }) => Ok(api_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "Workspace task is unavailable",
         )),

@@ -7,9 +7,7 @@ use omni_core::clock::SharedClock;
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, paginate, typed_tool};
 use omni_store::{EntityOps, Store};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
-use super::js_output;
 use crate::pets::persistence::{DailyVisitCount, PetStore, WeightHistoryRow};
 
 const MAX_MCP_COST_EVENTS: u64 = 100_000;
@@ -173,7 +171,7 @@ pub fn tools(
         "pets_read",
         move |input: PetsReadInput, _cx: ToolContext| {
             let pets = pets.clone();
-            async move { js_output(&pets_read(pets, input).await?) }
+            async move { pets_read(pets, input).await }
         },
     )?;
     let costs_tool = typed_tool(
@@ -199,9 +197,7 @@ pub fn tools(
                     .await
                     .map_err(|e| ToolError::execute_from(&e))?;
                 let summary = summarize(&events, CostRange::Days(days), clock.now_ms(), &tz);
-                js_output::<Value>(
-                    &serde_json::to_value(summary).map_err(|e| ToolError::output(e.to_string()))?,
-                )
+                Ok::<_, ToolError>(summary)
             }
         },
     )?;

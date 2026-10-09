@@ -244,8 +244,60 @@ async fn invalid_structured_output_is_a_schema_error() {
         )
         .await;
     assert!(
-        matches!(result, Err(AiError::Schema(message)) if message.starts_with("No object generated"))
+        matches!(result, Err(AiError::Schema(message)) if message == "No object generated: response did not match schema.")
     );
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema, PartialEq)]
+struct Scored {
+    #[schemars(range(min = 0, max = 100))]
+    score: u32,
+    note: Option<String>,
+}
+
+#[tokio::test]
+async fn structured_output_is_validated_against_its_schema_like_zod() {
+    let h = harness().await;
+    h.fakes.script(
+        ModelRole::Triage,
+        vec![
+            // Integral doubles are integers; the nullable optional may be null.
+            GenerateResponse::text("{\"score\": 80.0, \"note\": null}"),
+            // Out of range, extra key, missing key, not JSON: each fails once, unretried.
+            GenerateResponse::text("{\"score\": 101, \"note\": null}"),
+            GenerateResponse::text("{\"score\": 1, \"note\": null, \"extra\": true}"),
+            GenerateResponse::text("{\"score\": 1}"),
+            GenerateResponse::text("not json"),
+        ],
+    );
+    let model = h.model(ModelRole::Triage);
+    let generate = || {
+        h.ai.generate_object::<Scored>(
+            model.as_ref(),
+            GenerateRequest::prompt("x"),
+            CostTag::for_role(ModelRole::Triage),
+        )
+    };
+    let (first, _) = generate().await.unwrap();
+    assert_eq!(
+        first,
+        Scored {
+            score: 80,
+            note: None
+        }
+    );
+    for expected in [
+        "No object generated: response did not match schema.",
+        "No object generated: response did not match schema.",
+        "No object generated: response did not match schema.",
+        "No object generated: could not parse the response.",
+    ] {
+        let error = generate().await.unwrap_err();
+        assert!(
+            matches!(&error, AiError::Schema(message) if message == expected),
+            "{error:?}"
+        );
+    }
 }
 
 fn call(id: &str, name: &str, arguments: serde_json::Value) -> ToolCall {

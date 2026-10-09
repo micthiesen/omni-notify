@@ -26,6 +26,39 @@ pub fn parse_object<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, cra
         .map_err(|e| crate::AiError::Schema(format!("No object generated: {e}")))
 }
 
+/// AI SDK `NoObjectGeneratedError` message for text that is not JSON.
+pub const NOT_PARSED: &str = "No object generated: could not parse the response.";
+/// AI SDK `NoObjectGeneratedError` message for JSON that fails the schema.
+pub const SCHEMA_MISMATCH: &str = "No object generated: response did not match schema.";
+
+/// AI SDK structured output: the text must parse as JSON and validate against
+/// `schema` (zod's role in TS), and is then decoded. Integral floats decode into
+/// integer fields. Failures carry the AI SDK's exact messages and are not
+/// retried, as in `generateText` with `Output.object`; the details are logged.
+pub fn parse_validated<T: serde::de::DeserializeOwned>(
+    text: &str,
+    schema: &Value,
+) -> Result<T, crate::AiError> {
+    let value: Value = serde_json::from_str(text.trim()).map_err(|error| {
+        tracing::debug!(target: "AI", %error, "Structured output is not JSON");
+        crate::AiError::Schema(NOT_PARSED.to_owned())
+    })?;
+    let validator = jsonschema::validator_for(schema)
+        .map_err(|e| crate::AiError::Schema(format!("invalid output schema: {e}")))?;
+    let issues: Vec<String> = validator
+        .iter_errors(&value)
+        .map(|e| format!("{}: {e}", e.instance_path()))
+        .collect();
+    if !issues.is_empty() {
+        tracing::debug!(target: "AI", issues = %issues.join("; "), "Structured output failed its schema");
+        return Err(crate::AiError::Schema(SCHEMA_MISMATCH.to_owned()));
+    }
+    serde_json::from_value(omni_core::js::normalize_numbers(value)).map_err(|error| {
+        tracing::debug!(target: "AI", %error, "Structured output does not decode");
+        crate::AiError::Schema(SCHEMA_MISMATCH.to_owned())
+    })
+}
+
 /// Whether `schema` already satisfies OpenAI strict mode: every object lists all of
 /// its properties as required and sets `additionalProperties: false`.
 pub fn is_strict_compatible(schema: &Value) -> bool {

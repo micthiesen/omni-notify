@@ -8,11 +8,14 @@
 //! WP04/05/08/11 define their DTOs.
 
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 use futures::future::BoxFuture;
-use omni_core::email::{EmailHandler, EmailOrigin, FetchedEmail};
+use omni_core::email::{
+    DownloadedAttachment, EmailAttachment, EmailHandler, EmailOrigin, FetchedEmail,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// A port call failure.
 #[derive(Debug, thiserror::Error)]
@@ -60,7 +63,8 @@ pub struct EmailReaderHealth {
     pub drafts_available: bool,
 }
 
-/// Implemented by WP01; used by WP02 (retry, reprocess, MCP email tools) and WP11.
+/// Implemented by WP01; used by WP02 (retry, reprocess, MCP email tools), WP03
+/// (attachment download) and WP11.
 pub trait EmailReader: Send + Sync {
     /// Re-fetches one email by stable id; `None` when it is gone.
     fn fetch_by_id<'a>(
@@ -73,9 +77,18 @@ pub trait EmailReader: Send + Sync {
         q: &'a EmailSearch,
     ) -> BoxFuture<'a, Result<Vec<FetchedEmail>, PortError>>;
     fn health(&self) -> EmailReaderHealth;
+    /// `downloadAttachmentEffect`: the attachment's bytes by its folder/UID
+    /// handle; `None` when the message or part is no longer available.
+    fn download_attachment<'a>(
+        &'a self,
+        attachment: &'a EmailAttachment,
+    ) -> BoxFuture<'a, Result<Option<DownloadedAttachment>, PortError>>;
 }
 
-/// Implemented by WP01; used by WP12 to suppress mailbox events caused by its own archive moves.
+/// Implemented by WP01 (`omni_imap::transport::StoreArchiveEcho`, which needs only
+/// the store); used by WP12 to suppress mailbox events caused by its own archive
+/// moves. WP14 must set it whenever MCP events are enabled: the MCP package fails
+/// boot without it rather than publishing duplicate `email.received` events.
 pub trait ArchiveEcho: Send + Sync {
     fn is_archive_action_message<'a>(
         &'a self,
@@ -157,11 +170,28 @@ pub struct LiveTransition {
     pub at_ms: i64,
 }
 
+/// One streamer polled live this tick (TS `LiveObservation`): sent for the
+/// went-live edge and every still-live poll, never for a streamer whose poll
+/// failed or was not due (background tier).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LiveObservation {
+    /// A serialized `omni_api::streamers::LivestreamSummary`.
+    pub streamer: Value,
+    /// The new live status as a serialized `omni_api::streamers::StreamerStatusView`.
+    pub status: Value,
+    pub went_live: bool,
+    pub title_changed: bool,
+    pub at_ms: i64,
+}
+
 /// Implemented by WP05; used by WP04 (task hooks, routes) and WP12. Values are
 /// serialized `omni_api::intelligence` DTOs.
 pub trait LiveIntelligence: Send + Sync {
+    /// `observeLive`: a streamer polled live this tick.
+    fn observe_live<'a>(&'a self, observation: &'a LiveObservation) -> BoxFuture<'a, ()>;
     /// Runs after every live-check tick.
     fn after_tick(&self) -> BoxFuture<'_, ()>;
+    /// Aggregate edges; `live: false` is `observeOffline`.
     fn on_transition<'a>(&'a self, transition: &'a LiveTransition) -> BoxFuture<'a, ()>;
     fn details<'a>(
         &'a self,
@@ -184,9 +214,96 @@ pub trait BriefingsReader: Send + Sync {
     fn histories(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
 }
 
-/// Implemented and used inside WP12 (events and tools).
+/// A turn Omni just started on the Claude Code host (`noteTurnStarted` input).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClaudeTurnStarted {
+    pub session_id: String,
+    pub id: Option<String>,
+    pub project: Option<String>,
+    /// The session revision the turn started from.
+    pub revision: f64,
+}
+
+/// Implemented by WP12's `claude.session.turn_finished` watcher; used by the
+/// Claude session tools so a turn that ends before the next poll still
+/// produces an event. Failures are the implementation's to log.
 pub trait ClaudeSessionNotifier: Send + Sync {
-    fn note_turn_started<'a>(&'a self, session: &'a str) -> BoxFuture<'a, ()>;
+    fn note_turn_started<'a>(&'a self, turn: &'a ClaudeTurnStarted) -> BoxFuture<'a, ()>;
+}
+
+/// The bounded commands of the Claude Code host's session client.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HostCommand {
+    Projects,
+    List,
+    Status,
+    Read,
+    Result,
+    Wait,
+    Start,
+    Send,
+    Stop,
+}
+
+impl HostCommand {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            HostCommand::Projects => "projects",
+            HostCommand::List => "list",
+            HostCommand::Status => "status",
+            HostCommand::Read => "read",
+            HostCommand::Result => "result",
+            HostCommand::Wait => "wait",
+            HostCommand::Start => "start",
+            HostCommand::Send => "send",
+            HostCommand::Stop => "stop",
+        }
+    }
+}
+
+/// `DeviceLinkStatus` of a configured link.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HostLinkStatus {
+    pub online: bool,
+    pub disabled: bool,
+    /// The host's own name; never surfaced through MCP.
+    pub host: Option<String>,
+    pub last_seen_at: Option<String>,
+    pub pending_jobs: usize,
+}
+
+/// A relay failure (`DeviceLinkError`).
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{detail} ({code})")]
+pub struct HostError {
+    pub code: String,
+    pub detail: String,
+    pub retryable: bool,
+}
+
+impl HostError {
+    pub fn new(code: impl Into<String>, detail: impl Into<String>, retryable: bool) -> Self {
+        Self {
+            code: code.into(),
+            detail: detail.into(),
+            retryable,
+        }
+    }
+}
+
+/// The Claude Code host link: status plus bounded command execution.
+/// Implemented by WP12's device link (`omni_device_link::DeviceLinkService`, the
+/// outbound long-poll relay); used by WP12's Claude session tools, activity
+/// routes and session watcher.
+pub trait ClaudeHost: Send + Sync {
+    fn status(&self) -> HostLinkStatus;
+    /// Runs one command and returns the client's `data` payload.
+    fn execute(
+        &self,
+        command: HostCommand,
+        args: Map<String, Value>,
+        timeout: Duration,
+    ) -> BoxFuture<'_, Result<Map<String, Value>, HostError>>;
 }
 
 /// Returned when a port is set twice.
@@ -234,6 +351,7 @@ ports! {
     on_deck_source, set_on_deck_source: OnDeckSource,
     briefings_reader, set_briefings_reader: BriefingsReader,
     claude_session_notifier, set_claude_session_notifier: ClaudeSessionNotifier,
+    claude_host, set_claude_host: ClaudeHost,
 }
 
 #[cfg(test)]

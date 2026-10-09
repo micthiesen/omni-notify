@@ -3,7 +3,7 @@
 use base64::Engine as _;
 use omni_ai::{
     Ai, AiError, ContentPart, CostTag, FinishReason, GenerateRequest, LanguageModel, Message,
-    ModelRole, OutputSpec, Role, costs::llm_cost_cents, schema::parse_object,
+    ModelRole, OutputSpec, Role, costs::llm_cost_cents,
 };
 use omni_core::js::{json_stringify_pretty2, utf16_len, utf16_slice};
 
@@ -134,12 +134,13 @@ async fn run_once(
     content: &[ContentPart],
     log_file: Option<&RunLogFile>,
 ) -> Result<Attempt, CalendarExtractionError> {
+    let spec = OutputSpec::of::<CalendarEventExtraction>();
     let request = GenerateRequest {
         messages: vec![Message {
             role: Role::User,
             content: content.to_vec(),
         }],
-        output: Some(OutputSpec::of::<CalendarEventExtraction>()),
+        output: Some(spec.clone()),
         ..GenerateRequest::default()
     };
     let response = ai
@@ -155,8 +156,9 @@ async fn run_once(
             "No object generated: the response was cut off at the output token limit".to_owned(),
         )));
     }
-    let output: CalendarEventExtraction =
-        parse_object(&response.text).map_err(|e| extraction_error(&e))?;
+    let output: CalendarEventExtraction = spec
+        .parse(&response.text)
+        .map_err(|e| extraction_error(&e))?;
     if let (Some(reasoning), Some(file)) = (response.reasoning.as_deref(), log_file)
         && !reasoning.is_empty()
     {

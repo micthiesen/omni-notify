@@ -152,6 +152,12 @@ impl TaskRegistry {
         &self.inner.clock
     }
 
+    /// The live per-run log buffers this registry captures into; work outside a
+    /// task run (email processing) captures through the same buffers.
+    pub fn run_log_buffers(&self) -> RunLogs {
+        self.inner.logs.clone()
+    }
+
     /// Registers a task; names are unique.
     pub fn track(&self, task: Arc<dyn Task>) -> Result<(), DuplicateTaskError> {
         let mut entries = self.entries_lock();
@@ -210,14 +216,20 @@ impl TaskRegistry {
         name: &str,
         input: Option<serde_json::Value>,
     ) -> Result<String, RunNowError> {
-        let entry = self.entry(name).ok_or(RunNowError::NotFound)?;
+        let entry = self.entry(name).ok_or_else(|| RunNowError::NotFound {
+            name: name.to_owned(),
+        })?;
         if input.is_some() && !entry.task.accepts_manual_input() {
-            return Err(RunNowError::ManualInputUnsupported);
+            return Err(RunNowError::ManualInputUnsupported {
+                name: name.to_owned(),
+            });
         }
         let reservation = {
             let mut state = self.state();
             if state.running.contains(name) || state.queued.get(name).copied().unwrap_or(0) > 0 {
-                return Err(RunNowError::AlreadyRunning);
+                return Err(RunNowError::AlreadyRunning {
+                    name: name.to_owned(),
+                });
             }
             *state.queued.entry(name.to_owned()).or_insert(0) += 1;
             QueueReservation {
@@ -256,9 +268,13 @@ impl TaskRegistry {
         name: &str,
         input: Option<serde_json::Value>,
     ) -> Result<RunOutcome, RunNowError> {
-        let entry = self.entry(name).ok_or(RunNowError::NotFound)?;
+        let entry = self.entry(name).ok_or_else(|| RunNowError::NotFound {
+            name: name.to_owned(),
+        })?;
         if input.is_some() && !entry.task.accepts_manual_input() {
-            return Err(RunNowError::ManualInputUnsupported);
+            return Err(RunNowError::ManualInputUnsupported {
+                name: name.to_owned(),
+            });
         }
         let reservation = self.reserve(name);
         let run_id = persistence::make_run_id(name);

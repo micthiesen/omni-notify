@@ -1,8 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
-# `default-members = ["crates/omni-notify"]` is added by WP14 together with the
-# binary crate; Cargo rejects a default member that does not exist yet.
+default-members = ["crates/omni-notify"]
 
 [workspace.package]
 version = "0.1.0"
@@ -161,6 +160,11 @@ omni-briefings = { path = "crates/omni-briefings" }
 # WP12 (omni-mcp, omni-device-link)
 omni-mcp = { path = "crates/omni-mcp" }
 omni-device-link = { path = "crates/omni-device-link" }
+# WP15 (omni-web-kit, omni-web) and WP16 (omni-web-pages)
+omni-web-kit = { path = "crates/omni-web-kit" }
+omni-web-pages = { path = "crates/omni-web-pages" }
+# WP14 (omni-notify)
+omni-presspods = { path = "crates/omni-presspods" }
 
 [profile.dev]
 debug = "line-tables-only"

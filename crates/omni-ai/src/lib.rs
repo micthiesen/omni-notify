@@ -168,6 +168,12 @@ impl OutputSpec {
             schema: schema::strict_schema::<T>(),
         }
     }
+
+    /// Parses a response's text, validated against this schema
+    /// ([`schema::parse_validated`]).
+    pub fn parse<T: DeserializeOwned>(&self, text: &str) -> Result<T, AiError> {
+        schema::parse_validated(text, &self.schema)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -555,16 +561,16 @@ impl Ai {
     }
 
     /// Strict structured output (AI SDK `generateText` + `Output.object`); records cost.
-    /// `req.output` defaults to [`OutputSpec::of::<T>`].
+    /// `req.output` defaults to [`OutputSpec::of::<T>`]; the response must validate
+    /// against that schema, as the AI SDK validates with zod, and a mismatch fails
+    /// without a retry.
     pub async fn generate_object<T: DeserializeOwned + schemars::JsonSchema>(
         &self,
         m: &dyn LanguageModel,
         mut req: GenerateRequest,
         cost: CostTag,
     ) -> Result<(T, Usage), AiError> {
-        if req.output.is_none() {
-            req.output = Some(OutputSpec::of::<T>());
-        }
+        let spec = req.output.get_or_insert_with(OutputSpec::of::<T>).clone();
         let response = self.step(m, &req, cost).await?;
         if response.finish == FinishReason::Length {
             return Err(AiError::Schema(
@@ -572,7 +578,7 @@ impl Ai {
                     .to_owned(),
             ));
         }
-        let value = schema::parse_object(&response.text)?;
+        let value = spec.parse(&response.text)?;
         Ok((value, response.usage))
     }
 

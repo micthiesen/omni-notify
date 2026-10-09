@@ -21,6 +21,7 @@ use crate::speech::synthesize::Synthesizer;
 use crate::storage::checkpoint_work_id;
 use crate::types::{Article, summarize_retriever_attempts};
 use crate::url::normalize_url;
+pub use omni_core::js::to_fixed as js_to_fixed;
 
 const LOG: &str = "PressPods";
 
@@ -86,50 +87,6 @@ pub fn availability_message(episode: &PressPodsEpisode) -> String {
         episode.voice_name.as_deref().unwrap_or("undefined"),
         js_to_fixed(total_cents / 100.0, 2)
     )
-}
-
-/// JS `Number#toFixed(digits)` for finite values below 1e21: rounds the exact
-/// binary value, with an exact tie going up (`(0.125).toFixed(2)` is
-/// `"0.13"`), where Rust's formatter rounds ties to even.
-pub fn js_to_fixed(x: f64, digits: usize) -> String {
-    if !x.is_finite() || x.abs() >= 1e21 {
-        return omni_core::js::number_to_string(x);
-    }
-    // 1100 fractional digits hold any f64's exact decimal expansion.
-    let exact = format!("{:.1100}", x.abs());
-    let (int_part, frac_part) = exact.split_once('.').unwrap_or((&exact, ""));
-    let mut kept: Vec<u8> = int_part
-        .bytes()
-        .chain(frac_part.bytes().take(digits))
-        .map(|b| b - b'0')
-        .collect();
-    if frac_part.as_bytes().get(digits).is_some_and(|d| *d >= b'5') {
-        let mut i = kept.len();
-        loop {
-            if i == 0 {
-                kept.insert(0, 1);
-                break;
-            }
-            i -= 1;
-            if kept[i] == 9 {
-                kept[i] = 0;
-            } else {
-                kept[i] += 1;
-                break;
-            }
-        }
-    }
-    let int_len = kept.len() - digits;
-    let mut out = String::new();
-    if x < 0.0 {
-        out.push('-');
-    }
-    out.extend(kept[..int_len].iter().map(|d| char::from(b'0' + d)));
-    if digits > 0 {
-        out.push('.');
-        out.extend(kept[int_len..].iter().map(|d| char::from(b'0' + d)));
-    }
-    out
 }
 
 impl PressPods {

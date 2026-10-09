@@ -4,10 +4,10 @@
 //! each job's output to `POST /device-link/result`, both authenticated by
 //! `OMNI_DEVICE_LINK_TOKEN` only (which config validation keeps strong and
 //! distinct from `OMNI_MCP_TOKEN`). Omni never connects to the host. MCP tools
-//! (`omni-mcp`) reach the host only through [`DeviceLinkService::execute`];
-//! the binary adapts this service to `omni_mcp::ClaudeHost`, because subsystem
-//! crates may not depend on each other.
+//! (`omni-mcp`) reach the host only through the `omni_runtime::ports::ClaudeHost`
+//! port, which [`DeviceLink::from_context`] sets to this service.
 
+mod host;
 pub mod routes;
 pub mod service;
 
@@ -17,10 +17,14 @@ pub use service::{
     RESULT_SLACK,
 };
 
+use std::sync::Arc;
+
 use omni_runtime::{AppContext, Subsystem};
 
 /// The device link for this process, or `None` when `OMNI_DEVICE_LINK_TOKEN`
 /// is unset (the routes are then not mounted, as in TS) or equals the MCP token.
+/// Building it sets the `ClaudeHost` port, so build it before `omni-mcp`'s
+/// `McpPackage`.
 pub struct DeviceLink {
     pub service: DeviceLinkService,
     token: String,
@@ -42,8 +46,20 @@ impl DeviceLink {
             );
             return None;
         }
+        let service = DeviceLinkService::new(ctx.clock.clone());
+        if ctx
+            .ports
+            .set_claude_host(Arc::new(service.clone()))
+            .is_err()
+        {
+            tracing::error!(
+                target: "DeviceLink",
+                "The Claude Code host port was already set; this device link stays unmounted"
+            );
+            return None;
+        }
         Some(Self {
-            service: DeviceLinkService::new(ctx.clock.clone()),
+            service,
             token: token.to_owned(),
         })
     }

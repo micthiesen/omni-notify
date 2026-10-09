@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use super::words::decode_words;
+use omni_core::js::trim as js_trim;
 
 /// One parsed address; a group has `group` members and no address.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -108,10 +109,6 @@ fn tokenize(input: &str) -> Vec<Token> {
             (!token.value.is_empty()).then_some(token)
         })
         .collect()
-}
-
-fn js_trim(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
 }
 
 static STRICT_EMAIL: LazyLock<Option<Regex>> =

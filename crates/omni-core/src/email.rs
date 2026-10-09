@@ -70,6 +70,14 @@ pub struct EmailAttachment {
     pub size: u64,
 }
 
+/// A downloaded attachment (`DownloadedAttachment` in `src/email/types.ts`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DownloadedAttachment {
+    pub name: String,
+    pub mime_type: String,
+    pub data: Vec<u8>,
+}
+
 /// `EmailLinkMetadata` from `src/email/linkMetadata.ts`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

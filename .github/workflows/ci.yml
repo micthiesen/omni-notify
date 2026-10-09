@@ -21,29 +21,42 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Setup Pnpm
-        uses: pnpm/action-setup@v6
+      - name: Install the pinned Rust toolchain
+        # rust-toolchain.toml selects the version and components.
+        run: |
+          rustup toolchain install
+          rustup target add wasm32-unknown-unknown
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version-file: ".node-version"
-          cache: "pnpm"
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
 
-      - name: Install dependencies
-        run: pnpm install
+      - name: Fetch the verified sherpa-onnx static library
+        run: |
+          deploy/sherpa-onnx/fetch-static-lib.sh "$RUNNER_TEMP/sherpa-onnx"
+          echo "SHERPA_ONNX_ARCHIVE_DIR=$RUNNER_TEMP/sherpa-onnx" >> "$GITHUB_ENV"
 
-      - name: Check formatting and lint
-        run: pnpm run check
+      - name: Check formatting
+        run: cargo fmt --all --check
 
-      - name: Typecheck
-        run: pnpm run typecheck
+      - name: Lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check crate dependency direction
+        run: cargo xtask deps-check
 
       - name: Run tests
-        run: pnpm run test --run
+        run: cargo test --workspace --locked
+
+      - name: Install pinned frontend build tools
+        run: |
+          deploy/web-tools/install.sh "$RUNNER_TEMP/web-tools"
+          echo "$RUNNER_TEMP/web-tools" >> "$GITHUB_PATH"
 
       - name: Build frontend
-        run: pnpm --filter frontend run build
+        run: |
+          cargo fetch --locked
+          cd crates/omni-web
+          trunk build --release --offline --locked
 
   build-and-publish:
     runs-on: ubuntu-latest
@@ -72,6 +85,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/omni-notify:latest
@@ -79,8 +93,9 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/omni-notify:latest
-          cache-to: type=inline
+          # mode=max keeps the cargo-chef dependency layers of the build stages.
+          cache-from: type=gha,scope=omni-notify
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni-notify,mode=max' || '' }}
 
       - name: Logout from GitHub Container Registry
         if: github.event_name != 'pull_request'

@@ -7,8 +7,8 @@
 //! are converted, and every other tag stays [`JsValue::Tagged`].
 //!
 //! Known divergences, none of which node's own encoder ever writes: tag 0
-//! strings are parsed as RFC 3339 or a bare `YYYY-MM-DD` (V8's legacy
-//! `Date.parse` fallbacks are not reproduced); tag 32 (URL) and 35 (RegExp)
+//! strings without an offset are read as UTC where node uses the process zone
+//! (`Date.parse` otherwise matches V8); tag 32 (URL) and 35 (RegExp)
 //! keep their original text instead of node's normalized `href`/`source`;
 //! nesting deeper than [`MAX_DEPTH`] is rejected instead of recursing.
 
@@ -373,20 +373,10 @@ fn array_to_number(items: &[JsValue]) -> f64 {
     }
 }
 
-/// `Date.parse` for the ISO forms (RFC 3339 instants, `YYYY-MM-DD` as UTC).
+/// `new Date(s)` for a tag 0 string (`Date.parse`, offset-less forms read as UTC).
 fn parse_date_string(s: &str) -> f64 {
-    if let Ok(ts) = s.parse::<jiff::Timestamp>() {
-        #[allow(clippy::cast_precision_loss)]
-        return time_clip(ts.as_millisecond() as f64);
-    }
-    if s.len() == 10
-        && let Ok(date) = s.parse::<jiff::civil::Date>()
-        && let Ok(zoned) = date.to_zoned(jiff::tz::TimeZone::UTC)
-    {
-        #[allow(clippy::cast_precision_loss)]
-        return time_clip(zoned.timestamp().as_millisecond() as f64);
-    }
-    f64::NAN
+    #[allow(clippy::cast_precision_loss)]
+    omni_core::js::date_parse(s, &jiff::tz::TimeZone::UTC).map_or(f64::NAN, |ms| ms as f64)
 }
 
 /// Big-endian magnitude bytes as an `i128`, when they fit.

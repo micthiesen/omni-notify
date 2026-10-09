@@ -4,6 +4,7 @@
 use indexmap::IndexMap;
 
 use super::words::decode_words;
+pub(crate) use omni_core::js::trim as js_trim;
 
 /// `{ value, params }`; `value` is `None` where libmime leaves `false`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -205,11 +206,6 @@ fn percent_to_q(value: &str) -> String {
         }
     }
     out
-}
-
-/// JS `String#trim` (Unicode whitespace plus BOM).
-pub(crate) fn js_trim(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
 }
 
 /// libmime `decodeHeader`: unfold, split at the first colon; key lowercased.

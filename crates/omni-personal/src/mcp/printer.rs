@@ -5,7 +5,6 @@ use std::sync::Arc;
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
 use serde::Deserialize;
 
-use super::js_output;
 use crate::printer::{PrintPaper, PrintPdfInput, PrintSides, PrinterService};
 
 #[derive(Deserialize)]
@@ -55,7 +54,7 @@ pub fn tools(printer: Option<Arc<PrinterService>>) -> Result<Vec<McpTool>, ToolM
                     .status()
                     .await
                     .map_err(|e| ToolError::execute(e.message))?;
-                js_output(&status)
+                Ok::<_, ToolError>(status)
             }
         },
     )?;
@@ -90,7 +89,7 @@ pub fn tools(printer: Option<Arc<PrinterService>>) -> Result<Vec<McpTool>, ToolM
                     .print_pdf(&request)
                     .await
                     .map_err(|e| ToolError::execute(e.message))?;
-                js_output(&job)
+                Ok::<_, ToolError>(job)
             }
         },
     )?;

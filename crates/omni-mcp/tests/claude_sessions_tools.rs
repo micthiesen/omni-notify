@@ -107,7 +107,7 @@ impl Harness {
             ClaudeSessionWatcher::new(events, Arc::new(host.clone()), db.store.clone(), clock);
         let list = claude_session_tools(&ClaudeDeps {
             host: Some(Arc::new(host.clone())),
-            watcher: Some(watcher),
+            watcher: Some(Arc::new(watcher)),
         })
         .unwrap();
         Self {

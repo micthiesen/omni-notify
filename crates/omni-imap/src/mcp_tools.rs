@@ -119,7 +119,7 @@ struct Handler {
 
 fn trim_string(map: &mut Map<String, Value>, key: &str) {
     if let Some(Value::String(s)) = map.get_mut(key) {
-        *s = js_trim(s).to_owned();
+        *s = omni_core::js::trim(s).to_owned();
     }
 }
 
@@ -128,17 +128,13 @@ fn trim_list(map: &mut Map<String, Value>, key: &str) {
         Some(Value::Array(items)) => {
             for item in items {
                 if let Value::String(s) = item {
-                    *s = js_trim(s).to_owned();
+                    *s = omni_core::js::trim(s).to_owned();
                 }
             }
         }
-        Some(Value::String(s)) => *s = js_trim(s).to_owned(),
+        Some(Value::String(s)) => *s = omni_core::js::trim(s).to_owned(),
         _ => {}
     }
-}
-
-fn js_trim(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
 }
 
 /// zod transforms applied before validation.
@@ -164,8 +160,11 @@ fn normalize(kind: Kind, mut input: Value) -> Value {
     input
 }
 
+/// Decodes validated input; integral floats decode into integer fields (JS has
+/// one number type).
 fn decode<T: DeserializeOwned>(value: Value) -> Result<T, ToolError> {
-    serde_json::from_value(value).map_err(|e| ToolError::input(e.to_string()))
+    serde_json::from_value(omni_core::js::normalize_numbers(value))
+        .map_err(|e| ToolError::input(e.to_string()))
 }
 
 fn execute_error(error: &(dyn std::error::Error + 'static)) -> ToolError {
@@ -328,17 +327,6 @@ impl Handler {
             }
             Kind::ArchiveQueue => {
                 let queue: QueueInput = decode(input)?;
-                // zod `/^\d+$/` is ASCII-only; a Unicode `\d` must not admit other digits.
-                if !queue
-                    .origin
-                    .uid_validity
-                    .bytes()
-                    .all(|b| b.is_ascii_digit())
-                {
-                    return Err(ToolError::input(
-                        "origin.uidValidity: expected ASCII digits",
-                    ));
-                }
                 let identity = ArchiveIdentity {
                     folder: queue.origin.folder,
                     uid_validity: queue.origin.uid_validity,

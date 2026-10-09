@@ -1,0 +1,26 @@
+[package]
+name = "omni-web"
+description = "Omni Notify single-page app (Leptos CSR, built by trunk): router, shell and ops pages."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+omni-api.workspace = true
+omni-web-kit.workspace = true
+omni-web-pages.workspace = true
+leptos.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+console_error_panic_hook.workspace = true
+
+[dependencies.web-sys]
+workspace = true
+features = ["Document", "Element", "HtmlElement", "Window", "Location", "History", "FocusOptions"]

@@ -1,15 +1,6 @@
 //! JS `Math` semantics where Rust's differ.
 
-/// JS `WhiteSpace` or `LineTerminator` (what `String#trim` removes): Unicode
-/// `White_Space` minus U+0085, plus U+FEFF.
-pub fn is_js_whitespace(c: char) -> bool {
-    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
-}
-
-/// `String#trim`.
-pub fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_whitespace)
-}
+pub use omni_core::js::{is_js_whitespace, to_fixed as js_to_fixed, trim as js_trim};
 
 /// `Math.round`: halves round toward positive infinity.
 pub fn js_round(x: f64) -> f64 {
@@ -36,51 +27,6 @@ pub fn js_min(a: f64, b: f64) -> f64 {
     } else {
         a.min(b)
     }
-}
-
-/// `Number#toFixed(digits)`. JS rounds the exact binary value half away from
-/// zero (`0.0625.toFixed(3)` is `"0.063"`), where Rust's formatter rounds an
-/// exact tie to even, so the rounding is done here on the exact expansion.
-pub fn js_to_fixed(x: f64, digits: usize) -> String {
-    if !x.is_finite() || x.abs() >= 1e21 {
-        return omni_core::js::number_to_string(x);
-    }
-    let negative = x < 0.0;
-    // 1100 fractional digits hold every f64 exactly.
-    let exact = format!("{:.1100}", x.abs());
-    let (int_part, frac_part) = exact.split_once('.').unwrap_or((exact.as_str(), ""));
-    let mut kept: Vec<u8> = int_part
-        .bytes()
-        .chain(frac_part.bytes().take(digits))
-        .collect();
-    if frac_part.as_bytes().get(digits).is_some_and(|d| *d >= b'5') {
-        let mut index = kept.len();
-        loop {
-            if index == 0 {
-                kept.insert(0, b'1');
-                break;
-            }
-            index -= 1;
-            if kept[index] == b'9' {
-                kept[index] = b'0';
-            } else {
-                kept[index] += 1;
-                break;
-            }
-        }
-    }
-    let split = kept.len() - digits;
-    let (int_digits, frac_digits) = kept.split_at(split);
-    let mut out = String::with_capacity(kept.len() + 2);
-    if negative {
-        out.push('-');
-    }
-    out.push_str(&String::from_utf8_lossy(int_digits));
-    if digits > 0 {
-        out.push('.');
-        out.push_str(&String::from_utf8_lossy(frac_digits));
-    }
-    out
 }
 
 #[cfg(test)]

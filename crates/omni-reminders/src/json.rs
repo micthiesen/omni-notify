@@ -1,6 +1,7 @@
 //! Small JS-semantics helpers for untrusted JSON (`typeof`, `Number.isSafeInteger`,
 //! `Buffer.from(s, "base64")`).
 
+pub(crate) use omni_core::js::trim as js_trim;
 use serde_json::{Map, Value};
 
 /// `Number.MAX_SAFE_INTEGER`.
@@ -73,27 +74,6 @@ pub(crate) fn node_base64(s: &str) -> Vec<u8> {
 pub(crate) fn base64_encode(bytes: &[u8]) -> String {
     use base64::Engine as _;
     base64::engine::general_purpose::STANDARD.encode(bytes)
-}
-
-/// ECMAScript `WhiteSpace` or `LineTerminator` (what `String#trim` removes). Unlike
-/// `char::is_whitespace`, this includes U+FEFF and excludes U+0085.
-pub(crate) fn is_js_whitespace(c: char) -> bool {
-    matches!(
-        c,
-        '\u{9}' | '\u{a}' | '\u{b}' | '\u{c}' | '\u{d}' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202f}'
-                | '\u{205f}'
-                | '\u{3000}'
-                | '\u{feff}'
-    )
-}
-
-/// `String#trim()`.
-pub(crate) fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_whitespace)
 }
 
 /// `!s.trim()`: empty after JS trimming.

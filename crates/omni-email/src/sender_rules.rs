@@ -33,6 +33,7 @@ impl RuleTarget {
 }
 
 pub use omni_api::email::{RuleScope, RuleVerdict};
+pub use omni_core::js::{is_js_whitespace as is_js_space, trim as js_trim};
 
 /// Whether a rule of this scope applies to `target`.
 pub fn scope_covers(scope: RuleScope, target: RuleTarget) -> bool {
@@ -148,26 +149,6 @@ pub fn normalize_rule_pattern(input: &str) -> String {
         return p;
     }
     format!("@{p}")
-}
-
-/// JS `String#trim` whitespace (WhiteSpace + LineTerminator).
-pub fn is_js_space(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{000B}' | '\u{000C}' | '\r' | ' ' | '\u{00A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
-}
-
-/// JS `String#trim`.
-pub fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_space)
 }
 
 /// The rule deciding `from` for `target` (scope matches or is `both`); block

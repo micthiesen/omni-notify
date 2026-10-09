@@ -127,6 +127,13 @@ impl EmailReader for FakeReader {
             drafts_available: true,
         }
     }
+
+    fn download_attachment<'a>(
+        &'a self,
+        _attachment: &'a omni_core::email::EmailAttachment,
+    ) -> BoxFuture<'a, Result<Option<omni_core::email::DownloadedAttachment>, PortError>> {
+        Box::pin(async { Ok(None) })
+    }
 }
 
 /// An `EmailRetryHandlers` port over a fixed map.

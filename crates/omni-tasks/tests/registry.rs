@@ -145,18 +145,20 @@ async fn rejects_manual_input_for_ordinary_scheduled_tasks() {
         .unwrap();
     assert!(matches!(
         h.registry.run_now("Ordinary", Some(json!({ "count": 5 }))),
-        Err(RunNowError::ManualInputUnsupported)
+        Err(RunNowError::ManualInputUnsupported { ref name }) if name == "Ordinary"
     ));
     assert!(matches!(
         h.registry
             .run_now_and_wait("Ordinary", Some(json!({ "count": 5 })))
             .await,
-        Err(RunNowError::ManualInputUnsupported)
+        Err(RunNowError::ManualInputUnsupported { .. })
     ));
-    assert!(matches!(
-        h.registry.run_now("Missing", None),
-        Err(RunNowError::NotFound)
-    ));
+    let missing = h.registry.run_now("Missing", None);
+    assert!(matches!(missing, Err(RunNowError::NotFound { ref name }) if name == "Missing"));
+    assert_eq!(
+        missing.map_err(|e| e.to_string()),
+        Err("Unknown task \"Missing\"".to_owned())
+    );
 }
 
 #[tokio::test]
@@ -177,7 +179,10 @@ async fn atomically_rejects_one_of_two_simultaneous_manual_runs() {
     let first = h.registry.run_now("ConcurrentManual", None);
     let second = h.registry.run_now("ConcurrentManual", None);
     assert!(first.is_ok());
-    assert!(matches!(second, Err(RunNowError::AlreadyRunning)));
+    assert_eq!(
+        second.map_err(|e| e.to_string()),
+        Err("Task \"ConcurrentManual\" is already running".to_owned())
+    );
     release.notify_one();
     h.tracker.close();
     h.tracker.wait().await;

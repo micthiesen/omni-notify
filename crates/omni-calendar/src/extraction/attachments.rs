@@ -34,9 +34,9 @@ pub async fn download_supported_attachments(
         } else if attachment.size > MAX_ATTACHMENT_SIZE {
             tracing::debug!(
                 target: LOG,
-                "Skipping attachment \"{}\" (too large: {:.1}MB)",
+                "Skipping attachment \"{}\" (too large: {}MB)",
                 attachment.name,
-                megabytes(attachment.size)
+                omni_core::js::to_fixed(megabytes(attachment.size), 1)
             );
         } else {
             supported.push(attachment);
@@ -61,9 +61,10 @@ async fn download_one(
             let kb = downloaded.data.len() as f64 / 1024.0;
             tracing::debug!(
                 target: LOG,
-                "Downloaded attachment \"{}\" ({}, {kb:.0}KB)",
+                "Downloaded attachment \"{}\" ({}, {}KB)",
                 downloaded.name,
-                downloaded.mime_type
+                downloaded.mime_type,
+                omni_core::js::to_fixed(kb, 0)
             );
             Some(downloaded)
         }

@@ -6,8 +6,8 @@
 //! The pipeline reaches the email core (activity, retry queue, sender rules,
 //! triage, log capture) through the [`support::EmailSupport`] trait, implemented
 //! over `omni_email` by [`email_core::OmniEmailSupport`], and the transport's
-//! attachment download through [`support::AttachmentSource`], which the binary
-//! supplies.
+//! attachment download through [`support::AttachmentSource`], implemented over
+//! the `EmailReader` port by [`support::PortAttachments`].
 
 pub mod caldav;
 pub mod email_core;
@@ -28,13 +28,12 @@ use omni_mcp_kit::ToolMetaError;
 use omni_runtime::ports::CalendarWriter;
 use omni_runtime::{AppContext, BootError, BootPhase, BootStep, ManagedEntity, Subsystem};
 use omni_store::entity::EntityDescriptor;
-use omni_tasks::RunLogs;
 
 pub use caldav::{Caldav, CaldavSettings};
 pub use email_core::OmniEmailSupport;
 pub use persistence::CreatedCalendarEvent;
 pub use pipeline::{CalendarEventPipeline, PipelineDeps};
-pub use support::{AttachmentSource, EmailSupport, PIPELINE};
+pub use support::{AttachmentSource, EmailSupport, PIPELINE, PortAttachments};
 
 const LOG: &str = "Main:CalendarEvents";
 
@@ -48,16 +47,15 @@ pub struct CalendarDeps {
 impl CalendarDeps {
     /// Production wiring: the email core from `omni_email` (with the triage
     /// instance shared with the parcel pipeline) plus the transport's
-    /// attachment download.
-    pub fn new(
-        ctx: &AppContext,
-        run_logs: RunLogs,
-        triage: EmailTriage,
-        attachments: Arc<dyn AttachmentSource>,
-    ) -> Self {
+    /// attachment download through the `EmailReader` port.
+    pub fn new(ctx: &AppContext, triage: EmailTriage) -> Self {
         Self {
-            email: Arc::new(OmniEmailSupport::new(ctx.store.clone(), run_logs, triage)),
-            attachments,
+            email: Arc::new(OmniEmailSupport::new(
+                ctx.store.clone(),
+                ctx.run_logs(),
+                triage,
+            )),
+            attachments: Arc::new(PortAttachments::new(ctx.ports.clone())),
         }
     }
 }

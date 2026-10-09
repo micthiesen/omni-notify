@@ -7,7 +7,9 @@
 //!
 //! # Serde protocol
 //! JS-only values travel through serde under reserved names:
-//! - `Undefined` serializes as the unit struct [`UNDEFINED_TOKEN`];
+//! - `Undefined` serializes as the unit struct [`UNDEFINED_TOKEN`] and
+//!   deserializes as `none` (`null` is `unit`), so `#[serde(flatten)]` structs
+//!   read an explicit `undefined` into an `Option` field as `None`;
 //! - `Date` / [`JsDate`] as the newtype struct [`DATE_TOKEN`] over epoch ms (f64);
 //! - `Set` as the newtype struct [`SET_TOKEN`] over a sequence;
 //! - `BigInt` as the newtype struct [`BIGINT_TOKEN`] over an `i128` (the
@@ -17,16 +19,16 @@
 //! - `Tagged` as the tuple struct [`TAGGED_TOKEN`] `(tag, value)`;
 //! - `Map` (non-text keys) as a regular serde map.
 //!
-//! The omni deserializer's `deserialize_any` presents those values as a
+//! The omni deserializer's `deserialize_any` presents the other values as a
 //! single-entry map whose key is the token, and the omni serializer turns such
 //! a map back into the value. That keeps `#[serde(flatten)] extra: Extra`
 //! lossless (serde buffers unknown fields through `deserialize_any`), but a
 //! `serde_json::Value` field also sees the token maps; use `JsValue` for
 //! arbitrary payloads. Typed fields are unaffected: `Option<T>` reads
-//! `undefined` as `None`, numbers coerce between int and float, and
-//! [`JsDate`] accepts tag 0/1, ISO strings and epoch ms. Inside internally
-//! tagged or untagged enums (also buffered) use [`undefined_as_none`] on
-//! optional fields that TS may store as `undefined`.
+//! `undefined` as `None` (buffered or not), numbers coerce between int and
+//! float, and [`JsDate`] accepts tag 0/1, ISO strings and epoch ms.
+//! [`undefined_as_none`] remains for optional fields with a custom
+//! deserializer.
 //!
 //! Other formats (serde_json) see plain values: `undefined` becomes `null`, a
 //! Date its epoch ms, a Set an array.
@@ -619,8 +621,9 @@ impl<'de> Visitor<'de> for JsValueVisitor {
     fn visit_byte_buf<E: de::Error>(self, v: Vec<u8>) -> Result<JsValue, E> {
         Ok(JsValue::Bytes(v))
     }
+    /// The omni deserializer presents `undefined` as `none` and `null` as `unit`.
     fn visit_none<E: de::Error>(self) -> Result<JsValue, E> {
-        Ok(JsValue::Null)
+        Ok(JsValue::Undefined)
     }
     fn visit_unit<E: de::Error>(self) -> Result<JsValue, E> {
         Ok(JsValue::Null)

@@ -73,3 +73,55 @@ proptest! {
         prop_assert!(k1.starts_with(&prefix));
     }
 }
+
+#[derive(Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlattenedDoc {
+    id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    count: Option<f64>,
+    #[serde(flatten)]
+    extra: cbor::Extra,
+}
+
+#[derive(Debug, PartialEq, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum Tagged {
+    Item { note: Option<String> },
+}
+
+/// TS writes explicit `undefined` properties; serde's buffered paths
+/// (`#[serde(flatten)]`, internally tagged enums) read them as absent options,
+/// and unknown `undefined`s survive a round trip as `undefined`, not `null`.
+#[test]
+fn explicit_undefined_reads_through_buffered_serde_paths() {
+    let doc = JsValue::Object(IndexMap::from([
+        ("id".to_owned(), JsValue::String("a".to_owned())),
+        ("error".to_owned(), JsValue::Undefined),
+        ("count".to_owned(), JsValue::Undefined),
+        ("later".to_owned(), JsValue::Undefined),
+        ("kept".to_owned(), JsValue::Null),
+    ]));
+    let decoded: FlattenedDoc = cbor::from_value(doc).expect("decodes");
+    assert_eq!(decoded.error, None);
+    assert_eq!(decoded.count, None);
+    assert_eq!(decoded.extra.get("later"), Some(&JsValue::Undefined));
+    assert_eq!(decoded.extra.get("kept"), Some(&JsValue::Null));
+    let encoded = cbor::to_value(&decoded).expect("encodes");
+    assert_eq!(encoded.get("later"), Some(&JsValue::Undefined));
+    assert_eq!(encoded.get("kept"), Some(&JsValue::Null));
+    assert_eq!(encoded.get("error"), None);
+
+    let tagged = JsValue::Object(IndexMap::from([
+        ("kind".to_owned(), JsValue::String("item".to_owned())),
+        ("note".to_owned(), JsValue::Undefined),
+    ]));
+    assert_eq!(
+        cbor::from_value::<Tagged>(tagged).expect("decodes"),
+        Tagged::Item { note: None }
+    );
+    let bare: JsValue = cbor::from_value(JsValue::Undefined).expect("decodes");
+    assert_eq!(bare, JsValue::Undefined);
+}

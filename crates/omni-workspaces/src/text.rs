@@ -1,17 +1,7 @@
 //! JS string semantics used by workspace validation and prompts.
 
+pub use omni_core::js::trim as js_trim;
 use omni_core::js::{utf16_len, utf16_slice};
-
-/// `String#trim`: ECMAScript WhiteSpace and LineTerminator. That is Unicode
-/// `White_Space` plus the BOM (which Rust's `trim` keeps) minus U+0085 NEXT LINE
-/// (which Rust's `trim` removes and JS keeps).
-pub fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_whitespace)
-}
-
-fn is_js_whitespace(c: char) -> bool {
-    c == '\u{FEFF}' || (c.is_whitespace() && c != '\u{0085}')
-}
 
 /// `value.length` (UTF-16 code units).
 pub fn js_len(s: &str) -> usize {

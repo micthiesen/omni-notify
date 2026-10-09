@@ -150,3 +150,37 @@ async fn skips_without_a_token_or_user_and_records_in_record_mode() {
     );
     assert!(server.received_requests().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn errors_read_like_mitools_and_configuration_is_reported() {
+    let server = MockServer::start().await;
+    Mock::given(path("/1/messages.json"))
+        .respond_with(ResponseTemplate::new(400).set_body_string("{\"status\":0}"))
+        .mount(&server)
+        .await;
+    let push = pushover(&server, SideEffectMode::Live);
+    let error = push
+        .send(PushoverChannel::General, PushoverMessage::default())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Pushover API returned status code 400: {\"status\":0}"
+    );
+    let unreachable = omni_alerts::PushoverError {
+        status: None,
+        body: "timeout".to_owned(),
+    };
+    assert_eq!(unreachable.to_string(), "Pushover request failed: timeout");
+
+    assert!(push.is_configured());
+    assert!(push.has_token(PushoverChannel::Live));
+    assert!(!push.has_token(PushoverChannel::Recs));
+    let userless = Pushover::with_credentials(
+        http(&server),
+        None,
+        [(PushoverChannel::General, "t".to_owned())],
+        SideEffectMode::Live,
+    );
+    assert!(!userless.is_configured());
+}

@@ -48,16 +48,8 @@ impl BriefingNotifier for PushoverBriefingNotifier {
                 .send(PushoverChannel::Briefing, message)
                 .await
                 .map(drop)
-                .map_err(|e| pushover_error_message(&e))
+                .map_err(|e| e.to_string())
         })
-    }
-}
-
-/// mitools `PushoverError.message`, the tool error the model sees.
-pub fn pushover_error_message(error: &omni_alerts::PushoverError) -> String {
-    match error.status {
-        Some(status) => format!("Pushover API returned status code {status}: {}", error.body),
-        None => format!("Pushover request failed: {}", error.body),
     }
 }
 

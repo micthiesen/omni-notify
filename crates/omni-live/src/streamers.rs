@@ -7,6 +7,8 @@ use omni_api::streamers::{DggPresence, StreamerTier};
 
 use crate::channels::ChannelsConfig;
 use crate::platform::{Platform, PlatformBinding};
+/// JS `String.prototype.trim` (`omni_core::js::trim`).
+pub use omni_core::js::trim as js_trim;
 
 /// Background streamers are polled every Nth tick (20 s base, 60 s effective).
 pub const BACKGROUND_POLL_FACTOR: u64 = 3;
@@ -58,30 +60,6 @@ impl Streamer {
         self.discovery_source
             .map(|DiscoverySource::Dgg| self.dgg.and_then(|d| d.viewers).unwrap_or(0))
     }
-}
-
-/// JS `String.prototype.trim`: strips ECMAScript WhiteSpace and
-/// LineTerminator characters (unlike `str::trim`, it removes U+FEFF and keeps
-/// U+0085).
-pub fn js_trim(value: &str) -> &str {
-    value.trim_matches(is_js_whitespace)
-}
-
-fn is_js_whitespace(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0009}'..='\u{000D}'
-            | '\u{0020}'
-            | '\u{00A0}'
-            | '\u{1680}'
-            | '\u{2000}'..='\u{200A}'
-            | '\u{2028}'
-            | '\u{2029}'
-            | '\u{202F}'
-            | '\u{205F}'
-            | '\u{3000}'
-            | '\u{FEFF}'
-    )
 }
 
 /// `displayName.trim().toLowerCase()`.

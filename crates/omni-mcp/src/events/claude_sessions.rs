@@ -8,7 +8,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::future::BoxFuture;
 use omni_core::clock::SharedClock;
+use omni_runtime::ports::ClaudeSessionNotifier;
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityOps, EntityWrite, UpsertOpts};
 use omni_store::{Store, StoreError};
@@ -124,13 +126,7 @@ pub enum WatcherError {
 }
 
 /// A turn Omni just started (`noteTurnStarted` input).
-#[derive(Clone, Debug, PartialEq)]
-pub struct StartedTurn {
-    pub session_id: String,
-    pub id: Option<String>,
-    pub project: Option<String>,
-    pub revision: f64,
-}
+pub use omni_runtime::ports::ClaudeTurnStarted as StartedTurn;
 
 /// Publishes `claude.session.turn_finished`; cheap to clone.
 #[derive(Clone)]
@@ -335,5 +331,15 @@ impl ClaudeSessionWatcher {
             extra: Extra::default(),
         })
         .await
+    }
+}
+
+impl ClaudeSessionNotifier for ClaudeSessionWatcher {
+    fn note_turn_started<'a>(&'a self, turn: &'a StartedTurn) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            if let Err(error) = ClaudeSessionWatcher::note_turn_started(self, turn.clone()).await {
+                tracing::debug!(target: "MCP:ClaudeSessions", error = %error, "Turn start not recorded");
+            }
+        })
     }
 }

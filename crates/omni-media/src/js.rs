@@ -1,53 +1,8 @@
 //! JS formatting semantics the recommendation code persists or prompts with,
 //! plus serde helpers that mirror Effect Schema / zod optionality.
 
+pub use omni_core::js::{is_js_whitespace, to_fixed, trim as js_trim};
 use serde::{Deserialize, Deserializer};
-
-/// `Number#toFixed(digits)`: exact decimal rounding with ties toward the
-/// larger magnitude (JS picks the larger `n`), unlike Rust's ties-to-even.
-pub fn to_fixed(x: f64, digits: usize) -> String {
-    if !x.is_finite() || x.abs() >= 1e21 {
-        return omni_core::js::number_to_string(x);
-    }
-    let negative = x < 0.0;
-    // 1100 fractional digits hold the exact expansion of every finite double.
-    let exact = format!("{:.1100}", x.abs());
-    let (int_part, frac_part) = exact.split_once('.').unwrap_or((exact.as_str(), ""));
-    let kept = &frac_part[..digits.min(frac_part.len())];
-    let round_up = frac_part
-        .as_bytes()
-        .get(digits)
-        .is_some_and(|digit| *digit >= b'5');
-    let mut number: Vec<u8> = int_part.bytes().chain(kept.bytes()).collect();
-    if round_up {
-        let mut index = number.len();
-        loop {
-            if index == 0 {
-                number.insert(0, b'1');
-                break;
-            }
-            index -= 1;
-            if number[index] == b'9' {
-                number[index] = b'0';
-            } else {
-                number[index] += 1;
-                break;
-            }
-        }
-    }
-    let split = number.len() - kept.len();
-    let (int_digits, frac_digits) = number.split_at(split);
-    let mut out = String::new();
-    if negative {
-        out.push('-');
-    }
-    out.push_str(&String::from_utf8_lossy(int_digits));
-    if digits > 0 {
-        out.push('.');
-        out.push_str(&String::from_utf8_lossy(frac_digits));
-    }
-    out
-}
 
 /// `String(n)` for a JS number.
 pub fn number(n: f64) -> String {
@@ -111,34 +66,6 @@ pub fn collapse_whitespace(s: &str) -> String {
         }
     }
     out
-}
-
-/// JS `\s`: WhiteSpace and LineTerminator code points.
-pub fn is_js_whitespace(c: char) -> bool {
-    matches!(
-        c,
-        '\u{0009}'
-            | '\u{000A}'
-            | '\u{000B}'
-            | '\u{000C}'
-            | '\u{000D}'
-            | '\u{0020}'
-            | '\u{00A0}'
-            | '\u{1680}'
-            | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
-}
-
-/// JS `String#trim`.
-pub fn js_trim(s: &str) -> &str {
-    s.trim_matches(is_js_whitespace)
 }
 
 /// `s.slice(0, n)` in UTF-16 units.

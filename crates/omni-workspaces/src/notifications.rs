@@ -46,16 +46,8 @@ impl WorkspaceNotifier for PushoverWorkspaceNotifier {
                 .send(PushoverChannel::Workspace, message)
                 .await
                 .map(drop)
-                .map_err(|e| pushover_error_message(&e))
+                .map_err(|e| e.to_string())
         })
-    }
-}
-
-/// mitools `PushoverError.message`, which TS persists as `lastError`.
-pub fn pushover_error_message(error: &omni_alerts::PushoverError) -> String {
-    match error.status {
-        Some(status) => format!("Pushover API returned status code {status}: {}", error.body),
-        None => format!("Pushover request failed: {}", error.body),
     }
 }
 
@@ -282,30 +274,5 @@ impl Task for WorkspaceNotificationTask {
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn provider_failures_read_like_mitools() {
-        let rejected = omni_alerts::PushoverError {
-            status: Some(400),
-            body: "{\"status\":0}".to_owned(),
-        };
-        assert_eq!(
-            pushover_error_message(&rejected),
-            "Pushover API returned status code 400: {\"status\":0}"
-        );
-        let unreachable = omni_alerts::PushoverError {
-            status: None,
-            body: "timeout".to_owned(),
-        };
-        assert_eq!(
-            pushover_error_message(&unreachable),
-            "Pushover request failed: timeout"
-        );
     }
 }

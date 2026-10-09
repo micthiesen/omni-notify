@@ -115,12 +115,15 @@ pub struct DuplicateTaskError(pub String);
 /// three map to 404 / 409 / 400.
 #[derive(Debug, thiserror::Error)]
 pub enum RunNowError {
-    #[error("Unknown task")]
-    NotFound,
-    #[error("Task is already running")]
-    AlreadyRunning,
-    #[error("Task does not accept manual input")]
-    ManualInputUnsupported,
+    /// `TaskNotFoundError`.
+    #[error("Unknown task \"{name}\"")]
+    NotFound { name: String },
+    /// `TaskAlreadyRunningError`.
+    #[error("Task \"{name}\" is already running")]
+    AlreadyRunning { name: String },
+    /// `TaskManualInputUnsupportedError`.
+    #[error("Task \"{name}\" does not accept manual input")]
+    ManualInputUnsupported { name: String },
     #[error(transparent)]
     Store(#[from] StoreError),
     /// The awaited run finished as an error (already durably recorded).

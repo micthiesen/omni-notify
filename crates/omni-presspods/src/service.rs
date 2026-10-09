@@ -66,7 +66,9 @@ impl WorkerKick for TaskRegistry {
         match self.run_now(TASK_NAME, None) {
             // Already running (the drain loop picks the job up) or server-only
             // mode (no task registered; the job waits for a worker).
-            Ok(_) | Err(RunNowError::AlreadyRunning | RunNowError::NotFound) => Ok(()),
+            Ok(_) | Err(RunNowError::AlreadyRunning { .. } | RunNowError::NotFound { .. }) => {
+                Ok(())
+            }
             Err(error) => Err(PressPodsError::failed(
                 "start PressPods worker",
                 error.to_string(),

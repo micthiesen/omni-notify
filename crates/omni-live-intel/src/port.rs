@@ -1,27 +1,22 @@
 //! `omni_runtime::ports::LiveIntelligence` for WP04 (task hooks, routes) and
 //! WP12 (`livestream_get`).
 //!
-//! The port has no per-streamer `observeLive` hook, so `after_tick` pulls the
-//! tick's results from the `LiveDirectory` port: every live streamer due this
-//! tick (background tier on every third tick, as `isStreamerDue`) is observed,
-//! active streamers that are no longer live or listed are taken offline, and
-//! then voice targets are scheduled. `on_transition` with `live: false` maps to
-//! `observeOffline`.
-
-use std::collections::HashSet;
-use std::sync::atomic::{AtomicU64, Ordering};
+//! WP04 calls `observe_live` for every streamer it polled live this tick (the
+//! went-live edge and each still-live poll; background streamers only on their
+//! due ticks), `on_transition` with `live: false` for `observeOffline`, and
+//! `after_tick` once per tick for voice-target scheduling.
 
 use futures::future::BoxFuture;
-use omni_runtime::ports::{LiveIntelligence, LiveTransition, PortError};
+use omni_runtime::ports::{
+    LiveIntelligence, LiveObservation as PortObservation, LiveTransition, PortError,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::LOG;
-use crate::observation::{LiveObservation, LiveStatus, Streamer, StreamerTier};
+use crate::observation::{LiveObservation, LiveStatus, Streamer};
 use crate::routes::{DetailsError, IntelState, parse_feedback, submit_feedback};
 use crate::service::LivestreamIntelligenceService;
-
-const BACKGROUND_POLL_FACTOR: u64 = 3;
 
 fn port_error(error: &DetailsError) -> PortError {
     PortError::Failed {
@@ -30,94 +25,14 @@ fn port_error(error: &DetailsError) -> PortError {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StatusHead {
-    streamer_id: String,
-    #[serde(default)]
-    is_live: bool,
-}
-
 /// The port implementation.
 pub struct IntelligencePort {
     state: IntelState,
-    tick: AtomicU64,
 }
 
 impl IntelligencePort {
     pub fn new(state: IntelState) -> Self {
-        Self {
-            state,
-            tick: AtomicU64::new(0),
-        }
-    }
-
-    async fn observe_tick(&self, service: &LivestreamIntelligenceService) {
-        let Some(directory) = self.state.ports.live_directory() else {
-            return;
-        };
-        let (streamers, statuses) = match (directory.streamers().await, directory.statuses().await)
-        {
-            (Ok(streamers), Ok(statuses)) => (streamers, statuses),
-            (Err(error), _) | (_, Err(error)) => {
-                tracing::warn!(target: LOG, %error, "Live directory unavailable for intelligence");
-                return;
-            }
-        };
-        let tick = self.tick.fetch_add(1, Ordering::SeqCst);
-        let mut listed = HashSet::new();
-        let mut live = Vec::new();
-        for value in streamers {
-            match serde_json::from_value::<Streamer>(value) {
-                Ok(streamer) => {
-                    listed.insert(streamer.id.clone());
-                    live.push(streamer);
-                }
-                Err(error) => tracing::warn!(target: LOG, %error, "Skipping undecodable streamer"),
-            }
-        }
-        let mut live_statuses = std::collections::HashMap::new();
-        for value in statuses {
-            let Ok(head) = StatusHead::deserialize(&value) else {
-                continue;
-            };
-            if !head.is_live {
-                continue;
-            }
-            match serde_json::from_value::<LiveStatus>(value) {
-                Ok(status) => {
-                    live_statuses.insert(head.streamer_id, status);
-                }
-                Err(error) => {
-                    tracing::warn!(target: LOG, %error, "Skipping undecodable live status")
-                }
-            }
-        }
-        for streamer in live {
-            let due = streamer.tier != StreamerTier::Background
-                || tick.is_multiple_of(BACKGROUND_POLL_FACTOR);
-            match live_statuses.remove(&streamer.id) {
-                Some(status) if due => {
-                    let name = streamer.display_name.clone();
-                    if let Err(error) = service
-                        .observe_live(LiveObservation { streamer, status })
-                        .await
-                    {
-                        tracing::error!(target: LOG, "Intelligence observation failed for {name}: {error}");
-                    }
-                }
-                Some(_) => {}
-                None if service.is_active(&streamer.id) => {
-                    self.offline(service, &streamer.id).await;
-                }
-                None => {}
-            }
-        }
-        for id in service.active_ids() {
-            if !listed.contains(&id) {
-                self.offline(service, &id).await;
-            }
-        }
+        Self { state }
     }
 
     async fn offline(&self, service: &LivestreamIntelligenceService, id: &str) {
@@ -127,6 +42,14 @@ impl IntelligencePort {
     }
 }
 
+/// The intelligence view of a port observation (the `LiveDirectory` DTOs).
+fn decode(observation: &PortObservation) -> Result<LiveObservation, serde_json::Error> {
+    Ok(LiveObservation {
+        streamer: Streamer::deserialize(&observation.streamer)?,
+        status: LiveStatus::deserialize(&observation.status)?,
+    })
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FeedbackPortInput {
@@ -134,12 +57,30 @@ struct FeedbackPortInput {
 }
 
 impl LiveIntelligence for IntelligencePort {
+    fn observe_live<'a>(&'a self, observation: &'a PortObservation) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            let Some(service) = self.state.service() else {
+                return;
+            };
+            let observation = match decode(observation) {
+                Ok(observation) => observation,
+                Err(error) => {
+                    tracing::warn!(target: LOG, %error, "Skipping undecodable live observation");
+                    return;
+                }
+            };
+            let name = observation.streamer.display_name.clone();
+            if let Err(error) = service.observe_live(observation).await {
+                tracing::error!(target: LOG, "Intelligence observation failed for {name}: {error}");
+            }
+        })
+    }
+
     fn after_tick(&self) -> BoxFuture<'_, ()> {
         Box::pin(async move {
             let Some(service) = self.state.service() else {
                 return;
             };
-            self.observe_tick(service).await;
             if let Err(error) = service.after_tick().await {
                 tracing::error!(target: LOG, "Intelligence voice scheduling failed: {error}");
             }

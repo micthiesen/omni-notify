@@ -741,13 +741,11 @@ struct MessageQueued {
     queued: bool,
 }
 
-fn run_now_message(task: &str, error: RunNowError) -> ToolError {
+fn run_now_message(error: RunNowError) -> ToolError {
     ToolError::execute(match error {
-        RunNowError::NotFound => format!("Unknown task \"{task}\""),
-        RunNowError::AlreadyRunning => format!("Task \"{task}\" is already running"),
-        RunNowError::ManualInputUnsupported => {
-            format!("Task \"{task}\" does not accept manual input")
-        }
+        error @ (RunNowError::NotFound { .. }
+        | RunNowError::AlreadyRunning { .. }
+        | RunNowError::ManualInputUnsupported { .. }) => error.to_string(),
         other => omni_core::error::chain_message(&other),
     })
 }
@@ -772,7 +770,7 @@ async fn workspace_message(
     let run_id = service
         .tasks()
         .run_now(&task_name, Some(run_input))
-        .map_err(|e| run_now_message(&task_name, e))?;
+        .map_err(run_now_message)?;
     Ok(MessageQueued {
         workspace_id,
         subject_id,

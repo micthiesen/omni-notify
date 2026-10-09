@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 
 use omni_api::claude::{ClaudeSession, ClaudeTranscriptItem};
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};
+use omni_runtime::ports::{ClaudeSessionNotifier, ClaudeTurnStarted};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
 use super::truncate;
-use crate::events::claude_sessions::{ClaudeSessionWatcher, StartedTurn};
 use crate::host::{ClaudeHost, HostCommand, HostError};
 
 const LOG: &str = "MCP:ClaudeSessions";
@@ -194,7 +194,8 @@ fn public_error(error: HostError, host: Option<&str>) -> HostError {
 #[derive(Clone)]
 pub struct ClaudeDeps {
     pub host: Option<Arc<dyn ClaudeHost>>,
-    pub watcher: Option<ClaudeSessionWatcher>,
+    /// The `claude.session.turn_finished` watcher, when MCP events are enabled.
+    pub watcher: Option<Arc<dyn ClaudeSessionNotifier>>,
 }
 
 /// Arguments without the keys TS leaves `undefined`.
@@ -258,15 +259,13 @@ impl ClaudeDeps {
             return;
         }
         #[allow(clippy::cast_precision_loss)]
-        let turn = StartedTurn {
+        let turn = ClaudeTurnStarted {
             session_id: session.session_id.clone(),
             id: session.id.clone(),
             project: session.project.clone(),
             revision: revision as f64,
         };
-        if let Err(error) = watcher.note_turn_started(turn).await {
-            tracing::debug!(target: LOG, error = %error, "Turn start not recorded");
-        }
+        watcher.note_turn_started(&turn).await;
     }
 }
 

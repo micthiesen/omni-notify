@@ -80,13 +80,7 @@ pub const MAX_EMAIL_AGE_MS: i64 = 7 * 24 * 60 * 60_000;
 const PARSED_CACHE_TTL_MS: i64 = 5 * 60_000;
 const SEARCH_CACHE_TTL_MS: i64 = 30_000;
 
-/// A downloaded attachment.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DownloadedAttachment {
-    pub name: String,
-    pub mime_type: String,
-    pub data: Vec<u8>,
-}
+pub use omni_core::email::DownloadedAttachment;
 
 struct Caches {
     parsed: BoundedReadCache<FetchedEmail>,
@@ -1787,6 +1781,17 @@ impl EmailReader for ImapTransport {
             search_available: true,
             drafts_available: true,
         }
+    }
+
+    fn download_attachment<'a>(
+        &'a self,
+        attachment: &'a EmailAttachment,
+    ) -> BoxFuture<'a, Result<Option<DownloadedAttachment>, PortError>> {
+        Box::pin(async move {
+            ImapTransport::download_attachment(self, attachment)
+                .await
+                .map_err(port_error)
+        })
     }
 }
 

@@ -1,0 +1,71 @@
+[package]
+name = "omni-notify"
+description = "The omni-notify binary: boot, subsystem wiring, ops routes, dashboard SSE, data manager and compat tooling."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "omni_notify"
+path = "src/lib.rs"
+
+[[bin]]
+name = "omni-notify"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+futures.workspace = true
+indexmap.workspace = true
+jiff.workspace = true
+omni-ai.workspace = true
+omni-alerts.workspace = true
+omni-api.workspace = true
+omni-arr.workspace = true
+omni-briefings.workspace = true
+omni-calendar.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-device-link.workspace = true
+omni-email.workspace = true
+omni-http.workspace = true
+omni-imap.workspace = true
+omni-ios-controls.workspace = true
+omni-live.workspace = true
+omni-live-intel.workspace = true
+omni-mailer.workspace = true
+omni-mcp.workspace = true
+omni-mcp-kit.workspace = true
+omni-media.workspace = true
+omni-parcel.workspace = true
+omni-personal.workspace = true
+omni-podcasts.workspace = true
+omni-presspods.workspace = true
+omni-reminders.workspace = true
+omni-runtime.workspace = true
+omni-server-kit.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+omni-workspaces.workspace = true
+rand.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true

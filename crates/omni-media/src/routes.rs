@@ -281,7 +281,7 @@ async fn run(State(state): State<RouteState>, JsonBody(body): JsonBody<Value>) -
             );
             (StatusCode::ACCEPTED, Json(RunResponse { run_id })).into_response()
         }
-        Err(error) => run_now_error(TASK_NAME, error),
+        Err(error) => run_now_error(error),
     }
 }
 
@@ -292,19 +292,13 @@ fn max_value(max: f64) -> Value {
 }
 
 /// `taskRunErrorResponse` with the TS messages.
-pub fn run_now_error(name: &str, error: RunNowError) -> Response {
+pub fn run_now_error(error: RunNowError) -> Response {
     match error {
-        RunNowError::NotFound => {
-            api_error(StatusCode::NOT_FOUND, format!("Unknown task \"{name}\""))
+        RunNowError::NotFound { .. } => api_error(StatusCode::NOT_FOUND, error.to_string()),
+        RunNowError::AlreadyRunning { .. } => api_error(StatusCode::CONFLICT, error.to_string()),
+        RunNowError::ManualInputUnsupported { .. } => {
+            api_error(StatusCode::BAD_REQUEST, error.to_string())
         }
-        RunNowError::AlreadyRunning => api_error(
-            StatusCode::CONFLICT,
-            format!("Task \"{name}\" is already running"),
-        ),
-        RunNowError::ManualInputUnsupported => api_error(
-            StatusCode::BAD_REQUEST,
-            format!("Task \"{name}\" does not accept manual input"),
-        ),
         other => ApiError::internal(other).into_response(),
     }
 }

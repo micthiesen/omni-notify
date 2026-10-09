@@ -118,8 +118,10 @@ pub fn string_to_number(s: &str) -> f64 {
     trimmed.parse::<f64>().unwrap_or(f64::NAN)
 }
 
-/// `StrWhiteSpaceChar`: WhiteSpace (including every `Zs` character) and LineTerminator.
-fn is_js_whitespace(c: char) -> bool {
+/// `StrWhiteSpaceChar` (and regex `\s`): WhiteSpace (including every `Zs`
+/// character and U+FEFF) and LineTerminator. Unlike `char::is_whitespace`, U+0085
+/// is not whitespace.
+pub fn is_js_whitespace(c: char) -> bool {
     matches!(
         c,
         '\u{0009}'
@@ -139,6 +141,109 @@ fn is_js_whitespace(c: char) -> bool {
                 | '\u{3000}'
                 | '\u{FEFF}'
     )
+}
+
+/// `String.prototype.trim`.
+pub fn trim(s: &str) -> &str {
+    s.trim_matches(is_js_whitespace)
+}
+
+/// `String.prototype.trimStart`.
+pub fn trim_start(s: &str) -> &str {
+    s.trim_start_matches(is_js_whitespace)
+}
+
+/// `String.prototype.trimEnd`.
+pub fn trim_end(s: &str) -> &str {
+    s.trim_end_matches(is_js_whitespace)
+}
+
+/// `Date.parse(s)` in epoch ms with zone-less forms read in `tz`; `None` is `NaN`.
+pub use crate::js_date::{MAX_DATE_MS, date_parse};
+
+/// `Number.prototype.toFixed(digits)`: the decimal with `digits` fraction digits
+/// nearest the exact binary value, exact ties rounded away from zero (Rust's
+/// formatter rounds ties to even). `|x| >= 1e21` and non-finite values print as
+/// `Number#toString`, and `-0` prints without a sign.
+pub fn to_fixed(value: f64, digits: usize) -> String {
+    if !value.is_finite() || value.abs() >= 1e21 {
+        return number_to_string(value);
+    }
+    let value = if value == 0.0 { 0.0 } else { value };
+    let rounded = format!("{value:.digits$}");
+    // The exact binary expansion decides whether this was a tie.
+    let exact = format!("{:.1100}", value.abs());
+    let Some(point) = exact.find('.') else {
+        return rounded;
+    };
+    let tail = &exact[point + 1..];
+    let after = tail.get(digits..).unwrap_or("");
+    let is_tie = after.starts_with('5') && after[1..].bytes().all(|b| b == b'0');
+    if !is_tie {
+        return rounded;
+    }
+    // Round the magnitude up: truncate, then add one unit in the last place.
+    let kept = format!("{}{}", &exact[..point], &tail[..digits.min(tail.len())]);
+    let incremented = increment_decimal_digits(&kept);
+    let (int_part, frac_part) = incremented.split_at(incremented.len() - digits);
+    let int_part = if int_part.is_empty() { "0" } else { int_part };
+    let sign = if value < 0.0 { "-" } else { "" };
+    if digits == 0 {
+        format!("{sign}{int_part}")
+    } else {
+        format!("{sign}{int_part}.{frac_part}")
+    }
+}
+
+fn increment_decimal_digits(digits: &str) -> String {
+    let mut bytes: Vec<u8> = digits.bytes().collect();
+    let mut i = bytes.len();
+    loop {
+        if i == 0 {
+            bytes.insert(0, b'1');
+            break;
+        }
+        i -= 1;
+        if bytes[i] == b'9' {
+            bytes[i] = b'0';
+        } else {
+            bytes[i] += 1;
+            break;
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// `Number.MAX_SAFE_INTEGER` as a double.
+const MAX_SAFE_INTEGER_F64: f64 = 9_007_199_254_740_991.0;
+
+/// A JS number as a JSON value the way `JSON.stringify` writes it: integral
+/// values within the safe range become JSON integers (`12`, not `12.0`, and
+/// `-0` becomes `0`); non-finite numbers become `null`.
+pub fn number_value(n: f64) -> Value {
+    if n.is_finite() && n.fract() == 0.0 && n.abs() <= MAX_SAFE_INTEGER_F64 {
+        // Exact: integral and within +-2^53.
+        #[allow(clippy::cast_possible_truncation)]
+        let int = n as i64;
+        Value::from(int)
+    } else {
+        serde_json::Number::from_f64(n).map_or(Value::Null, Value::Number)
+    }
+}
+
+/// Rewrites every integral float in `value` as a JSON integer ([`number_value`]):
+/// JS has a single number type, so `2.0` and `2` are the same value.
+pub fn normalize_numbers(value: Value) -> Value {
+    match value {
+        Value::Number(n) if n.is_f64() => n.as_f64().map_or(Value::Number(n), number_value),
+        Value::Array(items) => Value::Array(items.into_iter().map(normalize_numbers).collect()),
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, v)| (k, normalize_numbers(v)))
+                .collect(),
+        ),
+        other => other,
+    }
 }
 
 /// `StrUnsignedDecimalLiteral` without the `Infinity` case.
@@ -458,6 +563,43 @@ mod tests {
             json_stringify_pretty2(&json!({"a": [1, {"b": []}]})),
             "{\n  \"a\": [\n    1,\n    {\n      \"b\": []\n    }\n  ]\n}"
         );
+    }
+
+    #[test]
+    fn trims_js_whitespace_only() {
+        assert_eq!(trim("\u{FEFF} a\u{A0}\u{3000}"), "a");
+        assert_eq!(trim("\u{85}a\u{85}"), "\u{85}a\u{85}");
+        assert_eq!(trim_start("\u{2028} a "), "a ");
+        assert_eq!(trim_end(" a \u{2029}"), " a");
+    }
+
+    /// Values from node's `Number#toFixed`.
+    #[test]
+    fn to_fixed_matches_js() {
+        assert_eq!(to_fixed(0.125, 2), "0.13");
+        assert_eq!(to_fixed(0.0625, 3), "0.063");
+        assert_eq!(to_fixed(0.5, 0), "1");
+        assert_eq!(to_fixed(2.5, 0), "3");
+        assert_eq!(to_fixed(1.005, 2), "1.00");
+        assert_eq!(to_fixed(0.92, 3), "0.920");
+        assert_eq!(to_fixed(1.0, 3), "1.000");
+        assert_eq!(to_fixed(30.000_000_000_000_004, 0), "30");
+        assert_eq!(to_fixed(-0.125, 2), "-0.13");
+        assert_eq!(to_fixed(-0.0, 2), "0.00");
+        assert_eq!(to_fixed(-0.001, 2), "-0.00");
+        assert_eq!(to_fixed(99.5, 0), "100");
+        assert_eq!(to_fixed(1e21, 2), "1e+21");
+        assert_eq!(to_fixed(f64::NAN, 2), "NaN");
+    }
+
+    #[test]
+    fn numbers_normalize_like_json_stringify() {
+        assert_eq!(number_value(12.0).to_string(), "12");
+        assert_eq!(number_value(-0.0).to_string(), "0");
+        assert_eq!(number_value(12.5).to_string(), "12.5");
+        assert_eq!(number_value(f64::NAN), Value::Null);
+        let nested = normalize_numbers(json!({"a": [1.0, 2.5, {"b": 3.0}], "c": 4}));
+        assert_eq!(nested.to_string(), r#"{"a":[1,2.5,{"b":3}],"c":4}"#);
     }
 
     #[test]

@@ -19,6 +19,9 @@ fn valid_bearer(header: Option<&str>) -> bool {
 
 fn config(pairs: &[(&str, &str)]) -> Result<Config, String> {
     let mut env: BTreeMap<String, String> = omni_testkit::test_app_env();
+    // The token rules start from an environment without either token.
+    env.remove("OMNI_MCP_TOKEN");
+    env.remove("OMNI_DEVICE_LINK_TOKEN");
     for (key, value) in pairs {
         env.insert((*key).to_owned(), (*value).to_owned());
     }

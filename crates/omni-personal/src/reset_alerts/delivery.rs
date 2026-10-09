@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
-use omni_alerts::{PushOutcome, Pushover, PushoverMessage};
+use omni_alerts::{PushOutcome, Pushover, PushoverChannel, PushoverMessage};
 use omni_store::cbor::{self, Extra};
 use omni_store::entity::{self, Entity};
 use omni_store::{DocMeta, DocOps, DocWrite, Store, StoreError, Tx};
@@ -162,28 +162,21 @@ pub trait ResetNotifier: Send + Sync {
 /// through [`Pushover`].
 pub struct PushoverNotifier {
     pushover: Pushover,
-    user_configured: bool,
-    token: Option<String>,
 }
 
 impl PushoverNotifier {
-    pub fn new(pushover: Pushover, user: Option<&str>, token: Option<&str>) -> Self {
-        Self {
-            pushover,
-            user_configured: user.is_some_and(|u| !u.is_empty()),
-            token: token.filter(|t| !t.is_empty()).map(str::to_owned),
-        }
+    pub fn new(pushover: Pushover) -> Self {
+        Self { pushover }
     }
 }
 
 impl ResetNotifier for PushoverNotifier {
     fn enabled(&self) -> bool {
-        self.user_configured && self.token.is_some()
+        self.pushover.is_configured() && self.pushover.has_token(PushoverChannel::General)
     }
 
     fn notify<'a>(&'a self, alert: &'a ResetAlert) -> BoxFuture<'a, Result<(), NotifyError>> {
         Box::pin(async move {
-            let token = self.token.as_deref().unwrap_or_default();
             let message = PushoverMessage {
                 message: alert.message.clone(),
                 title: Some(alert.title.clone()),
@@ -193,7 +186,7 @@ impl ResetNotifier for PushoverNotifier {
                 sound: None,
                 timestamp: None,
             };
-            match self.pushover.send_with_token(token, message).await {
+            match self.pushover.send(PushoverChannel::General, message).await {
                 Ok(PushOutcome::Sent | PushOutcome::Recorded) => Ok(()),
                 Ok(outcome @ (PushOutcome::SkippedNoToken | PushOutcome::Disabled)) => {
                     Err(NotifyError::Rejected {
@@ -206,15 +199,7 @@ impl ResetNotifier for PushoverNotifier {
                         status,
                         body: error.body,
                     }),
-                    // mitools `PushoverError.message`.
-                    Some(status) => Err(NotifyError::Uncertain(format!(
-                        "Pushover API returned status code {status}: {}",
-                        error.body
-                    ))),
-                    None => Err(NotifyError::Uncertain(format!(
-                        "Pushover request failed: {}",
-                        error.body
-                    ))),
+                    _ => Err(NotifyError::Uncertain(error.to_string())),
                 },
             }
         })

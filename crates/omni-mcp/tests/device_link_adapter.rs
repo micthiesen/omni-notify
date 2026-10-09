@@ -1,9 +1,7 @@
 //! End to end: Claude session tools over the real device-link relay.
 //!
-//! `DeviceLinkAdapter` is the binary's adapter (subsystem crates may not
-//! depend on each other, so WP14 owns the production copy of these ~30
-//! lines). A simulated host long-polls the relay and answers with canned
-//! session-client envelopes; results must reach MCP with the host name and
+//! `DeviceLinkService` is the `ClaudeHost` port implementation. A simulated
+//! host long-polls the relay and answers with canned session-client envelopes; results must reach MCP with the host name and
 //! home directory scrubbed, and errors keep their codes.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -14,54 +12,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::*;
-use futures::future::BoxFuture;
 use omni_device_link::{DeviceCommand, DeviceJobOutcome, DeviceLinkService, PollReport};
-use omni_mcp::host::{ClaudeHost, HostCommand, HostError, HostLinkStatus};
 use omni_mcp::tools::claude_sessions::{ClaudeDeps, claude_session_tools};
-use serde_json::{Map, Value, json};
-
-struct DeviceLinkAdapter(DeviceLinkService);
-
-fn device_command(command: HostCommand) -> DeviceCommand {
-    match command {
-        HostCommand::Projects => DeviceCommand::Projects,
-        HostCommand::List => DeviceCommand::List,
-        HostCommand::Status => DeviceCommand::Status,
-        HostCommand::Read => DeviceCommand::Read,
-        HostCommand::Result => DeviceCommand::Result,
-        HostCommand::Wait => DeviceCommand::Wait,
-        HostCommand::Start => DeviceCommand::Start,
-        HostCommand::Send => DeviceCommand::Send,
-        HostCommand::Stop => DeviceCommand::Stop,
-    }
-}
-
-impl ClaudeHost for DeviceLinkAdapter {
-    fn status(&self) -> HostLinkStatus {
-        let status = self.0.status();
-        HostLinkStatus {
-            online: status.online,
-            disabled: status.disabled,
-            host: status.host,
-            last_seen_at: status.last_seen_at,
-            pending_jobs: status.pending_jobs,
-        }
-    }
-
-    fn execute(
-        &self,
-        command: HostCommand,
-        args: Map<String, Value>,
-        timeout: Duration,
-    ) -> BoxFuture<'_, Result<Map<String, Value>, HostError>> {
-        Box::pin(async move {
-            self.0
-                .execute(device_command(command), args, timeout)
-                .await
-                .map_err(|e| HostError::new(e.code, e.detail, e.retryable))
-        })
-    }
-}
+use serde_json::json;
 
 /// Answers every job the way the host's session client would.
 fn spawn_host(link: DeviceLinkService) -> tokio::task::JoinHandle<()> {
@@ -105,7 +58,7 @@ async fn claude_tools_reach_the_host_only_through_the_long_poll_and_never_name_i
     let link = DeviceLinkService::new(clock.clone());
     let host = spawn_host(link.clone());
     let tools = claude_session_tools(&ClaudeDeps {
-        host: Some(Arc::new(DeviceLinkAdapter(link.clone()))),
+        host: Some(Arc::new(link.clone())),
         watcher: None,
     })
     .unwrap();

@@ -1,18 +1,63 @@
-FROM node:24.19.0-slim AS build
+# syntax=docker/dockerfile:1.7
 
-ENV CI=true
+# --- Rust toolchain with cargo-chef (dependency layers cached separately) ---
+FROM rust:1.97.1-bookworm AS chef
+ARG CARGO_CHEF_VERSION=0.1.78
+RUN cargo install cargo-chef --version "${CARGO_CHEF_VERSION}" --locked
+WORKDIR /src
+# Install the pinned toolchain's components once for every later stage.
+COPY rust-toolchain.toml ./
+RUN rustup toolchain install
 
-RUN npm install -g pnpm@11.20.0
+FROM chef AS planner
+COPY Cargo.toml Cargo.lock ./
+COPY .cargo ./.cargo
+COPY crates ./crates
+RUN cargo chef prepare --recipe-path recipe.json
 
-WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY frontend/package.json frontend/
-RUN pnpm install --frozen-lockfile
+# --- Server binaries ---
+FROM chef AS server
+# sherpa-onnx-sys links a prebuilt static library; supply the SHA-256-verified
+# archive so its build script never downloads an unchecked copy.
+COPY deploy/sherpa-onnx/fetch-static-lib.sh /usr/local/bin/fetch-sherpa-onnx
+RUN fetch-sherpa-onnx /opt/sherpa-onnx
+ENV SHERPA_ONNX_ARCHIVE_DIR=/opt/sherpa-onnx
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook --release --locked --recipe-path recipe.json \
+    -p omni-notify -p omni-live-intel
+COPY Cargo.toml Cargo.lock ./
+COPY .cargo ./.cargo
+COPY crates ./crates
+RUN cargo build --release --locked -p omni-notify --bin omni-notify \
+    && cargo build --release --locked -p omni-live-intel \
+      --bin omni-voice-enroll --bin omni-intel-doctor \
+    && mkdir -p /out \
+    && install -m 0755 target/release/omni-notify target/release/omni-voice-enroll \
+      target/release/omni-intel-doctor /out/
 
-COPY . .
-RUN pnpm run build && pnpm --filter frontend run build
-RUN pnpm prune --prod
+# --- Web frontend (wasm is platform independent: build once on the builder) ---
+FROM --platform=$BUILDPLATFORM chef AS web
+COPY deploy/web-tools/install.sh /tmp/install-web-tools.sh
+RUN /tmp/install-web-tools.sh /usr/local/bin && rm /tmp/install-web-tools.sh
+RUN rustup target add wasm32-unknown-unknown
+COPY --from=planner /src/recipe.json recipe.json
+RUN cargo chef cook --profile wasm-release --target wasm32-unknown-unknown --locked \
+    --recipe-path recipe.json -p omni-web
+COPY Cargo.toml Cargo.lock ./
+COPY .cargo ./.cargo
+COPY crates ./crates
+RUN cargo fetch --locked \
+    && cd crates/omni-web \
+    && trunk build --release --offline --locked
+# The SPA service serves .br/.gz siblings when the client accepts them.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends brotli \
+  && rm -rf /var/lib/apt/lists/* \
+  && find crates/omni-web/dist -type f \
+    \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.wasm' \) \
+    -exec brotli -k -q 11 {} + -exec gzip -k -n -9 {} +
 
+# --- Livestream intelligence assets ---
 FROM debian:bookworm-slim AS livestream-assets
 
 ARG TARGETARCH
@@ -50,18 +95,26 @@ RUN apt-get update \
   && tar -xjf /tmp/parakeet.tar.bz2 -C /models \
   && rm /tmp/parakeet.tar.bz2
 
+# --- Runtime ---
+# Node stays only as yt-dlp's JavaScript runtime (`--js-runtimes node`).
 FROM node:24.19.0-slim AS runtime
 
-# ffmpeg: PressPods audio pipeline (loudnorm + intro concat)
-# CUPS + brlaser + pdfinfo: bounded, model-aware PDF conversion for Brother printing
-# The compatible HL-L2360D profile is physically verified on this HL-L2370DW, including duplex.
+# ffmpeg: PressPods audio pipeline (arnndn denoise, loudnorm, intro concat) and
+#   livestream audio capture
+# CUPS + brlaser + ghostscript + pdfinfo: bounded, model-aware PDF conversion for
+#   Brother printing. The compatible HL-L2360D profile is physically verified on
+#   this HL-L2370DW, including duplex.
+# ca-certificates: rustls verifies TLS against the system trust store.
+# tini: PID 1 that forwards signals and reaps orphaned subprocesses.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
+    ca-certificates \
     cups \
     ffmpeg \
     ghostscript \
     poppler-utils \
     printer-driver-brlaser \
+    tini \
   && mkdir -p /usr/share/omni-printing /tmp/brlaser-ppd \
   && ppdc -d /tmp/brlaser-ppd /usr/share/cups/drv/brlaser.drv \
   && cp /tmp/brlaser-ppd/brl2360d.ppd /usr/share/omni-printing/brother-hll2370dw.ppd \
@@ -70,22 +123,28 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=build --chown=node:node /app/node_modules ./node_modules
-COPY --from=build --chown=node:node /app/dist ./dist
-COPY --from=build --chown=node:node /app/frontend/dist ./frontend/dist
-COPY --from=build --chown=node:node /app/assets ./assets
+COPY --from=server /out/ /usr/local/bin/
+COPY --from=web --chown=node:node /src/crates/omni-web/dist ./web
+COPY --chown=node:node assets ./assets
 COPY --from=livestream-assets --chown=node:node /models ./assets/livestream-intelligence/models
 COPY --from=livestream-assets /yt-dlp /usr/local/bin/yt-dlp
-COPY --from=build --chown=node:node /app/package.json ./package.json
-COPY --from=build --chown=node:node /app/docs/licenses ./licenses
+COPY --chown=node:node docs/licenses ./licenses
 
 RUN mkdir -p /data && chown node:node /data
 
-ENV DOCKERIZED=true NODE_ENV=production DB_NAME=/data/docstore.db
+ENV DOCKERIZED=true DB_NAME=/data/docstore.db OMNI_WEB_DIST=/app/web
 USER node
+
+# Fails the build when a runtime invariant is missing: ffmpeg arnndn,
+# firequalizer and libmp3lame, the denoise model, the brlaser filter and PPD,
+# cupsfilter, pdfinfo, the sherpa models and a runnable yt-dlp. DOCKERIZED is
+# unset for this one command because production config validation requires
+# runtime secrets (OMNI_MCP_TOKEN); none of the checked paths depend on it.
+RUN DOCKERIZED=false omni-notify doctor --image
 
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["node", "-e", "fetch('http://127.0.0.1:'+(process.env.FRONTEND_PORT||3000)+'/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+  CMD ["omni-notify", "healthcheck"]
 
-CMD ["node", "dist/index.js"]
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["omni-notify"]

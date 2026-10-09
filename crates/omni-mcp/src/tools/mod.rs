@@ -9,8 +9,8 @@ use futures::future::BoxFuture;
 use omni_api::tasks::TaskInfo;
 use omni_mcp_kit::{ToolError, golden_meta};
 use omni_store::LogLine;
+use omni_tasks::TaskRegistry;
 use omni_tasks::persistence::TaskRunData;
-use omni_tasks::{RunNowError, TaskRegistry};
 use serde_json::Value;
 
 use crate::json::order_by_schema;
@@ -41,14 +41,7 @@ impl TaskControl for TaskRegistry {
     }
 
     fn run_now(&self, name: &str, input: Option<Value>) -> Result<String, String> {
-        TaskRegistry::run_now(self, name, input).map_err(|error| match error {
-            RunNowError::NotFound => format!("Unknown task \"{name}\""),
-            RunNowError::AlreadyRunning => format!("Task \"{name}\" is already running"),
-            RunNowError::ManualInputUnsupported => {
-                format!("Task \"{name}\" does not accept manual input")
-            }
-            other => other.to_string(),
-        })
+        TaskRegistry::run_now(self, name, input).map_err(|error| error.to_string())
     }
 
     fn recent_runs<'a>(

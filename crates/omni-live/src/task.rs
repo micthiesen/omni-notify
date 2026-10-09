@@ -18,7 +18,7 @@ use indexmap::IndexMap;
 use jiff::tz::TimeZone;
 use omni_api::streamers::StreamerTier;
 use omni_core::clock::SharedClock;
-use omni_runtime::ports::{LiveIntelligence, LiveTransition, Ports};
+use omni_runtime::ports::{self, LiveIntelligence, LiveTransition, Ports};
 use omni_store::Store;
 use omni_tasks::{AppEvent, CronSchedule, EventBus, RunContext, Task, TaskError, TaskOptions};
 
@@ -74,10 +74,9 @@ pub trait IntelligenceObserver: Send + Sync {
     fn after_tick(&self) -> BoxFuture<'_, ()>;
 }
 
-/// Forwards to the `LiveIntelligence` port when WP05 has set it. The port
-/// carries aggregate edges only (`on_transition`); per-tick still-live
-/// observations are read back by the port implementation through
-/// `LiveDirectory::statuses`.
+/// Forwards to the `LiveIntelligence` port when WP05 has set it: every live
+/// observation (`observe_live`, with the streamer and status serialized as the
+/// `LiveDirectory` DTOs), aggregate edges (`on_transition`) and `after_tick`.
 #[derive(Clone, Default)]
 pub struct PortIntelligence {
     ports: Ports,
@@ -96,10 +95,10 @@ impl PortIntelligence {
 impl IntelligenceObserver for PortIntelligence {
     fn observe_live<'a>(&'a self, observation: &'a LiveObservation, now: i64) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            if !observation.went_live {
+            let Some(port) = self.port() else {
                 return;
-            }
-            if let Some(port) = self.port() {
+            };
+            if observation.went_live {
                 let transition = LiveTransition {
                     streamer_id: observation.streamer.id.clone(),
                     live: true,
@@ -107,6 +106,29 @@ impl IntelligenceObserver for PortIntelligence {
                 };
                 port.on_transition(&transition).await;
             }
+            let status = StreamerStatus::Live(observation.status.clone());
+            let streamer = crate::display::livestream_summary(&observation.streamer, &status);
+            let payload = match (
+                serde_json::to_value(&streamer),
+                serde_json::to_value(crate::display::status_view(&status)),
+            ) {
+                (Ok(streamer), Ok(status)) => ports::LiveObservation {
+                    streamer,
+                    status,
+                    went_live: observation.went_live,
+                    title_changed: observation.title_changed,
+                    at_ms: now,
+                },
+                (Err(error), _) | (_, Err(error)) => {
+                    tracing::error!(
+                        target: LOG,
+                        "Intelligence observation for {} not serialized: {error}",
+                        observation.streamer.display_name
+                    );
+                    return;
+                }
+            };
+            port.observe_live(&payload).await;
         })
     }
 

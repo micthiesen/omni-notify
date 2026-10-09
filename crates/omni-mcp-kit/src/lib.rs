@@ -78,6 +78,10 @@ pub fn golden_meta(name: &str) -> Result<&'static ToolMeta, ToolMetaError> {
 }
 
 /// A compiled JSON-schema validator (draft 2020-12, formats asserted like zod).
+///
+/// `pattern` keywords follow ECMAScript regex semantics as zod's do: `\d` and `\w`
+/// are ASCII-only and `\s` is JS whitespace (U+FEFF but not U+0085). `integer`
+/// accepts integral floats such as `2.0` (JS has one number type).
 pub struct SchemaValidator {
     validator: jsonschema::Validator,
 }
@@ -216,6 +220,8 @@ where
         input: Value,
         cx: ToolContext,
     ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
+        // JS has one number type: `2.0` decodes wherever an integer is expected.
+        let input = omni_core::js::normalize_numbers(input);
         let checked = match &self.input {
             Some(validator) => validator.check(&input).map_err(ToolError::input),
             None => Ok(()),
@@ -228,6 +234,8 @@ where
             let output = fut?.await?;
             let value =
                 serde_json::to_value(output).map_err(|e| ToolError::output(e.to_string()))?;
+            // Whole-number doubles serialize as JS prints them (`12`, not `12.0`).
+            let value = omni_core::js::normalize_numbers(value);
             if let Some(validator) = &self.output {
                 validator.check(&value).map_err(ToolError::output)?;
             }
@@ -242,7 +250,9 @@ where
 /// Builds a tool whose input is validated against the golden input schema, then
 /// decoded with serde (explicit defaults stand in for zod defaults), and whose output
 /// must serialize to a JSON object that satisfies the golden output schema (TS
-/// `defineTool`). Fails when `name` has no golden metadata.
+/// `defineTool`). Integral floats in the input decode into integer fields, and
+/// whole-number `f64` output fields serialize without a fraction, as in JS. Fails
+/// when `name` has no golden metadata.
 pub fn typed_tool<I, O, F, Fut>(name: &str, f: F) -> Result<McpTool, ToolMetaError>
 where
     I: DeserializeOwned + Send + 'static,
@@ -383,5 +393,70 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[tokio::test]
+    async fn numbers_cross_the_handler_as_js_numbers() {
+        #[derive(Deserialize)]
+        struct In {
+            n: u32,
+        }
+        #[derive(Serialize)]
+        struct Out {
+            half: f64,
+            whole: f64,
+        }
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {"n": {"type": "integer", "minimum": 0}},
+            "required": ["n"],
+        });
+        let handler = TypedHandler {
+            f: |input: In, _cx: ToolContext| async move {
+                Ok::<_, ToolError>(Out {
+                    half: f64::from(input.n) / 2.0,
+                    whole: f64::from(input.n),
+                })
+            },
+            input: SchemaValidator::new(
+                "t",
+                schema.as_object().cloned().as_ref().unwrap_or(&Map::new()),
+            )
+            .ok(),
+            output: None,
+            _types: std::marker::PhantomData,
+        };
+        let cx = ToolContext {
+            call_id: "1".to_owned(),
+            cancel: CancellationToken::new(),
+        };
+        let out = handler.call(serde_json::json!({"n": 3.0}), cx).await;
+        let Ok(ToolOutput::Structured(map)) = out else {
+            panic!("unexpected {out:?}");
+        };
+        assert_eq!(
+            serde_json::to_string(&map).unwrap_or_default(),
+            r#"{"half":1.5,"whole":3}"#
+        );
+    }
+
+    #[test]
+    fn patterns_use_ecmascript_classes() {
+        let schema = serde_json::json!({"type": "object", "properties": {
+            "d": {"type": "string", "pattern": "^\\d+$"},
+            "s": {"type": "string", "pattern": "^\\s+$"},
+            "set": {"type": "string", "pattern": "^[\\d\\s]+$"},
+        }});
+        let validator = SchemaValidator::new("t", schema.as_object().unwrap_or(&Map::new()));
+        let Ok(validator) = validator else {
+            panic!("schema compiles");
+        };
+        let check = |key: &str, value: &str| validator.check(&serde_json::json!({key: value}));
+        assert!(check("d", "12").is_ok());
+        assert!(check("d", "\u{0661}\u{0662}").is_err());
+        assert!(check("s", "\u{FEFF}\u{A0}").is_ok());
+        assert!(check("s", "\u{85}").is_err());
+        assert!(check("set", "1 2").is_ok());
+        assert!(check("set", "\u{0663}").is_err());
     }
 }

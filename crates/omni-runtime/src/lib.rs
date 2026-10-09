@@ -53,6 +53,14 @@ pub struct AppContext {
     pub paths: AppPaths,
 }
 
+impl AppContext {
+    /// The live run-log buffers shared with the task registry (email activity
+    /// log capture attributes lines through these).
+    pub fn run_logs(&self) -> omni_tasks::RunLogs {
+        self.tasks.run_log_buffers()
+    }
+}
+
 /// Filesystem locations resolved at boot.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppPaths {

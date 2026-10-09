@@ -1,0 +1,53 @@
+[package]
+name = "omni-web-pages"
+description = "Omni Notify frontend domain pages (media, podcasts, pods, workspaces, pets, reminders, briefings, MCP, Claude)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+omni-api.workspace = true
+omni-web-kit.workspace = true
+leptos.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+js-sys.workspace = true
+wasm-bindgen.workspace = true
+wasm-bindgen-futures.workspace = true
+
+[dependencies.web-sys]
+workspace = true
+features = [
+  "AbortController",
+  "AbortSignal",
+  "Document",
+  "DomTokenList",
+  "Element",
+  "Event",
+  "EventTarget",
+  "Headers",
+  "HtmlAudioElement",
+  "HtmlElement",
+  "HtmlMediaElement",
+  "Location",
+  "Node",
+  "PointerEvent",
+  "Request",
+  "RequestCache",
+  "RequestCredentials",
+  "RequestInit",
+  "RequestRedirect",
+  "Response",
+  "ScrollBehavior",
+  "ScrollIntoViewOptions",
+  "ScrollLogicalPosition",
+  "Url",
+  "UrlSearchParams",
+  "Window",
+]

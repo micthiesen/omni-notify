@@ -656,10 +656,16 @@ impl McpEventService {
         else {
             return Ok(());
         };
-        if let Some(echo) = self.inner.ports.archive_echo()
-            && echo
-                .is_archive_action_message(message_id, Some(origin))
-                .await?
+        // Never publish without the echo check: an unwired port would turn every
+        // archive move into a duplicate event (boot refuses to start without it).
+        let echo = self
+            .inner
+            .ports
+            .archive_echo()
+            .ok_or(PortError::Unavailable("ArchiveEcho"))?;
+        if echo
+            .is_archive_action_message(message_id, Some(origin))
+            .await?
         {
             return Ok(());
         }
@@ -689,10 +695,15 @@ impl McpEventService {
         self.inner.wake.notify_one();
     }
 
-    /// Runs a delivery pass whenever an event is queued. Never returns.
-    pub async fn delivery_worker(&self) {
+    /// Runs a delivery pass whenever an event is queued, until `shutdown` is
+    /// cancelled. A pass already under way completes first (TS interrupted the
+    /// fiber, but every claim is durable before network I/O either way).
+    pub async fn delivery_worker(&self, shutdown: tokio_util::sync::CancellationToken) {
         loop {
-            self.inner.wake.notified().await;
+            tokio::select! {
+                () = shutdown.cancelled() => return,
+                () = self.inner.wake.notified() => {}
+            }
             if let Err(error) = self.drain().await {
                 tracing::warn!(target: LOG, error = %error, "MCP event delivery pass failed");
             }
@@ -1078,12 +1089,10 @@ impl McpEventService {
     }
 }
 
-/// `Date.parse` + `toISOString` for the ISO timestamps transports emit.
+/// `Date.parse` for the ISO timestamps transports emit (always with an offset,
+/// so the zone for offset-less input does not matter).
 fn parse_iso(value: &str) -> Option<i64> {
-    value
-        .parse::<jiff::Timestamp>()
-        .ok()
-        .map(|ts| ts.as_millisecond())
+    omni_core::js::date_parse(value, &jiff::tz::TimeZone::UTC)
 }
 
 struct McpEventsEmailHandler {

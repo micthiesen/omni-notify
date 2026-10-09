@@ -102,7 +102,9 @@ async fn folds_repeated_open_papercuts_and_sorts_open_first() {
     assert_eq!(listed[1].resolution.as_deref(), Some("Fixed"));
 }
 
-#[tokio::test]
+// Paused time: the test clock follows tokio time, so a busy machine cannot move
+// it between the upsert and the comparison.
+#[tokio::test(start_paused = true)]
 async fn subject_upserts_keep_creation_and_research_times() {
     let h = Harness::new().await;
     h.subject(
