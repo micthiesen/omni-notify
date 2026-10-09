@@ -132,6 +132,8 @@ fn err(path: &str) -> CastroRequestError {
 struct FakeCastro {
     podcast: Option<CastroPodcast>,
     episodes: HashMap<String, CastroEpisode>,
+    /// Episodes whose fetch fails with this HTTP status.
+    episode_statuses: HashMap<String, u16>,
     subscriptions: Vec<CastroProfileSubscription>,
     podcast_state: Option<CastroPodcastState>,
     queue_items: Vec<CastroQueueItem>,
@@ -188,6 +190,13 @@ impl CastroTransport for FakeCastro {
     ) -> BoxFuture<'a, Result<CastroEpisode, CastroRequestError>> {
         self.record("fetch_episode", public_id);
         Box::pin(async move {
+            if let Some(&status) = self.episode_statuses.get(public_id) {
+                return Err(CastroRequestError {
+                    method: "GET",
+                    path_and_query: format!("/episodes/{public_id}"),
+                    cause: omni_podcasts::castro::api::CastroFailure::Status { status, body: None },
+                });
+            }
             self.episodes
                 .get(public_id)
                 .cloned()
@@ -505,6 +514,13 @@ fn iso(ms_ago: i64) -> Option<String> {
 }
 
 fn history_api(states: Vec<CastroEpisodeState>) -> Arc<FakeCastro> {
+    history_api_with(states, HashMap::new())
+}
+
+fn history_api_with(
+    states: Vec<CastroEpisodeState>,
+    episode_statuses: HashMap<String, u16>,
+) -> Arc<FakeCastro> {
     let mk = |id: &str, guid: &str, title: &str, media: &str, seconds: f64| {
         let mut e = episode(id, guid, title);
         e.media_url = media.into();
@@ -523,6 +539,7 @@ fn history_api(states: Vec<CastroEpisodeState>) -> Arc<FakeCastro> {
             mk(EP_PARTIAL, "guid-partial", "Partial Ep", "u2", 100.0),
             mk(EP_OLD, "guid-old", "Old Ep", "u3", 100.0),
         ]),
+        episode_statuses,
         ..FakeCastro::default()
     })
 }
@@ -555,6 +572,32 @@ async fn computes_completion_and_honors_the_since_ms_cutoff() {
     assert_eq!(played.starred, Some(true));
     assert_eq!(played.media_url.as_deref(), Some("u1"));
     assert!((partial.completion.unwrap() - 0.3).abs() < 1e-9);
+}
+
+#[tokio::test]
+async fn skips_episodes_castro_no_longer_serves() {
+    let api = history_api_with(
+        vec![
+            state(EP_PARTIAL, false, iso(DAY), 30.0),
+            state("removed-episode", false, iso(DAY), 10.0),
+        ],
+        HashMap::from([("removed-episode".to_owned(), 404)]),
+    );
+    let history = client(api).fetch_listen_history(None).await.unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0].episode_guid.as_deref(), Some("guid-partial"));
+}
+
+#[tokio::test]
+async fn other_episode_failures_still_fail_the_history() {
+    let api = history_api_with(
+        vec![
+            state(EP_PARTIAL, false, iso(DAY), 30.0),
+            state("broken-episode", false, iso(DAY), 10.0),
+        ],
+        HashMap::from([("broken-episode".to_owned(), 500)]),
+    );
+    assert!(client(api).fetch_listen_history(None).await.is_err());
 }
 
 #[tokio::test]

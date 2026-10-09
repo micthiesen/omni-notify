@@ -14,7 +14,7 @@ use jiff::tz::TimeZone;
 use moka::future::Cache;
 use omni_core::clock::SharedClock;
 
-use super::api::{CastroRequestError, CastroTransport};
+use super::api::{CastroFailure, CastroRequestError, CastroTransport};
 use super::fractional::generate_key_between;
 use super::protocol::{
     CastroAction, CastroActionSource, CastroActionType, CastroEpisode, CastroPodcast,
@@ -264,12 +264,28 @@ impl CastroClient {
                     })
             })
             .collect();
-        let mut history: Vec<ListenedEpisode> = ordered(
+        let history: Vec<Option<ListenedEpisode>> = ordered(
             recent
                 .into_iter()
                 .map(|(podcast, state, listened_at)| {
                     Box::pin(async move {
-                        let episode = self.fetch_episode(&state.episode_id).await?;
+                        let episode = match self.fetch_episode(&state.episode_id).await {
+                            Ok(episode) => episode,
+                            // Castro no longer serves an episode it removed; drop
+                            // that play instead of losing the whole history.
+                            Err(ClientError::Request(CastroRequestError {
+                                cause: CastroFailure::Status { status: 404, .. },
+                                ..
+                            })) => {
+                                tracing::debug!(
+                                    target: LOG,
+                                    "Skipping removed Castro episode {}",
+                                    state.episode_id
+                                );
+                                return Ok::<_, ClientError>(None);
+                            }
+                            Err(error) => return Err(error),
+                        };
                         let completion = if state.is_played {
                             Some(1.0)
                         } else if episode.duration.seconds > 0.0 {
@@ -279,7 +295,7 @@ impl CastroClient {
                         } else {
                             None
                         };
-                        Ok::<_, ClientError>(ListenedEpisode {
+                        Ok(Some(ListenedEpisode {
                             show_title: podcast.title.clone(),
                             episode_title: episode.title.clone(),
                             episode_guid: Some(guid_or_public_id(&episode)),
@@ -289,12 +305,13 @@ impl CastroClient {
                             listened_at,
                             completion,
                             starred: Some(state.is_starred),
-                        })
+                        }))
                     }) as BoxFuture<'_, _>
                 })
                 .collect(),
         )
         .await?;
+        let mut history: Vec<ListenedEpisode> = history.into_iter().flatten().collect();
         history.sort_by_key(|h| std::cmp::Reverse(h.listened_at));
         Ok(history)
     }
