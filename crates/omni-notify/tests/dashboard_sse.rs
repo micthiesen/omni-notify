@@ -68,12 +68,14 @@ async fn pings_on_connect_then_sends_the_snapshot_before_any_broadcast() {
     let app = TestApp::new().await;
     let (router, state) = ops(&app.ctx);
     let hub = tokio::spawn(state.dashboard.clone().listen());
+    let before = app.ctx.clock.now_ms();
     let (status, body) = get(&router, "/api/events").await;
     assert_eq!(status, StatusCode::OK);
     let mut reader = SseReader::new(body);
     let ping = reader.next(WAIT).await.unwrap();
     assert_eq!(ping.event, "ping");
-    assert_eq!(ping.data, app.ctx.clock.now_ms().to_string());
+    let pinged_at: i64 = ping.data.parse().unwrap();
+    assert!((before..=app.ctx.clock.now_ms()).contains(&pinged_at));
     let snapshot = reader.next(WAIT).await.unwrap();
     assert_eq!(
         (snapshot.event.as_str(), snapshot.id.as_deref()),
