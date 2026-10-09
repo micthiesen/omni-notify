@@ -1,4 +1,4 @@
-//! The workspace agent (`src/workspaces/engine.ts`): build the prompt, persist
+//! The workspace agent: build the prompt, persist
 //! the user message, run the tool loop, then plan and validate the whole
 //! structured output before committing it in one transaction. Notifications
 //! are queued inside that transaction and delivered after it commits.

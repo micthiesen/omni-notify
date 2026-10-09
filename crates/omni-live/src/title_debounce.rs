@@ -1,4 +1,4 @@
-//! Eager title-change debounce (`titleDebounce.ts`).
+//! Eager title-change debounce.
 //!
 //! The first change notifies immediately; later changes within the cooldown
 //! are held (last one wins) and the held title fires once the cooldown lapses,

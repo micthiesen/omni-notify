@@ -1,4 +1,4 @@
-//! Signed iOS control routes (`routes.ts`).
+//! Signed iOS control routes.
 //!
 //! Every `/api/ios-controls/*` request carries
 //! `Authorization: Omni-HMAC <hex>`, `X-Omni-Timestamp` (seconds, within

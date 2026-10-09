@@ -78,7 +78,7 @@ if [[ -f "$IOS_PROJECT_DIR/Config/Local.xcconfig" ]]; then
   fi
 else
   echo "✗ Config/Local.xcconfig is missing"
-  echo "  Run: pnpm ios:configure -- --team YOUR_TEAM_ID"
+  echo "  Run: scripts/ios-live/configure.sh --team YOUR_TEAM_ID"
   failures=$((failures + 1))
 fi
 

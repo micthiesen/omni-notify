@@ -1,4 +1,4 @@
-//! Taste evidence and profile storage (`src/recommendations/taste/persistence.ts`).
+//! Taste evidence and profile storage.
 
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
 use omni_store::{Store, StoreError};

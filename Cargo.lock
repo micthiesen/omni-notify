@@ -2977,7 +2977,6 @@ dependencies = [
  "omni-store",
  "omni-tasks",
  "omni-testkit",
- "regex",
  "schemars 1.2.2",
  "scraper",
  "serde",

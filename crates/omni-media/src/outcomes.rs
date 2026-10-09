@@ -1,4 +1,4 @@
-//! Passive outcome labels for delivered recommendations (`src/recommendations/outcomes.ts`).
+//! Passive outcome labels for delivered recommendations.
 
 use std::collections::HashMap;
 

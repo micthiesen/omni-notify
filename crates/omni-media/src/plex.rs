@@ -1,5 +1,4 @@
-//! Plex history, continue-watching and library index
-//! (`src/recommendations/plex/client.ts`).
+//! Plex history, continue-watching and library index.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock};

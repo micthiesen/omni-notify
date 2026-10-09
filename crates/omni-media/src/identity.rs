@@ -1,4 +1,4 @@
-//! Canonical TMDB identity for media-server items (`src/recommendations/identity.ts`).
+//! Canonical TMDB identity for media-server items.
 
 use std::sync::LazyLock;
 

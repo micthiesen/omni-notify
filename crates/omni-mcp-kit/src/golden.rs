@@ -1,12 +1,13 @@
-//! Golden MCP metadata embedded at build time.
+//! Golden MCP metadata embedded at build time. These committed files are the
+//! source of truth for every tool's public contract; edit them deliberately.
 //!
-//! - `golden/tools-list.json`: the TS server's `tools/list` result (identical in the
-//!   2025-11-25 and 2026-07-28 eras), generated offline by
-//!   `cargo xtask mcp-golden` from `src/mcp` with inert services.
+//! - `golden/tools-list.json`: the `tools/list` result (identical in the
+//!   2025-11-25 and 2026-07-28 eras), originally captured from the TypeScript
+//!   server with inert services.
 //! - `golden/handshake.json`: the legacy `initialize` result, the modern
 //!   `server/discover` result and each era's `tools/list` envelope.
-//! - `golden/mcp-policy.json`: a copy of `docs/mcp-policy.json` (`golden-check` keeps
-//!   them equal).
+//! - `golden/mcp-policy.json`: a copy of `docs/mcp-policy.json`; `cargo xtask
+//!   mcp-policy` renders both from the tool metadata and `--check` keeps them equal.
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};

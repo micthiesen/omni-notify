@@ -1,4 +1,4 @@
-//! History-based client routing (`frontend/src/router.tsx`).
+//! History-based client routing.
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast as _;

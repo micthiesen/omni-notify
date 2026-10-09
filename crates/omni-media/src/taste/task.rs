@@ -1,4 +1,4 @@
-//! The `TasteReflection` task (`src/recommendations/taste/task.ts`).
+//! The `TasteReflection` task.
 
 use std::collections::HashSet;
 use std::sync::Mutex;

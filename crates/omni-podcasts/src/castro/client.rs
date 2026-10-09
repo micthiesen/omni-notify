@@ -1,4 +1,4 @@
-//! [`PodcastAccount`] over the Castro sync protocol (`castro/client.ts`).
+//! [`PodcastAccount`] over the Castro sync protocol.
 //!
 //! Each client keeps its own metadata caches (podcast/episode/search 1 h,
 //! subscriptions 15 min), so a long-lived instance never serves a stale

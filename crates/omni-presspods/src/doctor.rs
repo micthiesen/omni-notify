@@ -1,4 +1,4 @@
-//! Runtime prerequisites for `omni-notify doctor` (ARCHITECTURE.md section 8):
+//! Runtime prerequisites for `omni-notify doctor`:
 //! ffmpeg must ship `arnndn`, `firequalizer` and `loudnorm`, the `libmp3lame`
 //! encoder, and the RNNoise model must be in the image.
 

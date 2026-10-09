@@ -46,7 +46,11 @@ adapter's owner ID is an existing Executor user, not a new account or API key.
 
 ## Exact MCP route
 
-`route.mjs` is deliberately specific to the inspected NPM proxy host 44:
+`route.mjs` is the one JavaScript file left in the repository on purpose. It
+runs inside the Nginx Proxy Manager (NPM) container with NPM's own Node runtime
+and imports NPM's models and access checks, so it needs no Node tooling here.
+
+It is deliberately specific to the inspected NPM proxy host 44:
 `mcp.syas.ca`, upstream `executor:4788`, no NPM access list. It refuses drift.
 It adds one `location = /mcp` in that host's advanced configuration. OAuth,
 well-known endpoints, UI paths, TLS and access lists remain unchanged.

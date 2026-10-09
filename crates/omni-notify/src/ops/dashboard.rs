@@ -1,4 +1,4 @@
-//! Dashboard snapshot and the `/api/events` SSE hub (`src/server.ts`).
+//! Dashboard snapshot and the `/api/events` SSE hub.
 //!
 //! - A new client gets a freshly built snapshot (never a replay of the last
 //!   broadcast) enqueued under the broadcast lock, so a newer broadcast can

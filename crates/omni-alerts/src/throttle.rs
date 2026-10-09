@@ -1,4 +1,4 @@
-//! In-memory alert throttle (`src/alerts/throttle.ts`): per-key escalating
+//! In-memory alert throttle: per-key escalating
 //! cooldowns of 15 m, 30 m, 1 h, then 3 h; a key silent for 6 h is a fresh
 //! incident; at most 500 keys, least-recently-seen evicted first.
 

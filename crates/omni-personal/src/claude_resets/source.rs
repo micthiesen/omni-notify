@@ -1,4 +1,4 @@
-//! Reset Radar's structured catalog (`src/claude-resets/source.ts`).
+//! Reset Radar's structured catalog.
 
 use jiff::tz::TimeZone;
 use omni_http::public::PublicHttpClient;

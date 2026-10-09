@@ -1,4 +1,4 @@
-//! Parcel candidate filter (`src/parcel-tracker/filter/keywords.ts`). Order:
+//! Parcel candidate filter. Order:
 //! user block, user allow, static blacklist (and the user's own address),
 //! AliExpress order-status block, static carrier auto-pass, then shared LLM
 //! triage; tracking keywords and carrier names are only the fallback when

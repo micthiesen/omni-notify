@@ -1,4 +1,4 @@
-//! The email MCP tools (`src/mcp/tools/email.ts`) against their golden
+//! The email MCP tools against their golden
 //! metadata: inputs and outputs are validated by the golden JSON schemas.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

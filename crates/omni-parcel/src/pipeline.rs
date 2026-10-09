@@ -1,4 +1,4 @@
-//! `ParcelTracker` (`src/parcel-tracker/pipeline.ts`): filter, extract,
+//! `ParcelTracker`: filter, extract,
 //! validate carriers, submit with durable dedup, and record one activity row
 //! per email whose outcome reflects per-delivery success.
 

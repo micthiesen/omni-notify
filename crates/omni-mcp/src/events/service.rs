@@ -1,4 +1,4 @@
-//! The durable MCP Events outbox (`src/mcp/events/service.ts`).
+//! The durable MCP Events outbox.
 //!
 //! Owner identity and encryption keys derive from the MCP bearer token and are
 //! never stored. State changes serialize on one short lock (`state_lock`);

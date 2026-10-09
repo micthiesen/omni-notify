@@ -1,4 +1,4 @@
-//! Viewer-record tracking and notifications (`ViewerMetricsService.ts`).
+//! Viewer-record tracking and notifications.
 //!
 //! A new peak becomes a record only after the count falls 5 percent below
 //! it (hysteresis), or when the stream goes offline (flush). Every window is

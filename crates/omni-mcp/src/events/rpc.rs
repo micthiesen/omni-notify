@@ -1,4 +1,4 @@
-//! The `events/*` JSON-RPC methods (`src/mcp/events/protocol.ts`).
+//! The `events/*` JSON-RPC methods.
 //!
 //! Params are validated like the TS zod schemas (strict objects, same issue
 //! wording) before the delegated-principal headers are read; service errors

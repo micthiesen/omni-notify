@@ -1,4 +1,4 @@
-//! The media MCP tools (`src/mcp/tools/media.ts`): inputs and outputs are
+//! The media MCP tools: inputs and outputs are
 //! validated against the golden `tools/list` schemas by `typed_tool`.
 #![allow(clippy::expect_used)]
 

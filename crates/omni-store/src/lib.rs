@@ -1,5 +1,5 @@
-//! The SQLite document store shared with the TypeScript service
-//! (ARCHITECTURE.md sections 3.3 and 4).
+//! The SQLite document store, compatible with rows written by the earlier
+//! TypeScript service (see docs/architecture.md, "Data compatibility").
 //!
 //! The `blobs` table, its key encoding and its CBOR payloads are a contract:
 //! Rust writes must decode in node-cbor to the same JS values TS would write.

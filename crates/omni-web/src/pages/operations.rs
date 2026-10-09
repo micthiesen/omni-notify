@@ -1,4 +1,4 @@
-//! Task health, controls, run history and activity (`pages/OperationsPage.tsx`).
+//! Task health, controls, run history and activity.
 
 use leptos::prelude::*;
 use omni_api::runs::{Run, RunStatus};

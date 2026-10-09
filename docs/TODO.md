@@ -7,7 +7,8 @@ Ideas that are agreed-on but deliberately not built yet.
   A scheduled task should snapshot it nightly (SQLite online backup API or
   `VACUUM INTO`) and rotate a handful of copies, ideally to a destination outside
   the container volume.
-- **Specs for the untested podcast-recs modules.** `selection.ts`, `shortlist.ts`,
-  `discovery.ts`, and `guests.ts` have no `.spec.ts`. Extract their pure parts
-  (prompt assembly, candidate mapping, result validation) and test those, mirroring
-  how `src/recommendations/shortlist.spec.ts` covers the media-recs equivalents.
+- **Tests for the untested podcast-recs modules.** `selection.rs`, `shortlist.rs`,
+  `discovery.rs`, and `guests.rs` in `crates/omni-podcasts/src/` have no tests.
+  Extract their pure parts (prompt assembly, candidate mapping, result validation)
+  and test those, mirroring how `crates/omni-media/tests/shortlist.rs` covers the
+  media-recs equivalents.

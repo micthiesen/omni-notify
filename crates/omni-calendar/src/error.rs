@@ -1,4 +1,4 @@
-//! Domain errors (`src/calendar-events/effect.ts`).
+//! Domain errors.
 
 use omni_store::StoreError;
 

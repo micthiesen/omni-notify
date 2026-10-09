@@ -1,5 +1,5 @@
 //! `CastroInboxCleanup`: every six hours, clear Substack free-preview episodes
-//! from the Castro Inbox (`castro/inboxCleanupTask.ts`). Only `clear_episode_new`
+//! from the Castro Inbox. Only `clear_episode_new`
 //! is posted; the queue is never read or changed. An unavailable Inbox fails
 //! the run instead of counting as empty.
 

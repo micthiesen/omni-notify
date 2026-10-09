@@ -1,4 +1,4 @@
-//! Livestream intelligence persistence (`persistence.ts`).
+//! Livestream intelligence persistence.
 
 use omni_store::cbor::Extra;
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};

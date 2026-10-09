@@ -1,4 +1,4 @@
-//! The `ObserverRepair` task and its live dependencies (`src/observer-repair/task.ts`).
+//! The `ObserverRepair` task and its live dependencies.
 
 use std::sync::{Arc, Mutex};
 

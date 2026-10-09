@@ -1,4 +1,4 @@
-//! The long-poll job relay (`src/device-link/service.ts`).
+//! The long-poll job relay.
 //!
 //! The Claude Code host long-polls for jobs and posts results, so Omni never
 //! connects to it. Claiming and withdrawing a job are single state transitions

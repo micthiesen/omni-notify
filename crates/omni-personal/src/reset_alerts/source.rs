@@ -1,4 +1,4 @@
-//! Bounded public JSON reads and shared field rules (`src/reset-alerts/source.ts`).
+//! Bounded public JSON reads and shared field rules.
 
 use std::time::Duration;
 

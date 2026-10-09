@@ -1,4 +1,4 @@
-//! Last-dispatch watermark (`src/email/persistence.ts`) for the watchdog and
+//! Last-dispatch watermark for the watchdog and
 //! IMAP UIDVALIDITY recovery. Its own row, so cursor saves and dispatch marks
 //! never clobber each other; the historical `jmap-email-dispatch` name is kept.
 

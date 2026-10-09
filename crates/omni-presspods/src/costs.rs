@@ -1,4 +1,4 @@
-//! Per-episode cost accounting (`src/press-pods/costs.ts`).
+//! Per-episode cost accounting.
 //!
 //! The counter is shared by concurrent retriever ratings, so it sits behind a
 //! mutex; the totals are persisted on the episode as [`Costs`]. TTS usage is

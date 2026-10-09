@@ -1,4 +1,4 @@
-//! Tier-1 discovery (`guests.ts`): recent episodes where a followed voice
+//! Tier-1 discovery: recent episodes where a followed voice
 //! guests. Both sources run per voice and are unioned: Podcast Index
 //! `byperson` and a web person-search whose results a cheap model extracts.
 //! A voice fails only when every configured source failed.

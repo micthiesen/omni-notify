@@ -1,4 +1,4 @@
-//! Narration cleaning (`src/press-pods/agents/cleaner.ts`): adapts the article
+//! Narration cleaning: adapts the article
 //! text for TTS (junk removal, audio phrasing, `## Section` chapter markers).
 
 use omni_ai::{CostTag, GenerateRequest, ModelRole};

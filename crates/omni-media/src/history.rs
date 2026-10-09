@@ -1,4 +1,4 @@
-//! Ground-truth watch history for taste inputs (`src/recommendations/history.ts`).
+//! Ground-truth watch history for taste inputs.
 
 use crate::js::{math_round, number, to_date_stamp};
 use crate::outcomes::WATCHED_COMPLETION_THRESHOLD;

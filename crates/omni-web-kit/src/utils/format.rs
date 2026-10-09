@@ -1,4 +1,4 @@
-//! Display formatting (`frontend/src/utils/format.ts`).
+//! Display formatting.
 
 use super::js::{
     date_locale_date_string, date_locale_string, js_round, local_date_ms, now_ms, number_string,

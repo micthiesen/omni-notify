@@ -1,4 +1,4 @@
-//! Claude Code alert selection (`src/claude-resets/policy.ts`). Event dates,
+//! Claude Code alert selection. Event dates,
 //! never the catalog update date or revisions, bound replay. Reset Radar has no
 //! structured banked/regular distinction, so its wording is kept as a report.
 

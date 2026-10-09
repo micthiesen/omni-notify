@@ -1,5 +1,4 @@
-//! Content-completeness scoring for a synthesized chunk
-//! (`src/press-pods/speech/coverage.ts`).
+//! Content-completeness scoring for a synthesized chunk.
 //!
 //! Higgs silently truncates, emitting a natural-sounding read of only the
 //! first part of a chunk, which a duration check cannot reliably catch (a

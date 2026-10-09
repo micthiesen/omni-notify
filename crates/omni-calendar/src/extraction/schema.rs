@@ -1,4 +1,4 @@
-//! Extracted event shapes (`src/calendar-events/extraction/schema.ts`).
+//! Extracted event shapes.
 //!
 //! One struct serves both as the strict structured-output schema the model fills
 //! (optional values are nullable and required, OpenAI strict mode) and as the

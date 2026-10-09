@@ -1,4 +1,4 @@
-//! `EmailRetry` (`src/email/retryTask.ts`): replays transiently failed email
+//! `EmailRetry`: replays transiently failed email
 //! processing. Each due row is claimed (attempt counted) before any network
 //! or handler work; the email is re-fetched by id and the owning pipeline's
 //! handler rerun. A resolved handler is not proof of success: the row is

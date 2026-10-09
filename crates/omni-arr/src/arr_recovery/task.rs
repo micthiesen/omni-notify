@@ -1,4 +1,4 @@
-//! The `ArrRecovery` scheduled task (`src/arr-recovery/task.ts`).
+//! The `ArrRecovery` scheduled task.
 
 use std::sync::{Arc, Mutex};
 

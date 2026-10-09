@@ -1,4 +1,4 @@
-//! Deterministic recovery policy (`src/arr-recovery/policy.ts`).
+//! Deterministic recovery policy.
 //!
 //! Regular expressions keep JS semantics: ASCII word boundaries and digits.
 //! Each pattern is compiled once; an uncompilable pattern (ruled out by the

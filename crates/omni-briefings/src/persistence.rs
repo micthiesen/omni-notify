@@ -1,4 +1,4 @@
-//! `briefing-history` and `briefing-delivery` (`src/briefing-agent/persistence.ts`).
+//! `briefing-history` and `briefing-delivery`.
 
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::{Entity, EntityOps as _, EntityWrite as _, UpsertOpts};

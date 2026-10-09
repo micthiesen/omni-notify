@@ -1,4 +1,4 @@
-//! Whisker pet-profile GraphQL (`src/pet-tracker/api.ts`).
+//! Whisker pet-profile GraphQL.
 
 use std::time::Duration;
 

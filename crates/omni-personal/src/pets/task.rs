@@ -1,4 +1,4 @@
-//! `PetTracker` (`src/pet-tracker/task.ts`): every ten minutes, sync Whisker
+//! `PetTracker`: every ten minutes, sync Whisker
 //! pets and new scale readings into the relational tables.
 
 use std::sync::Arc;

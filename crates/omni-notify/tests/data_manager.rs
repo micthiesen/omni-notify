@@ -1,5 +1,5 @@
 //! Port of `src/data-manager.spec.ts`, plus the `/api/data/entities/:slug`
-//! route contract (`src/server.ts`).
+//! route contract.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

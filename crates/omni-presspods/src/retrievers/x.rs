@@ -1,5 +1,4 @@
-//! X / Twitter posts, threads and X Articles through the FxTwitter API
-//! (`src/press-pods/retrievers/x.ts`).
+//! X / Twitter posts, threads and X Articles through the FxTwitter API.
 
 use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};

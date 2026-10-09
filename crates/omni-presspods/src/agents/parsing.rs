@@ -1,4 +1,4 @@
-//! `extractBetweenTags` (`src/press-pods/agents/parsing.ts`).
+//! `extractBetweenTags`.
 
 use regex::RegexBuilder;
 

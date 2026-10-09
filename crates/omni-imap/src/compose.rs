@@ -1,6 +1,5 @@
 //! Durable compose receipts and workflows behind `email_draft_create`,
-//! `email_send`, `email_send_status` and `email_sent_copy_repair`
-//! (`src/mcp/tools/email-compose.ts`).
+//! `email_send`, `email_send_status` and `email_sent_copy_repair`.
 //!
 //! Drafts and sends reserve their idempotency key durably before any side
 //! effect. Uncertain sends are never retried; a partial recipient rejection is

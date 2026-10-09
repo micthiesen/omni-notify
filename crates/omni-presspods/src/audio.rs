@@ -1,4 +1,4 @@
-//! Episode MP3 metadata (`src/press-pods/audio.ts`): duration and ID3 tags.
+//! Episode MP3 metadata: duration and ID3 tags.
 //!
 //! Tagging embeds the article's lead image as album art (fetched
 //! best-effort) and ID3 chapters (CHAP frames plus a top-level, ordered CTOC)

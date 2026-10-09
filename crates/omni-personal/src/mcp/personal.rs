@@ -1,4 +1,4 @@
-//! `pets_read` and `costs_read` (`src/mcp/tools/personal.ts`).
+//! `pets_read` and `costs_read`.
 
 use jiff::tz::TimeZone;
 use omni_ai::costs::{CostEventData, summarize};

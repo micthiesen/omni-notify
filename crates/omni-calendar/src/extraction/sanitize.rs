@@ -1,4 +1,4 @@
-//! Post-model output sanitization (`src/calendar-events/extraction/sanitize.ts`).
+//! Post-model output sanitization.
 //!
 //! The extraction model has degenerated in production (hundreds of identical
 //! create objects, paragraphs of field soup in `timeZone`, timed events with no

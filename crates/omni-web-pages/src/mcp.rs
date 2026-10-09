@@ -1,4 +1,4 @@
-//! MCP tool-call activity (`pages/McpPage.tsx`): visibility-aware 10 s polling,
+//! MCP tool-call activity: visibility-aware 10 s polling,
 //! status/tool filters and "Load Older" paging.
 
 use std::collections::HashSet;

@@ -1,4 +1,4 @@
-//! Combined taste evidence for prompts (`taste.ts`): the hand-written seed
+//! Combined taste evidence for prompts: the hand-written seed
 //! profile, subscribed shows, explicit feedback, and the latest reflective
 //! profile.
 

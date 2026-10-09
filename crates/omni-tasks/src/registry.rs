@@ -1,4 +1,4 @@
-//! The task registry (`src/task-runs/registry.ts`): durable run history,
+//! The task registry: durable run history,
 //! per-task serialization of every trigger, manual runs and catch-up.
 
 use std::collections::{HashMap, HashSet};

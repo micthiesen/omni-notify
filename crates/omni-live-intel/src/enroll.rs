@@ -1,4 +1,4 @@
-//! Voiceprint enrollment helpers (`src/tools/enroll-destiny-voice.ts`).
+//! Voiceprint enrollment helpers.
 
 use std::cmp::Ordering;
 use std::collections::HashSet;

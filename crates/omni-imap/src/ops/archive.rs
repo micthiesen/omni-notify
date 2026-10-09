@@ -1,4 +1,4 @@
-//! Exact IMAP archive operations (`src/email/imap/archive.ts`): native MOVE
+//! Exact IMAP archive operations: native MOVE
 //! of one verified Inbox UID to the designated Archive, the UIDPLUS
 //! COPY + `\Deleted` + `UID EXPUNGE <uid>` fallback (one mutation per call),
 //! and read-only reconciliation after a lost response. Never a mailbox-wide

@@ -1,5 +1,4 @@
-//! One scheduled task with its next run, last run and history accordion
-//! (`components/TaskCard.tsx`).
+//! One scheduled task with its next run, last run and history accordion.
 
 use leptos::prelude::*;
 use omni_api::runs::Run;

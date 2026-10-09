@@ -1,4 +1,4 @@
-//! Reset Beacon alert feed and history (`src/codex-resets/source.ts`).
+//! Reset Beacon alert feed and history.
 
 use jiff::tz::TimeZone;
 use omni_http::public::PublicHttpClient;

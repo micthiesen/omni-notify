@@ -1,4 +1,4 @@
-//! Pure hard filters applied before any model call (`filters.ts`).
+//! Pure hard filters applied before any model call.
 
 use std::collections::HashSet;
 

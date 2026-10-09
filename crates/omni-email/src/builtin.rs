@@ -4,7 +4,7 @@
 //! and tools of this crate serve them; `omni-parcel` and `omni-calendar` use
 //! these constants as their filter lists.
 
-/// Parcel: always rejected (`src/parcel-tracker/filter/keywords.ts`).
+/// Parcel: always rejected.
 pub const PARCEL_BLACKLISTED_SENDERS: &[&str] = &[
     // Intentionally excluded: Parcel has a dedicated Amazon integration that
     // covers those deliveries, so tracking them here would duplicate.
@@ -54,7 +54,7 @@ pub const PARCEL_CARRIER_SENDER_DOMAINS: &[&str] = &[
     "@aftership.com",
 ];
 
-/// Calendar: always rejected (`src/calendar-events/filter/keywords.ts`).
+/// Calendar: always rejected.
 pub const CALENDAR_BLACKLISTED_SENDERS: &[&str] = &[
     "@facebook.com",
     "@twitter.com",

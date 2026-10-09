@@ -1,4 +1,4 @@
-//! Luna's issue interpretation (`src/observer-repair/agent.ts`).
+//! Luna's issue interpretation.
 //!
 //! Luna reads the report, the title's current Arr state and recent resolved
 //! issues, then returns a structured decision. The numeric mappings and the

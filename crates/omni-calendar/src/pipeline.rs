@@ -1,4 +1,4 @@
-//! The `CalendarEvents` email handler (`src/calendar-events/pipeline.ts`).
+//! The `CalendarEvents` email handler.
 //!
 //! Filter every email, discover the calendar once (lazily, cached), then per
 //! candidate: download PDFs, extract events with the model, and create, cancel

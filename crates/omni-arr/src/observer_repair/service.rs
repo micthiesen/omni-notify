@@ -1,4 +1,4 @@
-//! The Observer repair pass (`src/observer-repair/service.ts`).
+//! The Observer repair pass.
 //!
 //! Each issue is reserved durably before assessment. A repair executes at most
 //! once per report revision; comment, resolution and notification completion

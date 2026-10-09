@@ -1,5 +1,5 @@
 //! Speech synthesis with verification, adaptive re-splitting and resumable
-//! checkpoints (`src/press-pods/speech/synthesize.ts`).
+//! checkpoints.
 //!
 //! Each chunk is synthesized, prepared by the audio chain and verified before
 //! it is accepted: an STT round trip (word coverage) is the primary verifier

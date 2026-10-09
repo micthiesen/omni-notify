@@ -1,4 +1,4 @@
-//! Dashboard state for the whole app (`frontend/src/live.tsx`).
+//! Dashboard state for the whole app.
 //!
 //! One `EventSource("/api/events")` per tab: every `snapshot` frame replaces
 //! the snapshot. `/api/snapshot` is polled immediately (first paint) and every

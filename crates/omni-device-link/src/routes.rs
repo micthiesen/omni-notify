@@ -1,4 +1,4 @@
-//! Host-facing long-poll endpoints (`src/device-link/routes.ts`), authenticated
+//! Host-facing long-poll endpoints, authenticated
 //! by `OMNI_DEVICE_LINK_TOKEN` only.
 
 use std::sync::Arc;

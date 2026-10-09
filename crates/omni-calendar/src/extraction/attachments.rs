@@ -1,4 +1,4 @@
-//! Supported attachment download (`src/calendar-events/extraction/attachments.ts`).
+//! Supported attachment download.
 
 use futures::StreamExt as _;
 use omni_core::email::EmailAttachment;

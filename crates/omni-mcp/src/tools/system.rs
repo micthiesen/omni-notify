@@ -1,4 +1,4 @@
-//! System tools (`src/mcp/tools/system.ts`): capabilities, tasks and runs,
+//! System tools: capabilities, tasks and runs,
 //! livestreams and briefings. Livestream and briefing data come from the
 //! owning packages through `LiveDirectory`, `LiveIntelligence` and
 //! `BriefingsReader`; none of these tools polls a platform.
@@ -18,7 +18,7 @@ use serde_json::{Map, Value, json};
 
 use super::{TaskControl, conform, truncate};
 
-/// Task names of the workspace definitions (`src/workspaces/definitions.ts`).
+/// Task names of the workspace definitions.
 const WORKSPACE_TASKS: [&str; 2] = ["PurchaseResearch", "MarketplaceSelling"];
 
 /// Configuration facts `system_status` reports (never the values themselves).

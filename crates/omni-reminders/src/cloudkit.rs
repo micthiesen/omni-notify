@@ -1,4 +1,4 @@
-//! CloudKit Reminders records, snapshots and verified writes (`src/reminders/cloudkit.ts`).
+//! CloudKit Reminders records, snapshots and verified writes.
 //!
 //! Record layout adapted from the MIT-licensed iobroker.icloud implementation at
 //! 07a91933e3f05a36d9c8918ece7f3de295aef805. Reads cap at 10,000 records; an

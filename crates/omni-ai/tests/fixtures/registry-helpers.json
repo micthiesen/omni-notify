@@ -1,0 +1,100 @@
+[
+  {
+    "helper": "getBriefingModel",
+    "envKey": "BRIEFING_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "briefings",
+    "operation": "generate"
+  },
+  {
+    "helper": "getLivestreamIntelligenceModel",
+    "envKey": "LIVESTREAM_INTELLIGENCE_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "livestream-intelligence",
+    "operation": null
+  },
+  {
+    "helper": "getWorkspaceModel",
+    "envKey": "WORKSPACE_MODEL",
+    "defaultModel": "openai:gpt-6-sol",
+    "feature": "workspaces",
+    "operation": "run"
+  },
+  {
+    "helper": "getExtractionModel",
+    "envKey": "EXTRACTION_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "parcel-tracker",
+    "operation": "extract-deliveries"
+  },
+  {
+    "helper": "getCalendarExtractionModel",
+    "envKey": "CALENDAR_EXTRACTION_MODEL",
+    "defaultModel": "openai:gpt-6-sol",
+    "feature": "calendar-events",
+    "operation": "extract-events"
+  },
+  {
+    "helper": "getTriageModel",
+    "envKey": "TRIAGE_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "email-triage",
+    "operation": "classify"
+  },
+  {
+    "helper": "getObserverRepairModel",
+    "envKey": null,
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "observer-repair",
+    "operation": "repair-issue"
+  },
+  {
+    "helper": "getArrRecoveryModel",
+    "envKey": null,
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "arr-recovery",
+    "operation": "assess-import"
+  },
+  {
+    "helper": "getRecsShortlistModel",
+    "envKey": "RECS_SHORTLIST_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "media-recommendations",
+    "operation": "shortlist"
+  },
+  {
+    "helper": "getRecsSelectionModel",
+    "envKey": "RECS_SELECTION_MODEL",
+    "defaultModel": "openai:gpt-6-sol",
+    "feature": "media-recommendations",
+    "operation": "select"
+  },
+  {
+    "helper": "getTasteReflectionModel",
+    "envKey": "TASTE_REFLECTION_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "media-recommendations",
+    "operation": "taste-reflection"
+  },
+  {
+    "helper": "getPodcastTasteReflectionModel",
+    "envKey": "PODCAST_TASTE_REFLECTION_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "podcast-recommendations",
+    "operation": "taste-reflection"
+  },
+  {
+    "helper": "getPressPodsMetadataModel",
+    "envKey": "PRESSPODS_METADATA_MODEL",
+    "defaultModel": "openai:gpt-6-luna",
+    "feature": "press-pods",
+    "operation": "rate-retrieval"
+  },
+  {
+    "helper": "getPressPodsCleaningModel",
+    "envKey": "PRESSPODS_CLEANING_MODEL",
+    "defaultModel": "openai:gpt-6-sol",
+    "feature": "press-pods",
+    "operation": "clean-narration"
+  }
+]

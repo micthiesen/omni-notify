@@ -1,4 +1,4 @@
-//! Tracked calendar events (`src/calendar-events/persistence.ts`): the
+//! Tracked calendar events: the
 //! `calendar-created-event` entity, keyed by a normalized content hash, used for
 //! create dedup and cancel/update matching.
 

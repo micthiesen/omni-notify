@@ -1,4 +1,4 @@
-//! Speech-to-text for content verification (`src/press-pods/speech/stt.ts`).
+//! Speech-to-text for content verification.
 //!
 //! Points at an OpenAI-compatible `/v1/audio/transcriptions` endpoint, by
 //! default the mlx-audio host that serves Higgs. Transcription only has to be

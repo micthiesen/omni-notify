@@ -1,5 +1,4 @@
-//! Enrolls Destiny's voiceprint from two or more clips
-//! (`src/tools/enroll-destiny-voice.ts`).
+//! Enrolls Destiny's voiceprint from two or more clips.
 //!
 //! `omni-voice-enroll --source URL [--seek SECONDS] --source URL [...]
 //!  [--output PATH] [--model-dir DIR]`

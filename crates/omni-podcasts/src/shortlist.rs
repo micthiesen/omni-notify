@@ -1,4 +1,4 @@
-//! Cheap-model scoring of eligible episodes (`shortlist.ts`). Ordering is
+//! Cheap-model scoring of eligible episodes. Ordering is
 //! computed in code from the scores, never from model prose.
 
 use std::collections::HashMap;

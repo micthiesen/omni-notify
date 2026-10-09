@@ -1,4 +1,4 @@
-//! The livestream intelligence service (`service.ts`): viewer anomalies,
+//! The livestream intelligence service: viewer anomalies,
 //! Destiny voice presence, rolling summaries and alerts.
 //!
 //! In-memory state (anomaly samples, voice evidence, cooldowns, schedules)

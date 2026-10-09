@@ -1,4 +1,4 @@
-//! Control state and APNs delivery (`service.ts`).
+//! Control state and APNs delivery.
 //!
 //! Registrations whose slot state hash differs from `lastDeliveredHash` are
 //! pushed; a transient failure is retried once (250 ms) and otherwise carried

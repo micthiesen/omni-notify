@@ -1,4 +1,4 @@
-//! The aggregate transition decision for one tick (`transitions.ts`).
+//! The aggregate transition decision for one tick.
 //!
 //! Notifications happen only on aggregate offline-to-live and live-to-offline
 //! edges. The first live binding is the sticky primary for the session (a

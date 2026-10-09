@@ -1,5 +1,5 @@
-//! Resolution of discovered episodes into verified candidates
-//! (`candidates.ts`): show identity via iTunes (Castro search as fallback),
+//! Resolution of discovered episodes into verified candidates:
+//! show identity via iTunes (Castro search as fallback),
 //! then the episode and its authoritative release date from the show's own
 //! RSS feed. Anything unverifiable is dropped with a logged reason.
 

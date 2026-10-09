@@ -1,4 +1,4 @@
-//! PressPods episode list, submission form and job queue (`pages/PodsPage.tsx`).
+//! PressPods episode list, submission form and job queue.
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;

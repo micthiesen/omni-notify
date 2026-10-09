@@ -1,4 +1,4 @@
-//! Parcel pipeline failures (`src/parcel-tracker/effect.ts`).
+//! Parcel pipeline failures.
 
 use omni_store::StoreError;
 

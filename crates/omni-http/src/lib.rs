@@ -1,4 +1,4 @@
-//! Outgoing HTTP (ARCHITECTURE.md section 3.5): one reqwest client with the
+//! Outgoing HTTP: one reqwest client with the
 //! project user agent, per-request timeouts and redirect rules, bounded
 //! response bodies, and the SSRF-guarded public client.
 

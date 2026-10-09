@@ -1,4 +1,4 @@
-//! MCP Events durable state (`src/mcp/events/persistence.ts`).
+//! MCP Events durable state.
 //!
 //! Entity structs mirror the stored shapes, including legacy fields (`folder`
 //! on subscriptions and requests written before event arguments were generic),

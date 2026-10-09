@@ -1,5 +1,5 @@
 //! `omni-notify compat-audit --db <copy> [--rewrite-to <new.db>]`
-//! (ARCHITECTURE.md 4.5 step 3): typed per-entity compatibility of a
+//! (see docs/architecture.md, "Data compatibility"): typed per-entity compatibility of a
 //! production copy.
 //!
 //! Per entity: rows, expired rows, CBOR decode failures, typed decode
@@ -11,8 +11,7 @@
 //!
 //! The source is copied into a temporary directory first; the given file is
 //! never opened. `--rewrite-to` writes every row, re-encoded through its typed
-//! model (other rows byte for byte), into a fresh database for
-//! `cargo xtask node-readback <copy> <new.db>`.
+//! model (other rows byte for byte), into a fresh database.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -56,7 +55,7 @@ pub fn entity_catalog() -> Vec<EntityDescriptor> {
 }
 
 /// Raw-key collections written with `upsert_doc` and an explicit entity
-/// column (ARCHITECTURE.md 3.3): read as plain JS values, never typed or
+/// column: read as plain JS values, never typed or
 /// migrated, so they are checked at the CBOR level only.
 pub const RAW_COLLECTIONS: &[&str] = &[
     omni_imap::archive_store::ACTION_ENTITY,
@@ -447,15 +446,7 @@ pub async fn run(args: &AuditArgs, now_ms: i64) -> anyhow::Result<(bool, String)
         target.execute_batch("COMMIT")?;
     }
     let _ = std::fs::remove_dir_all(&dir);
-    let mut report = audit.report();
-    if let Some(path) = &args.rewrite_to {
-        report.push_str(&format!(
-            "next: cargo xtask node-readback {} {}\n",
-            args.db.display(),
-            path.display()
-        ));
-    }
-    Ok((audit.blocking() == 0, report))
+    Ok((audit.blocking() == 0, audit.report()))
 }
 
 fn tempfile_dir() -> anyhow::Result<PathBuf> {

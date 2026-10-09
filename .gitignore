@@ -1,19 +1,15 @@
-node_modules
 dist
 .env
 .local/reminders-private/
 # Raw production captures (`cargo xtask capture-golden`); only synthesized fixtures are committed
 .local/golden-capture/
-.pnpm-debug.log
 *.db
 *.db-shm
 *.db-wal
-*._*.ts
-*._*.js
 .pushover-icons
 ios/OmniLive/Config/Local.xcconfig
 ios/OmniLive/build/
 ios/OmniLive/DerivedData/
 
-# Rust port
+# Rust
 /target/

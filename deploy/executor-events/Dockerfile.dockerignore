@@ -8,9 +8,6 @@
 !crates/
 !deploy/build-tools/
 crates/*/tests
-crates/*/scripts
 crates/*/target
 crates/*/dist
-crates/xtask/node
-**/node_modules
 **/.DS_Store

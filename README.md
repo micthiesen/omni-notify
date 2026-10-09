@@ -1,6 +1,8 @@
 # Omni Notify
 
-Monitors YouTube, Twitch, and Kick channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs AI-powered briefing agents that search the web on a schedule and send notification summaries.
+Monitors YouTube, Twitch, and Kick channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs AI-powered briefing agents, email pipelines, media and podcast recommendations, PressPods, Arr download recovery, and durable Omni workspaces, all exposed through a web UI and an authenticated MCP endpoint.
+
+Omni Notify is a Rust workspace. One `omni-notify` binary runs every scheduled task and serves the JSON API, the `/mcp` endpoint and a Leptos single-page frontend from one HTTP port, over a SQLite document store. See [the architecture overview](docs/architecture.md) for the crate layout, boot order and deployment pipeline.
 
 ## Quick Start
 
@@ -33,7 +35,7 @@ Platform fields are `youtube` / `twitch` / `kick`; each takes one username or an
 
 The optional top-level `dggTopEmbeds` count adds that many currently hosted or most-watched embeds from Destiny.gg. These are refreshed on the relaxed background cadence, never send live/offline/title notifications, and disappear when they leave the top set. A source already represented by an explicit channel entry is enriched with its DGG audience/host status instead of duplicated; its configured tier, platform polling, and notification behavior remain authoritative. Set it to `0` or omit it to disable discovery.
 
-**One entry = one streamer.** A streamer live on multiple platforms gets **one** "went live" notification when they start streaming anywhere and **one** "went offline" notification when all platforms go offline — no double-pings for multistreams.
+**One entry = one streamer.** A streamer live on multiple platforms gets **one** "went live" notification when they start streaming anywhere and **one** "went offline" notification when all platforms go offline, so multistreams never double-ping.
 
 ## How It Works
 
@@ -56,12 +58,15 @@ Destiny guest detection runs only on third-party DGG streams. It requires two mu
 Metered calls are restricted to `openai:gpt-6-luna` and capped at $3 per calendar month. Local audio inference records zero-cost usage events on the Costs page. Generate the persistent Destiny voiceprint inside the production container from at least two public clips where he is the only common speaker:
 
 ```bash
-docker exec omni-notify node dist/tools/enroll-destiny-voice.js \
+docker exec omni-notify omni-voice-enroll \
   --source 'https://www.youtube.com/watch?v=FIRST' --seek 600 \
-  --source 'https://www.youtube.com/watch?v=SECOND' --seek 600
+  --source 'https://www.youtube.com/watch?v=SECOND' --seek 600 \
+  --output /data/livestream-intelligence/destiny.json
 ```
 
-Set `LIVESTREAM_DESTINY_VOICEPRINT_PATH=/data/livestream-intelligence/destiny.json` after enrollment. `node dist/tools/livestream-intelligence-doctor.js --url <URL>` captures a bounded sample and reports transcript speed and speaker-match evidence.
+Set `LIVESTREAM_DESTINY_VOICEPRINT_PATH=/data/livestream-intelligence/destiny.json` after enrollment. `docker exec omni-notify omni-intel-doctor --url <URL>` captures a bounded sample and reports transcript speed and speaker-match evidence.
+
+If the bundled speech or speaker model files are missing, empty or corrupt, boot logs `Livestream intelligence disabled: ...` and the rest of the service, including live checks, keeps running.
 
 ## iPad Control Center
 
@@ -71,8 +76,8 @@ current channel name and title, and open the current stream directly. Omni sends
 targeted WidgetKit control pushes through APNs whenever a displayed slot changes.
 
 See [the CLI installation and operations guide](docs/ios-live-controls.md) for
-Apple/APNs setup, `pnpm ios:*` commands, private device installation, and the
-physical-iPad validation checklist.
+Apple/APNs setup, the `scripts/ios-live/*.sh` commands, private device
+installation, and the physical-iPad validation checklist.
 
 ## Per-Streamer Options
 
@@ -81,6 +86,8 @@ Alongside the platform fields, each `channels.json` entry accepts:
 - `pushoverToken`: override the Pushover token for this streamer's notifications.
 - `tier`: set to `"background"` for second-tier streamers you check on the dashboard but never want pushed about. Mutes live/offline/title-change notifications, restricts viewer-record notifications to all-time highs only, and polls at a relaxed cadence (every 60s instead of 20s). Tracking, the dashboard, and `/api/trigger-channels` are unaffected. Combining it with an explicit `liveNotifications` is a config error.
 - `liveNotifications`: set to `false` to mute live/offline/title-change notifications while keeping full-rate polling (e.g. for external integrations that need fast state). Viewer-record notifications (7d/30d/90d/all-time highs) still fire.
+
+Viewer records are confirmed once the count falls 5 percent below the peak, or when the stream goes offline. Primary-tier streamers are notified of new 7, 30 and 90-day highs as well as all-time highs; a record already confirmed today is not repeated.
 
 Title-change notifications are eagerly debounced: the first change fires immediately, further changes within 10 minutes are held with the last one winning.
 
@@ -103,7 +110,7 @@ Do not cover topics from past notifications above.
 ```
 
 - Filename becomes the task name (`CanadianNews.md` registers as "CanadianNews")
-- `schedule` is a 6-field node-cron expression (with seconds)
+- `schedule` is a 6-field cron expression (with seconds)
 - The body is the prompt sent to the AI agent
 
 ### Placeholders
@@ -148,21 +155,21 @@ A sibling pipeline (default: Mon/Wed/Fri at 11am, enabled by setting `PODCAST_TA
 Each run:
 
 1. Reads subscribed shows and listen history from the Castro account (see [docs/castro-sync.md](docs/castro-sync.md)). Subscribed shows are excluded and double as taste evidence alongside the seed profile and explicit feedback; a failed account read aborts the run. Without Castro credentials it runs off the seed profile and feedback alone.
-2. **Tier 1 — guest appearances.** For a rotating batch of the people in your profile's `## Voices` list, finds recent episodes featuring them as guests via Podcast Index (`byperson`, free) with a Tavily person-search fallback for non-podcasters. A model gate default-includes them (following the person is the signal), capped so a press-tour week can surface several.
-3. **Tier 2 — topic/drama.** Multi-angle web search → cheap shortlist → strong-model one-pick, conservative and suppressed once Tier 1 delivered enough.
+2. **Tier 1: guest appearances.** For a rotating batch of the people in your profile's `## Voices` list, finds recent episodes featuring them as guests via Podcast Index (`byperson`, free) with a Tavily person-search fallback for non-podcasters. A model gate default-includes them (following the person is the signal), capped so a press-tour week can surface several.
+3. **Tier 2: topic/drama.** Multi-angle web search → cheap shortlist → strong-model one-pick, conservative and suppressed once Tier 1 delivered enough.
 4. Verifies every candidate's release date against the show's actual RSS feed (or Podcast Index's resolved data), and hard-filters in code: older than 7 days, already recommended, show on 30-day cooldown, rejected, or subscribed.
 
 Recommended episodes are never repeated. When Castro credentials are set, listen history labels outcomes (listened / abandoned / ignored) automatically and each selected episode is resolved by RSS URL and added to the end of the Castro queue before notification. Resolution or enqueue failure falls back safely to the recommendation deep link. The good-pick/not-for-me feedback buttons in the web UI are always available.
 
 The same Castro credentials enable an independent `CastroInboxCleanup` task.
-It runs hourly and silently clears Inbox episodes whose description begins with
+It runs every six hours and silently clears Inbox episodes whose description begins with
 `This is a free preview`, the standard marker used by Substack preview
 episodes. It changes only the Inbox `is_new` state and never removes an episode
 from the Queue. Matching is deliberately case-sensitive and prefix-only.
 
 ## PressPods (Article → Podcast)
 
-Enabled by setting `PRESSPODS_AUTH_TOKEN` (plus a Google API key and a TTS backend — either a self-hosted Higgs server via `PRESSPODS_TTS_URL`, or `ELEVENLABS_API_KEY` with `PRESSPODS_TTS_PROVIDER=elevenlabs`). Submit an article URL — from an iOS Shortcut via `POST /pods/episodes?authToken=…` with `{ "url": "…" }`, or from the `/pods` page — and it becomes an episode in a private podcast RSS feed (`GET /pods/rss?authToken=…`) your podcast app subscribes to.
+Enabled by setting `PRESSPODS_AUTH_TOKEN` (plus a Google API key and a TTS backend: either a self-hosted Higgs server via `PRESSPODS_TTS_URL`, or `ELEVENLABS_API_KEY` with `PRESSPODS_TTS_PROVIDER=elevenlabs`). Submit an article URL (from an iOS Shortcut via `POST /pods/episodes?authToken=…` with `{ "url": "…" }`, or from the `/pods` page) and it becomes an episode in a private podcast RSS feed (`GET /pods/rss?authToken=…`) your podcast app subscribes to.
 
 Each submission becomes a durable job (visible on `/pods`, with retries and per-run logs) processed by the `PressPods` task:
 
@@ -175,18 +182,19 @@ Transient failures (TTS 429/5xx, network blips) retry automatically with backoff
 
 ## Web UI
 
-The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify dashboard:
+The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify dashboard, a Leptos single-page app built by trunk and served from `OMNI_WEB_DIST`:
 
 - `/` shows live streamer status (who's live now, title, uptime, peak viewers), a stat strip, every scheduled task with its cron schedule, ticking next-run countdown, "Run now" button and expandable run history, plus a recent-activity feed with per-task filtering.
 - `/pets` is the pet weight tracker.
-- `/recommendations` lists every recommendation with poster, status, reasoning, service links, explicit feedback controls, filters, the current evidence-backed taste profile, and recent pipeline activity.
+- `/media` (`/recommendations` redirects there) lists every recommendation with poster, status, reasoning, service links, explicit feedback controls, filters, the current evidence-backed taste profile, and recent pipeline activity.
 - `/podcasts` lists podcast episode recommendations with show artwork, status filters, episode/discussion links, good-pick/not-for-me feedback controls, and the podcast taste profile.
 - `/feedback/recommendations/:id` and `/feedback/podcasts/:id` are mobile-first one-tap rating pages. Pushover recommendation notifications deep-link here ("Rate this pick"), and the page links onward to the full recommendation view.
 - `/pods` lists PressPods episodes with an inline player, costs, and processing logs, plus a submit-URL form and retry controls for failed jobs.
 - `/briefings` is a browsable archive of briefing notifications (the last 50 stored per briefing).
 - `/emails` shows what the parcel and calendar email pipelines did with each email (why it was admitted or filtered, per-item results, honest processed/partial/failed outcomes) with per-email processing logs, one-click reprocess, block-sender and not-relevant/missed feedback actions, a forget-tracking-number escape hatch, and a user-editable sender-rules section. A shared LLM triage call gates both pipelines; corrections feed back into its prompt.
+- `/workspaces`, `/streamers/:id` (with `/streamers/:id/intelligence`), `/costs`, `/data`, `/operations`, `/mcp-activity`, `/claude` and `/reminders` cover workspaces, per-streamer detail and livestream intelligence, model and service costs, the data manager, task operations, MCP call history, Claude Code sessions and server iCloud Reminders sign-in.
 
-Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port — no extra ports needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
+Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port, so no extra ports are needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
 
 ### Executor MCP
 
@@ -217,11 +225,7 @@ file is generated from the same definitions registered by the server and is
 checked in tests for drift. See [the MCP operations guide](docs/mcp.md) for the
 transport, authentication, tool-family, and deployment contract.
 
-To iterate on the frontend without real credentials, `src/tools/preview-server.ts` boots the real server with fake tasks, streamers, runs, recommendations, and a pet:
-
-```bash
-DB_NAME=/tmp/omni-preview.db FRONTEND_PORT=3999 npx tsx src/tools/preview-server.ts
-```
+To iterate on the frontend without real credentials, `omni-notify --preview` boots the real server over a throwaway database seeded with fake streamers, runs, recommendations, briefings, email activity and a pet, with every side effect recorded and outgoing HTTP refused (see [Development](#development)).
 
 ## AI Model Configuration
 
@@ -290,8 +294,8 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `PODCAST_TASTE_PATH` | No | Markdown listener profile (required to enable podcast recommendations) |
 | `PODCAST_RECS_SCHEDULE` | No | Podcast recommendation cron (default: `0 0 11 * * 1,3,5`) |
 | `PUSHOVER_PODCAST_TOKEN` | No | Pushover token for podcast recs (falls back to `PUSHOVER_TOKEN`) |
-| `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and hourly Inbox cleanup) |
-| `PODCASTINDEX_KEY` / `PODCASTINDEX_SECRET` | No | Podcast Index API (guest-appearance discovery; quote the secret — it contains `#`) |
+| `CASTRO_ACCESS_ID` / `CASTRO_SECRET_KEY` | No | Castro device credentials (account reads, queue writes, and six-hourly Inbox cleanup) |
+| `PODCASTINDEX_KEY` / `PODCASTINDEX_SECRET` | No | Podcast Index API (guest-appearance discovery; quote the secret, which contains `#`) |
 | `PODCAST_VOICE_ROTATION_MAX` / `PODCAST_MAX_GUEST_PICKS` | No | Voices searched per run (default 12) / Tier-1 guest cap (default 6) |
 | `PODCAST_TASTE_REFLECTION_MODEL` | No | Model for weekly podcast taste reflection (default: `openai:gpt-6-luna`) |
 | `PODCAST_TASTE_REFLECTION_SCHEDULE` | No | Podcast taste reflection cron (default: `0 0 5 * * 0`, Sunday 5am) |
@@ -316,11 +320,40 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 
 ## Development
 
+Prerequisites: rustup (the toolchain is pinned in `rust-toolchain.toml`) with the
+`wasm32-unknown-unknown` target, [trunk](https://trunkrs.dev/) 0.21.14 and
+wasm-bindgen-cli 0.2.129 for the frontend, `cargo-deny`, `cargo-sweep`, and
+[dotenvx](https://dotenvx.com/) for running against a local `.env`. ffmpeg is
+needed only for the ignored real-audio PressPods test. The livestream intelligence
+build links the sherpa-onnx static library, which its build script downloads
+unverified by default; CI and the Docker build instead run
+`deploy/sherpa-onnx/fetch-static-lib.sh <dir>` and set `SHERPA_ONNX_ARCHIVE_DIR=<dir>`
+to use a SHA-256-verified copy.
+
 ```bash
-pnpm dev        # Development with hot reload
-pnpm build      # TypeScript compilation
-pnpm test       # Run tests (vitest)
-pnpm check      # Oxlint linting + Oxfmt formatting
+rustup target add wasm32-unknown-unknown
+cargo xtask gate                  # fmt, clippy (native + wasm32), deps-check, tests
+cargo deny --locked check         # advisories, licenses, bans, sources
+cargo test -p omni-live           # one crate
+cargo fmt --all                   # format
+
+# Frontend: build once, or serve with hot reload on :8081 (proxies /api to :3000)
+(cd crates/omni-web && trunk build --release)
+(cd crates/omni-web && trunk serve)
+
+# Run against .env (FRONTEND_PORT defaults to 3000)
+dotenvx run -- cargo run -p omni-notify -- --web-dist crates/omni-web/dist
+
+# Fake data, no credentials, nothing leaves the machine
+DB_NAME=/tmp/omni-preview.db cargo run -p omni-notify -- --preview --port 3999 \
+  --web-dist crates/omni-web/dist
 ```
+
+Other `omni-notify` modes: `--server-only` (HTTP without the scheduler),
+`--run-task <Name>` (one task, then exit), `--side-effects=record` (record every
+outgoing mutation instead of sending it), `healthcheck`, `doctor [--image]`, and
+`compat-audit --db <copy> [--rewrite-to <new.db>]`. `cargo xtask help` lists the
+repository tooling (golden fixtures, MCP policy, dependency rules, target
+hygiene).
 
 Inspired by [youtube_live_alert](https://github.com/your-diary/youtube_live_alert).

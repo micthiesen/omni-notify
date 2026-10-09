@@ -1,4 +1,4 @@
-//! The `PressPods` queue worker (`src/press-pods/task.ts`) over in-process
+//! The `PressPods` queue worker over in-process
 //! fakes: the happy path, transient and permanent failures, crash recovery
 //! and record mode.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

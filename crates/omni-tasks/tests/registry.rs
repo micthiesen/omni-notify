@@ -2,7 +2,7 @@
 //!
 //! Dropped case: "interrupts the native task Effect and records the stopped
 //! run". The Rust port makes started runs uninterruptible by design
-//! (ARCHITECTURE.md 3.4: a run, once started, runs inside `must_complete`);
+//! (a run, once started, runs inside `must_complete`);
 //! `dropping_the_waiter_does_not_cancel_the_run` asserts that replacement rule.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

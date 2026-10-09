@@ -1,4 +1,4 @@
-//! Durable recovery state with a per-service lease (`src/arr-recovery/persistence.ts`).
+//! Durable recovery state with a per-service lease.
 //!
 //! `arr-recovery-state` is keyed by `kind`. Every save re-checks that the
 //! caller still owns an unexpired lease, inside the same transaction.

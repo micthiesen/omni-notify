@@ -1,4 +1,4 @@
-//! PressPods MCP tools (`src/mcp/tools/press-pods.ts`). Metadata (names,
+//! PressPods MCP tools. Metadata (names,
 //! schemas, annotations, policy) comes from the golden tool list.
 
 use omni_mcp_kit::{McpTool, ToolError, ToolMetaError, paginate, truncate_utf16, typed_tool};

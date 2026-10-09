@@ -1,4 +1,4 @@
-//! MCP call recording (`src/mcp/activity.ts`).
+//! MCP call recording.
 //!
 //! Every tool call that passes input validation is recorded as `running`, then
 //! finished as `ok`, `error` or `interrupted` (the request went away). Inputs

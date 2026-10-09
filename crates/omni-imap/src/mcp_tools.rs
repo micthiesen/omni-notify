@@ -1,5 +1,5 @@
-//! MCP tools: compose (`email-compose.ts`), archive (`email-archive.ts`) and
-//! PDF attachments (`email-attachments.ts`). Metadata is golden; handlers
+//! MCP tools: compose, archive and
+//! PDF attachments. Metadata is golden; handlers
 //! apply zod's trims before validating against the golden input schema, so
 //! inputs TS accepted after trimming are accepted here too.
 

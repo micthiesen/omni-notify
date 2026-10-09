@@ -1,5 +1,5 @@
 //! Read-only observability routes for MCP calls and the Claude Code host's
-//! sessions (`src/mcp/activityRoutes.ts`). Omni's own UI may show the host
+//! sessions. Omni's own UI may show the host
 //! name, so these responses are not scrubbed.
 
 use std::collections::HashMap;

@@ -1,4 +1,4 @@
-//! Email pipeline and outcome labels (`frontend/src/utils/emailLabels.ts`).
+//! Email pipeline and outcome labels.
 
 use omni_api::email::{EmailActivityOutcome, EmailPipelineName};
 

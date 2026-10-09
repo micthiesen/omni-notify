@@ -1,4 +1,4 @@
-//! What to do with a voice-evidence decision (`presencePolicy.ts`).
+//! What to do with a voice-evidence decision.
 
 use crate::types::{DestinyPresence, PresenceState};
 use crate::voice_evidence::VoiceEvidenceDecision;

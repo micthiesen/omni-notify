@@ -1,5 +1,5 @@
 //! `BriefingAgentTask`: a web-researching agent that pushes at most a few
-//! notifications per run (`src/briefing-agent/BriefingAgentTask.ts`).
+//! notifications per run.
 
 use std::path::PathBuf;
 use std::sync::Arc;

@@ -1,4 +1,4 @@
-//! Workspace MCP tools (`src/mcp/tools/workspaces.ts`). Every call goes through
+//! Workspace MCP tools. Every call goes through
 //! `typed_tool`, so inputs and outputs are validated against the golden schemas.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

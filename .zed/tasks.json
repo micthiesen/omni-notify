@@ -11,85 +11,18 @@
     "show_command": false
   },
   {
-    "label": "Dev Server",
-    "command": "pnpm run dev",
+    "label": "Server",
+    "command": "npx @dotenvx/dotenvx run -- cargo run -p omni-notify",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
     "reveal": "always",
     "hide": "never"
-  },
-  {
-    "label": "Dev Server (API Only)",
-    "command": "pnpm run dev -- --server-only",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "use_new_terminal": true,
-    "allow_concurrent_runs": false,
-    "reveal": "always",
-    "hide": "never"
-  },
-  {
-    "label": "Build",
-    "command": "pnpm run build",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "on_success"
-  },
-  {
-    "label": "Typecheck",
-    "command": "pnpm run typecheck",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "on_success"
-  },
-  {
-    "label": "Lint",
-    "command": "pnpm run lint",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "on_success"
-  },
-  {
-    "label": "Format",
-    "command": "pnpm exec oxfmt --write .",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "on_success"
-  },
-  {
-    "label": "Check (Lint + Format)",
-    "command": "pnpm run check:write",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "on_success"
-  },
-  {
-    "label": "Test",
-    "command": "pnpm run test",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "use_new_terminal": true,
-    "allow_concurrent_runs": false,
-    "reveal": "always",
-    "hide": "never"
-  },
-  {
-    "label": "Test (Run Once)",
-    "command": "pnpm run test --run",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "on_success"
-  },
-  {
-    "label": "Docker Build",
-    "command": "pnpm run docker:build",
-    "cwd": "$ZED_WORKTREE_ROOT",
-    "reveal": "always",
-    "hide": "on_success"
   },
   {
     "label": "Frontend Dev",
-    "command": "pnpm --filter frontend dev",
-    "cwd": "$ZED_WORKTREE_ROOT",
+    "command": "trunk serve",
+    "cwd": "$ZED_WORKTREE_ROOT/crates/omni-web",
     "use_new_terminal": true,
     "allow_concurrent_runs": false,
     "reveal": "always",
@@ -97,14 +30,60 @@
   },
   {
     "label": "Frontend Build",
-    "command": "pnpm --filter frontend build",
+    "command": "trunk build --release",
+    "cwd": "$ZED_WORKTREE_ROOT/crates/omni-web",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "Build",
+    "command": "cargo build --workspace",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "Clippy",
+    "command": "cargo clippy --workspace --all-targets -- -D warnings",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "Format",
+    "command": "cargo fmt --all",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "reveal": "always",
+    "hide": "on_success"
+  },
+  {
+    "label": "Test",
+    "command": "cargo test --workspace",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "Gate",
+    "command": "cargo xtask gate",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always",
+    "hide": "never"
+  },
+  {
+    "label": "Docker Build",
+    "command": "docker build -t omni-notify .",
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
     "hide": "on_success"
   },
   {
     "label": "Seed Pet Data",
-    "command": "npx dotenvx run -- npx tsx src/pet-tracker/seed.ts",
+    "command": "npx @dotenvx/dotenvx run -- cargo run -p omni-personal --bin omni-pets-seed",
     "cwd": "$ZED_WORKTREE_ROOT",
     "reveal": "always",
     "hide": "on_success"

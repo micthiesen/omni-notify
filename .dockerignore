@@ -10,15 +10,12 @@
 !deploy/build-tools/
 !deploy/sherpa-onnx/fetch-static-lib.sh
 !deploy/web-tools/install.sh
-# Release builds never read tests, fixtures, helper scripts or build output, so
+# Release builds never read tests, fixtures or build output, so
 # editing them must not invalidate the Rust layers. Captured golden fixtures
 # can hold production data and never enter the context.
 crates/*/tests
-crates/*/scripts
 crates/*/target
 crates/*/dist
-crates/xtask/node
-**/node_modules
 **/.DS_Store
 **/*.db
 **/*.db-shm

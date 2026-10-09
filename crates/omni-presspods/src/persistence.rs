@@ -1,4 +1,4 @@
-//! Episode rows and the durable job queue (`src/press-pods/persistence.ts`).
+//! Episode rows and the durable job queue.
 //!
 //! Submissions become durable `press-pods-job` rows that the PressPods task
 //! drains. A crash mid-processing leaves a stale `processing` row that the

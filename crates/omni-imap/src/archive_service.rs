@@ -1,4 +1,4 @@
-//! The durable archive workflow (`src/email/archive/service.ts`). Every
+//! The durable archive workflow. Every
 //! mailbox mutation (MOVE, COPY, STORE `\Deleted`, `UID EXPUNGE`) is claimed
 //! durably first and never repeated; lost responses are reconciled by reads.
 //! One workflow runs at a time (including the receipt write after COPY).

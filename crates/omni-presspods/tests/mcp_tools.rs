@@ -1,4 +1,4 @@
-//! The six PressPods MCP tools (`src/mcp/tools/press-pods.ts`) against their
+//! The six PressPods MCP tools against their
 //! golden schemas: inputs are validated and outputs must satisfy the golden
 //! output schema.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

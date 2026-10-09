@@ -1,4 +1,4 @@
-# cargo-deny policy for the Rust port (ARCHITECTURE.md section 2).
+# cargo-deny policy (see docs/architecture.md).
 [graph]
 all-features = false
 

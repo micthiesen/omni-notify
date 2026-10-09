@@ -1,5 +1,10 @@
 //! omni_store::cbor against node-cbor 10.0.12 through mitools' encodeDoc /
-//! decodeDoc (`scripts/golden-cbor.mjs` -> `tests/golden/cbor.json`).
+//! decodeDoc, using the committed vectors in `tests/golden/cbor.json` (generated
+//! by node before the TypeScript runtime was retired; values use the `{"t": ..}`
+//! view that `describe` below mirrors). Deliberately absent, as documented
+//! divergences in `omni_store::cbor::decode`: tag 32 URLs and tag 35 RegExps,
+//! odd-length big-endian typed arrays, BigInts wider than 127 bits, and nesting
+//! deeper than `cbor::MAX_DEPTH`.
 //!
 //! For every encode case: the Rust encoding of the JS value equals node's
 //! bytes, decoding those bytes yields the value node decodes, and re-encoding

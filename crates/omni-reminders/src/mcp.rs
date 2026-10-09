@@ -1,4 +1,4 @@
-//! Server Reminders MCP tools (`src/mcp/tools/reminders.ts`).
+//! Server Reminders MCP tools.
 //!
 //! Bounded adapters over [`RemindersService`] under the existing MCP bearer
 //! authentication. Metadata (names, schemas, annotations, policy) comes from the

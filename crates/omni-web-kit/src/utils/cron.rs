@@ -1,4 +1,4 @@
-//! Human rendering of 6-field cron expressions (`frontend/src/utils/cron.ts`).
+//! Human rendering of 6-field cron expressions.
 
 use super::format::{format_clock_time, pad2};
 

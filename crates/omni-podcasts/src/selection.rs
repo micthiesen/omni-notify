@@ -1,4 +1,4 @@
-//! Tier-2 selection (`selection.ts`): research each finalist once with
+//! Tier-2 selection: research each finalist once with
 //! bounded web snippets, then choose one episode (or `no_add`) per call
 //! against a shrinking finalist set.
 

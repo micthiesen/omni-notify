@@ -1,4 +1,4 @@
-//! Durable once-per-key Pushover delivery (`src/reset-alerts/delivery.ts`).
+//! Durable once-per-key Pushover delivery.
 //!
 //! Each alert reserves its key and source-post aliases in one transaction
 //! before the provider call. `sending` rows are never resent automatically

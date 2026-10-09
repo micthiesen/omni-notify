@@ -137,8 +137,8 @@ async fn production_presspods_rows_decode_and_round_trip() {
     let feed = omni_presspods::rss::build_feed("https://pods.example.test", &newest_first, 0);
     assert_eq!(feed.matches("<item>").count(), newest_first.len().min(50));
 
-    // With OMNI_PROD_RSS (the TS feed of the same copy, written by
-    // `scripts/prod-rss.ts`) the Rust feed must match it byte for byte.
+    // With OMNI_PROD_RSS (a feed of the same copy saved from the former TS
+    // service) the Rust feed must match it byte for byte.
     if let Ok(ts_feed) = std::env::var("OMNI_PROD_RSS") {
         let expected = std::fs::read_to_string(ts_feed).unwrap();
         let start = feed.find("<lastBuildDate>").unwrap() + "<lastBuildDate>".len();

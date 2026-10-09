@@ -1,4 +1,4 @@
-//! iCalendar bodies (`src/calendar-events/caldav/ics.ts`), byte-for-byte: CRLF
+//! iCalendar bodies, byte-for-byte: CRLF
 //! line endings, no line folding, and the TS escape set (`\`, `;`, `,`, LF).
 
 use jiff::Timestamp;

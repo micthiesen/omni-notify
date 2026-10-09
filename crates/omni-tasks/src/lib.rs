@@ -1,4 +1,4 @@
-//! Scheduling, run history and run log capture (ARCHITECTURE.md section 3.4),
+//! Scheduling, run history and run log capture,
 //! carrying mitools `Scheduler.ts` and `src/task-runs/*` semantics.
 //!
 

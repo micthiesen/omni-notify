@@ -1,4 +1,4 @@
-//! The serialized account owner (`src/reminders/service.ts`).
+//! The serialized account owner.
 //!
 //! One lock serializes every Apple and CloudKit exchange for the account. Mutations
 //! reserve durably in the encrypted ledger before the external write and confirm

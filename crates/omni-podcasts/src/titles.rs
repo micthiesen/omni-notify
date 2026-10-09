@@ -1,5 +1,4 @@
-//! Loose title normalization shared by every podcast matching step
-//! (`src/podcast-recs/titles.ts`).
+//! Loose title normalization shared by every podcast matching step.
 
 use std::sync::LazyLock;
 

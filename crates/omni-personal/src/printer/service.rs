@@ -1,4 +1,4 @@
-//! The monochrome LAN printer (`src/printer/service.ts`): status, and PDF
+//! The monochrome LAN printer: status, and PDF
 //! printing through `pdfinfo` → `cupsfilter` → `rastertobrlaser` → IPP.
 //!
 //! Duplicate suppression: an exact document + configuration accepted within

@@ -49,7 +49,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
     ]
 }
 
-/// Data-manager rows (`src/data-manager.ts`).
+/// Data-manager rows.
 pub fn managed_entities() -> Vec<ManagedEntity> {
     vec![ManagedEntity {
         slug: "briefing-history",

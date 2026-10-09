@@ -1,4 +1,4 @@
-//! Evidence derivation with deterministic ids (`reflection/evidence.ts`).
+//! Evidence derivation with deterministic ids.
 //! Ids are `digest()`s of JS-formatted observation strings, so the same
 //! observation always maps to the same append-only row.
 

@@ -1,4 +1,4 @@
-//! Drafts in the server-designated `\Drafts` mailbox (`src/email/imap/actions.ts`).
+//! Drafts in the server-designated `\Drafts` mailbox.
 //! The deterministic Message-ID lets an uncertain APPEND be reconciled by
 //! search before (or instead of) another APPEND.
 

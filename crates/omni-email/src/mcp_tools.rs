@@ -1,4 +1,4 @@
-//! Email MCP tools (`src/mcp/tools/email.ts`): mailbox search/get through the
+//! Email MCP tools: mailbox search/get through the
 //! `EmailReader` port, health, pipeline activity, reprocess, sender rules,
 //! feedback and the retry queue. Metadata comes from the golden tool list.
 

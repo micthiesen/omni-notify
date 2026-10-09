@@ -1,5 +1,5 @@
-//! Golden vectors for `generateKeyBetween` captured from node
-//! (`scripts/fractional-golden.mjs`, rocicorp fractional-indexing 4.0.0).
+//! Committed golden vectors for `generateKeyBetween` captured from rocicorp
+//! fractional-indexing 4.0.0.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::castro::fractional::generate_key_between;

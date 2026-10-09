@@ -1,4 +1,4 @@
-//! Parcel `add-delivery` submission (`src/parcel-tracker/parcel/parcelApi.ts`).
+//! Parcel `add-delivery` submission.
 //! In `SideEffectMode::Record` nothing is sent: the payload is recorded and
 //! reported as accepted.
 

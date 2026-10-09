@@ -1,4 +1,4 @@
-//! APNs control pushes (`apns.ts`): `POST /3/device/<token>` with push type
+//! APNs control pushes: `POST /3/device/<token>` with push type
 //! `controls`, an ES256 provider token cached for 50 minutes, and a 5 s bound.
 
 use std::sync::Mutex;

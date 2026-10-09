@@ -1,4 +1,4 @@
-//! Narration sections and TTS-sized chunks (`src/press-pods/speech/textChunking.ts`).
+//! Narration sections and TTS-sized chunks.
 //!
 //! Lengths are JS string lengths (UTF-16 units), as in TS, so chunk
 //! boundaries and checkpoint keys match the TS implementation.

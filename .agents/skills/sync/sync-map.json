@@ -3,35 +3,11 @@
   "peers": {
     "mitools": {
       "path": "../mitools",
-      "notes": "Upstream shared library (@micthiesen/mitools) this project consumes; its upkeep skill was adapted from this repo's."
+      "notes": "TypeScript shared library that omni-notify consumed before its Rust port; its upkeep skill was adapted from this repo's."
     },
     "stillair": {
       "path": "../stillair",
       "notes": "Custom ceiling fan project (docs + Rust ESP32 firmware). Bootstrapped its sync skill from here; shares only the sync skill itself."
-    },
-    "condo": {
-      "path": "../condo",
-      "notes": "Shares Oxc lint and formatting policy; project-specific file exclusions remain local."
-    },
-    "derived-clients": {
-      "path": "../derived-clients",
-      "notes": "Shares Oxc lint and formatting policy; project-specific file exclusions remain local."
-    },
-    "homebridge-kasa": {
-      "path": "../homebridge-kasa",
-      "notes": "Shares Oxc lint and formatting policy; project-specific file exclusions remain local."
-    },
-    "homebridge-stream-triggers": {
-      "path": "../homebridge-stream-triggers",
-      "notes": "Shares Oxc lint and formatting policy; project-specific file exclusions remain local."
-    },
-    "presspods": {
-      "path": "../presspods",
-      "notes": "Shares Oxc lint and formatting policy; project-specific file exclusions remain local."
-    },
-    "homebridge-elgato-key-lights": {
-      "path": "../homebridge-elgato-key-lights",
-      "notes": "Shared Oxc lint and 88-column formatting policy. Preserve project-specific ignores, plugins, and deliberate lint exceptions."
     }
   },
   "resources": [
@@ -41,43 +17,7 @@
         "mitools"
       ],
       "mode": "judgment",
-      "notes": "Shared shape only (sync remote -> survey -> research majors -> apply -> verify -> ship). Steps are environment-specific: this repo has a frontend workspace, Dockerfile, and LLM model IDs; mitools is a published library whose CI publishes to npm on a version bump. Port procedure improvements, never the project-specific steps."
-    },
-    {
-      "path": ".oxlintrc.json",
-      "peers": [
-        "condo",
-        "derived-clients",
-        "homebridge-kasa",
-        "homebridge-stream-triggers",
-        "presspods",
-        "mitools",
-        "stillair",
-        "homebridge-elgato-key-lights"
-      ],
-      "mode": "judgment",
-      "notes": "Shared Oxc lint and 88-column formatting policy. Preserve project-specific ignores, plugins, and deliberate lint exceptions.",
-      "peerPath": {
-        "stillair": "pcb/.oxlintrc.json"
-      }
-    },
-    {
-      "path": ".oxfmtrc.json",
-      "peers": [
-        "condo",
-        "derived-clients",
-        "homebridge-kasa",
-        "homebridge-stream-triggers",
-        "presspods",
-        "mitools",
-        "stillair",
-        "homebridge-elgato-key-lights"
-      ],
-      "mode": "judgment",
-      "notes": "Shared Oxc lint and 88-column formatting policy. Preserve project-specific ignores, plugins, and deliberate lint exceptions.",
-      "peerPath": {
-        "stillair": "pcb/.oxfmtrc.json"
-      }
+      "notes": "Shared shape only (sync remote -> survey -> research majors -> apply -> verify -> ship). Steps are environment-specific: this repo is a Rust workspace with exact crate pins, a wasm frontend built by trunk, a Dockerfile with verified downloads, and LLM model IDs; mitools is a published TypeScript library whose CI publishes to npm on a version bump. Port procedure improvements, never the project-specific steps."
     }
   ]
 }

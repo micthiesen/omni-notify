@@ -1,4 +1,4 @@
-//! Keyless iTunes Search API for podcast shows (`src/podcast-recs/itunes.ts`).
+//! Keyless iTunes Search API for podcast shows.
 
 use std::time::Duration;
 

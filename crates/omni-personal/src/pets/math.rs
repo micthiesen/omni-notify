@@ -1,4 +1,4 @@
-//! Least-squares trend (`src/pet-tracker/math.ts`).
+//! Least-squares trend.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Point {

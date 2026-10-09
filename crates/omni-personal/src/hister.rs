@@ -1,4 +1,4 @@
-//! Hister captured-page archive client (`src/hister/service.ts`).
+//! Hister captured-page archive client.
 //!
 //! Every response is bounded (8 MiB body, 20 s, decoded field limits) and
 //! treated as untrusted. Redirects are refused so the access token is never

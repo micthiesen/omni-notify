@@ -1,4 +1,4 @@
-//! Deterministic profile identity evidence (`profileLinks.ts`).
+//! Deterministic profile identity evidence.
 //!
 //! A DGG-discovered account is linked to a configured account only through
 //! YouTube's oEmbed video owner, a direct profile link with equal handles, or

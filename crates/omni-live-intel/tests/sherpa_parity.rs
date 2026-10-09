@@ -1,9 +1,10 @@
-//! The sherpa-onnx parity spike: the Rust bindings must reproduce the TS
+//! The sherpa-onnx parity spike: the Rust bindings must reproduce the former TS
 //! (`sherpa-onnx-node`) speech path on the same audio, so voiceprints enrolled
 //! by the TS tool keep matching at the 0.62 threshold.
 //!
 //! Ignored by default (needs the Docker image's VAD and speaker models and a
-//! reference fixture). To run:
+//! reference JSON previously produced with `sherpa-onnx-node`; that generator
+//! was retired with the Node tooling). To run:
 //!
 //! 1. Put `silero_vad.int8.onnx` and
 //!    `3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx` (Dockerfile URLs and
@@ -11,8 +12,7 @@
 //! 2. Put 16 kHz mono f32le clips `NAME.f32` in `CLIPS`; the first clip is
 //!    enrolled, at least one later clip must be the same speaker saying
 //!    something else (names starting with the first name), the rest others.
-//! 3. `node tests/fixtures/sherpa-node-parity.mjs MODELS CLIPS ref.json Daniel Daniel2 Samantha`
-//! 4. `OMNI_SHERPA_MODELS=MODELS OMNI_SHERPA_CLIPS=CLIPS OMNI_SHERPA_REFERENCE=ref.json
+//! 3. `OMNI_SHERPA_MODELS=MODELS OMNI_SHERPA_CLIPS=CLIPS OMNI_SHERPA_REFERENCE=ref.json
 //!    cargo test -p omni-live-intel --test sherpa_parity -- --ignored --nocapture`
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::print_stdout)]
 

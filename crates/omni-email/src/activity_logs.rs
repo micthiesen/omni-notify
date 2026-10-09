@@ -1,5 +1,5 @@
-//! Captured log lines for emails that reached a pipeline's processing phase
-//! (`src/email/activityLogs.ts`). One `email-activity-log` row per activity,
+//! Captured log lines for emails that reached a pipeline's processing phase.
+//! One `email-activity-log` row per activity,
 //! overwritten on reprocess and pruned with the activity rows.
 
 use std::future::Future;

@@ -1,4 +1,4 @@
-//! Run trigger and status badges (`components/badges.tsx`).
+//! Run trigger and status badges.
 
 use leptos::prelude::*;
 use omni_api::runs::{RunStatus, RunTrigger};

@@ -1,4 +1,4 @@
-//! YouTube / Twitch / Kick glyphs (`components/PlatformIcon.tsx`).
+//! YouTube / Twitch / Kick glyphs.
 
 use leptos::prelude::*;
 

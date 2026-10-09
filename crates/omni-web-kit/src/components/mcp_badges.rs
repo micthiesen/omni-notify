@@ -1,4 +1,4 @@
-//! MCP policy and call status pills (`components/McpBadges.tsx`).
+//! MCP policy and call status pills.
 
 use leptos::prelude::*;
 use omni_api::mcp_activity::{McpCallStatus, RecommendedPolicy};

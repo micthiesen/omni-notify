@@ -2,7 +2,7 @@
 //!
 //! [`encode`] follows node's `Encoder` defaults and [`decode`] follows
 //! `Decoder.decodeFirstSync`; `tests/cbor_golden.rs` checks both against
-//! vectors produced by node (`scripts/golden-cbor.mjs`). [`to_value`] and
+//! committed vectors produced by node-cbor. [`to_value`] and
 //! [`from_value`] bridge serde types and [`JsValue`].
 //!
 //! # Serde protocol

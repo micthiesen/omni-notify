@@ -1,5 +1,4 @@
-//! Home: attention panel, live streams, On Deck, research and system health
-//! (`pages/HomePage.tsx`).
+//! Home: attention panel, live streams, On Deck, research and system health.
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;

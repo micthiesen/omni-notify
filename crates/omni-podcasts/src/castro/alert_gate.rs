@@ -1,4 +1,4 @@
-//! Castro failure alert gate (`src/alerts/castro.ts`): cleanup failures stay
+//! Castro failure alert gate: cleanup failures stay
 //! visible as failed runs and ERROR logs, but reach Pushover only after at
 //! least three consecutive failed runs spanning twelve hours (minus five
 //! minutes of schedule jitter), judged from durable run history so a restart

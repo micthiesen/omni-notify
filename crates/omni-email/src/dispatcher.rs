@@ -1,4 +1,4 @@
-//! Transport-agnostic fan-out (`src/email/dispatcher.ts`). On every mail event
+//! Transport-agnostic fan-out. On every mail event
 //! the dispatcher polls the source for new emails and hands them to every
 //! handler. Dispatch is no-drop: a bounded(1) trigger channel coalesces bursts
 //! while preserving one final pass for events that land mid-pass; the source

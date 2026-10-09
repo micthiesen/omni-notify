@@ -1,4 +1,4 @@
-//! Content digests (`src/utils/fingerprint.ts`) and constant-time comparison.
+//! Content digests and constant-time comparison.
 
 use serde::Serialize;
 use serde_json::Value;

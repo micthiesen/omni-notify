@@ -1,4 +1,4 @@
-//! The MCP Events catalog (`src/mcp/events/catalog.ts`).
+//! The MCP Events catalog.
 //!
 //! Each event declares its arguments, payload schema and the rule that matches
 //! a payload to a subscription. Arguments are string-valued filters kept in a

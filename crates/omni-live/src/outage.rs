@@ -1,4 +1,4 @@
-//! Fleet-level unreachability alerts (`outage.ts`).
+//! Fleet-level unreachability alerts.
 //!
 //! One alert when an outage is confirmed, escalating reminders while it
 //! lasts and one recovery note. The caller sends these directly instead of

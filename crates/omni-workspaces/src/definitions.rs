@@ -1,4 +1,4 @@
-//! The two workspaces (`src/workspaces/definitions.ts`); instruction strings verbatim.
+//! The two workspaces; instruction strings verbatim.
 
 use omni_api::workspaces::{
     WorkspaceArtifactDefinition, WorkspaceArtifactKind, WorkspaceDefinition,

@@ -1,4 +1,4 @@
-//! Live streamer cards and the offline strip (`components/LiveNow.tsx`).
+//! Live streamer cards and the offline strip.
 //! Cards are keyed by streamer id and read their own memo, so viewer counts,
 //! titles and status update in place from each snapshot.
 

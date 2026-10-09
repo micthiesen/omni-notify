@@ -1,4 +1,4 @@
-//! Platforms, bindings and fetched statuses (`platforms/index.ts`).
+//! Platforms, bindings and fetched statuses.
 
 use serde::{Deserialize, Serialize};
 

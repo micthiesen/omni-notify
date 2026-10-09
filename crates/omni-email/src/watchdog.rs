@@ -1,4 +1,4 @@
-//! `EmailWatchdog` (`src/email/watchdogTask.ts`): warns when no email batch
+//! `EmailWatchdog`: warns when no email batch
 //! has been dispatched for 72 hours (a June incident went 16 days unnoticed).
 
 use std::sync::{Arc, Mutex};

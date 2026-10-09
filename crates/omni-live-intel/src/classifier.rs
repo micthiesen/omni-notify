@@ -1,4 +1,4 @@
-//! Transcript assessment with a monthly budget gate (`classifier.ts`).
+//! Transcript assessment with a monthly budget gate.
 
 use std::sync::{Arc, Mutex};
 

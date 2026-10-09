@@ -1,4 +1,4 @@
-//! Tier-1 gate for guest appearances (`guestSelection.ts`): default-include,
+//! Tier-1 gate for guest appearances: default-include,
 //! drop only off-taste, trivial or namesake episodes, keep up to `max`.
 
 use std::collections::{HashMap, HashSet};

@@ -1,4 +1,4 @@
-//! Twitch live status over the public GQL endpoint (`platforms/twitch.ts`).
+//! Twitch live status over the public GQL endpoint.
 //!
 //! The username is escaped as a JSON string literal before interpolation into
 //! the GraphQL document (the TS port interpolated it raw, a known defect).

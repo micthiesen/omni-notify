@@ -1,5 +1,4 @@
-//! Image that swaps to a placeholder when missing or broken
-//! (`components/ImageWithFallback.tsx`).
+//! Image that swaps to a placeholder when missing or broken.
 
 use leptos::prelude::*;
 

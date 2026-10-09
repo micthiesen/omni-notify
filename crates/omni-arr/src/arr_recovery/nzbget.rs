@@ -1,5 +1,4 @@
-//! Read-only NZBGet corroboration of Arr's no-files rejection
-//! (`src/arr-recovery/nzbget.ts`).
+//! Read-only NZBGet corroboration of Arr's no-files rejection.
 
 use std::sync::LazyLock;
 use std::time::Duration;

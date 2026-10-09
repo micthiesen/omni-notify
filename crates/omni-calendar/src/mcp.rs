@@ -1,4 +1,4 @@
-//! Calendar MCP tools (`src/mcp/tools/calendar.ts`): bounded reads over the
+//! Calendar MCP tools: bounded reads over the
 //! tracked events plus approval-gated CalDAV writes. Metadata and JSON schemas
 //! come from the golden tool list; the zod refinements JSON Schema cannot
 //! express (trim, real dates, IANA zones, cross-field rules) are checked here.

@@ -1,4 +1,4 @@
-//! The recommendation pipeline (`src/recommendations/pipeline.ts`).
+//! The recommendation pipeline.
 //!
 //! Order of operations: pull local state (any unavailable view aborts the
 //! run), resolve identities, sync passive outcomes, reconcile stale pending

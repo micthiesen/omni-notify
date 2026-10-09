@@ -226,14 +226,14 @@ separately identified disposable reminders, with exact-record cleanup.
 
 Adapted from [ticaki/ioBroker.icloud](https://github.com/ticaki/ioBroker.icloud),
 revision `07a91933e3f05a36d9c8918ece7f3de295aef805` (v2.1.2). Source paths:
-`src/lib/index.ts`, `src/lib/auth/iCSRPAuthenticator.ts`, and
+upstream `src/lib/index.ts`, `src/lib/auth/iCSRPAuthenticator.ts`, and
 `src/lib/services/reminders.ts`; protocol context: `README_ENGLISH.md`.
 
 Copyright (c) 2026 ticaki <github@renopoint.de>. The full MIT license is preserved
 in [licenses/ioBroker.icloud-MIT.txt](licenses/ioBroker.icloud-MIT.txt) and included
 in the runtime image at `/app/licenses/ioBroker.icloud-MIT.txt`. The adaptation
 removes ioBroker lifecycle/logging, unredacted auth diagnostics, optimistic write
-success, and the recommendation to disable ADP. It uses Omni's Effect boundaries,
+success, and the recommendation to disable ADP. It uses Omni's typed error boundaries,
 private persistence, logger, notifications, MCP and frontend instead.
 
 The device-popup request uses `PUT /appleauth/auth/verify/trusteddevice/securitycode`.
@@ -244,7 +244,7 @@ from the delivery response. No popup is requested by background health checks.
 
 ## Shared protected iCloud access
 
-`src/icloud/protectedAccess.ts` provides the service-independent PCS workflow for
+`crates/omni-reminders/src/protected_access.rs` provides the service-independent PCS workflow for
 Reminders and future iCloud integrations. Its caller supplies an authenticated,
 cookie-persisting request adapter and serializes requests for the account. It
 does not own credentials, change Apple settings, or approve device prompts.
@@ -272,8 +272,8 @@ the client retains the completed list index and cursor for incremental refreshes
 Reminders use each list's compound query, including recurrence relationships.
 Incomplete pagination or malformed recurrence records fail closed.
 
-The initial complete snapshot runs in the application's Effect scope after access
-is verified. Large accounts can take several minutes; tools return a bounded
+The initial complete snapshot runs as a tracked background task (`reminders-index`)
+after access is verified. Large accounts can take several minutes; tools return a bounded
 "synchronizing" error during that initial load instead of waiting past the MCP
 transport deadline. The index stays in server memory and subsequent reads apply
 CloudKit changes from its completed cursor. Failed or interrupted refreshes never

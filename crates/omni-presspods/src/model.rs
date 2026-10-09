@@ -182,7 +182,7 @@ pub struct TokenCounts {
     pub extra: Extra,
 }
 
-/// `Costs` (`src/press-pods/costs.ts`).
+/// `Costs`.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Costs {

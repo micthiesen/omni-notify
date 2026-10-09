@@ -1,5 +1,5 @@
 //! Local speech: VAD, speaker embeddings, Destiny voiceprint matching and
-//! transcription (`localSpeech.ts`).
+//! transcription.
 //!
 //! [`LocalSpeechRuntime`] holds the TS decision logic (windowing, scoring,
 //! thresholds) over a [`SpeechBackend`]; [`crate::sherpa::SherpaBackend`] is the

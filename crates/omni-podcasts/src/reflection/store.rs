@@ -1,4 +1,4 @@
-//! Evidence ledger and profile checkpoints (`reflection/persistence.ts`).
+//! Evidence ledger and profile checkpoints.
 
 use omni_store::entity::{EntityOps as _, EntityWrite as _, UpsertOpts};
 use omni_store::{Store, StoreError};

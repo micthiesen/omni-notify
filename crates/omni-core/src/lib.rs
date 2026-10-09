@@ -1,6 +1,6 @@
 //! Foundation primitives shared by every omni crate: the clock seam, JS-exact
 //! semantics for persisted derivations, digests, ids, the email model and the
-//! sanctioned helpers for background work (ARCHITECTURE.md section 3.1).
+//! sanctioned helpers for background work.
 
 pub mod clock;
 pub mod digest;

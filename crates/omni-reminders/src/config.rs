@@ -1,4 +1,4 @@
-//! Feature configuration (`src/reminders/config.ts`).
+//! Feature configuration.
 
 use std::path::PathBuf;
 

@@ -1,4 +1,4 @@
-//! Explicit user corrections on pipeline outcomes (`src/email/feedback.ts`),
+//! Explicit user corrections on pipeline outcomes,
 //! injected into the triage prompt.
 
 use omni_store::cbor::Extra;

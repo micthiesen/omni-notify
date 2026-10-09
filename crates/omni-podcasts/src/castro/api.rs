@@ -1,4 +1,4 @@
-//! Low-level client for the observed Castro Tentacles protocol (`castro/api.ts`).
+//! Low-level client for the observed Castro Tentacles protocol.
 //!
 //! Every request is signed at send time (the HMAC covers the `Date` header),
 //! paced by one process-wide [`RequestPacer`] per credential set, bounded to

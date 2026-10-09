@@ -1,4 +1,4 @@
-//! The two-tier recommendation run (`pipeline.ts`):
+//! The two-tier recommendation run:
 //!
 //! - Tier 1: episodes where a followed voice guests somewhere new
 //!   (default-include, capped by `PODCAST_MAX_GUEST_PICKS`).

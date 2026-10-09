@@ -1,4 +1,4 @@
-//! Auto-read cleanup (`src/email/imap/autoRead.ts`): marks unread mail from the
+//! Auto-read cleanup: marks unread mail from the
 //! last 24 hours `\Seen` in the server-designated Archive, Junk and Trash
 //! mailboxes, leaving archive-action copies unread.
 

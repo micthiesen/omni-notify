@@ -1,5 +1,4 @@
-//! Sidebar, mobile header, bottom navigation and "More" sheet
-//! (`components/NavBar.tsx`).
+//! Sidebar, mobile header, bottom navigation and "More" sheet.
 
 use leptos::html::Div;
 use leptos::prelude::*;

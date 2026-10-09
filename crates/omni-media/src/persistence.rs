@@ -1,4 +1,4 @@
-//! Recommendation attempts and identity aliases (`src/recommendations/persistence.ts`).
+//! Recommendation attempts and identity aliases.
 
 use std::collections::{HashMap, HashSet};
 

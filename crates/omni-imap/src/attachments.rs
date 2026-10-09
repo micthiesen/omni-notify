@@ -1,4 +1,4 @@
-//! Stable, read-only attachment identity (`src/email/imap/attachments.ts`).
+//! Stable, read-only attachment identity.
 
 use std::sync::LazyLock;
 

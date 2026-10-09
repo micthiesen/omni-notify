@@ -1,4 +1,4 @@
-//! `events_status` (`src/mcp/tools/events.ts`): the MCP Events lifecycle Omni
+//! `events_status`: the MCP Events lifecycle Omni
 //! has observed, without secrets, tokens, callback paths or message content.
 
 use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, typed_tool};

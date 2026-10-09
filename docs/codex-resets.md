@@ -5,7 +5,7 @@ the existing `PUSHOVER_USER` and `PUSHOVER_TOKEN`; both must be configured for
 registration. The task appears in Omni's task list and supports manual runs.
 
 Bounded source reads, scheduling, and durable delivery are shared with
-`ClaudeResets` through `src/reset-alerts/`. Provider evidence rules remain
+`ClaudeResets` through `omni-personal`'s `reset_alerts` module. Provider evidence rules remain
 separate; the existing Codex entity namespace and delivery keys are unchanged.
 See [Claude Code reset alerts](claude-resets.md).
 

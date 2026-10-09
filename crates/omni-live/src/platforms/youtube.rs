@@ -1,4 +1,4 @@
-//! YouTube live status from the channel's `/live` page (`platforms/youtube.ts`).
+//! YouTube live status from the channel's `/live` page.
 
 use std::sync::LazyLock;
 

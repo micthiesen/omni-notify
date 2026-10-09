@@ -1,4 +1,4 @@
-//! CalDAV event writes (`src/calendar-events/caldav/api.ts`).
+//! CalDAV event writes.
 //!
 //! Transport failures are `Err(CaldavError)`; HTTP-level failures come back as
 //! `Error { code, message }` outcomes so callers can classify 5xx as retryable.

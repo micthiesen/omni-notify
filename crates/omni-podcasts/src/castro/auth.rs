@@ -1,4 +1,4 @@
-//! Castro `APIAuth-HMAC-SHA256` request signing (`castro/auth.ts`).
+//! Castro `APIAuth-HMAC-SHA256` request signing.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;

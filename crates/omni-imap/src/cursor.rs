@@ -1,4 +1,4 @@
-//! Per-folder IMAP delta cursors (`src/email/imap/persistence.ts`) and the
+//! Per-folder IMAP delta cursors and the
 //! dispatch watermark read used by UIDVALIDITY recovery.
 
 use omni_store::cbor::Extra;

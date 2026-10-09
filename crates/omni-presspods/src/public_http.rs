@@ -1,4 +1,4 @@
-//! Bounded public-internet fetches (`src/press-pods/publicHttp.ts`).
+//! Bounded public-internet fetches.
 //!
 //! Every retriever request goes through the SSRF-guarded
 //! [`PublicHttpClient`]: the URL, every DNS answer and every redirect hop

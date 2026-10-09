@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.27.1
-# Executor Events adapter (Rust port of packages/executor-events-adapter).
+# Executor Events adapter (the `omni-events-adapter` crate).
 # Build from the repository root so the Cargo workspace and lock file resolve:
 #   docker build -f deploy/executor-events/Dockerfile -t ghcr.io/micthiesen/executor-events-adapter .
 # Dockerfile.dockerignore beside this file limits the context to the workspace.

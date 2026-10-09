@@ -1,4 +1,4 @@
-//! `CodexResets` (`src/codex-resets/task.ts`).
+//! `CodexResets`.
 
 use std::sync::Arc;
 

@@ -1,4 +1,4 @@
-//! Typed API client functions (`frontend/src/api.ts`). DTOs come from
+//! Typed API client functions. DTOs come from
 //! `omni-api`.
 
 pub mod client;

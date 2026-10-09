@@ -1,8 +1,9 @@
-//! JS-exact semantics for values that are persisted or hashed by the TypeScript
-//! service. Everything that must match V8 byte for byte goes through here.
+//! JS-exact semantics for values that were persisted or hashed by the former
+//! TypeScript service. Everything that must match V8 byte for byte goes through
+//! here.
 //!
-//! `tests/js_golden.rs` checks every function against V8 output captured by
-//! `scripts/golden-js.mts` (`tests/golden/js.json`).
+//! `tests/js_golden.rs` checks every function against committed V8 output
+//! (`tests/golden/js.json`).
 
 use std::borrow::Cow;
 use std::cmp::Ordering;

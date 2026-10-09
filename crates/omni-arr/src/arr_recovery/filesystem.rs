@@ -1,5 +1,5 @@
-//! Deletion verification on the optional read-only download mounts
-//! (`src/arr-recovery/filesystem.ts`). Unlike Arr's filesystem API, a direct
+//! Deletion verification on the optional read-only download mounts.
+//! Unlike Arr's filesystem API, a direct
 //! directory read distinguishes an empty parent from an inaccessible one.
 
 use std::future::Future;

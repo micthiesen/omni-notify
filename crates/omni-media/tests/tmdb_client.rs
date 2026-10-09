@@ -1,4 +1,4 @@
-//! TMDB client over a local mock (`src/recommendations/tmdb/client.ts`):
+//! TMDB client over a local mock:
 //! key placement, adult filtering, transient retries and typed failures.
 #![allow(clippy::expect_used)]
 

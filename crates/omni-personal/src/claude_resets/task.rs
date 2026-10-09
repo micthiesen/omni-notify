@@ -1,4 +1,4 @@
-//! `ClaudeResets` (`src/claude-resets/task.ts`).
+//! `ClaudeResets`.
 
 use std::sync::Arc;
 

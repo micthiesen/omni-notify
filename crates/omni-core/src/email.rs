@@ -1,4 +1,4 @@
-//! Transport-agnostic incoming email model (`src/email/types.ts`), shared by
+//! Transport-agnostic incoming email model, shared by
 //! WP01/02/03/11/12, and the handler trait the dispatcher fans out to.
 
 use serde::{Deserialize, Serialize};

@@ -1,4 +1,4 @@
-//! Radarr/Sonarr v3 API access (`src/recommendations/arr/client.ts`).
+//! Radarr/Sonarr v3 API access.
 //!
 //! Every request is bounded (15 s overall, 8 MiB body) and every failure,
 //! malformed payload included, reads as `Unavailable`: callers never mistake a

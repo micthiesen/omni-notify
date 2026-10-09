@@ -1,4 +1,4 @@
-//! "What else could I watch" strip (`components/OnDeck.tsx`); renders nothing
+//! "What else could I watch" strip; renders nothing
 //! when empty.
 
 use leptos::prelude::*;

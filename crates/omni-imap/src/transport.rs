@@ -1,4 +1,4 @@
-//! The iCloud IMAP transport (`src/email/imap/transport.ts`): IDLE push on
+//! The iCloud IMAP transport: IDLE push on
 //! INBOX plus per-folder UID-cursor delta fetch, a 5-minute sweep event,
 //! jittered reconnect backoff, bounded read caches, and every mailbox workflow
 //! serialized behind one operation permit (selection is connection-global).

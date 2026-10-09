@@ -1,5 +1,4 @@
-//! Composition types shared by every subsystem and the binary
-//! (ARCHITECTURE.md section 3.11).
+//! Composition types shared by every subsystem and the binary.
 //!
 //! Each subsystem crate exposes a constructor returning a [`Subsystem`]; the
 //! binary (WP14) merges routers, registers tasks, MCP tools and entities, runs
@@ -124,7 +123,7 @@ pub type CanDelete = Arc<dyn Fn(&JsValue) -> Option<String> + Send + Sync>;
 pub type AfterDelete =
     Arc<dyn Fn(JsValue, Store) -> BoxFuture<'static, Result<(), String>> + Send + Sync>;
 
-/// One entity exposed in the data manager (`src/data-manager.ts`).
+/// One entity exposed in the data manager.
 #[derive(Clone)]
 pub struct ManagedEntity {
     pub slug: &'static str,

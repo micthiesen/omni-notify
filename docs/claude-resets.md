@@ -34,7 +34,7 @@ Catalog edit dates are not a polling heartbeat: a quiet feed remains usable.
 Each run logs fetch time, catalog update date, event count, and newest event.
 HTTP or schema errors fail the task visibly rather than masquerading as no news.
 
-Both providers use `src/reset-alerts/` for bounded HTTP/JSON/schema reads,
+Both providers use `omni-personal`'s `reset_alerts` module for bounded HTTP/JSON/schema reads,
 one-minute task execution, source snapshot logging, summaries, and durable
 Pushover delivery. Reads have a 20-second timeout and a 2 MiB cap. Claude's
 90-day reservations use `claude-reset-delivery`; Codex retains its existing

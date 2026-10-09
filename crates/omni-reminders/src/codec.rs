@@ -1,4 +1,4 @@
-//! Apple's zlib-compressed versioned topotext documents (`src/reminders/codec.ts`).
+//! Apple's zlib-compressed versioned topotext documents.
 //!
 //! Adapted from the MIT-licensed iobroker.icloud reminders implementation
 //! (07a91933e3f05a36d9c8918ece7f3de295aef805); see docs/server-reminders.md.

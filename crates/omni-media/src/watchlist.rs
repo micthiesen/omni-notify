@@ -1,4 +1,4 @@
-//! Radarr (movies) + Sonarr (series) as one watchlist (`src/recommendations/watchlist.ts`).
+//! Radarr (movies) + Sonarr (series) as one watchlist.
 //!
 //! Either service being unavailable makes the combined watchlist unavailable,
 //! so callers never mistake a partial response for the complete tracked state.

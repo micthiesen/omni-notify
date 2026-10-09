@@ -1,4 +1,4 @@
-//! Article validation and metadata extraction (`src/press-pods/agents/metadata.ts`).
+//! Article validation and metadata extraction.
 
 use std::sync::LazyLock;
 

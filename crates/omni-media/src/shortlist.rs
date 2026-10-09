@@ -1,4 +1,4 @@
-//! Cheap-model scoring of every eligible candidate (`src/recommendations/shortlist.ts`).
+//! Cheap-model scoring of every eligible candidate.
 
 use std::collections::HashMap;
 

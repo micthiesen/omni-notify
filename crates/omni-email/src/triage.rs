@@ -1,4 +1,4 @@
-//! Shared cheap-model relevance triage (`src/email/triage.ts`): one model call
+//! Shared cheap-model relevance triage: one model call
 //! per email, shared by the parcel and calendar pipelines. Concurrent callers
 //! share the in-flight call; failures are never cached (the keyword fallbacks
 //! own the degraded path); the cache holds at most [`MAX_TRIAGE_CACHE_ENTRIES`]

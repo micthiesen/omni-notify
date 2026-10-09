@@ -1,5 +1,4 @@
-//! Bounded livestream audio capture through `yt-dlp` and `ffmpeg` subprocesses
-//! (`audio.ts`).
+//! Bounded livestream audio capture through `yt-dlp` and `ffmpeg` subprocesses.
 //!
 //! The runner mirrors `runAudioProcess`: stdout over its cap or a timeout kills
 //! the child and fails non-retryably, a non-zero exit fails retryably with the

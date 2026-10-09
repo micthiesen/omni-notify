@@ -1,4 +1,4 @@
-//! Deterministic behavioral counts (`reflection/stats.ts`). Listens dedupe on
+//! Deterministic behavioral counts. Listens dedupe on
 //! (show, episode) and recommendation rows on `recommendationId`, newest wins.
 
 use std::collections::{HashMap, HashSet};

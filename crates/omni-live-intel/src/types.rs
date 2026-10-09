@@ -1,4 +1,4 @@
-//! Persisted livestream-intelligence documents (`src/live-check/intelligence/types.ts`).
+//! Persisted livestream-intelligence documents.
 //!
 //! Field order follows the object literals TS builds, so rows Rust writes encode
 //! like TS rows. Every struct keeps unknown fields in `extra` so read-modify-write
@@ -465,7 +465,7 @@ impl Entity for StreamSessionsData {
     }
 }
 
-/// One completed live session (`src/live-check/sessions.ts`).
+/// One completed live session.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamSession {

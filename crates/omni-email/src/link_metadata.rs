@@ -1,4 +1,4 @@
-//! Inert, bounded link and List-Unsubscribe metadata (`src/email/linkMetadata.ts`).
+//! Inert, bounded link and List-Unsubscribe metadata.
 //! URLs are parsed for validation only, never followed; no raw headers or
 //! remote content escape. Lengths and slices use JS UTF-16 semantics.
 

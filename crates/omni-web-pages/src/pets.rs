@@ -1,4 +1,4 @@
-//! Pet weight and litter-box visit trends (`pages/PetsPage.tsx`).
+//! Pet weight and litter-box visit trends.
 
 use leptos::html::Div;
 use leptos::prelude::*;

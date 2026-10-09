@@ -1,4 +1,4 @@
-//! Bounded CalDAV HTTP (`src/calendar-events/caldav/http.ts`).
+//! Bounded CalDAV HTTP.
 //!
 //! Every request has a 15 s timeout covering headers and body, and dropping
 //! the future aborts it. Bodies are read with a byte cap. PROPFIND follows

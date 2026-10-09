@@ -1,5 +1,4 @@
-//! "Taste Brain" section shared by the media and podcast pages
-//! (`components/TasteBrain.tsx`).
+//! "Taste Brain" section shared by the media and podcast pages.
 
 use leptos::prelude::*;
 use omni_api::media::{TasteClaim, TasteProfile};

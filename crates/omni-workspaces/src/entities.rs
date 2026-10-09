@@ -1,4 +1,4 @@
-//! Persisted workspace rows (`src/workspaces/persistence.ts`). Field order
+//! Persisted workspace rows. Field order
 //! follows the object literals the TS engine writes; every row keeps unknown
 //! fields in `extra` so read-modify-write never drops them.
 

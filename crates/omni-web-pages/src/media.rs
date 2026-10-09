@@ -1,5 +1,5 @@
-//! Media recommendations (`pages/RecommendationsPage.tsx`) and one pick's
-//! detail page (`pages/RecommendationDetailPage.tsx`).
+//! Media recommendations and one pick's
+//! detail page.
 
 use std::collections::HashMap;
 

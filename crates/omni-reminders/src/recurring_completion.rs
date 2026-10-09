@@ -1,5 +1,4 @@
-//! One-shot recurring completion with fresh verification
-//! (`src/reminders/recurringCompletion.ts`).
+//! One-shot recurring completion with fresh verification.
 //!
 //! Apple's public Reminders web build 2636Build17 uses a mutating
 //! `CompleteRecurringReminder` query instead of a generic Completed update

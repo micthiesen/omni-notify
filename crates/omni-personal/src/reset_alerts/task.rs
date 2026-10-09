@@ -1,4 +1,4 @@
-//! The shared one-minute reset alert task (`src/reset-alerts/task.ts`).
+//! The shared one-minute reset alert task.
 //! Providers own evidence interpretation; scheduling and delivery are identical.
 
 use std::sync::{Arc, Mutex};

@@ -1,4 +1,4 @@
-//! Followed voices from the taste seed's `## Voices` section (`voices.ts`).
+//! Followed voices from the taste seed's `## Voices` section.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;

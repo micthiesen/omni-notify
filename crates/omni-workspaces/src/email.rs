@@ -1,4 +1,4 @@
-//! Scoped email ingestion (`src/workspaces/email.ts`): emails matching an
+//! Scoped email ingestion: emails matching an
 //! approved scope of an active subject become sources (persisted before the
 //! workspace run is triggered) and trigger one email run per subject.
 //! `triggeredAt` is set only after that run succeeded, so a failed run is

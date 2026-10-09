@@ -1,4 +1,4 @@
-//! Durable per-issue repair reservations (`src/observer-repair/persistence.ts`).
+//! Durable per-issue repair reservations.
 //!
 //! `observer-repair-state` is keyed by the numeric `issueId`. A reservation is
 //! taken before any mutation; an execution found interrupted is converted to a

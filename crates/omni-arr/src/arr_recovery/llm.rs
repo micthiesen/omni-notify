@@ -1,4 +1,4 @@
-//! Guarded Luna assessment of ambiguous import failures (`src/arr-recovery/llm.ts`).
+//! Guarded Luna assessment of ambiguous import failures.
 //!
 //! The model only interprets names: its verdict is schema-checked, must echo
 //! every file and download id exactly, and is re-validated against the same

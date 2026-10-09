@@ -1,4 +1,4 @@
-//! Status filter chip bar (`components/StatusFilterChips.tsx`). Statuses with
+//! Status filter chip bar. Statuses with
 //! zero items are hidden; clicking the active chip clears it.
 
 use std::collections::HashMap;

@@ -1,4 +1,4 @@
-//! Streamer routes (`server.ts`): `GET /api/streamers`,
+//! Streamer routes: `GET /api/streamers`,
 //! `GET /api/trigger-channels`, `GET /api/streamers/:id/metrics`,
 //! `GET /api/streamers/:id/sessions`.
 

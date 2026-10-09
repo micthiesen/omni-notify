@@ -1,4 +1,4 @@
-//! Encrypted private state (`src/reminders/store.ts`).
+//! Encrypted private state.
 //!
 //! Separate from the docstore so generic data browsing/export cannot expose Apple
 //! secrets. File format: `0x01 | iv(12) | tag(16) | AES-256-GCM ciphertext` with AAD

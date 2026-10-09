@@ -1,4 +1,4 @@
-//! The `TasteReflection` task end to end over fakes (`src/recommendations/taste/task.ts`):
+//! The `TasteReflection` task end to end over fakes:
 //! an unavailable history skips the run, a full run resolves completed
 //! watches, persists evidence and a profile, and reports the TS summaries.
 #![allow(clippy::expect_used)]

@@ -1,4 +1,4 @@
-//! Channels for the homebridge-stream-triggers plugin (`triggerChannels.ts`).
+//! Channels for the homebridge-stream-triggers plugin.
 
 use omni_api::streamers::{TriggerChannel, TriggerChannelType};
 

@@ -1,5 +1,5 @@
-//! Durable retry queue for transiently failed email processing
-//! (`src/email/retry.ts`). A retry re-fetches the email by id and reruns the
+//! Durable retry queue for transiently failed email processing.
+//! A retry re-fetches the email by id and reruns the
 //! owning pipeline's handler; pipeline dedup gates make replay idempotent.
 
 use omni_store::cbor::Extra;

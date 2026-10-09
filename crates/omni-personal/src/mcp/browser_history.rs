@@ -1,4 +1,4 @@
-//! Hister tools (`src/mcp/tools/browser-history.ts`). Results are untrusted
+//! Hister tools. Results are untrusted
 //! archived evidence; only `set_browser_page_label` writes, and it verifies.
 
 use std::sync::Arc;

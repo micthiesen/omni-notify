@@ -1,4 +1,4 @@
-//! Apple recurrence service values (`src/reminders/recurrence.ts`).
+//! Apple recurrence service values.
 //!
 //! Protocol observations, independently implemented from Apple's public web client
 //! (Reminders web build 2636Build17): the RecurrenceRule model and its RRule display

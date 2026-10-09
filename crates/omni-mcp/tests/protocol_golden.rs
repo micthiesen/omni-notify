@@ -1,6 +1,6 @@
-//! Replays every raw HTTP exchange the TS MCP handler produced
-//! (`tests/golden/protocol.json`, captured offline by
-//! `scripts/protocol-golden.ts`) against the Rust endpoint and compares
+//! Replays every raw HTTP exchange the former TS MCP handler produced
+//! (`tests/golden/protocol.json`, a committed offline capture) against the
+//! Rust endpoint and compares
 //! status, content type, the security headers and every JSON-RPC message.
 //!
 //! The services match the capture: the same MCP token (so subscription ids,

@@ -1,5 +1,5 @@
 //! Captures a clip, transcribes it and scores it against the voiceprint, with
-//! timings (`src/tools/livestream-intelligence-doctor.ts`).
+//! timings.
 //!
 //! `omni-intel-doctor --url URL [--seek SECONDS] [--duration SECONDS]
 //!  [--model-dir DIR] [--voiceprint PATH]`

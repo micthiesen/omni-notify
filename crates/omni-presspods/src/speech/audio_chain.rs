@@ -1,4 +1,4 @@
-//! Audio assembly (`src/press-pods/speech/audioChain.ts`); read
+//! Audio assembly; read
 //! `docs/presspods-audio.md` before changing anything here.
 //!
 //! Per chunk: speed up, optionally denoise (Higgs), trim edge silence, fade

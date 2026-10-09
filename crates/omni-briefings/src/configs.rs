@@ -1,6 +1,5 @@
 //! Briefing configs: one `<Name>.md` per briefing under `BRIEFINGS_PATH`, with a
-//! `schedule` in its YAML front matter and the prompt as its body
-//! (`src/briefing-agent/configs.ts`).
+//! `schedule` in its YAML front matter and the prompt as its body.
 
 use std::path::{Path, PathBuf};
 

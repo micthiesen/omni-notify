@@ -15,15 +15,17 @@ Free Personal Team signing and AltStore are not substitutes for the paid members
 The repository owns the Xcode project source, generated `.xcodeproj`, Swift app and extension, server API, APNs sender, tests, and CLI commands. XcodeGen is only needed when changing project structure; the generated project is checked in for normal installs.
 
 ```bash
-pnpm ios:doctor       # diagnose Xcode, signing, local config, and devices
-pnpm ios:configure    # create private local build configuration
-pnpm ios:typecheck    # compile-check both targets and run static control fixtures
-pnpm ios:generate     # regenerate the checked-in Xcode project
-pnpm ios:build        # signed device build
-pnpm ios:build simulator
-pnpm ios:test         # simulator unit tests
-pnpm ios:install -- DEVICE_IDENTIFIER
+scripts/ios-live/doctor.sh       # diagnose Xcode, signing, local config, and devices
+scripts/ios-live/configure.sh    # create private local build configuration
+scripts/ios-live/typecheck.sh    # compile-check both targets and run static control fixtures
+(cd ios/OmniLive && xcodegen generate)   # regenerate the checked-in Xcode project
+scripts/ios-live/build.sh        # signed device build
+scripts/ios-live/build.sh simulator
+scripts/ios-live/test.sh         # simulator unit tests
+scripts/ios-live/install.sh DEVICE_IDENTIFIER
 ```
+
+The scripts are plain Bash; run them from the repository root.
 
 `Config/Local.xcconfig`, build output, tokens, and Apple keys are ignored by Git.
 
@@ -45,20 +47,20 @@ Find the 10-character Team ID at **developer.apple.com/account > Membership deta
 Create the local app configuration. Omitting `--token` creates a new 64-character secret:
 
 ```bash
-pnpm ios:configure -- --team ABCDE12345
+scripts/ios-live/configure.sh --team ABCDE12345
 ```
 
 The command prints `IOS_CONTROL_AUTH_TOKEN=...`. Put that exact value in the Omni server environment. To reuse an existing token or change the LAN URL/bundle ID:
 
 ```bash
-pnpm ios:configure -- \
+scripts/ios-live/configure.sh \
   --team ABCDE12345 \
   --token EXISTING_LONG_SECRET \
   --server http://omni.boris \
   --bundle-id com.micthiesen.OmniLive
 ```
 
-Run `pnpm ios:doctor` after setup. Every required line should pass. The signing identity warning can remain until Xcode has finished creating the development certificate.
+Run `scripts/ios-live/doctor.sh` after setup. Every required line should pass. The signing identity warning can remain until Xcode has finished creating the development certificate.
 
 ## One-time APNs setup
 
@@ -111,7 +113,7 @@ APNs delivery only tells iPadOS that the control changed. The control extension 
 3. Copy its identifier and install:
 
    ```bash
-   pnpm ios:install -- 00008112-DEVICE-IDENTIFIER
+   scripts/ios-live/install.sh 00008112-DEVICE-IDENTIFIER
    ```
 
    The command regenerates the project, asks Xcode's CLI to register/sign the device and required capabilities, builds the app plus control extension, and installs the resulting app with `devicectl`.
@@ -137,9 +139,9 @@ After this first pairing, installs and updates can generally use the same comman
 
 Do this only after the deferred one-time setup above:
 
-1. `pnpm ios:doctor` passes and lists the iPad.
-2. `pnpm ios:test` passes on an installed iPad simulator runtime.
-3. `pnpm ios:install -- DEVICE_IDENTIFIER` succeeds with automatic signing.
+1. `scripts/ios-live/doctor.sh` passes and lists the iPad.
+2. `scripts/ios-live/test.sh` passes on an installed iPad simulator runtime.
+3. `scripts/ios-live/install.sh DEVICE_IDENTIFIER` succeeds with automatic signing.
 4. The app's connection test shows the same four slots as the Omni home page.
 5. Four configured controls show the expected names and stream titles in Control Center.
 6. Tap each live control and confirm Safari or the platform app opens the matching current stream directly.
@@ -158,4 +160,4 @@ Control exists but never changes: open Omni Live and sync. If the registered cou
 
 Control says old channel away from home: expected for the LAN-only server. APNs can arrive anywhere, but the extension cannot fetch `omni.boris` until it rejoins the home network.
 
-HTTP 401: the token compiled into `Config/Local.xcconfig` does not match `IOS_CONTROL_AUTH_TOKEN` on the server. Rerun `pnpm ios:configure` with the correct token, then reinstall.
+HTTP 401: the token compiled into `Config/Local.xcconfig` does not match `IOS_CONTROL_AUTH_TOKEN` on the server. Rerun `scripts/ios-live/configure.sh` with the correct token, then reinstall.

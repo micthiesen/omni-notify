@@ -1,4 +1,4 @@
-//! Dev tool (`src/pet-tracker/seed.ts`): replaces the pet tables in
+//! Dev tool: replaces the pet tables in
 //! `./docstore.db` with 90 days of plausible readings for three fake pets.
 //! Never run it against production data.
 

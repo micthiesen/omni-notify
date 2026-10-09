@@ -1,5 +1,4 @@
-//! One-tap feedback cards linked from Pushover notifications
-//! (`pages/FeedbackPage.tsx`).
+//! One-tap feedback cards linked from Pushover notifications.
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;

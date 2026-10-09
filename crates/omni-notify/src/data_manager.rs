@@ -1,4 +1,4 @@
-//! Data manager (`src/data-manager.ts`): every managed entity's metadata,
+//! Data manager: every managed entity's metadata,
 //! counts and payload bytes, its rows (an undecodable row is listed as a
 //! malformed placeholder instead of failing the listing), and guarded
 //! single-row deletion by exact primary key.

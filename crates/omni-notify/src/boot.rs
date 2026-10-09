@@ -1,4 +1,4 @@
-//! Boot order (`src/index.ts`):
+//! Boot order:
 //!
 //! config + redacted log -> open store -> `migrate_all` over every entity ->
 //! `import_historical_costs` -> subsystem construction (intelligence,

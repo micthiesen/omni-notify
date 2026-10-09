@@ -1,5 +1,4 @@
-//! Workspaces: the overview grid, one workspace, and one subject's dossier
-//! (`pages/WorkspacesPage.tsx`).
+//! Workspaces: the overview grid, one workspace, and one subject's dossier.
 
 use std::collections::HashMap;
 use std::time::Duration;

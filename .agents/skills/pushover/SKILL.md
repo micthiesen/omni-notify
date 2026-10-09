@@ -15,7 +15,12 @@ Invoke `$pushover` with a description of what the app/token is for and an option
 
 ## Scripts
 
-Located at `.agents/skills/pushover/scripts/`:
+Located at `.agents/skills/pushover/scripts/`. They are standalone Node.js ES
+modules that use only built-in modules, so they need Node 18 or newer on PATH
+(for global `fetch`) but no `package.json` or install step. They also call the
+1Password CLI (`op`), macOS `sips` and `open`, and `rsvg-convert` (librsvg) for
+SVG icons.
+
 
 - **pushover-session.mjs** - Logs into Pushover via 1Password (email + password + TOTP). Prints session cookie to stdout.
 - **pushover-create-app.mjs** - Creates a Pushover app. Args: `<cookie> <name> [icon-path] [description]`. Prints JSON `{ "token": "...", "url": "..." }`.

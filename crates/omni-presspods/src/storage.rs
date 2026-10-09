@@ -1,5 +1,4 @@
-//! Episode audio files and per-chunk synthesis checkpoints
-//! (`src/press-pods/storage.ts`).
+//! Episode audio files and per-chunk synthesis checkpoints.
 //!
 //! Final MP3s live at `<audioDir>/<episodeId>.mp3`. Each verified chunk's
 //! prepared WAV is cached at `<audioDir>/.chunks/<workId>/<key>.wav`, keyed

@@ -1,4 +1,4 @@
-//! `claude.session.turn_finished` publisher (`src/mcp/events/claudeSessions.ts`).
+//! `claude.session.turn_finished` publisher.
 //!
 //! Diffs the host's session list against the last state Omni recorded. It
 //! polls only while a subscription for the event is active and the host is

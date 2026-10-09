@@ -1,5 +1,5 @@
 //! Claude Code host link, live sessions, transcripts and the `claude_*`
-//! action timeline (`pages/ClaudePage.tsx`).
+//! action timeline.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;

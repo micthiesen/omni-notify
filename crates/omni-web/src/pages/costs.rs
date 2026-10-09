@@ -1,4 +1,4 @@
-//! Usage and estimated spend (`pages/CostsPage.tsx`).
+//! Usage and estimated spend.
 
 use leptos::prelude::*;
 use omni_api::costs::{

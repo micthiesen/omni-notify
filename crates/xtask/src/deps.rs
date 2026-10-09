@@ -1,5 +1,5 @@
-//! `deps-check`: the crate dependency direction rules of ARCHITECTURE.md section 1 and
-//! WORK_PACKAGES.md "Cross-package dependency rules", over `cargo metadata`.
+//! `deps-check`: the crate dependency direction rules of docs/architecture.md
+//! ("Crate layout"), checked over `cargo metadata`.
 
 use std::collections::BTreeMap;
 

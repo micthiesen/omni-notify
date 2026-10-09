@@ -1,4 +1,4 @@
-//! The recovery pass (`src/arr-recovery/service.ts`).
+//! The recovery pass.
 //!
 //! Per service: take the durable lease, observe settled failures, reconcile
 //! earlier reservations against Arr's actual state, act on failures that stayed

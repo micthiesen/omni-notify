@@ -1,4 +1,4 @@
-//! URL identity for PressPods (`src/press-pods/url.ts`).
+//! URL identity for PressPods.
 //!
 //! Two submissions that point at the same article collapse to one episode.
 //! Normalization is only for identity and dedup: the retrievers still fetch

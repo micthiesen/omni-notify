@@ -1,4 +1,4 @@
-//! Streamers: aggregate identities over platform bindings (`streamers.ts`).
+//! Streamers: aggregate identities over platform bindings.
 
 use std::collections::HashSet;
 use std::sync::{Arc, RwLock};

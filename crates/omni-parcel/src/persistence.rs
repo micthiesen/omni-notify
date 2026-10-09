@@ -1,4 +1,4 @@
-//! Durable delivery dedup gate (`src/parcel-tracker/persistence.ts`): every
+//! Durable delivery dedup gate: every
 //! submission is reserved (`pending`, attempt counted) before Parcel is called
 //! and confirmed (`submitted` or `rejected`) afterwards, so an interrupted
 //! request is replayable and terminal outcomes are never resubmitted.

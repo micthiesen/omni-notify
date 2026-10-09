@@ -2,7 +2,7 @@
 //! (`GET /api/streamers/:id/intelligence-details`,
 //! `POST /api/streamers/:id/intelligence-feedback`).
 //!
-//! These mirror the persisted documents (`src/live-check/intelligence/types.ts`).
+//! These mirror the persisted documents.
 //! Metric values are `number | string | boolean | null`, carried as JSON values.
 //! TS `field?: T | null` reads as `Option<T>` (absent and null are both `None`).
 

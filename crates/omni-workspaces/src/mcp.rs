@@ -1,4 +1,4 @@
-//! Workspace MCP tools (`src/mcp/tools/workspaces.ts`), in TS order. Metadata
+//! Workspace MCP tools, in TS order. Metadata
 //! (descriptions, schemas, annotations, policy) comes from the golden tool list.
 
 use std::future::Future;

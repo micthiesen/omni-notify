@@ -1,4 +1,4 @@
-//! Viewer metric entities (`metrics/persistence.ts`).
+//! Viewer metric entities.
 
 use jiff::tz::TimeZone;
 use omni_store::Store;

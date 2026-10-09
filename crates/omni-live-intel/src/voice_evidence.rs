@@ -1,4 +1,4 @@
-//! Repeated-sample voice evidence (`voiceEvidence.ts`). In-memory, reset on restart.
+//! Repeated-sample voice evidence. In-memory, reset on restart.
 
 use std::collections::HashMap;
 

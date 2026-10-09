@@ -1,4 +1,4 @@
-//! Podcast MCP tools (`src/mcp/tools/podcasts.ts`): bounded adapters over the
+//! Podcast MCP tools: bounded adapters over the
 //! account client, recommendation rows and taste data. Metadata and schemas
 //! come from the golden tool list.
 

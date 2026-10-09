@@ -1,4 +1,4 @@
-//! Test support (ARCHITECTURE.md section 3.13). Dev-dependency only.
+//! Test support. Dev-dependency only.
 //!
 //! Helpers follow the usual test-fixture convention: setup failures panic with
 //! a message naming the step (`TestStore::new`, `TestApp::new`, `golden`), so
@@ -553,7 +553,7 @@ pub fn golden(path: &str) -> Value {
     )
 }
 
-/// node-cbor golden vectors written by `cargo xtask golden-cbor`.
+/// The committed node-cbor golden vectors (`crates/omni-store/tests/golden/cbor.json`).
 pub mod node_cbor_fixtures {
     use std::path::PathBuf;
 
@@ -563,7 +563,7 @@ pub mod node_cbor_fixtures {
 
     /// The `encode` case `name` of `crates/omni-store/tests/golden/cbor.json`: the
     /// bytes node-cbor wrote and the described JS value (the `{"t": ..}` view
-    /// documented in `crates/omni-store/scripts/golden-cbor.mjs`).
+    /// that `crates/omni-store/tests/cbor_golden.rs` describes).
     pub fn load(name: &str) -> (Vec<u8>, Value) {
         let path =
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../omni-store/tests/golden/cbor.json");

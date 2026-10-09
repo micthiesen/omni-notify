@@ -1,5 +1,6 @@
-//! Port of `src/ai/registry.spec.ts`, plus a parity check of every `get*Model()` helper
-//! in `src/ai/registry.ts` (code-default model, feature, default operation).
+//! Request timeout behavior, plus a parity check of every role against the committed
+//! model-helper table (code-default model, feature, default operation) that the
+//! production configuration was built from.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::sync::Arc;
@@ -61,6 +62,10 @@ async fn times_out_and_aborts_a_hanging_model_request() {
     );
 }
 
+/// One `get*Model()` helper of the former TypeScript registry, in declaration order
+/// (`fixtures/registry-helpers.json`).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Helper {
     env_key: Option<String>,
     default_model: String,
@@ -68,40 +73,13 @@ struct Helper {
     operation: Option<String>,
 }
 
-/// Parses each `resolveModel(configured, "provider:model", "feature", operation)` call.
-fn ts_helpers() -> Vec<Helper> {
-    let source = include_str!("../../../src/ai/registry.ts");
-    let call = regex_lite(
-        r#"resolveModel\(\s*(config\.(\w+)|undefined),\s*"([^"]+)",\s*"([^"]+)",\s*("([^"]+)"|operation),?\s*\)"#,
-    );
-    let mut helpers = Vec::new();
-    for chunk in source.split("export function ").skip(1) {
-        let Some(caps) = call.captures(chunk) else {
-            continue;
-        };
-        let operation = match caps.get(6) {
-            Some(literal) => Some(literal.as_str().to_owned()),
-            None => regex_lite(r#"operation = "([^"]+)""#)
-                .captures(chunk)
-                .map(|c| c[1].to_owned()),
-        };
-        helpers.push(Helper {
-            env_key: caps.get(2).map(|m| m.as_str().to_owned()),
-            default_model: caps[3].to_owned(),
-            feature: caps[4].to_owned(),
-            operation,
-        });
-    }
-    helpers
-}
-
-fn regex_lite(pattern: &str) -> regex::Regex {
-    regex::Regex::new(pattern).unwrap()
+fn helpers() -> Vec<Helper> {
+    serde_json::from_str(include_str!("fixtures/registry-helpers.json")).unwrap()
 }
 
 #[test]
 fn roles_match_every_registry_helper() {
-    let helpers = ts_helpers();
+    let helpers = helpers();
     assert_eq!(
         helpers.len(),
         ALL_ROLES.len(),
@@ -120,8 +98,8 @@ fn roles_match_every_registry_helper() {
         );
         let (feature, operation) = role_cost(*role);
         assert_eq!(feature, helper.feature, "{role:?} feature");
-        if let Some(ts_operation) = &helper.operation {
-            assert_eq!(operation, ts_operation, "{role:?} operation");
+        if let Some(expected) = &helper.operation {
+            assert_eq!(operation, expected, "{role:?} operation");
         } else {
             assert_eq!(*role, ModelRole::LivestreamIntelligence);
         }

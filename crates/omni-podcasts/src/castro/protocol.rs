@@ -1,4 +1,4 @@
-//! The observed Castro Tentacles sync protocol (`castro/protocol.ts`). Decoding
+//! The observed Castro Tentacles sync protocol. Decoding
 //! is serde plus the zod refinements that mattered (UUIDs, URLs, ranges): a
 //! response that fails them is a request error, exactly as in TS.
 

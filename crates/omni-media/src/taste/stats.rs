@@ -1,4 +1,4 @@
-//! Deterministic behavioral stats (`src/recommendations/taste/stats.ts`).
+//! Deterministic behavioral stats.
 
 use std::cmp::Ordering;
 

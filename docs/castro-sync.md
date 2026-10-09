@@ -1,15 +1,16 @@
 # Castro sync: integration notes
 
 Status: **authenticated client implemented and live-read verified**.
-`src/podcast-recs/castro/client.ts` reads subscriptions, the ordered queue, and
+`crates/omni-podcasts/src/castro/client.rs` reads subscriptions, the ordered queue, and
 180 days of playback history. It can enqueue a resolvable episode at the front
 or back of the queue, search podcasts and episodes, resolve direct RSS feeds,
 and subscribe to arbitrary shows. Podcast recommendations use this resolver to
 auto-enqueue episodes from shows that are not already subscribed.
 
-This document separates directly observed behavior from inference. Typed schemas
-for captured payloads live in `src/podcast-recs/castro/protocol.ts`; HMAC signing
-primitives live in `src/podcast-recs/castro/auth.ts`.
+This document separates directly observed behavior from inference. Typed serde models
+for captured payloads live in `crates/omni-podcasts/src/castro/protocol.rs`; HMAC
+signing primitives live in `crates/omni-podcasts/src/castro/auth.rs`, and the
+signed request layer in `castro/api.rs`.
 
 ## What we know (as of July 2026)
 
@@ -36,7 +37,7 @@ Sources:
 - Because sync is CRDT-event-shaped, "fetch listen history" may not be a single
   REST GET. The client implementation may need to ingest the event stream and
   maintain a local replica, then answer the snapshot-shaped reads of
-  `PodcastAccountClient` from that replica. Callers only ever see snapshots.
+  the `PodcastAccount` trait from that replica. Callers only ever see snapshots.
 
 ## Captured private API protocol
 
@@ -117,9 +118,9 @@ the feed's `<guid>` entirely. Verified against Radiolab (Simplecast): for the
 episode "The Builders", `castro.guid = 689112f0-…` (== `public_id`) while the
 feed's `<guid> = a9adfa38-…`; none of the feed's recent guids appeared among
 Castro's 661 stored episodes. The reliable cross-system episode key is the
-**enclosure/media URL** — `castro.media_url` equals the RSS `<enclosure url>`
-(both carry the same `awEpisodeId`). Episode matching in `client.ts`
-(`matchEpisode`) therefore tries guid, then normalized media URL (host+path,
+**enclosure/media URL**: `castro.media_url` equals the RSS `<enclosure url>`
+(both carry the same `awEpisodeId`). Episode matching in `client.rs`
+(`match_episode`) therefore tries guid, then normalized media URL (host+path,
 query stripped), then a unique title match.
 
 Live probing after authentication found populated `podcast_state` responses.
@@ -133,7 +134,7 @@ episode_id, is_new, is_starred, is_played, last_played, progress_seconds
 subscriptions, loads each podcast's state, keeps activity from the last 180
 days, and resolves the retained episode IDs through `/episodes/<id>`. It then
 computes completion from `progress_seconds / duration.seconds`, using 1 for an
-explicitly played episode. Metadata promises are cached for the lifetime of the
+explicitly played episode. Metadata lookups are cached for the lifetime of the
 service and reads are capped at eight concurrent requests. This live history is
 currently scoped to podcasts that remain subscribed. The backup proves older,
 unsubscribed history exists locally, but the live API has not exposed a route
@@ -181,8 +182,9 @@ The captured position strings are examples, not constants. They are
 fractional-ordering keys computed relative to the existing queue. A client must
 first reconstruct the ordered queue, then generate a key before the first item
 for `next` or after the final item for `last`. `EnqueueEpisodeRequest.position`
-exposes these two choices through `PodcastQueuePosition`. The implementation
-uses the `fractional-indexing` package. A live reversible smoke test added an
+exposes these two choices through `PodcastQueuePosition`. `castro/fractional.rs`
+ports rocicorp `fractional-indexing` 4.0.0 `generateKeyBetween`, checked against
+node-generated golden vectors in `crates/omni-podcasts/tests/golden/`. A live reversible smoke test added an
 already-played episode at Queue Next, confirmed it became the first item, and
 dequeued it again, restoring the original 29-item queue.
 
@@ -203,7 +205,7 @@ then fetches `/podcasts/<tentacles-id>` to map the RSS episode GUID to Castro's
 episode UUID.
 
 General podcast and episode searches are exposed through
-`PodcastAccountClient.searchPodcasts` and `searchEpisodes`. Live verification
+`CastroApi::search_podcasts` and `search_episodes`. Live verification
 returned 25 results from each endpoint. Subscription reads also use podcast
 search to enrich identities when `tentacles_id` matches; 33 of the current 39
 subscriptions resolved to exact RSS and iTunes identities, while the remaining
@@ -282,9 +284,9 @@ the device credential, the account is reset, or the keychain item is deleted.
 - **Writes require an active sync session.** With sync disabled for the
   credential's device, reads keep working (auth is still valid) but every
   `/profile/sync/actions` write returns `400` with body `Sync is disabled`. The
-  server body is the only tell — it now surfaces in `CastroApi` error messages.
+  server body is the only tell, and it surfaces in `CastroApi` error messages.
 - **A write from a device that is not a live sync peer does not propagate.**
-  It updates the server's queue projection (so our own `fetchQueue` sees it) but
+  It updates the server's queue projection (so our own `fetch_queue` sees it) but
   emits no sync event, so no other device ever renders it. Symptom: a queued
   episode is provably on the server yet never appears in the app, even after a
   full resync on multiple devices.
@@ -296,7 +298,7 @@ the device credential, the account is reset, or the keychain item is deleted.
   the owner does not otherwise open. That device is a first-class sync peer, so
   its writes broadcast to the iPhone; and because nothing else drives it, its
   sync is never toggled. Enrolling omni-notify as its own device is the durable
-  setup — impersonating an actively-used phone invites exactly the re-key above.
+  setup; impersonating an actively-used phone invites exactly the re-key above.
 
 ### Backup database inventory
 
@@ -329,10 +331,10 @@ Watch for credentials rotating when sync re-keys, app updates changing the
 schema, and rate limiting. Transport failures are returned as `unavailable`,
 never as empty state, per the project's three-state rule.
 
-## Hourly Inbox cleanup
+## Inbox cleanup every six hours
 
-`CastroInboxCleanupTask` runs at `0 * * * *` whenever the Castro credentials are
-configured. It reads each subscribed podcast's `podcast_state`, resolves only
+`CastroInboxCleanup` runs at `0 */6 * * *` (`castro/cleanup.rs`) whenever the
+Castro credentials are configured. It reads each subscribed podcast's `podcast_state`, resolves only
 episodes where `is_new` is true, and clears an episode only when its description
 begins exactly with:
 
@@ -343,7 +345,10 @@ This is a free preview
 The comparison is case-sensitive and does not match the phrase later in a
 description. Cleanup posts only `clear_episode_new`; it does not post
 `episode_dequeued`, so an episode already in the Queue remains there. Normal
-runs use task logs only and send no notification.
+runs use task logs only and send no notification. Failed runs stay visible in
+run history, but Pushover fires only after at least three consecutive failures
+spanning twelve hours, allowing five minutes of schedule jitter
+(`castro/alert_gate.rs`). A success resets the incident.
 
 ## Remaining fallbacks
 

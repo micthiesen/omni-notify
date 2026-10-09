@@ -1,4 +1,4 @@
-//! Deterministic taste evidence (`src/recommendations/taste/evidence.ts`).
+//! Deterministic taste evidence.
 //!
 //! Evidence ids hash `JSON.stringify` output with JS key order and number
 //! formatting; they must match the ids TS wrote, or re-polling the same

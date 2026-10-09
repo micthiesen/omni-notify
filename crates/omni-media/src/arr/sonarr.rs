@@ -1,4 +1,4 @@
-//! Sonarr series (`src/recommendations/arr/sonarr.ts`).
+//! Sonarr series.
 
 use omni_http::SideEffectMode;
 use serde::Deserialize;

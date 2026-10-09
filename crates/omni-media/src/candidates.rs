@@ -1,4 +1,4 @@
-//! Candidate pool assembly (`src/recommendations/candidates.ts`).
+//! Candidate pool assembly.
 
 use std::collections::HashSet;
 

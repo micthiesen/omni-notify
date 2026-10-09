@@ -1,5 +1,4 @@
-//! Podcast picks (`pages/PodcastsPage.tsx`) and one pick's detail page
-//! (`pages/PodcastDetailPage.tsx`).
+//! Podcast picks and one pick's detail page.
 
 use std::collections::HashMap;
 

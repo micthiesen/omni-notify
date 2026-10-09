@@ -1,4 +1,4 @@
-//! Parsed message to the pipeline shape (`src/email/imap/mapMessage.ts`).
+//! Parsed message to the pipeline shape.
 //!
 //! The HTML-to-text rendering, interesting-link extraction and link metadata
 //! are owned by the email pipeline (WP02, `omni-email`), which this crate may

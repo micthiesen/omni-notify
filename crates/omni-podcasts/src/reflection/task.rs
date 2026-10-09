@@ -1,4 +1,4 @@
-//! `PodcastTasteReflection` task (`reflection/task.ts`): the weekly deep read
+//! `PodcastTasteReflection` task: the weekly deep read
 //! of the full listen history (the client caps at 180 days).
 
 use std::sync::{Arc, Mutex};

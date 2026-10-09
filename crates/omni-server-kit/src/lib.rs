@@ -1,4 +1,4 @@
-//! axum building blocks shared by every router (ARCHITECTURE.md section 3.9).
+//! axum building blocks shared by every router.
 
 use std::convert::Infallible;
 use std::panic::AssertUnwindSafe;

@@ -1,4 +1,4 @@
-//! Language models, tools and cost accounting (ARCHITECTURE.md section 3.8).
+//! Language models, tools and cost accounting.
 //!
 //! Ports `src/ai/registry.ts` (model resolution, the five-minute per-call timeout and
 //! per-call cost recording), the AI SDK `generateText` behaviour the TS code relies on

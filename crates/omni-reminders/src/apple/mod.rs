@@ -1,4 +1,4 @@
-//! Apple authentication and bounded CloudKit transport (`src/reminders/apple.ts`).
+//! Apple authentication and bounded CloudKit transport.
 //!
 //! Adapted from ticaki/ioBroker.icloud v2.1.2 (MIT, Copyright (c) 2026 ticaki
 //! <github@renopoint.de>; notice in docs/licenses/ioBroker.icloud-MIT.txt). The

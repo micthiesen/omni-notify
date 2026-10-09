@@ -1,4 +1,4 @@
-//! Shared recommendation types (`src/recommendations/types.ts`).
+//! Shared recommendation types.
 
 use serde::{Deserialize, Serialize};
 

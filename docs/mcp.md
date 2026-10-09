@@ -322,14 +322,18 @@ machine-readable contract is [`docs/mcp-policy.json`](mcp-policy.json). Each
 entry contains the actual annotations, side effects, cost characteristics, and
 one recommended Executor policy: `allow`, `require_approval`, or `block`.
 
-Regenerate the inventory after changing registered tools:
+Tool metadata (names, descriptions, input schemas, annotations and policy) is
+committed in `crates/omni-mcp-kit/golden/` (`tools-list.json`,
+`mcp-policy.json`, `handshake.json`) and embedded at build time. Edit those files
+deliberately when a tool's public contract changes, then regenerate the inventory:
 
 ```bash
-pnpm mcp:policy
+cargo xtask mcp-policy
 ```
 
-Tests compare the committed inventory with the definitions registered by the
-server, so policy drift fails the suite.
+`cargo xtask mcp-policy --check` and `crates/omni-mcp/tests/policy.rs` compare
+the committed inventory with the definitions registered by the server, so policy
+drift fails the suite.
 
 ## Deployment boundary
 

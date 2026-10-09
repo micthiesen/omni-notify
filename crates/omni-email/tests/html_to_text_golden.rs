@@ -1,6 +1,5 @@
-//! `html_to_text` against html-to-text 10 with the TS options
-//! (`tests/golden/html_to_text.json`, regenerate with
-//! `node crates/omni-email/scripts/golden-html-to-text.mjs`).
+//! `html_to_text` against html-to-text 10 with the former TS options
+//! (committed `tests/golden/html_to_text.json`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_email::html_to_text::html_to_text;

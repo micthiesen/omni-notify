@@ -1,5 +1,5 @@
-//! The relational `pets` and `pet_weight_history` tables
-//! (`src/pet-tracker/persistence.ts`), with mitools' exact DDL.
+//! The relational `pets` and `pet_weight_history` tables,
+//! with mitools' exact DDL.
 
 use std::collections::HashMap;
 

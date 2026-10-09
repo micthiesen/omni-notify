@@ -1,4 +1,4 @@
-//! Briefing notification feed (`pages/BriefingsPage.tsx`).
+//! Briefing notification feed.
 
 use leptos::prelude::*;
 use omni_api::briefings::BriefingSummary;

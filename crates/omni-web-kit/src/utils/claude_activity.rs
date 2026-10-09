@@ -1,5 +1,4 @@
-//! Grouping and summaries of `claude_*` MCP calls
-//! (`frontend/src/utils/claudeActivity.ts`).
+//! Grouping and summaries of `claude_*` MCP calls.
 
 use std::collections::HashMap;
 

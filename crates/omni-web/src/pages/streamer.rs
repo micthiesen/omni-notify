@@ -1,5 +1,5 @@
 //! One monitored streamer: live header, intelligence, viewer records, chart
-//! and recent sessions (`pages/StreamerPage.tsx`).
+//! and recent sessions.
 
 use std::collections::HashMap;
 

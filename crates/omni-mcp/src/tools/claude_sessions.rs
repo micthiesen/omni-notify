@@ -1,4 +1,4 @@
-//! Claude Code session tools (`src/mcp/tools/claude-sessions.ts`).
+//! Claude Code session tools.
 //!
 //! MCP results describe a generic "Claude Code host": they never name the
 //! machine or expose its home directory ([`scrub_host_details`]). Sessions run

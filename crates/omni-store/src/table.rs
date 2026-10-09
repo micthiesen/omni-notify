@@ -139,7 +139,7 @@ impl<T: TableRow> Table<T> {
     }
 }
 
-/// The pet tracker tables (`src/pet-tracker/persistence.ts`), with the DDL
+/// The pet tracker tables, with the DDL
 /// mitools `Table.make` generates for them.
 pub mod pets {
     use super::{Deserialize, Row, Serialize, SqlValue, TableRow};

@@ -1,6 +1,6 @@
 //! mailparser parity corpus: every `tests/golden/mime/*.eml` is parsed with
-//! the Rust parser and compared with the JSON the TS reference produced
-//! (`scripts/golden-mime.mts`: mailparser `simpleParser` + `mapParsedMessage`).
+//! the Rust parser and compared with the committed JSON the former TS reference
+//! produced (mailparser `simpleParser` plus `mapParsedMessage`).
 //!
 //! Compared: Message-ID normalization, In-Reply-To, References, subject, Date,
 //! address lists, the HTML body, the plain-text body of messages without HTML,

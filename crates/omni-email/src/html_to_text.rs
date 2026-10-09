@@ -1,4 +1,4 @@
-//! HTML bodies to plain text (`src/email/htmlToText.ts`).
+//! HTML bodies to plain text.
 //!
 //! [`html_to_text`] ports the html-to-text 10 block/inline text builder for the
 //! exact options TS uses: `wordwrap: false`, entities decoded, anchors without

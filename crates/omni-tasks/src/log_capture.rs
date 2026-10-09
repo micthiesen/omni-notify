@@ -1,4 +1,4 @@
-//! Run log capture (`src/task-runs/logCapture.ts`) as a tracing layer.
+//! Run log capture as a tracing layer.
 //!
 //! A run is a span carrying a `run_id` field ([`run_span`], [`capture_scope`]).
 //! Every event inside it, at any level and across `.instrument`ed async work,

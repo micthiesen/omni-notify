@@ -1,5 +1,5 @@
 //! One PressPods episode: player with chapter seek, transcript, chunk
-//! diagnostics, retriever attempts and costs (`pages/PodsDetailPage.tsx`).
+//! diagnostics, retriever attempts and costs.
 
 use leptos::html::Audio;
 use leptos::prelude::*;

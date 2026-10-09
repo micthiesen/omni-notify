@@ -1,4 +1,4 @@
-//! The `Recommendations` task (`src/recommendations/task.ts`).
+//! The `Recommendations` task.
 
 use std::path::PathBuf;
 use std::sync::Mutex;

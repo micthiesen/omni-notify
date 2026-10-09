@@ -1,4 +1,4 @@
-//! Shared push presentation (`src/reset-alerts/presentation.ts`).
+//! Shared push presentation.
 
 use jiff::tz::TimeZone;
 use omni_core::js::{utf16_len, utf16_slice};

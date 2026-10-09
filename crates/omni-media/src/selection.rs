@@ -1,5 +1,4 @@
-//! Research the finalists once, then pick one title or `no_add`
-//! (`src/recommendations/selection.ts`).
+//! Research the finalists once, then pick one title or `no_add`.
 
 use std::collections::HashMap;
 

@@ -1,4 +1,4 @@
-//! Missed-run recovery decisions (`src/task-runs/catchUp.ts`).
+//! Missed-run recovery decisions.
 
 use jiff::Timestamp;
 

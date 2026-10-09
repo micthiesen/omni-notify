@@ -1,7 +1,5 @@
-//! Rows written by node-cbor in the exact shape the TS code writes them
-//! (`tests/golden/ts_rows.mjs`, regenerate with
-//! `node --input-type=module < crates/omni-workspaces/tests/golden/ts_rows.mjs`
-//! from the repository root). The production copy has no actions, scopes,
+//! Rows written by node-cbor in the exact shape the former TS code wrote them
+//! (committed `tests/golden/ts_rows.json`). The production copy has no actions, scopes,
 //! papercuts or notifications yet, so these cover their decoders.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

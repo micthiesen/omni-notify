@@ -1,4 +1,4 @@
-//! Whisker sign-in through Cognito `USER_SRP_AUTH` (`src/pet-tracker/auth.ts`).
+//! Whisker sign-in through Cognito `USER_SRP_AUTH`.
 //!
 //! The ID token is cached in memory and reused until five minutes before it
 //! expires. SRP math comes from `aws-cognito-srp`; the two Cognito calls

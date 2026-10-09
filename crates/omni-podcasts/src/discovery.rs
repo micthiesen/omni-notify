@@ -1,4 +1,4 @@
-//! Tier-2 discovery (`discovery.ts`): past-week web searches, then a cheap
+//! Tier-2 discovery: past-week web searches, then a cheap
 //! model extracts a raw candidate list. Nothing here is verified; identities
 //! and release dates come later from the shows' RSS feeds.
 

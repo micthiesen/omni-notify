@@ -1,5 +1,4 @@
-//! Two-pass taste reflection with evidence guardrails
-//! (`src/recommendations/taste/reflection.ts`).
+//! Two-pass taste reflection with evidence guardrails.
 
 use std::collections::{HashMap, HashSet};
 

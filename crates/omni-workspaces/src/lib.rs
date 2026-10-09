@@ -82,7 +82,7 @@ fn managed(
     }
 }
 
-/// Data-manager rows (`src/data-manager.ts`), in its order.
+/// Data-manager rows, in its order.
 pub fn managed_entities() -> Vec<ManagedEntity> {
     let d = entities::descriptors();
     let labels: [(&str, &str, &[&str]); 8] = [

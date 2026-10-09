@@ -1,4 +1,4 @@
-//! The durable workspace notification outbox (`src/workspaces/notifications.ts`).
+//! The durable workspace notification outbox.
 //!
 //! Each provider attempt is reserved (`sending`) before Pushover is called. A
 //! row still `sending` when found again had an unacknowledged attempt and is

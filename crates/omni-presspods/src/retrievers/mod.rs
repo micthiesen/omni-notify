@@ -1,4 +1,4 @@
-//! Article retrieval (`src/press-pods/retrievers/index.ts`).
+//! Article retrieval.
 //!
 //! Every retriever runs independently (concurrency 7, 60 s each); the
 //! metadata model rates each distinct extraction once (0-10) and the best

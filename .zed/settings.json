@@ -5,45 +5,9 @@
   "ensure_final_newline_on_save": true,
   "remove_trailing_whitespace_on_save": true,
 
-  "code_actions_on_format": {
-    "source.fixAll.oxc": true
-  },
-
   "languages": {
-    "TypeScript": {
-      "formatter": {
-        "language_server": {
-          "name": "oxfmt"
-        }
-      }
-    },
-    "TSX": {
-      "formatter": {
-        "language_server": {
-          "name": "oxfmt"
-        }
-      }
-    },
-    "JavaScript": {
-      "formatter": {
-        "language_server": {
-          "name": "oxfmt"
-        }
-      }
-    },
-    "JSON": {
-      "formatter": {
-        "language_server": {
-          "name": "oxfmt"
-        }
-      }
-    },
-    "JSONC": {
-      "formatter": {
-        "language_server": {
-          "name": "oxfmt"
-        }
-      }
+    "Rust": {
+      "tab_size": 4
     },
     "Markdown": {
       "format_on_save": "off"

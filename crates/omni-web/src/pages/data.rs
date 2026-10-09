@@ -1,4 +1,4 @@
-//! Browse and delete stored entity rows (`pages/DataPage.tsx`).
+//! Browse and delete stored entity rows.
 
 use std::collections::HashMap;
 

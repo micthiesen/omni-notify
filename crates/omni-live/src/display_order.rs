@@ -1,4 +1,4 @@
-//! One ordering primitive for every server-produced live list (`displayOrder.ts`).
+//! One ordering primitive for every server-produced live list.
 
 use std::cmp::Ordering;
 

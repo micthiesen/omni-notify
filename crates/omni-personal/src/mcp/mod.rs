@@ -1,4 +1,4 @@
-//! MCP tools owned by this package (`src/mcp/tools/{personal,printer,browser-history}.ts`),
+//! MCP tools owned by this package,
 //! in the TS registration order. Metadata comes from the golden tool list.
 
 pub mod browser_history;

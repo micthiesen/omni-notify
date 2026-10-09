@@ -1,4 +1,4 @@
-//! Podcast RSS reading (`src/podcast-recs/rss.ts`).
+//! Podcast RSS reading.
 //!
 //! The TS version used linkedom's forgiving XML DOM; this one walks quick-xml
 //! events leniently (stray `&`/`<` escaped first as literal text, mismatched

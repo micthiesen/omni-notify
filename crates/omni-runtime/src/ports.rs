@@ -26,7 +26,7 @@ pub enum PortError {
     Failed { message: String, transient: bool },
 }
 
-/// `EmailSearchOptions` (`src/email/types.ts`).
+/// `EmailSearchOptions`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EmailSearch {

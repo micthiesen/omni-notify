@@ -1,4 +1,4 @@
-//! Scoped Arr repairs for Observer issues (`src/observer-repair/arr.ts`).
+//! Scoped Arr repairs for Observer issues.
 //!
 //! Identifiers come from Arr by exact TMDB/TVDB identity, never from model
 //! output or display names. A plan preserves file -> import -> grab provenance

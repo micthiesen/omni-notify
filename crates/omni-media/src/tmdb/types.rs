@@ -1,4 +1,4 @@
-//! TMDB payload schemas and normalization (`src/recommendations/tmdb/types.ts`).
+//! TMDB payload schemas and normalization.
 //!
 //! Field rules mirror the zod schemas: unknown keys are ignored, `.optional()`
 //! accepts an absent key but not `null`, `.nullable()` accepts `null`, and

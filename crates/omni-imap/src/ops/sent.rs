@@ -1,4 +1,4 @@
-//! Private Sent copies (`src/email/imap/sent.ts`): discover the uniquely
+//! Private Sent copies: discover the uniquely
 //! designated `\Sent` mailbox, reconcile by exact Message-ID and semantic MIME,
 //! APPEND the unchanged original MIME with its original INTERNALDATE only after
 //! a durable caller claim, and verify the copy. An uncertain APPEND is only

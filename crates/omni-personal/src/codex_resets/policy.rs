@@ -1,4 +1,4 @@
-//! Codex alert selection (`src/codex-resets/policy.ts`). The feed supplies
+//! Codex alert selection. The feed supplies
 //! classification; history supplies type and reconciles old hints. An elapsed
 //! announcement deadline never constitutes evidence of a landed reset.
 

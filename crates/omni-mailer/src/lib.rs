@@ -1,4 +1,4 @@
-//! Outgoing mail (`src/emails/*`, ARCHITECTURE.md section 3.7).
+//! Outgoing mail.
 //!
 //! Every message is sent as [`OUTGOING_EMAIL_FROM`]; SMTP authentication
 //! identities stay separate. Submission never reports success unless every

@@ -1,4 +1,4 @@
-//! Path matching in the TypeScript app's precedence (`App.tsx`).
+//! Path matching in the TypeScript app's precedence.
 
 use omni_web_pages::FeedbackKind;
 

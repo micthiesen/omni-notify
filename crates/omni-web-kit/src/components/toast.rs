@@ -1,4 +1,4 @@
-//! Transient status toast (`components/Toast.tsx`).
+//! Transient status toast.
 
 use std::time::Duration;
 

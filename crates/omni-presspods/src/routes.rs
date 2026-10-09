@@ -1,4 +1,4 @@
-//! The PressPods HTTP surface (`src/press-pods/routes.ts`).
+//! The PressPods HTTP surface.
 //!
 //! `/pods/*` is exposed publicly through the reverse proxy for the iOS
 //! Shortcut and podcast clients: submissions and the feed require the auth

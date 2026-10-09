@@ -44,7 +44,7 @@ omni-parcel = { path = "crates/omni-parcel" }
 omni-imap = { path = "crates/omni-imap" }
 ego-tree = "=0.11.0"  # WP02: scraper DOM traversal for html_to_text
 
-# Exact pins (ARCHITECTURE.md section 2). Every version was published on or
+# Exact pins (see AGENTS.md, Rust conventions). Every version was published on or
 # before 2026-09-25 and resolves together (checked with cargo generate-lockfile).
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "process", "fs", "net", "io-util"] }
 tokio-util = { version = "=0.7.19", features = ["rt", "io"] }

@@ -1,4 +1,4 @@
-//! The seven podcast MCP tools (`src/mcp/tools/podcasts.ts`): golden metadata,
+//! The seven podcast MCP tools: golden metadata,
 //! input defaults/trimming, typed failures and golden output schemas.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

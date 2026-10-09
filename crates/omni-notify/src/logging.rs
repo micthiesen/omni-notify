@@ -1,4 +1,4 @@
-//! The tracing subscriber stack (ARCHITECTURE.md section 5, "Logging").
+//! The tracing subscriber stack (see AGENTS.md, Rust conventions, "Logging").
 //!
 //! Every layer filters on its own (`Layer::with_filter` semantics, implemented
 //! inside each layer), never globally: the run-log layer must keep DEBUG lines

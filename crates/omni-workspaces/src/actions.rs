@@ -1,4 +1,4 @@
-//! Approving and rejecting workspace proposals (`src/workspaces/actions.ts`).
+//! Approving and rejecting workspace proposals.
 //!
 //! Nothing a workspace agent proposes takes effect until the user approves it
 //! here (REST route or Executor-approved MCP tool). Approval and rejection of

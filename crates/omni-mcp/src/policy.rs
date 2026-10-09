@@ -1,4 +1,4 @@
-//! The Executor policy inventory (`src/mcp/policy.ts`): every registered tool
+//! The Executor policy inventory: every registered tool
 //! sorted by `localeCompare` on its name, serialized as `docs/mcp-policy.json`
 //! (`JSON.stringify(inventory, null, 2)` plus a trailing newline).
 
@@ -27,7 +27,7 @@ pub fn build_policy_inventory(tools: &[McpTool]) -> Value {
         .collect();
     json!({
         "schemaVersion": MCP_POLICY_SCHEMA_VERSION,
-        "generatedFrom": "src/mcp tool definitions",
+        "generatedFrom": "omni-mcp tool definitions",
         "tools": tools,
     })
 }

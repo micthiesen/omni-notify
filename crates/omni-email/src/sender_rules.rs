@@ -1,4 +1,4 @@
-//! User sender allow/block rules (`src/email/senderRules.ts`). User rules beat
+//! User sender allow/block rules. User rules beat
 //! the built-in lists in both directions; among matching rules block beats allow.
 
 use std::collections::BTreeSet;

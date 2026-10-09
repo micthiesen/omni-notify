@@ -1,4 +1,4 @@
-//! Durable archive receipts (`src/email/archive/persistence.ts`).
+//! Durable archive receipts.
 //!
 //! Raw keys (not entities): `email-archive:action:<sha256hex(idempotencyKey)>`
 //! (entity column `email-archive-action`), the latest-reservation marker

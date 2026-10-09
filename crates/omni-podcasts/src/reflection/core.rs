@@ -1,4 +1,4 @@
-//! Podcast taste reflection (`reflection/reflection.ts`): append current
+//! Podcast taste reflection: append current
 //! observations, checkpoint on their fingerprint (no model call when it is
 //! unchanged), then a draft and a skeptical revision. Claims citing missing
 //! or inadequate evidence are removed before persistence.

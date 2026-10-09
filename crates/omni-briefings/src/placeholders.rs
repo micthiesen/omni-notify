@@ -1,4 +1,4 @@
-//! Prompt placeholders (`src/briefing-agent/placeholders.ts`): `{{history:N}}`,
+//! Prompt placeholders: `{{history:N}}`,
 //! `{{date}}` and `{{time}}`, resolved in that order.
 
 use jiff::tz::TimeZone;

@@ -1,4 +1,4 @@
-//! Wire DTOs for every REST/SSE contract (ARCHITECTURE.md section 3.12).
+//! Wire DTOs for every REST/SSE contract.
 //!
 //! `serde` + `serde_json` only; must compile for `wasm32-unknown-unknown`.
 //! Serde rules: `rename_all = "camelCase"`; TS `T | null` is `Option<T>` and is

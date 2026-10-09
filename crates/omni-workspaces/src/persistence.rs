@@ -1,4 +1,4 @@
-//! Workspace repository (`src/workspaces/persistence.ts`). Every function is
+//! Workspace repository. Every function is
 //! one store job; callers wrap failures with the operation name they report.
 
 use std::cmp::Ordering;

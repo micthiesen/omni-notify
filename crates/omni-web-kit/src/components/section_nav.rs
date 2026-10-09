@@ -1,5 +1,4 @@
-//! Sub-navigation for the Listen and Research sections
-//! (`components/SectionNav.tsx`).
+//! Sub-navigation for the Listen and Research sections.
 
 use leptos::prelude::*;
 

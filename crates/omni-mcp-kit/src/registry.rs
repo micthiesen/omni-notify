@@ -42,7 +42,7 @@ impl From<ToolMetaError> for RegistryError {
     }
 }
 
-/// Every registered tool, listed in golden (`src/mcp/tools/index.ts`) order.
+/// Every registered tool, listed in golden order.
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: Arc<Vec<McpTool>>,

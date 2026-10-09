@@ -1,4 +1,4 @@
-//! Task-run log modal (`components/LogViewer.tsx`). Finished runs load their
+//! Task-run log modal. Finished runs load their
 //! persisted logs once; a running task tails the per-run SSE stream until its
 //! `done` frame. Reconnects are safe: `init` replaces the line state.
 

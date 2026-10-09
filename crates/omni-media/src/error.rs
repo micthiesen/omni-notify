@@ -1,4 +1,4 @@
-//! Typed recommendation failures (`src/recommendations/effect.ts`).
+//! Typed recommendation failures.
 
 use omni_store::StoreError;
 

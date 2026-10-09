@@ -1,4 +1,4 @@
-//! Executor delegated-owner revalidation (`src/mcp/events/executorAuth.ts`).
+//! Executor delegated-owner revalidation.
 //!
 //! Resolves the expiry of an owner's delegated access token through the fixed
 //! internal `OMNI_EVENTS_EXECUTOR_AUTH_URL`, or `None` when it does not validate

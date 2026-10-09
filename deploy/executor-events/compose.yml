@@ -19,8 +19,8 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: 256m
     pids_limit: 128
-    # The image's HEALTHCHECK probes /health (the Node image with node, the Rust
-    # image with `executor-events-adapter healthcheck`), so no override here.
+    # The image's HEALTHCHECK probes /health with
+    # `executor-events-adapter healthcheck`, so no override here.
 networks:
   integrations:
     external: true

@@ -1,4 +1,4 @@
-//! Ops routes owned by the binary (`src/server.ts`): health, tasks, task runs,
+//! Ops routes owned by the binary: health, tasks, task runs,
 //! run logs and their SSE tail, the dashboard snapshot and its SSE hub,
 //! costs, and the data manager.
 

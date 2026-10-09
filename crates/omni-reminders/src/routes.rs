@@ -1,4 +1,4 @@
-//! Public status and challenge controls (`src/reminders/routes.ts`); no account data.
+//! Public status and challenge controls; no account data.
 //!
 //! Every `/api/reminders/*` response is `no-store`. Requests must carry the exact
 //! configured public host; POSTs need the exact configured Origin, a same-origin

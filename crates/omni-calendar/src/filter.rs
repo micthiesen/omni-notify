@@ -1,4 +1,4 @@
-//! Candidate filter (`src/calendar-events/filter/keywords.ts`): user block,
+//! Candidate filter: user block,
 //! user allow, static blacklist, static auto-pass, then shared LLM triage, with
 //! a keyword fallback only when triage is unavailable.
 

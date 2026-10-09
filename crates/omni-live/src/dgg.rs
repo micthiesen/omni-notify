@@ -1,4 +1,4 @@
-//! Destiny.gg discovery (`dgg.ts`): the live websocket snapshot and its
+//! Destiny.gg discovery: the live websocket snapshot and its
 //! resolution into configured-streamer enrichment plus transient discoveries.
 
 use std::collections::{HashMap, HashSet};

@@ -1,4 +1,4 @@
-//! Taste evidence and profile entities (`src/recommendations/taste/types.ts`).
+//! Taste evidence and profile entities.
 
 use omni_api::media::{
     CommitmentPreferences, MediaType, RecommendationFeedback, RecommendationStatus,

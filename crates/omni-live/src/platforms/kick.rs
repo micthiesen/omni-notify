@@ -1,5 +1,4 @@
-//! Kick live status over the public API with client-credentials OAuth
-//! (`platforms/kick.ts`).
+//! Kick live status over the public API with client-credentials OAuth.
 
 use std::sync::Arc;
 

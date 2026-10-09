@@ -1,4 +1,4 @@
-//! Arr recovery domain types (`src/arr-recovery/types.ts`).
+//! Arr recovery domain types.
 
 use std::future::Future;
 

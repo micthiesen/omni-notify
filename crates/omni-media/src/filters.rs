@@ -1,5 +1,4 @@
-//! Deterministic hard filters applied before any model sees a candidate
-//! (`src/recommendations/filters.ts`).
+//! Deterministic hard filters applied before any model sees a candidate.
 
 use std::collections::HashSet;
 

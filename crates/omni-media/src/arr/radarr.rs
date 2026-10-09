@@ -1,4 +1,4 @@
-//! Radarr movies (`src/recommendations/arr/radarr.ts`).
+//! Radarr movies.
 
 use omni_http::SideEffectMode;
 use serde::Deserialize;

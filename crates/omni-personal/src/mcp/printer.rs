@@ -1,4 +1,4 @@
-//! `get_printer_status` and `print_document` (`src/mcp/tools/printer.ts`).
+//! `get_printer_status` and `print_document`.
 
 use std::sync::Arc;
 

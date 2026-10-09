@@ -1,4 +1,4 @@
-//! The `PressPods` task (`src/press-pods/task.ts`): drains the durable job
+//! The `PressPods` task: drains the durable job
 //! queue. Submissions kick a manual run immediately; the five-minute sweep
 //! picks up backoff retries and jobs orphaned by a crash.
 

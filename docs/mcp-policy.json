@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedFrom": "src/mcp tool definitions",
+  "generatedFrom": "omni-mcp tool definitions",
   "tools": [
     {
       "name": "briefings_list",

@@ -1,4 +1,4 @@
-//! The shared submission path (`src/press-pods/submit.ts`) for the public
+//! The shared submission path for the public
 //! endpoint, the web UI and MCP.
 //!
 //! Resubmitting a URL is a retry, not a new entry: an in-flight job for the

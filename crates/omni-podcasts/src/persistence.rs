@@ -1,5 +1,5 @@
 //! Recommendation attempts, exclusions, feedback, and the voice rotation
-//! cursor (`src/podcast-recs/persistence.ts`).
+//! cursor.
 
 use std::collections::{HashMap, HashSet};
 

@@ -1,5 +1,4 @@
-//! Standard Webhooks delivery and callback verification
-//! (`src/mcp/events/webhook.ts`).
+//! Standard Webhooks delivery and callback verification.
 //!
 //! Callbacks must be bounded HTTPS URLs without credentials or fragments whose
 //! DNS answers are all public (checked again at connection time by the public

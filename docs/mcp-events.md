@@ -1,8 +1,9 @@
 # MCP Events through Executor
 
 Omni implements MCP Events at its authenticated `/mcp` endpoint. The separate
-[`executor-events-adapter`](../packages/executor-events-adapter/README.md) package
-adds event discovery to the existing Executor connection while retaining its
+`executor-events-adapter` sidecar (the Rust crate
+[`omni-events-adapter`](../crates/omni-events-adapter/src/lib.rs), deployed as described in
+[`deploy/executor-events/`](../deploy/executor-events/README.md)) adds event discovery to the existing Executor connection while retaining its
 OAuth authority and tool catalog. It does not modify third-party Executor core.
 
 ## Verified protocol and deployment baseline
@@ -22,7 +23,8 @@ also serves `/<org>/mcp` and `/mcp/toolkits/<slug>`; the route does not cover
 those paths, so a ChatGPT connection must use exactly `/mcp` with Executor OAuth
 (the adapter does not accept Executor API keys) to discover events.
 
-Omni uses MCP SDK 2.0. The adapter translates modern MCP requests to the deployed
+Omni serves both the legacy `2025-11-25` era and the modern `2026-07-28` era
+(`crates/omni-mcp/src/rpc.rs`). The adapter translates modern MCP requests to the deployed
 legacy Executor host and forwards authenticated event RPC to Omni. Neither
 Executor search/invoke passthrough nor ordinary SSE notifications implement
 MCP Events. The required modern protocol is `2026-07-28`.
@@ -36,7 +38,7 @@ References:
 
 ## Events
 
-`events/list` serves the catalog in `src/mcp/events/catalog.ts`. Each event
+`events/list` serves the catalog in `crates/omni-mcp/src/events/catalog.rs`. Each event
 declares its arguments, payload schema and the rule that matches a payload to a
 subscription. All events share one durable outbox, signing, authorization and
 retry path. Neither event has a protocol replay cursor; subscription responses

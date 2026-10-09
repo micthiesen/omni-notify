@@ -1,4 +1,4 @@
-//! List rename and recurrence-rule operations (`src/reminders/cloudkitExtras.ts`).
+//! List rename and recurrence-rule operations.
 //!
 //! All writes use change-tag CAS, atomic multi-record modify, exact acknowledgment of
 //! every expected record, and a fresh read before success. One rule per reminder;

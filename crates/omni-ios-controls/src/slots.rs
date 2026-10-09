@@ -1,4 +1,4 @@
-//! The four live control slots (`liveSlots.ts`): primary first, then
+//! The four live control slots: primary first, then
 //! hottest, ties in channels.json order.
 
 use omni_api::ios::{IOS_CONTROL_SLOT_COUNT, LiveSlotState};

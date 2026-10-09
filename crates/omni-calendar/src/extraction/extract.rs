@@ -1,4 +1,4 @@
-//! Event extraction with the calendar model (`extractEvents.ts`).
+//! Event extraction with the calendar model.
 
 use base64::Engine as _;
 use omni_ai::{

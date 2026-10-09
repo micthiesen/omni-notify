@@ -1,5 +1,5 @@
 //! A `briefing-history` row whose cost is `null` (an unpriced model), written by
-//! node-cbor (`crates/omni-workspaces/tests/golden/ts_rows.mjs`, copied to `tests/golden/ts_rows.json`): `null` must
+//! node-cbor (committed `tests/golden/ts_rows.json`): `null` must
 //! survive a read-modify-write instead of collapsing to absent.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

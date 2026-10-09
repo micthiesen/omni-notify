@@ -1,4 +1,4 @@
-//! The live Parcel carrier list (`src/parcel-tracker/carriers/carrierMap.ts`):
+//! The live Parcel carrier list:
 //! a 24-hour in-memory cache refreshed under a mutex (concurrent first
 //! refreshes coalesce), bounded reads, and a stale-cache fallback when a
 //! refresh fails.

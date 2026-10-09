@@ -1,4 +1,4 @@
-//! Owner-scoped async work (`frontend/src/effect.ts`).
+//! Owner-scoped async work.
 //!
 //! [`spawn_scoped`] runs a future on the browser's microtask executor and
 //! aborts it when the current reactive owner (component or effect run) is

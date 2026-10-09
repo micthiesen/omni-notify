@@ -1,4 +1,4 @@
-//! MCP activity (WP12): `GET /api/mcp/activity` (`src/mcp/activityRoutes.ts`).
+//! MCP activity (WP12): `GET /api/mcp/activity`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

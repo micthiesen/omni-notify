@@ -1,4 +1,4 @@
-//! Which notification kinds may fire for a streamer (`notificationPolicy.ts`).
+//! Which notification kinds may fire for a streamer.
 
 use omni_api::streamers::StreamerTier;
 

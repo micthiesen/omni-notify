@@ -1,4 +1,4 @@
-//! Pure IMAP folder-sync planning (`src/email/imap/sync.ts`). New-mail
+//! Pure IMAP folder-sync planning. New-mail
 //! detection is UID based: everything at or above the cursor's uidNext is new.
 //! CONDSTORE/QRESYNC are deliberately unused (iCloud rejects parameterized
 //! `SELECT ... (CONDSTORE)`).

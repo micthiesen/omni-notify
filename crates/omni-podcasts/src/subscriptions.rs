@@ -1,5 +1,5 @@
-//! Subscribed shows, read exclusively from the podcast account
-//! (`subscriptions.ts`). A configured account whose read fails aborts the
+//! Subscribed shows, read exclusively from the podcast account.
+//! A configured account whose read fails aborts the
 //! run (three-state rule); no account means empty with a warning.
 
 use std::collections::HashSet;

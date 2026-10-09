@@ -1,5 +1,4 @@
-//! What the parcel and calendar pipelines did with each email
-//! (`pages/EmailActivityPage.tsx`).
+//! What the parcel and calendar pipelines did with each email.
 
 use std::collections::HashMap;
 

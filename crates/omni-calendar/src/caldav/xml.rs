@@ -1,4 +1,4 @@
-//! Minimal CalDAV multistatus parsing (`src/calendar-events/caldav/xml.ts`).
+//! Minimal CalDAV multistatus parsing.
 //!
 //! Regex-based on purpose, like TS: iCloud emits simple, flat PROPFIND
 //! responses whose namespace prefixes vary (`d:`, `D:`, none, `A:`, ...), so

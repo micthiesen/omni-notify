@@ -1,4 +1,4 @@
-//! `LiveCheckTask` (`task.ts`): one tick polls every due streamer, decides
+//! `LiveCheckTask`: one tick polls every due streamer, decides
 //! aggregate transitions and notifies only on aggregate edges.
 //!
 //! Ordering guarantees carried from TS:

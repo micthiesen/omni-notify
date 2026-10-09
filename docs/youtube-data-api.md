@@ -1,6 +1,6 @@
 # YouTube Data API for live checks: evaluated and rejected (2026-08)
 
-Question: could `src/live-check/platforms/youtube.ts` switch from HTML scraping to the
+Question: could the YouTube live check (now `crates/omni-live/src/platforms/youtube.rs`) switch from HTML scraping to the
 official [YouTube Data API v3](https://developers.google.com/youtube/v3/getting-started)?
 
 **Answer: no.** The API cannot support 20-second polling (`LiveCheckTask` runs
@@ -12,7 +12,7 @@ official [YouTube Data API v3](https://developers.google.com/youtube/v3/getting-
    channel is live requires `search.list?eventType=live&channelId=X`.
    - `channels.list` has no live-status field.
    - `videos.list` exposes live data (`snippet.liveBroadcastContent`,
-     `liveStreamingDetails.concurrentViewers`) only for a **known video ID** — and
+     `liveStreamingDetails.concurrentViewers`) only for a **known video ID**, and
      discovering the live video ID is the whole problem.
    - The Live Streaming API (`liveBroadcasts.list`) only covers your *own*
      authorized channel.
@@ -34,13 +34,13 @@ official [YouTube Data API v3](https://developers.google.com/youtube/v3/getting-
    detection even if quota were unlimited.
 
 5. Quota increases require the YouTube API Services compliance audit, oriented at
-   production applications — not realistically granted for a personal notifier.
+   production applications, not realistically granted for a personal notifier.
    (Getting a default-quota API key itself is trivial; that's not the blocker.)
 
 ## Hybrid considered and rejected
 
 Scrape for liveness + video ID, then one batched `videos.list` call per tick for
-`concurrentViewers` (~4,320 units/day regardless of channel count — fits). Rejected
+`concurrentViewers` (~4,320 units/day regardless of channel count, which fits). Rejected
 because the scraper already extracts the viewer count from the same HTML
 (`extractViewerCount`), so the API would add a key, a quota, and a dependency while
 providing nothing new.

@@ -1,4 +1,4 @@
-//! Observer (Overseerr) issue API client (`src/observer/client.ts`).
+//! Observer (Overseerr) issue API client.
 
 use std::time::Duration;
 

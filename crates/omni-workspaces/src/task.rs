@@ -1,4 +1,4 @@
-//! `WorkspaceTask` (`src/workspaces/task.ts`): scheduled refreshes of active
+//! `WorkspaceTask`: scheduled refreshes of active
 //! subjects, and manual runs for user messages and scoped emails.
 
 use std::sync::Mutex;

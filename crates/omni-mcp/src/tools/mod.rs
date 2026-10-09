@@ -1,5 +1,5 @@
-//! The MCP tools this package owns (`src/mcp/tools/{system,events,claude-sessions}.ts`)
-//! and the full-surface ordering check (`src/mcp/tools/index.ts`).
+//! The MCP tools this package owns
+//! and the full-surface ordering check.
 
 pub mod claude_sessions;
 pub mod events;

@@ -1,4 +1,4 @@
-//! URL to finished episode (`src/press-pods/pipeline.ts`): retrieval, rating,
+//! URL to finished episode: retrieval, rating,
 //! narration cleaning, TTS, audio finalization, the episode row, then a
 //! best-effort notification. Errors propagate to the task, which classifies
 //! them and requeues or fails the job.

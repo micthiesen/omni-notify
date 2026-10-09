@@ -1,5 +1,5 @@
 //! Email processing logs plus actions: reprocess, feedback, block sender and
-//! per-item parcel "forget" (`components/EmailLogModal.tsx`).
+//! per-item parcel "forget".
 
 use std::collections::HashSet;
 

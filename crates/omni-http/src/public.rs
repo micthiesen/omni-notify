@@ -1,4 +1,4 @@
-//! Public-internet requests guarded against SSRF (`src/effect/publicHttp.ts`).
+//! Public-internet requests guarded against SSRF.
 //!
 //! Every request URL and redirect hop passes [`assert_public_http_url_syntax`];
 //! every DNS lookup of the transport must answer only public addresses (a

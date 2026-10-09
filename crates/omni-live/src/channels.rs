@@ -1,5 +1,4 @@
-//! `channels.json`: the single source of truth for tracked streamers
-//! (`channelsConfig.ts`).
+//! `channels.json`: the single source of truth for tracked streamers.
 //!
 //! A missing file means "no streamers configured"; every other failure (bad
 //! JSON, an unknown key, an empty username, a contradictory tier) is an error

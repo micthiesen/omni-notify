@@ -1,4 +1,4 @@
-//! Client-side file downloads (`frontend/src/utils/download.ts`).
+//! Client-side file downloads.
 
 /// Trigger a download of in-memory `content`; the object URL is revoked after
 /// ten seconds.

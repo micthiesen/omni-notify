@@ -1,4 +1,4 @@
-//! Plex-backed view of the local media library (`src/recommendations/mediaLibrary.ts`).
+//! Plex-backed view of the local media library.
 //!
 //! An unavailable Plex instance is deliberately different from an empty
 //! library: callers must not make recommendation decisions from missing state.

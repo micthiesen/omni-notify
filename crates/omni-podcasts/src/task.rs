@@ -1,4 +1,4 @@
-//! `PodcastRecs` task (`task.ts`): scheduled runs target 3 topic picks;
+//! `PodcastRecs` task: scheduled runs target 3 topic picks;
 //! manual runs take `{maxRecommendations: 1..=5}`.
 
 use std::path::PathBuf;

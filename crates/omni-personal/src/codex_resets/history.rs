@@ -1,4 +1,4 @@
-//! Completed-history fallback (`src/codex-resets/history.ts`): report a
+//! Completed-history fallback: report a
 //! completed reset while the alert feed is delayed. Feed entries remain
 //! authoritative when they already cover a post.
 

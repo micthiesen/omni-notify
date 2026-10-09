@@ -1,4 +1,4 @@
-//! `StoreMaintenance` (new in Rust, ARCHITECTURE.md 4.1): hourly at minute 17,
+//! `StoreMaintenance` (new in Rust): hourly at minute 17,
 //! deletes up to 1000 expired docstore rows. Reads already hide expired rows,
 //! so this is invisible to TS. It is a hidden service, not a registry task: it
 //! never appears in `/api/tasks` or run history.

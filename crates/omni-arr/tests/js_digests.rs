@@ -1,6 +1,6 @@
 //! JS-derived identities match values computed by the TypeScript code
-//! (`observationFingerprint`, `issueRevision`) via tsx on 2026-10-09, so
-//! persisted fingerprints and revisions stay comparable across a rollback.
+//! (`observationFingerprint`, `issueRevision`) on 2026-10-09, so persisted
+//! fingerprints and revisions written before the Rust port stay comparable.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_arr::arr_recovery::QueueItem;

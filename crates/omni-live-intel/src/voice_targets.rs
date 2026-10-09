@@ -1,4 +1,4 @@
-//! Voice-sampling target selection (`voiceTargets.ts`).
+//! Voice-sampling target selection.
 
 use std::cmp::Ordering;
 

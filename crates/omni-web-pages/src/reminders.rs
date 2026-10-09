@@ -1,4 +1,4 @@
-//! iCloud Reminders administration (`pages/RemindersPage.tsx`).
+//! iCloud Reminders administration.
 //!
 //! The page talks only to the fixed same-origin `/api/reminders/*` routes,
 //! without credentials or caching and refusing redirects. Requests go through

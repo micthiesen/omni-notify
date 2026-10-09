@@ -1,4 +1,4 @@
-//! Typed environment configuration (`src/utils/config.ts`), owned by WP00.
+//! Typed environment configuration, owned by WP00.
 //!
 //! `Config` has one typed field per variable. Derived fallbacks (Pushover
 //! channel tokens, `EMAIL_SELF_ADDRESS`) are methods so the raw value stays
@@ -14,10 +14,10 @@ use std::sync::LazyLock;
 use omni_core::LogLevel;
 use serde::{Deserialize, Serialize};
 
-/// The only accepted non-empty `EMAIL_FROM` (`src/emails/identity.ts`).
+/// The only accepted non-empty `EMAIL_FROM`.
 pub const OUTGOING_EMAIL_FROM: &str = "michael@thiesen.dev";
 
-/// Minimum length of MCP / device-link bearer tokens (`src/mcp/auth.ts`).
+/// Minimum length of MCP / device-link bearer tokens.
 pub const MIN_MCP_TOKEN_LENGTH: usize = 32;
 const MIN_DISTINCT_TOKEN_CHARS: usize = 12;
 
@@ -54,7 +54,7 @@ pub enum ModelRole {
 }
 
 impl ModelRole {
-    /// Code default (`src/ai/registry.ts`). Production deploys use these.
+    /// Code default. Production deploys use these.
     pub fn default_model(self) -> &'static str {
         match self {
             ModelRole::Workspace
@@ -977,7 +977,7 @@ const LEGACY_EMAIL_ENV_VARS: &[&str] = &[
     "FASTMAIL_CALENDAR_ID",
 ];
 
-/// Boot warnings for variables that are set but no longer read (`src/index.ts`).
+/// Boot warnings for variables that are set but no longer read.
 pub fn legacy_warnings(vars: &BTreeMap<String, String>) -> Vec<String> {
     let is_set = |key: &str| vars.get(key).is_some_and(|value| !value.is_empty());
     let channel = LEGACY_CHANNEL_ENV_VARS

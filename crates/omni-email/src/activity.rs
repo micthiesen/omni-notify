@@ -1,4 +1,4 @@
-//! Per-email pipeline outcomes (`src/email/activity.ts`): one `email-activity`
+//! Per-email pipeline outcomes: one `email-activity`
 //! row per pipeline and email, overwritten on reprocess and pruned to the
 //! newest [`KEEP_PER_PIPELINE`] rows per pipeline together with their logs.
 

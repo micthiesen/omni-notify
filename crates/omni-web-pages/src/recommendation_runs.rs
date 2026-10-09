@@ -1,4 +1,4 @@
-//! Recent runs of a recommendation task (`components/RecommendationRuns.tsx`).
+//! Recent runs of a recommendation task.
 //!
 //! Shared by the media and podcast pages. Refetches whenever `latest_run_id`
 //! changes so a fresh run appears without a manual refresh.

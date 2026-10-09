@@ -1,5 +1,5 @@
-//! What the intelligence pipeline is doing, why, and what it cost
-//! (`pages/LivestreamIntelligencePage.tsx`). Refreshes every 10 s.
+//! What the intelligence pipeline is doing, why, and what it cost.
+//! Refreshes every 10 s.
 
 use std::time::Duration;
 

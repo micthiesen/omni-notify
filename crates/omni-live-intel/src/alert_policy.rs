@@ -1,4 +1,4 @@
-//! Alert confidence floors and per-session dedup (`alertPolicy.ts`).
+//! Alert confidence floors and per-session dedup.
 
 use crate::types::{LivestreamAlertType, LivestreamIntelligenceData};
 

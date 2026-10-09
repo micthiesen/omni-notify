@@ -1,5 +1,5 @@
 //! Canonical show/episode identities and the candidate shapes that flow
-//! through the pipeline (`src/podcast-recs/types.ts`).
+//! through the pipeline.
 
 use std::sync::LazyLock;
 

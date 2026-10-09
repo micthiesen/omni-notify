@@ -1,4 +1,4 @@
-//! Sonarr/Radarr v3 API client for recovery (`src/arr-recovery/client.ts`).
+//! Sonarr/Radarr v3 API client for recovery.
 
 use std::sync::LazyLock;
 use std::time::Duration;

@@ -1,4 +1,4 @@
-//! Bridge to the user's podcast client account (`src/podcast-recs/account.ts`).
+//! Bridge to the user's podcast client account.
 //!
 //! Reads return [`FetchResult`]: an unavailable account MUST stay
 //! distinguishable from an empty list (three-state rule), so callers abort

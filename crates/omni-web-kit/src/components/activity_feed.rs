@@ -1,4 +1,4 @@
-//! Recent task runs with grouping and filters (`components/ActivityFeed.tsx`).
+//! Recent task runs with grouping and filters.
 
 use leptos::prelude::*;
 use omni_api::runs::{Run, RunStatus};

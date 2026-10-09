@@ -1,4 +1,4 @@
-//! Ranked carrier candidates (`src/parcel-tracker/carriers/candidates.ts`).
+//! Ranked carrier candidates.
 
 use std::collections::HashSet;
 

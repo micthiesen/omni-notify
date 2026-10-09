@@ -1,4 +1,4 @@
-//! MCP tool registration (ARCHITECTURE.md section 3.10).
+//! MCP tool registration.
 //!
 //! Tool metadata (name, title, description, schemas, annotations, policy) is
 //! loaded from golden JSON generated from the TS sources ([`golden`]), never

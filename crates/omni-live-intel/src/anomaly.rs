@@ -1,4 +1,4 @@
-//! Viewer-surge detection and relevance scoring (`anomaly.ts`).
+//! Viewer-surge detection and relevance scoring.
 //!
 //! A surge compares the current count against a baseline drawn from samples
 //! 5-20 minutes old. The baseline must be flat (not still climbing after

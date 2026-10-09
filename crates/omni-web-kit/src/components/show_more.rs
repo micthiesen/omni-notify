@@ -1,4 +1,4 @@
-//! Incremental list reveal (`components/ShowMore.tsx`).
+//! Incremental list reveal.
 
 use leptos::prelude::*;
 

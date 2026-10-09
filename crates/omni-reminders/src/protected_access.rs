@@ -1,4 +1,4 @@
-//! Service-independent iCloud PCS (protected data) access (`src/icloud/protectedAccess.ts`).
+//! Service-independent iCloud PCS (protected data) access.
 //!
 //! Adapted from MIT-licensed pyicloud PR 317 (b5f2e2a7f9e5cd5be7e009626c4ae021d8b2bb34,
 //! `pyicloud/base.py`); see docs/licenses/pyicloud-MIT.txt. The caller owns

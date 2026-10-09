@@ -7,7 +7,7 @@ source "$SCRIPT_DIR/common.sh"
 
 device_id="${1:-}"
 if [[ -z "$device_id" ]]; then
-  echo "Usage: pnpm ios:install -- DEVICE_IDENTIFIER" >&2
+  echo "Usage: scripts/ios-live/install.sh DEVICE_IDENTIFIER" >&2
   echo "Available devices:" >&2
   xcrun devicectl list devices >&2 || true
   exit 2

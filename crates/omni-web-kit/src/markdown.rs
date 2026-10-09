@@ -1,4 +1,4 @@
-//! Generated research rendered as safe HTML (`WorkspaceMarkdown.tsx`).
+//! Generated research rendered as safe HTML.
 //!
 //! Mirrors `react-markdown` + `remark-gfm` with `skipHtml`: raw HTML is
 //! dropped, text is escaped, link and image URLs pass `defaultUrlTransform`

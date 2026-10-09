@@ -1,5 +1,4 @@
-//! Recommendation status, watchlist and feedback labels
-//! (`frontend/src/utils/recLabels.ts`).
+//! Recommendation status, watchlist and feedback labels.
 
 use omni_api::media::{RecommendationFeedback, RecommendationStatus, WatchlistResult};
 use omni_api::podcasts::{PodcastFeedback, PodcastRecommendationStatus};

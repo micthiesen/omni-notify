@@ -1,5 +1,5 @@
-//! A small insertion-ordered cache with entry, byte and TTL bounds
-//! (`src/email/imap/readCache.ts`). Reads refresh recency.
+//! A small insertion-ordered cache with entry, byte and TTL bounds.
+//! Reads refresh recency.
 
 use indexmap::IndexMap;
 

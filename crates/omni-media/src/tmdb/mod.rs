@@ -1,4 +1,4 @@
-//! TMDB catalog client (`src/recommendations/tmdb/client.ts`).
+//! TMDB catalog client.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

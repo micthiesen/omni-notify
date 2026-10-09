@@ -1,4 +1,4 @@
-//! Cleanup of model-written summaries and topic labels (`summaryText.ts`).
+//! Cleanup of model-written summaries and topic labels.
 //!
 //! Lengths and cut points use UTF-16 code units, as JS strings do.
 

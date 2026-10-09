@@ -1,5 +1,5 @@
-//! Passive outcome labels for delivered recommendations from listen history
-//! (`outcomes.ts`). Only called when history is actually available.
+//! Passive outcome labels for delivered recommendations from listen history.
+//! Only called when history is actually available.
 
 use std::collections::HashMap;
 

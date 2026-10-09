@@ -1,4 +1,4 @@
-//! Live channel, running, failing and next-run tiles (`components/StatStrip.tsx`).
+//! Live channel, running, failing and next-run tiles.
 
 use leptos::prelude::*;
 use omni_api::runs::RunStatus;

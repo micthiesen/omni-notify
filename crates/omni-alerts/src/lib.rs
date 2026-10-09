@@ -1,4 +1,4 @@
-//! Pushover delivery and ERROR-log alerts (ARCHITECTURE.md section 3.6).
+//! Pushover delivery and ERROR-log alerts.
 //!
 //! Notification paths are throttled at exactly one layer (AGENTS.md): the
 //! [`throttle`] here applies only to ERROR-log alerts; feature notifications

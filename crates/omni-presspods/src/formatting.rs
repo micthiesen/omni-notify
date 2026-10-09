@@ -8,7 +8,7 @@
 //! prefixed `" * "` / `"1. "`, and blockquote lines prefixed `"> "` (the cleaner
 //! prompt and the RSS show notes both key off that prefix). The output is
 //! model input, so exact whitespace parity with `html-to-text` is not a goal
-//! (ARCHITECTURE.md accepts html-to-text drift for prompts).
+//! (html-to-text drift is accepted for prompts).
 
 use std::sync::LazyLock;
 
