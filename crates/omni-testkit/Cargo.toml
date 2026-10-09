@@ -1,0 +1,32 @@
+[package]
+name = "omni-testkit"
+description = "Test support: temp stores, test clock, recorders, fake models, no-network HTTP and golden helpers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+axum.workspace = true
+futures.workspace = true
+omni-ai.workspace = true
+omni-alerts.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-mailer.workspace = true
+omni-runtime.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tokio-util.workspace = true
+tower.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+wiremock.workspace = true

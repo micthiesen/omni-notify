@@ -1,0 +1,21 @@
+[package]
+name = "omni-config"
+description = "Typed environment configuration, redaction and derived defaults."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+omni-core.workspace = true
+regex.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

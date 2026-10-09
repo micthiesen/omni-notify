@@ -12,3 +12,6 @@ dist
 ios/OmniLive/Config/Local.xcconfig
 ios/OmniLive/build/
 ios/OmniLive/DerivedData/
+
+# Rust port
+/target/

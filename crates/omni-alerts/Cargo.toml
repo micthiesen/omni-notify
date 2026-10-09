@@ -1,0 +1,25 @@
+[package]
+name = "omni-alerts"
+description = "Pushover client, alert throttle and the ERROR-log alert layer with gates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+futures.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+wiremock.workspace = true

@@ -1,0 +1,146 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# `default-members = ["crates/omni-notify"]` is added by WP14 together with the
+# binary crate; Cargo rejects a default member that does not exist yet.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"          # omni-live-intel uses the safe sherpa-onnx wrapper only
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"            # allowed in tests via clippy.toml
+expect_used = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"           # logging goes through tracing; xtask opts out with #![allow]
+print_stderr = "warn"
+let_underscore_future = "deny"  # no silently dropped futures
+large_futures = "warn"
+
+[workspace.dependencies]
+# Internal crates (foundation, WP00). Subsystem packages append their own lines.
+omni-core = { path = "crates/omni-core" }
+omni-config = { path = "crates/omni-config" }
+omni-store = { path = "crates/omni-store" }
+omni-tasks = { path = "crates/omni-tasks" }
+omni-http = { path = "crates/omni-http" }
+omni-alerts = { path = "crates/omni-alerts" }
+omni-mailer = { path = "crates/omni-mailer" }
+omni-ai = { path = "crates/omni-ai" }
+omni-server-kit = { path = "crates/omni-server-kit" }
+omni-mcp-kit = { path = "crates/omni-mcp-kit" }
+omni-runtime = { path = "crates/omni-runtime" }
+omni-api = { path = "crates/omni-api" }
+omni-testkit = { path = "crates/omni-testkit" }
+
+# Exact pins (ARCHITECTURE.md section 2). Every version was published on or
+# before 2026-09-25 and resolves together (checked with cargo generate-lockfile).
+tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "time", "sync", "signal", "process", "fs", "net", "io-util"] }
+tokio-util = { version = "=0.7.19", features = ["rt", "io"] }
+tokio-stream = { version = "=0.1.19", features = ["sync"] }
+futures = "=0.3.34"
+axum = { version = "=0.8.9", features = ["json", "query", "macros", "tokio", "http1", "http2"] }
+tower = { version = "=0.5.3", features = ["util", "limit", "timeout"] }
+tower-http = { version = "=0.7.1", features = ["fs", "trace", "set-header", "limit", "timeout", "compression-br", "compression-gzip"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "http2", "charset", "json", "stream", "gzip", "brotli", "query", "form", "multipart", "cookies"] }
+rustls = "=0.23.45"
+tokio-rustls = "=0.26.5"
+rustls-platform-verifier = "=0.7.1"
+hickory-resolver = "=0.26.3"
+tokio-tungstenite = { version = "=0.30.0", features = ["rustls-tls-native-roots"] }
+cookie_store = { version = "=0.22.1", features = ["serde_json"] }
+rusqlite = { version = "=0.40.2", features = ["bundled", "backup", "limits"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip", "preserve_order"] }
+serde_with = "=3.23.0"
+serde_path_to_error = "=0.1.20"
+indexmap = { version = "=2.13.0", features = ["serde"] }
+ryu-js = "=1.0.1"
+icu_collator = { version = "=2.2.1", features = ["compiled_data"] }
+schemars = "=1.2.2"
+jsonschema = { version = "=0.58.0", default-features = false }
+jiff = { version = "=0.2.37", features = ["serde", "tzdb-bundle-always"] }
+croner = { version = "=4.0.0", default-features = false, features = ["jiff"] }
+tracing = "=0.1.44"
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter", "fmt", "registry", "std"] }
+tracing-appender = "=0.2.5"
+thiserror = "=2.0.20"
+anyhow = "=1.0.104"
+rmcp = { version = "=3.4.1", default-features = false, features = ["base64", "server", "transport-streamable-http-server"] }
+async-imap = { version = "=0.11.3", default-features = false, features = ["runtime-tokio"] }
+imap-proto = "=0.16.7"
+mail-parser = { version = "=0.11.9", features = ["full_encoding"] }
+mail-builder = "=1.0.0"
+lettre = { version = "=0.11.23", default-features = false, features = ["smtp-transport", "tokio1", "tokio1-rustls", "rustls-platform-verifier", "aws-lc-rs", "builder"] }
+html2text = "=0.17.1"
+scraper = "=0.27.0"
+htmd = "=0.5.5"
+dom_smoothie = "=0.18.1"
+quick-xml = { version = "=0.42.0", features = ["serialize"] }
+rss = { version = "=2.1.2", features = ["builders"] }
+id3 = "=1.17.2"
+lofty = "=0.25.4"
+sherpa-onnx = "=1.13.8"
+ipp = { version = "=7.0.0", default-features = false, features = ["async-client-rustls"] }
+aws-cognito-srp = "=0.2.5"
+jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+serde_norway = "=0.9.42"
+sha1 = "=0.11.0"
+sha2 = "=0.11.0"
+hmac = "=0.13.0"
+aes-gcm = "=0.11.1"
+subtle = "=2.6.1"
+base64 = "=0.23.1"
+hex = "=0.4.3"
+flate2 = "=1.1.10"
+uuid = { version = "=1.26.1", features = ["v4", "serde"] }
+url = "=2.5.8"
+percent-encoding = "=2.3.2"
+rand = "=0.10.3"
+regex = "=1.13.1"
+bytes = "=1.12.1"
+http = "=1.5.0"
+moka = { version = "=0.12.16", features = ["future"] }
+backon = "=1.6.0"
+num-format = "=0.4.4"
+leptos = { version = "=0.8.20", features = ["csr"] }
+leptos_router = "=0.8.15"
+leptos_meta = "=0.8.6"
+leptos-use = { version = "=0.19.0", default-features = false, features = ["use_resize_observer", "use_document_visibility", "use_interval", "use_interval_fn"] }
+reactive_stores = "=0.4.3"
+gloo-net = { version = "=0.7.0", features = ["http", "eventsource"] }
+gloo-timers = { version = "=0.4.0", features = ["futures"] }
+wasm-bindgen = "=0.2.129"
+web-sys = "=0.3.106"
+js-sys = "=0.3.106"
+wasm-bindgen-futures = "=0.4.79"
+wasm-bindgen-test = "=0.3.79"
+console_error_panic_hook = "=0.1.7"
+pulldown-cmark = { version = "=0.13.4", default-features = false }
+insta = { version = "=1.48.0", features = ["json", "yaml"] }
+wiremock = "=0.6.5"
+tempfile = "=3.27.0"
+proptest = "=1.11.0"
+
+[profile.dev]
+debug = "line-tables-only"
+[profile.dev.package."*"]
+debug = false
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "debuginfo"
+overflow-checks = true
+[profile.wasm-release]          # used by trunk for omni-web
+inherits = "release"
+opt-level = "z"
+lto = true
+panic = "abort"

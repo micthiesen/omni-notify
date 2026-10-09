@@ -1,0 +1,32 @@
+[package]
+name = "omni-core"
+description = "Clock, ids, JS-compatible semantics, digests, email model and shared async helpers."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+futures.workspace = true
+icu_collator.workspace = true
+jiff.workspace = true
+percent-encoding.workspace = true
+rand.workspace = true
+ryu-js.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

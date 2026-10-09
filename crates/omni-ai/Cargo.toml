@@ -1,0 +1,39 @@
+[package]
+name = "omni-ai"
+description = "Model registry, provider wire clients, tool loop and cost accounting."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+dom_smoothie.workspace = true
+futures.workspace = true
+htmd.workspace = true
+indexmap.workspace = true
+jiff.workspace = true
+omni-api.workspace = true
+omni-config.workspace = true
+omni-core.workspace = true
+omni-http.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+schemars.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
+wiremock.workspace = true
+omni-testkit.workspace = true
+omni-tasks.workspace = true
+regex.workspace = true
+tracing-subscriber.workspace = true
