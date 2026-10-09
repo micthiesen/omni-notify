@@ -1,0 +1,26 @@
+{
+  "route": "/api/streamers/id3/sessions",
+  "status": 200,
+  "body": {
+    "sessions": [
+      {
+        "startedAt": 1791518821079,
+        "endedAt": 1791528300966,
+        "durationMs": 9479887,
+        "peakViewers": 890,
+        "title": "Synthetic text 743.",
+        "platform": "kick",
+        "username": "id176"
+      },
+      {
+        "startedAt": 1791441420864,
+        "endedAt": 1791442323626,
+        "durationMs": 902762,
+        "peakViewers": 95,
+        "title": "Synthetic text 743.",
+        "platform": "kick",
+        "username": "id176"
+      }
+    ]
+  }
+}

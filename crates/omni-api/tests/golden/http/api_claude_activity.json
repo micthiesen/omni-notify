@@ -1,0 +1,2728 @@
+{
+  "route": "/api/claude/activity",
+  "status": 200,
+  "body": {
+    "link": {
+      "configured": true,
+      "online": true,
+      "disabled": false,
+      "host": "id4",
+      "lastSeenAt": "2026-10-09T14:47:04.480Z",
+      "pendingJobs": 0
+    },
+    "actions": [
+      {
+        "callId": "00000000-0000-4000-8000-000000000009",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495617130,
+        "finishedAt": 1791495617686,
+        "durationMs": 556,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "limit": 50,
+          "cursor": 320
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000010",
+          "items": [
+            {
+              "index": 321,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:38:21.088Z",
+              "text": "Synthetic text 22.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 322,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:38:25.796Z",
+              "text": "Synthetic text 23.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 323,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:26.551Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 24.",
+              "isError": null
+            },
+            {
+              "index": 327,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:30.742Z",
+              "text": null,
+              "truncated": false,
+              "tool": "ToolSearch",
+              "input": "Synthetic text 25.",
+              "isError": null
+            },
+            {
+              "index": 330,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:32.311Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__skills",
+              "input": "Synthetic text 26.",
+              "isError": null
+            },
+            {
+              "index": 333,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:36.816Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__execute",
+              "input": "Synthetic text 27.",
+              "isError": null
+            },
+            {
+              "index": 339,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:58.654Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Write",
+              "input": "Synthetic text 28.",
+              "isError": null
+            },
+            "… [13 more items]"
+          ],
+          "revision": 354,
+          "nextCursor": 353,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000011",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495600497,
+        "finishedAt": 1791495601089,
+        "durationMs": 592,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "waitSeconds": 0,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 30.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "idle",
+            "state": "done",
+            "startedAt": "2026-10-08T21:27:58.609Z",
+            "revision": 354,
+            "lastAssistant": "Synthetic text 31."
+          },
+          "timedOut": false,
+          "result": "Synthetic text 32.… [truncated 1179 chars]",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000012",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495468540,
+        "finishedAt": 1791495469131,
+        "durationMs": 591,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "waitSeconds": 0,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 30.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-08T21:27:58.609Z",
+            "revision": 321,
+            "lastAssistant": "Synthetic text 33."
+          },
+          "timedOut": false,
+          "result": "Synthetic text 34.",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000013",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495332729,
+        "finishedAt": 1791495333438,
+        "durationMs": 709,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "limit": 30,
+          "cursor": 310
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000010",
+          "items": [
+            {
+              "index": 311,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:33:59.913Z",
+              "text": "Synthetic text 35.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 312,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:34:03.925Z",
+              "text": "Synthetic text 36.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 313,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:34:03.926Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 37.",
+              "isError": null
+            }
+          ],
+          "revision": 321,
+          "nextCursor": 320,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000014",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495183471,
+        "finishedAt": 1791495185419,
+        "durationMs": 1948,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "limit": 60,
+          "cursor": 263
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000010",
+          "items": [
+            {
+              "index": 264,
+              "kind": "user",
+              "timestamp": "2026-10-08T21:28:07.791Z",
+              "text": "Synthetic text 38.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 265,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:28:11.671Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 39.",
+              "isError": null
+            },
+            {
+              "index": 266,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:28:19.971Z",
+              "text": "Synthetic text 40.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 267,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:28:21.114Z",
+              "text": null,
+              "truncated": false,
+              "tool": "EnterWorktree",
+              "input": "Synthetic text 41.",
+              "isError": null
+            },
+            {
+              "index": 269,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:28:32.469Z",
+              "text": "Synthetic text 42.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            "… [27 more items]"
+          ],
+          "revision": 311,
+          "nextCursor": 310,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000015",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494898854,
+        "finishedAt": 1791494900539,
+        "durationMs": 1685,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "waitSeconds": 0,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 30.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-08T21:27:58.609Z",
+            "revision": 267,
+            "lastAssistant": "Synthetic text 43."
+          },
+          "timedOut": false,
+          "result": null,
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000016",
+        "tool": "claude_session_send",
+        "title": "Synthetic text 44.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791494873415,
+        "finishedAt": 1791494878705,
+        "durationMs": 5290,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "prompt": "Synthetic text 38.",
+          "interrupt": false,
+          "idempotencyKey": "id11"
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 38.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "stopped",
+            "state": "working",
+            "startedAt": "2026-10-08T21:27:55.143Z",
+            "revision": 0,
+            "lastAssistant": null
+          },
+          "previousRevision": 264,
+          "reused": false,
+          "warning": "Synthetic text 45."
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000018",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494822401,
+        "finishedAt": 1791494825752,
+        "durationMs": 3351,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "afterRevision": 263,
+          "waitSeconds": 45,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id12",
+            "sessionId": "00000000-0000-4000-8000-000000000017",
+            "kind": "background",
+            "title": "Synthetic text 46.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "idle",
+            "state": "done",
+            "startedAt": "2026-10-08T20:39:46.526Z",
+            "revision": 264,
+            "lastAssistant": "Synthetic text 43."
+          },
+          "timedOut": false,
+          "result": "Synthetic text 47.… [truncated 1596 chars]",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000019",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494811746,
+        "finishedAt": 1791494812318,
+        "durationMs": 572,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 30,
+          "cursor": 254
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 255,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:25:54.490Z",
+              "text": "Synthetic text 48.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 256,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:26:01.786Z",
+              "text": "Synthetic text 49.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 257,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:26:01.791Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 50.",
+              "isError": null
+            },
+            {
+              "index": 259,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:26:26.468Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Write",
+              "input": "Synthetic text 51.",
+              "isError": null
+            }
+          ],
+          "revision": 263,
+          "nextCursor": 262,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000020",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494758457,
+        "finishedAt": 1791494804383,
+        "durationMs": 45926,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "afterRevision": 255,
+          "waitSeconds": 45,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id12",
+            "sessionId": "00000000-0000-4000-8000-000000000017",
+            "kind": "background",
+            "title": "Synthetic text 46.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-08T20:39:46.526Z",
+            "revision": 263,
+            "lastAssistant": "Synthetic text 49."
+          },
+          "timedOut": true,
+          "result": null,
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000021",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494726568,
+        "finishedAt": 1791494731415,
+        "durationMs": 4847,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 100,
+          "cursor": 194
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 195,
+              "kind": "user",
+              "timestamp": "2026-10-08T21:07:04.662Z",
+              "text": "Synthetic text 52.… [truncated 4000 chars]",
+              "truncated": true,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 196,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:08:11.817Z",
+              "text": "Synthetic text 53.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 201,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:15:57.398Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Read",
+              "input": "Synthetic text 54.",
+              "isError": null
+            },
+            {
+              "index": 202,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:15:57.599Z",
+              "text": "Synthetic text 55.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 203,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:15:57.688Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 56.",
+              "isError": null
+            },
+            "… [40 more items]"
+          ],
+          "revision": 255,
+          "nextCursor": 254,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000022",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791493551098,
+        "finishedAt": 1791493551811,
+        "durationMs": 713,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 40,
+          "cursor": 177
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 178,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:58:54.905Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Read",
+              "input": "Synthetic text 57.",
+              "isError": null
+            },
+            {
+              "index": 179,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T20:58:55.061Z",
+              "text": "Synthetic text 58.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 180,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T20:59:03.384Z",
+              "text": "Synthetic text 59.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 181,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:59:03.405Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Skill",
+              "input": "Synthetic text 60.",
+              "isError": null
+            },
+            {
+              "index": 183,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:59:07.124Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 61.",
+              "isError": null
+            },
+            {
+              "index": 185,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:59:25.093Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Agent",
+              "input": "Synthetic text 62.",
+              "isError": null
+            },
+            {
+              "index": 192,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:59:51.747Z",
+              "text": null,
+              "truncated": false,
+              "tool": "ReadNotifications",
+              "input": "Synthetic text 63.",
+              "isError": null
+            }
+          ],
+          "revision": 195,
+          "nextCursor": 194,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000023",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791493125188,
+        "finishedAt": 1791493125778,
+        "durationMs": 590,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 80,
+          "cursor": 151
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 152,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:56:18.736Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 64.",
+              "isError": null
+            },
+            {
+              "index": 153,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T20:56:19.261Z",
+              "text": "Synthetic text 65.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 156,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:56:41.209Z",
+              "text": null,
+              "truncated": false,
+              "tool": "ToolSearch",
+              "input": "Synthetic text 66.",
+              "isError": null
+            },
+            {
+              "index": 157,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T20:56:41.327Z",
+              "text": "",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 158,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:56:44.656Z",
+              "text": null,
+              "truncated": false,
+              "tool": "WebSearch",
+              "input": "Synthetic text 67.",
+              "isError": null
+            },
+            {
+              "index": 160,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T20:56:54.040Z",
+              "text": "Synthetic text 68.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            "… [6 more items]"
+          ],
+          "revision": 178,
+          "nextCursor": 177,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000024",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791492974849,
+        "finishedAt": 1791492975442,
+        "durationMs": 593,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 100,
+          "cursor": 101
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 102,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T20:49:53.101Z",
+              "text": "Synthetic text 69.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 103,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:50:19.116Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 70.",
+              "isError": null
+            },
+            {
+              "index": 104,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T20:50:19.662Z",
+              "text": "Synthetic text 71.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 105,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:50:23.799Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Read",
+              "input": "Synthetic text 54.",
+              "isError": null
+            },
+            "… [30 more items]"
+          ],
+          "revision": 152,
+          "nextCursor": 151,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000025",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791492604789,
+        "finishedAt": 1791492605379,
+        "durationMs": 590,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 70,
+          "cursor": 54
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 55,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T20:45:01.000Z",
+              "text": "Synthetic text 72.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 56,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:45:05.127Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 73.",
+              "isError": null
+            },
+            {
+              "index": 68,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T20:45:40.338Z",
+              "text": "Synthetic text 74.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            "… [27 more items]"
+          ],
+          "revision": 102,
+          "nextCursor": 101,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000026",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791492101098,
+        "finishedAt": 1791492101565,
+        "durationMs": 467,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 40
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 0,
+              "kind": "user",
+              "timestamp": "2026-10-08T20:39:47.386Z",
+              "text": "Synthetic text 75.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 1,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T20:40:13.216Z",
+              "text": "Synthetic text 76.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 2,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:40:13.222Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 77.",
+              "isError": null
+            },
+            {
+              "index": 3,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T20:40:15.246Z",
+              "text": "Synthetic text 78.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 8,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T20:40:30.937Z",
+              "text": null,
+              "truncated": false,
+              "tool": "EnterWorktree",
+              "input": "Synthetic text 79.",
+              "isError": null
+            },
+            "… [17 more items]"
+          ],
+          "revision": 37,
+          "nextCursor": 36,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000027",
+        "tool": "claude_session_start",
+        "title": "Synthetic text 80.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791491983620,
+        "finishedAt": 1791491985573,
+        "durationMs": 1953,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "project": "id7",
+          "prompt": "Synthetic text 81.",
+          "idempotencyKey": "id13",
+          "title": "Synthetic text 46.",
+          "effort": "xhigh"
+        },
+        "output": {
+          "session": {
+            "id": "id12",
+            "sessionId": "00000000-0000-4000-8000-000000000017",
+            "kind": "background",
+            "title": "Synthetic text 46.",
+            "cwd": "~/id6/id7",
+            "project": "id7",
+            "status": "stopped",
+            "state": "working",
+            "startedAt": "2026-10-08T20:39:44.063Z",
+            "revision": 0,
+            "lastAssistant": null
+          },
+          "reused": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000028",
+        "tool": "claude_sessions_list",
+        "title": "Synthetic text 82.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791491951844,
+        "finishedAt": 1791491958375,
+        "durationMs": 6531,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "includeStopped": false,
+          "limit": 10
+        },
+        "output": {
+          "sessions": [
+            {
+              "id": null,
+              "sessionId": "00000000-0000-4000-8000-000000000029",
+              "kind": "interactive",
+              "title": "id14",
+              "cwd": "~/id6/id7",
+              "project": "id7",
+              "status": "idle",
+              "state": null,
+              "startedAt": "2026-10-06T05:46:33.686Z",
+              "revision": 369,
+              "lastAssistant": "Synthetic text 83."
+            },
+            {
+              "id": null,
+              "sessionId": "00000000-0000-4000-8000-000000000030",
+              "kind": "interactive",
+              "title": "id15",
+              "cwd": "~/id6/id16",
+              "project": "id16",
+              "status": "busy",
+              "state": null,
+              "startedAt": "2026-10-04T16:34:12.825Z",
+              "revision": 2506,
+              "lastAssistant": "Synthetic text 84."
+            }
+          ]
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000031",
+        "tool": "claude_link_status",
+        "title": "Synthetic text 85.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791491946489,
+        "finishedAt": 1791491951814,
+        "durationMs": 5325,
+        "status": "ok",
+        "error": null,
+        "input": {},
+        "output": {
+          "configured": true,
+          "online": true,
+          "disabled": false,
+          "lastSeenAt": "2026-10-08T20:38:57.705Z",
+          "pendingJobs": 0,
+          "projects": [
+            {
+              "name": "id17",
+              "path": "~/id6/id17",
+              "exists": true
+            },
+            {
+              "name": "id16",
+              "path": "~/id6/id16",
+              "exists": true
+            }
+          ],
+          "projectsError": null
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000032",
+        "tool": "claude_session_stop",
+        "title": "Synthetic text 86.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791267984518,
+        "finishedAt": 1791267985671,
+        "durationMs": 1153,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "id18"
+        },
+        "output": {
+          "id": "id18",
+          "sessionId": "00000000-0000-4000-8000-000000000033"
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000034",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791267973497,
+        "finishedAt": 1791267977090,
+        "durationMs": 3593,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "id18",
+          "afterRevision": 2,
+          "waitSeconds": 40,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id18",
+            "sessionId": "00000000-0000-4000-8000-000000000033",
+            "kind": "background",
+            "title": "Synthetic text 87.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "idle",
+            "state": "done",
+            "startedAt": "2026-10-06T06:26:11.584Z",
+            "revision": 4,
+            "lastAssistant": "id19"
+          },
+          "timedOut": false,
+          "result": "id19",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000035",
+        "tool": "claude_session_send",
+        "title": "Synthetic text 44.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791267972090,
+        "finishedAt": 1791267973226,
+        "durationMs": 1136,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "id18",
+          "prompt": "Synthetic text 88.",
+          "interrupt": false,
+          "idempotencyKey": "id20"
+        },
+        "output": {
+          "session": {
+            "id": "id18",
+            "sessionId": "00000000-0000-4000-8000-000000000033",
+            "kind": "background",
+            "title": "Synthetic text 87.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "idle",
+            "state": "working",
+            "startedAt": "2026-10-06T06:26:11.584Z",
+            "revision": 2,
+            "lastAssistant": "id21"
+          },
+          "previousRevision": 2,
+          "reused": true,
+          "warning": null
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000036",
+        "tool": "claude_session_send",
+        "title": "Synthetic text 44.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791267968748,
+        "finishedAt": 1791267971896,
+        "durationMs": 3148,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "id18",
+          "prompt": "Synthetic text 88.",
+          "interrupt": false,
+          "idempotencyKey": "id20"
+        },
+        "output": {
+          "session": {
+            "id": "id18",
+            "sessionId": "00000000-0000-4000-8000-000000000033",
+            "kind": "background",
+            "title": "Synthetic text 87.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "running",
+            "state": "working",
+            "startedAt": "2026-10-06T06:26:11.584Z",
+            "revision": 2,
+            "lastAssistant": "id21"
+          },
+          "previousRevision": 2,
+          "reused": false,
+          "warning": null
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000037",
+        "tool": "claude_session_start",
+        "title": "Synthetic text 80.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791267951128,
+        "finishedAt": 1791267952343,
+        "durationMs": 1215,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "project": "id7",
+          "prompt": "Synthetic text 89.",
+          "idempotencyKey": "id22",
+          "title": "Synthetic text 87.",
+          "model": "haiku",
+          "effort": "low"
+        },
+        "output": {
+          "session": {
+            "id": "id18",
+            "sessionId": "00000000-0000-4000-8000-000000000033",
+            "kind": "background",
+            "title": "Synthetic text 87.",
+            "cwd": "~/id6/id7",
+            "project": "id7",
+            "status": "stopped",
+            "state": "working",
+            "startedAt": "2026-10-06T06:25:51.549Z",
+            "revision": 0,
+            "lastAssistant": null
+          },
+          "reused": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000038",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791267656726,
+        "finishedAt": 1791267657216,
+        "durationMs": 490,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039",
+          "limit": 12
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000039",
+          "items": [
+            {
+              "index": 198,
+              "kind": "tool_result",
+              "timestamp": "2026-10-06T06:20:02.266Z",
+              "text": "",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 199,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T06:20:03.672Z",
+              "text": null,
+              "truncated": false,
+              "tool": "TaskStop",
+              "input": "Synthetic text 90.",
+              "isError": null
+            },
+            {
+              "index": 200,
+              "kind": "tool_result",
+              "timestamp": "2026-10-06T06:20:03.774Z",
+              "text": "Synthetic text 91.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 201,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T06:20:04.412Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 92.",
+              "isError": null
+            },
+            {
+              "index": 209,
+              "kind": "assistant",
+              "timestamp": "2026-10-06T06:20:46.611Z",
+              "text": "Synthetic text 93.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            }
+          ],
+          "revision": 210,
+          "nextCursor": 209,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000040",
+        "tool": "claude_session_wait",
+        "title": "Synthetic text 94.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791267617264,
+        "finishedAt": 1791267647982,
+        "durationMs": 30718,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039",
+          "afterRevision": 199,
+          "timeoutSeconds": 30
+        },
+        "output": {
+          "session": {
+            "id": "id23",
+            "sessionId": "00000000-0000-4000-8000-000000000039",
+            "kind": "background",
+            "title": "Synthetic text 95.",
+            "cwd": "~/id6/id24/id8/id9/id25",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-06T05:48:34.142Z",
+            "revision": 210,
+            "lastAssistant": "Synthetic text 96."
+          },
+          "timedOut": true
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000041",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791267174884,
+        "finishedAt": 1791267175385,
+        "durationMs": 501,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039"
+        },
+        "output": {
+          "session": {
+            "id": "id23",
+            "sessionId": "00000000-0000-4000-8000-000000000039",
+            "kind": "background",
+            "title": "Synthetic text 95.",
+            "cwd": "~/id6/id24/id8/id9/id25",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-06T05:48:34.142Z",
+            "revision": 183,
+            "lastAssistant": "Synthetic text 97."
+          }
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000042",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791266959618,
+        "finishedAt": 1791266960160,
+        "durationMs": 542,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039",
+          "limit": 15
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000039",
+          "items": [
+            {
+              "index": 168,
+              "kind": "user",
+              "timestamp": "2026-10-06T06:07:26.092Z",
+              "text": "Synthetic text 98.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 169,
+              "kind": "assistant",
+              "timestamp": "2026-10-06T06:07:29.923Z",
+              "text": "Synthetic text 99.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            }
+          ],
+          "revision": 183,
+          "nextCursor": 182,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000043",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791266187877,
+        "finishedAt": 1791266188554,
+        "durationMs": 677,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039",
+          "limit": 22,
+          "cursor": 19
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000039",
+          "items": [
+            {
+              "index": 20,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:49:22.247Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__execute",
+              "input": "Synthetic text 100.",
+              "isError": null
+            },
+            {
+              "index": 21,
+              "kind": "tool_result",
+              "timestamp": "2026-10-06T05:49:23.060Z",
+              "text": "Synthetic text 101.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 26,
+              "kind": "assistant",
+              "timestamp": "2026-10-06T05:49:31.690Z",
+              "text": "Synthetic text 102.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 33,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:50:09.608Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 103.",
+              "isError": null
+            },
+            "… [2 more items]"
+          ],
+          "revision": 160,
+          "nextCursor": 41,
+          "hasMore": true
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000044",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791266177662,
+        "finishedAt": 1791266178087,
+        "durationMs": 425,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039",
+          "limit": 18
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000039",
+          "items": [
+            {
+              "index": 142,
+              "kind": "assistant",
+              "timestamp": "2026-10-06T05:55:49.145Z",
+              "text": "Synthetic text 104.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 143,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:55:50.105Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 105.",
+              "isError": null
+            },
+            {
+              "index": 144,
+              "kind": "tool_result",
+              "timestamp": "2026-10-06T05:55:50.350Z",
+              "text": "Synthetic text 106.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 152,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:56:05.233Z",
+              "text": null,
+              "truncated": false,
+              "tool": "ToolSearch",
+              "input": "Synthetic text 107.",
+              "isError": null
+            },
+            {
+              "index": 153,
+              "kind": "tool_result",
+              "timestamp": "2026-10-06T05:56:05.331Z",
+              "text": "",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 154,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:56:08.981Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Monitor",
+              "input": "Synthetic text 108.",
+              "isError": null
+            }
+          ],
+          "revision": 160,
+          "nextCursor": 159,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000045",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791265944463,
+        "finishedAt": 1791265944973,
+        "durationMs": 510,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039",
+          "limit": 15
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000039",
+          "items": [
+            {
+              "index": 50,
+              "kind": "tool_result",
+              "timestamp": "2026-10-06T05:51:07.565Z",
+              "text": "Synthetic text 109.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 51,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:51:10.518Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 110.",
+              "isError": null
+            },
+            {
+              "index": 53,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:51:17.819Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__execute",
+              "input": "Synthetic text 111.",
+              "isError": null
+            },
+            {
+              "index": 55,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:51:25.350Z",
+              "text": null,
+              "truncated": false,
+              "tool": "EnterWorktree",
+              "input": "Synthetic text 112.",
+              "isError": null
+            }
+          ],
+          "revision": 65,
+          "nextCursor": 64,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000046",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791265759285,
+        "finishedAt": 1791265759715,
+        "durationMs": 430,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039",
+          "limit": 30
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000039",
+          "items": [
+            {
+              "index": 0,
+              "kind": "user",
+              "timestamp": "2026-10-06T05:48:35.171Z",
+              "text": "Synthetic text 113.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 1,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:48:43.752Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 114.",
+              "isError": null
+            },
+            {
+              "index": 2,
+              "kind": "tool_result",
+              "timestamp": "2026-10-06T05:48:50.174Z",
+              "text": "Synthetic text 115.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 4,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:48:53.100Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Read",
+              "input": "Synthetic text 116.",
+              "isError": null
+            },
+            {
+              "index": 13,
+              "kind": "assistant",
+              "timestamp": "2026-10-06T05:49:09.212Z",
+              "text": "Synthetic text 117.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 16,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:49:17.934Z",
+              "text": null,
+              "truncated": false,
+              "tool": "ToolSearch",
+              "input": "Synthetic text 25.",
+              "isError": null
+            },
+            {
+              "index": 18,
+              "kind": "tool_use",
+              "timestamp": "2026-10-06T05:49:19.081Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__skills",
+              "input": "Synthetic text 26.",
+              "isError": null
+            }
+          ],
+          "revision": 19,
+          "nextCursor": 18,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000047",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791265741730,
+        "finishedAt": 1791265742052,
+        "durationMs": 322,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000039"
+        },
+        "output": {
+          "session": {
+            "id": "id23",
+            "sessionId": "00000000-0000-4000-8000-000000000039",
+            "kind": "background",
+            "title": "Synthetic text 95.",
+            "cwd": "~/id6/id24",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-06T05:48:34.142Z",
+            "revision": 13,
+            "lastAssistant": null
+          }
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000048",
+        "tool": "claude_sessions_list",
+        "title": "Synthetic text 82.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791265681006,
+        "finishedAt": 1791265681765,
+        "durationMs": 759,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "includeStopped": false,
+          "limit": 20
+        },
+        "output": {
+          "sessions": [
+            {
+              "id": null,
+              "sessionId": "00000000-0000-4000-8000-000000000029",
+              "kind": "interactive",
+              "title": "id14",
+              "cwd": "~/id6/id7",
+              "project": "id7",
+              "status": "busy",
+              "state": null,
+              "startedAt": "2026-10-06T05:46:33.686Z",
+              "revision": 1,
+              "lastAssistant": null
+            },
+            {
+              "id": null,
+              "sessionId": "00000000-0000-4000-8000-000000000030",
+              "kind": "interactive",
+              "title": "id15",
+              "cwd": "~/id6/id16",
+              "project": "id16",
+              "status": "busy",
+              "state": null,
+              "startedAt": "2026-10-04T16:34:12.825Z",
+              "revision": 2221,
+              "lastAssistant": "Synthetic text 118."
+            }
+          ]
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000049",
+        "tool": "claude_link_status",
+        "title": "Synthetic text 85.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791265680989,
+        "finishedAt": 1791265680990,
+        "durationMs": 1,
+        "status": "ok",
+        "error": null,
+        "input": {},
+        "output": {
+          "configured": true,
+          "online": true,
+          "disabled": false,
+          "lastSeenAt": "2026-10-06T05:48:00.959Z",
+          "pendingJobs": 1
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000050",
+        "tool": "claude_projects_list",
+        "title": "Synthetic text 119.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791265680958,
+        "finishedAt": 1791265681145,
+        "durationMs": 187,
+        "status": "ok",
+        "error": null,
+        "input": {},
+        "output": {
+          "projects": [
+            {
+              "name": "id17",
+              "path": "~/id6/id17",
+              "exists": true
+            },
+            {
+              "name": "id16",
+              "path": "~/id6/id16",
+              "exists": true
+            }
+          ]
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000051",
+        "tool": "claude_session_result",
+        "title": "Synthetic text 120.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791166114861,
+        "finishedAt": 1791166115307,
+        "durationMs": 446,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052"
+        },
+        "output": {
+          "session": {
+            "id": "id26",
+            "sessionId": "00000000-0000-4000-8000-000000000052",
+            "kind": "background",
+            "title": "Synthetic text 121.",
+            "cwd": "~/id6/id7/id8/id9/id27",
+            "project": null,
+            "status": "idle",
+            "state": "working",
+            "startedAt": "2026-10-05T01:48:51.448Z",
+            "revision": 347,
+            "lastAssistant": "Synthetic text 122."
+          },
+          "result": "Synthetic text 123.",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000053",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791166099549,
+        "finishedAt": 1791166099868,
+        "durationMs": 319,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052"
+        },
+        "output": {
+          "session": {
+            "id": "id26",
+            "sessionId": "00000000-0000-4000-8000-000000000052",
+            "kind": "background",
+            "title": "Synthetic text 121.",
+            "cwd": "~/id6/id7/id8/id9/id27",
+            "project": null,
+            "status": "idle",
+            "state": "working",
+            "startedAt": "2026-10-05T01:48:51.448Z",
+            "revision": 347,
+            "lastAssistant": "Synthetic text 122."
+          }
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000054",
+        "tool": "claude_session_send",
+        "title": "Synthetic text 44.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791164929056,
+        "finishedAt": 1791164931659,
+        "durationMs": 2603,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "prompt": "Synthetic text 124.",
+          "interrupt": false
+        },
+        "output": {
+          "session": {
+            "id": "id26",
+            "sessionId": "00000000-0000-4000-8000-000000000052",
+            "kind": "background",
+            "title": "Synthetic text 121.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "running",
+            "state": "working",
+            "startedAt": "2026-10-05T01:48:51.448Z",
+            "revision": 274,
+            "lastAssistant": "Synthetic text 125."
+          },
+          "previousRevision": 274,
+          "warning": null
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000055",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791164896677,
+        "finishedAt": 1791164897206,
+        "durationMs": 529,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 100,
+          "cursor": 194
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 195,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:25:46.055Z",
+              "text": "Synthetic text 126.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 196,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:25:48.077Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 127.",
+              "isError": null
+            },
+            {
+              "index": 204,
+              "kind": "assistant",
+              "timestamp": "2026-10-05T01:27:47.149Z",
+              "text": "Synthetic text 128.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 205,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:27:52.486Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Agent",
+              "input": "Synthetic text 129.",
+              "isError": null
+            },
+            {
+              "index": 212,
+              "kind": "user",
+              "timestamp": "2026-10-05T01:34:25.770Z",
+              "text": "Synthetic text 130.… [truncated 4000 chars]",
+              "truncated": true,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            "… [59 more items]"
+          ],
+          "revision": 274,
+          "nextCursor": 273,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000056",
+        "tool": "claude_session_result",
+        "title": "Synthetic text 120.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791164869257,
+        "finishedAt": 1791164869806,
+        "durationMs": 549,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052"
+        },
+        "output": {
+          "session": {
+            "id": "id26",
+            "sessionId": "00000000-0000-4000-8000-000000000052",
+            "kind": "background",
+            "title": "Synthetic text 121.",
+            "cwd": "~/id6/id7/id8/id9/id27",
+            "project": null,
+            "status": "idle",
+            "state": "blocked",
+            "startedAt": "2026-10-05T01:21:12.918Z",
+            "revision": 274,
+            "lastAssistant": "Synthetic text 125."
+          },
+          "result": "Synthetic text 131.… [truncated 4 chars]",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000057",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791164841502,
+        "finishedAt": 1791164842291,
+        "durationMs": 789,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 5
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 268,
+              "kind": "user",
+              "timestamp": "2026-10-05T01:46:52.675Z",
+              "text": "Synthetic text 132.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 269,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:46:55.809Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 133.",
+              "isError": null
+            },
+            {
+              "index": 270,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:46:56.790Z",
+              "text": "Synthetic text 134.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 271,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:46:56.937Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__execute",
+              "input": "Synthetic text 135.",
+              "isError": null
+            }
+          ],
+          "revision": 273,
+          "nextCursor": 272,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000058",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791164155194,
+        "finishedAt": 1791164155732,
+        "durationMs": 538,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 6,
+          "cursor": 211
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 212,
+              "kind": "user",
+              "timestamp": "2026-10-05T01:34:25.770Z",
+              "text": "Synthetic text 130.… [truncated 4000 chars]",
+              "truncated": true,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 213,
+              "kind": "assistant",
+              "timestamp": "2026-10-05T01:34:48.825Z",
+              "text": "Synthetic text 136.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 214,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:34:49.518Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 137.",
+              "isError": null
+            },
+            {
+              "index": 215,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:34:49.848Z",
+              "text": "Synthetic text 138.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            }
+          ],
+          "revision": 226,
+          "nextCursor": 217,
+          "hasMore": true
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000059",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791164004739,
+        "finishedAt": 1791164005344,
+        "durationMs": 605,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 5
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 207,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:27:53.505Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 139.",
+              "isError": null
+            },
+            {
+              "index": 208,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:28:33.068Z",
+              "text": "Synthetic text 140.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 211,
+              "kind": "assistant",
+              "timestamp": "2026-10-05T01:29:23.461Z",
+              "text": "Synthetic text 141.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            }
+          ],
+          "revision": 212,
+          "nextCursor": 211,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000060",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791163619085,
+        "finishedAt": 1791163620431,
+        "durationMs": 1346,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 5
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 196,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:25:48.077Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 127.",
+              "isError": null
+            },
+            {
+              "index": 197,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:26:29.647Z",
+              "text": "Synthetic text 142.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            }
+          ],
+          "revision": 201,
+          "nextCursor": 200,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000061",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791163347839,
+        "finishedAt": 1791163348324,
+        "durationMs": 485,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 5
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 156,
+              "kind": "assistant",
+              "timestamp": "2026-10-05T01:21:13.230Z",
+              "text": "Synthetic text 143.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 157,
+              "kind": "user",
+              "timestamp": "2026-10-05T01:21:14.843Z",
+              "text": "Synthetic text 144.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 158,
+              "kind": "assistant",
+              "timestamp": "2026-10-05T01:22:09.690Z",
+              "text": "Synthetic text 145.… [truncated 149 chars]",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 159,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:22:22.534Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 146.",
+              "isError": null
+            },
+            {
+              "index": 160,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:22:23.726Z",
+              "text": "Synthetic text 147.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            }
+          ],
+          "revision": 161,
+          "nextCursor": 160,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000062",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791162999230,
+        "finishedAt": 1791162999766,
+        "durationMs": 536,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 12,
+          "cursor": 94
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 95,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:15:22.383Z",
+              "text": "Synthetic text 148.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 96,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:15:24.700Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 149.",
+              "isError": null
+            },
+            {
+              "index": 98,
+              "kind": "assistant",
+              "timestamp": "2026-10-05T01:15:46.831Z",
+              "text": "Synthetic text 150.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 103,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:15:58.750Z",
+              "text": null,
+              "truncated": false,
+              "tool": "EnterWorktree",
+              "input": "Synthetic text 151.",
+              "isError": null
+            }
+          ],
+          "revision": 111,
+          "nextCursor": 106,
+          "hasMore": true
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000063",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791162624607,
+        "finishedAt": 1791162625132,
+        "durationMs": 525,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000052",
+          "limit": 6
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000052",
+          "items": [
+            {
+              "index": 39,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:08:35.662Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Skill",
+              "input": "Synthetic text 152.",
+              "isError": null
+            },
+            {
+              "index": 40,
+              "kind": "tool_result",
+              "timestamp": "2026-10-05T01:08:35.684Z",
+              "text": "Synthetic text 153.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 41,
+              "kind": "tool_use",
+              "timestamp": "2026-10-05T01:08:37.850Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 154.",
+              "isError": null
+            }
+          ],
+          "revision": 45,
+          "nextCursor": 44,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000064",
+        "tool": "claude_sessions_list",
+        "title": "Synthetic text 82.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791162350686,
+        "finishedAt": 1791162351184,
+        "durationMs": 498,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "project": "id7",
+          "includeStopped": true,
+          "limit": 10
+        },
+        "output": {
+          "sessions": [
+            {
+              "id": "id28",
+              "sessionId": "00000000-0000-4000-8000-000000000065",
+              "kind": "background",
+              "title": "Synthetic text 155.",
+              "cwd": "~/id6/id7",
+              "project": "id7",
+              "status": "stopped",
+              "state": "done",
+              "startedAt": "2026-10-05T00:27:26.831Z",
+              "revision": 2,
+              "lastAssistant": "Synthetic text 156."
+            },
+            {
+              "id": "id29",
+              "sessionId": "00000000-0000-4000-8000-000000000066",
+              "kind": "background",
+              "title": "Synthetic text 157.",
+              "cwd": "~/id6/id7",
+              "project": "id7",
+              "status": "stopped",
+              "state": "done",
+              "startedAt": "2026-10-04T23:59:59.777Z",
+              "revision": 4,
+              "lastAssistant": "id30"
+            }
+          ]
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000067",
+        "tool": "claude_session_start",
+        "title": "Synthetic text 80.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791160058668,
+        "finishedAt": 1791160058857,
+        "durationMs": 189,
+        "status": "error",
+        "error": "Synthetic text 158.",
+        "input": {
+          "project": "id31",
+          "prompt": "x",
+          "idempotencyKey": "id32"
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000068",
+        "tool": "claude_session_result",
+        "title": "Synthetic text 120.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791160056342,
+        "finishedAt": 1791160056937,
+        "durationMs": 595,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "id28"
+        },
+        "output": {
+          "session": {
+            "id": "id28",
+            "sessionId": "00000000-0000-4000-8000-000000000065",
+            "kind": "background",
+            "title": "Synthetic text 155.",
+            "cwd": "/id33/id34/id6/id7",
+            "project": null,
+            "status": "idle",
+            "state": "done",
+            "startedAt": "2026-10-05T00:27:28.606Z",
+            "revision": 2,
+            "lastAssistant": "Synthetic text 156."
+          },
+          "result": "Synthetic text 156.",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000069",
+        "tool": "claude_session_wait",
+        "title": "Synthetic text 94.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791160048239,
+        "finishedAt": 1791160056304,
+        "durationMs": 8065,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "id28",
+          "afterRevision": 0,
+          "timeoutSeconds": 40
+        },
+        "output": {
+          "session": {
+            "id": "id28",
+            "sessionId": "00000000-0000-4000-8000-000000000065",
+            "kind": "background",
+            "title": "Synthetic text 155.",
+            "cwd": "/id33/id34/id6/id7",
+            "project": null,
+            "status": "idle",
+            "state": "done",
+            "startedAt": "2026-10-05T00:27:28.606Z",
+            "revision": 2,
+            "lastAssistant": "Synthetic text 156."
+          },
+          "timedOut": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000070",
+        "tool": "claude_session_start",
+        "title": "Synthetic text 80.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791160046494,
+        "finishedAt": 1791160048198,
+        "durationMs": 1704,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "project": "id7",
+          "prompt": "Synthetic text 159.",
+          "idempotencyKey": "id35",
+          "title": "Synthetic text 155.",
+          "model": "haiku"
+        },
+        "output": {
+          "session": {
+            "id": "id28",
+            "sessionId": "00000000-0000-4000-8000-000000000065",
+            "kind": "background",
+            "title": "Synthetic text 155.",
+            "cwd": "/id33/id34/id6/id7",
+            "project": "id7",
+            "status": "stopped",
+            "state": "working",
+            "startedAt": "2026-10-05T00:27:26.831Z",
+            "revision": 0,
+            "lastAssistant": null
+          },
+          "reused": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000071",
+        "tool": "claude_session_start",
+        "title": "Synthetic text 80.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791160011408,
+        "finishedAt": 1791160011409,
+        "durationMs": 1,
+        "status": "error",
+        "error": "Synthetic text 160.",
+        "input": {
+          "project": "id7",
+          "prompt": "Synthetic text 159.",
+          "idempotencyKey": "id36",
+          "title": "Synthetic text 155.",
+          "model": "haiku"
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000072",
+        "tool": "claude_sessions_list",
+        "title": "Synthetic text 161.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791160011383,
+        "finishedAt": 1791160011384,
+        "durationMs": 1,
+        "status": "error",
+        "error": "Synthetic text 160.",
+        "input": {
+          "includeStopped": false,
+          "limit": 5
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000073",
+        "tool": "claude_projects_list",
+        "title": "Synthetic text 162.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791160011341,
+        "finishedAt": 1791160011343,
+        "durationMs": 2,
+        "status": "error",
+        "error": "Synthetic text 160.",
+        "input": {},
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000074",
+        "tool": "claude_link_status",
+        "title": "Synthetic text 163.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791160011284,
+        "finishedAt": 1791160011292,
+        "durationMs": 8,
+        "status": "ok",
+        "error": null,
+        "input": {},
+        "output": {
+          "configured": true,
+          "online": false,
+          "disabled": false,
+          "host": null,
+          "lastSeenAt": null,
+          "pendingJobs": 0
+        }
+      }
+    ],
+    "retention": {
+      "maxCalls": 2000
+    }
+  }
+}

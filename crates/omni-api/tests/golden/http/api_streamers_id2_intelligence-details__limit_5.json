@@ -1,0 +1,186 @@
+{
+  "route": "/api/streamers/id2/intelligence-details?limit=5",
+  "status": 200,
+  "body": {
+    "intelligence": {
+      "streamerId": "id2",
+      "sessionStartedAt": 1791546962108,
+      "relevanceScore": 54,
+      "relevanceReasons": [
+        "Synthetic text 724.",
+        "Synthetic text 725."
+      ],
+      "chapters": [
+        {
+          "chapterId": "00000000-0000-4000-8000-000000000163",
+          "startedAt": 1791547463221,
+          "title": "Synthetic text 726.",
+          "summary": "Synthetic text 727."
+        },
+        {
+          "chapterId": "00000000-0000-4000-8000-000000000164",
+          "startedAt": 1791547965933,
+          "title": "Synthetic text 728.",
+          "summary": "Synthetic text 729."
+        }
+      ],
+      "updatedAt": 1791557203226,
+      "trend": {
+        "percentChange": 8.020164986251146,
+        "viewersPerMinute": 13.764007374663729,
+        "dggPercentChange": 5.6375838926174495,
+        "anomalous": false,
+        "reason": null,
+        "currentViewers": 2357,
+        "baselineViewers": 2182,
+        "currentDggViewers": 787,
+        "baselineDggViewers": 745,
+        "baselineSamples": 45,
+        "typicalPeakViewers": 2932,
+        "candidateObservations": 0,
+        "suppressionReason": null,
+        "updatedAt": 1791557203226
+      },
+      "summary": {
+        "text": "Synthetic text 730.",
+        "topic": "Synthetic text 731.",
+        "confidence": 0.95,
+        "transcriptExcerpt": "Synthetic text 732.",
+        "updatedAt": 1791556857196,
+        "windowSeconds": 75
+      },
+      "latestAlert": {
+        "alertId": "00000000-0000-4000-8000-000000000165",
+        "type": "destiny_guest",
+        "title": "Synthetic text 733.",
+        "message": "Synthetic text 734.",
+        "reason": "Synthetic text 735.",
+        "confidence": 0.7791788860490381,
+        "createdAt": 1791552658247
+      },
+      "alertedAtByType": {
+        "destiny_guest": 1791552658247
+      }
+    },
+    "diagnostics": {
+      "streamerId": "id2",
+      "sessionStartedAt": 1791546962108,
+      "stages": {
+        "metadata": {
+          "status": "skipped",
+          "eligible": false,
+          "finishedAt": 1791546962236,
+          "detail": "Synthetic text 739."
+        },
+        "voice": {
+          "status": "success",
+          "eligible": true,
+          "startedAt": 1791557163358,
+          "finishedAt": 1791557173022,
+          "nextAt": 1791557208358,
+          "durationMs": 9664,
+          "detail": "Synthetic text 740.",
+          "metrics": {
+            "confidence": 0.28391305540064965,
+            "matchedWindows": 0,
+            "checkedWindows": 5,
+            "evidence": "none"
+          }
+        },
+        "summary": {
+          "status": "success",
+          "eligible": true,
+          "startedAt": 1791556781551,
+          "finishedAt": 1791556857198,
+          "nextAt": 1791557261551,
+          "durationMs": 75647,
+          "detail": "Synthetic text 731.",
+          "metrics": {
+            "confidence": 0.95,
+            "audioSeconds": 75,
+            "transcriptCharacters": 1946,
+            "costCents": 0.022880000000000678
+          }
+        },
+        "alert": {
+          "status": "success",
+          "eligible": true,
+          "startedAt": 1791552658247,
+          "finishedAt": 1791552658384,
+          "durationMs": 137,
+          "detail": "Synthetic text 733.",
+          "metrics": {
+            "type": "destiny_guest",
+            "confidence": 0.7791788860490381
+          }
+        }
+      },
+      "updatedAt": 1791557173288
+    },
+    "events": [
+      {
+        "streamerId": "id2",
+        "sessionStartedAt": 1791546962108,
+        "kind": "summary",
+        "status": "success",
+        "title": "Synthetic text 741.",
+        "detail": "Synthetic text 731.",
+        "durationMs": 75647,
+        "costCents": 0.022880000000000678,
+        "metrics": {
+          "confidence": 0.95,
+          "audioSeconds": 75
+        },
+        "eventId": "00000000-0000-4000-8000-000000000166",
+        "createdAt": 1791556857849
+      },
+      {
+        "streamerId": "id2",
+        "sessionStartedAt": 1791546962108,
+        "kind": "summary",
+        "status": "success",
+        "title": "Synthetic text 741.",
+        "detail": "Synthetic text 742.",
+        "durationMs": 78687,
+        "costCents": 0.02862999999999971,
+        "metrics": {
+          "confidence": 0.88,
+          "audioSeconds": 75
+        },
+        "eventId": "00000000-0000-4000-8000-000000000167",
+        "createdAt": 1791556362169
+      }
+    ],
+    "runtime": {
+      "enabled": true,
+      "voiceprintLoaded": true,
+      "model": "parakeet-tdt-0.6b-v3-int8",
+      "queues": {
+        "capture": {
+          "running": 0,
+          "queued": 0
+        },
+        "speech": {
+          "running": 0,
+          "queued": 0
+        },
+        "llm": {
+          "running": 0,
+          "queued": 0
+        }
+      },
+      "activeStreamCount": 3,
+      "activeVoiceTargetCount": 3,
+      "budget": {
+        "spentCents": 22.74310000000002,
+        "limitCents": 1000,
+        "remainingCents": 977.2569
+      },
+      "intervals": {
+        "voiceSeconds": 45,
+        "summarySeconds": 480
+      }
+    },
+    "generatedAt": 1791557222813
+  }
+}

@@ -13,12 +13,18 @@ mod api_diff;
 mod capture;
 mod compat;
 mod deps;
+mod golden_synth;
 mod mcp;
+mod target_hygiene;
 
 const COMMANDS: &[(&str, &str)] = &[
     (
         "capture-golden",
-        "--base URL [--mcp-token-env NAME] [--route PATH]...: capture read-only HTTP GET fixtures and the live MCP tools/list",
+        "--base URL [--mcp-token-env NAME] [--route PATH]...: capture read-only HTTP GET fixtures and the live MCP tools/list into the gitignored .local/golden-capture/",
+    ),
+    (
+        "golden-synthesize",
+        "[--from DIR] [--check]: derive the committed synthetic HTTP fixtures (no personal data) from the raw capture",
     ),
     (
         "mcp-golden",
@@ -49,7 +55,68 @@ const COMMANDS: &[(&str, &str)] = &[
         "--ts URL --rust URL [--route PATH]... [--shape]: diff JSON values (or shapes) of read routes",
     ),
     ("deps-check", "enforce the crate dependency direction rules"),
+    (
+        "hygiene",
+        "measure Cargo build directories under target/ and sweep the oldest artifacts above OMNI_TARGET_LIMIT_GIB (default 40)",
+    ),
+    (
+        "gate",
+        "local pre-push gate: hygiene, fmt --check, workspace and wasm32 clippy -D warnings, deps-check, workspace tests --no-fail-fast",
+    ),
 ];
+
+/// The web crates trunk builds for `wasm32-unknown-unknown`; workspace Clippy only
+/// checks them for the host target.
+const WASM_CRATES: &[&str] = &["omni-web", "omni-web-kit", "omni-web-pages"];
+
+/// Runs `cargo <args>` from the repository root, failing on a non-zero exit.
+fn cargo(args: &[&str]) -> Result<()> {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    println!("gate: cargo {}", args.join(" "));
+    let status = std::process::Command::new(cargo)
+        .args(args)
+        .current_dir(repo_root())
+        .status()
+        .context("starting cargo")?;
+    if !status.success() {
+        bail!("cargo {} exited with {status}", args.join(" "));
+    }
+    Ok(())
+}
+
+/// Build-directory hygiene, then the checks CI runs, plus wasm32 Clippy for the
+/// web crates. Not run in CI: hosted runners start from a restored cache.
+fn gate() -> Result<()> {
+    target_hygiene::maintain(&repo_root())?;
+    cargo(&["fmt", "--all", "--check"])?;
+    cargo(&[
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings",
+    ])?;
+    let mut wasm = vec!["clippy"];
+    for name in WASM_CRATES {
+        wasm.extend(["-p", name]);
+    }
+    wasm.extend([
+        "--target",
+        "wasm32-unknown-unknown",
+        "--all-targets",
+        "--locked",
+        "--",
+        "-D",
+        "warnings",
+    ]);
+    cargo(&wasm)?;
+    deps::deps_check()?;
+    cargo(&["test", "--workspace", "--locked", "--no-fail-fast"])?;
+    println!("gate: ok");
+    Ok(())
+}
 
 /// The repository root (two levels above this crate).
 pub fn repo_root() -> PathBuf {
@@ -131,6 +198,7 @@ fn run(command: &str, args: &[String]) -> Result<()> {
     let check = args.iter().any(|a| a == "--check");
     match command {
         "capture-golden" => capture::capture_golden(args),
+        "golden-synthesize" => golden_synth::golden_synthesize(args),
         "mcp-golden" => mcp::mcp_golden(check),
         "mcp-policy" => mcp::mcp_policy(check),
         "golden-check" => {
@@ -158,6 +226,8 @@ fn run(command: &str, args: &[String]) -> Result<()> {
         }
         "api-diff" => api_diff::api_diff(args),
         "deps-check" => deps::deps_check(),
+        "hygiene" => target_hygiene::maintain(&repo_root()),
+        "gate" => gate(),
         other => bail!("unknown command {other:?}"),
     }
 }

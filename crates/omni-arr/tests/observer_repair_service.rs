@@ -316,7 +316,7 @@ async fn resumes_an_interrupted_execution_as_unhandled_without_assessing_or_repa
     .await
     .unwrap()
     .unwrap();
-    reserved.value.phase = RepairPhase::Executing;
+    reserved.phase = RepairPhase::Executing;
     save_issue(&h.store.store, &reserved, owner, seed_now + 1)
         .await
         .unwrap();

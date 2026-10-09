@@ -9,7 +9,7 @@ use std::time::Duration;
 use omni_arr::SideEffects;
 use omni_arr::arr_recovery::ArrKind;
 use omni_arr::arr_recovery::client::{ArrClientConfig, HttpArrClient};
-use omni_arr::arr_recovery::persistence::{ActionPhase, NotificationState, StoredRecoveryState};
+use omni_arr::arr_recovery::persistence::{ActionPhase, NotificationState, RecoveryState};
 use omni_arr::arr_recovery::service::{RecoveryContext, STUCK_GRACE_MS, run_recovery};
 use omni_arr::arr_recovery::task::{LunaAssessor, PushoverNotifier};
 use omni_core::clock::{SharedClock, TestClock};
@@ -107,14 +107,14 @@ async fn reserves_records_and_reports_without_sending_any_mutation() {
     assert_eq!(recorded[0].body.as_ref().unwrap()["name"], "ManualImport");
     let state = store
         .store
-        .read(|docs| docs.get::<StoredRecoveryState>(&"radarr".to_owned()))
+        .read(|docs| docs.get::<RecoveryState>(&"radarr".to_owned()))
         .await
         .unwrap()
         .unwrap();
-    let action = &state.value.actions[0];
+    let action = &state.actions[0];
     assert_eq!(action.phase, ActionPhase::Uncertain);
     assert_eq!(action.notification, NotificationState::Sent);
-    assert!(state.value.lease.is_none(), "the lease is released");
+    assert!(state.lease.is_none(), "the lease is released");
     let pushes = app.pushes.all();
     assert_eq!(pushes.len(), 1);
     assert_eq!(

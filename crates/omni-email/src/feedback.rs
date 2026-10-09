@@ -22,11 +22,7 @@ pub struct EmailFeedbackData {
     pub subject: String,
     pub from: String,
     pub verdict: EmailFeedbackVerdict,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "omni_store::cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
     pub created_at: i64,
     #[serde(flatten)]

@@ -1,0 +1,38 @@
+{
+  "route": "/api/task-runs/LiveCheckTask:00000000-0000-4000-8000-000000000004/logs",
+  "status": 200,
+  "body": {
+    "run": {
+      "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000004",
+      "taskName": "LiveCheckTask",
+      "trigger": "schedule",
+      "scheduledFor": null,
+      "startedAt": 1791557162009,
+      "finishedAt": 1791557163363,
+      "status": "success",
+      "error": null,
+      "summary": null
+    },
+    "lines": [
+      {
+        "t": 1791557162368,
+        "level": "debug",
+        "logger": "Main:LiveCheckTask",
+        "msg": "Synthetic text 744."
+      },
+      {
+        "t": 1791557162458,
+        "level": "debug",
+        "logger": "Main:LiveCheckTask",
+        "msg": "Synthetic text 745."
+      },
+      {
+        "t": 1791557162890,
+        "level": "debug",
+        "logger": "Main:ViewerMetrics",
+        "msg": "Synthetic text 746."
+      }
+    ],
+    "dropped": 0
+  }
+}

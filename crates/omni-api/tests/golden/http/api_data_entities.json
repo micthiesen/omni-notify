@@ -1,0 +1,443 @@
+{
+  "route": "/api/data/entities",
+  "status": 200,
+  "body": {
+    "entities": [
+      {
+        "slug": "cost-event",
+        "label": "Cost events",
+        "description": "Metered service usage and estimated cost ledger.",
+        "warning": "Deleting events changes global cost totals and cannot be undone.",
+        "primaryKey": [
+          "eventId"
+        ],
+        "count": 22901,
+        "storageBytes": 7666413
+      },
+      {
+        "slug": "cost-migration",
+        "label": "Cost migration state",
+        "description": "Completed cost-ledger backfills and their imported event counts.",
+        "warning": "Deleting this state can duplicate historical costs on the next restart.",
+        "primaryKey": [
+          "version"
+        ],
+        "count": 1,
+        "storageBytes": 60
+      },
+      {
+        "slug": "task-run",
+        "label": "Task runs",
+        "description": "Scheduled, manual, startup, and catch-up execution history.",
+        "warning": "Deleting a run also deletes its stored log.",
+        "primaryKey": [
+          "runId"
+        ],
+        "count": 956,
+        "storageBytes": 213429
+      },
+      {
+        "slug": "task-run-log",
+        "label": "Task run logs",
+        "description": "Captured log lines for completed task runs.",
+        "primaryKey": [
+          "runId"
+        ],
+        "count": 576,
+        "storageBytes": 6329799
+      },
+      {
+        "slug": "task-schedule-state",
+        "label": "Task schedule state",
+        "description": "Last evaluated cron occurrence used for catch-up decisions.",
+        "warning": "Deleting state changes the catch-up baseline for that task.",
+        "primaryKey": [
+          "taskName"
+        ],
+        "count": 25,
+        "storageBytes": 1851
+      },
+      {
+        "slug": "streamer-status",
+        "label": "Streamer status",
+        "description": "Current aggregate live session and last offline state per streamer.",
+        "warning": "Deleting live state can cause a fresh went-live transition on the next check.",
+        "primaryKey": [
+          "streamerId"
+        ],
+        "count": 277,
+        "storageBytes": 30781
+      },
+      {
+        "slug": "streamer-sessions",
+        "label": "Stream sessions",
+        "description": "Completed live sessions per streamer (start, end, peak, title).",
+        "warning": "Deleted session history cannot be reconstructed.",
+        "primaryKey": [
+          "streamerId"
+        ],
+        "count": 16,
+        "storageBytes": 118084
+      },
+      {
+        "slug": "streamer-viewer-metrics",
+        "label": "Viewer metrics",
+        "description": "Daily viewer peaks and all-time records per streamer.",
+        "warning": "Deleted viewer records cannot be reconstructed outside the retained window.",
+        "primaryKey": [
+          "streamerId"
+        ],
+        "count": 274,
+        "storageBytes": 99713
+      },
+      {
+        "slug": "streamer-platform-viewer-metrics",
+        "label": "Streamer platform viewer metrics",
+        "description": "Per-platform daily viewer peaks for grouped streamer identities.",
+        "primaryKey": [
+          "streamerId",
+          "platform",
+          "username"
+        ],
+        "count": 252,
+        "storageBytes": 89287
+      },
+      {
+        "slug": "live-profile-identity-link",
+        "label": "Livestream profile identity links",
+        "description": "Durable direct-profile associations between platform accounts.",
+        "primaryKey": [
+          "sourceBinding"
+        ],
+        "count": 61,
+        "storageBytes": 6661
+      },
+      {
+        "slug": "livestream-intelligence",
+        "label": "Livestream intelligence",
+        "description": "Current semantic metadata, summaries, chapters, and alert state.",
+        "primaryKey": [
+          "streamerId"
+        ],
+        "count": 271,
+        "storageBytes": 164677
+      },
+      {
+        "slug": "livestream-feedback",
+        "label": "Livestream alert feedback",
+        "description": "Useful, not-useful, and false-positive alert corrections.",
+        "primaryKey": [
+          "feedbackId"
+        ],
+        "count": 0,
+        "storageBytes": 0
+      },
+      {
+        "slug": "livestream-diagnostics",
+        "label": "Livestream diagnostics",
+        "description": "Latest metadata, voice, summary, and alert pipeline status per streamer.",
+        "primaryKey": [
+          "streamerId"
+        ],
+        "count": 270,
+        "storageBytes": 134312
+      },
+      {
+        "slug": "livestream-intelligence-event",
+        "label": "Livestream intelligence events",
+        "description": "Bounded timeline of meaningful livestream intelligence decisions and failures.",
+        "primaryKey": [
+          "eventId"
+        ],
+        "count": 2802,
+        "storageBytes": 733505
+      },
+      {
+        "slug": "recs-recommendation-attempt",
+        "label": "Media recommendations",
+        "description": "Recommendation attempts, delivery state, outcomes, and feedback.",
+        "warning": "Deleting rows changes cooldown, exclusion, and taste evidence behavior.",
+        "primaryKey": [
+          "recommendationId"
+        ],
+        "count": 66,
+        "storageBytes": 102051
+      },
+      {
+        "slug": "podcast-recommendation-attempt",
+        "label": "Podcast recommendations",
+        "description": "Podcast episode picks, queue state, outcomes, and feedback.",
+        "warning": "Deleting rows changes episode exclusions and show cooldowns.",
+        "primaryKey": [
+          "recommendationId"
+        ],
+        "count": 41,
+        "storageBytes": 85478
+      },
+      {
+        "slug": "podcast-taste-evidence",
+        "label": "Podcast taste evidence",
+        "description": "Listen, outcome, and feedback observations for podcast reflection.",
+        "warning": "Deleting evidence changes the inputs available to future reflections.",
+        "primaryKey": [
+          "evidenceId"
+        ],
+        "count": 370,
+        "storageBytes": 104597
+      },
+      {
+        "slug": "podcast-taste-profile",
+        "label": "Podcast taste profiles",
+        "description": "Generated checkpoints of the current podcast taste model.",
+        "primaryKey": [
+          "profileId"
+        ],
+        "count": 12,
+        "storageBytes": 62679
+      },
+      {
+        "slug": "recs-taste-evidence",
+        "label": "Taste evidence",
+        "description": "Versioned observations used to build the media taste profile.",
+        "warning": "Deleting evidence changes the inputs available to future reflections.",
+        "primaryKey": [
+          "evidenceId"
+        ],
+        "count": 381,
+        "storageBytes": 227873
+      },
+      {
+        "slug": "recs-taste-profile",
+        "label": "Taste profiles",
+        "description": "Generated checkpoints of the current media taste model.",
+        "primaryKey": [
+          "profileId"
+        ],
+        "count": 16,
+        "storageBytes": 119728
+      },
+      {
+        "slug": "recs-identity-alias",
+        "label": "Identity aliases",
+        "description": "Cached Plex GUID to TMDB identity resolutions.",
+        "warning": "Deleted aliases will be resolved again when encountered.",
+        "primaryKey": [
+          "guid"
+        ],
+        "count": 2284,
+        "storageBytes": 323916
+      },
+      {
+        "slug": "briefing-history",
+        "label": "Briefing history",
+        "description": "Recent notifications retained for briefing deduplication.",
+        "warning": "Deleting history can allow a briefing to repeat prior stories.",
+        "primaryKey": [
+          "briefingName"
+        ],
+        "count": 5,
+        "storageBytes": 88969
+      },
+      {
+        "slug": "press-pods-episode",
+        "label": "PressPods episodes",
+        "description": "Generated podcast episodes: metadata, narration, chunk stats, costs.",
+        "warning": "Deleting a row does not remove its audio file from disk; the episode also drops out of the RSS feed.",
+        "primaryKey": [
+          "episodeId"
+        ],
+        "count": 42,
+        "storageBytes": 1438315
+      },
+      {
+        "slug": "press-pods-job",
+        "label": "PressPods jobs",
+        "description": "Durable submission queue with retry backoff and stale-claim reclaim.",
+        "primaryKey": [
+          "jobId"
+        ],
+        "count": 2,
+        "storageBytes": 984
+      },
+      {
+        "slug": "parcel-submitted-delivery",
+        "label": "Submitted deliveries",
+        "description": "Parcel tracking numbers already sent to Parcel.app.",
+        "warning": "This is a deduplication gate. Deleted rows may be submitted again.",
+        "primaryKey": [
+          "trackingNumber"
+        ],
+        "count": 168,
+        "storageBytes": 27125
+      },
+      {
+        "slug": "calendar-created-event",
+        "label": "Created calendar events",
+        "description": "Calendar events created from email, keyed by normalized content.",
+        "warning": "This is a deduplication gate. Deleted rows may create duplicate events.",
+        "primaryKey": [
+          "eventHash"
+        ],
+        "count": 116,
+        "storageBytes": 41339
+      },
+      {
+        "slug": "email-activity",
+        "label": "Email activity",
+        "description": "Per-email outcomes from the parcel and calendar pipelines.",
+        "primaryKey": [
+          "activityId"
+        ],
+        "count": 2000,
+        "storageBytes": 1028988
+      },
+      {
+        "slug": "email-activity-log",
+        "label": "Email activity logs",
+        "description": "Captured log lines for emails that reached pipeline processing.",
+        "primaryKey": [
+          "activityId"
+        ],
+        "count": 235,
+        "storageBytes": 196137
+      },
+      {
+        "slug": "imap-folder-cursor",
+        "label": "Email IMAP cursors",
+        "description": "Per-folder iCloud IMAP UID cursors for incremental email processing.",
+        "warning": "Deleting a cursor can replay old email through every email handler.",
+        "primaryKey": [
+          "folder"
+        ],
+        "count": 2,
+        "storageBytes": 127
+      },
+      {
+        "slug": "jmap-email-dispatch",
+        "label": "Email dispatch state",
+        "description": "Last email dispatch timestamp, used by the pipeline watchdog.",
+        "primaryKey": [
+          "key"
+        ],
+        "count": 1,
+        "storageBytes": 41
+      },
+      {
+        "slug": "email-retry",
+        "label": "Email retries",
+        "description": "Emails queued for reprocessing after transient failures.",
+        "primaryKey": [
+          "retryKey"
+        ],
+        "count": 0,
+        "storageBytes": 0
+      },
+      {
+        "slug": "email-sender-rule",
+        "label": "Email sender rules",
+        "description": "User-defined block/allow rules merged into the email filters.",
+        "primaryKey": [
+          "ruleId"
+        ],
+        "count": 11,
+        "storageBytes": 1017
+      },
+      {
+        "slug": "email-feedback",
+        "label": "Email feedback",
+        "description": "Explicit outcome corrections injected into email triage prompts.",
+        "primaryKey": [
+          "activityId"
+        ],
+        "count": 0,
+        "storageBytes": 0
+      },
+      {
+        "slug": "workspace-subject",
+        "label": "Workspace subjects",
+        "description": "Durable dossiers maintained inside Omni workspaces.",
+        "primaryKey": [
+          "workspaceId",
+          "subjectId"
+        ],
+        "count": 2,
+        "storageBytes": 830
+      },
+      {
+        "slug": "workspace-artifact-revision",
+        "label": "Workspace artifact revisions",
+        "description": "Append-only history of workspace briefs, research, and decisions.",
+        "primaryKey": [
+          "revisionId"
+        ],
+        "count": 36,
+        "storageBytes": 62887
+      },
+      {
+        "slug": "workspace-message",
+        "label": "Workspace messages",
+        "description": "User and agent conversation attached to workspace subjects.",
+        "primaryKey": [
+          "messageId"
+        ],
+        "count": 16,
+        "storageBytes": 28270
+      },
+      {
+        "slug": "workspace-source",
+        "label": "Workspace sources",
+        "description": "Web and explicitly scoped email evidence used by workspaces.",
+        "primaryKey": [
+          "sourceId"
+        ],
+        "count": 13,
+        "storageBytes": 6367
+      },
+      {
+        "slug": "workspace-action",
+        "label": "Workspace actions",
+        "description": "Deterministic side effects awaiting or recording human approval.",
+        "primaryKey": [
+          "actionId"
+        ],
+        "count": 0,
+        "storageBytes": 0
+      },
+      {
+        "slug": "workspace-email-scope",
+        "label": "Workspace email scopes",
+        "description": "Explicitly approved senders and keywords eligible for ingestion.",
+        "primaryKey": [
+          "workspaceId",
+          "subjectId"
+        ],
+        "count": 0,
+        "storageBytes": 0
+      },
+      {
+        "slug": "workspace-papercut",
+        "label": "Workspace papercuts",
+        "description": "Deduplicated capability and workflow problems reported by agents.",
+        "primaryKey": [
+          "papercutId"
+        ],
+        "count": 0,
+        "storageBytes": 0
+      },
+      {
+        "slug": "workspace-notification",
+        "label": "Workspace notifications",
+        "description": "Durable Pushover delivery outbox with retry state.",
+        "primaryKey": [
+          "notificationId"
+        ],
+        "count": 0,
+        "storageBytes": 0
+      }
+    ],
+    "storage": {
+      "databaseSizeBytes": 38080512,
+      "entityStorageBytes": 19536290
+    }
+  }
+}

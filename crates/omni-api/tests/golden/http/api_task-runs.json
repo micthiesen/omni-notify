@@ -1,0 +1,140 @@
+{
+  "route": "/api/task-runs",
+  "status": 200,
+  "body": {
+    "runs": [
+      {
+        "runId": "ClaudeSessionEvents:00000000-0000-4000-8000-000000000143",
+        "taskName": "ClaudeSessionEvents",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557205001,
+        "finishedAt": 1791557205068,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000145",
+        "taskName": "LiveCheckTask",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557202953,
+        "finishedAt": 1791557203515,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "McpEventDelivery:00000000-0000-4000-8000-000000000142",
+        "taskName": "McpEventDelivery",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557190067,
+        "finishedAt": 1791557190122,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "EmailArchive:00000000-0000-4000-8000-000000000160",
+        "taskName": "EmailArchive",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557190001,
+        "finishedAt": 1791557190065,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "ClaudeResets:00000000-0000-4000-8000-000000000159",
+        "taskName": "ClaudeResets",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557160056,
+        "finishedAt": 1791557161110,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 720."
+      },
+      {
+        "runId": "CodexResets:00000000-0000-4000-8000-000000000158",
+        "taskName": "CodexResets",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557160001,
+        "finishedAt": 1791557160374,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 719."
+      },
+      {
+        "runId": "ArrRecovery:00000000-0000-4000-8000-000000000149",
+        "taskName": "ArrRecovery",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557100293,
+        "finishedAt": 1791557100749,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 710."
+      },
+      {
+        "runId": "WorkspaceNotifications:00000000-0000-4000-8000-000000000157",
+        "taskName": "WorkspaceNotifications",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557100242,
+        "finishedAt": 1791557100291,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 718."
+      },
+      {
+        "runId": "PressPods:00000000-0000-4000-8000-000000000005",
+        "taskName": "PressPods",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557100182,
+        "finishedAt": 1791557100240,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 708."
+      },
+      {
+        "runId": "RemindersSession:00000000-0000-4000-8000-000000000144",
+        "taskName": "RemindersSession",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557100114,
+        "finishedAt": 1791557102917,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "ObserverRepair:00000000-0000-4000-8000-000000000150",
+        "taskName": "ObserverRepair",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557100056,
+        "finishedAt": 1791557100695,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 711."
+      },
+      {
+        "runId": "EmailRetry:00000000-0000-4000-8000-000000000162",
+        "taskName": "EmailRetry",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557100001,
+        "finishedAt": 1791557100054,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 722."
+      }
+    ]
+  }
+}

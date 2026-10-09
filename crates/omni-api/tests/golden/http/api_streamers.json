@@ -1,0 +1,323 @@
+{
+  "route": "/api/streamers",
+  "status": 200,
+  "body": {
+    "streamers": [
+      {
+        "id": "id2",
+        "displayName": "id170",
+        "bindings": [
+          {
+            "platform": "kick",
+            "username": "id2",
+            "url": "https://example.com/r/202"
+          }
+        ],
+        "tier": "primary",
+        "dgg": {
+          "hosted": true,
+          "viewers": 787
+        },
+        "live": true,
+        "title": "Synthetic text 723.",
+        "startedAt": 1791546962108,
+        "maxViewerCount": 2357,
+        "viewerCount": 2357,
+        "sources": [
+          {
+            "platform": "kick",
+            "username": "id2",
+            "title": "Synthetic text 723.",
+            "viewerCount": 2357,
+            "category": "Just Chatting"
+          }
+        ],
+        "category": "Just Chatting",
+        "primary": {
+          "platform": "kick",
+          "username": "id2",
+          "url": "https://example.com/r/202"
+        },
+        "intelligence": {
+          "streamerId": "id2",
+          "sessionStartedAt": 1791546962108,
+          "relevanceScore": 54,
+          "relevanceReasons": [
+            "Synthetic text 724.",
+            "Synthetic text 725."
+          ],
+          "chapters": [
+            {
+              "chapterId": "00000000-0000-4000-8000-000000000163",
+              "startedAt": 1791547463221,
+              "title": "Synthetic text 726.",
+              "summary": "Synthetic text 727."
+            },
+            {
+              "chapterId": "00000000-0000-4000-8000-000000000164",
+              "startedAt": 1791547965933,
+              "title": "Synthetic text 728.",
+              "summary": "Synthetic text 729."
+            }
+          ],
+          "updatedAt": 1791557203226,
+          "trend": {
+            "percentChange": 8.020164986251146,
+            "viewersPerMinute": 13.764007374663729,
+            "dggPercentChange": 5.6375838926174495,
+            "anomalous": false,
+            "reason": null,
+            "currentViewers": 2357,
+            "baselineViewers": 2182,
+            "currentDggViewers": 787,
+            "baselineDggViewers": 745,
+            "baselineSamples": 45,
+            "typicalPeakViewers": 2932,
+            "candidateObservations": 0,
+            "suppressionReason": null,
+            "updatedAt": 1791557203226
+          },
+          "summary": {
+            "text": "Synthetic text 730.",
+            "topic": "Synthetic text 731.",
+            "confidence": 0.95,
+            "transcriptExcerpt": "Synthetic text 732.",
+            "updatedAt": 1791556857196,
+            "windowSeconds": 75
+          },
+          "latestAlert": {
+            "alertId": "00000000-0000-4000-8000-000000000165",
+            "type": "destiny_guest",
+            "title": "Synthetic text 733.",
+            "message": "Synthetic text 734.",
+            "reason": "Synthetic text 735.",
+            "confidence": 0.7791788860490381,
+            "createdAt": 1791552658247
+          },
+          "alertedAtByType": {
+            "destiny_guest": 1791552658247
+          }
+        }
+      },
+      {
+        "id": "dgg:twitch:id171",
+        "displayName": "id172",
+        "bindings": [
+          {
+            "platform": "twitch",
+            "username": "id171",
+            "url": "https://example.com/r/203"
+          }
+        ],
+        "tier": "background",
+        "dgg": {
+          "hosted": false,
+          "viewers": 3
+        },
+        "live": true,
+        "title": "Synthetic text 736.",
+        "startedAt": 1791530848000,
+        "maxViewerCount": 42177,
+        "viewerCount": 35359,
+        "sources": [
+          {
+            "platform": "twitch",
+            "username": "id171",
+            "title": "Synthetic text 736.",
+            "viewerCount": 35359
+          }
+        ],
+        "category": null,
+        "primary": {
+          "platform": "twitch",
+          "username": "id171",
+          "url": "https://example.com/r/203"
+        },
+        "intelligence": {
+          "streamerId": "dgg:twitch:id171",
+          "sessionStartedAt": 1791530848000,
+          "relevanceScore": 18,
+          "relevanceReasons": [],
+          "chapters": [],
+          "updatedAt": 1791557162888,
+          "trend": {
+            "percentChange": 4.572205956289001,
+            "viewersPerMinute": 178.1028834327323,
+            "dggPercentChange": -25,
+            "anomalous": false,
+            "reason": null,
+            "currentViewers": 35359,
+            "baselineViewers": 33813,
+            "currentDggViewers": 3,
+            "baselineDggViewers": 4,
+            "baselineSamples": 15,
+            "typicalPeakViewers": null,
+            "candidateObservations": 0,
+            "suppressionReason": null,
+            "updatedAt": 1791557162888
+          }
+        }
+      },
+      {
+        "id": "dgg:youtube:id173",
+        "displayName": "Synthetic text 737.",
+        "bindings": [
+          {
+            "platform": "youtube",
+            "username": "id174",
+            "url": "https://example.com/r/204"
+          }
+        ],
+        "tier": "background",
+        "dgg": {
+          "hosted": false,
+          "viewers": 3
+        },
+        "live": true,
+        "title": "Synthetic text 738.",
+        "startedAt": 1791550986000,
+        "maxViewerCount": 5963,
+        "viewerCount": 5963,
+        "sources": [
+          {
+            "platform": "youtube",
+            "username": "id174",
+            "title": "Synthetic text 738.",
+            "viewerCount": 5963
+          }
+        ],
+        "category": null,
+        "primary": {
+          "platform": "youtube",
+          "username": "id174",
+          "url": "https://example.com/r/204"
+        },
+        "intelligence": {
+          "streamerId": "dgg:youtube:id173",
+          "sessionStartedAt": 1791550986000,
+          "relevanceScore": 18,
+          "relevanceReasons": [],
+          "chapters": [],
+          "updatedAt": 1791557162891,
+          "trend": {
+            "percentChange": 4.175401816911251,
+            "viewersPerMinute": 12.781748574764901,
+            "dggPercentChange": -25,
+            "anomalous": false,
+            "reason": null,
+            "currentViewers": 5963,
+            "baselineViewers": 5724,
+            "currentDggViewers": 3,
+            "baselineDggViewers": 4,
+            "baselineSamples": 15,
+            "typicalPeakViewers": null,
+            "candidateObservations": 0,
+            "suppressionReason": null,
+            "updatedAt": 1791557162891
+          }
+        }
+      },
+      {
+        "id": "id3",
+        "displayName": "id175",
+        "bindings": [
+          {
+            "platform": "kick",
+            "username": "id176",
+            "url": "https://example.com/r/205"
+          }
+        ],
+        "tier": "background",
+        "live": false,
+        "lastStartedAt": 1791518821079,
+        "lastEndedAt": 1791528300966,
+        "lastMaxViewerCount": 890
+      },
+      {
+        "id": "id177",
+        "displayName": "id178",
+        "bindings": [
+          {
+            "platform": "twitch",
+            "username": "id177",
+            "url": "https://example.com/r/206"
+          }
+        ],
+        "tier": "primary",
+        "live": false,
+        "lastStartedAt": 1791506921863,
+        "lastEndedAt": 1791522421301,
+        "lastMaxViewerCount": 6620
+      },
+      {
+        "id": "id179",
+        "displayName": "id180",
+        "bindings": [
+          {
+            "platform": "youtube",
+            "username": "id181",
+            "url": "https://example.com/r/207"
+          },
+          {
+            "platform": "kick",
+            "username": "id179",
+            "url": "https://example.com/r/208"
+          }
+        ],
+        "tier": "primary",
+        "live": false,
+        "lastStartedAt": 1791482343343,
+        "lastEndedAt": 1791518821468,
+        "lastMaxViewerCount": 11821
+      },
+      {
+        "id": "id182",
+        "displayName": "id183",
+        "bindings": [
+          {
+            "platform": "youtube",
+            "username": "id184",
+            "url": "https://example.com/r/209"
+          }
+        ],
+        "tier": "background",
+        "live": false,
+        "lastStartedAt": 1791496802443,
+        "lastEndedAt": 1791512643248,
+        "lastMaxViewerCount": 354
+      },
+      {
+        "id": "id185",
+        "displayName": "id186",
+        "bindings": [
+          {
+            "platform": "twitch",
+            "username": "id187",
+            "url": "https://example.com/r/210"
+          }
+        ],
+        "tier": "background",
+        "live": false,
+        "lastStartedAt": 1791412462862,
+        "lastEndedAt": 1791435423397,
+        "lastMaxViewerCount": 15486
+      },
+      {
+        "id": "id188",
+        "displayName": "id189",
+        "bindings": [
+          {
+            "platform": "youtube",
+            "username": "id190",
+            "url": "https://example.com/r/211"
+          }
+        ],
+        "tier": "primary",
+        "live": false,
+        "lastStartedAt": 1790734122457,
+        "lastEndedAt": 1790757922960,
+        "lastMaxViewerCount": 3073
+      }
+    ]
+  }
+}

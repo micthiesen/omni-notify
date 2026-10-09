@@ -5,6 +5,13 @@ all-features = false
 [advisories]
 version = 2
 yanked = "deny"
+ignore = [
+  # paste is archived. It reaches only the wasm frontend, through leptos,
+  # reactive_graph, reactive_stores, tachys and either_of, as a proc macro with
+  # no runtime code. The pinned leptos 0.8.20 still requires it; remove this
+  # entry once a leptos upgrade drops paste.
+  { id = "RUSTSEC-2024-0436", reason = "unmaintained proc macro reached only through leptos 0.8.20" },
+]
 
 [licenses]
 version = 2
@@ -17,12 +24,14 @@ allow = [
   "ISC",
   "Zlib",
   "Unicode-3.0",
-  "Unicode-DFS-2016",
   "CC0-1.0",
   "MPL-2.0",
   "CDLA-Permissive-2.0",
   "BSL-1.0",
-  "OpenSSL",
+  # MIT without the attribution clause (borrow-or-share, via jsonschema).
+  "MIT-0",
+  # Public-domain-equivalent BSD (quoted_printable, via lettre).
+  "0BSD",
 ]
 confidence-threshold = 0.9
 

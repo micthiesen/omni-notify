@@ -54,12 +54,12 @@ async fn every_production_row_decodes_and_reencodes_to_the_same_js_value() {
             assert_eq!((descriptor.recompute_pk)(&original).unwrap(), row.pk);
             let reencoded = match name {
                 "arr-recovery-state" => {
-                    let typed: omni_arr::arr_recovery::persistence::StoredRecoveryState =
+                    let typed: omni_arr::arr_recovery::persistence::RecoveryState =
                         cbor::from_value(original.clone()).unwrap();
                     cbor::to_value(&typed).unwrap()
                 }
                 _ => {
-                    let typed: omni_arr::observer_repair::persistence::StoredRepairState =
+                    let typed: omni_arr::observer_repair::persistence::ObserverRepairState =
                         cbor::from_value(original.clone()).unwrap();
                     cbor::to_value(&typed).unwrap()
                 }

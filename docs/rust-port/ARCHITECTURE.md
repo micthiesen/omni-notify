@@ -188,7 +188,7 @@ nearest qualifying patch.
 | sherpa-onnx | `=1.13.8` | VAD, speaker embedding, nemo transducer (WP05 spike) |
 | ipp | `=7.0.0` | `async-client-rustls` |
 | aws-cognito-srp | `=0.2.5` | Whisker USER_SRP_AUTH (WP13 spike; fall back to in-house SRP-6a) |
-| jsonwebtoken | `=11.1.0` | `default-features=false, rust_crypto, use_pem`; ES256 APNs JWT |
+| jsonwebtoken | `=11.1.0` | `default-features=false, aws_lc_rs, use_pem`; ES256 APNs JWT (the `rust_crypto` backend pulls `rsa`, RUSTSEC-2023-0071) |
 | serde_norway | `=0.9.42` | briefing front matter |
 | sha1 / sha2 | `=0.11.0` / `=0.11.0` | |
 | hmac | `=0.13.0` | |
@@ -683,19 +683,28 @@ pub struct BootStep { pub phase: BootPhase, pub name: &'static str,
 pub enum BootPhase { Migrate, Reconcile, Services, AfterServer }
 pub struct BackgroundService { pub name: &'static str,
     pub start: Box<dyn Fn(AppContext) -> BoxFuture<'static, ()> + Send + Sync>, pub retry: Option<RetryPolicy> } // Fn: restarted on exit; email: 30s..300s
-pub mod ports {       // cross-subsystem traits; set once during wiring (OnceLock), read via accessors
-    pub struct Ports { /* OnceLock<Arc<dyn ...>> per port */ }
-    pub trait EmailReader { fetch_by_id(id, fresh) ; search(q) ; health() }          // impl WP01, used by WP02, WP11
-    pub trait ArchiveEcho { is_archive_action_message(message_id, origin) -> bool } // impl WP01, used by WP12
-    pub trait EmailRetryHandlers { handler(pipeline) -> Option<Arc<dyn EmailHandler>> } // impl WP14 wiring, used by WP02 retry/reprocess
-    pub trait CalendarWriter { create_event(uid, &CalendarEventInput) -> Created|AlreadyExists ; status() }  // impl WP03, used by WP11
-    pub trait LiveDirectory { streamers(); statuses(); display(); details(id) }      // impl WP04, used by WP12, WP14
-    pub trait LiveIntelligence { after_tick(); on_transition(); details(id, limit); diagnostics(); record_feedback() } // impl WP05, used by WP04, WP12
-    pub trait OnDeckSource { on_deck() -> Vec<OnDeckItem> }                          // impl WP08, used by WP14
-    pub trait BriefingsReader { histories() }                                        // impl WP11, used by WP12
-    pub trait ClaudeSessionNotifier { note_turn_started(session) }                   // impl WP12 events, used by WP12 tools (same WP)
-    pub trait PodcastAccount { ... }                                                 // impl + use WP07 (kept local)
+pub mod ports {       // cross-subsystem traits; each set once during WP14 wiring (OnceLock), read via accessors
+    // Consumers handle an unset port (provider disabled). DTO payloads owned by another
+    // package's omni-api module cross as serde_json::Value and are decoded into that type.
+    pub enum PortError { Unavailable(&'static str), Failed { message, transient } }
+    pub struct Ports { /* Arc<OnceLock<Arc<dyn Port>>> per port */ }   // port() -> Option<Arc<dyn _>>; set_port() -> Result<(), PortAlreadySet>
+    pub trait EmailReader {                                            // impl WP01, used by WP02 (retry, reprocess, MCP tools), WP03, WP11
+        fetch_by_id(id, fresh) -> Option<FetchedEmail>; search(&EmailSearch) -> Vec<FetchedEmail>;
+        health() -> EmailReaderHealth;  download_attachment(&EmailAttachment) -> Option<DownloadedAttachment> }
+    pub trait ArchiveEcho { is_archive_action_message(message_id, Option<&EmailOrigin>) -> bool } // impl WP01 (StoreArchiveEcho), used by WP12; required when MCP events are on
+    pub trait EmailRetryHandlers { handler(pipeline) -> Option<Arc<dyn EmailHandler>> }        // impl WP14 wiring, used by WP02 retry/reprocess
+    pub trait CalendarWriter { create_event(uid, &CalendarEventInput) -> Created { event_uid } | AlreadyExists;
+        status() -> CalendarWriterStatus }                             // impl WP03, used by WP11
+    pub trait LiveDirectory { streamers(); statuses(); display(); details(id) -> Option<Value> } // impl WP04, used by WP05, WP12, WP14 (omni_api::streamers JSON)
+    pub trait LiveIntelligence { observe_live(&LiveObservation); after_tick(); on_transition(&LiveTransition);
+        details(id, limit) -> Option<Value>; diagnostics() -> Value; record_feedback(Value) -> Value } // impl WP05, used by WP04, WP12
+    pub trait OnDeckSource { on_deck() -> Vec<Value> }                // impl WP08, used by WP14 snapshot (omni_api::media::OnDeckItem JSON)
+    pub trait BriefingsReader { histories() -> Vec<Value> }           // impl WP11, used by WP12 briefings_list (newest first)
+    pub trait ClaudeSessionNotifier { note_turn_started(&ClaudeTurnStarted) } // impl WP12 turn_finished watcher, used by WP12 session tools
+    pub trait ClaudeHost { status() -> HostLinkStatus;                // impl WP12 device link (DeviceLinkService), used by WP12 session
+        execute(HostCommand, args, timeout) -> Result<Map, HostError> } //   tools, activity routes and session watcher
 }
+// PodcastAccount stays local to omni-podcasts (WP07); it is not a port.
 ```
 
 ### 3.12 `omni-api` (shared DTOs)
@@ -801,7 +810,7 @@ where noted:
 - `omni-core`: `js::string_to_number` (JS `Number(string)`; used by config decoding and
   CBOR tag-1 coercion). `process::run_bounded` is real; `ProcessError::Unimplemented` is gone.
 - `omni-store::cbor`: `JsValue::Simple(u8)` (node `Simple`, re-encodes byte-identically);
-  `SIMPLE_TOKEN`; `ValueDeserializer` and `undefined_as_none` are public; `JsValue` helpers
+  `SIMPLE_TOKEN`; `ValueDeserializer` is public (`Option` fields read `undefined` as `None`, buffered or not); `JsValue` helpers
   `as_str/as_f64/get/as_object/as_object_mut/is_nullish`; `MAX_DEPTH = 128` nesting limit
   (node has none; production depth is far below). The omni deserializer's `deserialize_any`
   presents JS-only values as single-entry token maps (BigInt as its decimal string) so

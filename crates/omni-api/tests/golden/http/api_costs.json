@@ -1,0 +1,510 @@
+{
+  "route": "/api/costs",
+  "status": 200,
+  "body": {
+    "range": {
+      "days": 30,
+      "from": 1788965214142,
+      "to": 1791557214142
+    },
+    "summary": {
+      "selectedCostCents": 1304.9803799999756,
+      "allTimeCostCents": 4320.722720000284,
+      "allTimeUnknownEventCount": 6,
+      "averageDailyCostCents": 43.499345999999186,
+      "highestDay": {
+        "date": "2026-09-11",
+        "costCents": 99.09487999999983
+      },
+      "eventCount": 10402,
+      "unknownEventCount": 0,
+      "inputTokens": 16413501,
+      "outputTokens": 1643745,
+      "characters": 297047,
+      "requests": 10402,
+      "credits": 1016
+    },
+    "daily": [
+      {
+        "date": "2026-09-09",
+        "costCents": 57.45665999999996,
+        "byFeature": {
+          "livestream-intelligence": 6.58454,
+          "briefings": 4.20418,
+          "web-search": 16.000000000000004,
+          "email-triage": 0.24462,
+          "podcast-recommendations": 20.061760000000007,
+          "calendar-events": 0.7010000000000001,
+          "media-recommendations": 9.301939999999998,
+          "parcel-tracker": 0.35862000000000005
+        },
+        "pricedEventCount": 390,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-10",
+        "costCents": 32.64904000000001,
+        "byFeature": {
+          "livestream-intelligence": 7.425159999999998,
+          "email-triage": 0.14412,
+          "parcel-tracker": 0.31298000000000004,
+          "briefings": 5.5667800000000005,
+          "web-search": 19.200000000000006
+        },
+        "pricedEventCount": 405,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-11",
+        "costCents": 99.09487999999983,
+        "byFeature": {
+          "email-triage": 0.29676,
+          "livestream-intelligence": 4.984380000000001,
+          "briefings": 17.87246,
+          "web-search": 39.999999999999986,
+          "podcast-recommendations": 26.662440000000007,
+          "media-recommendations": 9.278839999999999
+        },
+        "pricedEventCount": 342,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-12",
+        "costCents": 29.14472000000003,
+        "byFeature": {
+          "email-triage": 0.50194,
+          "livestream-intelligence": 5.772860000000002,
+          "briefings": 4.9684,
+          "web-search": 16.800000000000004,
+          "arr-recovery": 0.6104799999999999,
+          "observer-repair": 0.49104000000000003
+        },
+        "pricedEventCount": 331,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-13",
+        "costCents": 56.734419999999986,
+        "byFeature": {
+          "livestream-intelligence": 6.977799999999999,
+          "arr-recovery": 0.0473,
+          "media-recommendations": 2.5127200000000003,
+          "podcast-recommendations": 1.39628,
+          "email-triage": 0.7710200000000001,
+          "parcel-tracker": 0.3619,
+          "briefings": 16.491000000000007,
+          "web-search": 25.600000000000012,
+          "calendar-events": 2.5764
+        },
+        "pricedEventCount": 412,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-17",
+        "costCents": 42.19170000000005,
+        "byFeature": {
+          "livestream-intelligence": 3.918260000000002,
+          "email-triage": 0.5075999999999999,
+          "briefings": 11.52952,
+          "web-search": 22.40000000000001,
+          "calendar-events": 3.0862,
+          "parcel-tracker": 0.7501200000000002
+        },
+        "pricedEventCount": 247,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-20",
+        "costCents": 41.07360000000002,
+        "byFeature": {
+          "livestream-intelligence": 6.498479999999997,
+          "media-recommendations": 2.5664800000000003,
+          "podcast-recommendations": 1.2559600000000002,
+          "email-triage": 0.5723800000000001,
+          "parcel-tracker": 0.7550800000000001,
+          "briefings": 11.82522,
+          "web-search": 17.600000000000005
+        },
+        "pricedEventCount": 365,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-22",
+        "costCents": 40.547019999999996,
+        "byFeature": {
+          "email-triage": 0.5670599999999999,
+          "parcel-tracker": 1.34538,
+          "livestream-intelligence": 5.953100000000002,
+          "briefings": 11.8068,
+          "web-search": 20.800000000000008,
+          "arr-recovery": 0.07468
+        },
+        "pricedEventCount": 392,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-23",
+        "costCents": 45.37513,
+        "byFeature": {
+          "email-triage": 0.24248000000000003,
+          "livestream-intelligence": 3.0199700000000003,
+          "parcel-tracker": 0.25515000000000004,
+          "briefings": 4.918590000000001,
+          "web-search": 13.600000000000003,
+          "podcast-recommendations": 17.29020000000001,
+          "arr-recovery": 0.04715,
+          "media-recommendations": 6.001589999999999
+        },
+        "pricedEventCount": 355,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-25",
+        "costCents": 55.909409999999966,
+        "byFeature": {
+          "email-triage": 0.21406000000000003,
+          "parcel-tracker": 0.47018000000000004,
+          "livestream-intelligence": 1.96199,
+          "briefings": 3.9977000000000005,
+          "web-search": 25.600000000000012,
+          "press-pods": 0.02139,
+          "calendar-events": 2.7226,
+          "podcast-recommendations": 14.790100000000006,
+          "media-recommendations": 6.13139
+        },
+        "pricedEventCount": 283,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-09-27",
+        "costCents": 46.447799999999944,
+        "byFeature": {
+          "livestream-intelligence": 3.580530000000001,
+          "media-recommendations": 1.29557,
+          "podcast-recommendations": 0.6126,
+          "briefings": 6.25807,
+          "web-search": 32.80000000000001,
+          "press-pods": 1.48196,
+          "email-triage": 0.26475,
+          "parcel-tracker": 0.15432
+        },
+        "pricedEventCount": 443,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-04",
+        "costCents": 22.716669999999993,
+        "byFeature": {
+          "email-triage": 0.16574999999999998,
+          "media-recommendations": 1.22816,
+          "livestream-intelligence": 2.1685600000000007,
+          "parcel-tracker": 0.10201000000000002,
+          "briefings": 3.0521900000000004,
+          "web-search": 16.000000000000004
+        },
+        "pricedEventCount": 268,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-08",
+        "costCents": 26.31823999999999,
+        "byFeature": {
+          "livestream-intelligence": 3.6900499999999994,
+          "email-triage": 0.14266,
+          "briefings": 2.9993300000000005,
+          "web-search": 10.4,
+          "calendar-events": 9.086200000000002
+        },
+        "pricedEventCount": 369,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-09",
+        "costCents": 0.73053,
+        "byFeature": {
+          "livestream-intelligence": 0.73053
+        },
+        "pricedEventCount": 61,
+        "unknownEventCount": 0
+      }
+    ],
+    "byFeature": [
+      {
+        "feature": "web-search",
+        "costCents": 562.4000000000023,
+        "eventCount": 703,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "podcast-recommendations",
+        "costCents": 238.63925000000103,
+        "eventCount": 451,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "briefings",
+        "costCents": 194.6818300000002,
+        "eventCount": 393,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "livestream-intelligence",
+        "costCents": 124.85334999999996,
+        "eventCount": 7839,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "media-recommendations",
+        "costCents": 105.91423999999988,
+        "eventCount": 99,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "calendar-events",
+        "costCents": 51.54239999999998,
+        "eventCount": 63,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "parcel-tracker",
+        "costCents": 12.463350000000005,
+        "eventCount": 198,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "email-triage",
+        "costCents": 11.658040000000014,
+        "eventCount": 608,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "press-pods",
+        "costCents": 1.50335,
+        "eventCount": 24,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "arr-recovery",
+        "costCents": 0.8335299999999999,
+        "eventCount": 20,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "observer-repair",
+        "costCents": 0.49104000000000003,
+        "eventCount": 4,
+        "unknownEventCount": 0
+      }
+    ],
+    "byService": [
+      {
+        "service": "tavily",
+        "model": "basic",
+        "category": "search",
+        "costCents": 812.799999999988,
+        "eventCount": 1016,
+        "unknownEventCount": 0,
+        "inputTokens": 0,
+        "inputNoCacheTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "characters": 0,
+        "requests": 1016,
+        "credits": 1016
+      },
+      {
+        "service": "openai",
+        "model": "gpt-5.6-luna",
+        "category": "llm",
+        "costCents": 241.96497999999985,
+        "eventCount": 2349,
+        "unknownEventCount": 0,
+        "inputTokens": 8287373,
+        "inputNoCacheTokens": 1199451,
+        "cacheReadTokens": 5350722,
+        "cacheWriteTokens": 1737200,
+        "outputTokens": 635146,
+        "reasoningTokens": 407967,
+        "characters": 0,
+        "requests": 2349,
+        "credits": 0
+      },
+      {
+        "service": "openai",
+        "model": "gpt-6-luna",
+        "category": "llm",
+        "costCents": 127.0086,
+        "eventCount": 2955,
+        "unknownEventCount": 0,
+        "inputTokens": 7770180,
+        "inputNoCacheTokens": 1550395,
+        "cacheReadTokens": 4673523,
+        "cacheWriteTokens": 1546262,
+        "outputTokens": 986136,
+        "reasoningTokens": 736671,
+        "characters": 0,
+        "requests": 2955,
+        "credits": 0
+      },
+      {
+        "service": "openai",
+        "model": "gpt-6-sol",
+        "category": "llm",
+        "costCents": 58.633199999999974,
+        "eventCount": 62,
+        "unknownEventCount": 0,
+        "inputTokens": 221591,
+        "inputNoCacheTokens": 186,
+        "cacheReadTokens": 7655,
+        "cacheWriteTokens": 213750,
+        "outputTokens": 14315,
+        "reasoningTokens": 6265,
+        "characters": 0,
+        "requests": 62,
+        "credits": 0
+      },
+      {
+        "service": "openai",
+        "model": "gpt-5.6",
+        "category": "llm",
+        "costCents": 46.54100000000001,
+        "eventCount": 14,
+        "unknownEventCount": 0,
+        "inputTokens": 57046,
+        "inputNoCacheTokens": 42,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 57004,
+        "outputTokens": 6006,
+        "reasoningTokens": 2025,
+        "characters": 0,
+        "requests": 14,
+        "credits": 0
+      },
+      {
+        "service": "openai",
+        "model": "gpt-5.6-terra",
+        "category": "llm",
+        "costCents": 18.0326,
+        "eventCount": 21,
+        "unknownEventCount": 0,
+        "inputTokens": 77311,
+        "inputNoCacheTokens": 63,
+        "cacheReadTokens": 2989,
+        "cacheWriteTokens": 74259,
+        "outputTokens": 2142,
+        "reasoningTokens": 1325,
+        "characters": 0,
+        "requests": 21,
+        "credits": 0
+      },
+      {
+        "service": "self-hosted",
+        "model": "parakeet-tdt-0.6b-v3-int8",
+        "category": "transcription",
+        "costCents": 0,
+        "eventCount": 3967,
+        "unknownEventCount": 0,
+        "inputTokens": 0,
+        "inputNoCacheTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "characters": 292875,
+        "requests": 3967,
+        "credits": 0
+      },
+      {
+        "service": "self-hosted",
+        "model": "bosonai/higgs-audio-v3-tts-4b",
+        "category": "tts",
+        "costCents": 0,
+        "eventCount": 10,
+        "unknownEventCount": 0,
+        "inputTokens": 0,
+        "inputNoCacheTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "characters": 4172,
+        "requests": 10,
+        "credits": 0
+      },
+      {
+        "service": "self-hosted",
+        "model": "mlx-community/parakeet-tdt-0.6b-v3",
+        "category": "transcription",
+        "costCents": 0,
+        "eventCount": 8,
+        "unknownEventCount": 0,
+        "inputTokens": 0,
+        "inputNoCacheTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "characters": 0,
+        "requests": 8,
+        "credits": 0
+      }
+    ],
+    "recent": [
+      {
+        "category": "llm",
+        "feature": "livestream-intelligence",
+        "operation": "assess-transcript",
+        "service": "openai",
+        "model": "gpt-6-luna",
+        "costCents": 0.02288,
+        "priceStatus": "estimated",
+        "usage": {
+          "inputTokens": 853,
+          "inputNoCacheTokens": 853,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 287,
+          "reasoningTokens": 211,
+          "requests": 1
+        },
+        "eventId": "00000000-0000-4000-8000-000000000075",
+        "incurredAt": 1791556857189,
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000076"
+      },
+      {
+        "category": "transcription",
+        "feature": "livestream-intelligence",
+        "operation": "rolling-summary",
+        "service": "self-hosted",
+        "model": "parakeet-tdt-0.6b-v3-int8",
+        "costCents": 0,
+        "priceStatus": "free",
+        "usage": {
+          "requests": 1,
+          "characters": 75
+        },
+        "eventId": "00000000-0000-4000-8000-000000000077",
+        "incurredAt": 1791556852113,
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000076"
+      },
+      {
+        "category": "transcription",
+        "feature": "livestream-intelligence",
+        "operation": "verify-destiny",
+        "service": "self-hosted",
+        "model": "parakeet-tdt-0.6b-v3-int8",
+        "costCents": 0,
+        "priceStatus": "free",
+        "usage": {
+          "requests": 1,
+          "characters": 63
+        },
+        "eventId": "00000000-0000-4000-8000-000000000078",
+        "incurredAt": 1791552650555,
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000079"
+      }
+    ]
+  }
+}

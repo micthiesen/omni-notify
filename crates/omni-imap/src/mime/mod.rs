@@ -14,5 +14,5 @@ mod transfer;
 mod words;
 
 pub use address::Address;
-pub use parse::{Attachment, ParseError, ParsedMail, parse_message};
+pub use parse::{Attachment, ParseError, ParsedMail, parse_message, parse_message_in};
 pub use splitter::{HeaderLine, SplitError};

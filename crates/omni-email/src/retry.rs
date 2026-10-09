@@ -22,11 +22,7 @@ pub struct EmailRetryData {
     pub email_id: String,
     pub reason: String,
     /// Counts enqueue signals without consuming retry attempts.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "omni_store::cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enqueue_count: Option<i64>,
     pub attempts: i64,
     pub next_attempt_at: i64,

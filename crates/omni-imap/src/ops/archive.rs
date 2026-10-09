@@ -96,17 +96,9 @@ pub enum ArchiveStrategy {
 pub struct ArchiveSnapshot {
     pub source_hash: String,
     pub flags: Vec<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "omni_store::cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strategy: Option<ArchiveStrategy>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "omni_store::cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_folder: Option<String>,
 }
 

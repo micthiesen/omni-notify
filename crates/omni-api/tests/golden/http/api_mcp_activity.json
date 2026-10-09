@@ -1,0 +1,1114 @@
+{
+  "route": "/api/mcp/activity",
+  "status": 200,
+  "body": {
+    "calls": [
+      {
+        "callId": "00000000-0000-4000-8000-000000000080",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791556077402,
+        "finishedAt": 1791556078533,
+        "durationMs": 1131,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "since": "2026-10-09T13:00:00Z",
+          "folder": "sent",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 1200
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000081",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791556077388,
+        "finishedAt": 1791556078042,
+        "durationMs": 654,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "since": "2026-10-09T13:00:00Z",
+          "folder": "archive",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 1200
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000082",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791556077357,
+        "finishedAt": 1791556077685,
+        "durationMs": 328,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "since": "2026-10-09T13:00:00Z",
+          "folder": "inbox",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 1200
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000083",
+        "tool": "email_get",
+        "title": "Synthetic text 176.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791527162088,
+        "finishedAt": 1791527163413,
+        "durationMs": 1325,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "emailId": "<message-5@example.com>",
+          "bodyChars": 20000,
+          "fresh": true
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000084",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791527145788,
+        "finishedAt": 1791527147284,
+        "durationMs": 1496,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "subject": "Synthetic text 177.",
+          "folder": "all",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 1000
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000085",
+        "tool": "pets_read",
+        "title": "Synthetic text 178.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791517642906,
+        "finishedAt": 1791517642908,
+        "durationMs": 2,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "resource": "history",
+          "petId": "PET-00000000-0000-4000-8000-000000000086",
+          "cursor": 500,
+          "limit": 100
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000087",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791517510175,
+        "finishedAt": 1791517511460,
+        "durationMs": 1285,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "to": "user2@example.com",
+          "since": "2026-10-08T00:00:00Z",
+          "folder": "sent",
+          "limit": 20,
+          "fresh": true,
+          "excerptChars": 2000
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000088",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791517506052,
+        "finishedAt": 1791517506971,
+        "durationMs": 919,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "from": "user2@example.com",
+          "since": "2026-10-08T00:00:00Z",
+          "folder": "all",
+          "limit": 20,
+          "fresh": true,
+          "excerptChars": 2000
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000089",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791514327393,
+        "finishedAt": 1791514328502,
+        "durationMs": 1109,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "since": "2026-10-09T02:05:00Z",
+          "before": "2026-10-09T02:51:53Z",
+          "folder": "sent",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 1200
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000090",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791514327363,
+        "finishedAt": 1791514327960,
+        "durationMs": 597,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "since": "2026-10-09T02:05:00Z",
+          "before": "2026-10-09T02:51:53Z",
+          "folder": "archive",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 1200
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000091",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791514327329,
+        "finishedAt": 1791514327617,
+        "durationMs": 288,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "since": "2026-10-09T02:05:00Z",
+          "before": "2026-10-09T02:51:53Z",
+          "folder": "inbox",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 1200
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000092",
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791498026583,
+        "finishedAt": 1791498027230,
+        "durationMs": 647,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "since": "2026-10-08T21:52:00Z",
+          "folder": "all",
+          "limit": 50,
+          "fresh": true,
+          "excerptChars": 900
+        },
+        "output": null
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000009",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495617130,
+        "finishedAt": 1791495617686,
+        "durationMs": 556,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "limit": 50,
+          "cursor": 320
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000010",
+          "items": [
+            {
+              "index": 321,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:38:21.088Z",
+              "text": "Synthetic text 22.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 322,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:38:25.796Z",
+              "text": "Synthetic text 23.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 323,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:26.551Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 24.",
+              "isError": null
+            },
+            {
+              "index": 327,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:30.742Z",
+              "text": null,
+              "truncated": false,
+              "tool": "ToolSearch",
+              "input": "Synthetic text 25.",
+              "isError": null
+            },
+            {
+              "index": 330,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:32.311Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__skills",
+              "input": "Synthetic text 26.",
+              "isError": null
+            },
+            {
+              "index": 333,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:36.816Z",
+              "text": null,
+              "truncated": false,
+              "tool": "mcp__claude_ai_Executor__execute",
+              "input": "Synthetic text 27.",
+              "isError": null
+            },
+            {
+              "index": 339,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:38:58.654Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Write",
+              "input": "Synthetic text 28.",
+              "isError": null
+            },
+            "… [13 more items]"
+          ],
+          "revision": 354,
+          "nextCursor": 353,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000011",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495600497,
+        "finishedAt": 1791495601089,
+        "durationMs": 592,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "waitSeconds": 0,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 30.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "idle",
+            "state": "done",
+            "startedAt": "2026-10-08T21:27:58.609Z",
+            "revision": 354,
+            "lastAssistant": "Synthetic text 31."
+          },
+          "timedOut": false,
+          "result": "Synthetic text 32.… [truncated 1179 chars]",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000012",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495468540,
+        "finishedAt": 1791495469131,
+        "durationMs": 591,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "waitSeconds": 0,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 30.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-08T21:27:58.609Z",
+            "revision": 321,
+            "lastAssistant": "Synthetic text 33."
+          },
+          "timedOut": false,
+          "result": "Synthetic text 34.",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000013",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495332729,
+        "finishedAt": 1791495333438,
+        "durationMs": 709,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "limit": 30,
+          "cursor": 310
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000010",
+          "items": [
+            {
+              "index": 311,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:33:59.913Z",
+              "text": "Synthetic text 35.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 312,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:34:03.925Z",
+              "text": "Synthetic text 36.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 313,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:34:03.926Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 37.",
+              "isError": null
+            }
+          ],
+          "revision": 321,
+          "nextCursor": 320,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000014",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791495183471,
+        "finishedAt": 1791495185419,
+        "durationMs": 1948,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "limit": 60,
+          "cursor": 263
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000010",
+          "items": [
+            {
+              "index": 264,
+              "kind": "user",
+              "timestamp": "2026-10-08T21:28:07.791Z",
+              "text": "Synthetic text 38.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 265,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:28:11.671Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 39.",
+              "isError": null
+            },
+            {
+              "index": 266,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:28:19.971Z",
+              "text": "Synthetic text 40.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 267,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:28:21.114Z",
+              "text": null,
+              "truncated": false,
+              "tool": "EnterWorktree",
+              "input": "Synthetic text 41.",
+              "isError": null
+            },
+            {
+              "index": 269,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:28:32.469Z",
+              "text": "Synthetic text 42.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            "… [27 more items]"
+          ],
+          "revision": 311,
+          "nextCursor": 310,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000015",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494898854,
+        "finishedAt": 1791494900539,
+        "durationMs": 1685,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000010",
+          "waitSeconds": 0,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 30.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-08T21:27:58.609Z",
+            "revision": 267,
+            "lastAssistant": "Synthetic text 43."
+          },
+          "timedOut": false,
+          "result": null,
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000016",
+        "tool": "claude_session_send",
+        "title": "Synthetic text 44.",
+        "recommendedPolicy": "require_approval",
+        "readOnly": false,
+        "startedAt": 1791494873415,
+        "finishedAt": 1791494878705,
+        "durationMs": 5290,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "prompt": "Synthetic text 38.",
+          "interrupt": false,
+          "idempotencyKey": "id11"
+        },
+        "output": {
+          "session": {
+            "id": "id5",
+            "sessionId": "00000000-0000-4000-8000-000000000010",
+            "kind": "background",
+            "title": "Synthetic text 38.",
+            "cwd": "~/id6/id7",
+            "project": null,
+            "status": "stopped",
+            "state": "working",
+            "startedAt": "2026-10-08T21:27:55.143Z",
+            "revision": 0,
+            "lastAssistant": null
+          },
+          "previousRevision": 264,
+          "reused": false,
+          "warning": "Synthetic text 45."
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000018",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494822401,
+        "finishedAt": 1791494825752,
+        "durationMs": 3351,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "afterRevision": 263,
+          "waitSeconds": 45,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id12",
+            "sessionId": "00000000-0000-4000-8000-000000000017",
+            "kind": "background",
+            "title": "Synthetic text 46.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "idle",
+            "state": "done",
+            "startedAt": "2026-10-08T20:39:46.526Z",
+            "revision": 264,
+            "lastAssistant": "Synthetic text 43."
+          },
+          "timedOut": false,
+          "result": "Synthetic text 47.… [truncated 1596 chars]",
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000019",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494811746,
+        "finishedAt": 1791494812318,
+        "durationMs": 572,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 30,
+          "cursor": 254
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 255,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:25:54.490Z",
+              "text": "Synthetic text 48.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 256,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:26:01.786Z",
+              "text": "Synthetic text 49.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 257,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:26:01.791Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 50.",
+              "isError": null
+            },
+            {
+              "index": 259,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:26:26.468Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Write",
+              "input": "Synthetic text 51.",
+              "isError": null
+            }
+          ],
+          "revision": 263,
+          "nextCursor": 262,
+          "hasMore": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000020",
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494758457,
+        "finishedAt": 1791494804383,
+        "durationMs": 45926,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "afterRevision": 255,
+          "waitSeconds": 45,
+          "includeResult": true
+        },
+        "output": {
+          "session": {
+            "id": "id12",
+            "sessionId": "00000000-0000-4000-8000-000000000017",
+            "kind": "background",
+            "title": "Synthetic text 46.",
+            "cwd": "~/id6/id7/id8/id9/id10",
+            "project": null,
+            "status": "busy",
+            "state": "working",
+            "startedAt": "2026-10-08T20:39:46.526Z",
+            "revision": 263,
+            "lastAssistant": "Synthetic text 49."
+          },
+          "timedOut": true,
+          "result": null,
+          "truncated": false
+        }
+      },
+      {
+        "callId": "00000000-0000-4000-8000-000000000021",
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "recommendedPolicy": "allow",
+        "readOnly": true,
+        "startedAt": 1791494726568,
+        "finishedAt": 1791494731415,
+        "durationMs": 4847,
+        "status": "ok",
+        "error": null,
+        "input": {
+          "session": "00000000-0000-4000-8000-000000000017",
+          "limit": 100,
+          "cursor": 194
+        },
+        "output": {
+          "sessionId": "00000000-0000-4000-8000-000000000017",
+          "items": [
+            {
+              "index": 195,
+              "kind": "user",
+              "timestamp": "2026-10-08T21:07:04.662Z",
+              "text": "Synthetic text 52.… [truncated 4000 chars]",
+              "truncated": true,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 196,
+              "kind": "assistant",
+              "timestamp": "2026-10-08T21:08:11.817Z",
+              "text": "Synthetic text 53.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": null
+            },
+            {
+              "index": 201,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:15:57.398Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Read",
+              "input": "Synthetic text 54.",
+              "isError": null
+            },
+            {
+              "index": 202,
+              "kind": "tool_result",
+              "timestamp": "2026-10-08T21:15:57.599Z",
+              "text": "Synthetic text 55.",
+              "truncated": false,
+              "tool": null,
+              "input": null,
+              "isError": false
+            },
+            {
+              "index": 203,
+              "kind": "tool_use",
+              "timestamp": "2026-10-08T21:15:57.688Z",
+              "text": null,
+              "truncated": false,
+              "tool": "Bash",
+              "input": "Synthetic text 56.",
+              "isError": null
+            },
+            "… [40 more items]"
+          ],
+          "revision": 255,
+          "nextCursor": 254,
+          "hasMore": false
+        }
+      }
+    ],
+    "nextBefore": 1791494300574,
+    "summary": {
+      "stored": 1994,
+      "last24h": 222,
+      "errors24h": 0,
+      "running": 0,
+      "approvalCalls24h": 5
+    },
+    "tools": [
+      {
+        "tool": "email_search",
+        "title": "Synthetic text 175.",
+        "calls": 1584,
+        "errors": 0,
+        "lastAt": 1791556077402,
+        "avgDurationMs": 664,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "email_get",
+        "title": "Synthetic text 176.",
+        "calls": 95,
+        "errors": 0,
+        "lastAt": 1791527162088,
+        "avgDurationMs": 772,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "pets_read",
+        "title": "Synthetic text 178.",
+        "calls": 16,
+        "errors": 0,
+        "lastAt": 1791517642906,
+        "avgDurationMs": 2,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "claude_session_read",
+        "title": "Synthetic text 21.",
+        "calls": 30,
+        "errors": 0,
+        "lastAt": 1791495617130,
+        "avgDurationMs": 775,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "claude_session_get",
+        "title": "Synthetic text 29.",
+        "calls": 50,
+        "errors": 0,
+        "lastAt": 1791495600497,
+        "avgDurationMs": 17358,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "claude_session_send",
+        "title": "Synthetic text 44.",
+        "calls": 5,
+        "errors": 0,
+        "lastAt": 1791494873415,
+        "avgDurationMs": 3001,
+        "recommendedPolicy": "require_approval"
+      },
+      {
+        "tool": "claude_session_start",
+        "title": "Synthetic text 80.",
+        "calls": 8,
+        "errors": 3,
+        "lastAt": 1791491983620,
+        "avgDurationMs": 1092,
+        "recommendedPolicy": "require_approval"
+      },
+      {
+        "tool": "claude_sessions_list",
+        "title": "Synthetic text 82.",
+        "calls": 6,
+        "errors": 1,
+        "lastAt": 1791491951844,
+        "avgDurationMs": 1896,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "claude_link_status",
+        "title": "Synthetic text 85.",
+        "calls": 6,
+        "errors": 0,
+        "lastAt": 1791491946489,
+        "avgDurationMs": 931,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "task_run_get",
+        "title": "Synthetic text 179.",
+        "calls": 1,
+        "errors": 0,
+        "lastAt": 1791489688938,
+        "avgDurationMs": 2,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "tasks_list",
+        "title": "Synthetic text 180.",
+        "calls": 1,
+        "errors": 0,
+        "lastAt": 1791489672791,
+        "avgDurationMs": 541,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "workspace_search",
+        "title": "Synthetic text 181.",
+        "calls": 1,
+        "errors": 0,
+        "lastAt": 1791489590269,
+        "avgDurationMs": 12,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "email_send_status",
+        "title": "Synthetic text 182.",
+        "calls": 3,
+        "errors": 0,
+        "lastAt": 1791489279764,
+        "avgDurationMs": 1,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "email_sent_copy_repair",
+        "title": "Synthetic text 183.",
+        "calls": 3,
+        "errors": 0,
+        "lastAt": 1791489279117,
+        "avgDurationMs": 760,
+        "recommendedPolicy": "require_approval"
+      },
+      {
+        "tool": "email_send",
+        "title": "Synthetic text 184.",
+        "calls": 4,
+        "errors": 0,
+        "lastAt": 1791489238848,
+        "avgDurationMs": 2636,
+        "recommendedPolicy": "require_approval"
+      },
+      {
+        "tool": "list_reminders",
+        "title": "Synthetic text 185.",
+        "calls": 3,
+        "errors": 0,
+        "lastAt": 1791489203142,
+        "avgDurationMs": 308,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "create_reminder",
+        "title": "Synthetic text 186.",
+        "calls": 1,
+        "errors": 0,
+        "lastAt": 1791489187222,
+        "avgDurationMs": 1399,
+        "recommendedPolicy": "require_approval"
+      },
+      {
+        "tool": "email_health",
+        "title": "Synthetic text 187.",
+        "calls": 4,
+        "errors": 0,
+        "lastAt": 1791489179955,
+        "avgDurationMs": 1,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "list_reminder_lists",
+        "title": "Synthetic text 188.",
+        "calls": 1,
+        "errors": 0,
+        "lastAt": 1791489162439,
+        "avgDurationMs": 455,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "email_attachment_get",
+        "title": "Synthetic text 189.",
+        "calls": 8,
+        "errors": 1,
+        "lastAt": 1791488540889,
+        "avgDurationMs": 891,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "email_archive_status",
+        "title": "Synthetic text 190.",
+        "calls": 6,
+        "errors": 0,
+        "lastAt": 1791451070270,
+        "avgDurationMs": 335,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "email_archive_queue",
+        "title": "Synthetic text 191.",
+        "calls": 7,
+        "errors": 2,
+        "lastAt": 1791451030867,
+        "avgDurationMs": 2,
+        "recommendedPolicy": "require_approval"
+      },
+      {
+        "tool": "email_rules_list",
+        "title": "Synthetic text 192.",
+        "calls": 75,
+        "errors": 0,
+        "lastAt": 1791427910740,
+        "avgDurationMs": 2,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "events_status",
+        "title": "Synthetic text 193.",
+        "calls": 9,
+        "errors": 0,
+        "lastAt": 1791358370122,
+        "avgDurationMs": 5,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "search_browser_history",
+        "title": "Synthetic text 194.",
+        "calls": 2,
+        "errors": 0,
+        "lastAt": 1791320067771,
+        "avgDurationMs": 40,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "claude_session_stop",
+        "title": "Synthetic text 86.",
+        "calls": 2,
+        "errors": 0,
+        "lastAt": 1791267984518,
+        "avgDurationMs": 1134,
+        "recommendedPolicy": "require_approval"
+      },
+      {
+        "tool": "claude_session_wait",
+        "title": "Synthetic text 94.",
+        "calls": 49,
+        "errors": 0,
+        "lastAt": 1791267617264,
+        "avgDurationMs": 43101,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "email_events_status",
+        "title": "Synthetic text 195.",
+        "calls": 6,
+        "errors": 0,
+        "lastAt": 1791267414833,
+        "avgDurationMs": 2,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "claude_projects_list",
+        "title": "Synthetic text 119.",
+        "calls": 5,
+        "errors": 1,
+        "lastAt": 1791265680958,
+        "avgDurationMs": 191,
+        "recommendedPolicy": "allow"
+      },
+      {
+        "tool": "claude_session_result",
+        "title": "Synthetic text 120.",
+        "calls": 3,
+        "errors": 0,
+        "lastAt": 1791166114861,
+        "avgDurationMs": 530,
+        "recommendedPolicy": "allow"
+      }
+    ],
+    "retention": {
+      "maxCalls": 2000
+    }
+  }
+}

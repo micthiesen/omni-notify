@@ -1,0 +1,7 @@
+{
+  "route": "/api/health",
+  "status": 200,
+  "body": {
+    "status": "ok"
+  }
+}

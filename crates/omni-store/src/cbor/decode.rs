@@ -373,10 +373,15 @@ fn array_to_number(items: &[JsValue]) -> f64 {
     }
 }
 
-/// `new Date(s)` for a tag 0 string (`Date.parse`, offset-less forms read as UTC).
+/// `new Date(s)` for a tag 0 string: `Date.parse` with zone-less date-times
+/// read as local time in the process zone, as node does.
 fn parse_date_string(s: &str) -> f64 {
+    parse_date_string_in(s, &jiff::tz::TimeZone::system())
+}
+
+fn parse_date_string_in(s: &str, tz: &jiff::tz::TimeZone) -> f64 {
     #[allow(clippy::cast_precision_loss)]
-    omni_core::js::date_parse(s, &jiff::tz::TimeZone::UTC).map_or(f64::NAN, |ms| ms as f64)
+    omni_core::js::date_parse(s, tz).map_or(f64::NAN, |ms| ms as f64)
 }
 
 /// Big-endian magnitude bytes as an `i128`, when they fit.
@@ -469,5 +474,28 @@ fn convert_tag(tag: u64, inner: JsValue) -> JsValue {
             }
             (_, inner) => JsValue::Tagged(tag, Box::new(inner)),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_date_string_in;
+    use jiff::tz::TimeZone;
+
+    #[test]
+    fn tag0_strings_without_an_offset_use_the_local_zone() {
+        let tz = TimeZone::get("America/Vancouver").expect("tzdb has America/Vancouver");
+        // node with TZ=America/Vancouver: Date.parse("2026-09-01T03:00:00") === 1788256800000
+        assert_eq!(
+            parse_date_string_in("2026-09-01T03:00:00", &tz),
+            1_788_256_800_000.0
+        );
+        // Date-only ISO strings and explicit offsets stay zone-independent.
+        assert_eq!(parse_date_string_in("2026-09-01", &tz), 1_788_220_800_000.0);
+        assert_eq!(
+            parse_date_string_in("2026-09-01T10:00:00Z", &tz),
+            1_788_256_800_000.0
+        );
+        assert!(parse_date_string_in("garbage", &tz).is_nan());
     }
 }

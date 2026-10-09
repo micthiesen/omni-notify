@@ -71,13 +71,30 @@ pub fn with_ping(
             tokio::select! {
                 next = stream.next() => next.map(|event| (event, (stream, ticker))),
                 _ = ticker.tick() => {
-                    let ping = Event::default().event("ping").data(clock.now_ms().to_string());
-                    Some((ping, (stream, ticker)))
+                    Some((ping(&clock), (stream, ticker)))
                 }
             }
         }
     })
     .map(Ok)
+}
+
+/// `event: ping`, `data: <epoch ms>`, no id.
+pub fn ping(clock: &SharedClock) -> Event {
+    Event::default()
+        .event("ping")
+        .data(clock.now_ms().to_string())
+}
+
+/// [`with_ping`] that also sends one ping before anything else, as TS's
+/// `Effect.repeat(..., Schedule.spaced(...))` heartbeat does on connect.
+pub fn with_ping_immediately(
+    stream: impl Stream<Item = Event> + Send + 'static,
+    every: Duration,
+    clock: SharedClock,
+) -> impl Stream<Item = Result<Event, Infallible>> + Send + 'static {
+    let first = ping(&clock);
+    futures::stream::once(std::future::ready(Ok(first))).chain(with_ping(stream, every, clock))
 }
 
 #[cfg(test)]
@@ -193,5 +210,27 @@ mod tests {
         assert!(stream.next().await.is_some());
         drop(tx);
         assert!(stream.next().await.is_none());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pings_once_before_the_source_then_on_the_cadence() {
+        let source =
+            futures::stream::iter([event("snapshot", 0, "{}")]).chain(futures::stream::pending());
+        let mut stream = Box::pin(with_ping_immediately(
+            source,
+            Duration::from_secs(25),
+            TestClock::new(7),
+        ));
+        let started = tokio::time::Instant::now();
+        let frames = [
+            stream.next().await.unwrap().unwrap(),
+            stream.next().await.unwrap().unwrap(),
+            stream.next().await.unwrap().unwrap(),
+        ];
+        let rendered: Vec<String> = frames.iter().map(|e| format!("{e:?}")).collect();
+        assert!(rendered[0].contains("ping"), "{rendered:?}");
+        assert!(rendered[1].contains("snapshot"), "{rendered:?}");
+        assert!(rendered[2].contains("ping"), "{rendered:?}");
+        assert_eq!(started.elapsed(), Duration::from_secs(25));
     }
 }

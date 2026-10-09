@@ -1,0 +1,103 @@
+{
+  "route": "/api/email-activity",
+  "status": 200,
+  "body": {
+    "activities": [
+      {
+        "activityId": "CalendarEvents#<message-1@example.com>",
+        "pipeline": "CalendarEvents",
+        "emailId": "<message-1@example.com>",
+        "subject": "Synthetic text 164.",
+        "from": "user1@example.com",
+        "receivedAt": 1791527016000,
+        "processedAt": 1791555795196,
+        "outcome": "filtered",
+        "detail": "Synthetic text 165.",
+        "admitReason": null,
+        "admitTier": null,
+        "costCents": null,
+        "items": []
+      },
+      {
+        "activityId": "ParcelTracker#<message-1@example.com>",
+        "pipeline": "ParcelTracker",
+        "emailId": "<message-1@example.com>",
+        "subject": "Synthetic text 164.",
+        "from": "user1@example.com",
+        "receivedAt": 1791527016000,
+        "processedAt": 1791555795178,
+        "outcome": "filtered",
+        "detail": "Synthetic text 165.",
+        "admitReason": null,
+        "admitTier": null,
+        "costCents": null,
+        "items": []
+      },
+      {
+        "activityId": "ParcelTracker#<message-2@example.com>",
+        "pipeline": "ParcelTracker",
+        "emailId": "<message-2@example.com>",
+        "subject": "Synthetic text 166.",
+        "from": "user2@example.com",
+        "receivedAt": 1791517417000,
+        "processedAt": 1791517996788,
+        "outcome": "filtered",
+        "detail": "Synthetic text 167.",
+        "admitReason": null,
+        "admitTier": null,
+        "costCents": 0.015300000000000001,
+        "items": []
+      },
+      {
+        "activityId": "CalendarEvents#<message-2@example.com>",
+        "pipeline": "CalendarEvents",
+        "emailId": "<message-2@example.com>",
+        "subject": "Synthetic text 166.",
+        "from": "user2@example.com",
+        "receivedAt": 1791517417000,
+        "processedAt": 1791517996775,
+        "outcome": "filtered",
+        "detail": "Synthetic text 167.",
+        "admitReason": null,
+        "admitTier": null,
+        "costCents": 0.015300000000000001,
+        "items": []
+      },
+      {
+        "activityId": "ParcelTracker#<message-3@example.com>",
+        "pipeline": "ParcelTracker",
+        "emailId": "<message-3@example.com>",
+        "subject": "Synthetic text 168.",
+        "from": "user3@example.com",
+        "receivedAt": 1791437937000,
+        "processedAt": 1791438138329,
+        "outcome": "processed",
+        "detail": null,
+        "admitReason": "Synthetic text 169.",
+        "admitTier": "triage",
+        "costCents": 0.07214999999999999,
+        "items": [
+          "Synthetic text 170.",
+          "Synthetic text 171."
+        ]
+      },
+      {
+        "activityId": "ParcelTracker#<message-4@example.com>",
+        "pipeline": "ParcelTracker",
+        "emailId": "<message-4@example.com>",
+        "subject": "Synthetic text 172.",
+        "from": "user4@example.com",
+        "receivedAt": 1791246644000,
+        "processedAt": 1791266549836,
+        "outcome": "processed",
+        "detail": null,
+        "admitReason": "Synthetic text 173.",
+        "admitTier": "builtin",
+        "costCents": 0.02301,
+        "items": [
+          "Synthetic text 174."
+        ]
+      }
+    ]
+  }
+}

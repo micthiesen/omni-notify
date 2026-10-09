@@ -1,0 +1,176 @@
+{
+  "route": "/api/press-pods/episodes/id1",
+  "status": 200,
+  "body": {
+    "episode": {
+      "episodeId": "id1",
+      "title": "Synthetic text 303.",
+      "author": "Synthetic text 304.",
+      "publication": "Synthetic text 305.",
+      "domain": "site1.example.com",
+      "articleUrl": "https://example.com/r/61.html",
+      "leadImageUrl": "https://example.com/r/62.jpg",
+      "excerpt": "Synthetic text 306.",
+      "voiceName": "Higgs (cloned)",
+      "synthesizedSeconds": 158.228,
+      "chapters": [],
+      "audioUrl": "/pods/audio/id1.mp3",
+      "durationSeconds": 215.17061224489797,
+      "fileBytes": 2713990,
+      "retrieverName": "postlight",
+      "retrieverSeconds": 24.15,
+      "retrieverAttempts": [
+        {
+          "name": "postlight",
+          "success": true,
+          "contentRating": 9,
+          "textChars": 4464
+        },
+        {
+          "name": "readability",
+          "success": true,
+          "contentRating": 9,
+          "textChars": 4626
+        },
+        {
+          "name": "extractus",
+          "success": true,
+          "contentRating": 9,
+          "textChars": 4626
+        },
+        {
+          "name": "wayback",
+          "success": false,
+          "error": "Synthetic text 307."
+        },
+        {
+          "name": "removepaywall",
+          "success": false,
+          "error": "Synthetic text 308."
+        },
+        {
+          "name": "fetch",
+          "success": true,
+          "contentRating": 9,
+          "textChars": 15185
+        },
+        {
+          "name": "jina",
+          "success": false,
+          "error": "Synthetic text 309."
+        }
+      ],
+      "costCents": 1.48,
+      "createdAt": 1790528063412,
+      "publishedAt": 1790270836000,
+      "runId": "PressPods:00000000-0000-4000-8000-000000000108",
+      "content": "Synthetic text 408.",
+      "authorGender": "male",
+      "voiceProvider": "Higgs",
+      "chunks": [
+        {
+          "index": 0,
+          "sectionIndex": 0,
+          "text": "Synthetic text 409.",
+          "charCount": 567,
+          "durationSeconds": 34.140045,
+          "startTimeSeconds": 7.512,
+          "secPerChar": 0.06021171957671958,
+          "attempts": 1,
+          "coverage": 0.9753086419753086,
+          "wordRatio": 1,
+          "expectedWords": 102
+        },
+        {
+          "index": 1,
+          "sectionIndex": 0,
+          "text": "Synthetic text 410.",
+          "charCount": 197,
+          "durationSeconds": 12.329025,
+          "startTimeSeconds": 42.352045000000004,
+          "secPerChar": 0.06258388324873096,
+          "attempts": 1,
+          "coverage": 0.9310344827586207,
+          "wordRatio": 1,
+          "expectedWords": 32,
+          "resplit": true,
+          "resplitDepth": 1
+        },
+        {
+          "index": 2,
+          "sectionIndex": 0,
+          "text": "Synthetic text 411.",
+          "charCount": 380,
+          "durationSeconds": 24.142313,
+          "startTimeSeconds": 55.38107000000001,
+          "secPerChar": 0.06353240263157896,
+          "attempts": 1,
+          "coverage": 0.9824561403508771,
+          "wordRatio": 1.0158730158730158,
+          "expectedWords": 63,
+          "resplit": true,
+          "resplitDepth": 1
+        },
+        {
+          "index": 3,
+          "sectionIndex": 0,
+          "text": "Synthetic text 412.",
+          "charCount": 68,
+          "durationSeconds": 4.80415,
+          "startTimeSeconds": 80.22338300000001,
+          "secPerChar": 0.07064926470588236,
+          "attempts": 1,
+          "resplit": true,
+          "resplitDepth": 1
+        },
+        {
+          "index": 4,
+          "sectionIndex": 0,
+          "text": "Synthetic text 413.",
+          "charCount": 528,
+          "durationSeconds": 29.273515,
+          "startTimeSeconds": 85.72753300000001,
+          "secPerChar": 0.05544226325757576,
+          "attempts": 1,
+          "coverage": 0.9375,
+          "wordRatio": 0.9775280898876404,
+          "expectedWords": 89
+        },
+        {
+          "index": 8,
+          "sectionIndex": 0,
+          "text": "Synthetic text 414.",
+          "charCount": 81,
+          "durationSeconds": 5.223719,
+          "startTimeSeconds": 209.96084399999995,
+          "secPerChar": 0.06449035802469136,
+          "attempts": 1
+        }
+      ],
+      "costs": {
+        "llmCents": 1.48196,
+        "ttsCents": 0,
+        "detailCents": {
+          "gpt-6-luna-meta-input": 0.08841000000000002,
+          "gpt-6-luna-meta-output": 0.058550000000000005,
+          "gpt-6-sol-clean-input": 0.402,
+          "gpt-6-sol-clean-output": 0.933,
+          "bosonai/higgs-audio-v3-tts-4b-tts": 0
+        },
+        "detailTokens": {
+          "gpt-6-luna-meta": {
+            "input": 8841,
+            "output": 1171
+          },
+          "gpt-6-sol-clean": {
+            "input": 2010,
+            "output": 933
+          }
+        },
+        "detailChars": {
+          "bosonai/higgs-audio-v3-tts-4b-tts": 4172
+        }
+      }
+    }
+  }
+}

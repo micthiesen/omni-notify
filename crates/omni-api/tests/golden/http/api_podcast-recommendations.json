@@ -1,0 +1,547 @@
+{
+  "route": "/api/podcast-recommendations",
+  "status": 200,
+  "body": {
+    "recommendations": [
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000002",
+        "showTitle": "Synthetic text 196.",
+        "episodeTitle": "Synthetic text 197.",
+        "feedUrl": "https://example.com/r/11.xml",
+        "itunesId": 1008,
+        "artworkUrl": "https://example.com/r/12.jpg",
+        "episodeUrl": "https://example.com/r/13",
+        "publishedAt": 1791259260000,
+        "durationMinutes": 34,
+        "status": "notified",
+        "whyForUser": "Synthetic text 198.",
+        "caveats": [
+          "Synthetic text 199.",
+          "Synthetic text 200."
+        ],
+        "confidence": 0.7,
+        "shortlistScores": {
+          "tasteMatch": 65,
+          "novelty": 55,
+          "composite": 53.32,
+          "risks": [
+            "Synthetic text 201.",
+            "Synthetic text 202."
+          ]
+        },
+        "discoveredVia": "Synthetic text 203.",
+        "sourceUrl": "https://example.com/r/14",
+        "matchedVoices": [],
+        "recommendedAt": 1791396289604,
+        "notifiedAt": 1791396290201,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000093",
+        "showTitle": "Synthetic text 204.",
+        "episodeTitle": "Synthetic text 205.",
+        "feedUrl": "https://example.com/r/15",
+        "itunesId": 1009,
+        "artworkUrl": "https://example.com/r/16.jpg",
+        "episodeUrl": "https://example.com/r/17",
+        "publishedAt": 1790896896000,
+        "durationMinutes": 44,
+        "status": "notified",
+        "whyForUser": "Synthetic text 206.",
+        "caveats": [
+          "Synthetic text 207.",
+          "Synthetic text 208."
+        ],
+        "confidence": 0.74,
+        "shortlistScores": {
+          "tasteMatch": 68,
+          "novelty": 70,
+          "composite": 56.59499999999999,
+          "risks": [
+            "Synthetic text 209."
+          ]
+        },
+        "discoveredVia": "Synthetic text 210.",
+        "sourceUrl": "https://example.com/r/18",
+        "matchedVoices": [],
+        "recommendedAt": 1791396279313,
+        "notifiedAt": 1791396279970,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000094",
+        "showTitle": "Synthetic text 211.",
+        "episodeTitle": "Synthetic text 212.",
+        "feedUrl": "https://example.com/r/19.xml",
+        "itunesId": 1010,
+        "artworkUrl": "https://example.com/r/20.jpg",
+        "episodeUrl": "https://example.com/r/21",
+        "publishedAt": 1790848800000,
+        "durationMinutes": 30,
+        "status": "notified",
+        "whyForUser": "Synthetic text 213.",
+        "caveats": [
+          "Synthetic text 214."
+        ],
+        "confidence": 0.77,
+        "shortlistScores": {
+          "tasteMatch": 70,
+          "novelty": 73,
+          "composite": 61.328500000000005,
+          "risks": []
+        },
+        "discoveredVia": "Synthetic text 215.",
+        "sourceUrl": "https://example.com/r/22",
+        "matchedVoices": [],
+        "recommendedAt": 1790964388950,
+        "notifiedAt": 1790964390070,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000095",
+        "showTitle": "Synthetic text 216.",
+        "episodeTitle": "Synthetic text 217.",
+        "feedUrl": "https://example.com/r/23",
+        "itunesId": 1011,
+        "artworkUrl": "https://example.com/r/24.jpg",
+        "episodeUrl": null,
+        "publishedAt": 1790794980000,
+        "durationMinutes": 60,
+        "status": "notified",
+        "whyForUser": "Synthetic text 218.",
+        "caveats": [],
+        "confidence": 0.88,
+        "shortlistScores": null,
+        "discoveredVia": "Synthetic text 219.",
+        "sourceUrl": null,
+        "matchedVoices": [
+          "Synthetic text 220."
+        ],
+        "recommendedAt": 1790964363976,
+        "notifiedAt": 1790964364936,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000096",
+        "showTitle": "Synthetic text 221.",
+        "episodeTitle": "Synthetic text 222.",
+        "feedUrl": "https://example.com/r/25",
+        "itunesId": 1012,
+        "artworkUrl": "https://example.com/r/26.jpg",
+        "episodeUrl": null,
+        "publishedAt": 1788840000000,
+        "durationMinutes": 43,
+        "status": "notified",
+        "whyForUser": "Synthetic text 223.",
+        "caveats": [
+          "Synthetic text 224.",
+          "Synthetic text 225."
+        ],
+        "confidence": 0.74,
+        "shortlistScores": {
+          "tasteMatch": 55,
+          "novelty": 76,
+          "composite": 50.266,
+          "risks": [
+            "Synthetic text 226.",
+            "Synthetic text 227."
+          ]
+        },
+        "discoveredVia": "Synthetic text 228.",
+        "sourceUrl": "https://example.com/r/27",
+        "matchedVoices": [],
+        "recommendedAt": 1788977185527,
+        "notifiedAt": 1788977187038,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000097",
+        "showTitle": "Synthetic text 229.",
+        "episodeTitle": "Synthetic text 230.",
+        "feedUrl": "https://example.com/r/28",
+        "itunesId": 1013,
+        "artworkUrl": "https://example.com/r/29.jpg",
+        "episodeUrl": null,
+        "publishedAt": 1788670800000,
+        "durationMinutes": 57,
+        "status": "notified",
+        "whyForUser": "Synthetic text 231.",
+        "caveats": [
+          "Synthetic text 232.",
+          "Synthetic text 233."
+        ],
+        "confidence": 0.89,
+        "shortlistScores": {
+          "tasteMatch": 78,
+          "novelty": 79,
+          "composite": 72.03599999999999,
+          "risks": []
+        },
+        "discoveredVia": "Synthetic text 234.",
+        "sourceUrl": "https://example.com/r/30.com",
+        "matchedVoices": [],
+        "recommendedAt": 1788804264909,
+        "notifiedAt": 1788804266011,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000098",
+        "showTitle": "Synthetic text 235.",
+        "episodeTitle": "Synthetic text 236.",
+        "feedUrl": "https://example.com/r/31.xml",
+        "itunesId": 1014,
+        "artworkUrl": "https://example.com/r/32.jpg",
+        "episodeUrl": "https://example.com/r/33",
+        "publishedAt": 1788315031000,
+        "durationMinutes": 172,
+        "status": "notified",
+        "whyForUser": "Synthetic text 237.",
+        "caveats": [
+          "Synthetic text 238.",
+          "Synthetic text 239."
+        ],
+        "confidence": 0.78,
+        "shortlistScores": {
+          "tasteMatch": 58,
+          "novelty": 63,
+          "composite": 54.73999999999999,
+          "risks": [
+            "Synthetic text 240.",
+            "Synthetic text 241."
+          ]
+        },
+        "discoveredVia": "Synthetic text 242.",
+        "sourceUrl": "https://example.com/r/33",
+        "matchedVoices": [],
+        "recommendedAt": 1788544915338,
+        "notifiedAt": 1788544915603,
+        "queueResult": "not_queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000099",
+        "showTitle": "Synthetic text 243.",
+        "episodeTitle": "Synthetic text 244.",
+        "feedUrl": "https://example.com/r/34",
+        "itunesId": 1015,
+        "artworkUrl": "https://example.com/r/35.jpg",
+        "episodeUrl": "https://example.com/r/36",
+        "publishedAt": 1787938800000,
+        "durationMinutes": 35,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 245.",
+        "caveats": [
+          "Synthetic text 246.",
+          "Synthetic text 247."
+        ],
+        "confidence": 0.84,
+        "shortlistScores": {
+          "tasteMatch": 75,
+          "novelty": 72,
+          "composite": 70.7655,
+          "risks": [
+            "Synthetic text 248.",
+            "Synthetic text 249."
+          ]
+        },
+        "discoveredVia": "Synthetic text 250.",
+        "sourceUrl": "https://example.com/r/36",
+        "matchedVoices": [],
+        "recommendedAt": 1788372119521,
+        "notifiedAt": 1788372120692,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000100",
+        "showTitle": "Synthetic text 251.",
+        "episodeTitle": "Synthetic text 252.",
+        "feedUrl": "https://example.com/r/37.xml",
+        "itunesId": 1016,
+        "artworkUrl": "https://example.com/r/38.jpg",
+        "episodeUrl": "https://example.com/r/39",
+        "publishedAt": 1787562000000,
+        "durationMinutes": 57,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 253.",
+        "caveats": [
+          "Synthetic text 254.",
+          "Synthetic text 255."
+        ],
+        "confidence": 0.87,
+        "shortlistScores": {
+          "tasteMatch": 78,
+          "novelty": 72,
+          "composite": 71.62799999999999,
+          "risks": []
+        },
+        "discoveredVia": "Synthetic text 256.",
+        "sourceUrl": "https://example.com/r/40",
+        "matchedVoices": [],
+        "recommendedAt": 1787594547943,
+        "notifiedAt": 1787594549070,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000101",
+        "showTitle": "Synthetic text 257.",
+        "episodeTitle": "Synthetic text 258.",
+        "feedUrl": "https://example.com/r/41",
+        "itunesId": 1017,
+        "artworkUrl": "https://example.com/r/42.jpg",
+        "episodeUrl": "https://example.com/r/43",
+        "publishedAt": 1787072400000,
+        "durationMinutes": 66,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 259.",
+        "caveats": [],
+        "confidence": 0.98,
+        "shortlistScores": null,
+        "discoveredVia": "Synthetic text 260.",
+        "sourceUrl": "https://example.com/r/44",
+        "matchedVoices": [
+          "Synthetic text 261."
+        ],
+        "recommendedAt": 1787162616551,
+        "notifiedAt": 1787162617155,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000102",
+        "showTitle": "Synthetic text 235.",
+        "episodeTitle": "Synthetic text 262.",
+        "feedUrl": "https://example.com/r/31.xml",
+        "itunesId": 1018,
+        "artworkUrl": "https://example.com/r/32.jpg",
+        "episodeUrl": "https://example.com/r/45",
+        "publishedAt": 1785291193000,
+        "durationMinutes": 188,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 263.",
+        "caveats": [
+          "Synthetic text 264.",
+          "Synthetic text 265."
+        ],
+        "confidence": 0.79,
+        "shortlistScores": {
+          "tasteMatch": 82,
+          "novelty": 70,
+          "composite": 74.87200000000001,
+          "risks": [
+            "Synthetic text 266.",
+            "Synthetic text 267."
+          ]
+        },
+        "discoveredVia": "Synthetic text 268.",
+        "sourceUrl": "https://example.com/r/45",
+        "matchedVoices": [],
+        "recommendedAt": 1785348095009,
+        "notifiedAt": 1785348095274,
+        "queueResult": "not_queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000103",
+        "showTitle": "Synthetic text 269.",
+        "episodeTitle": "Synthetic text 270.",
+        "feedUrl": "https://example.com/r/46",
+        "itunesId": 1019,
+        "artworkUrl": "https://example.com/r/47.jpg",
+        "episodeUrl": null,
+        "publishedAt": 1784692800000,
+        "durationMinutes": 52,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 271.",
+        "caveats": [
+          "Synthetic text 272.",
+          "Synthetic text 273."
+        ],
+        "confidence": 0.76,
+        "shortlistScores": {
+          "tasteMatch": 72,
+          "novelty": 61,
+          "composite": 62.516999999999996,
+          "risks": [
+            "Synthetic text 274.",
+            "Synthetic text 275."
+          ]
+        },
+        "discoveredVia": "Synthetic text 276.",
+        "sourceUrl": "https://example.com/r/48",
+        "matchedVoices": [],
+        "recommendedAt": 1785175566467,
+        "notifiedAt": 1785175567073,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000104",
+        "showTitle": "Synthetic text 277.",
+        "episodeTitle": "Synthetic text 278.",
+        "feedUrl": "https://example.com/r/49.rss",
+        "itunesId": 1020,
+        "artworkUrl": "https://example.com/r/50.jpg",
+        "episodeUrl": "https://example.com/r/51",
+        "publishedAt": 1785059700000,
+        "durationMinutes": 75,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 279.",
+        "caveats": [
+          "Synthetic text 280."
+        ],
+        "confidence": 0.97,
+        "shortlistScores": null,
+        "discoveredVia": "Synthetic text 260.",
+        "sourceUrl": "https://example.com/r/52",
+        "matchedVoices": [
+          "Synthetic text 261."
+        ],
+        "recommendedAt": 1785175549400,
+        "notifiedAt": 1785175550338,
+        "queueResult": "queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000105",
+        "showTitle": "Synthetic text 281.",
+        "episodeTitle": "Synthetic text 282.",
+        "feedUrl": "https://example.com/r/53",
+        "itunesId": 1021,
+        "artworkUrl": "https://example.com/r/54.jpg",
+        "episodeUrl": "https://example.com/r/55.mp3",
+        "publishedAt": 1784401200000,
+        "durationMinutes": 64,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 283.",
+        "caveats": [
+          "Synthetic text 284.",
+          "Synthetic text 285."
+        ],
+        "confidence": 0.82,
+        "shortlistScores": {
+          "tasteMatch": 78,
+          "novelty": 76,
+          "composite": 71.98199999999999,
+          "risks": [
+            "Synthetic text 286.",
+            "Synthetic text 287."
+          ]
+        },
+        "discoveredVia": "Synthetic text 288.",
+        "sourceUrl": "https://example.com/r/56.com",
+        "matchedVoices": [],
+        "recommendedAt": 1784916363052,
+        "notifiedAt": 1784916364828,
+        "queueResult": "queued",
+        "feedback": "good_pick",
+        "feedbackAt": 1784958201579,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000106",
+        "showTitle": "Synthetic text 289.",
+        "episodeTitle": "Synthetic text 290.",
+        "feedUrl": "https://example.com/r/57",
+        "itunesId": 1022,
+        "artworkUrl": "https://example.com/r/58.jpg",
+        "episodeUrl": "https://example.com/r/59",
+        "publishedAt": 1783719078000,
+        "durationMinutes": 111,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 291.",
+        "caveats": [
+          "Synthetic text 292.",
+          "Synthetic text 293."
+        ],
+        "confidence": 0.87,
+        "shortlistScores": {
+          "tasteMatch": 89,
+          "novelty": 91,
+          "composite": 85.11999999999999,
+          "risks": [
+            "Synthetic text 294.",
+            "Synthetic text 295."
+          ]
+        },
+        "discoveredVia": "Synthetic text 296.",
+        "sourceUrl": "https://example.com/r/60",
+        "matchedVoices": [],
+        "recommendedAt": 1784251140180,
+        "notifiedAt": 1784251141274,
+        "queueResult": "already_queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000107",
+        "showTitle": "Synthetic text 229.",
+        "episodeTitle": "Synthetic text 297.",
+        "feedUrl": "https://example.com/r/28",
+        "itunesId": 1023,
+        "artworkUrl": "https://example.com/r/29.jpg",
+        "episodeUrl": null,
+        "publishedAt": 1784091600000,
+        "durationMinutes": 57,
+        "status": "ignored",
+        "whyForUser": "Synthetic text 298.",
+        "caveats": [
+          "Synthetic text 299.",
+          "Synthetic text 300."
+        ],
+        "confidence": 0.88,
+        "shortlistScores": {
+          "tasteMatch": 86,
+          "novelty": 78,
+          "composite": 79.41999999999999,
+          "risks": [
+            "Synthetic text 301."
+          ]
+        },
+        "discoveredVia": "Synthetic text 302.",
+        "sourceUrl": "https://example.com/r/30.com",
+        "matchedVoices": [],
+        "recommendedAt": 1784242709382,
+        "notifiedAt": 1784242712487,
+        "queueResult": "already_queued",
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null
+      }
+    ]
+  }
+}

@@ -292,11 +292,8 @@ pub async fn check_health(port: u16) -> Result<(), String> {
 }
 
 async fn doctor(image: bool) -> u8 {
-    let config = match load_config() {
-        Ok(config) => config,
-        Err(code) => return code,
-    };
-    let checks = crate::doctor::checks(&config, std::path::Path::new("assets")).await;
+    let env = crate::doctor::DoctorEnv::from_process_env();
+    let checks = crate::doctor::checks(&env, std::path::Path::new("assets")).await;
     stdout_text(&crate::doctor::report(&checks));
     let failed = checks.iter().filter(|c| !c.ok).count();
     if failed == 0 {

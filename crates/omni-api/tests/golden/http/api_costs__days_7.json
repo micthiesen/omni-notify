@@ -1,0 +1,284 @@
+{
+  "route": "/api/costs?days=7",
+  "status": 200,
+  "body": {
+    "range": {
+      "days": 7,
+      "from": 1790952416594,
+      "to": 1791557216594
+    },
+    "summary": {
+      "selectedCostCents": 242.88214000000067,
+      "allTimeCostCents": 4320.722720000284,
+      "allTimeUnknownEventCount": 6,
+      "averageDailyCostCents": 34.697448571428666,
+      "highestDay": {
+        "date": "2026-10-02",
+        "costCents": 72.6774799999999
+      },
+      "eventCount": 2263,
+      "unknownEventCount": 0,
+      "inputTokens": 3286745,
+      "outputTokens": 389117,
+      "characters": 65003,
+      "requests": 2263,
+      "credits": 200
+    },
+    "daily": [
+      {
+        "date": "2026-10-02",
+        "costCents": 72.6774799999999,
+        "byFeature": {
+          "livestream-intelligence": 2.1462200000000005,
+          "briefings": 10.252310000000001,
+          "web-search": 32.000000000000014,
+          "email-triage": 0.13873000000000002,
+          "calendar-events": 2.5263999999999998,
+          "parcel-tracker": 0.05312,
+          "podcast-recommendations": 19.381960000000007,
+          "media-recommendations": 6.17874
+        },
+        "pricedEventCount": 311,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-03",
+        "costCents": 19.31331000000001,
+        "byFeature": {
+          "email-triage": 0.34078,
+          "parcel-tracker": 0.09582000000000002,
+          "briefings": 3.0756900000000007,
+          "web-search": 12.800000000000002,
+          "livestream-intelligence": 1.0602200000000002,
+          "calendar-events": 1.9408
+        },
+        "pricedEventCount": 157,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-04",
+        "costCents": 22.716669999999993,
+        "byFeature": {
+          "email-triage": 0.16574999999999998,
+          "media-recommendations": 1.22816,
+          "livestream-intelligence": 2.1685600000000007,
+          "parcel-tracker": 0.10201000000000002,
+          "briefings": 3.0521900000000004,
+          "web-search": 16.000000000000004
+        },
+        "pricedEventCount": 268,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-06",
+        "costCents": 13.621810000000007,
+        "byFeature": {
+          "livestream-intelligence": 3.8106400000000002,
+          "email-triage": 0.08477000000000001,
+          "briefings": 1.5852500000000003,
+          "web-search": 7.999999999999999,
+          "parcel-tracker": 0.14115000000000003
+        },
+        "pricedEventCount": 350,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-08",
+        "costCents": 26.31823999999999,
+        "byFeature": {
+          "livestream-intelligence": 3.6900499999999994,
+          "email-triage": 0.14266,
+          "briefings": 2.9993300000000005,
+          "web-search": 10.4,
+          "calendar-events": 9.086200000000002
+        },
+        "pricedEventCount": 369,
+        "unknownEventCount": 0
+      },
+      {
+        "date": "2026-10-09",
+        "costCents": 0.73053,
+        "byFeature": {
+          "livestream-intelligence": 0.73053
+        },
+        "pricedEventCount": 61,
+        "unknownEventCount": 0
+      }
+    ],
+    "byFeature": [
+      {
+        "feature": "web-search",
+        "costCents": 101.59999999999977,
+        "eventCount": 127,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "podcast-recommendations",
+        "costCents": 53.962579999999946,
+        "eventCount": 106,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "briefings",
+        "costCents": 25.381830000000008,
+        "eventCount": 95,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "calendar-events",
+        "costCents": 20.4436,
+        "eventCount": 22,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "livestream-intelligence",
+        "costCents": 20.046280000000003,
+        "eventCount": 1755,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "media-recommendations",
+        "costCents": 19.394090000000006,
+        "eventCount": 23,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "email-triage",
+        "costCents": 1.3005900000000004,
+        "eventCount": 116,
+        "unknownEventCount": 0
+      },
+      {
+        "feature": "parcel-tracker",
+        "costCents": 0.75317,
+        "eventCount": 19,
+        "unknownEventCount": 0
+      }
+    ],
+    "byService": [
+      {
+        "service": "tavily",
+        "model": "basic",
+        "category": "search",
+        "costCents": 160.0000000000001,
+        "eventCount": 200,
+        "unknownEventCount": 0,
+        "inputTokens": 0,
+        "inputNoCacheTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "characters": 0,
+        "requests": 200,
+        "credits": 200
+      },
+      {
+        "service": "openai",
+        "model": "gpt-6-luna",
+        "category": "llm",
+        "costCents": 50.71493999999998,
+        "eventCount": 1145,
+        "unknownEventCount": 0,
+        "inputTokens": 3159349,
+        "inputNoCacheTokens": 626472,
+        "cacheReadTokens": 2000186,
+        "cacheWriteTokens": 532691,
+        "outputTokens": 382429,
+        "reasoningTokens": 285074,
+        "characters": 0,
+        "requests": 1145,
+        "credits": 0
+      },
+      {
+        "service": "openai",
+        "model": "gpt-6-sol",
+        "category": "llm",
+        "costCents": 32.1672,
+        "eventCount": 32,
+        "unknownEventCount": 0,
+        "inputTokens": 127396,
+        "inputNoCacheTokens": 96,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 127300,
+        "outputTokens": 6688,
+        "reasoningTokens": 3419,
+        "characters": 0,
+        "requests": 32,
+        "credits": 0
+      },
+      {
+        "service": "self-hosted",
+        "model": "parakeet-tdt-0.6b-v3-int8",
+        "category": "transcription",
+        "costCents": 0,
+        "eventCount": 886,
+        "unknownEventCount": 0,
+        "inputTokens": 0,
+        "inputNoCacheTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "outputTokens": 0,
+        "reasoningTokens": 0,
+        "characters": 65003,
+        "requests": 886,
+        "credits": 0
+      }
+    ],
+    "recent": [
+      {
+        "category": "llm",
+        "feature": "livestream-intelligence",
+        "operation": "assess-transcript",
+        "service": "openai",
+        "model": "gpt-6-luna",
+        "costCents": 0.02288,
+        "priceStatus": "estimated",
+        "usage": {
+          "inputTokens": 853,
+          "inputNoCacheTokens": 853,
+          "cacheReadTokens": 0,
+          "cacheWriteTokens": 0,
+          "outputTokens": 287,
+          "reasoningTokens": 211,
+          "requests": 1
+        },
+        "eventId": "00000000-0000-4000-8000-000000000075",
+        "incurredAt": 1791556857189,
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000076"
+      },
+      {
+        "category": "transcription",
+        "feature": "livestream-intelligence",
+        "operation": "rolling-summary",
+        "service": "self-hosted",
+        "model": "parakeet-tdt-0.6b-v3-int8",
+        "costCents": 0,
+        "priceStatus": "free",
+        "usage": {
+          "requests": 1,
+          "characters": 75
+        },
+        "eventId": "00000000-0000-4000-8000-000000000077",
+        "incurredAt": 1791556852113,
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000076"
+      },
+      {
+        "category": "transcription",
+        "feature": "livestream-intelligence",
+        "operation": "verify-destiny",
+        "service": "self-hosted",
+        "model": "parakeet-tdt-0.6b-v3-int8",
+        "costCents": 0,
+        "priceStatus": "free",
+        "usage": {
+          "requests": 1,
+          "characters": 63
+        },
+        "eventId": "00000000-0000-4000-8000-000000000078",
+        "incurredAt": 1791552650555,
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000079"
+      }
+    ]
+  }
+}

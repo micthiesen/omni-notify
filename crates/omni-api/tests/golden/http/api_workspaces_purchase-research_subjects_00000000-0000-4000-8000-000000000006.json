@@ -1,0 +1,249 @@
+{
+  "route": "/api/workspaces/purchase-research/subjects/00000000-0000-4000-8000-000000000006",
+  "status": 200,
+  "body": {
+    "workspace": {
+      "id": "purchase-research",
+      "title": "Purchase Research",
+      "description": "Researches purchases under consideration, maintains evidence-backed comparisons, and follows decisions through delivery and return deadlines.",
+      "subjectLabel": "Purchase",
+      "subjectLabelPlural": "Purchases",
+      "taskName": "PurchaseResearch",
+      "schedule": "0 0 9 * * 0",
+      "inputPlaceholder": "What are you looking to buy, compare, or keep watching?",
+      "followUpPlaceholder": "Ask a follow-up, change requirements, add a candidate, or request fresh research…",
+      "instructions": "You maintain purchase dossiers for one person. A dossier begins when the user says they are considering or tracking something and ends when it is completed or archived.\n\nBe practical and skeptical. Preserve the user's actual requirements, separate facts from recommendations, cite current sources, record why candidates were rejected, and call out unanswered questions. Never purchase anything, send messages, broaden email access, or write to the calendar directly. Those effects must be emitted as reviewable proposals.\n\nScheduled runs should work only on active dossiers with unresolved questions, stale evidence, meaningful market changes, or a time-sensitive deadline. Do not manufacture updates merely to appear busy. Notifications are for material changes only.\n\nWhen the user explicitly asks to watch email, propose a narrow email scope using exact senders/domains and product-specific keywords. Never propose an empty or catch-all scope. When a confirmed purchase has a return or price-adjustment deadline, propose a calendar reminder with enough lead time to act.",
+      "artifacts": [
+        {
+          "key": "brief",
+          "title": "Brief",
+          "kind": "markdown",
+          "instructions": "The current objective, budget, timing, must-haves, preferences, constraints, and explicit non-goals."
+        },
+        {
+          "key": "requirements",
+          "title": "Requirements",
+          "kind": "structured",
+          "instructions": "A concise Markdown checklist grouped into required, preferred, and unresolved requirements."
+        },
+        {
+          "key": "comparison",
+          "title": "Comparison",
+          "kind": "structured",
+          "instructions": "A Markdown comparison table of serious candidates, current price when known, evidence-backed strengths, weaknesses, and status."
+        },
+        {
+          "key": "research",
+          "title": "Research",
+          "kind": "evidence-ledger",
+          "instructions": "Dated findings with source links, freshness notes, disagreements between sources, and facts that need verification."
+        },
+        {
+          "key": "questions",
+          "title": "Open Questions",
+          "kind": "collection",
+          "instructions": "The smallest useful list of questions whose answers could change the decision."
+        },
+        {
+          "key": "decision",
+          "title": "Decision",
+          "kind": "timeline",
+          "instructions": "Decision history, rejected candidates and why, final purchase details, delivery state, and return or price-adjustment deadlines."
+        }
+      ]
+    },
+    "subject": {
+      "workspaceId": "purchase-research",
+      "subjectId": "00000000-0000-4000-8000-000000000006",
+      "title": "Synthetic text 747.",
+      "status": "archived",
+      "summary": "Synthetic text 748.",
+      "createdAt": 1787072048663,
+      "lastResearchedAt": 1788105617620,
+      "updatedAt": 1788197365951
+    },
+    "artifacts": [
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "brief",
+        "kind": "markdown",
+        "content": "Synthetic text 751.",
+        "summary": "Synthetic text 752.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000175",
+        "createdAt": 1787641558487
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "comparison",
+        "kind": "structured",
+        "content": "Synthetic text 753.",
+        "summary": "Synthetic text 754.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000176",
+        "createdAt": 1787641558490
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "decision",
+        "kind": "timeline",
+        "content": "Synthetic text 755.",
+        "summary": "Synthetic text 756.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000177",
+        "createdAt": 1787641558495
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "questions",
+        "kind": "collection",
+        "content": "Synthetic text 757.",
+        "summary": "Synthetic text 758.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000178",
+        "createdAt": 1787641558494
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "requirements",
+        "kind": "structured",
+        "content": "Synthetic text 759.",
+        "summary": "Synthetic text 760.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000179",
+        "createdAt": 1787641558489
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "research",
+        "kind": "evidence-ledger",
+        "content": "Synthetic text 761.",
+        "summary": "Synthetic text 762.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000180",
+        "createdAt": 1787641558492
+      }
+    ],
+    "artifactRevisions": [
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "decision",
+        "kind": "timeline",
+        "content": "Synthetic text 755.",
+        "summary": "Synthetic text 756.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000177",
+        "createdAt": 1787641558495
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "questions",
+        "kind": "collection",
+        "content": "Synthetic text 757.",
+        "summary": "Synthetic text 758.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000178",
+        "createdAt": 1787641558494
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "research",
+        "kind": "evidence-ledger",
+        "content": "Synthetic text 761.",
+        "summary": "Synthetic text 762.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000180",
+        "createdAt": 1787641558492
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "comparison",
+        "kind": "structured",
+        "content": "Synthetic text 753.",
+        "summary": "Synthetic text 754.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000176",
+        "createdAt": 1787641558490
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "requirements",
+        "kind": "structured",
+        "content": "Synthetic text 759.",
+        "summary": "Synthetic text 760.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000179",
+        "createdAt": 1787641558489
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "artifactKey": "brief",
+        "kind": "markdown",
+        "content": "Synthetic text 751.",
+        "summary": "Synthetic text 752.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "revisionId": "00000000-0000-4000-8000-000000000175",
+        "createdAt": 1787641558487
+      }
+    ],
+    "messages": [
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "role": "user",
+        "text": "Synthetic text 763.",
+        "runId": "PurchaseResearch:0000000000056:id192",
+        "messageId": "00000000-0000-4000-8000-000000000181",
+        "createdAt": 1787072032609
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "role": "assistant",
+        "text": "Synthetic text 764.",
+        "runId": "PurchaseResearch:0000000000056:id192",
+        "messageId": "00000000-0000-4000-8000-000000000182",
+        "createdAt": 1787072048665
+      }
+    ],
+    "sources": [
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "kind": "web",
+        "title": "Synthetic text 765.",
+        "url": "https://example.com/r/212",
+        "excerpt": "Synthetic text 766.",
+        "runId": "PurchaseResearch:0000000000057:id193",
+        "sourceId": "00000000-0000-4000-8000-000000000183",
+        "createdAt": 1788105617621
+      },
+      {
+        "workspaceId": "purchase-research",
+        "subjectId": "00000000-0000-4000-8000-000000000006",
+        "kind": "web",
+        "title": "Synthetic text 765.",
+        "url": "https://example.com/r/212",
+        "excerpt": "Synthetic text 767.",
+        "runId": "PurchaseResearch:0000000000055:id191",
+        "sourceId": "00000000-0000-4000-8000-000000000184",
+        "createdAt": 1787641558496
+      }
+    ],
+    "actions": [],
+    "emailScope": null,
+    "papercuts": []
+  }
+}

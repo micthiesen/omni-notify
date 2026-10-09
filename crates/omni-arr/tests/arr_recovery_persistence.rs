@@ -3,7 +3,7 @@
 
 use omni_arr::arr_recovery::ArrKind;
 use omni_arr::arr_recovery::persistence::{
-    Observation, RECOVERY_LEASE_MS, StoredRecoveryState, acquire_state, release_state, save_state,
+    Observation, RECOVERY_LEASE_MS, RecoveryState, acquire_state, release_state, save_state,
 };
 use omni_store::cbor;
 use omni_store::entity::{self, Entity as _};
@@ -42,11 +42,11 @@ async fn leases_sonarr_and_radarr_independently() {
         acquire_state(&test.store, ArrKind::Radarr, "radarr-worker", NOW),
     );
     assert_eq!(
-        sonarr.unwrap().unwrap().value.lease.unwrap().owner,
+        sonarr.unwrap().unwrap().lease.unwrap().owner,
         "sonarr-worker"
     );
     assert_eq!(
-        radarr.unwrap().unwrap().value.lease.unwrap().owner,
+        radarr.unwrap().unwrap().lease.unwrap().owner,
         "radarr-worker"
     );
 }
@@ -59,7 +59,7 @@ async fn rejects_a_save_from_a_worker_that_does_not_own_the_lease() {
         .unwrap()
         .unwrap();
     let mut tampered = state.clone();
-    tampered.value.observations.insert(
+    tampered.observations.insert(
         "bad".into(),
         Observation {
             fingerprint: "bad".into(),
@@ -88,7 +88,7 @@ async fn rejects_a_save_from_a_worker_that_does_not_own_the_lease() {
         .await
         .unwrap()
         .unwrap();
-    assert!(unchanged.value.observations.is_empty());
+    assert!(unchanged.observations.is_empty());
 }
 
 #[tokio::test]
@@ -115,14 +115,14 @@ async fn fails_closed_when_persisted_nested_action_data_is_malformed() {
         }],
     });
     let value = cbor::to_value(&raw).unwrap();
-    let pk = entity::pk::<StoredRecoveryState>(&"radarr".to_owned()).unwrap();
+    let pk = entity::pk::<RecoveryState>(&"radarr".to_owned()).unwrap();
     test.store
         .write(move |tx| -> Result<(), StoreError> {
             tx.upsert_doc(
                 &pk,
                 &value,
                 DocMeta {
-                    entity: Some(StoredRecoveryState::NAME.to_owned()),
+                    entity: Some(RecoveryState::NAME.to_owned()),
                     version: 0,
                     expires_at: None,
                     updated_at: Some(NOW),
@@ -150,7 +150,7 @@ async fn does_not_let_an_expired_owner_release_a_newer_workers_lease() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(current.value.lease.unwrap().owner, "new-owner");
+    assert_eq!(current.lease.unwrap().owner, "new-owner");
 
     release_state(&test.store, ArrKind::Sonarr, "old-owner", after_expiry)
         .await

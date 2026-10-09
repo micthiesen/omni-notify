@@ -81,13 +81,21 @@ impl ModelFiles {
         ]
     }
 
-    /// Every file must be accessible before native initialization.
+    /// Every file must exist and be structurally sound before native
+    /// initialization, which aborts the process on a bad file
+    /// ([`crate::model_check`]).
     pub fn require(&self) -> Result<(), SpeechRecognitionError> {
         for path in self.all() {
             if let Err(cause) = std::fs::metadata(path) {
                 return Err(SpeechRecognitionError::new(
                     "validate livestream speech model files",
                     SpeechRecognitionError::new(format!("access {}", path.display()), cause),
+                ));
+            }
+            if let Err(cause) = crate::model_check::check_model_file(path) {
+                return Err(SpeechRecognitionError::new(
+                    "validate livestream speech model files",
+                    SpeechRecognitionError::new(format!("check {}", path.display()), cause),
                 ));
             }
         }

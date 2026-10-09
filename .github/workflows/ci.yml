@@ -13,13 +13,25 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+# Actions are pinned to full commit SHAs; the comment names the release.
+#
+# The image build starts beside lint-and-test instead of after it: it is the
+# longest job and needs nothing from the tests. It writes its layers to the
+# GitHub Actions cache without pushing. `publish` runs only after both pass and
+# repeats the same build, which is then fully cached, to push the image; nothing
+# untested reaches the registry. Pull requests build the image to prove the
+# Dockerfile but neither push nor write the shared caches.
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install the pinned Rust toolchain
         # rust-toolchain.toml selects the version and components.
@@ -28,7 +40,13 @@ jobs:
           rustup target add wasm32-unknown-unknown
 
       - name: Cache Cargo build
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          # One entry holds both the native debug artifacts (clippy, tests) and the
+          # wasm32 clippy artifacts of the web crates; the key already covers the
+          # rustc version, Cargo.lock and rust-toolchain.toml.
+          shared-key: native-and-wasm32
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fetch the verified sherpa-onnx static library
         run: |
@@ -41,26 +59,51 @@ jobs:
       - name: Lint
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Lint the web crates for wasm32
+        run: >-
+          cargo clippy -p omni-web -p omni-web-kit -p omni-web-pages
+          --target wasm32-unknown-unknown --all-targets --locked -- -D warnings
+
+      - name: Install pinned cargo-deny
+        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: cargo-deny@0.20.2
+
+      - name: Check advisories, licenses, bans and sources
+        run: cargo deny --locked check
+
       - name: Check crate dependency direction
         run: cargo xtask deps-check
 
       - name: Run tests
         run: cargo test --workspace --locked
 
-      - name: Install pinned frontend build tools
-        run: |
-          deploy/web-tools/install.sh "$RUNNER_TEMP/web-tools"
-          echo "$RUNNER_TEMP/web-tools" >> "$GITHUB_PATH"
-
-      - name: Build frontend
-        run: |
-          cargo fetch --locked
-          cd crates/omni-web
-          trunk build --release --offline --locked
-
-  build-and-publish:
+  # The image's web stage runs the release trunk build with the pinned tools, so
+  # the frontend build is checked here rather than in lint-and-test.
+  image:
     runs-on: ubuntu-latest
-    needs: [lint-and-test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build Docker image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          # mode=max keeps every stage, including the cargo-chef dependency layers.
+          cache-from: type=gha,scope=omni-notify
+          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni-notify,mode=max,ignore-error=true' || '' }}
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [lint-and-test, image]
+    if: github.event_name != 'pull_request'
 
     permissions:
       contents: read
@@ -68,46 +111,45 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v7
+      - name: Push Docker image
+        # Same inputs as the image job, so every step is a cache hit.
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/omni-notify:latest
             ghcr.io/${{ github.repository_owner }}/omni-notify:${{ github.sha }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          # mode=max keeps the cargo-chef dependency layers of the build stages.
           cache-from: type=gha,scope=omni-notify
-          cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni-notify,mode=max' || '' }}
 
       - name: Logout from GitHub Container Registry
-        if: github.event_name != 'pull_request'
+        if: always()
         run: docker logout ghcr.io
 
   notify:
     runs-on: ubuntu-latest
-    needs: [lint-and-test, build-and-publish]
+    needs: [lint-and-test, image, publish]
     if: >-
       always() &&
       github.ref == 'refs/heads/main' &&
-      (needs.lint-and-test.result == 'failure' || needs.build-and-publish.result == 'failure')
+      (needs.lint-and-test.result == 'failure' || needs.image.result == 'failure' ||
+      needs.publish.result == 'failure')
 
     steps:
       - name: Send CI failure notification
@@ -118,7 +160,8 @@ jobs:
           TITLE="omni-notify CI failed"
           FAILED=""
           [ "${{ needs.lint-and-test.result }}" = "failure" ] && FAILED="lint-and-test"
-          [ "${{ needs.build-and-publish.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }build-and-publish"
+          [ "${{ needs.image.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }image"
+          [ "${{ needs.publish.result }}" = "failure" ] && FAILED="${FAILED:+$FAILED, }publish"
           MESSAGE="Failed jobs: ${FAILED}"
           curl -s -o /dev/null \
             --form-string "token=$PUSHOVER_TOKEN" \

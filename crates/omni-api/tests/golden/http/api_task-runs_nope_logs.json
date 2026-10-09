@@ -1,0 +1,7 @@
+{
+  "route": "/api/task-runs/nope/logs",
+  "status": 404,
+  "body": {
+    "error": "Unknown run"
+  }
+}

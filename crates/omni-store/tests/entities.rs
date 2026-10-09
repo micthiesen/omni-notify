@@ -748,12 +748,12 @@ fn serde_bridge_preserves_js_values() {
 }
 
 #[test]
-fn undefined_as_none_helps_buffered_enums() {
+fn buffered_enums_read_undefined_as_none() {
     #[derive(Debug, PartialEq, Deserialize)]
     #[serde(tag = "type", rename_all = "lowercase")]
     enum Event {
         Note {
-            #[serde(default, deserialize_with = "cbor::undefined_as_none")]
+            #[serde(default)]
             text: Option<String>,
         },
     }

@@ -53,10 +53,41 @@ fn runs(data: &str) -> usize {
     snapshot["runs"].as_array().unwrap().len()
 }
 
+/// Connects and consumes the immediate `ping` that precedes the snapshot.
 async fn connect(router: &axum::Router) -> SseReader {
     let (status, body) = get(router, "/api/events").await;
     assert_eq!(status, StatusCode::OK);
-    SseReader::new(body)
+    let mut reader = SseReader::new(body);
+    let ping = reader.next(WAIT).await.unwrap();
+    assert_eq!((ping.event.as_str(), ping.id.as_deref()), ("ping", None));
+    reader
+}
+
+#[tokio::test]
+async fn pings_on_connect_then_sends_the_snapshot_before_any_broadcast() {
+    let app = TestApp::new().await;
+    let (router, state) = ops(&app.ctx);
+    let hub = tokio::spawn(state.dashboard.clone().listen());
+    let (status, body) = get(&router, "/api/events").await;
+    assert_eq!(status, StatusCode::OK);
+    let mut reader = SseReader::new(body);
+    let ping = reader.next(WAIT).await.unwrap();
+    assert_eq!(ping.event, "ping");
+    assert_eq!(ping.data, app.ctx.clock.now_ms().to_string());
+    let snapshot = reader.next(WAIT).await.unwrap();
+    assert_eq!(
+        (snapshot.event.as_str(), snapshot.id.as_deref()),
+        ("snapshot", Some("0"))
+    );
+    add_run(&app, "1").await;
+    task_event(&app);
+    let update = reader.next(WAIT).await.unwrap();
+    assert_eq!(
+        (update.event.as_str(), update.id.as_deref()),
+        ("snapshot", Some("1"))
+    );
+    app.ctx.shutdown.cancel();
+    hub.await.unwrap();
 }
 
 #[tokio::test]

@@ -1,0 +1,479 @@
+{
+  "route": "/api/tasks",
+  "status": 200,
+  "body": {
+    "tasks": [
+      {
+        "name": "McpEventDelivery",
+        "schedule": "*/30 * * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:47:00.000Z",
+          "2026-10-09T14:47:30.000Z"
+        ],
+        "lastRun": {
+          "runId": "McpEventDelivery:00000000-0000-4000-8000-000000000142",
+          "taskName": "McpEventDelivery",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557190067,
+          "finishedAt": 1791557190122,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "ClaudeSessionEvents",
+        "schedule": "*/15 * * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:47:00.000Z",
+          "2026-10-09T14:47:15.000Z"
+        ],
+        "lastRun": {
+          "runId": "ClaudeSessionEvents:00000000-0000-4000-8000-000000000143",
+          "taskName": "ClaudeSessionEvents",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557205001,
+          "finishedAt": 1791557205068,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "RemindersSession",
+        "schedule": "*/15 * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T15:00:00.000Z",
+          "2026-10-09T15:15:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "RemindersSession:00000000-0000-4000-8000-000000000144",
+          "taskName": "RemindersSession",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557100114,
+          "finishedAt": 1791557102917,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "LiveCheckTask",
+        "schedule": "*/20 * * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:47:00.000Z",
+          "2026-10-09T14:47:20.000Z"
+        ],
+        "lastRun": {
+          "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000145",
+          "taskName": "LiveCheckTask",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557202953,
+          "finishedAt": 1791557203515,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "PetTracker",
+        "schedule": "0 */10 * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:50:00.000Z",
+          "2026-10-09T15:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "PetTracker:00000000-0000-4000-8000-000000000146",
+          "taskName": "PetTracker",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791556800059,
+          "finishedAt": 1791556802626,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "CanadianNews",
+        "schedule": "0 0 8 * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T15:00:00.000Z",
+          "2026-10-10T15:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "CanadianNews:00000000-0000-4000-8000-000000000007",
+          "taskName": "CanadianNews",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791471600044,
+          "finishedAt": 1791471766236,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "VancouverWeekend",
+        "schedule": "0 0 15 * * 5",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T22:00:00.000Z",
+          "2026-10-16T22:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "VancouverWeekend:00000000-0000-4000-8000-000000000147",
+          "taskName": "VancouverWeekend",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1790978400033,
+          "finishedAt": 1790978549114,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "PressPods",
+        "schedule": "0 */5 * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:50:00.000Z",
+          "2026-10-09T14:55:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "PressPods:00000000-0000-4000-8000-000000000005",
+          "taskName": "PressPods",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557100182,
+          "finishedAt": 1791557100240,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 708."
+        }
+      },
+      {
+        "name": "Recommendations",
+        "displayName": "Media Recommendations",
+        "schedule": "0 0 17 * * 1,3,5",
+        "running": false,
+        "nextRuns": [
+          "2026-10-10T00:00:00.000Z",
+          "2026-10-13T00:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "Recommendations:00000000-0000-4000-8000-000000000148",
+          "taskName": "Recommendations",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791417600074,
+          "finishedAt": 1791417670003,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 709."
+        }
+      },
+      {
+        "name": "ArrRecovery",
+        "displayName": "Sonarr / Radarr Recovery",
+        "schedule": "0 */5 * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:50:00.000Z",
+          "2026-10-09T14:55:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "ArrRecovery:00000000-0000-4000-8000-000000000149",
+          "taskName": "ArrRecovery",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557100293,
+          "finishedAt": 1791557100749,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 710."
+        }
+      },
+      {
+        "name": "ObserverRepair",
+        "displayName": "Repair Observer issues",
+        "schedule": "0 */15 * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T15:00:00.000Z",
+          "2026-10-09T15:15:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "ObserverRepair:00000000-0000-4000-8000-000000000150",
+          "taskName": "ObserverRepair",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557100056,
+          "finishedAt": 1791557100695,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 711."
+        }
+      },
+      {
+        "name": "PodcastRecs",
+        "displayName": "Podcast Recommendations",
+        "schedule": "0 0 11 * * 1,3,5",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T18:00:00.000Z",
+          "2026-10-12T18:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "PodcastRecs:00000000-0000-4000-8000-000000000151",
+          "taskName": "PodcastRecs",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791396195174,
+          "finishedAt": 1791396290201,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 712."
+        }
+      },
+      {
+        "name": "CastroInboxCleanup",
+        "schedule": "0 */6 * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T19:00:00.000Z",
+          "2026-10-10T01:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "CastroInboxCleanup:00000000-0000-4000-8000-000000000152",
+          "taskName": "CastroInboxCleanup",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791550811845,
+          "finishedAt": 1791550834179,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 713."
+        }
+      },
+      {
+        "name": "TasteReflection",
+        "displayName": "Media Taste Reflection",
+        "schedule": "0 0 4 * * 0",
+        "running": false,
+        "nextRuns": [
+          "2026-10-11T11:00:00.000Z",
+          "2026-10-18T11:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "TasteReflection:00000000-0000-4000-8000-000000000153",
+          "taskName": "TasteReflection",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791111600002,
+          "finishedAt": 1791111696876,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 714."
+        }
+      },
+      {
+        "name": "PodcastTasteReflection",
+        "displayName": "Podcast Taste Reflection",
+        "schedule": "0 0 5 * * 0",
+        "running": false,
+        "nextRuns": [
+          "2026-10-11T12:00:00.000Z",
+          "2026-10-18T12:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "PodcastTasteReflection:00000000-0000-4000-8000-000000000154",
+          "taskName": "PodcastTasteReflection",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791115234980,
+          "finishedAt": 1791115260159,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 715."
+        }
+      },
+      {
+        "name": "PurchaseResearch",
+        "displayName": "Purchase Research",
+        "schedule": "0 0 9 * * 0",
+        "running": false,
+        "nextRuns": [
+          "2026-10-11T16:00:00.000Z",
+          "2026-10-18T16:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "PurchaseResearch:00000000-0000-4000-8000-000000000155",
+          "taskName": "PurchaseResearch",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791129600001,
+          "finishedAt": 1791129600029,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 716."
+        }
+      },
+      {
+        "name": "MarketplaceSelling",
+        "displayName": "Marketplace Selling",
+        "schedule": "0 0 9 * * 0",
+        "running": false,
+        "nextRuns": [
+          "2026-10-11T16:00:00.000Z",
+          "2026-10-18T16:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "MarketplaceSelling:00000000-0000-4000-8000-000000000156",
+          "taskName": "MarketplaceSelling",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791129600031,
+          "finishedAt": 1791129600057,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 717."
+        }
+      },
+      {
+        "name": "WorkspaceNotifications",
+        "displayName": "Workspace Notifications",
+        "schedule": "*/5 * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:50:00.000Z",
+          "2026-10-09T14:55:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "WorkspaceNotifications:00000000-0000-4000-8000-000000000157",
+          "taskName": "WorkspaceNotifications",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557100242,
+          "finishedAt": 1791557100291,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 718."
+        }
+      },
+      {
+        "name": "CodexResets",
+        "displayName": "Codex Reset Alerts",
+        "schedule": "0 * * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:47:00.000Z",
+          "2026-10-09T14:48:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "CodexResets:00000000-0000-4000-8000-000000000158",
+          "taskName": "CodexResets",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557160001,
+          "finishedAt": 1791557160374,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 719."
+        }
+      },
+      {
+        "name": "ClaudeResets",
+        "displayName": "Claude Code Reset Alerts",
+        "schedule": "0 * * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:47:00.000Z",
+          "2026-10-09T14:48:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "ClaudeResets:00000000-0000-4000-8000-000000000159",
+          "taskName": "ClaudeResets",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557160056,
+          "finishedAt": 1791557161110,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 720."
+        }
+      },
+      {
+        "name": "EmailArchive",
+        "schedule": "*/30 * * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T14:47:00.000Z",
+          "2026-10-09T14:47:30.000Z"
+        ],
+        "lastRun": {
+          "runId": "EmailArchive:00000000-0000-4000-8000-000000000160",
+          "taskName": "EmailArchive",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557190001,
+          "finishedAt": 1791557190065,
+          "status": "success",
+          "error": null,
+          "summary": null
+        }
+      },
+      {
+        "name": "EmailWatchdog",
+        "schedule": "0 0 */6 * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T19:00:00.000Z",
+          "2026-10-10T01:00:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "EmailWatchdog:00000000-0000-4000-8000-000000000161",
+          "taskName": "EmailWatchdog",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791550800001,
+          "finishedAt": 1791550800041,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 721."
+        }
+      },
+      {
+        "name": "EmailRetry",
+        "schedule": "0 */15 * * * *",
+        "running": false,
+        "nextRuns": [
+          "2026-10-09T15:00:00.000Z",
+          "2026-10-09T15:15:00.000Z"
+        ],
+        "lastRun": {
+          "runId": "EmailRetry:00000000-0000-4000-8000-000000000162",
+          "taskName": "EmailRetry",
+          "trigger": "schedule",
+          "scheduledFor": null,
+          "startedAt": 1791557100001,
+          "finishedAt": 1791557100054,
+          "status": "success",
+          "error": null,
+          "summary": "Synthetic text 722."
+        }
+      }
+    ]
+  }
+}

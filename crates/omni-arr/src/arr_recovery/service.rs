@@ -14,8 +14,8 @@ use omni_store::Store;
 
 use super::nzbget::NzbGetClient;
 use super::persistence::{
-    ActionPhase, NotificationState, Observation, RecoveryAction, StoredRecoveryState,
-    acquire_state, release_state, save_state,
+    ActionPhase, NotificationState, Observation, RecoveryAction, RecoveryState, acquire_state,
+    release_state, save_state,
 };
 use super::policy::{decide, eligible_queue_item, observation_fingerprint};
 use super::types::{
@@ -382,7 +382,7 @@ struct ClientPass<'a, C> {
     client: &'a C,
     cx: &'a RecoveryContext<'a>,
     owner: String,
-    state: StoredRecoveryState,
+    state: RecoveryState,
     failures: Vec<String>,
 }
 
@@ -396,7 +396,7 @@ impl<C: ArrClient> ClientPass<'_, C> {
     }
 
     fn action_mut(&mut self, index: usize) -> ArrResult<&mut RecoveryAction> {
-        self.state.value.actions.get_mut(index).ok_or_else(|| {
+        self.state.actions.get_mut(index).ok_or_else(|| {
             ArrRecoveryError::message("reconcile action", "action index out of range")
         })
     }
@@ -410,7 +410,7 @@ impl<C: ArrClient> ClientPass<'_, C> {
             .into_iter()
             .filter(|items| items.iter().all(eligible_queue_item))
             .collect();
-        let state = &mut self.state.value;
+        let state = &mut self.state;
         state
             .observations
             .retain(|id, _| eligible.iter().any(|items| items[0].download_id == *id));
@@ -435,7 +435,6 @@ impl<C: ArrClient> ClientPass<'_, C> {
         let mut llm_calls = 0usize;
         let unfinished: Vec<usize> = self
             .state
-            .value
             .actions
             .iter()
             .enumerate()
@@ -456,13 +455,12 @@ impl<C: ArrClient> ClientPass<'_, C> {
                 break;
             }
             let id = &items[0].download_id;
-            let Some(observation) = self.state.value.observations.get(id) else {
+            let Some(observation) = self.state.observations.get(id) else {
                 continue;
             };
             if !is_mature(observation)
                 || self
                     .state
-                    .value
                     .actions
                     .iter()
                     .any(|action| action.download_id == *id)
@@ -493,7 +491,6 @@ impl<C: ArrClient> ClientPass<'_, C> {
         self.deliver_notifications().await?;
         let awaiting = self
             .state
-            .value
             .actions
             .iter()
             .filter(|action| action.phase != ActionPhase::Done)
@@ -535,14 +532,14 @@ impl<C: ArrClient> ClientPass<'_, C> {
             decision = self.cx.assessor.assess(&evidence).await?;
         }
         if decision.is_replacement()
-            && !can_replace(&self.state.value.actions, &evidence.target, now, None)
+            && !can_replace(&self.state.actions, &evidence.target, now, None)
         {
             decision = Decision::defer(
                 "Replacement search budget/backoff reached",
                 DecisionSource::Rules,
             );
         }
-        let fingerprint = match self.state.value.observations.get_mut(&id) {
+        let fingerprint = match self.state.observations.get_mut(&id) {
             Some(observation) => {
                 observation.last_assessed_at = Some(now);
                 observation.reason = Some(decision.reason().to_owned());
@@ -579,16 +576,16 @@ impl<C: ArrClient> ClientPass<'_, C> {
             || !fresh_items.iter().all(eligible_queue_item)
             || observation_fingerprint(&fresh_items) != fingerprint
         {
-            self.state.value.observations.shift_remove(&id);
+            self.state.observations.shift_remove(&id);
             return self.save().await;
         }
         let fresh = gather_evidence(self.client, &fresh_items, self.cx.health).await?;
         if !same_evidence(&fresh, &evidence) {
-            self.state.value.observations.shift_remove(&id);
+            self.state.observations.shift_remove(&id);
             return self.save().await;
         }
         let output_path = items[0].output_path.clone().unwrap_or_default();
-        self.state.value.actions.push(RecoveryAction {
+        self.state.actions.push(RecoveryAction {
             download_id: id.clone(),
             title: items[0].title.clone(),
             target: evidence.target.clone(),
@@ -602,7 +599,7 @@ impl<C: ArrClient> ClientPass<'_, C> {
             error: None,
             notification: NotificationState::Pending,
         });
-        let index = self.state.value.actions.len() - 1;
+        let index = self.state.actions.len() - 1;
         self.save().await?;
         *acted += 1;
         if let Err(error) = self
@@ -756,7 +753,7 @@ impl<C: ArrClient> ClientPass<'_, C> {
         }
         let now = self.cx.now();
         if !can_replace(
-            &self.state.value.actions,
+            &self.state.actions,
             &search_target,
             now,
             Some(&action.download_id),
@@ -815,7 +812,6 @@ impl<C: ArrClient> ClientPass<'_, C> {
     async fn deliver_notifications(&mut self) -> ArrResult<()> {
         let pending: Vec<usize> = self
             .state
-            .value
             .actions
             .iter()
             .enumerate()
@@ -828,14 +824,14 @@ impl<C: ArrClient> ClientPass<'_, C> {
         let ranges = {
             let refs: Vec<&RecoveryAction> = pending
                 .iter()
-                .map(|index| &self.state.value.actions[*index])
+                .map(|index| &self.state.actions[*index])
                 .collect();
             batch_ranges(&refs)
         };
         for range in ranges {
             let batch = &pending[range];
             let message =
-                notification_message(batch.iter().map(|index| &self.state.value.actions[*index]));
+                notification_message(batch.iter().map(|index| &self.state.actions[*index]));
             self.set_notification(batch, NotificationState::Sending);
             self.save().await?;
             match self.cx.notifier.send(self.kind(), &message).await {
@@ -857,7 +853,7 @@ impl<C: ArrClient> ClientPass<'_, C> {
 
     fn set_notification(&mut self, batch: &[usize], state: NotificationState) {
         for index in batch {
-            if let Some(action) = self.state.value.actions.get_mut(*index) {
+            if let Some(action) = self.state.actions.get_mut(*index) {
                 action.notification = state;
             }
         }

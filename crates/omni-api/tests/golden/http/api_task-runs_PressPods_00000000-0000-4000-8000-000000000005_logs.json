@@ -1,0 +1,19 @@
+{
+  "route": "/api/task-runs/PressPods:00000000-0000-4000-8000-000000000005/logs",
+  "status": 200,
+  "body": {
+    "run": {
+      "runId": "PressPods:00000000-0000-4000-8000-000000000005",
+      "taskName": "PressPods",
+      "trigger": "schedule",
+      "scheduledFor": null,
+      "startedAt": 1791557100182,
+      "finishedAt": 1791557100240,
+      "status": "success",
+      "error": null,
+      "summary": "Synthetic text 708."
+    },
+    "lines": [],
+    "dropped": 0
+  }
+}

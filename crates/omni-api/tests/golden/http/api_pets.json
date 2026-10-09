@@ -1,0 +1,60 @@
+{
+  "route": "/api/pets",
+  "status": 200,
+  "body": [
+    {
+      "petId": "PET-00000000-0000-4000-8000-000000000001",
+      "name": "id37",
+      "currentWeight": 10.375,
+      "weightHistory": [
+        {
+          "timestamp": "2026-03-20T15:37:39",
+          "weight": 10.625
+        },
+        {
+          "timestamp": "2026-03-20T15:39:54",
+          "weight": 10.875
+        },
+        {
+          "timestamp": "2026-04-15T23:24:03",
+          "weight": 14
+        }
+      ],
+      "dailyVisits": [
+        {
+          "date": "2026-03-20",
+          "count": 2
+        },
+        {
+          "date": "2026-03-21",
+          "count": 3
+        }
+      ]
+    },
+    {
+      "petId": "PET-00000000-0000-4000-8000-000000000086",
+      "name": "id38",
+      "currentWeight": 11.375,
+      "weightHistory": [
+        {
+          "timestamp": "2026-03-20T00:08:03",
+          "weight": 11.625
+        },
+        {
+          "timestamp": "2026-03-20T07:57:04",
+          "weight": 11.875
+        }
+      ],
+      "dailyVisits": [
+        {
+          "date": "2026-03-20",
+          "count": 3
+        },
+        {
+          "date": "2026-03-21",
+          "count": 3
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "route": "/api/email-activity/CalendarEvents%23%3Cmessage-1%40example.com%3E/logs",
+  "status": 200,
+  "body": {
+    "activity": {
+      "activityId": "CalendarEvents#<message-1@example.com>",
+      "pipeline": "CalendarEvents",
+      "emailId": "<message-1@example.com>",
+      "subject": "Synthetic text 164.",
+      "from": "user1@example.com",
+      "receivedAt": 1791527016000,
+      "processedAt": 1791555795196,
+      "outcome": "filtered",
+      "detail": "Synthetic text 165.",
+      "admitReason": null,
+      "admitTier": null,
+      "costCents": null,
+      "items": []
+    },
+    "lines": [],
+    "dropped": 0
+  }
+}

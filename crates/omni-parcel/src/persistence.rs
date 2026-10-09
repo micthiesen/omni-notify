@@ -26,17 +26,9 @@ pub struct SubmittedDelivery {
     pub submitted_at: i64,
     pub email_id: String,
     /// Missing on legacy rows, which are already terminal submissions.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "omni_store::cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<SubmissionStatus>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "omni_store::cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attempts: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,

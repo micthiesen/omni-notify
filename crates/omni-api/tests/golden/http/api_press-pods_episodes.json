@@ -1,0 +1,1610 @@
+{
+  "route": "/api/press-pods/episodes",
+  "status": 200,
+  "body": {
+    "episodes": [
+      {
+        "episodeId": "id1",
+        "title": "Synthetic text 303.",
+        "author": "Synthetic text 304.",
+        "publication": "Synthetic text 305.",
+        "domain": "site1.example.com",
+        "articleUrl": "https://example.com/r/61.html",
+        "leadImageUrl": "https://example.com/r/62.jpg",
+        "excerpt": "Synthetic text 306.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 158.228,
+        "chapters": [],
+        "audioUrl": "/pods/audio/id1.mp3",
+        "durationSeconds": 215.17061224489797,
+        "fileBytes": 2713990,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 24.15,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 4464
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 4626
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 4626
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 307."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 15185
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 309."
+          }
+        ],
+        "costCents": 1.48,
+        "createdAt": 1790528063412,
+        "publishedAt": 1790270836000,
+        "runId": "PressPods:00000000-0000-4000-8000-000000000108"
+      },
+      {
+        "episodeId": "id39",
+        "title": "Synthetic text 310.",
+        "author": "Synthetic text 311.",
+        "publication": "Synthetic text 312.",
+        "domain": "site2.example.com",
+        "articleUrl": "https://example.com/r/63",
+        "leadImageUrl": "https://example.com/r/64.jpg",
+        "excerpt": "Synthetic text 313.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 1602.121,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 434.4187339999999,
+            "title": "Synthetic text 314."
+          }
+        ],
+        "audioUrl": "/pods/audio/id39.mp3",
+        "durationSeconds": 2159.0726530612246,
+        "fileBytes": 26116606,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 80.439,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 46291
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 46384
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 46384
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 49004
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 48736
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 13.24,
+        "createdAt": 1786846405092,
+        "publishedAt": 1769252400000,
+        "runId": "PressPods:0000000000001:id41"
+      },
+      {
+        "episodeId": "id42",
+        "title": "Synthetic text 316.",
+        "author": "Synthetic text 317.",
+        "publication": "Synthetic text 318.",
+        "domain": "site3.example.com",
+        "articleUrl": "https://example.com/r/65.html",
+        "leadImageUrl": "https://example.com/r/66.jpg",
+        "excerpt": "Synthetic text 319.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 310.174,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 152.141319,
+            "title": "Synthetic text 320."
+          }
+        ],
+        "audioUrl": "/pods/audio/id42.mp3",
+        "durationSeconds": 445.4138775510204,
+        "fileBytes": 5385056,
+        "retrieverName": "readability",
+        "retrieverSeconds": 27.432,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 8269
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 7371
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 7371
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 12244
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 12193
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 2.97,
+        "createdAt": 1786646797389,
+        "publishedAt": 1264550401000,
+        "runId": "PressPods:0000000000002:id43"
+      },
+      {
+        "episodeId": "id44",
+        "title": "Synthetic text 321.",
+        "author": "Synthetic text 322.",
+        "publication": "id45",
+        "domain": "site4.example.com",
+        "articleUrl": "https://example.com/r/67",
+        "leadImageUrl": "https://example.com/r/68.png",
+        "excerpt": "Synthetic text 323.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 1195.397,
+        "chapters": [],
+        "audioUrl": "/pods/audio/id44.mp3",
+        "durationSeconds": 1663.3991836734695,
+        "fileBytes": 20453510,
+        "retrieverName": "readability",
+        "retrieverSeconds": 67.936,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 31142
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 31115
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 31115
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 37748
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 37486
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 10.12,
+        "createdAt": 1786565828537,
+        "publishedAt": 1785837600000,
+        "runId": "PressPods:0000000000003:id46"
+      },
+      {
+        "episodeId": "id47",
+        "title": "Synthetic text 324.",
+        "author": "Synthetic text 325.",
+        "publication": "site5.example.com",
+        "domain": "site5.example.com",
+        "articleUrl": "https://example.com/r/69",
+        "leadImageUrl": "https://example.com/r/70.png",
+        "excerpt": "Synthetic text 326.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 1410.395,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 108.052158,
+            "title": "Synthetic text 327."
+          }
+        ],
+        "audioUrl": "/pods/audio/id47.mp3",
+        "durationSeconds": 1887.8955102040816,
+        "fileBytes": 22707029,
+        "retrieverName": "readability",
+        "retrieverSeconds": 41.063,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 31340
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 31198
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 31198
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 32395
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 9.77,
+        "createdAt": 1786227490019,
+        "publishedAt": 1786125600000,
+        "runId": "PressPods:0000000000004:id48"
+      },
+      {
+        "episodeId": "id49",
+        "title": "Synthetic text 329.",
+        "author": "Synthetic text 330.",
+        "publication": "Synthetic text 331.",
+        "domain": "site6.example.com",
+        "articleUrl": "https://example.com/r/71",
+        "leadImageUrl": "https://example.com/r/72.png",
+        "excerpt": "Synthetic text 332.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 564.763,
+        "chapters": [],
+        "audioUrl": "/pods/audio/id49.mp3",
+        "durationSeconds": 932.414693877551,
+        "fileBytes": 11355037,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 44.26,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 18148
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 18669
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 18669
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 21258
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 21022
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 5.46,
+        "createdAt": 1786042175627,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000005:id50"
+      },
+      {
+        "episodeId": "id51",
+        "title": "Synthetic text 333.",
+        "author": "Synthetic text 334.",
+        "publication": "Synthetic text 334.",
+        "domain": "site7.example.com",
+        "articleUrl": "https://example.com/r/73",
+        "leadImageUrl": "https://example.com/r/74.jpg",
+        "excerpt": "Synthetic text 335.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 119.489,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 66.55327,
+            "title": "Synthetic text 336."
+          }
+        ],
+        "audioUrl": "/pods/audio/id51.mp3",
+        "durationSeconds": 211.38285714285715,
+        "fileBytes": 2681011,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 22.434,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5309
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5422
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5422
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5564
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 2.58,
+        "createdAt": 1785888021621,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000006:id52"
+      },
+      {
+        "episodeId": "id53",
+        "title": "Synthetic text 337.",
+        "author": "id54",
+        "publication": "id54",
+        "domain": "site8.example.com",
+        "articleUrl": "https://example.com/r/75",
+        "leadImageUrl": "https://example.com/r/76.png",
+        "excerpt": "Synthetic text 338.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 350.22,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 29.469619,
+            "title": "Synthetic text 339."
+          }
+        ],
+        "audioUrl": "/pods/audio/id53.mp3",
+        "durationSeconds": 568.9991836734694,
+        "fileBytes": 8393338,
+        "retrieverName": "readability",
+        "retrieverSeconds": 54.112,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": false,
+            "error": "Synthetic text 340."
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 10558
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 10558
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 17887
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 17640
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 6.74,
+        "createdAt": 1785826043699,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000007:id55"
+      },
+      {
+        "episodeId": "id56",
+        "title": "Synthetic text 341.",
+        "author": "Synthetic text 342.",
+        "publication": "Synthetic text 343.",
+        "domain": "site9.example.com",
+        "articleUrl": "https://example.com/r/77",
+        "leadImageUrl": null,
+        "excerpt": "Synthetic text 344.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 94.935,
+        "chapters": [],
+        "audioUrl": "/pods/audio/id56.mp3",
+        "durationSeconds": 168.6465306122449,
+        "fileBytes": 2024116,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 34.756,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 2014
+          },
+          {
+            "name": "readability",
+            "success": false,
+            "error": "Synthetic text 345."
+          },
+          {
+            "name": "extractus",
+            "success": false,
+            "error": "Synthetic text 346."
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 1.68,
+        "createdAt": 1784997843670,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000008:id57"
+      },
+      {
+        "episodeId": "id58",
+        "title": "Synthetic text 347.",
+        "author": "Synthetic text 348.",
+        "publication": "id59",
+        "domain": "site10.example.com",
+        "articleUrl": "https://example.com/r/78",
+        "leadImageUrl": "https://example.com/r/79.jpg",
+        "excerpt": "Synthetic text 349.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 367.258,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 98.19952900000001,
+            "title": "Synthetic text 350."
+          }
+        ],
+        "audioUrl": "/pods/audio/id58.mp3",
+        "durationSeconds": 635.7681632653062,
+        "fileBytes": 9233809,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 40.546,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 10558
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 10558
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 10558
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 11391
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 3.85,
+        "createdAt": 1784823486132,
+        "publishedAt": 1784809395000,
+        "runId": "PressPods:0000000000009:id60"
+      },
+      {
+        "episodeId": "id61",
+        "title": "Synthetic text 351.",
+        "author": "Synthetic text 352.",
+        "publication": "Synthetic text 353.",
+        "domain": "site11.example.com",
+        "articleUrl": "https://example.com/r/80",
+        "leadImageUrl": "https://example.com/r/81.jpg",
+        "excerpt": "Synthetic text 354.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 310.352,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 95.335627,
+            "title": "id62"
+          }
+        ],
+        "audioUrl": "/pods/audio/id61.mp3",
+        "durationSeconds": 539.715918367347,
+        "fileBytes": 6647606,
+        "retrieverName": "x",
+        "retrieverSeconds": 36.523,
+        "retrieverAttempts": [
+          {
+            "name": "x",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 8443
+          }
+        ],
+        "costCents": 3.46,
+        "createdAt": 1784766735793,
+        "publishedAt": 1784643731000,
+        "runId": "PressPods:0000000000010:id63"
+      },
+      {
+        "episodeId": "id64",
+        "title": "Synthetic text 355.",
+        "author": "id65",
+        "publication": "site12.example.com",
+        "domain": "site12.example.com",
+        "articleUrl": "https://example.com/r/82.html",
+        "leadImageUrl": null,
+        "excerpt": "Synthetic text 356.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 196.296,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 31.7859,
+            "title": "Synthetic text 357."
+          }
+        ],
+        "audioUrl": "/pods/audio/id64.mp3",
+        "durationSeconds": 334.2628571428571,
+        "fileBytes": 4012007,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 25.976,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 4696
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 4696
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 4696
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5000
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 4750
+          },
+          {
+            "name": "jina",
+            "success": false,
+            "error": "Synthetic text 315."
+          }
+        ],
+        "costCents": 3.68,
+        "createdAt": 1784735941889,
+        "publishedAt": 1784419200000,
+        "runId": "PressPods:0000000000011:id66"
+      },
+      {
+        "episodeId": "id67",
+        "title": "Synthetic text 358.",
+        "author": "Synthetic text 359.",
+        "publication": "Synthetic text 360.",
+        "domain": "site13.example.com",
+        "articleUrl": "https://example.com/r/83",
+        "leadImageUrl": null,
+        "excerpt": "Synthetic text 361.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 454.751,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 40.646898,
+            "title": "Synthetic text 362."
+          }
+        ],
+        "audioUrl": "/pods/audio/id67.mp3",
+        "durationSeconds": 594.6514285714286,
+        "fileBytes": 7136595,
+        "retrieverName": "jina",
+        "retrieverSeconds": 55.408,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": false,
+            "error": "Synthetic text 363."
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 5,
+            "textChars": 420
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 5,
+            "textChars": 420
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 5,
+            "textChars": 8484
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 42044
+          }
+        ],
+        "costCents": 5.41,
+        "createdAt": 1784694173017,
+        "publishedAt": 1784636940000,
+        "runId": "PressPods:0000000000012:id68"
+      },
+      {
+        "episodeId": "id69",
+        "title": "Synthetic text 364.",
+        "author": "Synthetic text 365.",
+        "publication": "Synthetic text 366.",
+        "domain": "site14.example.com",
+        "articleUrl": "https://example.com/r/84",
+        "leadImageUrl": "https://example.com/r/85.jpeg",
+        "excerpt": "Synthetic text 367.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 519.261,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 22.12556,
+            "title": "Synthetic text 368."
+          }
+        ],
+        "audioUrl": "/pods/audio/id69.mp3",
+        "durationSeconds": 699.715918367347,
+        "fileBytes": 8408937,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 57.915,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 27055
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 27055
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 27055
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 30437
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 31128
+          }
+        ],
+        "costCents": 7.16,
+        "createdAt": 1784693662752,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000012:id68"
+      },
+      {
+        "episodeId": "id70",
+        "title": "Synthetic text 369.",
+        "author": "Synthetic text 370.",
+        "publication": "id71",
+        "domain": "site15.example.com",
+        "articleUrl": "https://example.com/r/86",
+        "leadImageUrl": "https://example.com/r/87",
+        "excerpt": "Synthetic text 371.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 882.93,
+        "chapters": [],
+        "audioUrl": "/pods/audio/id70.mp3",
+        "durationSeconds": 1220.4669387755102,
+        "fileBytes": 14770137,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 45.326,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 22586
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 22806
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 22806
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 27313
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 27067
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 23151
+          }
+        ],
+        "costCents": 7.47,
+        "createdAt": 1784615419651,
+        "publishedAt": 1784545208000,
+        "runId": "PressPods:0000000000013:id72"
+      },
+      {
+        "episodeId": "id73",
+        "title": "Synthetic text 372.",
+        "author": "Synthetic text 373.",
+        "publication": "id74",
+        "domain": "site16.example.com",
+        "articleUrl": "https://example.com/r/88",
+        "leadImageUrl": "https://example.com/r/89.png",
+        "excerpt": "Synthetic text 374.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 240.018,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 33.424403999999996,
+            "title": "Synthetic text 375."
+          }
+        ],
+        "audioUrl": "/pods/audio/id73.mp3",
+        "durationSeconds": 341.054693877551,
+        "fileBytes": 4300367,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 34.888,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5128
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5112
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5112
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 10387
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 6799
+          }
+        ],
+        "costCents": 3.85,
+        "createdAt": 1784610324447,
+        "publishedAt": 1784235864000,
+        "runId": "PressPods:0000000000014:id75"
+      },
+      {
+        "episodeId": "id76",
+        "title": "Synthetic text 376.",
+        "author": "Synthetic text 377.",
+        "publication": "site17.example.com",
+        "domain": "site18.example.com",
+        "articleUrl": "https://example.com/r/90",
+        "leadImageUrl": "https://example.com/r/91",
+        "excerpt": "Synthetic text 378.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 463.369,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 92.940979,
+            "title": "Synthetic text 379."
+          }
+        ],
+        "audioUrl": "/pods/audio/id76.mp3",
+        "durationSeconds": 577.1755102040817,
+        "fileBytes": 7115121,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 48.179,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 28041
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 28007
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 28007
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 31425
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 30586
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 31214
+          }
+        ],
+        "costCents": 7.04,
+        "createdAt": 1784564477118,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000015:id77"
+      },
+      {
+        "episodeId": "id78",
+        "title": "Synthetic text 380.",
+        "author": "Synthetic text 381.",
+        "publication": "Synthetic text 382.",
+        "domain": "site19.example.com",
+        "articleUrl": "https://example.com/r/92",
+        "leadImageUrl": null,
+        "excerpt": "Synthetic text 383.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 488.218,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 72.292294,
+            "title": "Synthetic text 384."
+          }
+        ],
+        "audioUrl": "/pods/audio/id78.mp3",
+        "durationSeconds": 538.7232653061225,
+        "fileBytes": 6465455,
+        "retrieverName": "jina",
+        "retrieverSeconds": 37.507,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 15186
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 15337
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 15337
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 328."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 16005
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 16369
+          }
+        ],
+        "costCents": 5.99,
+        "createdAt": 1784537173406,
+        "publishedAt": 1784246400000,
+        "runId": "PressPods:0000000000016:id79"
+      },
+      {
+        "episodeId": "id80",
+        "title": "Synthetic text 385.",
+        "author": "Synthetic text 386.",
+        "publication": "Synthetic text 387.",
+        "domain": "site20.example.com",
+        "articleUrl": "https://example.com/r/93",
+        "leadImageUrl": null,
+        "excerpt": "Synthetic text 388.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 527.922,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 31.273814,
+            "title": "Synthetic text 389."
+          }
+        ],
+        "audioUrl": "/pods/audio/id80.mp3",
+        "durationSeconds": 879.3861224489796,
+        "fileBytes": 10553586,
+        "retrieverName": "wayback",
+        "retrieverSeconds": 54.203,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 8,
+            "textChars": 6136
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 1,
+            "textChars": 1199
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 2,
+            "textChars": 1199
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 22611
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 22333
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 20555
+          }
+        ],
+        "costCents": 8.19,
+        "createdAt": 1784487511980,
+        "publishedAt": 1784073600000,
+        "runId": "PressPods:0000000000017:id81"
+      },
+      {
+        "episodeId": "id82",
+        "title": "Synthetic text 390.",
+        "author": "Synthetic text 391.",
+        "publication": "Synthetic text 392.",
+        "domain": "site21.example.com",
+        "articleUrl": "https://example.com/r/94",
+        "leadImageUrl": null,
+        "excerpt": "Synthetic text 393.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 553.774,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 25.816014,
+            "title": "Synthetic text 394."
+          }
+        ],
+        "audioUrl": "/pods/audio/id82.mp3",
+        "durationSeconds": 907.075918367347,
+        "fileBytes": 10885689,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 42.837,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 19163
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 19445
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 19445
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 21172
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 20924
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 27317
+          }
+        ],
+        "costCents": 7.29,
+        "createdAt": 1784486900866,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000017:id81"
+      },
+      {
+        "episodeId": "id83",
+        "title": "Synthetic text 395.",
+        "author": null,
+        "publication": "Synthetic text 396.",
+        "domain": "site22.example.com",
+        "articleUrl": "https://example.com/r/95",
+        "leadImageUrl": "https://example.com/r/96.jpeg",
+        "excerpt": "Synthetic text 397.",
+        "voiceName": "Higgs (cloned)",
+        "synthesizedSeconds": 112.951,
+        "chapters": [
+          {
+            "startTimeSeconds": 7.512,
+            "title": "id40"
+          },
+          {
+            "startTimeSeconds": 68.082408,
+            "title": "Synthetic text 398."
+          }
+        ],
+        "audioUrl": "/pods/audio/id83.mp3",
+        "durationSeconds": 204.094693877551,
+        "fileBytes": 2633175,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 20.827,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10.9,
+            "textChars": 3482
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10.9,
+            "textChars": 3667
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 3667
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 5187
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 4947
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 3809
+          }
+        ],
+        "costCents": 3.78,
+        "createdAt": 1784462873036,
+        "publishedAt": 1779387483000,
+        "runId": "PressPods:0000000000018:id84"
+      },
+      {
+        "episodeId": "id85",
+        "title": "Synthetic text 399.",
+        "author": "Synthetic text 400.",
+        "publication": "Synthetic text 400.",
+        "domain": "site23.example.com",
+        "articleUrl": "https://example.com/r/97",
+        "leadImageUrl": "https://example.com/r/98.png",
+        "excerpt": "Synthetic text 401.",
+        "voiceName": "Higgs (male)",
+        "synthesizedSeconds": 59.546,
+        "chapters": [],
+        "audioUrl": "/pods/audio/id85.mp3",
+        "durationSeconds": 129.22775510204082,
+        "fileBytes": 1723819,
+        "retrieverName": "postlight",
+        "retrieverSeconds": 24.379,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 2301
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 2301
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 2301
+          },
+          {
+            "name": "wayback",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 3019
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 9,
+            "textChars": 2805
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 3210
+          }
+        ],
+        "costCents": 3.38,
+        "createdAt": 1784452242852,
+        "publishedAt": null,
+        "runId": "PressPods:0000000000019:id86"
+      },
+      {
+        "episodeId": "id87",
+        "title": "Synthetic text 402.",
+        "author": "Synthetic text 403.",
+        "publication": "Synthetic text 404.",
+        "domain": "site24.example.com",
+        "articleUrl": "https://example.com/r/99",
+        "leadImageUrl": "https://example.com/r/100.png",
+        "excerpt": "Synthetic text 405.",
+        "voiceName": "Paul - Neutral",
+        "synthesizedSeconds": 20.987,
+        "chapters": null,
+        "audioUrl": "/pods/audio/id87.mp3",
+        "durationSeconds": 334.44,
+        "fileBytes": 6419927,
+        "retrieverName": "readability",
+        "retrieverSeconds": 30.314,
+        "retrieverAttempts": [
+          {
+            "name": "postlight",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 2066
+          },
+          {
+            "name": "readability",
+            "success": true,
+            "contentRating": 10.9,
+            "textChars": 7286
+          },
+          {
+            "name": "extractus",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 7286
+          },
+          {
+            "name": "wayback",
+            "success": false,
+            "error": "Synthetic text 406."
+          },
+          {
+            "name": "removepaywall",
+            "success": false,
+            "error": "Synthetic text 308."
+          },
+          {
+            "name": "fetch",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 9746
+          },
+          {
+            "name": "jina",
+            "success": true,
+            "contentRating": 10,
+            "textChars": 7774
+          }
+        ],
+        "costCents": 14.06,
+        "createdAt": 1784434923856,
+        "publishedAt": 1784317818000,
+        "runId": "PressPods:0000000000020:id88"
+      }
+    ],
+    "jobs": [
+      {
+        "jobId": "id89",
+        "url": "https://example.com/r/101.html",
+        "status": "failed",
+        "attempts": 1,
+        "nextAttemptAt": null,
+        "lastError": "Synthetic text 407.",
+        "createdAt": 1790349839660,
+        "updatedAt": 1790349853091,
+        "lastRunId": "PressPods:00000000-0000-4000-8000-000000000109"
+      },
+      {
+        "jobId": "id90",
+        "url": "https://example.com/r/102.html",
+        "status": "failed",
+        "attempts": 1,
+        "nextAttemptAt": null,
+        "lastError": "Synthetic text 407.",
+        "createdAt": 1787686735120,
+        "updatedAt": 1787686746289,
+        "lastRunId": "PressPods:0000000000021:id91"
+      }
+    ]
+  }
+}

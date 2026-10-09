@@ -15,7 +15,6 @@ pub mod observer;
 pub mod observer_repair;
 pub mod paths;
 pub mod side_effects;
-pub mod stored;
 
 use std::sync::Arc;
 
@@ -29,8 +28,8 @@ pub use side_effects::{RecordedMutation, SideEffects};
 /// Entities this package owns (for `migrate_all` and the compat audit).
 pub fn entities() -> Vec<EntityDescriptor> {
     vec![
-        EntityDescriptor::of::<arr_recovery::persistence::StoredRecoveryState>(),
-        EntityDescriptor::of::<observer_repair::persistence::StoredRepairState>(),
+        EntityDescriptor::of::<arr_recovery::persistence::RecoveryState>(),
+        EntityDescriptor::of::<observer_repair::persistence::ObserverRepairState>(),
     ]
 }
 

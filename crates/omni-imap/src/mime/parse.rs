@@ -4,6 +4,7 @@
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use jiff::tz::TimeZone;
 
 use super::address::{Address, decode_addresses, parse_addresses};
 use super::charset::decode_body;
@@ -135,7 +136,7 @@ fn parse_address_value(value: &str) -> Vec<Address> {
     parsed
 }
 
-fn process_root_headers(lines: &[HeaderLine], now_ms: i64) -> RootHeaders {
+fn process_root_headers(lines: &[HeaderLine], now_ms: i64, tz: &TimeZone) -> RootHeaders {
     let mut out = RootHeaders::default();
     for line in lines {
         let (_, value) = processed_value(line);
@@ -163,7 +164,7 @@ fn process_root_headers(lines: &[HeaderLine], now_ms: i64) -> RootHeaders {
                     out.subject = Some(decoded);
                 }
             }
-            "date" => out.date = Some(parse_date(&value).unwrap_or(now_ms)),
+            "date" => out.date = Some(parse_date(&value, tz).unwrap_or(now_ms)),
             "from" => out.from = Some(parse_address_value(&value)),
             "reply-to" => out.reply_to = Some(parse_address_value(&value)),
             "to" => out
@@ -296,8 +297,18 @@ fn encode_html(text: &str) -> String {
     out
 }
 
-/// Parses a complete RFC 822 message like `simpleParser(source)`.
+/// Parses a complete RFC 822 message like `simpleParser(source)`, reading
+/// zone-less Date headers in the process time zone as node does.
 pub fn parse_message(source: &[u8], now_ms: i64) -> Result<ParsedMail, ParseError> {
+    parse_message_in(source, now_ms, &TimeZone::system())
+}
+
+/// [`parse_message`] with zone-less Date headers read as local time in `tz`.
+pub fn parse_message_in(
+    source: &[u8],
+    now_ms: i64,
+    tz: &TimeZone,
+) -> Result<ParsedMail, ParseError> {
     let split = split(source)?;
     let nodes = &split.nodes;
 
@@ -391,7 +402,7 @@ pub fn parse_message(source: &[u8], now_ms: i64) -> Result<ParsedMail, ParseErro
             .parent
             .is_some_and(|p| nodes[p].content_type.as_deref() == Some("message/rfc822"));
         if show_meta {
-            let meta = meta_entries(&nodes[index].headers, now_ms);
+            let meta = meta_entries(&nodes[index].headers, now_ms, tz);
             if has_html {
                 html_parts.push(meta_html(&meta));
             }
@@ -442,7 +453,7 @@ pub fn parse_message(source: &[u8], now_ms: i64) -> Result<ParsedMail, ParseErro
     }
 
     let root = &nodes[0];
-    let headers = process_root_headers(&root.headers, now_ms);
+    let headers = process_root_headers(&root.headers, now_ms, tz);
     Ok(ParsedMail {
         message_id: headers.message_id,
         in_reply_to: headers.in_reply_to,
@@ -469,8 +480,12 @@ enum MetaValue {
 }
 
 /// From, Subject, Date, To, Cc, Bcc of an embedded message (last occurrence).
-fn meta_entries(lines: &[HeaderLine], now_ms: i64) -> Vec<(&'static str, MetaValue)> {
-    let headers = process_root_headers(lines, now_ms);
+fn meta_entries(
+    lines: &[HeaderLine],
+    now_ms: i64,
+    tz: &TimeZone,
+) -> Vec<(&'static str, MetaValue)> {
+    let headers = process_root_headers(lines, now_ms, tz);
     let mut out = Vec::new();
     if let Some(from) = headers.from {
         out.push(("From", MetaValue::Addresses(from)));

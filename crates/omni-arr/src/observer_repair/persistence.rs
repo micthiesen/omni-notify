@@ -4,12 +4,10 @@
 //! taken before any mutation; an execution found interrupted is converted to a
 //! needs-attention outcome rather than repeated.
 
-use omni_store::cbor::{self, JsValue};
+use omni_store::cbor::{self, Extra, JsValue};
 use omni_store::entity::{self, Entity};
 use omni_store::{DocMeta, DocOps as _, DocWrite as _, Store, StoreError, Tx};
 use serde::{Deserialize, Serialize};
-
-use crate::stored::{Stored, StoredFields};
 
 pub const OBSERVER_REPAIR_LEASE_MS: i64 = 30 * 60 * 1_000;
 
@@ -56,7 +54,7 @@ pub struct RepairLease {
     pub expires_at: i64,
 }
 
-/// `ObserverRepairState`.
+/// `ObserverRepairState`, the `observer-repair-state` document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ObserverRepairState {
@@ -70,6 +68,9 @@ pub struct ObserverRepairState {
     pub notification: DeliveryState,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lease: Option<RepairLease>,
+    /// Unknown top-level fields, written back unchanged.
+    #[serde(flatten)]
+    pub extra: Extra,
 }
 
 impl ObserverRepairState {
@@ -82,30 +83,16 @@ impl ObserverRepairState {
             message: None,
             notification: DeliveryState::Pending,
             lease: None,
+            extra: Extra::new(),
         }
     }
 }
 
-impl StoredFields for ObserverRepairState {
-    const FIELDS: &'static [&'static str] = &[
-        "issueId",
-        "revision",
-        "phase",
-        "outcome",
-        "message",
-        "notification",
-        "lease",
-    ];
-}
-
-/// The `observer-repair-state` document (unknown top-level fields preserved).
-pub type StoredRepairState = Stored<ObserverRepairState>;
-
-impl Entity for Stored<ObserverRepairState> {
+impl Entity for ObserverRepairState {
     const NAME: &'static str = "observer-repair-state";
     type Key = i64;
     fn key(&self) -> i64 {
-        self.value.issue_id
+        self.issue_id
     }
 }
 
@@ -131,15 +118,15 @@ fn fail(operation: String) -> impl FnOnce(PersistenceCause) -> RepairPersistence
 }
 
 fn pk(issue_id: i64) -> Result<String, StoreError> {
-    entity::pk::<StoredRepairState>(&issue_id)
+    entity::pk::<ObserverRepairState>(&issue_id)
 }
 
-fn decode(pk: &str, value: JsValue) -> Result<StoredRepairState, PersistenceCause> {
+fn decode(pk: &str, value: JsValue) -> Result<ObserverRepairState, PersistenceCause> {
     cbor::from_value(value)
         .map_err(|e| PersistenceCause::Invalid(format!("invalid stored repair state {pk}: {e}")))
 }
 
-fn read(tx: &Tx<'_>, pk: &str) -> Result<Option<StoredRepairState>, PersistenceCause> {
+fn read(tx: &Tx<'_>, pk: &str) -> Result<Option<ObserverRepairState>, PersistenceCause> {
     match tx.get_raw_row(pk)? {
         Some(raw) => decode(pk, raw.decode()?).map(Some),
         None => Ok(None),
@@ -149,7 +136,7 @@ fn read(tx: &Tx<'_>, pk: &str) -> Result<Option<StoredRepairState>, PersistenceC
 fn write(
     tx: &mut Tx<'_>,
     pk: &str,
-    state: &StoredRepairState,
+    state: &ObserverRepairState,
     now: i64,
 ) -> Result<(), PersistenceCause> {
     let value = cbor::to_value(state).map_err(|source| StoreError::Encode {
@@ -160,7 +147,7 @@ fn write(
         pk,
         &value,
         DocMeta {
-            entity: Some(StoredRepairState::NAME.to_owned()),
+            entity: Some(ObserverRepairState::NAME.to_owned()),
             version: 0,
             expires_at: None,
             updated_at: Some(now),
@@ -177,7 +164,7 @@ pub async fn acquire_issue(
     revision: &str,
     owner: &str,
     now: i64,
-) -> Result<Option<StoredRepairState>, RepairPersistenceError> {
+) -> Result<Option<ObserverRepairState>, RepairPersistenceError> {
     let revision = revision.to_owned();
     let owner = owner.to_owned();
     store
@@ -185,16 +172,15 @@ pub async fn acquire_issue(
             let pk = pk(issue_id)?;
             let current = read(tx, &pk)?;
             let next = match current {
-                Some(current) if current.value.phase == RepairPhase::Done => {
-                    if current.value.revision == revision {
+                Some(current) if current.phase == RepairPhase::Done => {
+                    if current.revision == revision {
                         return Ok(None);
                     }
-                    Stored::new(ObserverRepairState::reserved(issue_id, &revision))
+                    ObserverRepairState::reserved(issue_id, &revision)
                 }
                 Some(current) => {
-                    if current.value.revision != revision
+                    if current.revision != revision
                         || current
-                            .value
                             .lease
                             .as_ref()
                             .is_some_and(|lease| lease.expires_at > now)
@@ -202,20 +188,20 @@ pub async fn acquire_issue(
                         return Ok(None);
                     }
                     let mut next = current;
-                    if next.value.phase == RepairPhase::Executing {
-                        next.value.phase = RepairPhase::Unhandled;
-                        next.value.outcome = Some(RepairOutcome::Unhandled);
-                        next.value.message = Some(
+                    if next.phase == RepairPhase::Executing {
+                        next.phase = RepairPhase::Unhandled;
+                        next.outcome = Some(RepairOutcome::Unhandled);
+                        next.message = Some(
                             "Repair interrupted while executing; manual handling required"
                                 .to_owned(),
                         );
                     }
                     next
                 }
-                None => Stored::new(ObserverRepairState::reserved(issue_id, &revision)),
+                None => ObserverRepairState::reserved(issue_id, &revision),
             };
             let mut leased = next;
-            leased.value.lease = Some(RepairLease {
+            leased.lease = Some(RepairLease {
                 owner,
                 expires_at: now + OBSERVER_REPAIR_LEASE_MS,
             });
@@ -229,11 +215,11 @@ pub async fn acquire_issue(
 /// Saves `state` if `owner` still holds the unexpired lease (which is kept).
 pub async fn save_issue(
     store: &Store,
-    state: &StoredRepairState,
+    state: &ObserverRepairState,
     owner: &str,
     now: i64,
 ) -> Result<(), RepairPersistenceError> {
-    let issue_id = state.value.issue_id;
+    let issue_id = state.issue_id;
     let mut next = state.clone();
     let owner = owner.to_owned();
     store
@@ -244,7 +230,7 @@ pub async fn save_issue(
                     "No Observer repair state exists for {issue_id}"
                 )));
             };
-            let lease = match current.value.lease {
+            let lease = match current.lease {
                 Some(lease) if lease.owner == owner => lease,
                 _ => {
                     return Err(PersistenceCause::Invalid(format!(
@@ -257,7 +243,7 @@ pub async fn save_issue(
                     "Observer repair lease owned by {owner} has expired"
                 )));
             }
-            next.value.lease = Some(lease);
+            next.lease = Some(lease);
             write(tx, &pk, &next, now)
         })
         .await
@@ -278,10 +264,10 @@ pub async fn release_issue(
             let Some(mut current) = read(tx, &pk)? else {
                 return Ok(());
             };
-            if current.value.lease.as_ref().map(|l| l.owner.as_str()) != Some(owner.as_str()) {
+            if current.lease.as_ref().map(|l| l.owner.as_str()) != Some(owner.as_str()) {
                 return Ok(());
             }
-            current.value.lease = None;
+            current.lease = None;
             write(tx, &pk, &current, now)
         })
         .await
@@ -293,12 +279,14 @@ pub async fn list_pending(
     store: &Store,
 ) -> Result<Vec<ObserverRepairState>, RepairPersistenceError> {
     store
-        .read(|docs| -> Result<_, StoreError> { docs.get_docs_by_entity(StoredRepairState::NAME) })
+        .read(|docs| -> Result<_, StoreError> {
+            docs.get_docs_by_entity(ObserverRepairState::NAME)
+        })
         .await
         .map_err(PersistenceCause::Store)
         .and_then(|rows| {
             rows.into_iter()
-                .map(|(pk, value)| decode(&pk, value).map(|state| state.value))
+                .map(|(pk, value)| decode(&pk, value))
                 .collect::<Result<Vec<_>, _>>()
         })
         .map(|states| {
@@ -316,23 +304,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fields_list_every_serialized_property() {
-        let state = ObserverRepairState {
-            outcome: Some(RepairOutcome::Repaired),
-            message: Some("m".into()),
-            lease: Some(RepairLease {
-                owner: "o".into(),
-                expires_at: 1,
-            }),
-            ..ObserverRepairState::reserved(1, "r")
+    fn reads_explicit_undefined_and_keeps_unknown_fields() {
+        let mut stored = cbor::to_value(&ObserverRepairState::reserved(7, "r")).unwrap();
+        let object = stored.as_object_mut().unwrap();
+        object.insert("outcome".to_owned(), JsValue::Undefined);
+        object.insert("message".to_owned(), JsValue::Undefined);
+        object.insert("lease".to_owned(), JsValue::Undefined);
+        object.insert("future".to_owned(), JsValue::Int(1));
+        let state: ObserverRepairState = cbor::from_value(stored).unwrap();
+        assert_eq!((state.outcome, state.message.as_deref()), (None, None));
+        assert_eq!(state.lease, None);
+        assert_eq!(
+            state.extra,
+            Extra::from([("future".to_owned(), JsValue::Int(1))])
+        );
+        let JsValue::Object(back) = cbor::to_value(&state).unwrap() else {
+            panic!("object");
         };
-        let value = cbor::to_value(&state).unwrap();
-        let keys: Vec<&str> = value
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect();
-        assert_eq!(keys, ObserverRepairState::FIELDS);
+        let keys: Vec<&str> = back.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            ["issueId", "revision", "phase", "notification", "future"]
+        );
     }
 }

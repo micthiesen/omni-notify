@@ -16,7 +16,7 @@ use super::agent::{RepairAction, RepairDecision};
 use super::arr::ArrRepairError;
 use super::persistence::{
     DeliveryState, ObserverRepairState, RepairOutcome, RepairPersistenceError, RepairPhase,
-    StoredRepairState, acquire_issue, list_pending, release_issue, save_issue,
+    acquire_issue, list_pending, release_issue, save_issue,
 };
 use crate::js_opt::JsonOpt;
 use crate::observer::{ObserverClientError, ObserverIssue};
@@ -159,14 +159,10 @@ struct IssueRun<'a, D: ?Sized> {
     store: &'a Store,
     clock: &'a SharedClock,
     owner: String,
-    state: StoredRepairState,
+    state: ObserverRepairState,
 }
 
 impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
-    fn value(&mut self) -> &mut ObserverRepairState {
-        &mut self.state.value
-    }
-
     async fn save(&self) -> Result<(), RepairError> {
         save_issue(self.store, &self.state, &self.owner, self.clock.now_ms())
             .await
@@ -174,7 +170,7 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
     }
 
     fn mark_unhandled(&mut self, message: String) {
-        let state = self.value();
+        let state = &mut self.state;
         state.phase = RepairPhase::Unhandled;
         state.outcome = Some(RepairOutcome::Unhandled);
         state.message = Some(message);
@@ -197,22 +193,20 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
         }
         let prepared = deps.prepare(issue, &decision).await?;
         let fresh = deps.get_issue(issue_id).await?;
-        if issue_revision(&fresh) != self.state.value.revision
-            || fresh.updated_at != issue.updated_at
-        {
+        if issue_revision(&fresh) != self.state.revision || fresh.updated_at != issue.updated_at {
             return Err(RepairError::operation(
                 "recheck changed issue before repair",
                 "Issue changed during assessment",
             ));
         }
-        let state = self.value();
+        let state = &mut self.state;
         state.phase = RepairPhase::Executing;
         state.message = Some(prepared.summary.clone());
         self.save().await?;
         let command_id = tokio::time::timeout(EXECUTE_TIMEOUT, prepared.execute)
             .await
             .map_err(|_| RepairError::Timeout("Repair execution timed out".to_owned()))??;
-        let state = self.value();
+        let state = &mut self.state;
         state.phase = RepairPhase::Repaired;
         state.outcome = Some(RepairOutcome::Repaired);
         state.message = Some(format!(
@@ -228,9 +222,9 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
         summaries: &mut Vec<String>,
     ) -> Result<(), RepairError> {
         let issue_id = issue.id;
-        if self.state.value.phase == RepairPhase::Reserved {
+        if self.state.phase == RepairPhase::Reserved {
             if issue.status != 1 {
-                self.value().phase = RepairPhase::Done;
+                self.state.phase = RepairPhase::Done;
                 return self.save().await;
             }
             if let Err(error) = self.attempt(issue).await {
@@ -243,36 +237,33 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
         self.finish().await?;
         summaries.push(format!(
             "#{issue_id} {}",
-            self.state
-                .value
-                .outcome
-                .map_or("skipped", RepairOutcome::as_str)
+            self.state.outcome.map_or("skipped", RepairOutcome::as_str)
         ));
         Ok(())
     }
 
     /// Comment, resolve and notify from the durable phase.
     async fn finish(&mut self) -> Result<(), RepairError> {
-        let id = self.state.value.issue_id;
-        let revision = self.state.value.revision.clone();
+        let id = self.state.issue_id;
+        let revision = self.state.revision.clone();
         if matches!(
-            self.state.value.phase,
+            self.state.phase,
             RepairPhase::Repaired | RepairPhase::Commented
         ) {
             let current = self.deps.get_issue(id).await?;
             if current.status == 1 && issue_revision(&current) != revision {
                 let message = format!(
                     "{} The report changed during repair; left open for review.",
-                    self.state.value.message.as_deref().unwrap_or_default()
+                    self.state.message.as_deref().unwrap_or_default()
                 );
                 self.mark_unhandled(message);
                 self.save().await?;
             }
         }
-        if self.state.value.phase == RepairPhase::Repaired {
+        if self.state.phase == RepairPhase::Repaired {
             let message = format!(
                 "[Omni repair {id}/{revision}] {}",
-                self.state.value.message.as_deref().unwrap_or_default()
+                self.state.message.as_deref().unwrap_or_default()
             );
             let current = self.deps.get_issue(id).await?;
             if !current.comment_list().iter().any(|c| c.message == message) {
@@ -285,15 +276,15 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
                     "Comment not visible",
                 ));
             }
-            self.value().phase = RepairPhase::Commented;
+            self.state.phase = RepairPhase::Commented;
             self.save().await?;
         }
-        if self.state.value.phase == RepairPhase::Commented {
+        if self.state.phase == RepairPhase::Commented {
             let current = self.deps.get_issue(id).await?;
             if current.status != 2 && issue_revision(&current) != revision {
                 let message = format!(
                     "{} The report changed before resolution; left open for review.",
-                    self.state.value.message.as_deref().unwrap_or_default()
+                    self.state.message.as_deref().unwrap_or_default()
                 );
                 self.mark_unhandled(message);
             } else {
@@ -306,15 +297,15 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
                         "Issue remains open",
                     ));
                 }
-                self.value().phase = RepairPhase::Resolved;
+                self.state.phase = RepairPhase::Resolved;
             }
             self.save().await?;
         }
-        match self.state.value.notification {
+        match self.state.notification {
             DeliveryState::Pending => {
-                self.value().notification = DeliveryState::Sending;
+                self.state.notification = DeliveryState::Sending;
                 self.save().await?;
-                let verb = if self.state.value.outcome == Some(RepairOutcome::Repaired) {
+                let verb = if self.state.outcome == Some(RepairOutcome::Repaired) {
                     "Repaired"
                 } else {
                     "Needs attention"
@@ -322,19 +313,18 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
                 let text = format!(
                     "{verb}: {}",
                     self.state
-                        .value
                         .message
                         .as_deref()
                         .unwrap_or("Repair interrupted; manual review required")
                 );
                 if let Err(error) = self.deps.send(id, &text).await {
                     if error.is_definite_pushover_rejection() {
-                        self.value().notification = DeliveryState::Pending;
+                        self.state.notification = DeliveryState::Pending;
                         self.save().await?;
                     }
                     return Err(error);
                 }
-                self.value().notification = DeliveryState::Sent;
+                self.state.notification = DeliveryState::Sent;
                 self.save().await?;
             }
             DeliveryState::Sending => {
@@ -349,7 +339,7 @@ impl<D: RepairDependencies + ?Sized> IssueRun<'_, D> {
             }
             DeliveryState::Sent => {}
         }
-        self.value().phase = RepairPhase::Done;
+        self.state.phase = RepairPhase::Done;
         self.save().await
     }
 }

@@ -106,23 +106,11 @@ pub struct EmailActivityData {
     pub processed_at: i64,
     pub outcome: EmailActivityOutcome,
     /// Filter reason, error message, or other context.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admit_reason: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admit_tier: Option<AdmitTier>,
     #[serde(
         default,
@@ -132,11 +120,7 @@ pub struct EmailActivityData {
     )]
     pub cost_cents: LlmCost,
     /// Short per-item results, e.g. `1Z999AA1 (ups): submitted`.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<String>>,
     #[serde(flatten)]
     pub extra: Extra,

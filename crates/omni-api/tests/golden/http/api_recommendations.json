@@ -1,0 +1,2173 @@
+{
+  "route": "/api/recommendations",
+  "status": 200,
+  "body": {
+    "recommendations": [
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000003",
+        "canonicalId": "tmdb:movie:000022",
+        "tmdbId": 1025,
+        "mediaType": "movie",
+        "title": "Synthetic text 415.",
+        "year": 2024,
+        "posterPath": "/id92.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 416.",
+        "caveats": [
+          "Synthetic text 417.",
+          "Synthetic text 418."
+        ],
+        "runDate": "2026-10-06",
+        "recommendedAt": 1791244876079,
+        "notifiedAt": 1791244876079,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.72,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Horror"
+        ],
+        "runtimeMinutes": 101,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 419."
+        ],
+        "cast": [
+          "Synthetic text 420.",
+          "Synthetic text 421."
+        ],
+        "keywords": [
+          "id93",
+          "id94"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 71,
+          "novelty": 50,
+          "effortFit": 81,
+          "composite": 61.31375,
+          "risks": [
+            "Synthetic text 422.",
+            "Synthetic text 423."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/103",
+          "plex": "https://example.com/r/104.html",
+          "manager": "https://example.com/r/105"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000110",
+        "canonicalId": "tmdb:movie:000023",
+        "tmdbId": 1026,
+        "mediaType": "movie",
+        "title": "Synthetic text 424.",
+        "year": 2018,
+        "posterPath": "/id95.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 425.",
+        "caveats": [
+          "Synthetic text 426."
+        ],
+        "runDate": "2026-10-03",
+        "recommendedAt": 1790985673524,
+        "notifiedAt": 1790985673524,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.7,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Thriller",
+          "Crime",
+          "Horror",
+          "Drama"
+        ],
+        "runtimeMinutes": 111,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 427."
+        ],
+        "cast": [
+          "Synthetic text 428.",
+          "Synthetic text 429."
+        ],
+        "keywords": [
+          "id96",
+          "id97"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 81,
+          "novelty": 52,
+          "effortFit": 87,
+          "composite": 69.32875,
+          "risks": [
+            "Synthetic text 430."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/106",
+          "plex": "https://example.com/r/107.html",
+          "manager": "https://example.com/r/108"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000111",
+        "canonicalId": "tmdb:movie:0000024",
+        "tmdbId": 1027,
+        "mediaType": "movie",
+        "title": "id98",
+        "year": 2026,
+        "posterPath": "/id99.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 431.",
+        "caveats": [
+          "Synthetic text 432.",
+          "Synthetic text 433."
+        ],
+        "runDate": "2026-09-26",
+        "recommendedAt": 1790380864214,
+        "notifiedAt": 1790380864214,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.78,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "trending",
+        "genres": [
+          "Drama",
+          "Thriller"
+        ],
+        "runtimeMinutes": 110,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 434."
+        ],
+        "cast": [
+          "Synthetic text 435.",
+          "Synthetic text 436."
+        ],
+        "keywords": [
+          "id100",
+          "id101"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 80,
+          "novelty": 91,
+          "effortFit": 82,
+          "composite": 72.3405,
+          "risks": [
+            "Synthetic text 437."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/109",
+          "plex": "https://example.com/r/110.html",
+          "manager": "https://example.com/r/111"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000112",
+        "canonicalId": "tmdb:tv:00025",
+        "tmdbId": 1028,
+        "mediaType": "tv",
+        "title": "Synthetic text 438.",
+        "year": 2019,
+        "posterPath": "/id102.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 439.",
+        "caveats": [
+          "Synthetic text 440.",
+          "Synthetic text 441."
+        ],
+        "runDate": "2026-09-24",
+        "recommendedAt": 1790208120773,
+        "notifiedAt": 1790208120773,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.87,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Crime",
+          "Drama",
+          "Mystery"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 3,
+        "episodeCount": 18,
+        "seriesStatus": "Returning Series",
+        "originalLanguage": "en",
+        "originCountries": [
+          "GB"
+        ],
+        "creators": [
+          "Synthetic text 442."
+        ],
+        "cast": [
+          "Synthetic text 443.",
+          "Synthetic text 444."
+        ],
+        "keywords": [
+          "id103",
+          "Synthetic text 445."
+        ],
+        "certification": "TV-MA",
+        "shortlistScores": {
+          "tasteMatch": 85,
+          "novelty": 81,
+          "effortFit": 65,
+          "composite": 73.6,
+          "risks": [
+            "Synthetic text 446.",
+            "Synthetic text 447."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/112",
+          "plex": "https://example.com/r/113.html",
+          "manager": "https://example.com/r/114"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000113",
+        "canonicalId": "tmdb:movie:000026",
+        "tmdbId": 1029,
+        "mediaType": "movie",
+        "title": "Synthetic text 448.",
+        "year": 2016,
+        "posterPath": "/id104.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 449.",
+        "caveats": [
+          "Synthetic text 450.",
+          "Synthetic text 451."
+        ],
+        "runDate": "2026-09-19",
+        "recommendedAt": 1789776061486,
+        "notifiedAt": 1789776061486,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.84,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Horror",
+          "Mystery",
+          "Crime"
+        ],
+        "runtimeMinutes": 104,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "IE",
+          "US",
+          "GB"
+        ],
+        "creators": [
+          "Synthetic text 452."
+        ],
+        "cast": [
+          "Synthetic text 453.",
+          "Synthetic text 454."
+        ],
+        "keywords": [
+          "Synthetic text 455.",
+          "Synthetic text 456."
+        ],
+        "certification": "NR",
+        "shortlistScores": {
+          "tasteMatch": 78,
+          "novelty": 72,
+          "effortFit": 85,
+          "composite": 72.83650000000002,
+          "risks": [
+            "Synthetic text 457.",
+            "Synthetic text 458."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/115",
+          "plex": "https://example.com/r/116.html",
+          "manager": "https://example.com/r/117"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000114",
+        "canonicalId": "tmdb:tv:000027",
+        "tmdbId": 1030,
+        "mediaType": "tv",
+        "title": "Synthetic text 459.",
+        "year": 2024,
+        "posterPath": "/id105.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 460.",
+        "caveats": [
+          "Synthetic text 461.",
+          "Synthetic text 462."
+        ],
+        "runDate": "2026-09-15",
+        "recommendedAt": 1789430472718,
+        "notifiedAt": 1789430472718,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.8,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "trending",
+        "genres": [
+          "Comedy",
+          "Drama",
+          "Crime"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 2,
+        "episodeCount": 16,
+        "seriesStatus": "Returning Series",
+        "originalLanguage": "en",
+        "originCountries": [
+          "GB"
+        ],
+        "creators": [
+          "Synthetic text 463."
+        ],
+        "cast": [
+          "Synthetic text 464.",
+          "Synthetic text 465."
+        ],
+        "keywords": [
+          "Synthetic text 466.",
+          "id106"
+        ],
+        "certification": "TV-MA",
+        "shortlistScores": {
+          "tasteMatch": 76,
+          "novelty": 84,
+          "effortFit": 65,
+          "composite": 73.90500000000002,
+          "risks": [
+            "Synthetic text 467.",
+            "Synthetic text 468."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/118",
+          "plex": "https://example.com/r/119.html",
+          "manager": "https://example.com/r/120"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000115",
+        "canonicalId": "tmdb:movie:000028",
+        "tmdbId": 1031,
+        "mediaType": "movie",
+        "title": "id107",
+        "year": 2016,
+        "posterPath": "/id108.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 469.",
+        "caveats": [
+          "Synthetic text 470.",
+          "Synthetic text 471."
+        ],
+        "runDate": "2026-09-05",
+        "recommendedAt": 1788566474817,
+        "notifiedAt": 1788566474817,
+        "startedAt": null,
+        "resolvedAt": 1791244827878,
+        "watchlistResult": "added",
+        "confidence": 0.7,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Thriller",
+          "Western",
+          "Drama",
+          "Horror"
+        ],
+        "runtimeMinutes": 148,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "BE",
+          "GB",
+          "NL",
+          "DE",
+          "US",
+          "FR",
+          "SE"
+        ],
+        "creators": [
+          "Synthetic text 472."
+        ],
+        "cast": [
+          "Synthetic text 473.",
+          "Synthetic text 474."
+        ],
+        "keywords": [
+          "id109",
+          "id110"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 86,
+          "novelty": 84,
+          "effortFit": 79,
+          "composite": 80.736,
+          "risks": [
+            "Synthetic text 475.",
+            "Synthetic text 476."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/121",
+          "plex": "https://example.com/r/122.html",
+          "manager": "https://example.com/r/123"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000116",
+        "canonicalId": "tmdb:tv:000029",
+        "tmdbId": 1032,
+        "mediaType": "tv",
+        "title": "Synthetic text 477.",
+        "year": 2023,
+        "posterPath": "/id111.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 478.",
+        "caveats": [
+          "Synthetic text 479.",
+          "Synthetic text 480."
+        ],
+        "runDate": "2026-09-03",
+        "recommendedAt": 1788393663458,
+        "notifiedAt": 1788393663458,
+        "startedAt": null,
+        "resolvedAt": 1791244827878,
+        "watchlistResult": "added",
+        "confidence": 0.9,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Crime",
+          "Drama"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 2,
+        "episodeCount": 12,
+        "seriesStatus": "Ended",
+        "originalLanguage": "en",
+        "originCountries": [
+          "GB"
+        ],
+        "creators": [
+          "Synthetic text 481."
+        ],
+        "cast": [
+          "Synthetic text 482.",
+          "Synthetic text 483."
+        ],
+        "keywords": [
+          "id112",
+          "Synthetic text 484."
+        ],
+        "certification": null,
+        "shortlistScores": {
+          "tasteMatch": 84,
+          "novelty": 84,
+          "effortFit": 75,
+          "composite": 76.446,
+          "risks": [
+            "Synthetic text 485.",
+            "Synthetic text 486."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/124",
+          "plex": "https://example.com/r/125.html",
+          "manager": "https://example.com/r/126"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000117",
+        "canonicalId": "tmdb:movie:00030",
+        "tmdbId": 1033,
+        "mediaType": "movie",
+        "title": "Synthetic text 487.",
+        "year": 1943,
+        "posterPath": "/id113.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 488.",
+        "caveats": [
+          "Synthetic text 489.",
+          "Synthetic text 490."
+        ],
+        "runDate": "2026-09-01",
+        "recommendedAt": 1788220865452,
+        "notifiedAt": 1788220866349,
+        "startedAt": null,
+        "resolvedAt": 1790985624099,
+        "watchlistResult": "added",
+        "confidence": 0.89,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Thriller",
+          "Mystery",
+          "Crime"
+        ],
+        "runtimeMinutes": 107,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 491."
+        ],
+        "cast": [
+          "Synthetic text 492.",
+          "Synthetic text 493."
+        ],
+        "keywords": [
+          "Synthetic text 494.",
+          "id114"
+        ],
+        "certification": "PG",
+        "shortlistScores": {
+          "tasteMatch": 84,
+          "novelty": 85,
+          "effortFit": 88,
+          "composite": 82.07325000000002,
+          "risks": [
+            "Synthetic text 495.",
+            "Synthetic text 496."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/127",
+          "plex": "https://example.com/r/128.html",
+          "manager": "https://example.com/r/129"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000118",
+        "canonicalId": "tmdb:tv:000031",
+        "tmdbId": 1034,
+        "mediaType": "tv",
+        "title": "Synthetic text 497.",
+        "year": 2024,
+        "posterPath": "/id115.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 498.",
+        "caveats": [
+          "Synthetic text 499.",
+          "Synthetic text 500."
+        ],
+        "runDate": "2026-08-30",
+        "recommendedAt": 1788054773987,
+        "notifiedAt": 1788054774576,
+        "startedAt": null,
+        "resolvedAt": 1790812826416,
+        "watchlistResult": "added",
+        "confidence": 0.8,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "trending",
+        "genres": [
+          "Sci-Fi & Fantasy",
+          "Drama"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 2,
+        "episodeCount": 19,
+        "seriesStatus": "Returning Series",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 501."
+        ],
+        "cast": [
+          "Synthetic text 502.",
+          "Synthetic text 503."
+        ],
+        "keywords": [
+          "Synthetic text 504.",
+          "Synthetic text 456."
+        ],
+        "certification": "TV-MA",
+        "shortlistScores": {
+          "tasteMatch": 90,
+          "novelty": 70,
+          "effortFit": 77,
+          "composite": 79.104,
+          "risks": [
+            "Synthetic text 505.",
+            "Synthetic text 506."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/130",
+          "plex": "https://example.com/r/131.html",
+          "manager": "https://example.com/r/132"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000119",
+        "canonicalId": "tmdb:tv:000032",
+        "tmdbId": 1035,
+        "mediaType": "tv",
+        "title": "Synthetic text 507.",
+        "year": 2025,
+        "posterPath": "/id116.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 508.",
+        "caveats": [
+          "Synthetic text 509.",
+          "Synthetic text 510."
+        ],
+        "runDate": "2026-08-30",
+        "recommendedAt": 1788054760121,
+        "notifiedAt": 1788054761114,
+        "startedAt": null,
+        "resolvedAt": 1790812826416,
+        "watchlistResult": "added",
+        "confidence": 0.76,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Drama",
+          "Crime",
+          "Mystery"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 1,
+        "episodeCount": 8,
+        "seriesStatus": "Ended",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 511."
+        ],
+        "cast": [
+          "Synthetic text 512.",
+          "Synthetic text 513."
+        ],
+        "keywords": [
+          "Synthetic text 514.",
+          "Synthetic text 456."
+        ],
+        "certification": "TV-14",
+        "shortlistScores": {
+          "tasteMatch": 80,
+          "novelty": 72,
+          "effortFit": 92,
+          "composite": 73.968,
+          "risks": [
+            "Synthetic text 515.",
+            "Synthetic text 516."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/133",
+          "plex": "https://example.com/r/134.html",
+          "manager": "https://example.com/r/135"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000120",
+        "canonicalId": "tmdb:movie:0033",
+        "tmdbId": 1036,
+        "mediaType": "movie",
+        "title": "Synthetic text 517.",
+        "year": 1999,
+        "posterPath": "/id117.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 518.",
+        "caveats": [
+          "Synthetic text 519.",
+          "Synthetic text 520."
+        ],
+        "runDate": "2026-08-30",
+        "recommendedAt": 1788054747919,
+        "notifiedAt": 1788054748913,
+        "startedAt": null,
+        "resolvedAt": 1790812826416,
+        "watchlistResult": "added",
+        "confidence": 0.84,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Drama"
+        ],
+        "runtimeMinutes": 127,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 521."
+        ],
+        "cast": [
+          "Synthetic text 522.",
+          "Synthetic text 523."
+        ],
+        "keywords": [
+          "Synthetic text 456.",
+          "id118"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 79,
+          "novelty": 76,
+          "effortFit": 82,
+          "composite": 70.965,
+          "risks": [
+            "Synthetic text 524."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/136",
+          "plex": "https://example.com/r/137.html",
+          "manager": "https://example.com/r/138"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000121",
+        "canonicalId": "tmdb:movie:000034",
+        "tmdbId": 1037,
+        "mediaType": "movie",
+        "title": "id119",
+        "year": 2020,
+        "posterPath": "/id120.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 525.",
+        "caveats": [
+          "Synthetic text 526.",
+          "Synthetic text 527."
+        ],
+        "runDate": "2026-08-30",
+        "recommendedAt": 1788054737302,
+        "notifiedAt": 1788054738225,
+        "startedAt": null,
+        "resolvedAt": 1790812826416,
+        "watchlistResult": "added",
+        "confidence": 0.87,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Thriller",
+          "Horror",
+          "Drama"
+        ],
+        "runtimeMinutes": 90,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 528."
+        ],
+        "cast": [
+          "Synthetic text 529.",
+          "Synthetic text 530."
+        ],
+        "keywords": [
+          "Synthetic text 494.",
+          "Synthetic text 531."
+        ],
+        "certification": "PG-13",
+        "shortlistScores": {
+          "tasteMatch": 82,
+          "novelty": 52,
+          "effortFit": 96,
+          "composite": 73.82150000000001,
+          "risks": [
+            "Synthetic text 532.",
+            "Synthetic text 533."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/139",
+          "plex": "https://example.com/r/140.html",
+          "manager": "https://example.com/r/141"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000122",
+        "canonicalId": "tmdb:movie:000035",
+        "tmdbId": 1038,
+        "mediaType": "movie",
+        "title": "Synthetic text 534.",
+        "year": 2018,
+        "posterPath": "/id121.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 535.",
+        "caveats": [
+          "Synthetic text 536.",
+          "Synthetic text 537."
+        ],
+        "runDate": "2026-08-29",
+        "recommendedAt": 1787976699956,
+        "notifiedAt": 1787976700938,
+        "startedAt": null,
+        "resolvedAt": 1790640023111,
+        "watchlistResult": "added",
+        "confidence": 0.82,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "novelty",
+        "genres": [
+          "Animation",
+          "Action",
+          "Adventure",
+          "Science Fiction"
+        ],
+        "runtimeMinutes": 117,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 538.",
+          "Synthetic text 539."
+        ],
+        "cast": [
+          "Synthetic text 540.",
+          "Synthetic text 541."
+        ],
+        "keywords": [
+          "id122",
+          "Synthetic text 542."
+        ],
+        "certification": "PG",
+        "shortlistScores": {
+          "tasteMatch": 80,
+          "novelty": 84,
+          "effortFit": 91,
+          "composite": 80.704,
+          "risks": [
+            "Synthetic text 543."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/142",
+          "plex": "https://example.com/r/143.html",
+          "manager": "https://example.com/r/144"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000123",
+        "canonicalId": "tmdb:movie:036",
+        "tmdbId": 1039,
+        "mediaType": "movie",
+        "title": "Synthetic text 544.",
+        "year": 1975,
+        "posterPath": "/id123.jpg",
+        "status": "watched",
+        "whyForUser": "Synthetic text 545.",
+        "caveats": [
+          "Synthetic text 546.",
+          "Synthetic text 547."
+        ],
+        "runDate": "2026-08-29",
+        "recommendedAt": 1787961665642,
+        "notifiedAt": 1787961666647,
+        "startedAt": 1787987181000,
+        "resolvedAt": 1788054678476,
+        "watchlistResult": "added",
+        "confidence": 0.9,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Drama"
+        ],
+        "runtimeMinutes": 135,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 548."
+        ],
+        "cast": [
+          "Synthetic text 549.",
+          "Synthetic text 550."
+        ],
+        "keywords": [
+          "Synthetic text 551.",
+          "id124"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 86,
+          "novelty": 78,
+          "effortFit": 91,
+          "composite": 81.17500000000003,
+          "risks": [
+            "Synthetic text 552."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/145",
+          "plex": "https://example.com/r/146.html",
+          "manager": "https://example.com/r/147"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000124",
+        "canonicalId": "tmdb:movie:00037",
+        "tmdbId": 1040,
+        "mediaType": "movie",
+        "title": "Synthetic text 553.",
+        "year": 1962,
+        "posterPath": "/id125.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 554.",
+        "caveats": [
+          "Synthetic text 555.",
+          "Synthetic text 556."
+        ],
+        "runDate": "2026-08-22",
+        "recommendedAt": 1787426460425,
+        "notifiedAt": 1787426461509,
+        "startedAt": null,
+        "resolvedAt": 1790035223578,
+        "watchlistResult": "added",
+        "confidence": 0.86,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Drama",
+          "Horror",
+          "Thriller"
+        ],
+        "runtimeMinutes": 135,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 557."
+        ],
+        "cast": [
+          "Synthetic text 558.",
+          "Synthetic text 559."
+        ],
+        "keywords": [
+          "id126",
+          "Synthetic text 514."
+        ],
+        "certification": null,
+        "shortlistScores": {
+          "tasteMatch": 86,
+          "novelty": 79,
+          "effortFit": 92,
+          "composite": 82.88650000000001,
+          "risks": [
+            "Synthetic text 560.",
+            "Synthetic text 561."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/148",
+          "plex": "https://example.com/r/149.html",
+          "manager": "https://example.com/r/150"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000125",
+        "canonicalId": "tmdb:tv:0038",
+        "tmdbId": 1041,
+        "mediaType": "tv",
+        "title": "Synthetic text 562.",
+        "year": 2013,
+        "posterPath": "/id127.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 563.",
+        "caveats": [
+          "Synthetic text 564.",
+          "Synthetic text 565."
+        ],
+        "runDate": "2026-08-22",
+        "recommendedAt": 1787356882085,
+        "notifiedAt": 1787356883327,
+        "startedAt": null,
+        "resolvedAt": 1790035223578,
+        "watchlistResult": "added",
+        "confidence": 0.81,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Drama"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 6,
+        "episodeCount": 73,
+        "seriesStatus": "Ended",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 566."
+        ],
+        "cast": [
+          "Synthetic text 567.",
+          "Synthetic text 568."
+        ],
+        "keywords": [
+          "id128",
+          "Synthetic text 456."
+        ],
+        "certification": "TV-MA",
+        "shortlistScores": {
+          "tasteMatch": 88,
+          "novelty": 84,
+          "effortFit": 46,
+          "composite": 74.67,
+          "risks": [
+            "Synthetic text 569.",
+            "Synthetic text 570."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/151",
+          "plex": "https://example.com/r/152.html",
+          "manager": "https://example.com/r/153"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000126",
+        "canonicalId": "tmdb:tv:00039",
+        "tmdbId": 1042,
+        "mediaType": "tv",
+        "title": "Synthetic text 571.",
+        "year": 2007,
+        "posterPath": "/id129.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 572.",
+        "caveats": [
+          "Synthetic text 573.",
+          "Synthetic text 574."
+        ],
+        "runDate": "2026-08-18",
+        "recommendedAt": 1787011280934,
+        "notifiedAt": 1787011281912,
+        "startedAt": null,
+        "resolvedAt": 1789776023373,
+        "watchlistResult": "added",
+        "confidence": 0.76,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Documentary",
+          "War & Politics",
+          "Crime"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 1,
+        "episodeCount": 7,
+        "seriesStatus": "Ended",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [],
+        "cast": [
+          "Synthetic text 575.",
+          "Synthetic text 576."
+        ],
+        "keywords": [
+          "Synthetic text 577.",
+          "id130"
+        ],
+        "certification": "TV-14",
+        "shortlistScores": {
+          "tasteMatch": 86,
+          "novelty": 68,
+          "effortFit": 82,
+          "composite": 79.08600000000001,
+          "risks": [
+            "Synthetic text 578.",
+            "Synthetic text 579."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/154",
+          "plex": "https://example.com/r/155.html",
+          "manager": "https://example.com/r/156"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000127",
+        "canonicalId": "tmdb:movie:0000040",
+        "tmdbId": 1043,
+        "mediaType": "movie",
+        "title": "Synthetic text 580.",
+        "year": 2026,
+        "posterPath": "/id131.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 581.",
+        "caveats": [
+          "Synthetic text 582.",
+          "Synthetic text 583."
+        ],
+        "runDate": "2026-08-15",
+        "recommendedAt": 1786752061568,
+        "notifiedAt": 1786752062481,
+        "startedAt": null,
+        "resolvedAt": 1789430425025,
+        "watchlistResult": "added",
+        "confidence": 0.8,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "trending",
+        "genres": [
+          "Science Fiction",
+          "Mystery",
+          "Thriller"
+        ],
+        "runtimeMinutes": 99,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 584."
+        ],
+        "cast": [
+          "Synthetic text 585.",
+          "Synthetic text 586."
+        ],
+        "keywords": [
+          "id132",
+          "Synthetic text 587."
+        ],
+        "certification": "PG-13",
+        "shortlistScores": {
+          "tasteMatch": 88,
+          "novelty": 78,
+          "effortFit": 98,
+          "composite": 81.8125,
+          "risks": [
+            "Synthetic text 588.",
+            "Synthetic text 589."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/157",
+          "plex": "https://example.com/r/158.html",
+          "manager": "https://example.com/r/159"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000128",
+        "canonicalId": "tmdb:movie:0000041",
+        "tmdbId": 1044,
+        "mediaType": "movie",
+        "title": "id133",
+        "year": 2025,
+        "posterPath": "/id134.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 590.",
+        "caveats": [
+          "Synthetic text 591.",
+          "Synthetic text 592."
+        ],
+        "runDate": "2026-08-13",
+        "recommendedAt": 1786579267544,
+        "notifiedAt": 1786579268400,
+        "startedAt": null,
+        "resolvedAt": 1789430425025,
+        "watchlistResult": "added",
+        "confidence": 0.78,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Mystery",
+          "Thriller"
+        ],
+        "runtimeMinutes": 95,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 593."
+        ],
+        "cast": [
+          "Synthetic text 594.",
+          "Synthetic text 595."
+        ],
+        "keywords": [
+          "id135",
+          "id136"
+        ],
+        "certification": "PG-13",
+        "shortlistScores": {
+          "tasteMatch": 80,
+          "novelty": 69,
+          "effortFit": 95,
+          "composite": 76.2375,
+          "risks": [
+            "Synthetic text 596.",
+            "Synthetic text 597."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/160",
+          "plex": "https://example.com/r/161.html",
+          "manager": "https://example.com/r/162"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000129",
+        "canonicalId": "tmdb:movie:000042",
+        "tmdbId": 1045,
+        "mediaType": "movie",
+        "title": "Synthetic text 598.",
+        "year": 2019,
+        "posterPath": "/id137.jpg",
+        "status": "watched",
+        "whyForUser": "Synthetic text 599.",
+        "caveats": [
+          "Synthetic text 600.",
+          "Synthetic text 601."
+        ],
+        "runDate": "2026-08-08",
+        "recommendedAt": 1786147259649,
+        "notifiedAt": 1786147260712,
+        "startedAt": 1787380616000,
+        "resolvedAt": 1787426370808,
+        "watchlistResult": "added",
+        "confidence": 0.86,
+        "feedback": "good_pick",
+        "feedbackAt": 1787375253825,
+        "feedbackNote": "Synthetic text 602.",
+        "source": "similar",
+        "genres": [
+          "Horror",
+          "Thriller",
+          "Mystery"
+        ],
+        "runtimeMinutes": 98,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 603."
+        ],
+        "cast": [
+          "Synthetic text 604.",
+          "Synthetic text 605."
+        ],
+        "keywords": [
+          "Synthetic text 494.",
+          "Synthetic text 606."
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 87,
+          "novelty": 61,
+          "effortFit": 96,
+          "composite": 80.65400000000001,
+          "risks": [
+            "Synthetic text 607.",
+            "Synthetic text 608."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/163",
+          "plex": "https://example.com/r/164.html",
+          "manager": "https://example.com/r/165"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000130",
+        "canonicalId": "tmdb:tv:000043",
+        "tmdbId": 1046,
+        "mediaType": "tv",
+        "title": "id138",
+        "year": 2026,
+        "posterPath": "/id139.jpg",
+        "status": "watched",
+        "whyForUser": "Synthetic text 609.",
+        "caveats": [
+          "Synthetic text 610.",
+          "Synthetic text 611."
+        ],
+        "runDate": "2026-08-06",
+        "recommendedAt": 1785974482182,
+        "notifiedAt": 1785974483783,
+        "startedAt": 1787556846000,
+        "resolvedAt": 1787616024110,
+        "watchlistResult": "added",
+        "confidence": 0.78,
+        "feedback": "good_pick",
+        "feedbackAt": 1787976728707,
+        "feedbackNote": null,
+        "source": "trending",
+        "genres": [
+          "Drama",
+          "Crime"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 1,
+        "episodeCount": 7,
+        "seriesStatus": "Returning Series",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 612."
+        ],
+        "cast": [
+          "Synthetic text 613.",
+          "Synthetic text 614."
+        ],
+        "keywords": [
+          "Synthetic text 456.",
+          "id97"
+        ],
+        "certification": "TV-MA",
+        "shortlistScores": {
+          "tasteMatch": 79,
+          "novelty": 88,
+          "effortFit": 82,
+          "composite": 72.8465,
+          "risks": [
+            "Synthetic text 615.",
+            "Synthetic text 616."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/166",
+          "plex": "https://example.com/r/167.html",
+          "manager": "https://example.com/r/168"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000131",
+        "canonicalId": "tmdb:movie:00044",
+        "tmdbId": 1047,
+        "mediaType": "movie",
+        "title": "Synthetic text 617.",
+        "year": 2011,
+        "posterPath": "/id140.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 618.",
+        "caveats": [
+          "Synthetic text 619.",
+          "Synthetic text 620."
+        ],
+        "runDate": "2026-08-04",
+        "recommendedAt": 1785801673368,
+        "notifiedAt": 1785801674276,
+        "startedAt": null,
+        "resolvedAt": 1788566428315,
+        "watchlistResult": "added",
+        "confidence": 0.84,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Horror",
+          "Thriller",
+          "Crime"
+        ],
+        "runtimeMinutes": 95,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "GB"
+        ],
+        "creators": [
+          "Synthetic text 621."
+        ],
+        "cast": [
+          "Synthetic text 622.",
+          "Synthetic text 623."
+        ],
+        "keywords": [
+          "id141",
+          "Synthetic text 606."
+        ],
+        "certification": "NR",
+        "shortlistScores": {
+          "tasteMatch": 88,
+          "novelty": 70,
+          "effortFit": 94,
+          "composite": 82.159,
+          "risks": [
+            "Synthetic text 624.",
+            "Synthetic text 625."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/169",
+          "plex": "https://example.com/r/170.html",
+          "manager": "https://example.com/r/171"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000132",
+        "canonicalId": "tmdb:movie:0000045",
+        "tmdbId": 1048,
+        "mediaType": "movie",
+        "title": "id142",
+        "year": 2026,
+        "posterPath": "/id143.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 626.",
+        "caveats": [
+          "Synthetic text 627.",
+          "Synthetic text 628."
+        ],
+        "runDate": "2026-08-01",
+        "recommendedAt": 1785542461389,
+        "notifiedAt": 1785542462196,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.82,
+        "feedback": "not_for_me",
+        "feedbackAt": 1787381894859,
+        "feedbackNote": null,
+        "source": "trending",
+        "genres": [
+          "Horror",
+          "Romance"
+        ],
+        "runtimeMinutes": 88,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "AU"
+        ],
+        "creators": [
+          "Synthetic text 629."
+        ],
+        "cast": [
+          "Synthetic text 630.",
+          "Synthetic text 631."
+        ],
+        "keywords": [
+          "id94",
+          "id144"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 82,
+          "novelty": 80,
+          "effortFit": 98,
+          "composite": 77.92399999999998,
+          "risks": [
+            "Synthetic text 588.",
+            "Synthetic text 632."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/172",
+          "plex": "https://example.com/r/173.html",
+          "manager": "https://example.com/r/174"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000133",
+        "canonicalId": "tmdb:movie:00046",
+        "tmdbId": 1049,
+        "mediaType": "movie",
+        "title": "Synthetic text 633.",
+        "year": 1963,
+        "posterPath": "/id145.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 634.",
+        "caveats": [
+          "Synthetic text 635.",
+          "Synthetic text 636."
+        ],
+        "runDate": "2026-07-28",
+        "recommendedAt": 1785196860384,
+        "notifiedAt": 1785196861391,
+        "startedAt": null,
+        "resolvedAt": 1787961622026,
+        "watchlistResult": "added",
+        "confidence": 0.86,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Horror"
+        ],
+        "runtimeMinutes": 112,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "GB"
+        ],
+        "creators": [
+          "Synthetic text 637."
+        ],
+        "cast": [
+          "Synthetic text 638.",
+          "Synthetic text 639."
+        ],
+        "keywords": [
+          "id109",
+          "id146"
+        ],
+        "certification": "G",
+        "shortlistScores": {
+          "tasteMatch": 84,
+          "novelty": 69,
+          "effortFit": 86,
+          "composite": 77.82725,
+          "risks": [
+            "Synthetic text 640."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/175",
+          "plex": "https://example.com/r/176.html",
+          "manager": "https://example.com/r/177"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000134",
+        "canonicalId": "tmdb:tv:00047",
+        "tmdbId": 1050,
+        "mediaType": "tv",
+        "title": "Synthetic text 641.",
+        "year": 2020,
+        "posterPath": "/id147.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 642.",
+        "caveats": [
+          "Synthetic text 643.",
+          "Synthetic text 644."
+        ],
+        "runDate": "2026-07-18",
+        "recommendedAt": 1784332871060,
+        "notifiedAt": 1784332872015,
+        "startedAt": null,
+        "resolvedAt": 1787011230188,
+        "watchlistResult": "added",
+        "confidence": 0.84,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "similar",
+        "genres": [
+          "Sci-Fi & Fantasy",
+          "Drama"
+        ],
+        "runtimeMinutes": 61,
+        "seasonCount": 1,
+        "episodeCount": 6,
+        "seriesStatus": "Ended",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 645.",
+          "Synthetic text 646."
+        ],
+        "cast": [
+          "Synthetic text 522.",
+          "Synthetic text 647."
+        ],
+        "keywords": [
+          "Synthetic text 456.",
+          "id148"
+        ],
+        "certification": "TV-MA",
+        "shortlistScores": {
+          "tasteMatch": 82,
+          "novelty": 72,
+          "effortFit": 82,
+          "composite": 77.115,
+          "risks": [
+            "Synthetic text 648.",
+            "Synthetic text 649."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/178",
+          "plex": "https://example.com/r/179.html",
+          "manager": "https://example.com/r/180"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000135",
+        "canonicalId": "tmdb:movie:000048",
+        "tmdbId": 1051,
+        "mediaType": "movie",
+        "title": "Synthetic text 650.",
+        "year": 2019,
+        "posterPath": "/id149.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 651.",
+        "caveats": [
+          "Synthetic text 652.",
+          "Synthetic text 653."
+        ],
+        "runDate": "2026-07-16",
+        "recommendedAt": 1784174130237,
+        "notifiedAt": 1784174131199,
+        "startedAt": null,
+        "resolvedAt": 1787011230188,
+        "watchlistResult": "added",
+        "confidence": 0.74,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Horror",
+          "Drama",
+          "Mystery",
+          "Science Fiction"
+        ],
+        "runtimeMinutes": 99,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "BE",
+          "FR",
+          "LU"
+        ],
+        "creators": [
+          "Synthetic text 654."
+        ],
+        "cast": [
+          "Synthetic text 655.",
+          "Synthetic text 656."
+        ],
+        "keywords": [
+          "id150",
+          "id151"
+        ],
+        "certification": "NR",
+        "shortlistScores": {
+          "tasteMatch": 75,
+          "novelty": 78,
+          "effortFit": 88,
+          "composite": 74.43249999999999,
+          "risks": [
+            "Synthetic text 657.",
+            "Synthetic text 658."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/181",
+          "plex": "https://example.com/r/182.html",
+          "manager": "https://example.com/r/183"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000136",
+        "canonicalId": "tmdb:tv:00049",
+        "tmdbId": 1052,
+        "mediaType": "tv",
+        "title": "id152",
+        "year": 2019,
+        "posterPath": "/id153.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 659.",
+        "caveats": [
+          "Synthetic text 660.",
+          "Synthetic text 661."
+        ],
+        "runDate": "2026-07-16",
+        "recommendedAt": 1784174104430,
+        "notifiedAt": 1784174104986,
+        "startedAt": null,
+        "resolvedAt": 1787011230188,
+        "watchlistResult": "added",
+        "confidence": 0.84,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "novelty",
+        "genres": [
+          "Action & Adventure",
+          "Animation"
+        ],
+        "runtimeMinutes": 22,
+        "seasonCount": 3,
+        "episodeCount": 30,
+        "seriesStatus": "Returning Series",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 662."
+        ],
+        "cast": [
+          "Synthetic text 663."
+        ],
+        "keywords": [
+          "id154",
+          "id155"
+        ],
+        "certification": "TV-14",
+        "shortlistScores": {
+          "tasteMatch": 76,
+          "novelty": 80,
+          "effortFit": 65,
+          "composite": 69.56400000000001,
+          "risks": [
+            "Synthetic text 467.",
+            "Synthetic text 664."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/184",
+          "plex": "https://example.com/r/185.html",
+          "manager": "https://example.com/r/186"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000137",
+        "canonicalId": "tmdb:tv:00050",
+        "tmdbId": 1053,
+        "mediaType": "tv",
+        "title": "id156",
+        "year": 2021,
+        "posterPath": "/id157.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 665.",
+        "caveats": [
+          "Synthetic text 666.",
+          "Synthetic text 667."
+        ],
+        "runDate": "2026-07-16",
+        "recommendedAt": 1784174064067,
+        "notifiedAt": 1784174064708,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.88,
+        "feedback": "already_watched",
+        "feedbackAt": 1784174453164,
+        "feedbackNote": null,
+        "source": "novelty",
+        "genres": [
+          "Animation",
+          "Action & Adventure",
+          "Sci-Fi & Fantasy"
+        ],
+        "runtimeMinutes": null,
+        "seasonCount": 2,
+        "episodeCount": 18,
+        "seriesStatus": "Ended",
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 668.",
+          "Synthetic text 669."
+        ],
+        "cast": [
+          "Synthetic text 670.",
+          "Synthetic text 671."
+        ],
+        "keywords": [
+          "id155",
+          "Synthetic text 672."
+        ],
+        "certification": "TV-14",
+        "shortlistScores": {
+          "tasteMatch": 78,
+          "novelty": 82,
+          "effortFit": 70,
+          "composite": 73.53,
+          "risks": [
+            "Synthetic text 673."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/187",
+          "plex": "https://example.com/r/188.html",
+          "manager": "https://example.com/r/189"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000138",
+        "canonicalId": "tmdb:movie:0000051",
+        "tmdbId": 1054,
+        "mediaType": "movie",
+        "title": "id158",
+        "year": 2026,
+        "posterPath": "/id159.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 674.",
+        "caveats": [
+          "Synthetic text 675.",
+          "Synthetic text 676."
+        ],
+        "runDate": "2026-07-16",
+        "recommendedAt": 1784169922293,
+        "notifiedAt": 1784169923102,
+        "startedAt": null,
+        "resolvedAt": 1787011230188,
+        "watchlistResult": "added",
+        "confidence": 0.76,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "trending",
+        "genres": [
+          "Horror",
+          "Thriller"
+        ],
+        "runtimeMinutes": 94,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 677."
+        ],
+        "cast": [
+          "Synthetic text 678.",
+          "Synthetic text 679."
+        ],
+        "keywords": [
+          "id160",
+          "Synthetic text 680."
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 86,
+          "novelty": 72,
+          "effortFit": 98,
+          "composite": 80.655,
+          "risks": [
+            "Synthetic text 681.",
+            "Synthetic text 682."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/190",
+          "plex": "https://example.com/r/191.html",
+          "manager": "https://example.com/r/192"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000139",
+        "canonicalId": "tmdb:movie:000052",
+        "tmdbId": 1055,
+        "mediaType": "movie",
+        "title": "Synthetic text 683.",
+        "year": 2018,
+        "posterPath": "/id161.jpg",
+        "status": "notified",
+        "whyForUser": "Synthetic text 684.",
+        "caveats": [
+          "Synthetic text 685.",
+          "Synthetic text 686."
+        ],
+        "runDate": "2026-07-16",
+        "recommendedAt": 1784165836372,
+        "notifiedAt": 1784165837151,
+        "startedAt": null,
+        "resolvedAt": null,
+        "watchlistResult": "added",
+        "confidence": 0.86,
+        "feedback": "already_watched",
+        "feedbackAt": 1784166040304,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Horror",
+          "Drama",
+          "Science Fiction"
+        ],
+        "runtimeMinutes": 91,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 687."
+        ],
+        "cast": [
+          "Synthetic text 688.",
+          "Synthetic text 687."
+        ],
+        "keywords": [
+          "id162",
+          "id163"
+        ],
+        "certification": "PG-13",
+        "shortlistScores": {
+          "tasteMatch": 85,
+          "novelty": 67,
+          "effortFit": 97,
+          "composite": 82.071,
+          "risks": [
+            "Synthetic text 689.",
+            "Synthetic text 690."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/193",
+          "plex": "https://example.com/r/194.html",
+          "manager": "https://example.com/r/195"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000140",
+        "canonicalId": "tmdb:movie:000053",
+        "tmdbId": 1056,
+        "mediaType": "movie",
+        "title": "Synthetic text 691.",
+        "year": 2016,
+        "posterPath": "/id164.jpg",
+        "status": "watched",
+        "whyForUser": "Synthetic text 692.",
+        "caveats": [
+          "Synthetic text 693.",
+          "Synthetic text 694."
+        ],
+        "runDate": "2026-07-16",
+        "recommendedAt": 1784165696104,
+        "notifiedAt": 1784165696904,
+        "startedAt": 1784169837000,
+        "resolvedAt": 1784217248661,
+        "watchlistResult": "added",
+        "confidence": 0.91,
+        "feedback": "good_pick",
+        "feedbackAt": 1784173662346,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Thriller",
+          "Science Fiction",
+          "Drama",
+          "Horror"
+        ],
+        "runtimeMinutes": 104,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "en",
+        "originCountries": [
+          "US"
+        ],
+        "creators": [
+          "Synthetic text 695."
+        ],
+        "cast": [
+          "Synthetic text 696.",
+          "Synthetic text 697."
+        ],
+        "keywords": [
+          "id165",
+          "id166"
+        ],
+        "certification": "PG-13",
+        "shortlistScores": {
+          "tasteMatch": 86,
+          "novelty": 74,
+          "effortFit": 90,
+          "composite": 82.543,
+          "risks": [
+            "Synthetic text 698.",
+            "Synthetic text 699."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/196",
+          "plex": "https://example.com/r/197.html",
+          "manager": "https://example.com/r/198"
+        }
+      },
+      {
+        "recommendationId": "00000000-0000-4000-8000-000000000141",
+        "canonicalId": "tmdb:movie:0054",
+        "tmdbId": 1057,
+        "mediaType": "movie",
+        "title": "Synthetic text 700.",
+        "year": 2006,
+        "posterPath": "/id167.jpg",
+        "status": "ignored",
+        "whyForUser": "Synthetic text 701.",
+        "caveats": [
+          "Synthetic text 702.",
+          "Synthetic text 703."
+        ],
+        "runDate": "2026-07-16",
+        "recommendedAt": 1784164316227,
+        "notifiedAt": 1784164317102,
+        "startedAt": null,
+        "resolvedAt": 1787011230188,
+        "watchlistResult": "added",
+        "confidence": 0.88,
+        "feedback": null,
+        "feedbackAt": null,
+        "feedbackNote": null,
+        "source": "discover",
+        "genres": [
+          "Horror",
+          "Drama",
+          "Science Fiction"
+        ],
+        "runtimeMinutes": 120,
+        "seasonCount": null,
+        "episodeCount": null,
+        "seriesStatus": null,
+        "originalLanguage": "ko",
+        "originCountries": [
+          "KR"
+        ],
+        "creators": [
+          "Synthetic text 704."
+        ],
+        "cast": [
+          "Synthetic text 705.",
+          "Synthetic text 706."
+        ],
+        "keywords": [
+          "id168",
+          "id169"
+        ],
+        "certification": "R",
+        "shortlistScores": {
+          "tasteMatch": 87,
+          "novelty": 82,
+          "effortFit": 89,
+          "composite": 82.704,
+          "risks": [
+            "Synthetic text 707."
+          ]
+        },
+        "links": {
+          "tmdb": "https://example.com/r/199",
+          "plex": "https://example.com/r/200.html",
+          "manager": "https://example.com/r/201"
+        }
+      }
+    ]
+  }
+}

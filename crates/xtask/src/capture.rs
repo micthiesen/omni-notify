@@ -1,5 +1,7 @@
 //! `capture-golden`: read-only fixture capture from a running TS service (WP00 F4).
 //!
+//! Captures hold production data, so they are written only to the gitignored
+//! `.local/golden-capture/`; `golden-synthesize` derives the committed fixtures.
 //! Only GET requests and the MCP `initialize` + `tools/list` handshake are sent. The
 //! bearer token is read from the environment variable named by `--mcp-token-env` and
 //! never printed.
@@ -79,7 +81,7 @@ pub fn capture_golden(args: &[String]) -> Result<()> {
         .build()?;
     runtime.block_on(async {
         let client = client()?;
-        let http_dir = repo_root().join("crates/omni-api/tests/golden/http");
+        let http_dir = repo_root().join(crate::golden_synth::RAW_DIR);
         std::fs::create_dir_all(&http_dir)?;
         for route in routes {
             let response = client
@@ -112,7 +114,7 @@ pub fn capture_golden(args: &[String]) -> Result<()> {
         }
         if let Some(token) = token {
             let tools = mcp_tools_list(&client, base, &token).await?;
-            let live = repo_root().join("crates/omni-mcp-kit/golden/tools-list.live.json");
+            let live = repo_root().join(".local/golden-capture/tools-list.live.json");
             write_json(&live, &tools)?;
             let offline: Value = serde_json::from_str(omni_mcp_kit::golden::TOOLS_LIST_JSON)?;
             if offline == tools {
@@ -124,6 +126,10 @@ pub fn capture_golden(args: &[String]) -> Result<()> {
                 );
             }
         }
+        println!(
+            "raw captures are in {}; run `cargo xtask golden-synthesize`",
+            http_dir.display()
+        );
         Ok(())
     })
 }

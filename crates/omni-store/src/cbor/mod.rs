@@ -27,8 +27,6 @@
 //! arbitrary payloads. Typed fields are unaffected: `Option<T>` reads
 //! `undefined` as `None` (buffered or not), numbers coerce between int and
 //! float, and [`JsDate`] accepts tag 0/1, ISO strings and epoch ms.
-//! [`undefined_as_none`] remains for optional fields with a custom
-//! deserializer.
 //!
 //! Other formats (serde_json) see plain values: `undefined` becomes `null`, a
 //! Date its epoch ms, a Set an array.
@@ -44,7 +42,7 @@ use serde::ser::{SerializeMap, SerializeSeq, SerializeTupleStruct};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 pub use decode::{MAX_DEPTH, decode};
-pub use value_de::{ValueDeserializer, undefined_as_none};
+pub use value_de::ValueDeserializer;
 
 /// Reserved serde name for JS `undefined`.
 pub const UNDEFINED_TOKEN: &str = "$omni::cbor::Undefined";

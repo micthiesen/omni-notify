@@ -1,0 +1,7 @@
+{
+  "route": "/api/costs?days=14",
+  "status": 400,
+  "body": {
+    "error": "days must be 7, 30, 90, or all"
+  }
+}

@@ -266,3 +266,127 @@ async fn formats_the_previous_record_with_grouping() {
         "Peaked at 15,000 viewers (previous: 12,000)."
     );
 }
+
+const DAY_MS: i64 = 86_400_000;
+
+/// Seeds prior-day buckets as `(days_ago, max_viewers)` pairs.
+async fn seed_history(store: &omni_store::Store, id: &str, all_time_max: i64, days: &[(i64, i64)]) {
+    let daily_buckets = days
+        .iter()
+        .map(|&(ago, max_viewers)| {
+            let at = T - ago * DAY_MS;
+            omni_live::metrics::DailyBucket {
+                date: omni_live::metrics::to_date_stamp(at),
+                max_viewers,
+                timestamp: at,
+            }
+        })
+        .collect();
+    let metrics = ViewerMetrics {
+        all_time_max,
+        daily_buckets,
+        ..ViewerMetrics::empty(id)
+    };
+    store
+        .write(move |tx| tx.upsert(&metrics, UpsertOpts::default()))
+        .await
+        .unwrap();
+}
+
+async fn observe(service: &ViewerMetricsService, id: &str, count: i64, at: i64) {
+    service
+        .record_viewer_count(
+            &observation(id, "S", count, None, ViewerRecordScope::All),
+            at,
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn confirms_a_7_day_high_over_the_prior_week_after_falling_5_percent() {
+    let (store, service, notifier) = service(T).await;
+    seed_history(&store.store, "w7", 1_000, &[(3, 200), (20, 400)]).await;
+    observe(&service, "w7", 150, T).await;
+    observe(&service, "w7", 300, T + 60_000).await;
+    observe(&service, "w7", 290, T + 120_000).await;
+    assert_eq!(notifier.count(), 0, "290 is within 5 percent of 300");
+    observe(&service, "w7", 280, T + 180_000).await;
+    let sent = notifier.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].1.title, "New 7-day high for S!");
+    assert_eq!(sent[0].1.message, "Peaked at 300 viewers (previous: 200).");
+}
+
+#[tokio::test]
+async fn reports_the_highest_priority_window_that_was_beaten() {
+    let (store, service, notifier) = service(T).await;
+    seed_history(
+        &store.store,
+        "w30",
+        1_000,
+        &[(3, 200), (20, 250), (60, 500)],
+    )
+    .await;
+    observe(&service, "w30", 300, T).await;
+    observe(&service, "w30", 200, T + 60_000).await;
+    let sent = notifier.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].1.title, "New 30-day high for S!");
+    assert_eq!(sent[0].1.message, "Peaked at 300 viewers (previous: 250).");
+}
+
+#[tokio::test]
+async fn does_not_repeat_a_window_record_already_confirmed_today() {
+    let (store, service, notifier) = service(T).await;
+    seed_history(&store.store, "again", 1_000, &[(3, 200)]).await;
+    observe(&service, "again", 300, T).await;
+    observe(&service, "again", 250, T + 60_000).await;
+    assert_eq!(notifier.count(), 1);
+    // Back above the prior week, but not above today's confirmed peak.
+    observe(&service, "again", 290, T + 120_000).await;
+    observe(&service, "again", 200, T + 180_000).await;
+    service
+        .flush_pending_peaks(
+            &observation("again", "S", 0, None, ViewerRecordScope::All),
+            T + 240_000,
+        )
+        .await
+        .unwrap();
+    assert_eq!(notifier.count(), 1);
+}
+
+#[tokio::test]
+async fn flushes_a_pending_window_high_when_the_stream_goes_offline() {
+    let (store, service, notifier) = service(T).await;
+    seed_history(&store.store, "flush", 1_000, &[(10, 400), (40, 600)]).await;
+    observe(&service, "flush", 450, T).await;
+    assert_eq!(notifier.count(), 0);
+    service
+        .flush_pending_peaks(
+            &observation("flush", "S", 0, None, ViewerRecordScope::All),
+            T + 60_000,
+        )
+        .await
+        .unwrap();
+    let sent = notifier.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].1.title, "New 30-day high for S!");
+    assert_eq!(sent[0].1.message, "Peaked at 450 viewers (previous: 400).");
+    let persisted = get_viewer_metrics(&store.store, "flush").await.unwrap();
+    assert_eq!(persisted.all_time_max, 1_000);
+}
+
+#[tokio::test]
+async fn background_scope_never_notifies_a_beaten_window_with_history() {
+    let (store, service, notifier) = service(T).await;
+    seed_history(&store.store, "bgw", 1_000, &[(3, 200), (20, 250)]).await;
+    let scope = ViewerRecordScope::AllTimeOnly;
+    for (count, at) in [(300, T), (200, T + 60_000)] {
+        service
+            .record_viewer_count(&observation("bgw", "S", count, None, scope), at)
+            .await
+            .unwrap();
+    }
+    assert_eq!(notifier.count(), 0);
+}

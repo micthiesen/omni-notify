@@ -201,25 +201,45 @@ async fn the_port_serves_details_and_feedback() {
 }
 
 #[tokio::test]
-async fn enabling_without_model_files_fails_boot() {
-    let mut app = TestApp::new().await;
-    let dir = tempfile::tempdir().expect("tempdir");
-    let mut config = (*app.ctx.config).clone();
-    config.livestream_intelligence_enabled = true;
-    config.livestream_model_dir = dir.path().display().to_string();
-    app.ctx.config = Arc::new(config);
-    let subsystem = omni_live_intel::subsystem(&app.ctx);
-    let mut errors = Vec::new();
-    for step in subsystem.boot_steps {
-        if let Err(error) = (step.run)(app.ctx.clone()).await {
-            errors.push(error.to_string());
+async fn missing_or_corrupt_model_files_disable_intelligence_without_failing_boot() {
+    for corrupt in [false, true] {
+        let mut app = TestApp::new().await;
+        let dir = tempfile::tempdir().expect("tempdir");
+        if corrupt {
+            let files = omni_live_intel::speech::ModelFiles::in_dir(dir.path());
+            for path in files.all() {
+                std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+                std::fs::write(path, b"").expect("write empty model");
+            }
         }
+        let mut config = (*app.ctx.config).clone();
+        config.livestream_intelligence_enabled = true;
+        config.livestream_model_dir = dir.path().display().to_string();
+        app.ctx.config = Arc::new(config);
+        let subsystem = omni_live_intel::subsystem(&app.ctx);
+        let logs = omni_testkit::capture_logs();
+        for step in subsystem.boot_steps {
+            (step.run)(app.ctx.clone())
+                .await
+                .expect("bad models fail closed, not the boot");
+        }
+        assert!(app.ctx.ports.live_intelligence().is_none());
+        let errors: Vec<_> = logs
+            .events()
+            .into_iter()
+            .filter(|e| e.level == tracing::Level::ERROR)
+            .collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(
+            errors[0].message.starts_with(
+                "Livestream intelligence disabled: validate livestream speech model files"
+            ),
+            "{errors:?}"
+        );
+        assert_eq!(
+            errors[0].message.contains("file is empty"),
+            corrupt,
+            "{errors:?}"
+        );
     }
-    assert_eq!(errors.len(), 1);
-    assert!(
-        errors[0].starts_with("livestream-intelligence: validate livestream speech model files"),
-        "{}",
-        errors[0]
-    );
-    assert!(app.ctx.ports.live_intelligence().is_none());
 }

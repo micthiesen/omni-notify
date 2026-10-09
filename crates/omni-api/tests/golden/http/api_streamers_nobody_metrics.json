@@ -1,0 +1,7 @@
+{
+  "route": "/api/streamers/nobody/metrics",
+  "status": 404,
+  "body": {
+    "error": "Unknown streamer"
+  }
+}

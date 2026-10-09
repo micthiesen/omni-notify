@@ -1,0 +1,30 @@
+{
+  "route": "/api/task-runs?task=PressPods",
+  "status": 200,
+  "body": {
+    "runs": [
+      {
+        "runId": "PressPods:00000000-0000-4000-8000-000000000005",
+        "taskName": "PressPods",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557100182,
+        "finishedAt": 1791557100240,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 708."
+      },
+      {
+        "runId": "PressPods:00000000-0000-4000-8000-000000000173",
+        "taskName": "PressPods",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791556800246,
+        "finishedAt": 1791556800273,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 708."
+      }
+    ]
+  }
+}

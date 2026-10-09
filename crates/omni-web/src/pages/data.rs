@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use leptos::prelude::*;
-use omni_web_kit::api::{self, DataEntity, DataRow, DataStorageSummary};
+use omni_web_kit::api::{self, DataRow, ManagedDataSummary, ManagedEntitySummary};
 use omni_web_kit::components::{ShowMoreButton, Toast, ToastKind, use_show_more, use_toast};
 use omni_web_kit::hooks::use_modal;
 use omni_web_kit::task::{spawn_detached, spawn_scoped};
@@ -232,7 +232,7 @@ fn compare_values(a: Option<&Value>, b: Option<&Value>) -> std::cmp::Ordering {
     locale_compare_numeric(&display_value(a).0, &display_value(b).0)
 }
 
-fn columns_for(rows: &[DataRow], selected: &DataEntity) -> Vec<String> {
+fn columns_for(rows: &[DataRow], selected: &ManagedEntitySummary) -> Vec<String> {
     let mut frequency: Vec<(String, usize)> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
     for row in rows {
@@ -262,7 +262,7 @@ fn columns_for(rows: &[DataRow], selected: &DataEntity) -> Vec<String> {
 
 #[component]
 fn RowDetail(
-    entity: DataEntity,
+    entity: ManagedEntitySummary,
     row: DataRow,
     #[prop(into)] deleting: Signal<bool>,
     on_close: Callback<()>,
@@ -320,8 +320,8 @@ fn RowDetail(
 
 #[component]
 pub fn DataPage() -> impl IntoView {
-    let entities = RwSignal::new(Vec::<DataEntity>::new());
-    let storage = RwSignal::new(None::<DataStorageSummary>);
+    let entities = RwSignal::new(Vec::<ManagedEntitySummary>::new());
+    let storage = RwSignal::new(None::<ManagedDataSummary>);
     let selected_slug = RwSignal::new(String::new());
     let rows = RwSignal::new(Vec::<DataRow>::new());
     let loading_entities = RwSignal::new(true);
@@ -515,7 +515,7 @@ pub fn DataPage() -> impl IntoView {
                     entities.update(|list| {
                         for e in list.iter_mut() {
                             if e.slug == entity.slug {
-                                e.count = (e.count - 1.0).max(0.0);
+                                e.count = e.count.saturating_sub(1);
                             }
                         }
                     });
@@ -661,7 +661,7 @@ pub fn DataPage() -> impl IntoView {
                     <div class="data-browser-aside">
                         <code>{move || entity().slug}</code>
                         <span class="data-selected-size">
-                            {move || format!("{} payload", format_bytes(entity().storage_bytes))}
+                            {move || format!("{} payload", format_bytes(entity().storage_bytes as f64))}
                         </span>
                     </div>
                 </div>
@@ -747,7 +747,7 @@ pub fn DataPage() -> impl IntoView {
                 let slug = entity.slug.clone();
                 view! {
                     <option value=entity.slug.clone() selected=move || selected_slug.get() == slug>
-                        {format!("{} ({})", to_title_case(&entity.label), number_string(entity.count))}
+                        {format!("{} ({})", to_title_case(&entity.label), number_string(entity.count as f64))}
                     </option>
                 }
             })
@@ -773,8 +773,8 @@ pub fn DataPage() -> impl IntoView {
                     >
                         <span class="data-entity-name">{to_title_case(&entity.label)}</span>
                         <span class="data-entity-meta">
-                            <span>{format_bytes(entity.storage_bytes)}</span>
-                            <span class="data-entity-count">{number_string(entity.count)}</span>
+                            <span>{format_bytes(entity.storage_bytes as f64)}</span>
+                            <span class="data-entity-count">{number_string(entity.count as f64)}</span>
                         </span>
                     </button>
                 }
@@ -824,11 +824,11 @@ pub fn DataPage() -> impl IntoView {
                     {move || storage.get().map(|storage| view! {
                         <div class="data-storage-summary">
                             <span title="SQLite allocated pages, including relational tables and indexes">
-                                <strong>{format_bytes(storage.database_size_bytes)}</strong>
+                                <strong>{format_bytes(storage.database_size_bytes as f64)}</strong>
                                 " database"
                             </span>
                             <span title="Encoded payload bytes across registered mitools Entities">
-                                <strong>{format_bytes(storage.entity_storage_bytes)}</strong>
+                                <strong>{format_bytes(storage.entity_storage_bytes as f64)}</strong>
                                 " entities"
                             </span>
                         </div>
@@ -868,15 +868,15 @@ pub fn DataPage() -> impl IntoView {
     }
 }
 
-fn empty_entity() -> DataEntity {
-    DataEntity {
+fn empty_entity() -> ManagedEntitySummary {
+    ManagedEntitySummary {
         slug: String::new(),
         label: String::new(),
         description: String::new(),
         warning: None,
         primary_key: Vec::new(),
-        count: 0.0,
-        storage_bytes: 0.0,
+        count: 0,
+        storage_bytes: 0,
     }
 }
 

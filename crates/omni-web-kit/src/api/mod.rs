@@ -1,8 +1,7 @@
 //! Typed API client functions (`frontend/src/api.ts`). DTOs come from
-//! `omni-api`; [`dto`] holds the frontend copies of the WP14 shapes.
+//! `omni-api`.
 
 pub mod client;
-pub mod dto;
 
 use omni_api::briefings::BriefingsResponse;
 use omni_api::claude::{
@@ -10,35 +9,37 @@ use omni_api::claude::{
 };
 use omni_api::common::encode_uri_component as enc;
 use omni_api::costs::{CostRange, CostsResponse};
+use omni_api::data::{DeleteRowResponse, EntitiesResponse, EntityRowsResponse};
 use omni_api::email::{
-    EmailActivitiesResponse, EmailActivityLogsResponse, EmailActivityResponse,
+    DeletedResponse, EmailActivitiesResponse, EmailActivityLogsResponse, EmailActivityResponse,
     EmailFeedbackListResponse, EmailFeedbackResponse, EmailFeedbackVerdict, EmailPipelineName,
     EmailRuleInput, EmailRuleUpsertResponse, EmailRulesResponse,
 };
 use omni_api::intelligence::{FeedbackResponse, FeedbackVerdict, IntelligenceDetailsResponse};
 use omni_api::mcp_activity::{McpActivityResponse, McpCallStatus};
 use omni_api::media::{
-    RecommendationFeedback, RecommendationResponse, RecommendationsResponse, TasteProfileResponse,
+    RecommendationFeedback, RecommendationResponse, RecommendationsResponse, RunResponse,
+    TasteProfileResponse,
 };
 use omni_api::podcasts::{
     PodcastFeedback, PodcastRecommendationResponse, PodcastRecommendationsResponse,
     PodcastTasteProfileResponse,
 };
-use omni_api::presspods::{PressPodsEpisodeResponse, PressPodsJobResponse, PressPodsListResponse};
+use omni_api::presspods::{
+    PressPodsDeletedResponse, PressPodsEpisodeResponse, PressPodsJobResponse, PressPodsListResponse,
+};
 use omni_api::runs::{RunLogsResponse, RunsResponse};
 use omni_api::streamers::{StreamSessionsResponse, StreamerMetricsResponse};
-use omni_api::tasks::TasksResponse;
+use omni_api::tasks::{RunNowResponse, TasksResponse};
 use omni_api::workspaces::{
-    WorkspaceActionResponse, WorkspaceResponse, WorkspaceSubjectResponse, WorkspaceSubjectStatus,
-    WorkspaceSubjectUpdated, WorkspacesResponse,
+    WorkspaceActionResponse, WorkspaceMessageAccepted, WorkspaceResponse, WorkspaceSubjectResponse,
+    WorkspaceSubjectStatus, WorkspaceSubjectUpdated, WorkspacesResponse,
 };
 use serde_json::{Map, Value, json};
 
 pub use client::{ApiClientError, NO_BODY, delete, get, post};
-pub use dto::{
-    DataEntitiesResponse, DataEntity, DataRow, DataRowsResponse, DataStorageSummary, Deleted,
-    RunId, Snapshot,
-};
+pub use omni_api::data::{DataRow, ManagedDataSummary, ManagedEntitySummary};
+pub use omni_api::snapshot::Snapshot;
 
 /// Builds `?a=1&b=2` (`URLSearchParams` order and encoding of plain values).
 fn query(params: &[(&str, Option<String>)]) -> String {
@@ -78,15 +79,18 @@ pub async fn fetch_snapshot() -> Result<Snapshot, ApiClientError> {
     get("/api/snapshot").await
 }
 
-pub async fn fetch_data_entities() -> Result<DataEntitiesResponse, ApiClientError> {
+pub async fn fetch_data_entities() -> Result<EntitiesResponse, ApiClientError> {
     get("/api/data/entities").await
 }
 
-pub async fn fetch_data_rows(slug: &str) -> Result<DataRowsResponse, ApiClientError> {
+pub async fn fetch_data_rows(slug: &str) -> Result<EntityRowsResponse, ApiClientError> {
     get(&format!("/api/data/entities/{}", enc(slug))).await
 }
 
-pub async fn delete_data_row(slug: &str, key: &DataRow) -> Result<Deleted, ApiClientError> {
+pub async fn delete_data_row(
+    slug: &str,
+    key: &DataRow,
+) -> Result<DeleteRowResponse, ApiClientError> {
     delete(
         &format!("/api/data/entities/{}", enc(slug)),
         Some(&json!({ "key": key })),
@@ -118,14 +122,17 @@ pub fn run_log_stream_url(run_id: &str) -> String {
 pub async fn run_task_request(
     name: &str,
     max_recommendations: Option<u32>,
-) -> Result<RunId, ApiClientError> {
+) -> Result<RunNowResponse, ApiClientError> {
     if let Some(max) = max_recommendations {
         let path = if name == "PodcastRecs" {
             "/api/podcast-recommendations/run"
         } else {
             "/api/recommendations/run"
         };
-        return post(path, Some(&json!({ "maxRecommendations": max }))).await;
+        let accepted: RunResponse = post(path, Some(&json!({ "maxRecommendations": max }))).await?;
+        return Ok(RunNowResponse {
+            run_id: accepted.run_id,
+        });
     }
     post(&format!("/api/tasks/{}/run", enc(name)), NO_BODY).await
 }
@@ -266,11 +273,15 @@ pub async fn retry_press_pods_job(job_id: &str) -> Result<PressPodsJobResponse, 
     .await
 }
 
-pub async fn dismiss_press_pods_job(job_id: &str) -> Result<Deleted, ApiClientError> {
+pub async fn dismiss_press_pods_job(
+    job_id: &str,
+) -> Result<PressPodsDeletedResponse, ApiClientError> {
     delete(&format!("/api/press-pods/jobs/{}", enc(job_id)), NO_BODY).await
 }
 
-pub async fn delete_press_pods_episode(episode_id: &str) -> Result<Deleted, ApiClientError> {
+pub async fn delete_press_pods_episode(
+    episode_id: &str,
+) -> Result<PressPodsDeletedResponse, ApiClientError> {
     delete(
         &format!("/api/press-pods/episodes/{}", enc(episode_id)),
         NO_BODY,
@@ -318,7 +329,7 @@ pub async fn send_workspace_message(
     workspace_id: &str,
     message: &str,
     subject_id: Option<&str>,
-) -> Result<RunId, ApiClientError> {
+) -> Result<WorkspaceMessageAccepted, ApiClientError> {
     let mut body = Map::new();
     body.insert("message".into(), json!(message));
     if let Some(subject_id) = subject_id {
@@ -412,7 +423,7 @@ pub async fn create_email_rule(
     post("/api/email-rules", Some(input)).await
 }
 
-pub async fn delete_email_rule(rule_id: &str) -> Result<Deleted, ApiClientError> {
+pub async fn delete_email_rule(rule_id: &str) -> Result<DeletedResponse, ApiClientError> {
     delete(&format!("/api/email-rules/{}", enc(rule_id)), NO_BODY).await
 }
 
@@ -450,7 +461,9 @@ pub async fn reprocess_email_activity(
     .await
 }
 
-pub async fn forget_parcel_delivery(tracking_number: &str) -> Result<Deleted, ApiClientError> {
+pub async fn forget_parcel_delivery(
+    tracking_number: &str,
+) -> Result<DeletedResponse, ApiClientError> {
     delete(
         &format!("/api/parcel-tracker/deliveries/{}", enc(tracking_number)),
         NO_BODY,

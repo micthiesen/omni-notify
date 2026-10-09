@@ -1,0 +1,5 @@
+{
+  "route": "/api/pets/PET-00000000-0000-4000-8000-000000000001/export.csv?days=30",
+  "status": 200,
+  "contentType": "text/csv"
+}

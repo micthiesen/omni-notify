@@ -1,0 +1,40 @@
+{
+  "route": "/api/streamers/id3/metrics",
+  "status": 200,
+  "body": {
+    "dailyBuckets": [
+      {
+        "date": "2026-07-17",
+        "maxViewers": 1112,
+        "timestamp": 1784268802726
+      },
+      {
+        "date": "2026-07-18",
+        "maxViewers": 3991,
+        "timestamp": 1784412281215
+      }
+    ],
+    "allTimeMax": 7691,
+    "allTimeMaxTimestamp": 1787169200621,
+    "platforms": [
+      {
+        "platform": "kick",
+        "username": "id176",
+        "dailyBuckets": [
+          {
+            "date": "2026-08-26",
+            "maxViewers": 4704,
+            "timestamp": 1787788582387
+          },
+          {
+            "date": "2026-08-27",
+            "maxViewers": 4654,
+            "timestamp": 1787788881516
+          }
+        ],
+        "allTimeMax": 4704,
+        "allTimeMaxTimestamp": 1787788582387
+      }
+    ]
+  }
+}

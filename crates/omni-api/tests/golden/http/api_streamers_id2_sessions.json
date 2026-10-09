@@ -1,0 +1,26 @@
+{
+  "route": "/api/streamers/id2/sessions",
+  "status": 200,
+  "body": {
+    "sessions": [
+      {
+        "startedAt": 1791455200666,
+        "endedAt": 1791479001728,
+        "durationMs": 23801062,
+        "peakViewers": 3020,
+        "title": "Synthetic text 723.",
+        "platform": "kick",
+        "username": "id2"
+      },
+      {
+        "startedAt": 1791425541292,
+        "endedAt": 1791435703226,
+        "durationMs": 10161934,
+        "peakViewers": 1735,
+        "title": "Synthetic text 723.",
+        "platform": "kick",
+        "username": "id2"
+      }
+    ]
+  }
+}

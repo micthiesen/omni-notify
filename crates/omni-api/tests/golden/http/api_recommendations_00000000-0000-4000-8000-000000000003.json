@@ -1,0 +1,70 @@
+{
+  "route": "/api/recommendations/00000000-0000-4000-8000-000000000003",
+  "status": 200,
+  "body": {
+    "recommendation": {
+      "recommendationId": "00000000-0000-4000-8000-000000000003",
+      "canonicalId": "tmdb:movie:000022",
+      "tmdbId": 1058,
+      "mediaType": "movie",
+      "title": "Synthetic text 415.",
+      "year": 2024,
+      "posterPath": "/id92.jpg",
+      "status": "notified",
+      "whyForUser": "Synthetic text 416.",
+      "caveats": [
+        "Synthetic text 417.",
+        "Synthetic text 418."
+      ],
+      "runDate": "2026-10-06",
+      "recommendedAt": 1791244876079,
+      "notifiedAt": 1791244876079,
+      "startedAt": null,
+      "resolvedAt": null,
+      "watchlistResult": "added",
+      "confidence": 0.72,
+      "feedback": null,
+      "feedbackAt": null,
+      "feedbackNote": null,
+      "source": "similar",
+      "genres": [
+        "Horror"
+      ],
+      "runtimeMinutes": 101,
+      "seasonCount": null,
+      "episodeCount": null,
+      "seriesStatus": null,
+      "originalLanguage": "en",
+      "originCountries": [
+        "US"
+      ],
+      "creators": [
+        "Synthetic text 419."
+      ],
+      "cast": [
+        "Synthetic text 420.",
+        "Synthetic text 421."
+      ],
+      "keywords": [
+        "id93",
+        "id94"
+      ],
+      "certification": "R",
+      "shortlistScores": {
+        "tasteMatch": 71,
+        "novelty": 50,
+        "effortFit": 81,
+        "composite": 61.31375,
+        "risks": [
+          "Synthetic text 422.",
+          "Synthetic text 423."
+        ]
+      },
+      "links": {
+        "tmdb": "https://example.com/r/103",
+        "plex": "https://example.com/r/104.html",
+        "manager": "https://example.com/r/105"
+      }
+    }
+  }
+}

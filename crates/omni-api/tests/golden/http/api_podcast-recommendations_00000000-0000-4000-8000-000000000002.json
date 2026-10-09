@@ -1,0 +1,42 @@
+{
+  "route": "/api/podcast-recommendations/00000000-0000-4000-8000-000000000002",
+  "status": 200,
+  "body": {
+    "recommendation": {
+      "recommendationId": "00000000-0000-4000-8000-000000000002",
+      "showTitle": "Synthetic text 196.",
+      "episodeTitle": "Synthetic text 197.",
+      "feedUrl": "https://example.com/r/11.xml",
+      "itunesId": 1024,
+      "artworkUrl": "https://example.com/r/12.jpg",
+      "episodeUrl": "https://example.com/r/13",
+      "publishedAt": 1791259260000,
+      "durationMinutes": 34,
+      "status": "notified",
+      "whyForUser": "Synthetic text 198.",
+      "caveats": [
+        "Synthetic text 199.",
+        "Synthetic text 200."
+      ],
+      "confidence": 0.7,
+      "shortlistScores": {
+        "tasteMatch": 65,
+        "novelty": 55,
+        "composite": 53.32,
+        "risks": [
+          "Synthetic text 201.",
+          "Synthetic text 202."
+        ]
+      },
+      "discoveredVia": "Synthetic text 203.",
+      "sourceUrl": "https://example.com/r/14",
+      "matchedVoices": [],
+      "recommendedAt": 1791396289604,
+      "notifiedAt": 1791396290201,
+      "queueResult": "queued",
+      "feedback": null,
+      "feedbackAt": null,
+      "feedbackNote": null
+    }
+  }
+}

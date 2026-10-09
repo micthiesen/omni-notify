@@ -21,6 +21,7 @@ pub mod audio;
 pub mod classifier;
 pub mod enroll;
 pub mod js_math;
+pub mod model_check;
 pub mod observation;
 pub mod persistence;
 pub mod port;
@@ -114,7 +115,8 @@ pub fn load_speech_runtime(
 }
 
 /// `createLivestreamIntelligenceService`: `None` while disabled; a missing
-/// model file or a bad voiceprint fails boot.
+/// or corrupt model file or a bad voiceprint is an error (the boot step
+/// logs it and leaves intelligence disabled).
 pub async fn create_service(
     ctx: &AppContext,
 ) -> Result<Option<LivestreamIntelligenceService>, SpeechRecognitionError> {
@@ -174,9 +176,19 @@ pub fn subsystem(ctx: &AppContext) -> Subsystem {
         run: Box::new(move |ctx: AppContext| {
             Box::pin(async move {
                 const STEP: &str = "livestream-intelligence";
-                let service = create_service(&ctx)
-                    .await
-                    .map_err(|e| BootError::new(STEP, e.to_string()))?;
+                // A missing or corrupt model or a bad voiceprint fails closed:
+                // intelligence stays disabled with an ERROR (which alerts),
+                // and the rest of the process keeps running.
+                let service = match create_service(&ctx).await {
+                    Ok(service) => service,
+                    Err(error) => {
+                        tracing::error!(
+                            target: LOG,
+                            "Livestream intelligence disabled: {error}"
+                        );
+                        None
+                    }
+                };
                 // Disabled: no port, as TS passes no observer to the live-check
                 // task and no diagnostics provider to MCP (whose
                 // `livestreamIntelligence` capability is the port's presence).

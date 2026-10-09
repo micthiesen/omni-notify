@@ -1,0 +1,24 @@
+{
+  "route": "/api/data/entities/cost-migration",
+  "status": 200,
+  "body": {
+    "summary": {
+      "slug": "cost-migration",
+      "label": "Cost migration state",
+      "description": "Completed cost-ledger backfills and their imported event counts.",
+      "warning": "Deleting this state can duplicate historical costs on the next restart.",
+      "primaryKey": [
+        "version"
+      ],
+      "count": 1,
+      "storageBytes": 60
+    },
+    "rows": [
+      {
+        "version": "historical-v1",
+        "completedAt": 1784566090350,
+        "importedEvents": 20
+      }
+    ]
+  }
+}

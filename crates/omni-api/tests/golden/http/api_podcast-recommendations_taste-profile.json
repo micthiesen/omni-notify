@@ -1,0 +1,10 @@
+{
+  "route": "/api/podcast-recommendations/taste-profile",
+  "status": 200,
+  "body": {
+    "profile": {
+      "_id": "Effect",
+      "op": "WithFiber"
+    }
+  }
+}

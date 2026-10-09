@@ -95,7 +95,7 @@ sherpa-onnx = "=1.13.6"
 sherpa-onnx-sys = "=1.13.6"
 ipp = { version = "=7.0.0", default-features = false, features = ["async-client-rustls"] }
 aws-cognito-srp = "=0.2.5"
-jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["rust_crypto", "use_pem"] }
+jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
 serde_norway = "=0.9.42"
 sha1 = "=0.11.0"
 sha2 = "=0.11.0"

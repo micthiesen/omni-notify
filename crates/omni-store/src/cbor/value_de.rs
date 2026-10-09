@@ -1,33 +1,17 @@
 //! serde `Deserializer` over [`JsValue`] (see the module docs for the
 //! reserved-name protocol and number coercions).
 
-use serde::Deserialize;
 use serde::de::{
-    self, DeserializeOwned, DeserializeSeed, Deserializer, EnumAccess, IntoDeserializer, MapAccess,
-    SeqAccess, Unexpected, VariantAccess, Visitor,
+    self, DeserializeSeed, Deserializer, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
+    Unexpected, VariantAccess, Visitor,
 };
 
 use super::{
     BIGINT_TOKEN, DATE_TOKEN, DecodeError, JsValue, SET_TOKEN, SIMPLE_TOKEN, TAGGED_TOKEN,
-    from_value,
 };
 
 /// JS `Number.MAX_SAFE_INTEGER`.
 const MAX_SAFE: i128 = 9_007_199_254_740_991;
-
-/// `deserialize_with` for optional fields inside buffered serde contexts
-/// (internally tagged/untagged enums): JS `undefined` and `null` become `None`.
-pub fn undefined_as_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let value = JsValue::deserialize(deserializer)?;
-    if value.is_nullish() {
-        return Ok(None);
-    }
-    from_value(value).map(Some).map_err(de::Error::custom)
-}
 
 /// A serde `Deserializer` reading from an owned [`JsValue`].
 pub struct ValueDeserializer {

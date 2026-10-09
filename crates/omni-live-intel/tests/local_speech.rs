@@ -17,7 +17,14 @@ fn speech_fixture(voiceprint: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let files = ModelFiles::in_dir(dir.path());
     for path in files.all() {
         std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
-        std::fs::write(path, "").expect("write model fixture");
+        // Structurally valid stand-ins: they pass the pre-native file
+        // checks, and every test here fails before native initialization.
+        let contents: &[u8] = if path.extension().is_some_and(|e| e == "txt") {
+            b"<unk> 0\n"
+        } else {
+            &[0x08, 0x08, 0x3a, 0x01, 0x00]
+        };
+        std::fs::write(path, contents).expect("write model fixture");
     }
     let voiceprint_path = dir.path().join("destiny.json");
     std::fs::write(&voiceprint_path, voiceprint).expect("write voiceprint");
@@ -42,6 +49,48 @@ fn rejects_a_structurally_invalid_voiceprint_before_native_initialization() {
         .err()
         .expect("fails");
     assert!(error.operation.contains("decode voiceprint"), "{error}");
+}
+
+#[test]
+fn empty_or_corrupt_model_files_fail_validation_before_native_initialization() {
+    let (dir, _) = speech_fixture("");
+    let files = ModelFiles::in_dir(dir.path());
+    std::fs::write(&files.encoder, "").expect("truncate encoder");
+    let backend_called = std::cell::Cell::new(false);
+    let error = LocalSpeechRuntime::<FakeBackend>::create(
+        dir.path(),
+        None,
+        DEFAULT_SPEAKER_THRESHOLD,
+        |_| {
+            backend_called.set(true);
+            Err(SpeechRecognitionError::new("unreachable", "native init"))
+        },
+    )
+    .err()
+    .expect("fails");
+    assert_eq!(error.operation, "validate livestream speech model files");
+    assert!(error.cause.contains("encoder.int8.onnx"), "{error}");
+    assert!(error.cause.contains("file is empty"), "{error}");
+    assert!(!backend_called.get());
+
+    std::fs::write(&files.encoder, "<html>gateway timeout</html>").expect("corrupt encoder");
+    let error = load_speech_runtime(dir.path(), None, DEFAULT_SPEAKER_THRESHOLD)
+        .err()
+        .expect("fails");
+    assert!(error.cause.contains("not a valid ONNX model"), "{error}");
+
+    std::fs::write(&files.encoder, [0x08, 0x08]).expect("graphless encoder");
+    let error = load_speech_runtime(dir.path(), None, DEFAULT_SPEAKER_THRESHOLD)
+        .err()
+        .expect("fails");
+    assert!(error.cause.contains("no graph"), "{error}");
+
+    std::fs::write(&files.encoder, [0x08, 0x08, 0x3a, 0x01, 0x00]).expect("fix encoder");
+    std::fs::write(&files.tokens, "").expect("empty tokens");
+    let error = load_speech_runtime(dir.path(), None, DEFAULT_SPEAKER_THRESHOLD)
+        .err()
+        .expect("fails");
+    assert!(error.cause.contains("tokens.txt"), "{error}");
 }
 
 #[test]

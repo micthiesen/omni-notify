@@ -1,0 +1,63 @@
+{
+  "route": "/api/task-runs?limit=5",
+  "status": 200,
+  "body": {
+    "runs": [
+      {
+        "runId": "LiveCheckTask:00000000-0000-4000-8000-000000000168",
+        "taskName": "LiveCheckTask",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557221100,
+        "finishedAt": null,
+        "status": "running",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "ClaudeSessionEvents:00000000-0000-4000-8000-000000000169",
+        "taskName": "ClaudeSessionEvents",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557220602,
+        "finishedAt": 1791557220696,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "McpEventDelivery:00000000-0000-4000-8000-000000000170",
+        "taskName": "McpEventDelivery",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557220574,
+        "finishedAt": 1791557220601,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "EmailArchive:00000000-0000-4000-8000-000000000171",
+        "taskName": "EmailArchive",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557220537,
+        "finishedAt": 1791557220573,
+        "status": "success",
+        "error": null,
+        "summary": null
+      },
+      {
+        "runId": "ClaudeResets:00000000-0000-4000-8000-000000000172",
+        "taskName": "ClaudeResets",
+        "trigger": "schedule",
+        "scheduledFor": null,
+        "startedAt": 1791557220405,
+        "finishedAt": 1791557222742,
+        "status": "success",
+        "error": null,
+        "summary": "Synthetic text 720."
+      }
+    ]
+  }
+}

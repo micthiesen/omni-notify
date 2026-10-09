@@ -1,0 +1,7 @@
+{
+  "route": "/pods/rss",
+  "status": 401,
+  "body": {
+    "error": "Unauthorized"
+  }
+}

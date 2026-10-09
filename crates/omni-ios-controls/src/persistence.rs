@@ -18,11 +18,7 @@ pub struct IosControlRegistration {
     pub push_token: String,
     pub environment: ApnsEnvironment,
     /// Hash of the slot state last delivered to this token.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_delivered_hash: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,

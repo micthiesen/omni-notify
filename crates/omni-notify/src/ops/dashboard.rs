@@ -7,7 +7,8 @@
 //!   by 150 ms, then one snapshot is built for every client; a broadcast within
 //!   150 ms of the previous one is skipped, and an unchanged payload is not
 //!   sent again.
-//! - Every client gets a `ping` frame (data: epoch ms) every 25 s.
+//! - Every client gets a `ping` frame (data: epoch ms) on connect, before
+//!   its initial snapshot, and every 25 s after.
 //! - Snapshot frame ids increase monotonically across all clients.
 
 use std::convert::Infallible;
@@ -252,13 +253,24 @@ pub async fn snapshot_route(State(state): State<OpsState>) -> Response {
     }
 }
 
+/// Like TS `streamSSE`, the response starts at once: a `ping` goes out
+/// immediately, then the client's own initial snapshot, then broadcasts. A
+/// failed initial snapshot is logged and ends the stream (the frontend keeps
+/// polling and reconnects).
 pub async fn events_route(State(state): State<OpsState>) -> Response {
-    let receiver = match state.dashboard.connect().await {
-        Ok(receiver) => receiver,
-        Err(error) => return omni_server_kit::ApiError::internal(error).into_response(),
-    };
-    let frames = omni_server_kit::sse::with_ping(
-        UnboundedReceiverStream::new(receiver),
+    let dashboard = state.dashboard.clone();
+    let snapshots =
+        futures::stream::once(async move { dashboard.connect().await }).flat_map(|connected| {
+            match connected {
+                Ok(receiver) => UnboundedReceiverStream::new(receiver).left_stream(),
+                Err(error) => {
+                    tracing::error!(target: LOG, "Dashboard SSE initial snapshot failed: {error}");
+                    futures::stream::empty().right_stream()
+                }
+            }
+        });
+    let frames = omni_server_kit::sse::with_ping_immediately(
+        snapshots,
         SSE_HEARTBEAT,
         state.ctx.clock.clone(),
     );

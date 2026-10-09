@@ -1,0 +1,25 @@
+{
+  "route": "/api/trigger-channels",
+  "status": 200,
+  "body": {
+    "channels": [
+      {
+        "key": "id179",
+        "displayName": "id180",
+        "type": "youtube",
+        "url": "https://example.com/r/207"
+      },
+      {
+        "key": "id177",
+        "displayName": "id178",
+        "type": "twitch"
+      },
+      {
+        "key": "id2",
+        "displayName": "id170",
+        "type": "kick",
+        "url": "https://example.com/r/202"
+      }
+    ]
+  }
+}

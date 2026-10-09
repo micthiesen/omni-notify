@@ -288,7 +288,8 @@ mod tests {
             body: "[]".into(),
         };
         assert_eq!(
-            decode_response::<super::super::dto::RunId>("/x", &wrong).map_err(|e| e.to_string()),
+            decode_response::<omni_api::tasks::RunNowResponse>("/x", &wrong)
+                .map_err(|e| e.to_string()),
             Err("Response did not match its schema: /x".into())
         );
     }

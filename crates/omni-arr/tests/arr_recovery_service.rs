@@ -15,8 +15,8 @@ use std::time::Duration;
 use futures::future::BoxFuture;
 use omni_alerts::PushoverError;
 use omni_arr::arr_recovery::persistence::{
-    ActionPhase, NotificationState, Observation, RecoveryAction, StoredRecoveryState,
-    acquire_state, release_state, save_state,
+    ActionPhase, NotificationState, Observation, RecoveryAction, RecoveryState, acquire_state,
+    release_state, save_state,
 };
 use omni_arr::arr_recovery::policy::observation_fingerprint;
 use omni_arr::arr_recovery::service::{
@@ -248,10 +248,10 @@ impl Harness {
         run_recovery(std::slice::from_ref(client), &cx).await
     }
 
-    async fn state(&self) -> StoredRecoveryState {
+    async fn state(&self) -> RecoveryState {
         self.store
             .store
-            .read(|docs| docs.get::<StoredRecoveryState>(&"radarr".to_owned()))
+            .read(|docs| docs.get::<RecoveryState>(&"radarr".to_owned()))
             .await
             .unwrap()
             .unwrap()
@@ -264,7 +264,7 @@ impl Harness {
             .await
             .unwrap()
             .unwrap();
-        stored.value.observations.insert(
+        stored.observations.insert(
             item.download_id.clone(),
             Observation {
                 fingerprint: observation_fingerprint(std::slice::from_ref(item)),
@@ -275,7 +275,7 @@ impl Harness {
                 reason: None,
             },
         );
-        stored.value.actions = actions;
+        stored.actions = actions;
         save_state(&self.store.store, &stored, owner, now)
             .await
             .unwrap();
@@ -306,7 +306,7 @@ async fn retries_a_confirmed_pushover_rejection_without_repeating_the_action() {
             .is_err()
     );
     assert_eq!(
-        h.state().await.value.actions[0].notification,
+        h.state().await.actions[0].notification,
         NotificationState::Pending
     );
 
@@ -314,7 +314,7 @@ async fn retries_a_confirmed_pushover_rejection_without_repeating_the_action() {
     let unused = ScriptedAssessor::fixed(Decision::defer("unused", DecisionSource::Llm));
     h.run(&client, &unused).await.unwrap();
     assert_eq!(
-        h.state().await.value.actions[0].notification,
+        h.state().await.actions[0].notification,
         NotificationState::Sent
     );
     assert_eq!(client.calls("remove"), 1);
@@ -328,12 +328,12 @@ async fn waits_for_a_second_unchanged_observation_spanning_15_minutes() {
 
     h.run(&client, &assessor).await.unwrap();
     assert_eq!(client.calls("remove"), 0);
-    assert!(h.state().await.value.actions.is_empty());
+    assert!(h.state().await.actions.is_empty());
 
     h.advance(STUCK_GRACE_MS);
     h.run(&client, &assessor).await.unwrap();
     assert_eq!(client.calls("remove"), 1);
-    assert_eq!(h.state().await.value.actions[0].phase, ActionPhase::Done);
+    assert_eq!(h.state().await.actions[0].phase, ActionPhase::Done);
 }
 
 #[tokio::test]
@@ -382,7 +382,7 @@ async fn excludes_normal_active_downloads() {
 
     assert_eq!(client.calls("target"), 0);
     assert_eq!(client.calls("remove"), 0);
-    assert!(h.state().await.value.observations.is_empty());
+    assert!(h.state().await.observations.is_empty());
 }
 
 #[tokio::test]
@@ -402,10 +402,7 @@ async fn does_not_report_an_import_successful_until_its_files_verify() {
     h.run(&client, &assessor).await.unwrap();
 
     assert_eq!(client.calls("import_files"), 1);
-    assert_eq!(
-        h.state().await.value.actions[0].phase,
-        ActionPhase::Uncertain
-    );
+    assert_eq!(h.state().await.actions[0].phase, ActionPhase::Uncertain);
     let sent = h.notifier.sent.lock().unwrap().clone();
     assert!(
         sent.iter().any(|m| m.contains("Needs inspection")),
@@ -425,7 +422,7 @@ async fn removes_a_duplicate_without_requesting_a_replacement_search() {
 
     assert_eq!(client.calls("remove"), 1);
     assert_eq!(client.calls("search"), 0);
-    assert_eq!(h.state().await.value.actions[0].phase, ActionPhase::Done);
+    assert_eq!(h.state().await.actions[0].phase, ActionPhase::Done);
 }
 
 #[tokio::test]
@@ -453,10 +450,7 @@ async fn never_replays_an_import_whose_submission_outcome_is_unknown() {
 
     assert_eq!(client.calls("import_files"), 0);
     assert_eq!(client.calls("command"), 0);
-    assert_eq!(
-        h.state().await.value.actions[0].phase,
-        ActionPhase::Uncertain
-    );
+    assert_eq!(h.state().await.actions[0].phase, ActionPhase::Uncertain);
 }
 
 #[tokio::test]
@@ -499,7 +493,7 @@ async fn aborts_when_the_queue_changes_during_assessment() {
 
     assert_eq!(client.calls("remove"), 0);
     assert_eq!(client.calls("import_files"), 0);
-    assert!(h.state().await.value.actions.is_empty());
+    assert!(h.state().await.actions.is_empty());
 }
 
 #[tokio::test]
@@ -535,9 +529,9 @@ async fn defers_a_replacement_while_its_search_backoff_is_active() {
     assert_eq!(client.calls("remove"), 0);
     assert_eq!(client.calls("search"), 0);
     let stored = h.state().await;
-    assert_eq!(stored.value.actions.len(), 1);
+    assert_eq!(stored.actions.len(), 1);
     assert_eq!(
-        stored.value.observations["download-2"].reason.as_deref(),
+        stored.observations["download-2"].reason.as_deref(),
         Some("Replacement search budget/backoff reached")
     );
 }

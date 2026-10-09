@@ -1,0 +1,7 @@
+{
+  "route": "/api/reminders/status",
+  "status": 403,
+  "body": {
+    "error": "Forbidden"
+  }
+}

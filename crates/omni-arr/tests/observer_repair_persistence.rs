@@ -33,7 +33,7 @@ async fn permits_a_new_owner_after_lease_expiry_and_marks_interrupted_execution_
         .await
         .unwrap()
         .unwrap();
-    first.value.phase = RepairPhase::Executing;
+    first.phase = RepairPhase::Executing;
     save_issue(&test.store, &first, "first", NOW + 1)
         .await
         .unwrap();
@@ -47,9 +47,9 @@ async fn permits_a_new_owner_after_lease_expiry_and_marks_interrupted_execution_
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(resumed.value.phase, RepairPhase::Unhandled);
-    assert_eq!(resumed.value.outcome, Some(RepairOutcome::Unhandled));
-    assert_eq!(resumed.value.lease.unwrap().owner, "second");
+    assert_eq!(resumed.phase, RepairPhase::Unhandled);
+    assert_eq!(resumed.outcome, Some(RepairOutcome::Unhandled));
+    assert_eq!(resumed.lease.unwrap().owner, "second");
 }
 
 #[tokio::test]
@@ -59,8 +59,8 @@ async fn skips_completed_revisions_and_resets_only_completed_state_for_a_new_rev
         .await
         .unwrap()
         .unwrap();
-    first.value.phase = RepairPhase::Done;
-    first.value.outcome = Some(RepairOutcome::Repaired);
+    first.phase = RepairPhase::Done;
+    first.outcome = Some(RepairOutcome::Repaired);
     save_issue(&test.store, &first, "worker", NOW + 1)
         .await
         .unwrap();
@@ -74,8 +74,8 @@ async fn skips_completed_revisions_and_resets_only_completed_state_for_a_new_rev
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(next.value.phase, RepairPhase::Reserved);
-    assert_eq!(next.value.revision, "r2");
+    assert_eq!(next.phase, RepairPhase::Reserved);
+    assert_eq!(next.revision, "r2");
     let active = acquire_issue(&test.store, 10, "r1", "worker", NOW)
         .await
         .unwrap()
@@ -86,7 +86,7 @@ async fn skips_completed_revisions_and_resets_only_completed_state_for_a_new_rev
             .unwrap()
             .is_none()
     );
-    assert_eq!(active.value.revision, "r1");
+    assert_eq!(active.revision, "r1");
 }
 
 #[tokio::test]
@@ -101,7 +101,7 @@ async fn lists_at_most_100_unfinished_states() {
         .await
         .unwrap()
         .unwrap();
-    first.value.phase = RepairPhase::Done;
+    first.phase = RepairPhase::Done;
     save_issue(&test.store, &first, "worker", NOW + 1)
         .await
         .unwrap();

@@ -1,6 +1,8 @@
 //! Every DTO against the HTTP fixtures captured from the production TS
-//! service (`cargo xtask capture-golden --base http://omni.boris`, read-only
-//! GETs). Each fixture body must decode into its
+//! service (`cargo xtask capture-golden --base <TS URL>`, read-only GETs, raw
+//! captures stay in the gitignored `.local/golden-capture/`) and synthesized by
+//! `cargo xtask golden-synthesize`, which keeps routes, shapes, enum values and
+//! edge cases but replaces personal data. Each fixture body must decode into its
 //! DTO and re-encode to the same JSON value: same keys, same nulls, same
 //! numbers (JS has one number type, so `1` and `1.0` are equal).
 
@@ -121,9 +123,9 @@ golden! {
     task_runs_limited: omni_api::runs::RunsResponse = "api_task-runs__limit_5";
     task_runs_for_task: omni_api::runs::RunsResponse = "api_task-runs__task_PressPods";
     run_logs: omni_api::runs::RunLogsResponse =
-        "api_task-runs_LiveCheckTask_a05dc9c0-4110-4268-bbb9-1ac83212876f_logs";
+        "api_task-runs_LiveCheckTask_00000000-0000-4000-8000-000000000004_logs";
     run_logs_presspods: omni_api::runs::RunLogsResponse =
-        "api_task-runs_PressPods_5fd43fe5-4e6e-40b6-9753-301436707d9f_logs";
+        "api_task-runs_PressPods_00000000-0000-4000-8000-000000000005_logs";
     run_logs_unknown: omni_api::common::ApiErrorBody = "api_task-runs_nope_logs", 404;
     snapshot: omni_api::snapshot::Snapshot = "api_snapshot";
     costs: omni_api::costs::CostsResponse = "api_costs";
@@ -139,32 +141,32 @@ golden! {
     streamers: omni_api::streamers::StreamersResponse = "api_streamers";
     trigger_channels: omni_api::streamers::TriggerChannelsResponse = "api_trigger-channels";
     streamer_metrics_live: omni_api::streamers::StreamerMetricsResponse =
-        "api_streamers_anythingelse_metrics";
+        "api_streamers_id2_metrics";
     streamer_metrics_offline: omni_api::streamers::StreamerMetricsResponse =
-        "api_streamers_darius_metrics";
+        "api_streamers_id3_metrics";
     streamer_metrics_unknown: omni_api::common::ApiErrorBody = "api_streamers_nobody_metrics", 404;
     streamer_sessions_live: omni_api::streamers::StreamSessionsResponse =
-        "api_streamers_anythingelse_sessions";
+        "api_streamers_id2_sessions";
     streamer_sessions_offline: omni_api::streamers::StreamSessionsResponse =
-        "api_streamers_darius_sessions";
+        "api_streamers_id3_sessions";
     intelligence_details: omni_api::intelligence::IntelligenceDetailsResponse =
-        "api_streamers_anythingelse_intelligence-details__limit_5";
+        "api_streamers_id2_intelligence-details__limit_5";
     email_activity: omni_api::email::EmailActivitiesResponse = "api_email-activity";
     email_activity_logs: omni_api::email::EmailActivityLogsResponse =
-        "api_email-activity_CalendarEvents_23_3Canomalyco_2Fsst_2Fissues_2F6575_2F6075578949_40github_com_3E_logs";
+        "api_email-activity_CalendarEvents_23_3Cmessage-1_40example_com_3E_logs";
     email_feedback: omni_api::email::EmailFeedbackListResponse = "api_email-feedback";
     email_rules: omni_api::email::EmailRulesResponse = "api_email-rules";
     pets: Vec<omni_api::pets::Pet> = "api_pets";
     podcast_recommendations: omni_api::podcasts::PodcastRecommendationsResponse =
         "api_podcast-recommendations";
     podcast_recommendation: omni_api::podcasts::PodcastRecommendationResponse =
-        "api_podcast-recommendations_6fcb0401-7b15-45a7-84c2-3ae7915f6d4b";
+        "api_podcast-recommendations_00000000-0000-4000-8000-000000000002";
     presspods_episodes: omni_api::presspods::PressPodsListResponse = "api_press-pods_episodes";
     presspods_episode: omni_api::presspods::PressPodsEpisodeResponse =
-        "api_press-pods_episodes_t_H1l9vKZANwpHusw7NNDw";
+        "api_press-pods_episodes_id1";
     recommendations: omni_api::media::RecommendationsResponse = "api_recommendations";
     recommendation: omni_api::media::RecommendationResponse =
-        "api_recommendations_582207dc-59c9-40d4-99ce-4efa687a5e67";
+        "api_recommendations_00000000-0000-4000-8000-000000000003";
     reminders_status_cross_origin: omni_api::common::ApiErrorBody = "api_reminders_status", 403;
     workspace_papercuts: omni_api::workspaces::WorkspacePapercutsResponse = "api_workspace-papercuts";
     workspaces: omni_api::workspaces::WorkspacesResponse = "api_workspaces";
@@ -172,7 +174,7 @@ golden! {
     workspace_marketplace: omni_api::workspaces::WorkspaceResponse =
         "api_workspaces_marketplace-selling";
     workspace_subject: omni_api::workspaces::WorkspaceSubjectResponse =
-        "api_workspaces_purchase-research_subjects_3324868c-9a97-4a32-93cf-1cc07a9d2df6";
+        "api_workspaces_purchase-research_subjects_00000000-0000-4000-8000-000000000006";
     briefings: omni_api::briefings::BriefingsResponse = "api_briefings";
     mcp_activity: omni_api::mcp_activity::McpActivityResponse = "api_mcp_activity";
     claude_activity: omni_api::claude::ClaudeActivityResponse = "api_claude_activity";
@@ -224,7 +226,7 @@ fn every_json_fixture_is_covered() {
 fn csv_export_fixture_keeps_its_shape() {
     let meta: Value = serde_json::from_str(
         &std::fs::read_to_string(fixture_dir().join(
-            "api_pets_PET-b4738d2e-9a37-4d70-b401-a86e56bfd180_export_csv__days_30.meta.json",
+            "api_pets_PET-00000000-0000-4000-8000-000000000001_export_csv__days_30.meta.json",
         ))
         .unwrap(),
     )
@@ -238,7 +240,7 @@ fn csv_export_fixture_keeps_its_shape() {
     );
     let body = std::fs::read_to_string(
         fixture_dir()
-            .join("api_pets_PET-b4738d2e-9a37-4d70-b401-a86e56bfd180_export_csv__days_30.body"),
+            .join("api_pets_PET-00000000-0000-4000-8000-000000000001_export_csv__days_30.body"),
     )
     .unwrap();
     assert!(body.starts_with("timestamp,weight_lbs\n"));

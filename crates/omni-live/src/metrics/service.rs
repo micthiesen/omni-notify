@@ -89,6 +89,12 @@ impl ViewerMetricsService {
     ) -> Result<(), LiveError> {
         let mut metrics = get_viewer_metrics(&self.store, &observation.streamer_id).await?;
         let count = observation.viewer_count;
+        // Window maxima come from the buckets as they stood before this
+        // observation. Measuring after it would include `count` itself, so a
+        // windowed record could never start (TS had this bug). Earlier
+        // observations today still count, so a peak confirmed today, or one
+        // observed before a restart, is not reported again at a lower value.
+        let prior_buckets = metrics.daily_buckets.clone();
         metrics.daily_buckets = update_daily_bucket(&metrics.daily_buckets, count, now);
 
         let confirmed = self.with_state(|states| {
@@ -97,7 +103,7 @@ impl ViewerMetricsService {
             for window in MetricWindow::ALL {
                 let config = window.config();
                 let window_max =
-                    calculate_window_max(&metrics.daily_buckets, metrics.all_time_max, config, now, &self.tz);
+                    calculate_window_max(&prior_buckets, metrics.all_time_max, config, now, &self.tz);
                 match state.get_mut(&window) {
                     Some(pending) => {
                         #[allow(clippy::cast_precision_loss)]

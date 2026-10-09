@@ -97,23 +97,11 @@ pub struct StoredAttempt {
     pub fingerprint: String,
     pub status: AttemptStatus,
     pub updated_at: i64,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prepared: Option<PreparedMessage>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sent_copy: Option<SentCopyState>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "cbor::undefined_as_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<AttemptResult>,
     #[serde(flatten)]
     pub extra: Extra,
