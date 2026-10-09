@@ -12,6 +12,7 @@ pub fn strict_schema<T: schemars::JsonSchema>() -> Value {
         root.remove("$schema");
     }
     make_strict(&mut value);
+    isolate_refs(&mut value);
     value
 }
 
@@ -121,6 +122,37 @@ fn make_strict(value: &mut Value) {
     }
 }
 
+/// OpenAI strict mode rejects any keyword next to `$ref` (schemars puts a
+/// field's doc comment there), so a `$ref` with siblings becomes a one-branch
+/// `anyOf` that keeps the siblings on the outer schema.
+fn isolate_refs(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            if map.len() > 1
+                && let Some(reference) = map.remove("$ref")
+            {
+                let mut inner = Map::new();
+                inner.insert("$ref".to_owned(), reference);
+                map.insert("anyOf".to_owned(), Value::Array(vec![Value::Object(inner)]));
+            }
+            map.values_mut().for_each(isolate_refs);
+        }
+        Value::Array(items) => items.iter_mut().for_each(isolate_refs),
+        _ => {}
+    }
+}
+
+/// Whether any `$ref` in `schema` has sibling keywords (rejected by OpenAI).
+pub fn has_ref_siblings(schema: &Value) -> bool {
+    match schema {
+        Value::Object(map) => {
+            (map.contains_key("$ref") && map.len() > 1) || map.values().any(has_ref_siblings)
+        }
+        Value::Array(items) => items.iter().any(has_ref_siblings),
+        _ => false,
+    }
+}
+
 fn make_nullable(schema: &mut Value) {
     let Value::Object(map) = schema else {
         return;
@@ -174,5 +206,31 @@ mod tests {
             schema["properties"]["note"]["type"],
             serde_json::json!(["string", "null"])
         );
+    }
+
+    #[allow(dead_code)]
+    #[derive(schemars::JsonSchema)]
+    enum Kind {
+        Create,
+        Cancel,
+    }
+
+    #[allow(dead_code)]
+    #[derive(schemars::JsonSchema)]
+    struct WithDescribedRefs {
+        /// What to do with the event.
+        action: Kind,
+        /// An optional second kind.
+        #[serde(default)]
+        fallback: Option<Kind>,
+    }
+
+    #[test]
+    fn refs_never_carry_sibling_keywords() {
+        let schema = strict_schema::<WithDescribedRefs>();
+        assert!(!has_ref_siblings(&schema), "{schema:#}");
+        let action = &schema["properties"]["action"];
+        assert_eq!(action["description"], "What to do with the event.");
+        assert_eq!(action["anyOf"][0]["$ref"], "#/$defs/Kind");
     }
 }
