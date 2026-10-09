@@ -63,6 +63,49 @@ async fn durably_queues_admitted_email_after_transient_extraction_failure() {
 }
 
 #[tokio::test]
+async fn parks_emails_whose_extraction_request_was_rejected_and_alerts_once() {
+    let extractor = Arc::new(FakeExtractor(Box::new(|_| {
+        Box::pin(async {
+            let message = "provider error 400: Invalid schema for response_format 'delivery_extraction': 'oneOf' is not permitted.";
+            Err(ParcelError::SystemicExtraction {
+                message: message.to_owned(),
+                signature: omni_email::systemic::Signature::from_text(message),
+            })
+        })
+    })));
+    let h = harness(
+        extractor,
+        FakeSubmitter::new(&[SubmitResult::Success]),
+        ups_only(),
+    )
+    .await;
+    h.pipeline
+        .handle_emails(&[shipment("mail-a"), shipment("mail-b")])
+        .await
+        .unwrap();
+    let build = omni_email::systemic::current_build().await;
+    for id in ["mail-a", "mail-b"] {
+        let row = retry::get(&h.store.store, &format!("ParcelTracker#{id}"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.awaiting_build.as_deref(), Some(build.as_str()));
+        assert_eq!(row.attempts, 0);
+        let activity = activity::get(&h.store.store, &format!("ParcelTracker#{id}"))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(activity.outcome, EmailActivityOutcome::Error);
+    }
+    let pushes = h.pushover.recorded();
+    assert_eq!(pushes.len(), 1);
+    assert_eq!(
+        pushes[0].message.title.as_deref(),
+        Some("Parcel extraction failing")
+    );
+}
+
+#[tokio::test]
 async fn preserves_interruption_while_delivery_extraction_is_in_progress() {
     let started = Arc::new(Notify::new());
     let signal = started.clone();

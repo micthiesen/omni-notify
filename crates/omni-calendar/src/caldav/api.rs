@@ -11,11 +11,17 @@ use omni_http::{HttpClient, Method, SideEffectMode, Url};
 
 use super::http::{self, CALDAV_ERROR_MAX_BYTES, CaldavResponse, assert_trusted_caldav_url};
 use super::ics::build_icalendar;
+use super::merge;
 use super::xml::extract_uid_conflict_href;
 use crate::error::CaldavError;
 use crate::extraction::schema::ExtractedEvent;
 
 const LOG: &str = "CalDAV";
+
+/// Merge attempts for an update that keeps hitting 412.
+pub const MERGE_ATTEMPTS: usize = 3;
+/// Cap for reading one calendar resource.
+const CALDAV_RESOURCE_MAX_BYTES: usize = 256 * 1024;
 
 /// Resolved CalDAV target: a calendar collection URL plus the auth to use.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,6 +111,16 @@ impl CaldavWriter {
             .clone()
     }
 
+    /// The shared record-mode capture list (the primary calendar tools append
+    /// to the same list).
+    pub fn recorded_handle(&self) -> Arc<Mutex<Vec<RecordedCaldavWrite>>> {
+        self.recorded.clone()
+    }
+
+    pub fn mode(&self) -> SideEffectMode {
+        self.mode
+    }
+
     fn record(&self, method: &'static str, url: &Url, body: Option<String>) {
         self.recorded
             .lock()
@@ -134,7 +150,14 @@ impl CaldavWriter {
         let url = event_url(session, uid)?;
         tracing::debug!(target: LOG, "CalDAV PUT {url}\n{ics}");
         let response = self
-            .put(session, &url, ics.clone(), true, "create calendar event")
+            .put(
+                session,
+                &url,
+                ics.clone(),
+                Some("*"),
+                None,
+                "create calendar event",
+            )
             .await?;
         if matches!(response.status, 201 | 204) {
             tracing::info!(target: LOG, "Created calendar event: {} ({uid})", event.title);
@@ -161,46 +184,150 @@ impl CaldavWriter {
         })
     }
 
-    /// Overwrites an existing event. A 403 that names a `no-uid-conflict`
-    /// resource means the event now lives in another calendar (a cross-calendar
-    /// move): the conflicting copy is deleted and the event recreated in this
-    /// collection. Any other 403 is reported as an error.
+    /// Updates an existing event without clobbering other edits: reads the
+    /// current copy, applies only the field groups that differ between
+    /// `base` (what the pipeline last wrote) and `event`, and writes with
+    /// `If-Match`. A 412 re-reads and merges again, at most
+    /// [`MERGE_ATTEMPTS`] times. A missing resource is recreated with
+    /// `If-None-Match: *`; when that is refused with a `no-uid-conflict`
+    /// naming a trusted resource in another calendar (a cross-calendar move),
+    /// the moved copy is merged in place instead.
     pub async fn update(
         &self,
         session: &CaldavSession,
+        base: &ExtractedEvent,
         event: &ExtractedEvent,
         existing_uid: &str,
     ) -> Result<UpdateOutcome, CaldavError> {
-        let ics = self.render(event, existing_uid);
-        let url = event_url(session, existing_uid)?;
-        tracing::debug!(target: LOG, "CalDAV PUT (update) {url}\n{ics}");
-        let response = self
-            .put(session, &url, ics.clone(), false, "update calendar event")
-            .await?;
-        if matches!(response.status, 201 | 204) {
-            tracing::info!(target: LOG, "Updated calendar event: {} ({existing_uid})", event.title);
-            return Ok(UpdateOutcome::Success {
+        let now_ms = self.clock.now_ms();
+        let base_ics = build_icalendar(base, existing_uid, now_ms, &self.default_tz);
+        let new_ics = build_icalendar(event, existing_uid, now_ms, &self.default_tz);
+        let home = event_url(session, existing_uid)?;
+        let mut target = home.clone();
+        let success = || {
+            Ok(UpdateOutcome::Success {
                 event_uid: existing_uid.to_owned(),
+            })
+        };
+        for _ in 0..MERGE_ATTEMPTS {
+            let current = self.get(session, &target).await?;
+            if current.status == 404 {
+                if target != home {
+                    // The moved copy vanished too: start over at home.
+                    target = home.clone();
+                    continue;
+                }
+                tracing::warn!(target: LOG, "Calendar event {existing_uid} is missing; recreating it");
+                let response = self
+                    .put(
+                        session,
+                        &home,
+                        new_ics.clone(),
+                        Some("*"),
+                        None,
+                        "recreate calendar event",
+                    )
+                    .await?;
+                if matches!(response.status, 201 | 204) {
+                    return success();
+                }
+                if response.status == 412 {
+                    continue;
+                }
+                let text = http::error_text(&response, "recreate calendar event")?;
+                if response.status == 403
+                    && let Some(conflict) = self.conflicting_copy(&home, &text)
+                {
+                    tracing::warn!(
+                        target: LOG,
+                        "Calendar event {existing_uid} moved to another calendar; updating it there"
+                    );
+                    target = conflict;
+                    continue;
+                }
+                return Ok(UpdateOutcome::Error {
+                    code: response.status,
+                    message: status_message(&response),
+                });
+            }
+            if !current.is_ok() {
+                return Ok(UpdateOutcome::Error {
+                    code: current.status,
+                    message: status_message(&current),
+                });
+            }
+            let Some(etag) = current.etag.clone() else {
+                return Ok(UpdateOutcome::Error {
+                    code: current.status,
+                    message: "CalDAV GET returned no ETag".to_owned(),
+                });
+            };
+            let now =
+                jiff::Timestamp::from_millisecond(now_ms).unwrap_or(jiff::Timestamp::UNIX_EPOCH);
+            let merged = match merge::merge(&current.text(), &base_ics, &new_ics, now) {
+                Ok(Some(merged)) => merged,
+                Ok(None) => {
+                    tracing::info!(target: LOG, "Calendar event already current: {existing_uid}");
+                    return success();
+                }
+                Err(error) => {
+                    return Ok(UpdateOutcome::Error {
+                        code: 422,
+                        message: format!("cannot merge the update: {error}"),
+                    });
+                }
+            };
+            tracing::debug!(target: LOG, "CalDAV PUT (merge) {target}\n{merged}");
+            let response = self
+                .put(
+                    session,
+                    &target,
+                    merged,
+                    None,
+                    Some(&etag),
+                    "update calendar event",
+                )
+                .await?;
+            if matches!(response.status, 200 | 201 | 204) {
+                tracing::info!(target: LOG, "Updated calendar event: {} ({existing_uid})", event.title);
+                return success();
+            }
+            if response.status == 412 {
+                tracing::info!(target: LOG, "Calendar event {existing_uid} changed meanwhile; merging again");
+                continue;
+            }
+            let text = http::error_text(&response, "update calendar event")?;
+            tracing::error!(
+                target: LOG,
+                "CalDAV PUT (update) failed: {} {} URL: {target}\nResponse:\n{text}",
+                response.status,
+                response.reason
+            );
+            return Ok(UpdateOutcome::Error {
+                code: response.status,
+                message: status_message(&response),
             });
         }
-        let text = http::error_text(&response, "update calendar event")?;
-        if response.status == 403
-            && let Some(conflict) = self.conflicting_copy(&url, &text)
-        {
-            return self
-                .recreate_after_move(session, event, existing_uid, &url, &conflict, ics)
-                .await;
-        }
-        tracing::error!(
-            target: LOG,
-            "CalDAV PUT (update) failed: {} {} URL: {url}\nBody:\n{ics}\nResponse:\n{text}",
-            response.status,
-            response.reason
-        );
         Ok(UpdateOutcome::Error {
-            code: response.status,
-            message: status_message(&response),
+            code: 412,
+            message: format!(
+                "CalDAV 412: the event kept changing during {MERGE_ATTEMPTS} merge attempts"
+            ),
         })
+    }
+
+    /// Reads one resource (bounded).
+    async fn get(&self, session: &CaldavSession, url: &Url) -> Result<CaldavResponse, CaldavError> {
+        http::request(
+            &self.http,
+            Method::GET,
+            url,
+            &[("Authorization", session.auth_header.as_str())],
+            None,
+            "read calendar event",
+            CALDAV_RESOURCE_MAX_BYTES,
+        )
+        .await
     }
 
     /// The trusted URL of the resource holding this UID in another collection.
@@ -217,56 +344,6 @@ impl CaldavWriter {
                 None
             }
         }
-    }
-
-    async fn recreate_after_move(
-        &self,
-        session: &CaldavSession,
-        event: &ExtractedEvent,
-        uid: &str,
-        url: &Url,
-        conflict: &Url,
-        ics: String,
-    ) -> Result<UpdateOutcome, CaldavError> {
-        tracing::warn!(
-            target: LOG,
-            "Calendar event {uid} moved to another calendar ({conflict}); deleting that copy and recreating it here"
-        );
-        match self
-            .delete_url(session, conflict, "delete moved calendar event")
-            .await?
-        {
-            DeleteOutcome::Success | DeleteOutcome::NotFound => {}
-            DeleteOutcome::Error { code, message } => {
-                return Ok(UpdateOutcome::Error {
-                    code,
-                    message: format!("{message} (deleting the moved copy)"),
-                });
-            }
-        }
-        let response = self
-            .put(session, url, ics, false, "recreate calendar event")
-            .await?;
-        if matches!(response.status, 201 | 204) {
-            tracing::info!(target: LOG, "Recreated calendar event: {} ({uid})", event.title);
-            return Ok(UpdateOutcome::Success {
-                event_uid: uid.to_owned(),
-            });
-        }
-        let text = http::error_text(&response, "recreate calendar event")?;
-        tracing::error!(
-            target: LOG,
-            "CalDAV PUT (recreate) failed: {} {} URL: {url}\nResponse:\n{text}",
-            response.status,
-            response.reason
-        );
-        Ok(UpdateOutcome::Error {
-            code: response.status,
-            message: format!(
-                "{} (recreating after the moved copy was deleted)",
-                status_message(&response)
-            ),
-        })
     }
 
     /// Deletes `<collection><uid>.ics`; 404 is `NotFound`.
@@ -327,7 +404,8 @@ impl CaldavWriter {
         session: &CaldavSession,
         url: &Url,
         ics: String,
-        create_only: bool,
+        if_none_match: Option<&str>,
+        if_match: Option<&str>,
         operation: &str,
     ) -> Result<CaldavResponse, CaldavError> {
         if self.mode == SideEffectMode::Record {
@@ -336,6 +414,7 @@ impl CaldavWriter {
                 status: 201,
                 reason: "Created".to_owned(),
                 location: None,
+                etag: None,
                 body: Vec::new(),
             });
         }
@@ -343,9 +422,11 @@ impl CaldavWriter {
             ("Content-Type", "text/calendar; charset=utf-8"),
             ("Authorization", session.auth_header.as_str()),
         ];
-        if create_only {
-            // Only create, never overwrite.
-            headers.push(("If-None-Match", "*"));
+        if let Some(value) = if_none_match {
+            headers.push(("If-None-Match", value));
+        }
+        if let Some(value) = if_match {
+            headers.push(("If-Match", value));
         }
         http::request(
             &self.http,

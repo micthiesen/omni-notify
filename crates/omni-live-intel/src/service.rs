@@ -78,6 +78,12 @@ fn failure_detail(error: &ServiceError) -> String {
     omni_core::js::utf16_slice(&message, 0, DETAIL_MAX_CHARS).into_owned()
 }
 
+/// A capture that found the stream not broadcasting. The live check lags the
+/// platform when a stream ends, so this is a skip, not a failure event.
+fn is_not_live(error: &ServiceError) -> bool {
+    matches!(error, ServiceError::Audio(AudioError::NotLive { .. }))
+}
+
 /// Whether the stream belongs to Destiny himself (always excluded from voice targets).
 pub fn is_destiny_owned_stream(streamer: &Streamer) -> bool {
     std::iter::once(streamer.id.as_str())
@@ -819,7 +825,12 @@ impl LivestreamIntelligenceService {
             if let Err(error) = Box::pin(service.voice_job(&observation, started_at)).await {
                 let finished_at = service.now();
                 let detail = failure_detail(&error);
-                let mut failed = stage(PipelineStatus::Error);
+                let not_live = is_not_live(&error);
+                let mut failed = stage(if not_live {
+                    PipelineStatus::Skipped
+                } else {
+                    PipelineStatus::Error
+                });
                 failed.eligible = Some(true);
                 failed.started_at = Some(started_at);
                 failed.finished_at = Some(finished_at);
@@ -829,6 +840,14 @@ impl LivestreamIntelligenceService {
                 service
                     .set_stage(&id, session, PipelineStage::Voice, failed)
                     .await;
+                if not_live {
+                    tracing::debug!(
+                        target: LOG,
+                        "Voice sampling skipped for {}: {detail}",
+                        observation.streamer.display_name
+                    );
+                    return;
+                }
                 service
                     .record(
                         NewLivestreamEvent::new(
@@ -1199,7 +1218,12 @@ impl LivestreamIntelligenceService {
             {
                 let finished_at = service.now();
                 let detail = failure_detail(&error);
-                let mut failed = stage(PipelineStatus::Error);
+                let not_live = is_not_live(&error);
+                let mut failed = stage(if not_live {
+                    PipelineStatus::Skipped
+                } else {
+                    PipelineStatus::Error
+                });
                 failed.eligible = Some(true);
                 failed.started_at = Some(started_at);
                 failed.finished_at = Some(finished_at);
@@ -1209,6 +1233,14 @@ impl LivestreamIntelligenceService {
                 service
                     .set_stage(&id, session, PipelineStage::Summary, failed)
                     .await;
+                if not_live {
+                    tracing::debug!(
+                        target: LOG,
+                        "Rolling summary skipped for {}: {detail}",
+                        observation.streamer.display_name
+                    );
+                    return;
+                }
                 service
                     .record(
                         NewLivestreamEvent::new(

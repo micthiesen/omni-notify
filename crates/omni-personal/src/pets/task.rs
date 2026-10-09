@@ -1,7 +1,9 @@
 //! `PetTracker`: every ten minutes, sync Whisker
-//! pets and new scale readings into the relational tables.
+//! pets and new scale readings into the relational tables, then run the health
+//! watch (`health`, `alerts`). A household with no reading for 48 hours fails
+//! the run so the gap is visible in run history.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
 use jiff::tz::TimeZone;
@@ -9,8 +11,10 @@ use omni_core::clock::SharedClock;
 use omni_core::js::{date_parse, math_round, to_iso_string};
 use omni_tasks::{CronSchedule, InvalidScheduleError, RunContext, Task, TaskError, TaskOptions};
 
+use super::alerts::{GAP_ERROR_PREFIX, HealthAlertError, HealthLedger};
 use super::api::{WhiskerApi, WhiskerApiError};
 use super::auth::{WhiskerAuth, WhiskerAuthenticationError};
+use super::health::{self, HOUR_MS};
 use super::math::{Point, linear_regression};
 use super::persistence::{PetRow, PetStore, WeightHistoryRow};
 
@@ -54,6 +58,11 @@ pub enum PetSyncError {
     Api(#[from] WhiskerApiError),
     #[error(transparent)]
     Store(#[from] omni_store::StoreError),
+    #[error(transparent)]
+    Alert(#[from] HealthAlertError),
+    /// No reading from any pet for at least 48 hours.
+    #[error("{GAP_ERROR_PREFIX} for {hours:.0} h (latest {latest})")]
+    DataGap { hours: f64, latest: String },
 }
 
 struct PetSyncResult {
@@ -68,8 +77,10 @@ pub struct PetTrackerTask {
     auth: Arc<WhiskerAuth>,
     api: WhiskerApi,
     pets: PetStore,
+    ledger: HealthLedger,
     clock: SharedClock,
     tz: TimeZone,
+    last_summary: Mutex<Option<String>>,
 }
 
 impl PetTrackerTask {
@@ -77,6 +88,7 @@ impl PetTrackerTask {
         auth: Arc<WhiskerAuth>,
         api: WhiskerApi,
         pets: PetStore,
+        ledger: HealthLedger,
         clock: SharedClock,
         tz: TimeZone,
     ) -> Result<Self, InvalidScheduleError> {
@@ -85,13 +97,64 @@ impl PetTrackerTask {
             auth,
             api,
             pets,
+            ledger,
             clock,
             tz,
+            last_summary: Mutex::new(None),
         })
     }
 
-    /// One sync pass.
-    pub async fn sync(&self) -> Result<(), PetSyncError> {
+    fn set_summary(&self, summary: Option<String>) {
+        *self
+            .last_summary
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = summary;
+    }
+
+    /// One scheduled pass: sync, then evaluate and deliver health alerts.
+    /// Fails with [`PetSyncError::DataGap`] while no pet has a reading for 48 h.
+    pub async fn run_pass(&self) -> Result<(), PetSyncError> {
+        self.set_summary(None);
+        let new_readings = self.sync().await?;
+        let now = self.clock.now_ms();
+        let pets = self.pets.all_pets_with_history().await?;
+        let evaluation = health::evaluate(&pets, now, &self.tz, 1);
+        let sent = self.ledger.apply(&evaluation.assessments, now).await;
+        let mut summary = format!(
+            "{}, {new_readings} new reading{}",
+            health::summary_line(&evaluation.trends),
+            if new_readings == 1 { "" } else { "s" }
+        );
+        if let Ok(sent @ 1..) = sent {
+            summary.push_str(&format!(
+                ", {sent} health alert{} sent",
+                if sent == 1 { "" } else { "s" }
+            ));
+        }
+        for finding in evaluation.trends.iter().flat_map(|t| &t.findings) {
+            tracing::info!(target: LOG, "{}", finding.message);
+        }
+        let gap = evaluation.gap();
+        if let Some(gap) = &gap {
+            summary = format!("{}; {summary}", gap.message);
+        }
+        self.set_summary(Some(summary));
+        sent?;
+        match (gap, evaluation.latest_reading) {
+            (Some(_), Some(latest)) => {
+                #[allow(clippy::cast_precision_loss)]
+                let hours = (now - latest) as f64 / HOUR_MS as f64;
+                Err(PetSyncError::DataGap {
+                    hours,
+                    latest: to_iso_string(latest),
+                })
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// One sync pass; returns the number of new readings.
+    pub async fn sync(&self) -> Result<usize, PetSyncError> {
         let session = self.auth.authenticate().await?;
         let pets = self
             .api
@@ -150,7 +213,7 @@ impl PetTrackerTask {
             }
             tracing::info!(target: LOG, "{}", lines.join(", "));
         }
-        Ok(())
+        Ok(total_new)
     }
 
     async fn format_pet_line(&self, pet: &PetSyncResult) -> Result<String, PetSyncError> {
@@ -206,6 +269,13 @@ impl Task for PetTrackerTask {
     }
 
     fn run<'a>(&'a self, _cx: &'a RunContext) -> BoxFuture<'a, Result<(), TaskError>> {
-        Box::pin(async move { self.sync().await.map_err(TaskError::from_error) })
+        Box::pin(async move { self.run_pass().await.map_err(TaskError::from_error) })
+    }
+
+    fn last_run_summary(&self) -> Option<String> {
+        self.last_summary
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 }

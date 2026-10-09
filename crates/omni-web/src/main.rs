@@ -7,6 +7,7 @@
 mod app;
 mod pages;
 mod routes;
+mod shell;
 
 fn main() {
     console_error_panic_hook::set_once();

@@ -42,11 +42,15 @@ pub mod media;
 
 /// Briefings.
 pub mod briefings;
+/// The primary iCloud calendar.
+pub mod calendar;
 /// Workspaces.
 pub mod workspaces;
 
 /// Claude activity, sessions and transcripts.
 pub mod claude;
+/// MCP Events payloads published through the event port.
+pub mod events;
 /// MCP activity.
 pub mod mcp_activity;
 
@@ -55,3 +59,6 @@ pub mod reminders;
 
 /// Pets.
 pub mod pets;
+
+/// Parcel deliveries (cached Parcel API reads).
+pub mod parcels;

@@ -21,7 +21,7 @@ use serde::Serialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::{Mutex, Notify};
 
-use super::catalog::{EMAIL_RECEIVED, event_definition};
+use super::catalog::{EMAIL_RECEIVED, EventArguments, event_definition};
 use super::crypto::{EventCrypto, owner_label};
 use super::executor_auth::{EventAuthorizer, ExecutorAuthError};
 use super::persistence::{
@@ -543,6 +543,12 @@ impl McpEventService {
 
     /// Whether any current subscription would receive this event name.
     pub async fn has_active_subscription(&self, name: &str) -> Result<bool, StoreError> {
+        Ok(!self.active_arguments(name).await?.is_empty())
+    }
+
+    /// The canonical arguments of every current subscription to `name`
+    /// (current key, not expired), one entry per subscription.
+    pub async fn active_arguments(&self, name: &str) -> Result<Vec<EventArguments>, StoreError> {
         let now = self.now();
         let key_id = self.crypto().key_id();
         Ok(self
@@ -550,8 +556,10 @@ impl McpEventService {
             .store
             .subscriptions()
             .await?
-            .iter()
-            .any(|row| row.key_id == key_id && row.name == name && row.expires_at > now))
+            .into_iter()
+            .filter(|row| row.key_id == key_id && row.name == name && row.expires_at > now)
+            .map(|row| row.effective_arguments())
+            .collect())
     }
 
     /// Queues one event for every matching subscription, once per receipt key.
@@ -723,6 +731,10 @@ impl McpEventService {
             .filter(|row| row.status == DeliveryStatus::Pending && row.next_attempt_at <= now)
             .collect();
         due.sort_by_key(|row| row.next_attempt_at);
+        // Every due row is claimed, failed or withheld (each moves it out of
+        // the due set), so a backlog drains in back-to-back passes instead
+        // of one batch per 30-second sweep.
+        let backlog = due.len() > MAX_DUE_PER_PASS;
         due.truncate(MAX_DUE_PER_PASS);
         let authorization = self.authorize_batch(&due).await?;
         let claims = {
@@ -733,6 +745,9 @@ impl McpEventService {
             self.send(claim).await?;
         }
         self.prune().await?;
+        if backlog {
+            self.request_drain();
+        }
         Ok(due.len())
     }
 

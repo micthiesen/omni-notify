@@ -33,9 +33,23 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
+      "name": "calendar_changes_list",
+      "title": "List Calendar Changes",
+      "description": "List changes detected in the primary iCloud calendar after a cursor (created, updated, deleted), oldest first: the polling form of the calendar.event_changed event. By default changes written by Omni's calendar tools are skipped (origin any includes them). Keep nextCursor to continue. Changes are kept 30 days.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; at most a few CalDAV reads",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
       "name": "calendar_event_create",
       "title": "Create Calendar Event",
-      "description": "Create and locally track an event in the configured CalDAV calendar. Content-hash deduplication makes identical repeated calls no-ops. This external calendar mutation requires approval.",
+      "description": "Create an event in the primary iCloud calendar. Repeating the call with the same idempotencyKey returns the first result instead of creating another event. Requires approval.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -43,16 +57,15 @@
         "openWorldHint": true
       },
       "sideEffects": [
-        "Creates an event in the configured external CalDAV calendar",
-        "Writes a local tracked-event record"
+        "Creates an event in the primary iCloud calendar"
       ],
-      "cost": "No paid API expected; one CalDAV discovery/write sequence",
+      "cost": "No paid API; a few CalDAV requests",
       "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "calendar_event_delete",
       "title": "Delete Calendar Event",
-      "description": "Delete one Omni-tracked event from the external CalDAV calendar and retain a cancelled local tombstone to prevent accidental recreation. Requires approval.",
+      "description": "Delete an event from the primary iCloud calendar: the whole series, one occurrence, or this and following occurrences. Invitations from others cannot be deleted here. Requires approval.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -60,16 +73,16 @@
         "openWorldHint": true
       },
       "sideEffects": [
-        "Deletes an external CalDAV event",
-        "Marks the local tracked event cancelled"
+        "Deletes an event or occurrences from the primary iCloud calendar",
+        "With attendeeNotifications \"send\", iCloud emails the attendees"
       ],
-      "cost": "No paid API expected; one CalDAV discovery/delete sequence",
+      "cost": "No paid API; a few CalDAV requests",
       "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "calendar_event_get",
-      "title": "Get Tracked Calendar Event",
-      "description": "Get one Omni-tracked calendar event by eventHash, including its stable CalDAV UID and local status.",
+      "title": "Get Calendar Event",
+      "description": "Get one event of the primary iCloud calendar by eventId: details, recurrence, exceptions, alarms, attendees, whether it can be edited, its etag and its next occurrences.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -77,13 +90,13 @@
         "openWorldHint": false
       },
       "sideEffects": [],
-      "cost": "None",
+      "cost": "None; at most a few CalDAV reads",
       "recommendedExecutorPolicy": "allow"
     },
     {
       "name": "calendar_event_preview",
-      "title": "Preview Calendar Event",
-      "description": "Validate a proposed event and render the exact bounded iCalendar payload Omni would write. No local or remote state changes.",
+      "title": "Preview Calendar Change",
+      "description": "Plan a create, update or delete in the primary iCloud calendar against its current state and show the exact writes, changed fields and warnings without changing anything. Pass the idempotencyKey you will use so the planned eventIds match.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -91,13 +104,13 @@
         "openWorldHint": false
       },
       "sideEffects": [],
-      "cost": "None",
+      "cost": "None; at most a few CalDAV reads",
       "recommendedExecutorPolicy": "allow"
     },
     {
       "name": "calendar_event_update",
       "title": "Update Calendar Event",
-      "description": "Patch one active Omni-tracked event and overwrite its external CalDAV representation. Null clears an optional field. This consequential external mutation requires approval.",
+      "description": "Change an event in the primary iCloud calendar: the whole series, one occurrence, or this and following occurrences. Only the given fields change; everything else is kept. Invitations from others are read-only, and events with attendees need attendeeNotifications \"send\". Requires approval.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": true,
@@ -105,16 +118,58 @@
         "openWorldHint": true
       },
       "sideEffects": [
-        "Overwrites an event in the configured external CalDAV calendar",
-        "Updates local tracked-event identity and content"
+        "Changes an event in the primary iCloud calendar",
+        "With attendeeNotifications \"send\", iCloud emails the attendees"
       ],
-      "cost": "No paid API expected; one CalDAV discovery/write sequence when changed",
+      "cost": "No paid API; a few CalDAV requests",
       "recommendedExecutorPolicy": "require_approval"
     },
     {
       "name": "calendar_events_list",
-      "title": "List Tracked Calendar Events",
-      "description": "List Omni's locally tracked CalDAV events with bounded filtering and pagination. This does not enumerate unrelated events directly from the remote calendar.",
+      "title": "List Calendar Events",
+      "description": "List event occurrences in the primary iCloud calendar overlapping a time window (recurring series expanded), sorted by start. Times are local to each event's time zone.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; at most a few CalDAV reads",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "calendar_events_search",
+      "title": "Search Calendar Events",
+      "description": "Find events in the primary iCloud calendar whose title, location or notes contain the query, within a window (default 30 days back to a year ahead). A recurring series appears once, at its first matching occurrence.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; at most a few CalDAV reads",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "calendar_status",
+      "title": "Inspect Calendar Status",
+      "description": "Report whether the primary iCloud calendar is identified, writable and in sync, plus the change-feed cursor and tracked email-event counts. Never reveals calendar URLs or credentials.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "None; at most a few CalDAV reads",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "calendar_tracked_events_list",
+      "title": "List Email-Created Events",
+      "description": "List the events Omni created from email (the extraction pipeline's dedup records) with bounded filtering and pagination.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -126,9 +181,9 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
-      "name": "calendar_status",
-      "title": "Inspect Tracked Calendar Status",
-      "description": "Report the configured CalDAV provider and local tracked-event counts without contacting the provider or revealing calendar URLs or credentials.",
+      "name": "calendar_write_status",
+      "title": "Check Calendar Write",
+      "description": "Report what happened to a calendar write by its idempotencyKey. An uncertain write is checked by reading the event back; it is never sent again.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -136,7 +191,7 @@
         "openWorldHint": false
       },
       "sideEffects": [],
-      "cost": "None",
+      "cost": "None; at most a few CalDAV reads",
       "recommendedExecutorPolicy": "allow"
     },
     {
@@ -567,7 +622,7 @@
     {
       "name": "email_retry_list",
       "title": "List Email Retries",
-      "description": "List bounded persisted retries for transient parcel or calendar pipeline failures, ordered by next attempt.",
+      "description": "List bounded persisted retries for transient parcel or calendar pipeline failures, ordered by next attempt. Rows with awaitingBuild failed systemically and replay once a new build is running.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -690,7 +745,7 @@
     {
       "name": "events_status",
       "title": "Check MCP Event Delivery",
-      "description": "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
+      "description": "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, workspace.updated, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,
@@ -997,9 +1052,37 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
+      "name": "parcels_get",
+      "title": "Get a Parcel Delivery",
+      "description": "Read one delivery from Omni's cached Parcel data by tracking number (spaces and case ignored), with up to 30 carrier events, newest first. Also reports whether Omni submitted that tracking number from an email, even when the cache does not include it yet.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost; reads Omni's cached Parcel data",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "parcels_list",
+      "title": "List Parcel Deliveries",
+      "description": "List package deliveries tracked in the Parcel app with carrier, status, expected date and recent carrier events, plus the email Omni submitted each tracking number from. Data comes from Omni's cache, refreshed on a schedule (every 30 minutes while anything is active, every 3 hours otherwise); fetchedAt says how old it is and nothing here can force a refresh.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "sideEffects": [],
+      "cost": "No external traffic or monetary cost; reads Omni's cached Parcel data",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
       "name": "pets_read",
       "title": "Read Pet Weight Data",
-      "description": "List pets with bounded recent weight and visit history, or read a bounded slice for one pet. This uses only Omni's local synchronized data.",
+      "description": "List pets with bounded recent weight and visit history, read a bounded slice for one pet, or read the computed health trend (weekly median weights, 2/4/12/26-week changes, visits per week, data gaps, tripped health rules and alerts sent) instead of paging raw readings. This uses only Omni's local synchronized data.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": false,

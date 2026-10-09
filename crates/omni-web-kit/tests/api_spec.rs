@@ -1,4 +1,4 @@
-//! Port of `frontend/src/api.spec.ts`: the frontend decodes every response
+//! Response decoding: the frontend decodes every response
 //! into the shared `omni-api` DTOs, so malformed nested data must fail to
 //! decode and valid shapes must round-trip.
 

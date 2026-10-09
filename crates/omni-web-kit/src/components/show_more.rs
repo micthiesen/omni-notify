@@ -55,15 +55,21 @@ where
     }
 }
 
+/// "Show N more" (a ghost button that says what and how many). `noun`
+/// defaults to nothing: "Show 34 more" vs "Show 34 more streams".
 #[component]
 pub fn ShowMoreButton(
     #[prop(into)] remaining: Signal<usize>,
     on_click: Callback<()>,
+    #[prop(into, optional)] noun: MaybeProp<String>,
 ) -> impl IntoView {
+    let label = move || match noun.get() {
+        Some(noun) => format!("Show {} more {noun}", remaining.get()),
+        None => format!("Show {} more", remaining.get()),
+    };
     view! {
-        <button type="button" class="show-more-btn" on:click=move |_| on_click.run(())>
-            "Show More"
-            <span class="show-more-count">{move || remaining.get()}</span>
+        <button type="button" class="btn ghost sm show-more" on:click=move |_| on_click.run(())>
+            {label}
         </button>
     }
 }

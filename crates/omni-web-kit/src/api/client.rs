@@ -1,4 +1,4 @@
-//! Fetch client (`frontend/src/api.ts` `apiGet` / `apiPost` / `apiDelete`).
+//! Fetch client for GET, POST and DELETE.
 //!
 //! GETs ride out container restarts: network failures and 502/503/504 retry
 //! with exponential backoff from 500 ms capped at 8 s, at most 7 retries.
@@ -31,7 +31,7 @@ impl ApiClientError {
         }
     }
 
-    /// The user-facing message (`err.message` in TS).
+    /// The user-facing message.
     pub fn message(&self) -> &str {
         match self {
             ApiClientError::Api { message, .. }
@@ -106,7 +106,7 @@ impl RawResponse {
     }
 }
 
-/// `decodeResponse`: non-2xx → `Api`, invalid JSON or shape → `Decode`.
+/// Non-2xx → `Api`, invalid JSON or shape → `Decode`.
 pub fn decode_response<T: DeserializeOwned>(
     path: &str,
     response: &RawResponse,
@@ -184,7 +184,6 @@ pub(crate) async fn get_raw(path: &str) -> Result<RawResponse, ApiClientError> {
     }
 }
 
-/// `apiGet`.
 pub async fn get<T: DeserializeOwned>(path: &str) -> Result<T, ApiClientError> {
     let response = get_raw(path).await?;
     decode_response(path, &response)
@@ -202,7 +201,7 @@ fn encode_body<B: Serialize>(
         })
 }
 
-/// `apiPost` (never retried).
+/// POSTs a JSON body (never retried).
 pub async fn post<T: DeserializeOwned, B: Serialize>(
     path: &str,
     body: Option<&B>,
@@ -212,7 +211,7 @@ pub async fn post<T: DeserializeOwned, B: Serialize>(
     decode_response(path, &response)
 }
 
-/// `apiDelete` (never retried).
+/// DELETEs with a JSON body (never retried).
 pub async fn delete<T: DeserializeOwned, B: Serialize>(
     path: &str,
     body: Option<&B>,
@@ -251,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_maps_errors_like_the_ts_client() {
+    fn decode_maps_errors_to_messages() {
         let error = RawResponse {
             status: 409,
             status_text: "Conflict".into(),

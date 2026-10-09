@@ -1,4 +1,4 @@
-//! Pure helpers shared by pages (`frontend/src/utils/*`).
+//! Pure helpers shared by pages.
 
 pub mod claude_activity;
 pub mod cron;
@@ -7,3 +7,4 @@ pub mod email_labels;
 pub mod format;
 pub mod js;
 pub mod rec_labels;
+pub mod tasks;

@@ -66,11 +66,13 @@ async fn skips_the_reflection_when_plex_history_is_unavailable() {
     configured(&mut h);
     *h.library.history.lock().expect("lock") = FetchResult::unavailable("Plex offline");
     let task = taste_task(&h);
-    task.run(&context()).await.expect("run");
+    let (result, degraded) = omni_tasks::collect_degraded(task.run(&context())).await;
+    result.expect("run");
     assert_eq!(
         task.last_run_summary().as_deref(),
         Some("skipped: Plex offline")
     );
+    assert_eq!(degraded, vec!["watch history unavailable: Plex offline"]);
     assert!(h.app.ai.requests().is_empty());
 }
 

@@ -30,6 +30,7 @@ use crate::entities::{
     SubjectRow,
 };
 use crate::error::{WorkspaceError, op};
+use crate::events::CommittedReply;
 use crate::persistence::{NewMessage, NewPapercut};
 use crate::service::WorkspaceService;
 use crate::text::{js_len, js_prefix, js_trim, truncate_marked};
@@ -470,6 +471,7 @@ struct Commit {
 struct Committed {
     actions: Vec<ActionRow>,
     notifications: Vec<NotificationRow>,
+    reply: Option<CommittedReply>,
 }
 
 fn queue_notification(
@@ -497,6 +499,7 @@ fn commit_output(tx: &mut omni_store::Tx<'_>, c: Commit) -> Result<Committed, St
     let mut updated: IndexSet<String> = IndexSet::new();
     let mut actions = Vec::new();
     let mut notifications = Vec::new();
+    let mut reply = None;
 
     for (subject_id, update) in &c.plan.subjects {
         updated.insert(subject_id.clone());
@@ -646,11 +649,21 @@ fn commit_output(tx: &mut omni_store::Tx<'_>, c: Commit) -> Result<Committed, St
                 UpsertOpts::default(),
             )?;
         }
+        let message_id = uuid_v4();
+        if reply.is_none() {
+            reply = Some(CommittedReply {
+                workspace_id: workspace_id.clone(),
+                subject_id: subject_id.clone(),
+                message_id: message_id.clone(),
+                run_id: c.run_id.clone(),
+                created_at: now,
+            });
+        }
         tx.upsert(
             &MessageRow {
                 workspace_id: workspace_id.clone(),
                 subject_id: subject_id.clone(),
-                message_id: uuid_v4(),
+                message_id,
                 role: WorkspaceMessageRole::Assistant,
                 text: c.response.clone(),
                 created_at: now,
@@ -676,6 +689,7 @@ fn commit_output(tx: &mut omni_store::Tx<'_>, c: Commit) -> Result<Committed, St
     Ok(Committed {
         actions,
         notifications,
+        reply,
     })
 }
 
@@ -1005,6 +1019,18 @@ impl WorkspaceService {
             .write(move |tx| commit_output(tx, commit))
             .await
             .map_err(op("commit workspace output"))?;
+        let events = committed
+            .actions
+            .iter()
+            .filter_map(crate::events::action_pending)
+            .chain(
+                committed
+                    .reply
+                    .as_ref()
+                    .and_then(crate::events::reply_ready),
+            )
+            .collect();
+        crate::events::publish_all(&self.inner.ports, events).await;
         self.delivery()
             .deliver_all(&committed.notifications)
             .await?;

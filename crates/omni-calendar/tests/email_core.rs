@@ -56,6 +56,7 @@ fn pipeline(app: &TestApp, caldav: Caldav, run_logs: RunLogs) -> CalendarEventPi
             app.ctx.store.clone(),
             run_logs,
             EmailTriage::new(Arc::new(CalendarClassifier)),
+            app.ctx.pushover.clone(),
         )),
         attachments: Arc::new(NoAttachments),
     })
@@ -240,4 +241,151 @@ async fn processed_emails_record_activity_and_their_captured_log() {
         "{messages:?}"
     );
     assert!(retry::get_all(&app.ctx.store).await.unwrap().is_empty());
+}
+
+/// Answers `fetch_by_id` with one fixed email.
+struct OneEmail(omni_core::email::FetchedEmail);
+
+impl omni_runtime::ports::EmailReader for OneEmail {
+    fn fetch_by_id<'a>(
+        &'a self,
+        id: &'a str,
+        _fresh: bool,
+    ) -> BoxFuture<'a, Result<Option<omni_core::email::FetchedEmail>, omni_runtime::ports::PortError>>
+    {
+        let found = (id == self.0.id).then(|| self.0.clone());
+        Box::pin(async move { Ok(found) })
+    }
+
+    fn search<'a>(
+        &'a self,
+        _q: &'a omni_runtime::ports::EmailSearch,
+    ) -> BoxFuture<'a, Result<Vec<omni_core::email::FetchedEmail>, omni_runtime::ports::PortError>>
+    {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn health(&self) -> omni_runtime::ports::EmailReaderHealth {
+        omni_runtime::ports::EmailReaderHealth {
+            transport: "IMAP".to_owned(),
+            search_available: false,
+            drafts_available: false,
+        }
+    }
+
+    fn download_attachment<'a>(
+        &'a self,
+        _attachment: &'a omni_core::email::EmailAttachment,
+    ) -> BoxFuture<
+        'a,
+        Result<Option<omni_core::email::DownloadedAttachment>, omni_runtime::ports::PortError>,
+    > {
+        Box::pin(async { Ok(None) })
+    }
+}
+
+struct OnlyCalendar(Arc<CalendarEventPipeline>);
+
+impl omni_runtime::ports::EmailRetryHandlers for OnlyCalendar {
+    fn handler(&self, pipeline: &str) -> Option<Arc<dyn omni_core::email::EmailHandler>> {
+        (pipeline == "CalendarEvents")
+            .then(|| self.0.clone() as Arc<dyn omni_core::email::EmailHandler>)
+    }
+}
+
+#[tokio::test]
+async fn a_rejected_extraction_request_replays_once_a_new_build_runs() {
+    let app = TestApp::new().await;
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(201))
+        .expect(1)
+        .mount(&server)
+        .await;
+    app.ai.script_failure(
+        ModelRole::CalendarExtraction,
+        omni_testkit::FakeFailure {
+            status: 400,
+            message: "Invalid schema for response_format 'calendar_event_extraction': $ref cannot have keywords {'description'}.".to_owned(),
+        },
+    );
+    let create = || {
+        extraction(json!([
+            { "action": "create", "title": "Strata AGM", "startDate": "2026-11-03", "startTime": "18:00", "allDay": false }
+        ]))
+    };
+    app.ai
+        .script(ModelRole::CalendarExtraction, vec![create(), create()]);
+    let mail = email("bcs-1", "strata@example.com", "AGM notice", "x");
+    let p = Arc::new(pipeline(
+        &app,
+        caldav(&app, &server, Some(CALENDAR_URL)),
+        run_logs(),
+    ));
+    let store = &app.ctx.store;
+
+    p.handle_emails(std::slice::from_ref(&mail)).await.unwrap();
+
+    let parked = retry::get(store, "CalendarEvents#bcs-1")
+        .await
+        .unwrap()
+        .unwrap();
+    let build = omni_email::systemic::current_build().await;
+    assert_eq!(parked.awaiting_build.as_deref(), Some(build.as_str()));
+    assert_eq!(app.pushes.all().len(), 1);
+    let failed = activity::get(store, "CalendarEvents#bcs-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(failed.outcome, EmailActivityOutcome::Error);
+
+    let ports = omni_runtime::Ports::default();
+    ports
+        .set_email_reader(Arc::new(OneEmail(mail.clone())))
+        .ok()
+        .unwrap();
+    ports
+        .set_email_retry_handlers(Arc::new(OnlyCalendar(p.clone())))
+        .ok()
+        .unwrap();
+    let task = omni_email::retry_task::EmailRetryTask::new(
+        store.clone(),
+        ports,
+        omni_tasks::CronSchedule::parse(omni_email::retry_task::SCHEDULE, &jiff::tz::TimeZone::UTC)
+            .unwrap(),
+    );
+    // Same build: nothing replays.
+    task.run_pass().await.unwrap();
+    assert!(
+        retry::get(store, "CalendarEvents#bcs-1")
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let report = omni_email::systemic::release_for_build(store, "sha256:nextbuild", 20)
+        .await
+        .unwrap();
+    assert_eq!(report.released, 1);
+    task.run_pass().await.unwrap();
+
+    assert!(retry::get_all(store).await.unwrap().is_empty());
+    let replayed = activity::get(store, "CalendarEvents#bcs-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(replayed.outcome, EmailActivityOutcome::Processed);
+    assert_eq!(replayed.detail.as_deref(), Some("replayed after fix"));
+
+    // Handler dedup: processing the same email again creates nothing new.
+    p.handle_emails(std::slice::from_ref(&mail)).await.unwrap();
+    let again = activity::get(store, "CalendarEvents#bcs-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        again.items.as_deref().unwrap(),
+        ["\"Strata AGM\" on 2026-11-03: duplicate, skipped"]
+    );
+    server.verify().await;
 }

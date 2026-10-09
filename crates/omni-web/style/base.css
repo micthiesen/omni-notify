@@ -1,0 +1,129 @@
+/* Reset, element defaults, utilities and shared keyframes. */
+
+@layer reset {
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scrollbar-color: var(--line-strong) transparent; }
+body, h1, h2, h3, h4, h5, h6, p, ul, ol, dl, dd, figure, pre { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+img, svg { display: block; max-width: 100%; }
+table { border-collapse: collapse; }
+}
+
+@layer base {
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--canvas);
+  color: var(--text);
+  font: var(--t-body);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+a { color: inherit; text-decoration: none; }
+h1 { font: var(--t-h1); letter-spacing: -0.02em; }
+h2 { font: var(--t-h2); letter-spacing: -0.01em; }
+h3 { font: var(--t-h3); }
+code, kbd, pre, samp { font-family: var(--mono); }
+::selection { background: var(--signal-line); color: var(--text); }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+}
+
+@layer utilities {
+[hidden] { display: none; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums slashed-zero; letter-spacing: -0.01em; }
+.mono { font-family: var(--mono); }
+.dim { color: var(--text-2); }
+.muted { color: var(--text-3); }
+.off { color: var(--text-off); }
+.small { font: var(--t-small); }
+.label { font: var(--t-label); color: var(--text-3); }
+.text-warn { color: var(--warn); }
+.text-fault { color: var(--fault); }
+.text-signal { color: var(--signal); }
+.text-live { color: var(--live); }
+.text-ok { color: var(--ok); }
+.truncate { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.spacer { flex: 1; }
+.stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+.stack-lg { display: flex; flex-direction: column; gap: var(--sp-8); }
+.cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.dot-sep > * + *::before { content: "·"; margin: 0 var(--sp-2); color: var(--text-off); }
+.tick { animation: value-tick 900ms var(--ease); }
+@media (max-width: 899px) {
+  .hide-phone { display: none; }
+}
+@media (min-width: 900px) {
+  .only-phone { display: none; }
+}
+@media (max-width: 1279px) {
+  .hide-below-wide { display: none; }
+}
+}
+
+@property --fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes edge-fade {
+  0% { --fade-l: 0px; --fade-r: 28px; }
+  8% { --fade-l: 28px; }
+  92% { --fade-r: 28px; }
+  100% { --fade-l: 28px; --fade-r: 0px; }
+}
+@keyframes value-tick {
+0%, 20% { color: var(--signal); }
+}
+@keyframes ping {
+0% { transform: scale(0.6); opacity: 0.8; }
+80%, 100% { transform: scale(1.8); opacity: 0; }
+}
+@keyframes pop {
+50% { transform: scale(1.6); }
+}
+@keyframes spin {
+to { transform: rotate(360deg); }
+}
+@keyframes breathe {
+50% { opacity: 0.4; }
+}
+@keyframes shimmer {
+to { background-position: -200% 0; }
+}
+@keyframes rise {
+from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes sheet-in {
+from { transform: translateY(40px); opacity: 0; }
+}
+@keyframes drawer-in {
+from { transform: translateX(32px); opacity: 0; }
+}
+@keyframes fade-in {
+from { opacity: 0; }
+}
+@keyframes drain {
+from { transform: scaleX(1); }
+to { transform: scaleX(0); }
+}
+@keyframes target-pulse {
+0%, 100% { outline-color: transparent; }
+20%, 60% { outline-color: var(--signal); }
+}
+@keyframes progress-slide {
+from { transform: translateX(-100%); }
+to { transform: translateX(250%); }
+}
+
+/* The only place !important is allowed (design-system section 9). */
+@media (prefers-reduced-motion: reduce) {
+*, *::before, *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+}

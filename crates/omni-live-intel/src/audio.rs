@@ -41,6 +41,10 @@ pub enum AudioError {
     /// yt-dlp output could not be decoded.
     #[error("{message}")]
     Decode { message: String, cause: String },
+    /// The stream is not broadcasting: it ended (or has not started) while
+    /// the live check still reports it live. Not a capture failure.
+    #[error("Stream is not live: {detail}")]
+    NotLive { detail: String },
 }
 
 impl AudioError {
@@ -59,6 +63,39 @@ impl AudioError {
                 ..
             }
         )
+    }
+}
+
+/// yt-dlp failures that mean the stream is not broadcasting. Kick keeps the
+/// channel's `livestream` for a while after a broadcast ends while its playlist
+/// already returns 404, and the live check lags the platform by up to a minute.
+const NOT_LIVE_MARKERS: &[&str] = &[
+    "is not currently live",
+    "Failed to download m3u8 information: HTTP Error 404",
+    "This live event has ended",
+    "This live event will begin",
+    "Premieres in",
+];
+
+/// yt-dlp `live_status` values for media that is not broadcasting now.
+const NOT_LIVE_STATUSES: &[&str] = &["is_upcoming", "post_live", "was_live", "not_live"];
+
+/// Reclassifies a yt-dlp exit whose stderr says the stream is not live.
+fn classify_resolve_error(error: AudioError) -> AudioError {
+    match error {
+        AudioError::Process { message, .. }
+            if NOT_LIVE_MARKERS
+                .iter()
+                .any(|marker| message.contains(marker)) =>
+        {
+            let detail = message
+                .rsplit_once("ERROR: ")
+                .map_or(message.as_str(), |(_, tail)| tail)
+                .trim()
+                .to_owned();
+            AudioError::NotLive { detail }
+        }
+        other => other,
     }
 }
 
@@ -208,7 +245,13 @@ pub struct ResolvedMedia {
     pub url: String,
     #[serde(default)]
     pub http_headers: Option<IndexMap<String, String>>,
+    #[serde(default)]
+    pub live_status: Option<String>,
 }
+
+/// yt-dlp prints only the fields the capture needs: a full `--dump-single-json`
+/// of an ended YouTube stream (DASH fragment lists) can run past any sane cap.
+const RESOLVE_TEMPLATE: &str = "%(.{url,http_headers,live_status})j";
 
 /// `-headers` value: `Name: value\r\n` per non-empty header, newlines flattened.
 fn header_argument(headers: Option<&IndexMap<String, String>>) -> Option<String> {
@@ -272,7 +315,8 @@ impl LivestreamAudioCapture {
             USER_AGENT,
             "--format",
             "worstaudio[language^=en]/worstaudio/best",
-            "--dump-single-json",
+            "--print",
+            RESOLVE_TEMPLATE,
             stream_url,
         ]
         .iter()
@@ -284,7 +328,8 @@ impl LivestreamAudioCapture {
             Duration::from_secs(30),
             4 * 1024 * 1024,
         )
-        .await?;
+        .await
+        .map_err(classify_resolve_error)?;
         let raw: serde_json::Value =
             serde_json::from_slice(&output.stdout).map_err(|e| AudioError::Decode {
                 message: "yt-dlp returned invalid JSON".to_owned(),
@@ -294,6 +339,15 @@ impl LivestreamAudioCapture {
             message: "yt-dlp returned no playable media URL".to_owned(),
             cause: e.to_string(),
         })?;
+        if let Some(status) = media
+            .live_status
+            .as_deref()
+            .filter(|status| NOT_LIVE_STATUSES.contains(status))
+        {
+            return Err(AudioError::NotLive {
+                detail: format!("yt-dlp reports {status}"),
+            });
+        }
         self.cache().insert(
             stream_url.to_owned(),
             (media.clone(), now + RESOLVE_CACHE_MS),

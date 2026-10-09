@@ -67,17 +67,20 @@ async fn durably_queues_admitted_email_when_calendar_discovery_fails() {
     assert_eq!(activity[0].cost_cents, None);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn durably_queues_admitted_email_after_transient_extraction_failure() {
     let app = TestApp::new().await;
     let server = MockServer::start().await;
-    app.ai.script_failure(
-        ModelRole::CalendarExtraction,
-        FakeFailure {
-            status: 400,
-            message: "model timeout".to_owned(),
-        },
-    );
+    // The model client retries a 503 twice before giving up.
+    for _ in 0..3 {
+        app.ai.script_failure(
+            ModelRole::CalendarExtraction,
+            FakeFailure {
+                status: 503,
+                message: "model overloaded".to_owned(),
+            },
+        );
+    }
     let support = FakeSupport::new(FakeSupport::calendar_yes());
     let p = pipeline(
         &app,
@@ -93,17 +96,60 @@ async fn durably_queues_admitted_email_after_transient_extraction_failure() {
         [(
             "CalendarEvents".to_owned(),
             "mail-3".to_owned(),
-            "Calendar extraction failed: provider error 400: model timeout".to_owned()
+            "Calendar extraction failed: provider error 503: model overloaded".to_owned()
         )]
     );
+    assert!(support.systemic().is_empty());
     // The error activity row is written.
     let activity = support.activity();
     assert_eq!(activity.len(), 1);
     assert_eq!(activity[0].outcome, ActivityOutcome::Error);
     assert_eq!(
         activity[0].detail.as_deref(),
-        Some("extraction failed: Calendar extraction failed: provider error 400: model timeout")
+        Some("extraction failed: Calendar extraction failed: provider error 503: model overloaded")
     );
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn parks_admitted_email_for_a_new_build_after_a_rejected_extraction_request() {
+    let app = TestApp::new().await;
+    let server = MockServer::start().await;
+    let message = "Invalid schema for response_format 'calendar_event_extraction': In context=('properties', 'events', 'items'), $ref cannot have keywords {'description'}.";
+    app.ai.script_failure(
+        ModelRole::CalendarExtraction,
+        FakeFailure {
+            status: 400,
+            message: message.to_owned(),
+        },
+    );
+    let support = FakeSupport::new(FakeSupport::calendar_yes());
+    let p = pipeline(
+        &app,
+        caldav(&app, &server, Some(CALENDAR_URL)),
+        support.clone(),
+        app.ctx.ai.clone(),
+    );
+
+    p.handle_emails(&[appointment("mail-4")]).await.unwrap();
+
+    // Not the retry schedule: the email waits for a build with the fix.
+    assert!(support.retries().is_empty());
+    let detail =
+        format!("extraction failed: Calendar extraction failed: provider error 400: {message}");
+    let signature = omni_email::systemic::classify_recorded(&detail).unwrap();
+    assert_eq!(
+        support.systemic(),
+        [(
+            "CalendarEvents".to_owned(),
+            "mail-4".to_owned(),
+            signature.key
+        )]
+    );
+    let activity = support.activity();
+    assert_eq!(activity.len(), 1);
+    assert_eq!(activity[0].outcome, ActivityOutcome::Error);
+    assert_eq!(activity[0].detail.as_deref(), Some(detail.as_str()));
     assert!(server.received_requests().await.unwrap().is_empty());
 }
 
@@ -381,6 +427,23 @@ async fn cancels_only_through_an_explicit_handle_and_updates_with_backfill() {
     haircut.start_time = Some("10:00".to_owned());
     haircut.description = Some("Ask for Sam".to_owned());
     haircut.reminder_minutes = Some(60.0);
+    // The calendar copy carries a manual edit the update must keep.
+    let copy = omni_calendar::caldav::ics::build_icalendar(
+        &haircut.to_event(),
+        "omni-haircut@omni-notify",
+        omni_testkit::TEST_EPOCH_MS,
+        "America/Vancouver",
+    )
+    .replace("END:VEVENT", "LOCATION:Salon on Main\r\nEND:VEVENT");
+    Mock::given(method("GET"))
+        .and(path("/123/calendars/home/omni-haircut@omni-notify.ics"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("ETag", "\"h1\"")
+                .set_body_string(copy),
+        )
+        .mount(&server)
+        .await;
     persistence::record_created_event(&app.ctx.store, haircut)
         .await
         .unwrap();
@@ -463,13 +526,21 @@ async fn cancels_only_through_an_explicit_handle_and_updates_with_backfill() {
     assert_eq!(
         calls,
         [
+            "GET /123/calendars/home/omni-haircut@omni-notify.ics",
             "PUT /123/calendars/home/omni-haircut@omni-notify.ics",
             "DELETE /123/calendars/home/omni-dentist@omni-notify.ics"
         ]
     );
-    let body = String::from_utf8_lossy(&requests[0].body);
+    let put = &requests[1];
+    assert_eq!(put.headers.get("if-match").unwrap(), "\"h1\"");
+    let body = String::from_utf8_lossy(&put.body);
     assert!(body.contains("DESCRIPTION:Ask for Sam\r\n"), "{body}");
     assert!(body.contains("TRIGGER:-PT1H\r\n"), "{body}");
+    assert!(body.contains("T110000\r\n"), "{body}");
+    assert!(
+        body.contains("LOCATION:Salon on Main\r\n"),
+        "manual edit kept: {body}"
+    );
 }
 
 #[tokio::test]

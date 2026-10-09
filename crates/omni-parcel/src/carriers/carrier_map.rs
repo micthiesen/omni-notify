@@ -102,6 +102,16 @@ impl CarrierDirectory {
             .collect()
     }
 
+    /// Carrier names by code (empty when unavailable).
+    pub async fn names(&self) -> std::collections::HashMap<String, String> {
+        self.carriers()
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|c| (c.code, c.name))
+            .collect()
+    }
+
     async fn carriers(&self) -> Option<Vec<CarrierEntry>> {
         let mut cache = self.cache.lock().await;
         let now = self.clock.now_ms();

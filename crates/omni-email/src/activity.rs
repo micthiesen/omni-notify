@@ -245,6 +245,34 @@ pub async fn record(store: &Store, entry: NewActivity) -> Result<EmailActivityDa
     Ok(written)
 }
 
+/// Appended to an activity detail when a systemic replay settles the email.
+pub const REPLAYED_NOTE: &str = "replayed after fix";
+
+/// Marks the row's detail as settled by a replay unless it is still an error.
+pub async fn annotate_replay(
+    store: &Store,
+    pipeline: EmailPipelineName,
+    email_id: &str,
+) -> Result<bool, StoreError> {
+    let key = activity_id(pipeline, email_id);
+    store
+        .write(move |tx| {
+            let Some(mut row) = tx.get::<EmailActivityData>(&key)? else {
+                return Ok(false);
+            };
+            if row.outcome == EmailActivityOutcome::Error {
+                return Ok(false);
+            }
+            row.detail = Some(match row.detail.take() {
+                Some(detail) if !detail.is_empty() => format!("{detail} ({REPLAYED_NOTE})"),
+                _ => REPLAYED_NOTE.to_owned(),
+            });
+            tx.upsert(&row, UpsertOpts::default())?;
+            Ok::<_, StoreError>(true)
+        })
+        .await
+}
+
 pub async fn get(
     store: &Store,
     activity_id: &str,

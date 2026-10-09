@@ -1,7 +1,9 @@
-//! Hand-written SVG charts replacing recharts: a stacked [`BarChart`] (Costs,
-//! streamer viewers) and a [`LineChart`] with an optional brush (Pets). Both
-//! fill their `.chart-container`, follow its size, and render tooltips with
-//! the app's `.custom-tooltip` markup through a caller-supplied view.
+//! Hand-written SVG charts: a stacked [`BarChart`] (Costs, streamer viewers)
+//! and a [`LineChart`] with an optional brush (Pets). Both fill their
+//! `.chart-container`, follow its size, draw dashed gridlines instead of a
+//! y-axis line, and show a caller-supplied tooltip view inside
+//! `.chart-tooltip` on hover, tap (pinned until tapped again or Escape) or
+//! arrow keys while focused.
 
 use leptos::html::Div;
 use leptos::prelude::*;
@@ -11,7 +13,7 @@ use wasm_bindgen::closure::Closure;
 use crate::task::on_cleanup_local;
 
 const AXIS_HEIGHT: f64 = 30.0;
-const TICK_FONT: f64 = 12.0;
+const TICK_FONT: f64 = 11.0;
 /// Rough rendered width of one 12 px tick glyph, for tick thinning.
 const GLYPH_WIDTH: f64 = 7.0;
 
@@ -45,8 +47,8 @@ pub struct AxisStyle {
 impl Default for AxisStyle {
     fn default() -> Self {
         Self {
-            tick: "var(--text-muted)".into(),
-            line: "var(--border)".into(),
+            tick: "var(--axis)".into(),
+            line: "var(--grid)".into(),
         }
     }
 }
@@ -120,6 +122,23 @@ fn use_size(node: NodeRef<Div>) -> ReadSignal<(f64, f64)> {
     size
 }
 
+/// Keyboard stepping over chart points: Left/Right move, Home/End jump,
+/// Escape clears. Returns the next index, or `None` to clear.
+pub fn step_index(key: &str, current: Option<usize>, count: usize) -> Option<Option<usize>> {
+    if count == 0 {
+        return None;
+    }
+    let last = count - 1;
+    Some(match key {
+        "ArrowRight" => Some(current.map_or(last, |i| (i + 1).min(last))),
+        "ArrowLeft" => Some(current.map_or(last, |i| i.saturating_sub(1))),
+        "Home" => Some(0),
+        "End" => Some(last),
+        "Escape" => None,
+        _ => return None,
+    })
+}
+
 fn pointer_x(event: &web_sys::MouseEvent) -> Option<(f64, f64)> {
     let target = event
         .current_target()?
@@ -139,10 +158,7 @@ fn tooltip_style(x: f64, y: f64, width: f64) -> String {
     } else {
         format!("left: {}px;", x + 10.0)
     };
-    format!(
-        "position: absolute; pointer-events: none; top: {}px; {horizontal} z-index: 2;",
-        y.max(0.0)
-    )
+    format!("top: {}px; {horizontal}", y.max(0.0))
 }
 
 // ---------------------------------------------------------------- bar chart
@@ -168,7 +184,7 @@ pub fn BarChart(
     #[prop(into)] series: Signal<Vec<BarSeries>>,
     x_tick: Callback<String, String>,
     y_tick: Callback<f64, String>,
-    /// Tooltip content for a category index (render a `.custom-tooltip`).
+    /// Tooltip content for a category index (render a `.chart-tooltip`).
     tooltip: Callback<usize, AnyView>,
     #[prop(default = 44.0)] y_width: f64,
     #[prop(default = 28.0)] max_bar_size: f64,
@@ -176,13 +192,24 @@ pub fn BarChart(
     #[prop(default = 0.0)]
     radius: f64,
     #[prop(default = 40.0)] min_tick_gap: f64,
-    #[prop(into, default = "var(--accent-soft)".to_owned())] cursor_fill: String,
+    #[prop(into, default = "var(--hover)".to_owned())] cursor_fill: String,
     #[prop(default = Margin::default())] margin: Margin,
     #[prop(default = AxisStyle::default())] axis: AxisStyle,
+    /// Extra class for a category's bars (`"bar-record"`, `"bar-today"`).
+    #[prop(optional)]
+    bar_class: Option<Callback<usize, Option<String>>>,
+    /// Dashed reference line with its label ("typical 12.4K").
+    #[prop(into, optional)]
+    reference: Signal<Option<(f64, String)>>,
+    /// Accessible summary of the chart.
+    #[prop(into, optional)]
+    label: MaybeProp<String>,
 ) -> impl IntoView {
     let node = NodeRef::<Div>::new();
     let size = use_size(node);
     let hover = RwSignal::new(None::<(usize, f64, f64)>);
+    let pinned = RwSignal::new(false);
+    let anchors = StoredValue::new(Vec::<(f64, f64)>::new());
 
     let layout = move || {
         let (width, height) = size.get();
@@ -200,9 +227,11 @@ pub fn BarChart(
         }
         let points = data.get();
         let series = series.get();
+        let reference = reference.get();
         let max = points
             .iter()
             .map(|p| p.values.iter().filter(|v| v.is_finite()).sum::<f64>())
+            .chain(reference.as_ref().map(|(v, _)| *v))
             .fold(0.0, f64::max);
         let ticks = nice_ticks(0.0, max, 5);
         let y_max = ticks.last().copied().unwrap_or(1.0).max(f64::MIN_POSITIVE);
@@ -215,6 +244,16 @@ pub fn BarChart(
             .collect();
         let labels: Vec<String> = points.iter().map(|p| x_tick.run(p.x.clone())).collect();
         let shown = thin_ticks(&centers, &labels, min_tick_gap);
+        anchors.set_value(
+            points
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let total: f64 = p.values.iter().filter(|v| v.is_finite()).sum();
+                    (centers[i], scale_y(total))
+                })
+                .collect(),
+        );
 
         let hovered = hover.get();
         let cursor = hovered.map(|(index, _, _)| {
@@ -233,6 +272,7 @@ pub fn BarChart(
             .enumerate()
             .flat_map(|(index, point)| {
                 let x = centers[index] - bar_width / 2.0;
+                let mark = bar_class.and_then(|c| c.run(index));
                 let top_segment = point.values.iter().rposition(|v| *v > 0.0);
                 let mut base = 0.0;
                 point
@@ -257,7 +297,7 @@ pub fn BarChart(
                             xl = x + bar_width - r,
                             x2 = x + bar_width,
                         );
-                        Some(view! { <path d=path fill=color></path> })
+                        Some(view! { <path d=path fill=color class=mark.clone()></path> })
                     })
                     .collect::<Vec<_>>()
             })
@@ -268,9 +308,10 @@ pub fn BarChart(
                 let y = scale_y(*tick);
                 view! {
                     <g>
-                        <line x1=left - 6.0 x2=left y1=y y2=y stroke=axis.line.clone()></line>
+                        <line class="chart-grid" x1=left x2=right y1=y y2=y stroke=axis.line.clone() stroke-dasharray="2 4"></line>
                         <text
-                            x=left - 9.0
+                            class="chart-axis"
+                            x=left - 8.0
                             y=y
                             text-anchor="end"
                             dominant-baseline="central"
@@ -289,8 +330,8 @@ pub fn BarChart(
                 let x = centers[index];
                 view! {
                     <g>
-                        <line x1=x x2=x y1=bottom y2=bottom + 6.0 stroke=axis.line.clone()></line>
                         <text
+                            class="chart-axis"
                             x=x
                             y=bottom + 9.0
                             text-anchor="middle"
@@ -305,42 +346,84 @@ pub fn BarChart(
             })
             .collect_view();
         let tip = hovered.map(|(index, x, y)| {
-            view! { <div style=tooltip_style(x, y, width)>{tooltip.run(index)}</div> }
+            view! { <div class="chart-tooltip" style=tooltip_style(x, y, width)>{tooltip.run(index)}</div> }
         });
         let count = points.len();
-        let on_move = move |event: web_sys::MouseEvent| {
-            let Some((x, y)) = pointer_x(&event) else {
-                return;
-            };
-            if x < left || x > right || y < top || y > bottom || count == 0 {
-                hover.set(None);
-                return;
-            }
-            let index = (((x - left) / band).floor() as usize).min(count - 1);
-            hover.set(Some((index, x, y)));
+        let locate = move |event: &web_sys::PointerEvent| {
+            let (x, y) = pointer_x(event)?;
+            (x >= left && x <= right && y >= top && y <= bottom && count > 0)
+                .then(|| ((((x - left) / band).floor() as usize).min(count - 1), x, y))
         };
+        let reference_line = reference.map(|(value, text)| {
+            let y = scale_y(value);
+            view! {
+                <line class="chart-ref" x1=left x2=right y1=y y2=y></line>
+                <text class="chart-ref-label" x=right y=y - 4.0 text-anchor="end">{text}</text>
+            }
+        });
         Some(view! {
             <svg
                 class="chart-surface"
                 width=width
                 height=height
                 viewBox=format!("0 0 {width} {height}")
-                on:mousemove=on_move
-                on:mouseleave=move |_| hover.set(None)
+                on:pointermove=move |event: web_sys::PointerEvent| {
+                    if event.pointer_type() == "mouse" && !pinned.get_untracked() {
+                        hover.set(locate(&event));
+                    }
+                }
+                on:pointerleave=move |event: web_sys::PointerEvent| {
+                    if event.pointer_type() == "mouse" && !pinned.get_untracked() {
+                        hover.set(None);
+                    }
+                }
+                on:pointerdown=move |event: web_sys::PointerEvent| {
+                    let next = locate(&event);
+                    let same = next.map(|n| n.0) == hover.get_untracked().map(|h| h.0);
+                    if event.pointer_type() == "mouse" {
+                        pinned.set(next.is_some() && !(same && pinned.get_untracked()));
+                        hover.set(next);
+                    } else if same {
+                        hover.set(None);
+                    } else {
+                        hover.set(next);
+                    }
+                }
             >
                 {cursor}
-                <line x1=left x2=left y1=top y2=bottom stroke=axis.line.clone()></line>
-                <line x1=left x2=right y1=bottom y2=bottom stroke=axis.line.clone()></line>
                 {y_axis}
+                <line class="chart-baseline" x1=left x2=right y1=bottom y2=bottom></line>
                 {x_axis}
                 {bars}
+                {reference_line}
             </svg>
             {tip}
         })
     };
 
+    let on_key = move |event: web_sys::KeyboardEvent| {
+        let points = anchors.get_value();
+        let current = hover.get_untracked().map(|h| h.0);
+        if let Some(next) = step_index(&event.key(), current, points.len()) {
+            event.prevent_default();
+            pinned.set(next.is_some());
+            hover.set(next.map(|i| (i, points[i].0, points[i].1)));
+        }
+    };
+
     view! {
-        <div node_ref=node style="position: relative; width: 100%; height: 100%;">
+        <div
+            node_ref=node
+            class="chart-frame"
+            tabindex="0"
+            role="img"
+            aria-label=move || label.get().unwrap_or_else(|| "Bar chart".to_owned())
+            on:keydown=on_key
+            on:blur=move |_| {
+                pinned.set(false);
+                hover.set(None);
+            }
+        >
             {chart}
         </div>
     }
@@ -458,10 +541,15 @@ pub fn LineChart(
     #[prop(default = 40.0)] y_width: f64,
     #[prop(default = 50.0)] min_tick_gap: f64,
     #[prop(default = AxisStyle::default())] axis: AxisStyle,
+    /// Accessible summary of the chart.
+    #[prop(into, optional)]
+    label: MaybeProp<String>,
 ) -> impl IntoView {
     let node = NodeRef::<Div>::new();
     let size = use_size(node);
     let hover = RwSignal::new(None::<(usize, f64, f64)>);
+    let pinned = RwSignal::new(false);
+    let anchors = StoredValue::new(Vec::<(usize, f64, f64)>::new());
     let range = RwSignal::new(None::<(usize, usize)>);
     let drag = StoredValue::new(None::<BrushDrag>);
 
@@ -585,9 +673,10 @@ pub fn LineChart(
                 let y = scale_y(*tick);
                 view! {
                     <g>
-                        <line x1=left - 6.0 x2=left y1=y y2=y stroke=axis.line.clone()></line>
+                        <line class="chart-grid" x1=left x2=right y1=y y2=y stroke=axis.line.clone() stroke-dasharray="2 4"></line>
                         <text
-                            x=left - 9.0
+                            class="chart-axis"
+                            x=left - 8.0
                             y=y
                             text-anchor="end"
                             dominant-baseline="central"
@@ -616,8 +705,8 @@ pub fn LineChart(
                 let x = x_centers[i];
                 view! {
                     <g>
-                        <line x1=x x2=x y1=bottom y2=bottom + 6.0 stroke=axis.line.clone()></line>
                         <text
+                            class="chart-axis"
                             x=x
                             y=bottom + 9.0
                             text-anchor="middle"
@@ -648,32 +737,43 @@ pub fn LineChart(
                             cy=scale_y(v)
                             r="5"
                             fill=line.stroke.clone()
-                            stroke="var(--bg-card)"
+                            stroke="var(--overlay)"
                             stroke-width="2"
                         ></circle>
                     })
                 })
                 .collect_view();
             view! {
-                <line x1=x x2=x y1=top y2=bottom stroke="var(--border-strong)"></line>
+                <line x1=x x2=x y1=top y2=bottom stroke="var(--line-strong)"></line>
                 {dots}
             }
         });
         let tip = hovered.map(|(index, x, y)| {
-            view! { <div style=tooltip_style(x, y, width)>{tooltip.run(index)}</div> }
+            view! { <div class="chart-tooltip" style=tooltip_style(x, y, width)>{tooltip.run(index)}</div> }
         });
 
         let brush_view = brush.then(|| {
             let by = bottom + AXIS_HEIGHT + 4.0;
-            let step = if last > 0 { (right - left) / last as f64 } else { 0.0 };
+            let step = if last > 0 {
+                (right - left) / last as f64
+            } else {
+                0.0
+            };
             let sx = left + start as f64 * step;
             let ex = left + end as f64 * step;
             let index_at = move |x: f64| {
-                if step <= 0.0 { 0 } else { (((x - left) / step).round().max(0.0) as usize).min(last) }
+                if step <= 0.0 {
+                    0
+                } else {
+                    (((x - left) / step).round().max(0.0) as usize).min(last)
+                }
             };
             let begin = move |kind: BrushDrag, event: web_sys::PointerEvent| {
                 event.prevent_default();
-                if let Some(target) = event.current_target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
+                if let Some(target) = event
+                    .current_target()
+                    .and_then(|t| t.dyn_into::<web_sys::Element>().ok())
+                {
                     let _ = target.set_pointer_capture(event.pointer_id());
                 }
                 drag.set_value(Some(kind));
@@ -693,9 +793,14 @@ pub fn LineChart(
                     BrushDrag::Start => (index_at(x).min(e), e),
                     BrushDrag::End => (s, index_at(x).max(s)),
                     BrushDrag::Window { anchor, start, end } => {
-                        let shift = if step > 0.0 { ((x - anchor) / step).round() as i64 } else { 0 };
+                        let shift = if step > 0.0 {
+                            ((x - anchor) / step).round() as i64
+                        } else {
+                            0
+                        };
                         let span = end - start;
-                        let new_start = (start as i64 + shift).clamp(0, (last - span) as i64) as usize;
+                        let new_start =
+                            (start as i64 + shift).clamp(0, (last - span) as i64) as usize;
                         (new_start, new_start + span)
                     }
                 };
@@ -704,15 +809,13 @@ pub fn LineChart(
             let end_drag = move |_event: web_sys::PointerEvent| drag.set_value(None);
             view! {
                 <g class="chart-brush">
-                    <rect x=left y=by width=right - left height="24" fill="var(--bg-inset)" stroke="var(--border-strong)"></rect>
+                    <rect class="brush-track" x=left y=by width=right - left height="24"></rect>
                     <rect
+                        class="brush-window"
                         x=sx
                         y=by
                         width=(ex - sx).max(1.0)
                         height="24"
-                        fill="var(--border-strong)"
-                        fill-opacity="0.35"
-                        style="cursor: move"
                         on:pointerdown=move |event: web_sys::PointerEvent| {
                             let x = f64::from(event.offset_x());
                             begin(BrushDrag::Window { anchor: x, start, end }, event)
@@ -723,10 +826,9 @@ pub fn LineChart(
                     <rect
                         x=sx - 4.0
                         y=by
+                        class="brush-handle"
                         width="8"
                         height="24"
-                        fill="var(--border-strong)"
-                        style="cursor: ew-resize"
                         on:pointerdown=move |event| begin(BrushDrag::Start, event)
                         on:pointermove=on_move
                         on:pointerup=end_drag
@@ -734,10 +836,9 @@ pub fn LineChart(
                     <rect
                         x=ex - 4.0
                         y=by
+                        class="brush-handle"
                         width="8"
                         height="24"
-                        fill="var(--border-strong)"
-                        style="cursor: ew-resize"
                         on:pointerdown=move |event| begin(BrushDrag::End, event)
                         on:pointermove=on_move
                         on:pointerup=end_drag
@@ -750,32 +851,63 @@ pub fn LineChart(
             .iter()
             .map(|i| (*i, scale_x(points[*i].x)))
             .collect();
-        let on_move = move |event: web_sys::MouseEvent| {
-            let Some((x, y)) = pointer_x(&event) else {
-                return;
-            };
-            if x < left || x > right || y < top || y > bottom || xs.is_empty() {
-                hover.set(None);
-                return;
+        anchors.set_value(
+            xs.iter()
+                .map(|(i, x)| {
+                    let y = points[*i]
+                        .values
+                        .iter()
+                        .flatten()
+                        .copied()
+                        .fold(f64::NEG_INFINITY, f64::max);
+                    (*i, *x, if y.is_finite() { scale_y(y) } else { bottom })
+                })
+                .collect(),
+        );
+        let locate = move |event: &web_sys::PointerEvent| {
+            let (x, y) = pointer_x(event)?;
+            if x < left || x > right || y < top || y > bottom {
+                return None;
             }
-            let nearest = xs
-                .iter()
+            xs.iter()
                 .min_by(|a, b| (a.1 - x).abs().total_cmp(&(b.1 - x).abs()))
-                .map(|(i, _)| *i);
-            hover.set(nearest.map(|i| (i, x, y)));
+                .map(|(i, _)| (*i, x, y))
         };
+        let locate_down = locate.clone();
         Some(view! {
             <svg
                 class="chart-surface"
                 width=width
                 height=height
                 viewBox=format!("0 0 {width} {height}")
-                on:mousemove=on_move
-                on:mouseleave=move |_| hover.set(None)
+                on:pointermove=move |event: web_sys::PointerEvent| {
+                    if event.pointer_type() == "mouse" && !pinned.get_untracked() && drag.get_value().is_none() {
+                        hover.set(locate(&event));
+                    }
+                }
+                on:pointerleave=move |event: web_sys::PointerEvent| {
+                    if event.pointer_type() == "mouse" && !pinned.get_untracked() {
+                        hover.set(None);
+                    }
+                }
+                on:pointerdown=move |event: web_sys::PointerEvent| {
+                    let next = locate_down(&event);
+                    if next.is_none() {
+                        return;
+                    }
+                    let same = next.map(|n| n.0) == hover.get_untracked().map(|h| h.0);
+                    if event.pointer_type() == "mouse" {
+                        pinned.set(!(same && pinned.get_untracked()));
+                        hover.set(next);
+                    } else if same {
+                        hover.set(None);
+                    } else {
+                        hover.set(next);
+                    }
+                }
             >
-                <line x1=left x2=left y1=top y2=bottom stroke=axis.line.clone()></line>
-                <line x1=left x2=right y1=bottom y2=bottom stroke=axis.line.clone()></line>
                 {y_axis}
+                <line class="chart-baseline" x1=left x2=right y1=bottom y2=bottom></line>
                 {x_axis}
                 {lines}
                 {active}
@@ -785,8 +917,31 @@ pub fn LineChart(
         })
     };
 
+    let on_key = move |event: web_sys::KeyboardEvent| {
+        let points = anchors.get_value();
+        let current = hover
+            .get_untracked()
+            .and_then(|h| points.iter().position(|p| p.0 == h.0));
+        if let Some(next) = step_index(&event.key(), current, points.len()) {
+            event.prevent_default();
+            pinned.set(next.is_some());
+            hover.set(next.map(|i| points[i]));
+        }
+    };
+
     view! {
-        <div node_ref=node style="position: relative; width: 100%; height: 100%;">
+        <div
+            node_ref=node
+            class="chart-frame"
+            tabindex="0"
+            role="img"
+            aria-label=move || label.get().unwrap_or_else(|| "Line chart".to_owned())
+            on:keydown=on_key
+            on:blur=move |_| {
+                pinned.set(false);
+                hover.set(None);
+            }
+        >
             {chart}
         </div>
     }
@@ -801,6 +956,16 @@ mod tests {
         assert_eq!(nice_ticks(0.0, 95.0, 5), [0.0, 25.0, 50.0, 75.0, 100.0]);
         assert_eq!(nice_ticks(0.0, 0.0, 5), [0.0, 0.25, 0.5, 0.75, 1.0]);
         assert_eq!(nice_ticks(0.0, 4200.0, 5), [0.0, 2000.0, 4000.0, 6000.0]);
+    }
+
+    #[test]
+    fn keys_step_through_points() {
+        assert_eq!(step_index("ArrowRight", None, 5), Some(Some(4)));
+        assert_eq!(step_index("ArrowLeft", Some(0), 5), Some(Some(0)));
+        assert_eq!(step_index("ArrowRight", Some(2), 5), Some(Some(3)));
+        assert_eq!(step_index("Escape", Some(2), 5), Some(None));
+        assert_eq!(step_index("a", Some(2), 5), None);
+        assert_eq!(step_index("Home", Some(2), 0), None);
     }
 
     #[test]

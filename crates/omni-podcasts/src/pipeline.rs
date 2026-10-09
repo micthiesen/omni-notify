@@ -149,6 +149,7 @@ pub async fn run_podcast_pipeline(
         Ok(state) => state,
         Err(e) => {
             tracing::warn!(target: LOG, "Podcast recommendation run skipped: {}", e.reason);
+            omni_tasks::report_degraded(e.reason.clone());
             return Ok(format!("skipped: {}", e.reason));
         }
     };
@@ -309,6 +310,7 @@ pub async fn run_podcast_pipeline(
                 .position(|f| f.candidate.episode_id == selected.candidate_id)
             else {
                 stop_reason = Some("selection returned an unknown candidate id".to_owned());
+                omni_tasks::report_degraded("selection returned an unknown candidate id");
                 break;
             };
             let finalist = remaining.remove(position);
@@ -418,6 +420,10 @@ async fn sync_outcomes(
         Ok(history) => history,
         Err(e) => {
             tracing::warn!(target: LOG, "Listen history unavailable ({}); skipping outcomes", e.reason);
+            omni_tasks::report_degraded(format!(
+                "listen history unavailable, outcomes not synced: {}",
+                e.reason
+            ));
             return Ok(());
         }
     };

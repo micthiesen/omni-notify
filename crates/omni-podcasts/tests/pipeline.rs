@@ -370,12 +370,19 @@ async fn skips_the_run_when_configured_subscriptions_are_unavailable() {
         RecordingNotifier::default(),
     )
     .await;
-    let summary = run_podcast_pipeline(&h.deps, None, PodcastPipelineOptions::default())
-        .await
-        .unwrap();
+    let (summary, degraded) = omni_tasks::collect_degraded(run_podcast_pipeline(
+        &h.deps,
+        None,
+        PodcastPipelineOptions::default(),
+    ))
+    .await;
     assert_eq!(
-        summary,
+        summary.unwrap(),
         "skipped: Castro subscriptions unavailable: Castro timed out"
+    );
+    assert_eq!(
+        degraded,
+        vec!["Castro subscriptions unavailable: Castro timed out"]
     );
     assert!(h.app.ai.requests().is_empty());
     assert!(h.notifier.sent.lock().unwrap().is_empty());

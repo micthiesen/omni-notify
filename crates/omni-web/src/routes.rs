@@ -1,10 +1,12 @@
-//! Path matching in the TypeScript app's precedence.
+//! Path matching, in route precedence order.
 
 use omni_web_pages::FeedbackKind;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Route {
     Home,
+    /// The full streamer roster.
+    Live,
     Media,
     MediaDetail(String),
     Podcasts,
@@ -117,6 +119,7 @@ pub fn match_route(path: &str) -> Route {
         "/operations" => Route::Operations,
         "/mcp-activity" => Route::Mcp,
         "/claude" => Route::Claude,
+        "/live" => Route::Live,
         "/" => Route::Home,
         _ => Route::NotFound,
     }
@@ -139,6 +142,7 @@ pub fn page_title(path: &str) -> String {
         Some("Workspaces")
     } else {
         match path {
+            "/live" => Some("Live"),
             "/reminders" => Some("iCloud Reminders"),
             "/pets" => Some("Pets"),
             "/media" => Some("Watch"),
@@ -170,8 +174,11 @@ mod tests {
     }
 
     #[test]
-    fn routes_and_deep_links_match_the_ts_app() {
+    fn routes_and_deep_links() {
         assert_eq!(route("/"), Route::Home);
+        assert_eq!(route("/live"), Route::Live);
+        assert_eq!(route("/live/"), Route::Live);
+        assert_eq!(route("/live/x"), Route::NotFound);
         assert_eq!(route("/media"), Route::Media);
         assert_eq!(route("/recommendations"), Route::Media);
         assert_eq!(route("/recommendations/"), Route::Media);
@@ -224,6 +231,7 @@ mod tests {
     #[test]
     fn titles_follow_sections() {
         assert_eq!(page_title("/costs"), "Costs · Omni Notify");
+        assert_eq!(page_title("/live"), "Live · Omni Notify");
         assert_eq!(page_title("/workspaces/w/s"), "Workspaces · Omni Notify");
         assert_eq!(page_title("/streamers/x"), "Omni Notify");
         assert_eq!(page_title("/"), "Omni Notify");

@@ -2,86 +2,262 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0b0d">
 <title>Reminders · Omni Notify</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0b0d'/%3E%3Ccircle cx='16' cy='16' r='8' fill='none' stroke='%23c6f36a' stroke-width='3'/%3E%3C/svg%3E">
 <style>
+/* Instrument design system (docs/design-system.md), copied for this
+   standalone page. Tokens match crates/omni-web/style/tokens.css. */
 :root {
-  color-scheme: light dark;
-  --text: #1d1d1f;
-  --muted: #5f6368;
-  --bg: #f5f5f7;
-  --bg-card: #ffffff;
-  --border: #d2d2d7;
-  --alert: #b3261e;
+  color-scheme: dark;
+  --canvas: #0a0b0d;
+  --canvas-glass: rgb(10 11 13 / 0.88);
+  --surface: #111316;
+  --raised: #171a1e;
+  --hover: #1a1d22;
+  --overlay: #1d2126;
+  --well: #07080a;
+  --line: #22262c;
+  --line-strong: #30353d;
+  --line-hover: #3b414a;
+  --text: #eceef1;
+  --text-2: #a9b0ba;
+  --text-3: #858d98;
+  --signal: #c6f36a;
+  --signal-hi: #d8fa94;
+  --signal-ink: #0c1004;
+  --signal-wash: rgb(198 243 106 / 0.1);
+  --signal-line: rgb(198 243 106 / 0.32);
+  --ok: #4ade9a;
+  --ok-wash: rgb(74 222 154 / 0.11);
+  --warn: #f4b740;
+  --warn-wash: rgb(244 183 64 / 0.11);
+  --warn-line: rgb(244 183 64 / 0.34);
+  --fault: #ff7452;
+  --fault-wash: rgb(255 116 82 / 0.11);
+  --fault-line: rgb(255 116 82 / 0.34);
+  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ctl-md: 36px;
+  --pad: 20px;
+  --gutter: 40px;
+  --top-h: 52px;
+  --r-xs: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --e-1: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --d-1: 120ms;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #f5f5f7;
-    --muted: #a1a1a6;
-    --bg: #111113;
-    --bg-card: #1c1c1e;
-    --border: #3a3a3c;
-    --alert: #ff8a80;
-  }
+@media (max-width: 899px) {
+  :root { --ctl-md: 44px; --pad: 16px; --gutter: 16px; }
 }
-* { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0;
-  padding: 32px 16px;
+  min-height: 100dvh;
+  background: var(--canvas);
   color: var(--text);
-  background: var(--bg);
-  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 400 0.875rem/1.375rem var(--font);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
 }
-.reminders-panel { max-width: 640px; margin: 0 auto; }
-.reminders-panel h1 { margin: 0 0 8px; font-size: 28px; }
-.reminders-panel p { margin: 16px 0; line-height: 1.6; }
-.reminders-panel [role="alert"] { color: var(--alert); }
-.reminders-panel form { display: grid; gap: 12px; justify-items: start; margin: 24px 0; }
-.reminders-panel input {
-  width: 12ch;
-  padding: 10px 12px;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font: inherit;
-  font-size: 20px;
-  letter-spacing: 0.15em;
+a { color: inherit; text-decoration: none; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.skip { position: absolute; left: var(--gutter); top: -100px; z-index: 20; padding: 8px 12px; border-radius: var(--r-md); background: var(--signal); color: var(--signal-ink); font-weight: 600; }
+.skip:focus { top: 8px; }
+
+/* Top bar */
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: calc(var(--top-h) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--gutter) 0;
+  background: var(--canvas-glass);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(8px);
 }
-.reminders-panel button {
-  margin: 0 8px 8px 0;
-  padding: 10px 16px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+.brand { display: inline-flex; align-items: center; gap: 8px; font: 600 0.9375rem/1 var(--font); letter-spacing: -0.01em; }
+.brand-mark { width: 20px; height: 20px; flex: none; }
+.crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--text-3); font: 500 0.8125rem/1 var(--font); }
+.crumbs .here { color: var(--text); }
+.back {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  font: 500 0.8125rem/1 var(--font);
+  transition: background var(--d-1) var(--ease), color var(--d-1) var(--ease);
+}
+.back:hover { background: var(--hover); color: var(--text); }
+
+/* Page */
+main { padding: 48px var(--gutter) calc(64px + env(safe-area-inset-bottom)); }
+.page { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+h1 { font: 600 1.75rem/2.125rem var(--font); letter-spacing: -0.02em; }
+.lede { color: var(--text-2); }
+
+/* Panel */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--e-1); min-width: 0; }
+.panel-head { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 12px var(--pad); border-bottom: 1px solid var(--line); }
+.panel-title { font: 600 0.9375rem/1.25rem var(--font); }
+.panel-body { display: flex; flex-direction: column; gap: 20px; padding: var(--pad); }
+
+/* Status: shape plus word */
+.status { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font: 500 0.75rem/1rem var(--font); white-space: nowrap; }
+.status::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.status.ok::before { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-wash); }
+.status.running { color: var(--signal); }
+.status.running::before { width: 9px; height: 9px; background: transparent; border: 1.5px solid var(--signal); border-right-color: transparent; animation: spin 0.9s linear infinite; }
+.status.warn { color: var(--warn); }
+.status.warn::before { width: 6px; height: 6px; border-radius: 1px; background: var(--warn); transform: rotate(45deg); }
+.status.fault { color: var(--fault); }
+.status.fault::before { border-radius: 1px; background: var(--fault); }
+.status.idle::before { background: transparent; border: 1.5px solid var(--text-3); }
+
+.reminders-status { font: 400 0.9375rem/1.5rem var(--font); }
+.diagnostic { padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--well); color: var(--warn); font: 0.75rem/1.125rem var(--mono); overflow-wrap: anywhere; }
+
+/* Code entry */
+.code-form { display: flex; flex-direction: column; gap: 8px; }
+.field-label { font: 500 0.75rem/1rem var(--font); color: var(--text-2); }
+.field-help { font: 400 0.8125rem/1.1875rem var(--font); color: var(--text-3); }
+.code-row { display: flex; gap: 8px; }
+.input {
+  flex: 1;
+  min-width: 0;
+  height: var(--ctl-md);
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--canvas);
   color: var(--text);
-  background: var(--bg-card);
-  font: inherit;
+  font: 500 1.25rem/1 var(--mono);
+  letter-spacing: 0.3em;
+  font-variant-numeric: tabular-nums slashed-zero;
+  transition: border-color var(--d-1) var(--ease);
+}
+.input::placeholder { color: var(--text-3); opacity: 0.5; }
+.input:hover { border-color: var(--line-strong); }
+.input:focus-visible { outline: 2px solid var(--signal); outline-offset: -1px; border-color: transparent; }
+
+/* Buttons */
+.actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: var(--ctl-md);
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  color: var(--text);
+  font: 500 0.8125rem/1 var(--font);
+  white-space: nowrap;
   cursor: pointer;
+  transition: background var(--d-1) var(--ease), border-color var(--d-1) var(--ease), color var(--d-1) var(--ease), transform var(--d-1) var(--ease);
 }
-.reminders-panel button:disabled { cursor: wait; opacity: 0.6; }
-[hidden] { display: none !important; }
+.btn:hover { background: var(--overlay); border-color: var(--line-hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--signal); border-color: var(--signal); color: var(--signal-ink); }
+.btn.primary:hover { background: var(--signal-hi); border-color: var(--signal-hi); }
+.btn:disabled { opacity: 0.55; cursor: progress; transform: none; }
+.btn.primary:disabled:hover { background: var(--signal); border-color: var(--signal); }
+.btn:not(.primary):disabled:hover { background: var(--raised); border-color: var(--line-strong); }
+
+/* Errors and notices */
+.error-state { display: flex; align-items: flex-start; gap: 12px; padding: 16px var(--pad); border: 1px solid var(--fault-line); border-radius: var(--r-lg); background: var(--fault-wash); }
+.error-state::before { content: ""; flex: none; width: 7px; height: 7px; margin-top: 7px; border-radius: 1px; background: var(--fault); }
+.error-state.warn { border-color: var(--warn-line); background: var(--warn-wash); }
+.error-state.warn::before { width: 6px; height: 6px; background: var(--warn); transform: rotate(45deg); }
+.error-title { font: 600 0.9375rem/1.25rem var(--font); }
+.error-detail { margin-top: 4px; color: var(--text-2); font: 400 0.8125rem/1.1875rem var(--font); }
+
+.actions:not(:has(.btn:not([hidden]))),
+.panel[hidden], .diagnostic[hidden], .code-form[hidden], .btn[hidden], .error-state[hidden] { display: none; }
+
+@media (max-width: 899px) {
+  .crumbs .sep, .crumbs .group { display: none; }
+  main { padding-top: 24px; }
+  h1 { font: 600 1.5rem/1.875rem var(--font); }
+  body { font-size: 0.9375rem; line-height: 1.4375rem; }
+  .code-row { flex-direction: column; }
+  .code-row .input { flex: none; }
+  .actions > .btn { flex: 1 1 100%; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
 </style>
 </head>
 <body>
+<a class="skip" href="#main-content">Skip to content</a>
+<header class="top">
+  <a class="brand" href="/" aria-label="Omni home">
+    <svg class="brand-mark" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" fill="none" stroke="#c6f36a" stroke-width="2.5"/></svg>
+    <span>Omni</span>
+  </a>
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <span class="sep" aria-hidden="true">/</span>
+    <span class="group">Personal</span>
+    <span class="sep" aria-hidden="true">/</span>
+    <span class="here" aria-current="page">Reminders</span>
+  </nav>
+  <a class="back" href="/">← Omni</a>
+</header>
 <main id="main-content">
-<section class="reminders-panel" aria-label="iCloud Reminders">
-  <h1>iCloud Reminders</h1>
-  <p>Connect your account to monitor Reminders. Keep Advanced Data Protection enabled.</p>
-  <p id="insecure" role="alert" hidden>Open this page over HTTPS to administer Reminders.</p>
-  <div id="controls" hidden>
-    <p id="status" role="status">Loading connection status…</p>
-    <p id="diagnostic" role="alert" hidden></p>
-    <form id="code-form" hidden>
-      <label for="reminders-code">Verification code</label>
-      <input id="reminders-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6">
-      <button id="submit-code" type="submit">Submit code</button>
-    </form>
-    <button id="start" type="button" hidden>Start sign-in</button>
-    <button id="verify" type="button" hidden>Check access</button>
+<div class="page">
+  <header class="head">
+    <h1>iCloud Reminders</h1>
+    <p class="lede">Connect your account to monitor Reminders. Keep Advanced Data Protection enabled.</p>
+  </header>
+  <div id="insecure" class="error-state warn" role="alert" hidden>
+    <div>
+      <p class="error-title">Open this page over HTTPS to administer Reminders.</p>
+      <p class="error-detail">Sign-in controls are only available on the HTTPS address.</p>
+    </div>
   </div>
-  <p id="error" role="alert" hidden></p>
-</section>
+  <section id="controls" class="panel" aria-label="iCloud Reminders connection" hidden>
+    <div class="panel-head">
+      <h2 class="panel-title">Connection</h2>
+      <span id="phase" class="status running">Checking</span>
+    </div>
+    <div class="panel-body">
+      <p id="status" class="reminders-status" role="status">Loading connection status…</p>
+      <p id="diagnostic" class="diagnostic" role="alert" hidden></p>
+      <form id="code-form" class="code-form" hidden>
+        <label class="field-label" for="reminders-code">Verification code</label>
+        <div class="code-row">
+          <input id="reminders-code" class="input" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000">
+          <button id="submit-code" class="btn primary" type="submit">Submit code</button>
+        </div>
+        <p class="field-help">Six digits from your trusted Apple device.</p>
+      </form>
+      <div class="actions">
+        <button id="start" class="btn primary" type="button" hidden>Start sign-in</button>
+        <button id="verify" class="btn" type="button" hidden>Check access</button>
+      </div>
+    </div>
+  </section>
+  <p id="error" class="error-state" role="alert" hidden></p>
+</div>
 </main>
 <script src="/reminders/app.js"></script>
 </body>

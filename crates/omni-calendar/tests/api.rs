@@ -10,7 +10,9 @@ mod common;
 use std::time::Duration;
 
 use common::{CALENDAR_URL, icloud_http, session};
+use omni_calendar::caldav::api::MERGE_ATTEMPTS;
 use omni_calendar::caldav::http::CALDAV_ERROR_MAX_BYTES;
+use omni_calendar::caldav::ics::build_icalendar;
 use omni_calendar::caldav::{CaldavWriter, CreateOutcome, DeleteOutcome, UpdateOutcome};
 use omni_calendar::extraction::schema::{EventAction, ExtractedEvent};
 use omni_http::SideEffectMode;
@@ -110,9 +112,37 @@ async fn reconciles_a_repeated_deterministic_create_after_an_ambiguous_response(
     );
 }
 
+fn moved() -> ExtractedEvent {
+    let mut event = event();
+    event.start_time = Some("10:00".to_owned());
+    event
+}
+
+/// The server copy: what the pipeline wrote plus a manual edit.
+fn server_copy(location: &str) -> String {
+    build_icalendar(
+        &event(),
+        UID,
+        omni_testkit::TEST_EPOCH_MS,
+        "America/Vancouver",
+    )
+    .replace("END:VEVENT", &format!("LOCATION:{location}\r\nEND:VEVENT"))
+}
+
+fn ics(body: String, etag: &str) -> ResponseTemplate {
+    ResponseTemplate::new(200)
+        .insert_header("ETag", etag)
+        .set_body_string(body)
+}
+
 #[tokio::test]
 async fn bounds_update_and_delete_requests() {
     let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(EVENT_PATH))
+        .respond_with(ics(server_copy("Front desk"), "\"e1\""))
+        .mount(&server)
+        .await;
     Mock::given(method("PUT"))
         .and(path(EVENT_PATH))
         .respond_with(ResponseTemplate::new(204))
@@ -124,7 +154,7 @@ async fn bounds_update_and_delete_requests() {
         .mount(&server)
         .await;
     let w = writer(&server);
-    let update = w.update(&session(), &event(), UID).await.unwrap();
+    let update = w.update(&session(), &event(), &moved(), UID).await.unwrap();
     let deletion = w.delete(&session(), UID).await.unwrap();
     assert_eq!(
         update,
@@ -133,9 +163,199 @@ async fn bounds_update_and_delete_requests() {
         }
     );
     assert_eq!(deletion, DeleteOutcome::NotFound);
-    // An update overwrites: no If-None-Match.
+    // An update is conditional on the version it merged into.
     let requests = server.received_requests().await.unwrap();
-    assert!(requests[0].headers.get("if-none-match").is_none());
+    let put = &requests[1];
+    assert_eq!(put.method.as_str(), "PUT");
+    assert!(put.headers.get("if-none-match").is_none());
+    assert_eq!(put.headers.get("if-match").unwrap(), "\"e1\"");
+    let body = String::from_utf8_lossy(&put.body);
+    assert!(body.contains("T100000\r\n"), "{body}");
+    assert!(
+        body.contains("LOCATION:Front desk\r\n"),
+        "manual edit kept: {body}"
+    );
+}
+
+#[tokio::test]
+async fn update_skips_the_write_when_nothing_the_email_owns_changed() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ics(server_copy("Front desk"), "\"e1\""))
+        .mount(&server)
+        .await;
+    let result = writer(&server)
+        .update(&session(), &event(), &event(), UID)
+        .await
+        .unwrap();
+    assert!(matches!(result, UpdateOutcome::Success { .. }));
+    let requests = server.received_requests().await.unwrap();
+    assert!(requests.iter().all(|r| r.method.as_str() == "GET"));
+}
+
+#[tokio::test]
+async fn update_merges_again_after_a_concurrent_edit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ics(server_copy("Front desk"), "\"e1\""))
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .respond_with(ics(server_copy("Room 4"), "\"e2\""))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(header("If-Match", "\"e1\""))
+        .respond_with(ResponseTemplate::new(412))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(header("If-Match", "\"e2\""))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert!(matches!(result, UpdateOutcome::Success { .. }));
+    let requests = server.received_requests().await.unwrap();
+    let last = requests.last().unwrap();
+    let body = String::from_utf8_lossy(&last.body);
+    assert!(body.contains("LOCATION:Room 4\r\n"), "{body}");
+    assert!(body.contains("T100000\r\n"), "{body}");
+}
+
+#[tokio::test]
+async fn update_gives_up_after_bounded_conflicts() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ics(server_copy("Front desk"), "\"e1\""))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(412))
+        .mount(&server)
+        .await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert!(
+        matches!(result, UpdateOutcome::Error { code: 412, .. }),
+        "{result:?}"
+    );
+    let puts = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .filter(|r| r.method.as_str() == "PUT")
+        .count();
+    assert_eq!(puts, MERGE_ATTEMPTS);
+}
+
+const UID_CONFLICT: &str = r#"<?xml version="1.0" encoding="utf-8"?>
+<d:error xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <c:no-uid-conflict><d:href>/123/calendars/work/stable@omni-notify.ics</d:href></c:no-uid-conflict>
+</d:error>"#;
+
+#[tokio::test]
+async fn update_merges_into_an_event_moved_to_another_calendar() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(EVENT_PATH))
+        .respond_with(ResponseTemplate::new(404))
+        .mount(&server)
+        .await;
+    // Recreating at home is refused because the UID now lives in "work".
+    Mock::given(method("PUT"))
+        .and(path(EVENT_PATH))
+        .and(header("If-None-Match", "*"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(UID_CONFLICT))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/123/calendars/work/stable@omni-notify.ics"))
+        .and(header("Authorization", "Basic secret"))
+        .respond_with(ics(server_copy("Front desk"), "\"w1\""))
+        .mount(&server)
+        .await;
+    Mock::given(method("PUT"))
+        .and(path("/123/calendars/work/stable@omni-notify.ics"))
+        .and(header("If-Match", "\"w1\""))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        UpdateOutcome::Success {
+            event_uid: UID.to_owned()
+        }
+    );
+    let methods: Vec<String> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|r| format!("{} {}", r.method, r.url.path()))
+        .collect();
+    assert_eq!(
+        methods,
+        [
+            "GET /123/calendars/home/stable@omni-notify.ics",
+            "PUT /123/calendars/home/stable@omni-notify.ics",
+            "GET /123/calendars/work/stable@omni-notify.ics",
+            "PUT /123/calendars/work/stable@omni-notify.ics",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn update_403_without_a_uid_conflict_is_an_error_and_deletes_nothing() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(403).set_body_string("<d:error xmlns:d=\"DAV:\"/>"))
+        .mount(&server)
+        .await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert_eq!(
+        result,
+        UpdateOutcome::Error {
+            code: 403,
+            message: "CalDAV 403: Forbidden".to_owned()
+        }
+    );
+    let requests = server.received_requests().await.unwrap();
+    assert!(requests.iter().all(|r| r.method.as_str() != "DELETE"));
+}
+
+#[tokio::test]
+async fn update_ignores_a_conflict_on_an_untrusted_host() {
+    let server = MockServer::start().await;
+    Mock::given(method("PUT"))
+        .respond_with(ResponseTemplate::new(403).set_body_string(
+            "<error><no-uid-conflict><href>https://attacker.example/x.ics</href></no-uid-conflict></error>",
+        ))
+        .mount(&server)
+        .await;
+    let result = writer(&server)
+        .update(&session(), &event(), &moved(), UID)
+        .await
+        .unwrap();
+    assert!(matches!(result, UpdateOutcome::Error { code: 403, .. }));
+    // GET (404 by default) and the refused recreate; nothing else.
+    assert_eq!(server.received_requests().await.unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -178,98 +398,6 @@ async fn reports_http_failures_with_their_status() {
             message: "CalDAV 503: Service Unavailable".to_owned()
         }
     );
-}
-
-const UID_CONFLICT: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<d:error xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <c:no-uid-conflict><d:href>/123/calendars/work/stable@omni-notify.ics</d:href></c:no-uid-conflict>
-</d:error>"#;
-
-#[tokio::test]
-async fn update_recreates_an_event_moved_to_another_calendar() {
-    let server = MockServer::start().await;
-    // First overwrite is refused because the UID now lives in "work".
-    Mock::given(method("PUT"))
-        .and(path(EVENT_PATH))
-        .respond_with(ResponseTemplate::new(403).set_body_string(UID_CONFLICT))
-        .up_to_n_times(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path("/123/calendars/work/stable@omni-notify.ics"))
-        .and(header("Authorization", "Basic secret"))
-        .respond_with(ResponseTemplate::new(204))
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("PUT"))
-        .and(path(EVENT_PATH))
-        .respond_with(ResponseTemplate::new(201))
-        .mount(&server)
-        .await;
-    let result = writer(&server)
-        .update(&session(), &event(), UID)
-        .await
-        .unwrap();
-    assert_eq!(
-        result,
-        UpdateOutcome::Success {
-            event_uid: UID.to_owned()
-        }
-    );
-    let methods: Vec<String> = server
-        .received_requests()
-        .await
-        .unwrap()
-        .iter()
-        .map(|r| format!("{} {}", r.method, r.url.path()))
-        .collect();
-    assert_eq!(
-        methods,
-        [
-            "PUT /123/calendars/home/stable@omni-notify.ics",
-            "DELETE /123/calendars/work/stable@omni-notify.ics",
-            "PUT /123/calendars/home/stable@omni-notify.ics",
-        ]
-    );
-}
-
-#[tokio::test]
-async fn update_403_without_a_uid_conflict_is_an_error_and_deletes_nothing() {
-    let server = MockServer::start().await;
-    Mock::given(method("PUT"))
-        .respond_with(ResponseTemplate::new(403).set_body_string("<d:error xmlns:d=\"DAV:\"/>"))
-        .mount(&server)
-        .await;
-    let result = writer(&server)
-        .update(&session(), &event(), UID)
-        .await
-        .unwrap();
-    assert_eq!(
-        result,
-        UpdateOutcome::Error {
-            code: 403,
-            message: "CalDAV 403: Forbidden".to_owned()
-        }
-    );
-    assert_eq!(server.received_requests().await.unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn update_refuses_to_delete_a_conflict_on_an_untrusted_host() {
-    let server = MockServer::start().await;
-    Mock::given(method("PUT"))
-        .respond_with(ResponseTemplate::new(403).set_body_string(
-            "<error><no-uid-conflict><href>https://attacker.example/x.ics</href></no-uid-conflict></error>",
-        ))
-        .mount(&server)
-        .await;
-    let result = writer(&server)
-        .update(&session(), &event(), UID)
-        .await
-        .unwrap();
-    assert!(matches!(result, UpdateOutcome::Error { code: 403, .. }));
-    assert_eq!(server.received_requests().await.unwrap().len(), 1);
 }
 
 #[tokio::test]

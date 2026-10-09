@@ -16,6 +16,9 @@ use super::source::ResetSourceError;
 /// Every minute, at second zero.
 pub const RESET_SCHEDULE: &str = "0 * * * * *";
 
+/// Snapshot fields that change on every poll without the source changing.
+const VOLATILE_SNAPSHOT_FIELDS: &[&str] = &["feedGeneratedAt"];
+
 /// One provider poll: current signals plus a bounded source snapshot for the log.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ResetSnapshot {
@@ -47,6 +50,23 @@ pub struct ResetAlertTask<P: ResetProvider> {
     source: Arc<dyn SnapshotSource>,
     ledger: ResetDeliveryLedger<P>,
     last_summary: Mutex<Option<String>>,
+    logged: Mutex<LoggedState>,
+}
+
+/// What the last INFO lines reported, so an unchanged poll logs at debug.
+#[derive(Default)]
+struct LoggedState {
+    snapshot: Option<Map<String, Value>>,
+    summary: Option<String>,
+}
+
+/// The snapshot fields that identify a source change.
+fn stable_fields(metadata: &Map<String, Value>) -> Map<String, Value> {
+    metadata
+        .iter()
+        .filter(|(key, _)| !VOLATILE_SNAPSHOT_FIELDS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 macro_rules! provider_log {
@@ -75,6 +95,7 @@ impl<P: ResetProvider> ResetAlertTask<P> {
             source,
             ledger,
             last_summary: Mutex::new(None),
+            logged: Mutex::new(LoggedState::default()),
         })
     }
 
@@ -86,6 +107,8 @@ impl<P: ResetProvider> ResetAlertTask<P> {
     }
 
     /// One poll: read, log the snapshot, deliver, summarize.
+    /// The snapshot and summary log at INFO only when they change (or a
+    /// delivery happened); an unchanged poll logs at debug.
     pub async fn run_once(&self) -> Result<DeliveryCounts, ResetRunError> {
         self.set_summary(None);
         let snapshot = self.source.read().await?;
@@ -96,7 +119,18 @@ impl<P: ResetProvider> ResetAlertTask<P> {
         );
         fields.extend(snapshot.metadata.clone());
         let fields = Value::Object(fields).to_string();
-        provider_log!(P::PROVIDER, info, snapshot = %fields, "Reset source snapshot");
+        let stable = stable_fields(&snapshot.metadata);
+        let snapshot_changed = {
+            let mut logged = self.logged();
+            let changed = logged.snapshot.as_ref() != Some(&stable);
+            logged.snapshot = Some(stable);
+            changed
+        };
+        if snapshot_changed {
+            provider_log!(P::PROVIDER, info, snapshot = %fields, "Reset source snapshot");
+        } else {
+            provider_log!(P::PROVIDER, debug, snapshot = %fields, "Reset source snapshot");
+        }
         let counts = self.ledger.deliver(&snapshot.alerts, snapshot.now).await?;
         let summary = format!(
             "{}: {} sent, {} already handled, {} uncertain; {} current signals",
@@ -106,9 +140,25 @@ impl<P: ResetProvider> ResetAlertTask<P> {
             counts.uncertain,
             snapshot.alerts.len()
         );
-        provider_log!(P::PROVIDER, info, "{summary}");
+        let summary_notable = {
+            let mut logged = self.logged();
+            let changed = logged.summary.as_deref() != Some(summary.as_str());
+            logged.summary = Some(summary.clone());
+            changed || counts.sent > 0 || counts.uncertain > 0
+        };
+        if summary_notable {
+            provider_log!(P::PROVIDER, info, "{summary}");
+        } else {
+            provider_log!(P::PROVIDER, debug, "{summary}");
+        }
         self.set_summary(Some(summary));
         Ok(counts)
+    }
+
+    fn logged(&self) -> std::sync::MutexGuard<'_, LoggedState> {
+        self.logged
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 }
 

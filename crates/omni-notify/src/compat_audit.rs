@@ -23,6 +23,7 @@ pub fn entity_catalog() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<omni_tasks::persistence::TaskRunData>(),
         EntityDescriptor::of::<omni_tasks::persistence::TaskRunLog>(),
         EntityDescriptor::of::<omni_tasks::persistence::TaskScheduleState>(),
+        EntityDescriptor::of::<omni_tasks::health::TaskHealthIncident>(),
         EntityDescriptor::of::<omni_ai::costs::CostEventData>(),
         EntityDescriptor::of::<omni_ai::costs::CostMigrationData>(),
         EntityDescriptor::of::<omni_ios_controls::persistence::IosControlRegistration>(),

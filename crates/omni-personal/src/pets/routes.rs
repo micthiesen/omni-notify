@@ -1,4 +1,4 @@
-//! `GET /api/pets` and `GET /api/pets/:petId/export.csv`.
+//! `GET /api/pets`, `GET /api/pets/health` and `GET /api/pets/:petId/export.csv`.
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
@@ -14,13 +14,34 @@ use omni_core::js::{
 use omni_server_kit::{ApiError, json_response};
 use serde::Deserialize;
 
+use super::alerts::HealthLedger;
+use super::health;
 use super::persistence::PetStore;
 
 #[derive(Clone)]
 struct PetsState {
     pets: PetStore,
+    ledger: HealthLedger,
     clock: SharedClock,
     tz: TimeZone,
+}
+
+/// Weekly blocks per card unless `?weeks=` asks for 1 to 52.
+pub const DEFAULT_HEALTH_WEEKS: u32 = 26;
+pub const MAX_HEALTH_WEEKS: u32 = 52;
+
+/// The health response shared by the route and the `pets_read` `trend` resource.
+pub async fn health_response(
+    pets: &PetStore,
+    ledger: &HealthLedger,
+    now: i64,
+    tz: &TimeZone,
+    weeks: u32,
+) -> Result<omni_api::pets::PetHealthResponse, omni_store::StoreError> {
+    let all = pets.all_pets_with_history().await?;
+    let evaluation = health::evaluate(&all, now, tz, weeks);
+    let alerts = ledger.all().await?.iter().map(|row| row.info()).collect();
+    Ok(health::response(&evaluation, alerts, now))
 }
 
 /// `Math.round(n * 100) / 100`.
@@ -29,11 +50,51 @@ fn round2(n: f64) -> f64 {
 }
 
 /// The pet routes, state applied.
-pub fn router(pets: PetStore, clock: SharedClock, tz: TimeZone) -> Router {
+pub fn router(pets: PetStore, ledger: HealthLedger, clock: SharedClock, tz: TimeZone) -> Router {
     Router::new()
         .route("/api/pets", get(list_pets))
+        .route("/api/pets/health", get(pet_health))
         .route("/api/pets/{pet_id}/export.csv", get(export_csv))
-        .with_state(PetsState { pets, clock, tz })
+        .with_state(PetsState {
+            pets,
+            ledger,
+            clock,
+            tz,
+        })
+}
+
+#[derive(Deserialize)]
+struct HealthQuery {
+    weeks: Option<String>,
+}
+
+async fn pet_health(
+    State(state): State<PetsState>,
+    Query(query): Query<HealthQuery>,
+) -> Result<Response, ApiError> {
+    let weeks = match query.weeks.as_deref().filter(|w| !w.is_empty()) {
+        None => DEFAULT_HEALTH_WEEKS,
+        Some(text) => text
+            .parse::<u32>()
+            .ok()
+            .filter(|w| (1..=MAX_HEALTH_WEEKS).contains(w))
+            .ok_or_else(|| {
+                ApiError::bad_request(format!(
+                    "weeks must be an integer from 1 to {MAX_HEALTH_WEEKS}"
+                ))
+            })?,
+    };
+    let response = health_response(
+        &state.pets,
+        &state.ledger,
+        state.clock.now_ms(),
+        &state.tz,
+        weeks,
+    )
+    .await
+    .map_err(ApiError::internal)?;
+    let value = serde_json::to_value(&response).map_err(ApiError::internal)?;
+    Ok(json_response(StatusCode::OK, json_stringify(&value)))
 }
 
 async fn list_pets(State(state): State<PetsState>) -> Result<Response, ApiError> {

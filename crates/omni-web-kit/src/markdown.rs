@@ -265,7 +265,7 @@ pub fn render_markdown_html(content: &str) -> String {
 #[component]
 pub fn WorkspaceMarkdown(#[prop(into)] content: Signal<String>) -> impl IntoView {
     let html = Memo::new(move |_| render_markdown_html(&content.get()));
-    view! { <div class="workspace-markdown" inner_html=move || html.get()></div> }
+    view! { <div class="prose workspace-markdown" inner_html=move || html.get()></div> }
 }
 
 #[cfg(test)]

@@ -1,9 +1,9 @@
 //! JavaScript number, date and string semantics.
 //!
-//! On `wasm32` these call the browser's own implementations so the UI renders
-//! exactly what the TypeScript frontend rendered (`toFixed`, `toLocaleString`,
-//! `Date.parse`, `localeCompare`). Native builds (unit tests) use close Rust
-//! equivalents; nothing persisted depends on them.
+//! On `wasm32` these call the browser's own implementations (`toFixed`,
+//! `toLocaleString`, `Date.parse`, `localeCompare`) so formatting follows the
+//! viewer's locale. Native builds (unit tests) use close Rust equivalents;
+//! nothing persisted depends on them.
 
 /// `Date.now()`.
 pub fn now_ms() -> f64 {
@@ -323,8 +323,54 @@ pub fn utf16_slice(s: &str, n: usize) -> String {
     out
 }
 
+/// Local calendar day of `ms` as days since 1970-01-01.
+pub fn local_day_index(ms: f64) -> i64 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ms));
+        let offset_ms = date.get_timezone_offset() * 60_000.0;
+        ((ms - offset_ms) / 86_400_000.0).floor() as i64
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        (ms / 86_400_000.0).floor() as i64
+    }
+}
+
+/// Monday of the week containing day index `day` (1970-01-01 was a Thursday).
+pub fn week_start(day: i64) -> i64 {
+    day - (day + 3).rem_euclid(7)
+}
+
+/// `decodeURIComponent`; `None` when it would throw.
+pub fn decode_component(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = value.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn weeks_start_on_monday() {
+        // 2026-10-05 is a Monday, 2026-10-11 a Sunday.
+        let monday = super::days_from_civil(2026, 10, 5);
+        assert_eq!(super::week_start(monday), monday);
+        assert_eq!(super::week_start(monday + 6), monday);
+        assert_eq!(super::week_start(monday + 7), monday + 7);
+    }
+
     use super::*;
 
     #[test]

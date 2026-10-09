@@ -10,7 +10,9 @@ use omni_mcp_kit::{McpTool, ToolContext, ToolError, ToolMetaError, paginate, typ
 use omni_store::{EntityOps, Store};
 use serde::{Deserialize, Serialize};
 
+use crate::pets::alerts::HealthLedger;
 use crate::pets::persistence::{DailyVisitCount, PetStore, WeightHistoryRow};
+use crate::pets::routes::health_response;
 
 const MAX_MCP_COST_EVENTS: u64 = 100_000;
 
@@ -29,6 +31,16 @@ enum PetsReadInput {
         #[serde(default = "default_page_limit")]
         limit: usize,
     },
+    Trend {
+        #[serde(default, rename = "petId")]
+        pet_id: Option<String>,
+        #[serde(default = "default_trend_weeks")]
+        weeks: u32,
+    },
+}
+
+fn default_trend_weeks() -> u32 {
+    12
 }
 
 fn default_history_limit() -> usize {
@@ -87,6 +99,19 @@ enum PetsReadOutput {
         next_cursor: Option<usize>,
         total: usize,
     },
+    Trend {
+        #[serde(flatten)]
+        health: omni_api::pets::PetHealthResponse,
+    },
+}
+
+/// Handler dependencies.
+#[derive(Clone)]
+struct PetsDeps {
+    pets: PetStore,
+    ledger: HealthLedger,
+    clock: SharedClock,
+    tz: TimeZone,
 }
 
 /// `values.slice(-n)`: the last `n`, or everything when `n` is 0 (`-0` is 0).
@@ -97,8 +122,9 @@ fn last_n<T>(mut values: Vec<T>, n: usize) -> Vec<T> {
     values.split_off(values.len() - n)
 }
 
-async fn pets_read(pets: PetStore, input: PetsReadInput) -> Result<PetsReadOutput, ToolError> {
+async fn pets_read(deps: PetsDeps, input: PetsReadInput) -> Result<PetsReadOutput, ToolError> {
     let store_err = |e: omni_store::StoreError| ToolError::execute_from(&e);
+    let pets = deps.pets;
     match input {
         PetsReadInput::List { history_limit } => {
             let mut out = Vec::new();
@@ -149,6 +175,22 @@ async fn pets_read(pets: PetStore, input: PetsReadInput) -> Result<PetsReadOutpu
                 total: page.total,
             })
         }
+        PetsReadInput::Trend { pet_id, weeks } => {
+            let mut health =
+                health_response(&pets, &deps.ledger, deps.clock.now_ms(), &deps.tz, weeks)
+                    .await
+                    .map_err(store_err)?;
+            if let Some(pet_id) = pet_id {
+                if !health.pets.iter().any(|p| p.pet_id == pet_id) {
+                    return Err(ToolError::execute("Pet not found"));
+                }
+                health.pets.retain(|p| p.pet_id == pet_id);
+                health
+                    .alerts
+                    .retain(|a| a.pet_id.as_ref().is_none_or(|id| *id == pet_id));
+            }
+            Ok(PetsReadOutput::Trend { health })
+        }
     }
 }
 
@@ -165,15 +207,22 @@ fn default_days() -> f64 {
 /// Builds `pets_read` and `costs_read`.
 pub fn tools(
     pets: PetStore,
+    ledger: HealthLedger,
     store: Store,
     clock: SharedClock,
     tz: TimeZone,
 ) -> Result<Vec<McpTool>, ToolMetaError> {
+    let deps = PetsDeps {
+        pets,
+        ledger,
+        clock: clock.clone(),
+        tz: tz.clone(),
+    };
     let pets_tool = typed_tool(
         &defs::PETS_READ,
         move |input: PetsReadInput, _cx: ToolContext| {
-            let pets = pets.clone();
-            async move { pets_read(pets, input).await }
+            let deps = deps.clone();
+            async move { pets_read(deps, input).await }
         },
     )?;
     let costs_tool = typed_tool(

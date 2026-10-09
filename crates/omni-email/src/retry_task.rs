@@ -2,7 +2,9 @@
 //! processing. Each due row is claimed (attempt counted) before any network
 //! or handler work; the email is re-fetched by id and the owning pipeline's
 //! handler rerun. A resolved handler is not proof of success: the row is
-//! cleared only when the run did not enqueue the email again.
+//! cleared only when the run did not enqueue the email again. Rows parked by a
+//! systemic failure wait for [`crate::systemic::release_for_build`]; a settled
+//! replay marks the activity row "replayed after fix".
 
 use std::sync::{Arc, Mutex};
 
@@ -11,6 +13,7 @@ use omni_runtime::Ports;
 use omni_store::{Store, StoreError};
 use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 
+use crate::activity::{self, EmailPipelineName};
 use crate::retry::{self, EmailRetryData, MAX_RETRY_ATTEMPTS};
 
 const LOG: &str = "Main:EmailRetry";
@@ -159,6 +162,11 @@ impl EmailRetryTask {
                     }
                     retry::clear(&self.store, &row.pipeline, &row.email_id).await?;
                     tally.succeeded += 1;
+                    if row.signature.is_some()
+                        && let Some(pipeline) = EmailPipelineName::parse(&row.pipeline)
+                    {
+                        activity::annotate_replay(&self.store, pipeline, &row.email_id).await?;
+                    }
                     tracing::info!(
                         target: LOG,
                         "Retry succeeded for {} email \"{}\" (attempt {})",
@@ -199,6 +207,10 @@ impl EmailRetryTask {
             tally.missing
         );
         tracing::info!(target: LOG, "Email retry pass: {summary}");
+        let failed = tally.requeued + tally.exhausted;
+        if failed > 0 {
+            omni_tasks::report_degraded(format!("{failed} email retry(ies) failed again"));
+        }
         self.set_summary(summary);
         Ok(())
     }

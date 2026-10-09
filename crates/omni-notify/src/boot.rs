@@ -70,6 +70,7 @@ pub fn all_entities(subsystems: &[Subsystem]) -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<omni_tasks::persistence::TaskRunData>(),
         EntityDescriptor::of::<omni_tasks::persistence::TaskRunLog>(),
         EntityDescriptor::of::<omni_tasks::persistence::TaskScheduleState>(),
+        EntityDescriptor::of::<omni_tasks::health::TaskHealthIncident>(),
         EntityDescriptor::of::<omni_ai::costs::CostEventData>(),
         EntityDescriptor::of::<omni_ai::costs::CostMigrationData>(),
     ];
@@ -254,6 +255,7 @@ pub async fn run(
         let schedule = CronSchedule::parse(crate::maintenance::SCHEDULE, &tz)
             .map_err(|e| AppError::other("StoreMaintenance schedule", e))?;
         services.push(crate::maintenance::service(schedule));
+        services.push(crate::task_health::service());
         crate::services::start_all(&ctx, services);
         trace.record("services");
         Scheduler::start(ctx.tasks.clone(), ctx.shutdown.clone(), &ctx.tracker);

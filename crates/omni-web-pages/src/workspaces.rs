@@ -1,4 +1,5 @@
-//! Workspaces: the overview grid, one workspace, and one subject's dossier.
+//! Research workspaces: the overview, one workspace, and one subject's
+//! dossier (outline plus one section at a time).
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -8,18 +9,34 @@ use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
 use omni_api::runs::RunStatus;
 use omni_api::workspaces::{
-    WorkspaceActionStatus, WorkspaceMessageRole, WorkspaceOverview, WorkspaceSourceKind,
+    WorkspaceAction, WorkspaceActionStatus, WorkspaceDefinition, WorkspaceMessageRole,
+    WorkspaceOverview, WorkspaceResponse, WorkspaceSourceKind, WorkspaceSubject,
     WorkspaceSubjectResponse, WorkspaceSubjectStatus,
 };
 use omni_web_kit::api::{self, ActionResolution, ApiClientError};
+use omni_web_kit::chrome::use_page_label;
+use omni_web_kit::components::{
+    Button, ButtonSize, ButtonVariant, ConfirmButton, Disclosure, EmptyState, ErrorState, Icon,
+    PageHead, Panel, Readout, ReadoutBand, SegOption, Segmented, SkeletonRows, Status, StatusKind,
+    Tag, Tone,
+};
+use omni_web_kit::feeds::use_workspace_feed;
+use omni_web_kit::hooks::{query_param, replace_query_param, scroll_into_view_center, use_now};
+use omni_web_kit::live::use_live_data;
 use omni_web_kit::markdown::WorkspaceMarkdown;
 use omni_web_kit::router::Link;
 use omni_web_kit::task::{sleep, spawn_detached, spawn_scoped};
-use omni_web_kit::utils::format::{format_absolute, format_relative};
+use omni_web_kit::utils::cron::describe_cron;
+use omni_web_kit::utils::format::{format_absolute, format_relative_at};
 use omni_web_kit::utils::js::number_string;
+use omni_web_kit::utils::tasks::{format_next, next_run_ms};
 use serde_json::Value;
 
+use crate::research_nav::{ResearchSwitch, ResearchTab};
+
 const RUN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// Subjects listed per workspace on the overview before "All N".
+const OVERVIEW_SUBJECTS: usize = 5;
 
 /// Workspace pages and the nav listen for this to refresh their counts.
 fn notify_workspace_updated() {
@@ -78,7 +95,7 @@ fn write_pretty(value: &Value, depth: usize, out: &mut String) {
     }
 }
 
-/// `formatActionPayload`: the stored JSON, pretty-printed.
+/// The stored JSON, pretty-printed.
 pub fn format_action_payload(payload: &str) -> String {
     match serde_json::from_str::<Value>(payload) {
         Ok(value) => js_stringify_pretty(&value),
@@ -86,7 +103,7 @@ pub fn format_action_payload(payload: &str) -> String {
     }
 }
 
-/// `safeSourceHref`: only http(s) URLs, normalized by the URL parser.
+/// Only http(s) URLs, normalized by the URL parser.
 fn safe_source_href(value: Option<&str>) -> Option<String> {
     let value = value.filter(|v| !v.is_empty())?;
     let url = web_sys::Url::new(value).ok()?;
@@ -101,6 +118,64 @@ fn source_kind_str(kind: WorkspaceSourceKind) -> &'static str {
     }
 }
 
+fn plural(n: usize, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("{n} {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
+/// A subject's status: active is the quiet default, the rest say so.
+fn subject_status(status: WorkspaceSubjectStatus) -> (StatusKind, &'static str) {
+    match status {
+        WorkspaceSubjectStatus::Active => (StatusKind::Ok, "Active"),
+        WorkspaceSubjectStatus::Paused => (StatusKind::Idle, "Paused"),
+        WorkspaceSubjectStatus::Completed => (StatusKind::Idle, "Completed"),
+        WorkspaceSubjectStatus::Archived => (StatusKind::Idle, "Archived"),
+    }
+}
+
+fn action_status(status: WorkspaceActionStatus) -> (StatusKind, &'static str) {
+    match status {
+        WorkspaceActionStatus::Pending => (StatusKind::Warn, "Waiting on you"),
+        WorkspaceActionStatus::Approved => (StatusKind::Ok, "Approved"),
+        WorkspaceActionStatus::Rejected => (StatusKind::Idle, "Rejected"),
+        WorkspaceActionStatus::Failed => (StatusKind::Fault, "Failed"),
+    }
+}
+
+fn subject_href(workspace_id: &str, subject_id: &str) -> String {
+    format!(
+        "/workspaces/{}/{}",
+        encode_uri_component(workspace_id),
+        encode_uri_component(subject_id)
+    )
+}
+
+/// `Every day at 09:00` / `On demand` for a workspace's research sweep.
+fn schedule_label(def: &WorkspaceDefinition) -> String {
+    if def.scheduled_runs == Some(false) {
+        return "On demand".to_owned();
+    }
+    describe_cron(&def.schedule).unwrap_or_else(|| def.schedule.clone())
+}
+
+/// The workspace task's next fire from the live snapshot.
+fn use_next_sweep(task_name: Signal<Option<String>>) -> Memo<Option<f64>> {
+    let live = use_live_data();
+    Memo::new(move |_| {
+        let name = task_name.get()?;
+        live.snapshot.with(|s| {
+            s.as_ref()?
+                .tasks
+                .iter()
+                .find(|t| t.name == name)
+                .and_then(next_run_ms)
+        })
+    })
+}
+
 /// Polls the run until it settles: success, its error, or a timeout.
 async fn wait_for_run(run_id: &str) -> Result<(), String> {
     let poll = async {
@@ -113,6 +188,12 @@ async fn wait_for_run(run_id: &str) -> Result<(), String> {
                             .run
                             .error
                             .unwrap_or_else(|| "Workspace run failed".to_owned()));
+                    }
+                    RunStatus::Degraded => {
+                        return Err(logs
+                            .run
+                            .error
+                            .unwrap_or_else(|| "Workspace run skipped its work".to_owned()));
                     }
                     RunStatus::Running => sleep(Duration::from_secs(1)).await,
                 },
@@ -139,236 +220,603 @@ pub fn WorkspacesPage(
     #[prop(into)] workspace_id: Signal<Option<String>>,
     #[prop(into)] subject_id: Signal<Option<String>>,
 ) -> impl IntoView {
-    let subject_mode =
-        Memo::new(move |_| workspace_id.with(Option::is_some) && subject_id.with(Option::is_some));
-    move || {
-        if subject_mode.get() {
+    let mode = Memo::new(move |_| {
+        match (
+            workspace_id.with(Option::is_some),
+            subject_id.with(Option::is_some),
+        ) {
+            (true, true) => 2,
+            (true, false) => 1,
+            _ => 0,
+        }
+    });
+    move || match mode.get() {
+        2 => {
             let workspace = Signal::derive(move || workspace_id.get().unwrap_or_default());
             let subject = Signal::derive(move || subject_id.get().unwrap_or_default());
             view! { <SubjectPage workspace_id=workspace subject_id=subject /> }.into_any()
-        } else {
-            view! { <WorkspaceList workspace_id=workspace_id /> }.into_any()
         }
+        1 => {
+            let workspace = Signal::derive(move || workspace_id.get().unwrap_or_default());
+            view! { <WorkspacePage workspace_id=workspace /> }.into_any()
+        }
+        _ => view! { <Overview /> }.into_any(),
     }
 }
 
-async fn load_list(workspace_id: Option<String>) -> Result<Vec<WorkspaceOverview>, ApiClientError> {
-    match workspace_id {
-        Some(id) => {
-            let response = api::fetch_workspace(&id).await?;
-            let active = response
-                .subjects
-                .iter()
-                .filter(|s| s.status == WorkspaceSubjectStatus::Active)
-                .count();
-            let pending = response
-                .actions
-                .iter()
-                .filter(|a| a.status == WorkspaceActionStatus::Pending)
-                .count();
-            Ok(vec![WorkspaceOverview {
-                definition: response.workspace,
-                subjects: response.subjects,
-                active_subject_count: active as u64,
-                pending_action_count: pending as u64,
-                open_papercut_count: response.papercuts.len() as u64,
-            }])
+// ===== Compose =====
+
+/// "Start research" form: sends a message (optionally to a subject), waits
+/// for the run, clears the text and calls `on_done`.
+#[component]
+fn Compose(
+    #[prop(into)] workspace_id: Signal<String>,
+    #[prop(into, optional)] subject_id: Signal<Option<String>>,
+    #[prop(into)] placeholder: Signal<String>,
+    #[prop(into)] label: String,
+    #[prop(into)] send_label: String,
+    #[prop(optional)] primary: bool,
+    #[prop(optional)] compact: bool,
+    busy: RwSignal<bool>,
+    error: RwSignal<Option<String>>,
+    on_done: Callback<()>,
+) -> impl IntoView {
+    let text = RwSignal::new(String::new());
+    let send = move || {
+        let message = text.get_untracked().trim().to_owned();
+        if message.is_empty() || busy.get_untracked() {
+            return;
         }
-        None => Ok(api::fetch_workspaces().await?.workspaces),
+        busy.set(true);
+        error.set(None);
+        let workspace = workspace_id.get_untracked();
+        let subject = subject_id.get_untracked();
+        spawn_detached(async move {
+            let result: Result<(), String> = async {
+                let accepted =
+                    api::send_workspace_message(&workspace, &message, subject.as_deref())
+                        .await
+                        .map_err(|e| e.message().to_owned())?;
+                wait_for_run(&accepted.run_id).await?;
+                Ok(())
+            }
+            .await;
+            match result {
+                Ok(()) => {
+                    text.try_set(String::new());
+                    notify_workspace_updated();
+                    on_done.run(());
+                }
+                Err(message) => {
+                    error.try_set(Some(message));
+                }
+            }
+            busy.try_set(false);
+        });
+    };
+    let variant = if primary {
+        ButtonVariant::Primary
+    } else {
+        ButtonVariant::Secondary
+    };
+    let size = if compact {
+        ButtonSize::Sm
+    } else {
+        ButtonSize::Md
+    };
+    view! {
+        <form
+            class=if compact { "ws-compose compact" } else { "ws-compose" }
+            on:submit=move |event: leptos::ev::SubmitEvent| {
+                event.prevent_default();
+                send();
+            }
+        >
+            <textarea
+                class="textarea"
+                rows=if compact { "1" } else { "3" }
+                prop:value=move || text.get()
+                on:input=move |event| text.set(event_target_value(&event))
+                on:keydown=move |event: web_sys::KeyboardEvent| {
+                    if event.key() == "Enter" && (event.meta_key() || event.ctrl_key()) {
+                        event.prevent_default();
+                        send();
+                    }
+                }
+                placeholder=move || placeholder.get()
+                aria-label=label
+            ></textarea>
+            <div class="ws-compose-foot">
+                {move || {
+                    busy.get()
+                        .then(|| {
+                            view! {
+                                <Status
+                                    kind=StatusKind::Running
+                                    label="Researching, this can take a few minutes"
+                                />
+                            }
+                        })
+                }}
+                <span class="spacer"></span>
+                <Button
+                    variant
+                    size
+                    submit=true
+                    busy
+                    disabled=Signal::derive(move || text.with(|t| t.trim().is_empty()))
+                    disabled_reason="Write a message first"
+                >
+                    {send_label}
+                </Button>
+            </div>
+        </form>
+    }
+}
+
+// ===== Overview =====
+
+#[component]
+fn SubjectRow(
+    workspace_id: String,
+    subject: WorkspaceSubject,
+    now: ReadSignal<f64>,
+) -> impl IntoView {
+    let (kind, word) = subject_status(subject.status);
+    let summary = if subject.summary.is_empty() {
+        "Work just started.".to_owned()
+    } else {
+        subject.summary.clone()
+    };
+    let updated = subject.updated_at as f64;
+    let quiet = subject.status != WorkspaceSubjectStatus::Active;
+    view! {
+        <Link to=subject_href(&workspace_id, &subject.subject_id) class=if quiet { "row ws-subject-row quiet" } else { "row ws-subject-row" }>
+            <Status kind=kind label=word dot_only=kind == StatusKind::Ok />
+            <span class="row-main">
+                <span class="row-title">{subject.title.clone()}</span>
+                <span class="row-sub">{summary}</span>
+            </span>
+            <span class="row-end mono small muted" title=format_absolute(updated)>
+                {move || format_relative_at(updated, now.get())}
+            </span>
+        </Link>
     }
 }
 
 #[component]
-fn WorkspaceList(#[prop(into)] workspace_id: Signal<Option<String>>) -> impl IntoView {
-    let workspaces = RwSignal::new(None::<Vec<WorkspaceOverview>>);
-    let messages = RwSignal::new(HashMap::<String, String>::new());
-    let busy_workspace_id = RwSignal::new(None::<String>);
+fn Overview() -> impl IntoView {
+    let feed = use_workspace_feed();
+    let now = use_now(30_000);
     let error = RwSignal::new(None::<String>);
+    let tick = use_now(1000);
 
-    Effect::new(move |_| {
-        let id = workspace_id.get();
-        spawn_scoped(async move {
-            match load_list(id).await {
-                Ok(list) => workspaces.set(Some(list)),
-                Err(err) => error.set(Some(err.message().to_owned())),
-            }
-        });
+    let totals = Memo::new(move |_| {
+        feed.workspaces.with(|w| {
+            w.as_ref().map(|w| {
+                (
+                    w.iter().map(|o| o.active_subject_count).sum::<u64>() as usize,
+                    w.iter().map(|o| o.pending_action_count).sum::<u64>() as usize,
+                )
+            })
+        })
+    });
+    let sentence = Signal::derive(move || match totals.get() {
+        None => "Research".to_owned(),
+        Some((active, 0)) => format!(
+            "{} in progress, nothing waiting on you.",
+            plural(active, "subject", "subjects")
+        ),
+        Some((active, pending)) => format!(
+            "{} in progress, {} waiting on you.",
+            plural(active, "subject", "subjects"),
+            plural(pending, "action", "actions")
+        ),
     });
 
-    let send = move |id: String| {
-        let message = messages.with_untracked(|m| m.get(&id).map(|m| m.trim().to_owned()));
-        let Some(message) = message.filter(|m| !m.is_empty()) else {
-            return;
-        };
-        if busy_workspace_id.with_untracked(Option::is_some) {
-            return;
-        }
-        busy_workspace_id.set(Some(id.clone()));
-        error.set(None);
-        let scope = workspace_id.get_untracked();
-        spawn_detached(async move {
-            let result: Result<(), String> = async {
-                let accepted = api::send_workspace_message(&id, &message, None)
-                    .await
-                    .map_err(|e| e.message().to_owned())?;
-                wait_for_run(&accepted.run_id).await?;
-                messages.update(|m| {
-                    m.insert(id.clone(), String::new());
-                });
-                let list = load_list(scope).await.map_err(|e| e.message().to_owned())?;
-                workspaces.set(Some(list));
-                notify_workspace_updated();
-                Ok(())
-            }
-            .await;
-            if let Err(message) = result {
-                error.set(Some(message));
-            }
-            busy_workspace_id.set(None);
-        });
-    };
-
-    let card = move |workspace: WorkspaceOverview| {
-        let def = workspace.definition;
+    let card = move |overview: WorkspaceOverview| {
+        let def = overview.definition.clone();
         let id = def.id.clone();
         let label = def.subject_label.to_lowercase();
-        let subjects = if workspace.subjects.is_empty() {
+        let total = overview.subjects.len();
+        let mut subjects: Vec<WorkspaceSubject> = overview
+            .subjects
+            .iter()
+            .filter(|s| s.status != WorkspaceSubjectStatus::Archived)
+            .cloned()
+            .collect();
+        subjects.sort_by_key(|s| s.status != WorkspaceSubjectStatus::Active);
+        subjects.truncate(OVERVIEW_SUBJECTS);
+        let shown = subjects.len();
+        let rows = if subjects.is_empty() {
             view! {
-                <div class="muted">{format!("Message the workspace to start the first {label}.")}</div>
+                <p class="ws-empty small muted">{format!("Message the workspace to start the first {label}.")}</p>
             }
             .into_any()
         } else {
-            workspace
-                .subjects
-                .iter()
-                .map(|subject| {
-                    let to = format!(
-                        "/workspaces/{}/{}",
-                        encode_uri_component(&def.id),
-                        encode_uri_component(&subject.subject_id)
-                    );
-                    let summary = if subject.summary.is_empty() {
-                        "Work just started.".to_owned()
-                    } else {
-                        subject.summary.clone()
-                    };
-                    let status = subject.status.as_str();
-                    let title = subject.title.clone();
-                    view! {
-                        <Link to=to class="workspace-subject-row">
-                            <span>
-                                <strong>{title}</strong>
-                                <small>{summary}</small>
-                            </span>
-                            <span class=format!("workspace-status status-{status}")>{status}</span>
-                        </Link>
-                    }
-                })
+            subjects
+                .into_iter()
+                .map(|subject| view! { <SubjectRow workspace_id=id.clone() subject now /> })
                 .collect_view()
                 .into_any()
         };
+        let task = def.task_name.clone();
+        let next = use_next_sweep(Signal::stored(Some(task)));
+        let scheduled = def.scheduled_runs != Some(false);
+        let schedule = schedule_label(&def);
         let placeholder = def
             .input_placeholder
             .clone()
             .unwrap_or_else(|| format!("What would you like help with for this {label}?"));
-        let value_id = id.clone();
-        let input_id = id.clone();
-        let busy_id = id.clone();
-        let disabled_id = id.clone();
-        let submit_id = id.clone();
+        let busy = RwSignal::new(false);
+        let pending = overview.pending_action_count as usize;
+        let papercuts = overview.open_papercut_count as usize;
+        let href = format!("/workspaces/{}", encode_uri_component(&id));
+        let all_href = href.clone();
         view! {
-            <section class="workspace-card">
-                <div class="workspace-card-header">
-                    <div>
-                        <h2>{def.title.clone()}</h2>
-                        <p>{def.description.clone()}</p>
+            <Panel class="ws-card">
+                <div class="ws-card-head">
+                    <div class="ws-card-id">
+                        <Link to=href class="ws-card-title">{def.title.clone()}</Link>
+                        <p class="small muted clamp-2">{def.description.clone()}</p>
                     </div>
-                    <div class="workspace-counts meta-row">
-                        <span>{format!("{} Active", workspace.active_subject_count)}</span>
-                        <span>{format!("{} Pending", workspace.pending_action_count)}</span>
-                        <span>{format!("{} Papercuts", workspace.open_papercut_count)}</span>
-                        {(def.scheduled_runs == Some(false)).then(|| view! { <span>"On Demand"</span> })}
+                    <div class="ws-card-meta">
+                        {(pending > 0)
+                            .then(|| view! { <Tag tone=Tone::Warn>{plural(pending, "action waiting", "actions waiting")}</Tag> })}
+                        {(papercuts > 0).then(|| view! { <Tag>{plural(papercuts, "papercut", "papercuts")}</Tag> })}
+                        <span class="mono small muted" title=def.schedule.clone()>
+                            {schedule}
+                            {move || {
+                                scheduled
+                                    .then(|| next.get())
+                                    .flatten()
+                                    .map(|at| format!(" · next {}", format_next(at - tick.get())))
+                            }}
+                        </span>
                     </div>
                 </div>
-                <div class="workspace-subject-list">{subjects}</div>
-                <form
-                    class="workspace-compose"
-                    on:submit=move |event: leptos::ev::SubmitEvent| {
-                        event.prevent_default();
-                        send(submit_id.clone());
-                    }
-                >
-                    <textarea
-                        prop:value=move || messages.with(|m| m.get(&value_id).cloned().unwrap_or_default())
-                        on:input=move |event| {
-                            let text = event_target_value(&event);
-                            messages.update(|m| {
-                                m.insert(input_id.clone(), text);
-                            });
+                <div class="rows">{rows}</div>
+                {(total > shown)
+                    .then(|| {
+                        view! {
+                            <Link to=all_href class="row ws-more small">
+                                {format!("All {total} {}", def.subject_label_plural.to_lowercase())}
+                            </Link>
                         }
+                    })}
+                <div class="ws-card-foot">
+                    <Compose
+                        workspace_id=overview.definition.id.clone()
                         placeholder=placeholder
-                        aria-label=format!("Message {}", def.title)
-                    ></textarea>
-                    <button
-                        type="submit"
-                        disabled=move || {
-                            busy_workspace_id.with(Option::is_some)
-                                || messages.with(|m| m.get(&disabled_id).is_none_or(|t| t.trim().is_empty()))
-                        }
-                    >
-                        {move || {
-                            if busy_workspace_id.with(|b| b.as_deref() == Some(busy_id.as_str())) {
-                                "Starting…"
-                            } else {
-                                "Send"
-                            }
-                        }}
-                    </button>
-                </form>
-                {move || {
-                    workspace_id
-                        .with(Option::is_none)
-                        .then(|| {
-                            view! {
-                                <Link to=format!("/workspaces/{id}") class="workspace-open-link">
-                                    "Open Workspace ›"
-                                </Link>
-                            }
-                        })
-                }}
-            </section>
+                        label=format!("Message {}", overview.definition.title)
+                        send_label="Start"
+                        compact=true
+                        busy
+                        error
+                        on_done=Callback::new(move |()| feed.refresh())
+                    />
+                </div>
+            </Panel>
         }
     };
 
+    let phase = Memo::new(move |_| {
+        feed.workspaces.with(|w| match w {
+            None => Phase::Loading,
+            Some(w) if w.is_empty() => Phase::Empty,
+            Some(_) => Phase::Ready,
+        })
+    });
+
     view! {
-        <div class="page-header">
-            <div class="page-header-stack">
-                <h1>
-                    {move || {
-                        if workspace_id.with(Option::is_some) {
-                            workspaces
-                                .with(|w| w.as_ref().and_then(|w| w.first()).map(|w| w.definition.title.clone()))
-                                .unwrap_or_else(|| "Workspace".to_owned())
-                        } else {
-                            "Workspaces".to_owned()
-                        }
-                    }}
-                </h1>
-                <p class="page-subtitle">"Research, decisions, and next steps for your ongoing projects."</p>
-            </div>
-        </div>
-        {move || error.get().map(|e| view! { <div class="error">{e}</div> })}
+        <PageHead title=sentence eyebrow="Research" sentence=true lede="Research, decisions and next steps for ongoing projects." />
+        <ResearchSwitch current=ResearchTab::Workspaces />
         {move || {
-            (workspaces.with(Option::is_none) && error.with(Option::is_none))
-                .then(|| view! { <div class="loading">"Loading…"</div> })
+            error.get().map(|e| view! { <ErrorState title="That message could not start research" raw=e /> })
         }}
-        <div class="workspace-grid">
-            <For
-                each=move || workspaces.get().unwrap_or_default()
-                key=|w| format!("{}|{w:?}", w.definition.id)
-                children=card
-            />
-        </div>
+        {move || match phase.get() {
+            Phase::Loading => match feed.error.get() {
+                Some(e) => view! {
+                    <ErrorState
+                        title="Workspaces could not load"
+                        raw=e
+                        retry=Callback::new(move |()| feed.refresh())
+                        page=true
+                    />
+                }
+                .into_any(),
+                None => view! { <SkeletonRows count=6 label="Loading workspaces" /> }.into_any(),
+            },
+            Phase::Empty => {
+                view! { <EmptyState message="No workspaces are configured." icon=Icon::Flask /> }.into_any()
+            }
+            Phase::Ready => view! {
+                <div class="ws-cards">
+                    <For
+                        each=move || feed.workspaces.get().unwrap_or_default()
+                        key=|w| format!("{}|{w:?}", w.definition.id)
+                        children=card
+                    />
+                </div>
+            }
+            .into_any(),
+        }}
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    Loading,
+    Empty,
+    Ready,
+}
+
+// ===== One workspace =====
+
+#[component]
+fn WorkspacePage(#[prop(into)] workspace_id: Signal<String>) -> impl IntoView {
+    let detail = RwSignal::new(None::<WorkspaceResponse>);
+    let error = RwSignal::new(None::<String>);
+    let send_error = RwSignal::new(None::<String>);
+    let busy = RwSignal::new(false);
+    let reload = RwSignal::new(0u32);
+    let now = use_now(30_000);
+    let tick = use_now(1000);
+
+    Effect::new(move |_| {
+        let id = workspace_id.get();
+        reload.track();
+        spawn_scoped(async move {
+            match api::fetch_workspace(&id).await {
+                Ok(response) => {
+                    detail.set(Some(response));
+                    error.set(None);
+                }
+                Err(err) => error.set(Some(err.message().to_owned())),
+            }
+        });
+    });
+    use_page_label(move || detail.with(|d| d.as_ref().map(|d| d.workspace.title.clone())));
+
+    let task =
+        Signal::derive(move || detail.with(|d| d.as_ref().map(|d| d.workspace.task_name.clone())));
+    let next = use_next_sweep(task);
+    let pending_by_subject = Memo::new(move |_| {
+        let mut counts = HashMap::<String, usize>::new();
+        detail.with(|d| {
+            for action in d.iter().flat_map(|d| d.actions.iter()) {
+                if action.status == WorkspaceActionStatus::Pending {
+                    *counts.entry(action.subject_id.clone()).or_default() += 1;
+                }
+            }
+        });
+        counts
+    });
+
+    let body = move || {
+        let d = detail.get()?;
+        let def = d.workspace.clone();
+        let active = d
+            .subjects
+            .iter()
+            .filter(|s| s.status == WorkspaceSubjectStatus::Active)
+            .count();
+        let pending: usize = pending_by_subject.with(|p| p.values().sum());
+        let papercuts = d.papercuts.len();
+        let label = def.subject_label.to_lowercase();
+        let placeholder = def
+            .input_placeholder
+            .clone()
+            .unwrap_or_else(|| format!("What would you like help with for this {label}?"));
+        let scheduled = def.scheduled_runs != Some(false);
+        let schedule = schedule_label(&def);
+        let groups = [
+            WorkspaceSubjectStatus::Active,
+            WorkspaceSubjectStatus::Paused,
+            WorkspaceSubjectStatus::Completed,
+            WorkspaceSubjectStatus::Archived,
+        ]
+        .into_iter()
+        .filter_map(|status| {
+            let subjects: Vec<WorkspaceSubject> = d
+                .subjects
+                .iter()
+                .filter(|s| s.status == status)
+                .cloned()
+                .collect();
+            (!subjects.is_empty()).then_some((status, subjects))
+        })
+        .map(|(status, subjects)| {
+            let (_, word) = subject_status(status);
+            let count = subjects.len();
+            let workspace = def.id.clone();
+            let rows = subjects
+                .into_iter()
+                .map(|subject| {
+                    let waiting = pending_by_subject.with(|p| p.get(&subject.subject_id).copied().unwrap_or(0));
+                    let (kind, word) = subject_status(subject.status);
+                    let updated = subject.updated_at as f64;
+                    let summary = if subject.summary.is_empty() { "Work just started.".to_owned() } else { subject.summary.clone() };
+                    view! {
+                        <Link to=subject_href(&workspace, &subject.subject_id) class="row ws-subject-row">
+                            <Status kind=kind label=word dot_only=kind == StatusKind::Ok />
+                            <span class="row-main">
+                                <span class="row-title">{subject.title.clone()}</span>
+                                <span class="row-sub">{summary}</span>
+                            </span>
+                            <span class="row-end">
+                                {(waiting > 0).then(|| view! { <Tag tone=Tone::Warn>{plural(waiting, "waiting", "waiting")}</Tag> })}
+                                <span class="mono small muted hide-phone" title=format_absolute(updated)>
+                                    {move || format_relative_at(updated, now.get())}
+                                </span>
+                            </span>
+                        </Link>
+                    }
+                })
+                .collect_view();
+            view! {
+                <div class="group-head">
+                    {word}
+                    <span class="seg-n">{count}</span>
+                </div>
+                <div class="rows">{rows}</div>
+            }
+        })
+        .collect_view();
+        let empty = d.subjects.is_empty().then(|| {
+            view! { <EmptyState compact=true message=format!("No {} yet. Describe one above to start.", def.subject_label_plural.to_lowercase()) /> }
+        });
+        let pending_tone = if pending > 0 {
+            Tone::Warn
+        } else {
+            Tone::Neutral
+        };
+        Some(view! {
+            <PageHead title=def.title.clone() eyebrow="Research" lede=def.description.clone() />
+            <ReadoutBand cols=4 aria_label="Workspace">
+                <Readout label="Active" value=active.to_string() />
+                <Readout
+                    label="Waiting on you"
+                    value=pending.to_string()
+                    tone=pending_tone
+                />
+                <Readout label="Papercuts" value=papercuts.to_string() />
+                <Readout
+                    label="Next sweep"
+                    value=Signal::derive(move || {
+                        if !scheduled {
+                            return "—".to_owned();
+                        }
+                        next.get().map_or_else(|| "—".to_owned(), |at| format_next(at - tick.get()))
+                    })
+                >
+                    <span class="readout-sub" title=def.schedule.clone()>{schedule}</span>
+                </Readout>
+            </ReadoutBand>
+            <Panel title=format!("New {label}") pad=true class="ws-new">
+                <Compose
+                    workspace_id=def.id.clone()
+                    placeholder=placeholder
+                    label=format!("Message {}", def.title)
+                    send_label="Start research"
+                    primary=true
+                    busy
+                    error=send_error
+                    on_done=Callback::new(move |()| reload.update(|n| *n += 1))
+                />
+                {move || send_error.get().map(|e| view! { <ErrorState title="That message could not start research" raw=e /> })}
+            </Panel>
+            <Panel
+                title=def.subject_label_plural.clone()
+                head_end=ViewFn::from(move || view! { <span class="num">{d.subjects.len()}</span> })
+                class="ws-subjects"
+            >
+                {groups}
+                {empty}
+            </Panel>
+        })
+    };
+
+    let loaded = Memo::new(move |_| detail.with(Option::is_some));
+    move || {
+        if !loaded.get() {
+            return match error.get() {
+                Some(e) => view! {
+                    <ErrorState
+                        title="This workspace could not load"
+                        raw=e
+                        retry=Callback::new(move |()| reload.update(|n| *n += 1))
+                        link=("All workspaces".to_owned(), "/workspaces".to_owned())
+                        page=true
+                    />
+                }
+                .into_any(),
+                None => view! { <SkeletonRows count=6 label="Loading workspace" /> }.into_any(),
+            };
+        }
+        view! {
+            {move || error.get().map(|e| view! { <ErrorState title="Refresh failed, showing the last loaded state" raw=e warn=true /> })}
+            {body}
+        }
+        .into_any()
+    }
+}
+
+// ===== One subject =====
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubjectSection {
+    Actions,
+    Artifacts,
+    Conversation,
+    Sources,
+    Papercuts,
+}
+
+impl SubjectSection {
+    const ALL: [SubjectSection; 5] = [
+        Self::Actions,
+        Self::Artifacts,
+        Self::Conversation,
+        Self::Sources,
+        Self::Papercuts,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Actions => "actions",
+            Self::Artifacts => "artifacts",
+            Self::Conversation => "conversation",
+            Self::Sources => "sources",
+            Self::Papercuts => "papercuts",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Actions => "Actions",
+            Self::Artifacts => "Artifacts",
+            Self::Conversation => "Conversation",
+            Self::Sources => "Sources",
+            Self::Papercuts => "Papercuts",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.as_str() == value)
+    }
+}
+
+/// The section and artifact tab a `?section=&target=` link selects. A target
+/// picks its own section unless `section` names one.
+pub fn deep_link_selection(
+    section: Option<&str>,
+    target: Option<&str>,
+) -> (Option<SubjectSection>, Option<String>) {
+    let artifact = target
+        .and_then(|t| t.strip_prefix("artifact-"))
+        .filter(|k| !k.is_empty())
+        .map(str::to_owned);
+    let from_target = match target {
+        Some(t) if t.starts_with("action-") => Some(SubjectSection::Actions),
+        Some(_) if artifact.is_some() => Some(SubjectSection::Artifacts),
+        _ => None,
+    };
+    (
+        section.and_then(SubjectSection::parse).or(from_target),
+        artifact,
+    )
+}
+
+/// Opening section without a link: pending actions first, else artifacts.
+pub fn default_section(actions: &[WorkspaceAction]) -> SubjectSection {
+    if actions
+        .iter()
+        .any(|a| a.status == WorkspaceActionStatus::Pending)
+    {
+        SubjectSection::Actions
+    } else {
+        SubjectSection::Artifacts
     }
 }
 
@@ -378,17 +826,26 @@ fn SubjectPage(
     #[prop(into)] subject_id: Signal<String>,
 ) -> impl IntoView {
     let detail = RwSignal::new(None::<WorkspaceSubjectResponse>);
-    let message = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
+    let sending = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
-
-    let reload = move || {
-        let (w, s) = (workspace_id.get_untracked(), subject_id.get_untracked());
-        async move { api::fetch_workspace_subject(&w, &s).await }
-    };
+    let chosen = RwSignal::new(None::<SubjectSection>);
+    let artifact_tab = RwSignal::new(None::<String>);
+    let reload = RwSignal::new(0u32);
+    let linked = StoredValue::new(None::<String>);
+    let now = use_now(30_000);
 
     Effect::new(move |_| {
         let (w, s) = (workspace_id.get(), subject_id.get());
+        // A new subject reads its deep link afresh.
+        let (section, artifact) = deep_link_selection(
+            query_param("section").as_deref(),
+            query_param("target").as_deref(),
+        );
+        chosen.set(section);
+        artifact_tab.set(artifact);
+        detail.set(None);
+        error.set(None);
         spawn_scoped(async move {
             match api::fetch_workspace_subject(&w, &s).await {
                 Ok(response) => detail.set(Some(response)),
@@ -396,24 +853,378 @@ fn SubjectPage(
             }
         });
     });
+    Effect::new(move |previous: Option<u32>| {
+        let n = reload.get();
+        if previous.is_some() {
+            let (w, s) = (workspace_id.get_untracked(), subject_id.get_untracked());
+            spawn_scoped(async move {
+                match api::fetch_workspace_subject(&w, &s).await {
+                    Ok(response) => detail.set(Some(response)),
+                    Err(err) => error.set(Some(err.message().to_owned())),
+                }
+            });
+        }
+        n
+    });
+    use_page_label(move || detail.with(|d| d.as_ref().map(|d| d.subject.title.clone())));
 
-    // `?target=` deep links (Pushover) scroll to and highlight an element.
+    let section = Memo::new(move |_| {
+        chosen.get().unwrap_or_else(|| {
+            detail.with(|d| {
+                d.as_ref()
+                    .map_or(SubjectSection::Artifacts, |d| default_section(&d.actions))
+            })
+        })
+    });
+    let artifact_keys = Memo::new(move |_| {
+        detail.with(|d| {
+            d.as_ref()
+                .map(|d| {
+                    d.workspace
+                        .artifacts
+                        .iter()
+                        .map(|a| (a.key.clone(), a.title.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        })
+    });
+    let current_artifact = Memo::new(move |_| {
+        let keys = artifact_keys.get();
+        artifact_tab
+            .get()
+            .filter(|k| keys.iter().any(|(key, _)| key == k))
+            .or_else(|| keys.first().map(|(k, _)| k.clone()))
+    });
+
+    let select_section = move |next: SubjectSection| {
+        chosen.set(Some(next));
+        replace_query_param("section", Some(next.as_str()));
+        replace_query_param("target", None);
+    };
+    let select_artifact = move |key: String| {
+        artifact_tab.set(Some(key));
+        select_section(SubjectSection::Artifacts);
+    };
+
+    // `?target=` deep links (Pushover) scroll to and highlight an element,
+    // once per subject, after its section is visible.
     Effect::new(move |_| {
         if detail.with(Option::is_none) {
             return;
         }
+        let subject = subject_id.get_untracked();
+        if linked.get_value().as_deref() == Some(subject.as_str()) {
+            return;
+        }
+        linked.set_value(Some(subject));
         request_animation_frame(move || {
-            let Some(target) = omni_web_kit::hooks::query_param("target").filter(|t| !t.is_empty())
-            else {
+            let Some(target) = query_param("target").filter(|t| !t.is_empty()) else {
                 return;
             };
             let Some(element) = document().get_element_by_id(&target) else {
                 return;
             };
             let _ = element.class_list().add_1("deep-link-target");
-            omni_web_kit::hooks::scroll_into_view_center(&target);
+            scroll_into_view_center(&target);
         });
     });
+
+    let counts = Memo::new(move |_| {
+        detail.with(|d| {
+            d.as_ref().map(|d| {
+                let pending = d
+                    .actions
+                    .iter()
+                    .filter(|a| a.status == WorkspaceActionStatus::Pending)
+                    .count();
+                (
+                    pending,
+                    d.actions.len(),
+                    d.artifacts.len(),
+                    d.messages.len(),
+                    d.sources.len(),
+                    d.papercuts.len(),
+                )
+            })
+        })
+    });
+    let count_of = move |s: SubjectSection| {
+        counts.get().map_or(
+            0,
+            |(_, actions, artifacts, messages, sources, papercuts)| match s {
+                SubjectSection::Actions => actions,
+                SubjectSection::Artifacts => artifacts,
+                SubjectSection::Conversation => messages,
+                SubjectSection::Sources => sources,
+                SubjectSection::Papercuts => papercuts,
+            },
+        )
+    };
+    let pending_count = move || counts.get().map_or(0, |c| c.0);
+
+    // Runs `action`, then reloads and notifies; errors land in `error`.
+    let after =
+        move |action: std::pin::Pin<Box<dyn std::future::Future<Output = Result<(), String>>>>| {
+            busy.set(true);
+            error.set(None);
+            spawn_detached(async move {
+                match action.await {
+                    Ok(()) => {
+                        reload.try_update(|n| *n += 1);
+                        notify_workspace_updated();
+                    }
+                    Err(message) => {
+                        error.try_set(Some(message));
+                    }
+                }
+                busy.try_set(false);
+            });
+        };
+    let resolve_action = move |action_id: String, resolution: ActionResolution| {
+        after(Box::pin(async move {
+            api::resolve_workspace_action(&action_id, resolution)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.message().to_owned())
+        }));
+    };
+    let set_status = move |status: WorkspaceSubjectStatus| {
+        let (w, s) = (workspace_id.get_untracked(), subject_id.get_untracked());
+        after(Box::pin(async move {
+            api::set_workspace_subject_status(&w, &s, status)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.message().to_owned())
+        }));
+    };
+
+    let header = move || {
+        let (workspace, subject) =
+            detail.with(|d| d.as_ref().map(|d| (d.workspace.clone(), d.subject.clone())))?;
+        let current = subject.status;
+        let options = [
+            (WorkspaceSubjectStatus::Active, "Active"),
+            (WorkspaceSubjectStatus::Paused, "Paused"),
+            (WorkspaceSubjectStatus::Completed, "Completed"),
+            (WorkspaceSubjectStatus::Archived, "Archived"),
+        ];
+        let updated = subject.updated_at as f64;
+        let researched = subject.last_researched_at.map(|t| t as f64);
+        let (kind, word) = subject_status(current);
+        let status_select = ViewFn::from(move || {
+            view! {
+                <label class="ws-status">
+                    <span class="sr-only">"Subject status"</span>
+                    <select
+                        class="select"
+                        aria-label="Subject status"
+                        disabled=move || busy.get()
+                        on:change=move |event| {
+                            let status = match event_target_value(&event).as_str() {
+                                "active" => WorkspaceSubjectStatus::Active,
+                                "paused" => WorkspaceSubjectStatus::Paused,
+                                "completed" => WorkspaceSubjectStatus::Completed,
+                                _ => WorkspaceSubjectStatus::Archived,
+                            };
+                            set_status(status);
+                        }
+                    >
+                        {options
+                            .into_iter()
+                            .map(|(status, label)| {
+                                view! {
+                                    <option value=status.as_str() prop:selected=status == current>
+                                        {label}
+                                    </option>
+                                }
+                            })
+                            .collect_view()}
+                    </select>
+                </label>
+            }
+        });
+        Some(view! {
+            <div id="workspace-summary">
+                <PageHead
+                    title=subject.title.clone()
+                    eyebrow=workspace.title.clone()
+                    lede=subject.summary.clone()
+                    actions=status_select
+                >
+                    <div class="cluster small muted ws-subject-meta">
+                        <Status kind=kind label=word />
+                        <span title=format_absolute(updated)>
+                            {move || format!("Updated {}", format_relative_at(updated, now.get()))}
+                        </span>
+                        {researched
+                            .map(|at| {
+                                view! {
+                                    <span title=format_absolute(at)>
+                                        {move || format!("Researched {}", format_relative_at(at, now.get()))}
+                                    </span>
+                                }
+                            })}
+                        {move || {
+                            (sending.get() || busy.get())
+                                .then(|| view! { <Status kind=StatusKind::Running label="Working" /> })
+                        }}
+                    </div>
+                </PageHead>
+            </div>
+        })
+    };
+
+    let outline = move || {
+        let current = section.get();
+        let artifacts = artifact_keys.get();
+        let current_key = current_artifact.get();
+        SubjectSection::ALL
+            .into_iter()
+            .filter(|s| *s != SubjectSection::Papercuts || count_of(*s) > 0)
+            .map(|s| {
+                let selected = s == current;
+                let count = count_of(s);
+                let pending = pending_count();
+                let badge = if s == SubjectSection::Actions && pending > 0 {
+                    view! { <span class="count warn">{pending}</span> }.into_any()
+                } else {
+                    view! { <span class="seg-n">{count}</span> }.into_any()
+                };
+                let subs = (s == SubjectSection::Artifacts && artifacts.len() > 1).then(|| {
+                    artifacts
+                        .iter()
+                        .map(|(key, title)| {
+                            let on = selected && current_key.as_deref() == Some(key.as_str());
+                            let key = key.clone();
+                            view! {
+                                <button
+                                    type="button"
+                                    class="ws-outline-item sub"
+                                    aria-current=on.then_some("true")
+                                    on:click=move |_| select_artifact(key.clone())
+                                >
+                                    <span class="truncate">{title.clone()}</span>
+                                </button>
+                            }
+                        })
+                        .collect_view()
+                });
+                view! {
+                    <button
+                        type="button"
+                        class="ws-outline-item"
+                        aria-current=selected.then_some("true")
+                        on:click=move |_| select_section(s)
+                    >
+                        <span>{s.label()}</span>
+                        {badge}
+                    </button>
+                    {subs}
+                }
+            })
+            .collect_view()
+    };
+    let section_options = Signal::derive(move || {
+        SubjectSection::ALL
+            .into_iter()
+            .filter(|s| *s != SubjectSection::Papercuts || count_of(*s) > 0)
+            .map(|s| SegOption::new(s, s.label()).with_count(count_of(s)))
+            .collect::<Vec<_>>()
+    });
+
+    let actions_section = move || {
+        let actions = detail.with(|d| d.as_ref().map(|d| d.actions.clone()).unwrap_or_default());
+        if actions.is_empty() {
+            return view! { <EmptyState compact=true message="Nothing needs your approval for this subject." /> }
+                .into_any();
+        }
+        let (open, done): (Vec<_>, Vec<_>) = actions.into_iter().partition(|a| {
+            matches!(
+                a.status,
+                WorkspaceActionStatus::Pending | WorkspaceActionStatus::Failed
+            )
+        });
+        let card = move |action: WorkspaceAction| {
+            let is_open = matches!(
+                action.status,
+                WorkspaceActionStatus::Pending | WorkspaceActionStatus::Failed
+            );
+            let pending = action.status == WorkspaceActionStatus::Pending;
+            let failed = action.status == WorkspaceActionStatus::Failed;
+            let (kind, word) = action_status(action.status);
+            let approve_id = action.action_id.clone();
+            let reject_id = action.action_id.clone();
+            let created = action.created_at as f64;
+            view! {
+                <Panel
+                    id=format!("action-{}", action.action_id)
+                    class=if pending { "ws-action pending" } else { "ws-action" }
+                >
+                    <div class="ws-action-body">
+                        <div class="ws-action-head">
+                            <h3>{action.title.clone()}</h3>
+                            <Status kind=kind label=word />
+                        </div>
+                        <p class="dim">{action.description.clone()}</p>
+                        <span class="mono small muted" title=format_absolute(created)>
+                            {move || format!("Proposed {}", format_relative_at(created, now.get()))}
+                        </span>
+                        {action
+                            .result
+                            .clone()
+                            .filter(|r| !r.is_empty())
+                            .map(|r| view! { <p class="ws-action-result small">{r}</p> })}
+                    </div>
+                    <Disclosure summary="Action details" open=is_open class="ws-action-payload">
+                        <pre class="code-block">{format_action_payload(&action.payload)}</pre>
+                    </Disclosure>
+                    {is_open
+                        .then(|| {
+                            view! {
+                                <div class="ws-action-buttons">
+                                    <Button
+                                        variant=ButtonVariant::Primary
+                                        icon=Icon::Check
+                                        busy
+                                        on_click=Callback::new(move |_| resolve_action(approve_id.clone(), ActionResolution::Approve))
+                                    >
+                                        {if failed { "Retry" } else { "Approve" }}
+                                    </Button>
+                                    {pending
+                                        .then(|| {
+                                            view! {
+                                                <ConfirmButton
+                                                    label="Reject"
+                                                    confirm_label="Confirm reject"
+                                                    variant=ButtonVariant::Danger
+                                                    disabled=busy
+                                                    disabled_reason="Another change is in progress"
+                                                    on_confirm=Callback::new(move |()| resolve_action(reject_id.clone(), ActionResolution::Reject))
+                                                />
+                                            }
+                                        })}
+                                </div>
+                            }
+                        })}
+                </Panel>
+            }
+        };
+        let done_count = done.len();
+        view! {
+            <div class="stack">
+                {open.into_iter().map(card).collect_view()}
+                {(done_count > 0)
+                    .then(|| {
+                        view! {
+                            <div class="group-head ws-resolved">"Resolved" <span class="seg-n">{done_count}</span></div>
+                            {done.into_iter().map(card).collect_view()}
+                        }
+                    })}
+            </div>
+        }
+        .into_any()
+    };
 
     let revisions = Memo::new(move |_| {
         let mut counts = HashMap::<String, usize>::new();
@@ -424,408 +1235,275 @@ fn SubjectPage(
         });
         counts
     });
-
-    // Runs `action`, then reloads and notifies; errors land in `error`.
-    let after = move |clear_error: bool,
-                      action: std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<(), String>>>,
-    >| {
-        busy.set(true);
-        if clear_error {
-            error.set(None);
-        }
-        let next = reload();
-        spawn_detached(async move {
-            let result: Result<(), String> = async {
-                action.await?;
-                let response = next.await.map_err(|e| e.message().to_owned())?;
-                detail.set(Some(response));
-                notify_workspace_updated();
-                Ok(())
+    let artifacts_section = move || {
+        let d = detail.get()?;
+        let counts = revisions.get();
+        let keys = artifact_keys.get();
+        let tabs = (keys.len() > 1).then(|| {
+            let options = keys
+                .iter()
+                .map(|(key, title)| SegOption::new(key.clone(), title.clone()))
+                .collect::<Vec<_>>();
+            let select_options = keys
+                .iter()
+                .map(|(key, title)| {
+                    let key = key.clone();
+                    let selected_key = key.clone();
+                    view! {
+                        <option value=key prop:selected=move || current_artifact.get().as_deref() == Some(selected_key.as_str())>
+                            {title.clone()}
+                        </option>
+                    }
+                })
+                .collect_view();
+            view! {
+                <div class="ws-artifact-tabs hide-phone">
+                    <Segmented
+                        options=Signal::stored(options)
+                        value=Signal::derive(move || current_artifact.get().unwrap_or_default())
+                        on_change=Callback::new(move |key: String| select_artifact(key))
+                        aria_label="Artifact"
+                        small=true
+                    />
+                </div>
+                <select
+                    class="select only-phone ws-artifact-select"
+                    aria-label="Artifact"
+                    on:change=move |event| select_artifact(event_target_value(&event))
+                >
+                    {select_options}
+                </select>
             }
-            .await;
-            if let Err(message) = result {
-                error.set(Some(message));
-            }
-            busy.set(false);
         });
-    };
-
-    let send = move || {
-        let text = message.get_untracked().trim().to_owned();
-        if text.is_empty() || busy.get_untracked() {
-            return;
-        }
-        let (w, s) = (workspace_id.get_untracked(), subject_id.get_untracked());
-        after(
-            true,
-            Box::pin(async move {
-                let accepted = api::send_workspace_message(&w, &text, Some(&s))
-                    .await
-                    .map_err(|e| e.message().to_owned())?;
-                wait_for_run(&accepted.run_id).await?;
-                message.set(String::new());
-                Ok(())
-            }),
-        );
-    };
-
-    let resolve_action = move |action_id: String, resolution: ActionResolution| {
-        after(
-            false,
-            Box::pin(async move {
-                api::resolve_workspace_action(&action_id, resolution)
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.message().to_owned())
-            }),
-        );
-    };
-
-    let set_status = move |status: WorkspaceSubjectStatus| {
-        let (w, s) = (workspace_id.get_untracked(), subject_id.get_untracked());
-        after(
-            true,
-            Box::pin(async move {
-                api::set_workspace_subject_status(&w, &s, status)
-                    .await
-                    .map(|_| ())
-                    .map_err(|e| e.message().to_owned())
-            }),
-        );
-    };
-
-    let header = move || {
-        detail.with(|d| d.as_ref().map(|d| (d.workspace.title.clone(), d.subject.clone())))
-            .map(|(workspace_title, subject)| {
-                let current = subject.status;
-                let options = [
-                    (WorkspaceSubjectStatus::Active, "Active"),
-                    (WorkspaceSubjectStatus::Paused, "Paused"),
-                    (WorkspaceSubjectStatus::Completed, "Completed"),
-                    (WorkspaceSubjectStatus::Archived, "Archived"),
-                ];
+        let articles = d
+            .workspace
+            .artifacts
+            .iter()
+            .map(|definition| {
+                let artifact = d.artifacts.iter().find(|a| a.artifact_key == definition.key);
+                let count = counts.get(&definition.key).copied().unwrap_or(0);
+                let key = definition.key.clone();
+                let hidden = move || current_artifact.get().as_deref() != Some(key.as_str());
+                let body = match artifact {
+                    Some(artifact) => {
+                        let created = artifact.created_at as f64;
+                        view! {
+                            <div class="ws-artifact-meta mono small muted">
+                                <span title=format_absolute(created)>
+                                    {move || format!("Updated {}", format_relative_at(created, now.get()))}
+                                </span>
+                                <span>{plural(count, "revision", "revisions")}</span>
+                            </div>
+                            <WorkspaceMarkdown content=artifact.content.clone() />
+                        }
+                        .into_any()
+                    }
+                    None => view! { <EmptyState compact=true message="Not created yet. The next research run fills it in." /> }
+                        .into_any(),
+                };
                 view! {
-                    <div class="page-header" id="workspace-summary">
-                        <div class="page-header-stack">
-                            <Link to=format!("/workspaces/{}", workspace_id.get_untracked()) class="workspace-back">
-                                {format!("← {workspace_title}")}
-                            </Link>
-                            <h1>{subject.title.clone()}</h1>
-                            <p class="page-subtitle">{subject.summary.clone()}</p>
-                        </div>
-                        <select
-                            class="workspace-status-select"
-                            aria-label="Subject status"
-                            on:change=move |event| {
-                                let status = match event_target_value(&event).as_str() {
-                                    "active" => WorkspaceSubjectStatus::Active,
-                                    "paused" => WorkspaceSubjectStatus::Paused,
-                                    "completed" => WorkspaceSubjectStatus::Completed,
-                                    _ => WorkspaceSubjectStatus::Archived,
-                                };
-                                set_status(status);
-                            }
-                        >
-                            {options
-                                .into_iter()
-                                .map(|(status, label)| {
-                                    view! {
-                                        <option value=status.as_str() prop:selected=status == current>
-                                            {label}
-                                        </option>
-                                    }
-                                })
-                                .collect_view()}
-                        </select>
-                    </div>
+                    <article class="ws-artifact" id=format!("artifact-{}", definition.key) hidden=hidden>
+                        <h2 class="ws-artifact-title">{definition.title.clone()}</h2>
+                        {body}
+                    </article>
                 }
             })
-    };
-
-    let actions_section = move || {
-        let actions = detail.with(|d| d.as_ref().map(|d| d.actions.clone()).unwrap_or_default());
-        (!actions.is_empty()).then(|| {
-            view! {
-                <section class="workspace-section" id="actions">
-                    <h2>"Actions"</h2>
-                    <div class="workspace-action-list">
-                        {actions
-                            .into_iter()
-                            .map(|action| {
-                                let open = matches!(
-                                    action.status,
-                                    WorkspaceActionStatus::Pending | WorkspaceActionStatus::Failed
-                                );
-                                let pending = action.status == WorkspaceActionStatus::Pending;
-                                let failed = action.status == WorkspaceActionStatus::Failed;
-                                let approve_id = action.action_id.clone();
-                                let reject_id = action.action_id.clone();
-                                view! {
-                                    <article class="workspace-action-card" id=format!("action-{}", action.action_id)>
-                                        <div class="workspace-action-heading">
-                                            <div>
-                                                <strong>{action.title.clone()}</strong>
-                                                <p>{action.description.clone()}</p>
-                                            </div>
-                                            <span class=format!("workspace-status status-{}", action.status.as_str())>
-                                                {action.status.as_str()}
-                                            </span>
-                                        </div>
-                                        <details class="content-disclosure" open=open>
-                                            <summary>"Action Details"</summary>
-                                            <pre>{format_action_payload(&action.payload)}</pre>
-                                        </details>
-                                        {action
-                                            .result
-                                            .clone()
-                                            .filter(|r| !r.is_empty())
-                                            .map(|r| view! { <p class="workspace-action-result">{r}</p> })}
-                                        {open
-                                            .then(|| {
-                                                view! {
-                                                    <div class="workspace-action-buttons">
-                                                        <button
-                                                            type="button"
-                                                            on:click=move |_| resolve_action(approve_id.clone(), ActionResolution::Approve)
-                                                            disabled=move || busy.get()
-                                                        >
-                                                            {if failed { "Retry" } else { "Approve" }}
-                                                        </button>
-                                                        {pending
-                                                            .then(|| {
-                                                                view! {
-                                                                    <button
-                                                                        type="button"
-                                                                        class="danger-button"
-                                                                        on:click=move |_| resolve_action(reject_id.clone(), ActionResolution::Reject)
-                                                                        disabled=move || busy.get()
-                                                                    >
-                                                                        "Reject"
-                                                                    </button>
-                                                                }
-                                                            })}
-                                                    </div>
-                                                }
-                                            })}
-                                    </article>
-                                }
-                            })
-                            .collect_view()}
-                    </div>
-                </section>
-            }
-        })
-    };
-
-    let compose_placeholder = move || {
-        detail.with(|d| {
-            d.as_ref().map(|d| {
-                d.workspace
-                    .follow_up_placeholder
-                    .clone()
-                    .unwrap_or_else(|| {
-                        format!(
-                            "Add details or ask for the next step on this {}…",
-                            d.workspace.subject_label.to_lowercase()
-                        )
-                    })
-            })
-        })
-    };
-
-    let artifacts = move || {
-        detail.with(|d| {
-            let d = d.as_ref()?;
-            let counts = revisions.get();
-            Some(
-                d.workspace
-                    .artifacts
-                    .iter()
-                    .map(|definition| {
-                        let artifact = d.artifacts.iter().find(|a| a.artifact_key == definition.key);
-                        let count = counts.get(&definition.key).copied().unwrap_or(0);
-                        let body = match artifact {
-                            Some(artifact) => view! {
-                                <WorkspaceMarkdown content=artifact.content.clone() />
-                                <small>{format!("Updated {}", format_relative(artifact.created_at as f64))}</small>
-                            }
-                            .into_any(),
-                            None => view! { <p class="muted">"Not created yet."</p> }.into_any(),
-                        };
-                        view! {
-                            <article class="workspace-artifact-card" id=format!("artifact-{}", definition.key)>
-                                <div class="workspace-artifact-heading">
-                                    <h3>{definition.title.clone()}</h3>
-                                    {artifact
-                                        .is_some()
-                                        .then(|| {
-                                            view! {
-                                                <span>
-                                                    {format!("{count} revision{}", if count == 1 { "" } else { "s" })}
-                                                </span>
-                                            }
-                                        })}
-                                </div>
-                                {body}
-                            </article>
-                        }
-                    })
-                    .collect_view(),
-            )
+            .collect_view();
+        Some(view! {
+            {tabs}
+            {articles}
         })
     };
 
     let conversation = move || {
-        detail.with(|d| {
-            d.as_ref().map(|d| {
-                d.messages
-                    .iter()
-                    .map(|item| {
-                        let role = item.role.as_str();
-                        let who = if item.role == WorkspaceMessageRole::User {
-                            "You"
-                        } else {
-                            "Omni"
-                        };
-                        view! {
-                            <article class=format!("workspace-message workspace-message-{role}")>
+        let d = detail.get()?;
+        let placeholder = d
+            .workspace
+            .follow_up_placeholder
+            .clone()
+            .unwrap_or_else(|| {
+                format!(
+                    "Add details or ask for the next step on this {}…",
+                    d.workspace.subject_label.to_lowercase()
+                )
+            });
+        let thread = if d.messages.is_empty() {
+            view! { <EmptyState compact=true message="No messages yet." /> }.into_any()
+        } else {
+            d.messages
+                .iter()
+                .map(|item| {
+                    let (who, class) = match item.role {
+                        WorkspaceMessageRole::User => ("You", "ws-msg user"),
+                        WorkspaceMessageRole::Assistant => ("Omni", "ws-msg"),
+                        WorkspaceMessageRole::System => ("System", "ws-msg system"),
+                    };
+                    view! {
+                        <article class=class>
+                            <div class="ws-msg-head">
                                 <strong>{who}</strong>
-                                <p>{item.text.clone()}</p>
-                                <small>{format_absolute(item.created_at as f64)}</small>
-                            </article>
-                        }
-                    })
-                    .collect_view()
-            })
+                                <time class="mono small muted">{format_absolute(item.created_at as f64)}</time>
+                            </div>
+                            <p class="ws-msg-text">{item.text.clone()}</p>
+                        </article>
+                    }
+                })
+                .collect_view()
+                .into_any()
+        };
+        Some(view! {
+            <div class="ws-thread">{thread}</div>
+            <Compose
+                workspace_id=workspace_id
+                subject_id=Signal::derive(move || Some(subject_id.get()))
+                placeholder=placeholder
+                label="Message workspace"
+                send_label="Send"
+                primary=true
+                busy=sending
+                error
+                on_done=Callback::new(move |()| reload.update(|n| *n += 1))
+            />
         })
     };
 
     let sources = move || {
-        detail.with(|d| {
-            let d = d.as_ref()?;
-            let scope = d.email_scope.as_ref().map(|scope| {
-                view! {
-                    <div class="workspace-scope">
-                        <strong>"Email Scope"</strong>
-                        <code>{serde_json::to_string(scope).unwrap_or_default()}</code>
-                    </div>
-                }
-            });
-            let items = d
-                .sources
-                .iter()
-                .map(|source| {
-                    let link = match safe_source_href(source.url.as_deref()) {
-                        Some(href) => view! {
-                            <a href=href target="_blank" rel="noreferrer">{source.title.clone()}</a>
-                        }
-                        .into_any(),
-                        None => view! { <strong>{source.title.clone()}</strong> }.into_any(),
-                    };
+        let d = detail.get()?;
+        let scope = d.email_scope.clone().map(|scope| {
+            let line = |label: &'static str, items: Vec<String>| {
+                (!items.is_empty()).then(|| {
                     view! {
-                        <article>
-                            <span class="workspace-source-kind">{source_kind_str(source.kind)}</span>
-                            {link}
-                            <p>{source.excerpt.clone()}</p>
-                        </article>
+                        <dt>{label}</dt>
+                        <dd class="mono">{items.join(", ")}</dd>
                     }
                 })
-                .collect_view();
-            let empty = d
-                .sources
-                .is_empty()
-                .then(|| view! { <p class="muted">"No sources captured yet."</p> });
-            Some(view! {
-                {scope}
-                <div class="workspace-source-list">{items} {empty}</div>
+            };
+            let lines = view! {
+                {line("Senders", scope.senders)}
+                {line("Domains", scope.domains)}
+                {line("Subject has", scope.subject_keywords)}
+                {line("Body has", scope.body_keywords)}
+            };
+            view! {
+                <Panel title="Email scope" pad=true>
+                    <dl class="kv">{lines}</dl>
+                </Panel>
+            }
+        });
+        let items = d
+            .sources
+            .iter()
+            .map(|source| {
+                let title = match safe_source_href(source.url.as_deref()) {
+                    Some(href) => view! {
+                        <a class="row-title ws-source-link" href=href target="_blank" rel="noreferrer">
+                            {source.title.clone()}
+                        </a>
+                    }
+                    .into_any(),
+                    None => view! { <span class="row-title">{source.title.clone()}</span> }.into_any(),
+                };
+                let kind = source_kind_str(source.kind);
+                view! {
+                    <div class="row ws-source">
+                        <Tag>{kind}</Tag>
+                        <div class="row-main">
+                            {title}
+                            <p class="small muted clamp-2">{source.excerpt.clone()}</p>
+                        </div>
+                    </div>
+                }
             })
+            .collect_view();
+        let list = if d.sources.is_empty() {
+            view! { <EmptyState compact=true message="No sources captured yet." /> }.into_any()
+        } else {
+            view! { <Panel><div class="rows">{items}</div></Panel> }.into_any()
+        };
+        Some(view! {
+            <div class="stack">
+                {scope}
+                {list}
+            </div>
         })
     };
 
     let papercuts = move || {
-        detail.with(|d| {
-            let d = d.as_ref()?;
-            (!d.papercuts.is_empty()).then(|| {
+        let d = detail.get()?;
+        let rows = d
+            .papercuts
+            .iter()
+            .map(|item| {
                 view! {
-                    <section class="workspace-section workspace-papercuts">
-                        <h2>"Papercuts"</h2>
-                        {d
-                            .papercuts
-                            .iter()
-                            .map(|item| {
-                                view! {
-                                    <article>
-                                        <strong>{item.title.clone()}</strong>
-                                        <p>{item.detail.clone()}</p>
-                                        <small>
-                                            {format!(
-                                                "{} occurrence{}",
-                                                item.occurrences,
-                                                if item.occurrences == 1 { "" } else { "s" },
-                                            )}
-                                        </small>
-                                    </article>
-                                }
-                            })
-                            .collect_view()}
-                    </section>
+                    <div class="row">
+                        <div class="row-main">
+                            <span class="row-title">{item.title.clone()}</span>
+                            <p class="small muted">{item.detail.clone()}</p>
+                        </div>
+                        <span class="row-end mono small">{format!("×{}", item.occurrences)}</span>
+                    </div>
                 }
             })
+            .collect_view();
+        Some(if d.papercuts.is_empty() {
+            view! { <EmptyState compact=true message="No papercuts reported." /> }.into_any()
+        } else {
+            view! { <Panel><div class="rows">{rows}</div></Panel> }.into_any()
         })
+    };
+
+    let pane = move |s: SubjectSection, content: ViewFn| {
+        view! {
+            <section
+                class="ws-pane"
+                id=s.as_str()
+                hidden=move || section.get() != s
+                aria-label=s.label()
+            >
+                {move || content.run()}
+            </section>
+        }
     };
 
     let loaded = Memo::new(move |_| detail.with(Option::is_some));
     move || {
         if !loaded.get() {
             return match error.get() {
-                Some(e) => view! { <div class="error">{e}</div> }.into_any(),
-                None => view! { <div class="loading">"Loading…"</div> }.into_any(),
+                Some(e) => view! {
+                    <ErrorState
+                        title="This subject could not load"
+                        raw=e
+                        retry=Callback::new(move |()| reload.update(|n| *n += 1))
+                        link=("Back to the workspace".to_owned(), format!("/workspaces/{}", encode_uri_component(&workspace_id.get_untracked())))
+                        page=true
+                    />
+                }
+                .into_any(),
+                None => view! { <SkeletonRows count=6 label="Loading subject" /> }.into_any(),
             };
         }
         view! {
             {header}
-            {move || error.get().map(|e| view! { <div class="error">{e}</div> })}
-            {actions_section}
-            <form
-                class="workspace-compose workspace-compose-detail"
-                on:submit=move |event: leptos::ev::SubmitEvent| {
-                    event.prevent_default();
-                    send();
-                }
-            >
-                <textarea
-                    prop:value=move || message.get()
-                    on:input=move |event| message.set(event_target_value(&event))
-                    placeholder=compose_placeholder
-                    aria-label="Message workspace"
-                ></textarea>
-                <button type="submit" disabled=move || busy.get() || message.with(|m| m.trim().is_empty())>
-                    {move || if busy.get() { "Working…" } else { "Send" }}
-                </button>
-            </form>
-
-            <nav class="workspace-section-nav" aria-label="Project sections">
-                <a href="#artifacts">"Research"</a>
-                <a href="#conversation">"Conversation"</a>
-                <a href="#sources">"Sources"</a>
-            </nav>
-            <section class="workspace-section" id="artifacts">
-                <h2>"Artifacts"</h2>
-                <div class="workspace-artifact-grid">{artifacts}</div>
-            </section>
-
-            <div class="workspace-two-column">
-                <section class="workspace-section" id="conversation">
-                    <h2>"Conversation"</h2>
-                    <div class="workspace-message-list">{conversation}</div>
-                </section>
-                <section class="workspace-section" id="sources">
-                    <h2>"Sources"</h2>
-                    {sources}
-                </section>
+            {move || error.get().map(|e| view! { <ErrorState title="That change did not go through" raw=e /> })}
+            <div class="ws-dossier">
+                <nav class="ws-outline" aria-label="Subject sections">{outline}</nav>
+                <div class="ws-sections-seg">
+                    <Segmented
+                        options=section_options
+                        value=section
+                        on_change=Callback::new(select_section)
+                        aria_label="Subject sections"
+                        small=true
+                    />
+                </div>
+                <div class="ws-panes">
+                    {pane(SubjectSection::Actions, ViewFn::from(actions_section))}
+                    {pane(SubjectSection::Artifacts, ViewFn::from(artifacts_section))}
+                    {pane(SubjectSection::Conversation, ViewFn::from(conversation))}
+                    {pane(SubjectSection::Sources, ViewFn::from(sources))}
+                    {pane(SubjectSection::Papercuts, ViewFn::from(papercuts))}
+                </div>
             </div>
-            {papercuts}
         }
         .into_any()
     }
@@ -833,7 +1511,7 @@ fn SubjectPage(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_action_payload, js_stringify_pretty};
+    use super::{SubjectSection, deep_link_selection, format_action_payload, js_stringify_pretty};
 
     #[test]
     fn action_payloads_pretty_print_like_json_stringify() {
@@ -846,5 +1524,37 @@ mod tests {
             "Stored action details are unavailable."
         );
         assert_eq!(js_stringify_pretty(&serde_json::json!(null)), "null");
+    }
+
+    #[test]
+    fn deep_links_pick_the_section_and_artifact_tab() {
+        assert_eq!(
+            deep_link_selection(Some("actions"), Some("action-1")),
+            (Some(SubjectSection::Actions), None)
+        );
+        assert_eq!(
+            deep_link_selection(None, Some("action-1")),
+            (Some(SubjectSection::Actions), None)
+        );
+        assert_eq!(
+            deep_link_selection(Some("artifacts"), Some("artifact-comparison")),
+            (
+                Some(SubjectSection::Artifacts),
+                Some("comparison".to_owned())
+            )
+        );
+        assert_eq!(
+            deep_link_selection(None, Some("artifact-comparison")),
+            (
+                Some(SubjectSection::Artifacts),
+                Some("comparison".to_owned())
+            )
+        );
+        assert_eq!(
+            deep_link_selection(Some("sources"), None),
+            (Some(SubjectSection::Sources), None)
+        );
+        assert_eq!(deep_link_selection(Some("bogus"), None), (None, None));
+        assert_eq!(deep_link_selection(None, None), (None, None));
     }
 }

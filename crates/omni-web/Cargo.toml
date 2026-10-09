@@ -14,6 +14,7 @@ workspace = true
 omni-api.workspace = true
 omni-web-kit.workspace = true
 omni-web-pages.workspace = true
+futures.workspace = true
 leptos.workspace = true
 serde_json.workspace = true
 wasm-bindgen.workspace = true
@@ -22,4 +23,15 @@ console_error_panic_hook.workspace = true
 
 [dependencies.web-sys]
 workspace = true
-features = ["Document", "Element", "HtmlElement", "Window", "Location", "History", "FocusOptions"]
+features = [
+  "Document",
+  "Element",
+  "FocusOptions",
+  "History",
+  "HtmlElement",
+  "HtmlInputElement",
+  "KeyboardEvent",
+  "Location",
+  "MouseEvent",
+  "Window",
+]

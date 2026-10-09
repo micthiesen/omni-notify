@@ -62,6 +62,7 @@ impl PodcastTasteReflectionTask {
             Err(e) => {
                 self.set_summary(format!("skipped: {}", e.reason));
                 tracing::warn!(target: LOG, "Podcast taste reflection skipped: {}", e.reason);
+                omni_tasks::report_degraded(format!("listen history unavailable: {}", e.reason));
                 return Ok(());
             }
         };

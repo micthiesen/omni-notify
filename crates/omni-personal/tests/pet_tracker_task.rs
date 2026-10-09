@@ -7,6 +7,7 @@ use std::sync::Arc;
 use base64::Engine as _;
 use jiff::tz::TimeZone;
 use omni_core::clock::SharedClock;
+use omni_personal::pets::alerts::HealthLedger;
 use omni_personal::pets::api::WhiskerApi;
 use omni_personal::pets::auth::WhiskerAuth;
 use omni_personal::pets::persistence::PetStore;
@@ -111,6 +112,7 @@ async fn syncs_pets_and_new_readings_idempotently() {
         )),
         WhiskerApi::new(http),
         pets.clone(),
+        HealthLedger::new(store.store.clone(), None),
         clock,
         TimeZone::get("America/Vancouver").unwrap(),
     )

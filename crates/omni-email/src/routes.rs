@@ -1,5 +1,5 @@
-//! Email routes: activity, activity logs, reprocess, sender rules and
-//! feedback.
+//! Email routes: activity, activity logs, reprocess, sender rules, feedback
+//! and the retry queue.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -8,9 +8,10 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use omni_api::email::{
     BuiltinRules, BuiltinSenderLists, DeletedResponse, EmailActivitiesResponse, EmailActivity,
-    EmailActivityLogsResponse, EmailActivityResponse, EmailFeedback, EmailFeedbackListResponse,
-    EmailFeedbackResponse, EmailFeedbackVerdict, EmailPipelineName, EmailRule,
-    EmailRuleUpsertResponse, EmailRulesResponse, RuleScope, RuleUpsertStatus, RuleVerdict,
+    EmailActivityLogsResponse, EmailActivityResponse, EmailFailureSignature, EmailFeedback,
+    EmailFeedbackListResponse, EmailFeedbackResponse, EmailFeedbackVerdict, EmailPipelineName,
+    EmailRetriesResponse, EmailRetry, EmailRule, EmailRuleUpsertResponse, EmailRulesResponse,
+    RuleScope, RuleUpsertStatus, RuleVerdict,
 };
 use omni_api::runs::RunLogLine;
 use omni_core::js::{string_to_number, utf16_len};
@@ -25,9 +26,11 @@ use crate::activity_logs;
 use crate::builtin;
 use crate::feedback::{self, EmailFeedbackData, NewFeedback};
 use crate::reprocess::{ReprocessFailure, reprocess_activity};
+use crate::retry::{self, EmailRetryData};
 use crate::sender_rules::{
     self, EmailRuleData, RuleError, matches_builtin_block, normalize_rule_pattern,
 };
+use crate::systemic::{self, EmailSystemicAlertData};
 
 const LOG: &str = "Main:Server";
 
@@ -52,6 +55,7 @@ pub fn router(state: EmailRoutesState) -> Router {
         .route("/api/email-rules", get(list_rules).post(add_rule))
         .route("/api/email-rules/{rule_id}", delete(delete_rule))
         .route("/api/email-feedback", get(list_feedback))
+        .route("/api/email-retries", get(list_retries))
         .with_state(state)
 }
 
@@ -93,6 +97,33 @@ pub fn serialize_feedback(row: &EmailFeedbackData) -> EmailFeedback {
         verdict: row.verdict,
         note: row.note.clone(),
         created_at: row.created_at,
+    }
+}
+
+pub fn serialize_retry(row: &EmailRetryData) -> EmailRetry {
+    EmailRetry {
+        retry_key: row.retry_key.clone(),
+        pipeline: row.pipeline.clone(),
+        email_id: row.email_id.clone(),
+        reason: row.reason.clone(),
+        attempts: row.attempts,
+        next_attempt_at: row.next_attempt_at,
+        created_at: row.created_at,
+        awaiting_build: row.awaiting_build.clone(),
+        signature: row.signature.clone(),
+    }
+}
+
+pub fn serialize_signature(row: &EmailSystemicAlertData) -> EmailFailureSignature {
+    EmailFailureSignature {
+        pipeline: row.pipeline.clone(),
+        signature: row.signature.clone(),
+        summary: row.summary.clone(),
+        build: row.build.clone(),
+        failures: row.failures,
+        first_seen_at: row.first_seen_at,
+        last_seen_at: row.last_seen_at,
+        last_alerted_at: row.last_alerted_at,
     }
 }
 
@@ -388,5 +419,23 @@ async fn list_feedback(
         .map_err(ApiError::internal)?;
     Ok(Json(EmailFeedbackListResponse {
         feedback: rows.iter().map(serialize_feedback).collect(),
+    }))
+}
+
+async fn list_retries(
+    State(state): State<EmailRoutesState>,
+) -> Result<Json<EmailRetriesResponse>, ApiError> {
+    let mut retries = retry::get_all(&state.store)
+        .await
+        .map_err(ApiError::internal)?;
+    retries.sort_by_key(|r| r.next_attempt_at);
+    let mut signatures = systemic::alerts(&state.store)
+        .await
+        .map_err(ApiError::internal)?;
+    signatures.sort_by_key(|s| std::cmp::Reverse(s.last_seen_at));
+    Ok(Json(EmailRetriesResponse {
+        current_build: systemic::current_build().await,
+        retries: retries.iter().map(serialize_retry).collect(),
+        signatures: signatures.iter().map(serialize_signature).collect(),
     }))
 }

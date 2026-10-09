@@ -32,10 +32,15 @@ families cover:
 
 - email search, retrieval, iCloud draft creation, SMTP sending, activity, rules,
   feedback, retries, and reprocessing
-- CalDAV event inspection, preview, creation, update, and deletion
+- the primary iCloud calendar: status, occurrence listing and search, event
+  detail, preview, idempotent create/update/delete, write status, a change feed,
+  and the email-created event list (see "Calendar" below)
 - task status, task runs, livestreams, briefings, workspaces, actions, and papercuts
 - media library, watchlist, recommendations, podcast accounts, and podcast recommendations
-- PressPods jobs and episodes, pet weights, and aggregate costs
+- PressPods jobs and episodes, pet weights and weekly health trends
+  (`pets_read` `resource: "trend"`), and aggregate costs
+- Parcel delivery status from Omni's scheduled, budgeted cache (`parcels_list`,
+  `parcels_get`); these tools never call Parcel
 - optional fixed-printer status and bounded public-PDF printing
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
 
@@ -251,6 +256,34 @@ Partial SMTP configuration is treated as unavailable rather than silently
 switching accounts. `email_health` reports the selected provider and draft
 support without exposing addresses or credentials. It checks configuration;
 it does not authenticate to the provider or send a message.
+
+### Calendar
+
+The calendar tools manage the one primary iCloud calendar (see
+`docs/calendar.md`). Reads (`calendar_status`, `calendar_events_list`,
+`calendar_events_search`, `calendar_event_get`, `calendar_write_status`,
+`calendar_changes_list`, `calendar_tracked_events_list`) serve a local mirror
+kept fresh by sync-collection, syncing first when it is older than 30 seconds
+or `fresh` is set. Listings expand recurrences over at most 366 days and report
+times in the event's zone plus UTC. `calendar_event_preview` takes the same
+input as a write and shows the planned iCalendar without writing.
+
+`calendar_event_create`, `calendar_event_update` and `calendar_event_delete`
+require approval and a caller-chosen `idempotencyKey` (16-128 of
+`[A-Za-z0-9_-]`). A replay returns the recorded result; reusing a key with
+other input fails with `idempotency_key_reused`. Updates and deletes take an
+optional `etag` and a `scope` of `series`, `occurrence` (an override or
+EXDATE) or `following` (splits the series). Every write is conditional and
+verified by reading it back; an uncertain outcome is reported as `uncertain`
+and settles through `calendar_write_status` by reading, never by resending.
+Invitations are read-only, and events Michael organizes with attendees need
+`attendeeNotifications: "send"`. Errors carry a `[code]` prefix such as
+`version_conflict`, `uid_conflict` or `calendar_identity_ambiguous`.
+
+`calendar_changes_list` is the polling form of `calendar.event_changed`: it
+skips changes written by these tools unless `origin` is `any`, and its cursor
+moves past filtered rows. `calendar_events_list` over now to now plus the lead
+is the polling form of `calendar.event_starting` (`docs/mcp-events.md`).
 
 ### Browser history
 

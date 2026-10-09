@@ -4,6 +4,7 @@
 pub mod api;
 pub mod http;
 pub mod ics;
+pub mod merge;
 pub mod xml;
 
 use omni_config::Config;

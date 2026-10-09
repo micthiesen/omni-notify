@@ -11,7 +11,7 @@ use omni_config::Config;
 use omni_core::clock::SharedClock;
 use omni_http::public::PublicHttpClient;
 use omni_http::{SideEffectMode, Url};
-use omni_runtime::AppContext;
+use omni_runtime::{AppContext, Ports};
 use omni_tasks::{RunNowError, TaskRegistry};
 
 use crate::agents::Agents;
@@ -103,13 +103,22 @@ pub struct PressPodsDeps {
 #[derive(Clone)]
 pub struct PressPods {
     pub(crate) deps: Arc<PressPodsDeps>,
+    /// MCP Events publishing (through the `EventPublisher` port).
+    pub(crate) ports: Ports,
 }
 
 impl PressPods {
     pub fn new(deps: PressPodsDeps) -> Self {
         Self {
             deps: Arc::new(deps),
+            ports: Ports::default(),
         }
+    }
+
+    /// Publishes `presspods.job_finished` through `ports`' event publisher.
+    pub fn with_ports(mut self, ports: Ports) -> Self {
+        self.ports = ports;
+        self
     }
 
     /// Production wiring from the app context.
@@ -160,7 +169,8 @@ impl PressPods {
             mode: ctx.side_effects,
             clock: ctx.clock.clone(),
             config,
-        }))
+        })
+        .with_ports(ctx.ports.clone()))
     }
 
     pub fn persistence(&self) -> &Persistence {

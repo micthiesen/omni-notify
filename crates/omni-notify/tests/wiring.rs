@@ -40,6 +40,7 @@ async fn every_port_is_set_and_email_tasks_need_a_transport() {
         ports.claude_session_notifier().is_some(),
         "ClaudeSessionNotifier (events + device link)"
     );
+    assert!(ports.event_publisher().is_some(), "EventPublisher (events)");
     // No iCloud credentials: no reader, no dispatcher, no email tasks.
     assert!(ports.email_reader().is_none());
     assert!(wired.email_handlers.is_empty());
@@ -56,6 +57,7 @@ async fn every_port_is_set_and_email_tasks_need_a_transport() {
     }
     assert!(names.contains("McpEventDelivery"));
     assert!(names.contains("ClaudeSessionEvents"));
+    assert!(names.contains("TaskRunEvents"));
     assert!(names.contains("RemindersSession"));
     assert!(names.contains("WorkspaceNotifications"));
     // `/api/tasks` lists them in registration order.

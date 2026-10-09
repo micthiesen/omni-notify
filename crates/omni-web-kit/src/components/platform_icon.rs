@@ -1,4 +1,4 @@
-//! YouTube / Twitch / Kick glyphs.
+//! YouTube / Twitch / Kick glyphs, filled from the platform tokens.
 
 use leptos::prelude::*;
 
@@ -17,20 +17,11 @@ fn platform_path(platform: &str) -> Option<&'static str> {
     }
 }
 
-fn platform_color(platform: &str) -> &'static str {
-    match platform {
-        "youtube" => "#ff4d4d",
-        "twitch" => "#a970ff",
-        "kick" => "#53fc18",
-        _ => "currentColor",
-    }
-}
-
 /// Nothing for unknown platforms.
 #[component]
 pub fn PlatformIcon(
     #[prop(into)] platform: String,
-    #[prop(default = 14)] size: u32,
+    #[prop(default = 16)] size: u32,
 ) -> impl IntoView {
     platform_path(&platform).map(|path| {
         view! {
@@ -38,10 +29,9 @@ pub fn PlatformIcon(
                 width=size
                 height=size
                 viewBox="0 0 24 24"
-                fill=platform_color(&platform)
                 aria-label=platform.clone()
                 role="img"
-                class="platform-icon"
+                class=format!("platform-icon {platform}")
             >
                 <path d=path></path>
             </svg>

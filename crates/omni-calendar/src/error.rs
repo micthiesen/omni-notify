@@ -36,6 +36,26 @@ impl CaldavError {
 pub struct CalendarExtractionError {
     pub cause: String,
     pub transient: bool,
+    /// Set when the request itself was rejected (see `omni_email::systemic`):
+    /// the email waits for a new build instead of the retry schedule.
+    pub systemic: Option<omni_email::systemic::Signature>,
+}
+
+impl CalendarExtractionError {
+    /// Systemic failures wait for a new build; transient and content failures
+    /// use the retry queue.
+    pub fn from_ai(error: &omni_ai::AiError) -> Self {
+        let systemic = match omni_email::systemic::classify_ai_error(error) {
+            omni_email::systemic::FailureClass::Systemic(signature) => Some(signature),
+            omni_email::systemic::FailureClass::Transient
+            | omni_email::systemic::FailureClass::Content => None,
+        };
+        Self {
+            cause: error.to_string(),
+            transient: systemic.is_none(),
+            systemic,
+        }
+    }
 }
 
 /// A tracked-event store operation failed.

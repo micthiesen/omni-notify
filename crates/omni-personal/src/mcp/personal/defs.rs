@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 pub static PETS_READ: ToolDef<PetsReadInput, PetsReadOutput> = ToolDef::new(ToolInfo {
     name: "pets_read",
     title: "Read Pet Weight Data",
-    description: "List pets with bounded recent weight and visit history, or read a bounded slice for one pet. This uses only Omni's local synchronized data.",
+    description: "List pets with bounded recent weight and visit history, read a bounded slice for one pet, or read the computed health trend (weekly median weights, 2/4/12/26-week changes, visits per week, data gaps, tripped health rules and alerts sent) instead of paging raw readings. This uses only Omni's local synchronized data.",
     annotations: Annotations {
         read_only_hint: true,
         destructive_hint: false,
@@ -70,10 +70,29 @@ pub struct PetsReadInputHistory {
 }
 
 #[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase")]
+pub struct PetsReadInputTrend {
+    #[schemars(transform = Literal("trend"))]
+    pub resource: Lit,
+    #[schemars(
+        description = "Limit the pets to this one; household data-gap state is always included",
+        length(min = 1, max = 200)
+    )]
+    pub pet_id: Option<String>,
+    #[schemars(
+        description = "Rolling 7-day blocks per pet, oldest first",
+        range(min = 1, max = 52),
+        extend("default" = 12)
+    )]
+    pub weeks: Option<u64>,
+}
+
+#[derive(JsonSchema)]
 #[schemars(untagged, transform = one_of)]
 pub enum PetsReadInput {
     List(PetsReadInputList),
     History(PetsReadInputHistory),
+    Trend(PetsReadInputTrend),
 }
 
 #[derive(JsonSchema)]
@@ -130,10 +149,90 @@ pub struct PetsReadOutputHistory {
 }
 
 #[derive(JsonSchema)]
+pub enum PetHealthKind {
+    #[schemars(rename = "weight-drop-2w")]
+    WeightDrop2w,
+    #[schemars(rename = "weight-drop-90d")]
+    WeightDrop90d,
+    #[schemars(rename = "visit-drop")]
+    VisitDrop,
+    #[schemars(rename = "data-gap")]
+    DataGap,
+}
+
+#[derive(JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct PetHealthFinding {
+    pub kind: PetHealthKind,
+    #[schemars(description = "Percent drop, visit ratio, or hours without readings")]
+    pub value: f64,
+    pub message: String,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PetWeek {
+    pub start: String,
+    pub end: String,
+    pub readings: u64,
+    pub median_weight: Option<f64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PetWeightChange {
+    pub weeks: u64,
+    #[schemars(
+        description = "Last 7 days' median weight vs the 7 days ending this many weeks earlier; negative is a loss"
+    )]
+    pub percent: Option<f64>,
+    pub baseline_weight: Option<f64>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PetTrend {
+    pub pet_id: String,
+    pub name: String,
+    pub weight: Option<f64>,
+    pub latest_reading_at: Option<String>,
+    pub weekly: Vec<PetWeek>,
+    pub changes: Vec<PetWeightChange>,
+    pub visits_last_7_days: u64,
+    pub usual_visits_per_week: Option<f64>,
+    pub findings: Vec<PetHealthFinding>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PetHealthAlert {
+    pub pet_id: Option<String>,
+    pub kind: PetHealthKind,
+    pub active: bool,
+    pub last_notified_at: Option<String>,
+    pub last_message: Option<String>,
+    pub recovered_at: Option<String>,
+}
+
+#[derive(JsonSchema)]
+#[schemars(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PetsReadOutputTrend {
+    #[schemars(transform = Literal("trend"))]
+    pub resource: Lit,
+    pub generated_at: String,
+    pub latest_reading_at: Option<String>,
+    pub hours_since_latest_reading: Option<f64>,
+    pub data_gap: Option<PetHealthFinding>,
+    pub pets: Vec<PetTrend>,
+    pub alerts: Vec<PetHealthAlert>,
+}
+
+#[derive(JsonSchema)]
 #[schemars(untagged, transform = one_of)]
 pub enum PetsReadOutput {
     List(PetsReadOutputList),
     History(PetsReadOutputHistory),
+    Trend(PetsReadOutputTrend),
 }
 
 #[derive(JsonSchema)]

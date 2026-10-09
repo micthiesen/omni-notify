@@ -1,0 +1,194 @@
+/* Omni design system "Instrument": layer order, fonts and every token.
+   Reference: docs/design-system.md. Raw colors live only in this file. */
+
+@layer reset, tokens, base, components, layout, pages, utilities;
+
+@font-face {
+  font-family: "Geist";
+  src: url("fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer tokens {
+  :root {
+    color-scheme: dark;
+
+    /* Surfaces and lines */
+    --canvas: #0a0b0d;
+    --canvas-glass: rgb(10 11 13 / 0.88);
+    --surface: #111316;
+    --raised: #171a1e;
+    --hover: #1a1d22;
+    --overlay: #1d2126;
+    --well: #07080a;
+    --line: #22262c;
+    --line-strong: #30353d;
+    --line-hover: #3b414a;
+    --scrim: rgb(5 6 8 / 0.62);
+
+    /* Text */
+    --text: #eceef1;
+    --text-2: #a9b0ba;
+    --text-3: #858d98;
+    --text-off: #4b525b;
+
+    /* Signal: the one accent */
+    --signal: #c6f36a;
+    --signal-hi: #d8fa94;
+    --signal-ink: #0c1004;
+    --signal-wash: rgb(198 243 106 / 0.1);
+    --signal-line: rgb(198 243 106 / 0.32);
+
+    /* Semantic hues (deviation only) */
+    --live: #ff4d6a;
+    --live-wash: rgb(255 77 106 / 0.11);
+    --live-line: rgb(255 77 106 / 0.34);
+    --ok: #4ade9a;
+    --ok-wash: rgb(74 222 154 / 0.11);
+    --ok-line: rgb(74 222 154 / 0.34);
+    --ok-dim: rgb(74 222 154 / 0.5);
+    --warn: #f4b740;
+    --warn-wash: rgb(244 183 64 / 0.11);
+    --warn-line: rgb(244 183 64 / 0.34);
+    --fault: #ff7452;
+    --fault-wash: rgb(255 116 82 / 0.11);
+    --fault-line: rgb(255 116 82 / 0.34);
+    --info: #7ab8ff;
+    --info-wash: rgb(122 184 255 / 0.11);
+    --info-line: rgb(122 184 255 / 0.34);
+    --on-live: #ffffff;
+
+    /* Platform marks: glyph fill only */
+    --yt: #ff0033;
+    --twitch: #a970ff;
+    --kick: #53fc18;
+    --dgg: #3fa9f5;
+
+    /* Charts */
+    --bar: #3a414a;
+    --bar-hi: #59626e;
+    --grid: #1b1f24;
+    --axis: var(--text-3);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --series-other: #5b636e;
+
+    /* Avatar and poster fallback gradients (deterministic per id) */
+    --mono-a0: #2a3340;
+    --mono-b0: #1a1f27;
+    --mono-a1: #3a2d3f;
+    --mono-b1: #1f1a24;
+    --mono-a2: #2b3a33;
+    --mono-b2: #18211d;
+    --mono-a3: #3d3528;
+    --mono-b3: #221e17;
+    --mono-a4: #2e3047;
+    --mono-b4: #1a1b28;
+    --mono-a5: #3d2b2b;
+    --mono-b5: #231a1a;
+
+    /* Type */
+    --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --t-display: 600 2.5rem/2.75rem var(--font);
+    --t-h1: 600 1.75rem/2.125rem var(--font);
+    --t-h2: 600 1.125rem/1.5rem var(--font);
+    --t-h3: 600 0.9375rem/1.25rem var(--font);
+    --t-body: 400 0.875rem/1.375rem var(--font);
+    --t-small: 400 0.8125rem/1.1875rem var(--font);
+    --t-label: 500 0.75rem/1rem var(--font);
+    --t-prose: 400 0.9375rem/1.5rem var(--font);
+    --t-read-xl: 500 3.5rem/3.5rem var(--mono);
+    --t-read-l: 500 2rem/2rem var(--mono);
+    --t-read-m: 500 1.25rem/1.375rem var(--mono);
+    --t-read-s: 450 0.8125rem/1.0625rem var(--mono);
+    --t-kbd: 500 0.6875rem/1 var(--mono);
+
+    /* Space (4 px base) */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+    --sp-8: 32px;
+    --sp-10: 40px;
+    --sp-12: 48px;
+    --sp-16: 64px;
+
+    /* Sizes */
+    --row: 52px;
+    --row-dense: 36px;
+    --row-touch: 56px;
+    --ctl-md: 36px;
+    --ctl-sm: 30px;
+    --pad: 20px;
+    --gutter: 40px;
+    --rail-w: 232px;
+    --rail-w-collapsed: 64px;
+    --top-h: 56px;
+    --tab-h: 64px;
+    --content-max: 1320px;
+    --measure: 68ch;
+
+    /* Radii */
+    --r-xs: 4px;
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+    --r-pill: 999px;
+
+    /* Elevation */
+    --e-0: none;
+    --e-1: inset 0 1px 0 rgb(255 255 255 / 0.03);
+    --e-2: inset 0 1px 0 rgb(255 255 255 / 0.03), 0 8px 24px rgb(0 0 0 / 0.45);
+    --e-3: inset 0 1px 0 rgb(255 255 255 / 0.03), 0 24px 64px rgb(0 0 0 / 0.6);
+
+    /* Layers */
+    --z-sticky: 10;
+    --z-nav: 20;
+    --z-drawer: 30;
+    --z-overlay: 40;
+    --z-toast: 50;
+
+    /* Motion */
+    --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --d-1: 120ms;
+    --d-2: 180ms;
+    --d-3: 260ms;
+  }
+
+  @media (max-width: 899px) {
+    :root {
+      --t-display: 600 2rem/2.25rem var(--font);
+      --t-h1: 600 1.5rem/1.875rem var(--font);
+      --t-h3: 600 1rem/1.375rem var(--font);
+      --t-body: 400 0.9375rem/1.4375rem var(--font);
+      --t-read-xl: 500 2.75rem/2.75rem var(--mono);
+      --t-read-l: 500 1.75rem/1.75rem var(--mono);
+      --row: var(--row-touch);
+      --ctl-md: 44px;
+      --ctl-sm: 36px;
+      --pad: 16px;
+      --gutter: 16px;
+      --top-h: 52px;
+    }
+  }
+}

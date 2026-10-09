@@ -87,9 +87,84 @@ async fn registers_tasks_tools_and_entities() {
         vec![
             "codex-reset-delivery",
             "claude-reset-delivery",
-            "printer-accepted-job"
+            "printer-accepted-job",
+            "pet-health-alert"
         ]
     );
+    assert_eq!(subsystem.alert_gates.len(), 1);
+    assert!(subsystem.alert_gates[0].applies("Error running task \"PetTracker\""));
+    assert!(!subsystem.alert_gates[0].applies("Error running task \"CodexResets\""));
+}
+
+/// Three readings a day for 30 days, ending 72 hours before the test epoch
+/// (2026-01-01T00:00Z), losing weight steadily.
+async fn seed_trend(app: &TestApp) {
+    let pets = PetStore::open(&app.ctx.store).await.unwrap();
+    pets.upsert_pet(&PetRow {
+        pet_id: "PET-1".into(),
+        name: "Sam".into(),
+        current_weight: 13.4,
+        updated_at: "2025-12-29T00:00:00.000Z".into(),
+    })
+    .await
+    .unwrap();
+    let end = jiff::civil::date(2025, 12, 29).at(0, 0, 0, 0);
+    for i in 0..90 {
+        let at = end - jiff::SignedDuration::from_hours(8 * i);
+        pets.insert_weight_reading(&WeightHistoryRow {
+            pet_id: "PET-1".into(),
+            timestamp: at.to_string(),
+            weight: 13.4 + 0.004 * f64::from(u8::try_from(i).unwrap()),
+        })
+        .await
+        .unwrap();
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn serves_health_trends_and_the_household_data_gap() {
+    let app = TestApp::new().await;
+    seed_trend(&app).await;
+    let subsystem = omni_personal::subsystem(&app.ctx).await.unwrap();
+    let router = app.router(&subsystem);
+    let (status, body) = app.get_json(&router, "/api/pets/health?weeks=4").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["generatedAt"], "2026-01-01T00:00:00.000Z");
+    assert_eq!(body["latestReadingAt"], "2025-12-29T00:00:00.000Z");
+    assert_eq!(body["hoursSinceLatestReading"], 72);
+    assert_eq!(body["dataGap"]["kind"], "data-gap");
+    assert_eq!(body["alerts"], json!([]));
+    let sam = &body["pets"][0];
+    assert_eq!(sam["name"], "Sam");
+    assert_eq!(sam["weekly"].as_array().unwrap().len(), 4);
+    // The newest block ends now and holds the 12 readings of its first four days.
+    assert_eq!(sam["weekly"][3]["readings"], 12);
+    assert_eq!(sam["changes"][0]["weeks"], 2);
+    assert!(sam["changes"][0]["percent"].as_f64().unwrap() < 0.0);
+    // The outage, not the cat, explains the low count: no visit finding.
+    assert_eq!(sam["findings"], json!([]));
+
+    let (status, body) = app.get_json(&router, "/api/pets/health?weeks=99").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"].as_str().unwrap().contains("weeks"));
+
+    let trend = call(
+        &subsystem.mcp_tools,
+        "pets_read",
+        json!({"resource": "trend", "petId": "PET-1", "weeks": 2}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(trend["resource"], "trend");
+    assert_eq!(trend["pets"][0]["weekly"].as_array().unwrap().len(), 2);
+    assert_eq!(trend["dataGap"]["kind"], "data-gap");
+    let missing = call(
+        &subsystem.mcp_tools,
+        "pets_read",
+        json!({"resource": "trend", "petId": "PET-2"}),
+    )
+    .await;
+    assert!(missing.is_err());
 }
 
 #[tokio::test]

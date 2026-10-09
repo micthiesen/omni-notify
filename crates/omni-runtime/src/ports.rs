@@ -7,6 +7,7 @@
 //! deserializes into the same `omni-api` type, so this crate needs no
 //! dependency on subsystem DTOs.
 
+use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -307,6 +308,39 @@ pub trait ClaudeHost: Send + Sync {
     ) -> BoxFuture<'_, Result<Map<String, Value>, HostError>>;
 }
 
+/// One MCP Events source observation (`docs/mcp-events.md`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EventPublication {
+    /// A catalog event name (`omni_api::events` or the MCP catalog).
+    pub name: &'static str,
+    /// Stable for the source observation: a replay with the same key is
+    /// dropped and keeps the event ID. It is hashed before it is stored, so
+    /// it may hold identifiers, but it must not change across versions.
+    pub dedup_key: String,
+    /// When the source observed it, epoch ms.
+    pub occurred_at_ms: i64,
+    /// The payload; it must match the event's payload schema.
+    pub data: Map<String, Value>,
+}
+
+/// Implemented by `omni-mcp` over the durable MCP Events outbox; used by
+/// subsystems that publish events. Unset when MCP Events are disabled, in
+/// which case publishers skip publishing and any subscription-gated polling.
+/// Call it outside the caller's own store transactions and locks.
+pub trait EventPublisher: Send + Sync {
+    /// Queues the event for every matching subscription, once per dedup key.
+    /// `Ok(true)` when at least one delivery was queued. Holds no lock across
+    /// webhook or authorization I/O.
+    fn publish<'a>(&'a self, event: &'a EventPublication)
+    -> BoxFuture<'a, Result<bool, PortError>>;
+    /// Canonical arguments of every current subscription to `name`, so a
+    /// publisher can poll only while subscribed or fan out per argument set.
+    fn active_arguments<'a>(
+        &'a self,
+        name: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<BTreeMap<String, String>>, PortError>>;
+}
+
 /// Returned when a port is set twice.
 #[derive(Debug, thiserror::Error)]
 #[error("port {0} is already set")]
@@ -353,6 +387,18 @@ ports! {
     briefings_reader, set_briefings_reader: BriefingsReader,
     claude_session_notifier, set_claude_session_notifier: ClaudeSessionNotifier,
     claude_host, set_claude_host: ClaudeHost,
+    event_publisher, set_event_publisher: EventPublisher,
+}
+
+impl Ports {
+    /// Publishes through [`EventPublisher`] when MCP Events are enabled;
+    /// `Ok(false)` when the port is unset.
+    pub async fn publish_event(&self, event: &EventPublication) -> Result<bool, PortError> {
+        match self.event_publisher() {
+            Some(publisher) => publisher.publish(event).await,
+            None => Ok(false),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -365,6 +411,22 @@ mod tests {
         fn on_deck(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>> {
             Box::pin(async { Ok(vec![Value::Null]) })
         }
+    }
+
+    #[test]
+    fn publishing_without_the_event_port_is_a_no_op() {
+        use futures::FutureExt as _;
+        let ports = Ports::default();
+        let event = EventPublication {
+            name: "task.run_finished",
+            dedup_key: "run".to_owned(),
+            occurred_at_ms: 0,
+            data: Map::new(),
+        };
+        assert!(matches!(
+            ports.publish_event(&event).now_or_never(),
+            Some(Ok(false))
+        ));
     }
 
     #[test]

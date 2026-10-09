@@ -10,6 +10,9 @@ use std::future::Future;
 
 use leptos::prelude::*;
 use omni_api::reminders::{Phase, PublicStatus, Reason, StatusResponse};
+use omni_web_kit::components::{
+    Button, ButtonVariant, ErrorState, PageHead, Panel, Status, StatusKind,
+};
 use omni_web_kit::task::{spawn_detached, spawn_scoped};
 use web_sys::{RequestCache, RequestCredentials, RequestRedirect};
 
@@ -103,7 +106,7 @@ fn decode_status(body: Option<&str>) -> Option<PublicStatus> {
         .map(|r| r.status)
 }
 
-/// `remindersRequest`: the decoded status, or a user-facing error message.
+/// The decoded status, or a user-facing error message.
 /// Failed start/verify calls that carry a non-authenticated status return
 /// that status; other failures never echo the response body.
 pub async fn reminders_request<T: RemindersTransport>(
@@ -194,7 +197,6 @@ impl RemindersTransport for FetchTransport {
     }
 }
 
-/// `statusText`.
 pub fn status_text(status: &PublicStatus) -> &'static str {
     let has_challenge = status
         .challenge_id
@@ -219,6 +221,29 @@ pub fn status_text(status: &PublicStatus) -> &'static str {
         Phase::UnsupportedProtocol => {
             "Apple sign-in or Reminders access returned an unsupported response. The diagnostic below identifies the failed step. Keep Advanced Data Protection enabled."
         }
+    }
+}
+
+/// The connection badge: a Status shape and a short word. `None` is the
+/// first status load.
+pub fn phase_badge(status: Option<&PublicStatus>) -> (StatusKind, &'static str) {
+    let Some(status) = status else {
+        return (StatusKind::Running, "Checking");
+    };
+    let has_challenge = status
+        .challenge_id
+        .as_deref()
+        .is_some_and(|c| !c.is_empty());
+    match status.phase {
+        Phase::Disabled => (StatusKind::Idle, "Disabled"),
+        Phase::Authenticated => (StatusKind::Ok, "Connected"),
+        Phase::AuthenticationNeeded if has_challenge => (StatusKind::Warn, "Code needed"),
+        Phase::AuthenticationNeeded => (StatusKind::Warn, "Sign-in needed"),
+        Phase::AwaitingDeviceApproval => (StatusKind::Warn, "Awaiting approval"),
+        Phase::TermsRequired => (StatusKind::Warn, "Terms required"),
+        Phase::RateLimited => (StatusKind::Warn, "Rate limited"),
+        Phase::TransientOutage => (StatusKind::Warn, "Apple unavailable"),
+        Phase::UnsupportedProtocol => (StatusKind::Fault, "Unsupported response"),
     }
 }
 
@@ -248,6 +273,13 @@ pub struct RemindersView {
     pub show_code_form: bool,
     pub show_start: bool,
     pub show_verify: bool,
+}
+
+impl RemindersView {
+    /// Check access is the primary action when it is the only one offered.
+    pub fn verify_is_primary(&self) -> bool {
+        self.show_verify && !self.show_start && !self.show_code_form
+    }
 }
 
 /// Derives the page's visible parts (controls stay behind HTTPS).
@@ -309,7 +341,8 @@ fn is_secure() -> bool {
 pub fn RemindersPage() -> impl IntoView {
     let status = RwSignal::new(None::<PublicStatus>);
     let code = RwSignal::new(String::new());
-    let busy = RwSignal::new(false);
+    // The operation in flight; every action is disabled while one runs.
+    let pending = RwSignal::new(None::<Operation>);
     let error = RwSignal::new(String::new());
     let secure = is_secure();
 
@@ -323,14 +356,14 @@ pub fn RemindersPage() -> impl IntoView {
     }
 
     let request = move |operation: Operation, input: Option<CodeInput>| {
-        busy.set(true);
+        pending.set(Some(operation));
         error.set(String::new());
         spawn_detached(async move {
             match reminders_request(&FetchTransport, operation, input.as_ref()).await {
                 Ok(next) => status.set(Some(next)),
                 Err(message) => error.set(message),
             }
-            busy.set(false);
+            pending.set(None);
         });
     };
 
@@ -354,65 +387,110 @@ pub fn RemindersPage() -> impl IntoView {
     };
 
     let view_model = Memo::new(move |_| status.with(|s| reminders_view(secure, s.as_ref())));
+    let badge = Memo::new(move |_| status.with(|s| phase_badge(s.as_ref())));
+    let running =
+        move |operation: Operation| Signal::derive(move || pending.get() == Some(operation));
+    let blocked = Signal::derive(move || pending.get().is_some());
 
-    let controls = move || {
+    let connection = move || {
         let model = view_model.get();
         if !model.secure {
-            return view! { <p role="alert">{HTTPS_REQUIRED}</p> }.into_any();
+            return view! {
+                <ErrorState
+                    warn=true
+                    title=HTTPS_REQUIRED
+                    detail="Sign-in controls are only available on the HTTPS address."
+                />
+            }
+            .into_any();
         }
+        let verify_variant = if model.verify_is_primary() {
+            ButtonVariant::Primary
+        } else {
+            ButtonVariant::Secondary
+        };
+        let has_actions = model.show_start || model.show_verify;
         view! {
-            <p role="status">{model.status_line.clone()}</p>
-            {model.diagnostic.clone().map(|d| view! { <p role="alert">{d}</p> })}
-            {model
-                .show_code_form
-                .then(|| {
-                    view! {
-                        <form on:submit=submit_code>
-                            <label for="reminders-code">"Verification code"</label>
-                            <input
-                                id="reminders-code"
-                                type="text"
-                                inputmode="numeric"
-                                autocomplete="one-time-code"
-                                pattern="[0-9]{6}"
-                                maxlength="6"
-                                prop:value=move || code.get()
-                                on:input=move |event| code.set(event_target_value(&event))
-                            />
-                            <button type="submit" disabled=move || busy.get()>
-                                {move || if busy.get() { "Verifying…" } else { "Submit code" }}
-                            </button>
+            <Panel
+                title="Connection"
+                pad=true
+                aria_label="iCloud Reminders connection"
+                head_end=ViewFn::from(move || {
+                    let (kind, word) = badge.get();
+                    view! { <Status kind=kind label=word/> }
+                })
+            >
+                <div class="reminders-body">
+                    <p class="reminders-status" role="status">{model.status_line.clone()}</p>
+                    {model.diagnostic.clone().map(|d| view! {
+                        <p class="reminders-diagnostic" role="alert">{d}</p>
+                    })}
+                    {model.show_code_form.then(|| view! {
+                        <form class="reminders-code" on:submit=submit_code>
+                            <label class="field-label" for="reminders-code">"Verification code"</label>
+                            <div class="reminders-code-row">
+                                <input
+                                    id="reminders-code"
+                                    class="input reminders-code-input"
+                                    type="text"
+                                    inputmode="numeric"
+                                    autocomplete="one-time-code"
+                                    pattern="[0-9]{6}"
+                                    maxlength="6"
+                                    placeholder="000000"
+                                    prop:value=move || code.get()
+                                    on:input=move |event| code.set(event_target_value(&event))
+                                />
+                                <Button
+                                    variant=ButtonVariant::Primary
+                                    submit=true
+                                    busy=running(Operation::Code)
+                                    disabled=blocked
+                                    disabled_reason="Another request is in progress"
+                                >
+                                    {move || if pending.get() == Some(Operation::Code) { "Verifying…" } else { "Submit code" }}
+                                </Button>
+                            </div>
+                            <p class="field-help">"Six digits from your trusted Apple device."</p>
                         </form>
-                    }
-                })}
-            {model
-                .show_start
-                .then(|| {
-                    view! {
-                        <button type="button" disabled=move || busy.get() on:click=move |_| request(Operation::Start, None)>
-                            "Start sign-in"
-                        </button>
-                    }
-                })}
-            {model
-                .show_verify
-                .then(|| {
-                    view! {
-                        <button type="button" disabled=move || busy.get() on:click=move |_| request(Operation::Verify, None)>
-                            "Check access"
-                        </button>
-                    }
-                })}
+                    })}
+                    {has_actions.then(|| view! {
+                        <div class="reminders-actions">
+                            {model.show_start.then(|| view! {
+                                <Button
+                                    variant=ButtonVariant::Primary
+                                    busy=running(Operation::Start)
+                                    disabled=blocked
+                                    disabled_reason="Another request is in progress"
+                                    on_click=Callback::new(move |_| request(Operation::Start, None))
+                                >
+                                    "Start sign-in"
+                                </Button>
+                            })}
+                            {model.show_verify.then(|| view! {
+                                <Button
+                                    variant=verify_variant
+                                    busy=running(Operation::Verify)
+                                    disabled=blocked
+                                    disabled_reason="Another request is in progress"
+                                    on_click=Callback::new(move |_| request(Operation::Verify, None))
+                                >
+                                    "Check access"
+                                </Button>
+                            })}
+                        </div>
+                    })}
+                </div>
+            </Panel>
         }
         .into_any()
     };
 
     view! {
-        <section class="reminders-panel" aria-label="iCloud Reminders">
-            <h1>"iCloud Reminders"</h1>
-            <p>{INTRO}</p>
-            {controls}
-            {move || error.with(|e| (!e.is_empty()).then(|| view! { <p role="alert">{e.clone()}</p> }))}
-        </section>
+        <div class="reminders">
+            <PageHead title="iCloud Reminders" lede=INTRO/>
+            {connection}
+            {move || error.with(|e| (!e.is_empty()).then(|| view! { <ErrorState title=e.clone()/> }))}
+        </div>
     }
 }

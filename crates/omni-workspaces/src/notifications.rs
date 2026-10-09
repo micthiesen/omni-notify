@@ -183,6 +183,7 @@ impl NotificationDelivery {
                     error = %message,
                     "Workspace notification {id} failed (attempt {attempts}); queued for retry"
                 );
+                omni_tasks::report_degraded(message);
                 Ok(false)
             }
         }

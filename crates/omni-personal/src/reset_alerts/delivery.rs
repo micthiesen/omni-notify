@@ -186,23 +186,32 @@ impl ResetNotifier for PushoverNotifier {
                 sound: None,
                 timestamp: None,
             };
-            match self.pushover.send(PushoverChannel::General, message).await {
-                Ok(PushOutcome::Sent | PushOutcome::Recorded) => Ok(()),
-                Ok(outcome @ (PushOutcome::SkippedNoToken | PushOutcome::Disabled)) => {
-                    Err(NotifyError::Rejected {
-                        status: 0,
-                        body: format!("Pushover did not send the message ({outcome:?})"),
-                    })
-                }
-                Err(error) => match error.status {
-                    Some(status) if error.is_definite_rejection() => Err(NotifyError::Rejected {
-                        status,
-                        body: error.body,
-                    }),
-                    _ => Err(NotifyError::Uncertain(error.to_string())),
-                },
-            }
+            send_general(&self.pushover, message).await
         })
+    }
+}
+
+/// Sends on the General channel, classifying failures for a delivery ledger:
+/// a 4xx or an unsent message is a definite rejection, anything else uncertain.
+pub async fn send_general(
+    pushover: &Pushover,
+    message: PushoverMessage,
+) -> Result<(), NotifyError> {
+    match pushover.send(PushoverChannel::General, message).await {
+        Ok(PushOutcome::Sent | PushOutcome::Recorded) => Ok(()),
+        Ok(outcome @ (PushOutcome::SkippedNoToken | PushOutcome::Disabled)) => {
+            Err(NotifyError::Rejected {
+                status: 0,
+                body: format!("Pushover did not send the message ({outcome:?})"),
+            })
+        }
+        Err(error) => match error.status {
+            Some(status) if error.is_definite_rejection() => Err(NotifyError::Rejected {
+                status,
+                body: error.body,
+            }),
+            _ => Err(NotifyError::Uncertain(error.to_string())),
+        },
     }
 }
 

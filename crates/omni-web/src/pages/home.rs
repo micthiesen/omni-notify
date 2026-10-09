@@ -1,390 +1,668 @@
-//! Home: attention panel, live streams, On Deck, research and system health.
+//! Home: the status sentence, the On air Stage, Needs you, Up next, On deck
+//! and the Research, Inbox and Spend panels.
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
-use omni_api::email::EmailActivityOutcome;
-use omni_api::runs::RunStatus;
-use omni_api::workspaces::{WorkspaceOverview, WorkspaceSubjectStatus};
+use omni_api::costs::{CostRange, CostsResponse};
+use omni_api::email::{EmailActivity, EmailActivityOutcome};
+use omni_api::streamers::{OfflineStreamerView, StreamerTier, StreamerView};
+use omni_api::tasks::TaskInfo;
+use omni_api::workspaces::WorkspaceSubjectStatus;
 use omni_web_kit::api;
-use omni_web_kit::components::{LiveNow, OnDeck, StatStrip};
+use omni_web_kit::components::streamers::streamer_path;
+use omni_web_kit::components::{
+    Avatar, Disclosure, EmptyState, ErrorState, Glyph, Icon, IconSize, LiveTag, OnDeck, PageHead,
+    Panel, Presence, Readout, ReadoutSize, Segmented, Skeleton, SkeletonKind, SkeletonRows, Status,
+    StatusKind, Tone,
+};
+use omni_web_kit::feeds::use_workspace_feed;
+use omni_web_kit::hooks::use_now;
+use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::Link;
-use omni_web_kit::task::{on_cleanup_local, spawn_scoped};
-use omni_web_kit::use_live_data;
-use omni_web_kit::utils::format::format_relative;
-use omni_web_kit::utils::js::now_ms;
-use wasm_bindgen::JsCast as _;
-use wasm_bindgen::closure::Closure;
+use omni_web_kit::task::spawn_scoped;
+use omni_web_kit::utils::format::{format_cents, format_relative, format_relative_at, task_label};
+use omni_web_kit::utils::js::{date_locale_string, now_ms};
+use omni_web_kit::utils::tasks::{
+    Cadence, TaskHealth, cadence, format_next, next_run_ms, period_ms, task_health,
+};
 
-fn plural(count: usize) -> &'static str {
-    if count == 1 { "" } else { "s" }
+use super::live::{
+    LeadStage, LiveRow, LiveSort, live_list, on_air_meta, sort_options, use_live_order,
+};
+
+const DAY_MS: f64 = 86_400_000.0;
+
+/// One "Needs you" line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attention {
+    pub count: usize,
+    pub label: String,
+    pub href: &'static str,
+    pub kind: StatusKind,
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// Attention items from the snapshot tasks, pending actions and failed
+/// emails in the last day.
+pub fn attention_items(
+    tasks: &[TaskInfo],
+    pending_actions: usize,
+    email_failures: usize,
+    now: f64,
+) -> Vec<Attention> {
+    let failing = tasks
+        .iter()
+        .filter(|t| task_health(t, now) == TaskHealth::Fault)
+        .count();
+    let stale = tasks
+        .iter()
+        .filter(|t| task_health(t, now) == TaskHealth::Stale)
+        .count();
+    [
+        (
+            pending_actions,
+            "workspace action waiting",
+            "workspace actions waiting",
+            "/workspaces",
+            StatusKind::Info,
+        ),
+        (
+            failing,
+            "task failing",
+            "tasks failing",
+            "/operations?filter=attention",
+            StatusKind::Fault,
+        ),
+        (
+            stale,
+            "task stale",
+            "tasks stale",
+            "/operations?filter=attention",
+            StatusKind::Stale,
+        ),
+        (
+            email_failures,
+            "email failed today",
+            "emails failed today",
+            "/emails?outcome=failed",
+            StatusKind::Fault,
+        ),
+    ]
+    .into_iter()
+    .filter(|(n, ..)| *n > 0)
+    .map(|(count, one, many, href, kind)| Attention {
+        count,
+        label: plural(count, one, many),
+        href,
+        kind,
+    })
+    .collect()
+}
+
+/// The headline and the line under it.
+pub fn status_sentence(items: &[Attention], live: usize, healthy: bool) -> (String, String) {
+    let total: usize = items.iter().map(|i| i.count).sum();
+    let channels = match live {
+        0 => "nobody on air".to_owned(),
+        n => format!("{} on air", plural(n, "channel", "channels")),
+    };
+    if total == 0 {
+        let tasks = if healthy {
+            "every task healthy"
+        } else {
+            "tasks loading"
+        };
+        (
+            "All quiet.".to_owned(),
+            format!(
+                "{}, {tasks}, nothing waiting on you.",
+                capitalize(&channels)
+            ),
+        )
+    } else {
+        let head = if total == 1 {
+            "1 thing needs you.".to_owned()
+        } else {
+            format!("{total} things need you.")
+        };
+        let parts: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        (
+            head,
+            format!("{}; {}.", capitalize(&parts.join(", ")), channels),
+        )
+    }
+}
+
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().collect::<String>() + chars.as_str())
+        .unwrap_or_default()
+}
+
+fn email_failures(activities: &[EmailActivity], now: f64) -> usize {
+    activities
+        .iter()
+        .filter(|a| {
+            a.processed_at as f64 >= now - DAY_MS
+                && matches!(
+                    a.outcome,
+                    EmailActivityOutcome::Failed
+                        | EmailActivityOutcome::Error
+                        | EmailActivityOutcome::Partial
+                )
+        })
+        .count()
+}
+
+#[component]
+fn NeedsYou(items: Signal<Vec<Attention>>, loading: Signal<bool>) -> impl IntoView {
+    let title = Signal::derive(move || {
+        if items.with(Vec::is_empty) {
+            "Nothing needs you".to_owned()
+        } else {
+            "Needs you".to_owned()
+        }
+    });
+    view! {
+        <Panel title=title aria_label="Needs you">
+            {move || {
+                if loading.get() && items.with(Vec::is_empty) {
+                    return view! { <SkeletonRows count=2/> }.into_any();
+                }
+                let list = items.get();
+                if list.is_empty() {
+                    return view! {
+                        <div class="rows">
+                            <div class="row"><Status kind=StatusKind::Ok label="Tasks healthy"/></div>
+                            <div class="row"><Status kind=StatusKind::Ok label="No actions waiting"/></div>
+                            <div class="row"><Status kind=StatusKind::Ok label="Email clean today"/></div>
+                        </div>
+                    }
+                    .into_any();
+                }
+                view! {
+                    <div class="rows">
+                        {list.into_iter().map(|item| view! {
+                            <Link to=item.href class="row">
+                                <Status kind=item.kind label=item.label/>
+                                <span class="row-end"><Glyph icon=Icon::ChevronRight size=IconSize::Small/></span>
+                            </Link>
+                        }).collect_view()}
+                    </div>
+                }
+                .into_any()
+            }}
+        </Panel>
+    }
+}
+
+#[component]
+fn UpNext() -> impl IntoView {
+    let live = use_live_data();
+    let now = use_now(1000);
+    let rows = Memo::new(move |_| {
+        live.snapshot.with(|s| {
+            let Some(s) = s else {
+                return (Vec::new(), Vec::new());
+            };
+            let (realtime, mut rest): (Vec<&TaskInfo>, Vec<&TaskInfo>) = s
+                .tasks
+                .iter()
+                .partition(|t| cadence(t) == Cadence::Realtime);
+            rest.sort_by(|a, b| {
+                next_run_ms(a)
+                    .unwrap_or(f64::MAX)
+                    .total_cmp(&next_run_ms(b).unwrap_or(f64::MAX))
+            });
+            let rest = rest
+                .into_iter()
+                .take(5)
+                .map(|t| {
+                    (
+                        t.name.clone(),
+                        task_label(&t.name, t.display_name.as_deref()),
+                        next_run_ms(t),
+                        t.running,
+                    )
+                })
+                .collect();
+            let realtime = realtime.iter().filter_map(|t| period_ms(t)).collect();
+            (rest, realtime)
+        })
+    });
+    view! {
+        <Panel title="Up next" head_end=ViewFn::from(|| view! { <Link to="/operations" class="textlink small">"Operations"</Link> })>
+            <div class="rows">
+                {move || rows.with(|(rest, _)| rest.clone()).into_iter().map(|(name, label, next, running)| {
+                    let href = format!("/operations#inspect={}", encode_uri_component(&name));
+                    view! {
+                        <Link to=href class="row dense">
+                            <span class="row-main"><span class="row-title">{label}</span></span>
+                            <span class="row-end num">
+                                {move || if running { "running".to_owned() } else { next.map(|n| format_next(n - now.get())).unwrap_or_else(|| "—".to_owned()) }}
+                            </span>
+                        </Link>
+                    }
+                }).collect_view()}
+                {move || {
+                    let periods = rows.with(|(_, r)| r.clone());
+                    (!periods.is_empty()).then(|| {
+                        let lo = periods.iter().copied().fold(f64::INFINITY, f64::min) / 1000.0;
+                        let hi = periods.iter().copied().fold(0.0, f64::max) / 1000.0;
+                        let range = if (hi - lo).abs() < 1.0 { format!("{lo:.0} s") } else { format!("{lo:.0}–{hi:.0} s") };
+                        view! {
+                            <Link to="/operations" class="row dense">
+                                <span class="row-main"><span class="row-title dim">{format!("Realtime checks ×{} · {range}", periods.len())}</span></span>
+                            </Link>
+                        }
+                    })
+                }}
+            </div>
+        </Panel>
+    }
+}
+
+#[component]
+fn OfflineChips(streamers: Vec<OfflineStreamerView>) -> impl IntoView {
+    let now = now_ms();
+    view! {
+        <div class="offline-chips">
+            {streamers.into_iter().map(|s| {
+                let last = s.last_ended_at.or(s.last_started_at).map(|t| format_relative_at(t as f64, now));
+                view! {
+                    <Link to=streamer_path(&s.id) class="offline-chip" title=last.clone().map(|l| format!("Last live {l}")).unwrap_or_default()>
+                        <Avatar name=s.display_name.clone() size=24 presence=Presence::Offline/>
+                        <span>{s.display_name.clone()}</span>
+                        {last.map(|l| view! { <span class="small dim">{l}</span> })}
+                    </Link>
+                }
+            }).collect_view()}
+        </div>
+    }
+}
+
+#[component]
+fn OnAir() -> impl IntoView {
+    let live = use_live_data();
+    let sort = RwSignal::new(LiveSort::Relevance);
+    let order = use_live_order(live, sort.into());
+    let lead = Memo::new(move |_| order.with(|o| o.first().cloned()));
+    let others = Memo::new(move |_| order.with(|o| o.iter().skip(1).cloned().collect::<Vec<_>>()));
+    let meta = Memo::new(move |_| on_air_meta(&live_list(live)));
+    let offline = Memo::new(move |_| {
+        let mut list: Vec<OfflineStreamerView> = live.snapshot.with(|s| {
+            s.as_ref()
+                .map(|s| {
+                    s.streamers
+                        .iter()
+                        .filter_map(|v| match v {
+                            StreamerView::Offline(o) => Some(o.clone()),
+                            StreamerView::Live(_) => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
+        list.sort_by_key(|o| {
+            (
+                o.tier != StreamerTier::Primary,
+                std::cmp::Reverse(o.last_ended_at.unwrap_or(0)),
+            )
+        });
+        list
+    });
+    let is_live = Signal::derive(move || lead.with(Option::is_some));
+    view! {
+        <Panel stage=is_live aria_label="On air" class="on-air">
+            <div class="panel-head">
+                <h2 class="panel-title">
+                    {move || if is_live.get() {
+                        view! { <LiveTag/> }.into_any()
+                    } else {
+                        view! { <span>"On air"</span> }.into_any()
+                    }}
+                </h2>
+                <span class="panel-meta">{move || is_live.get().then(|| meta.get())}</span>
+                <span class="spacer"></span>
+                {move || (order.with(Vec::len) > 1).then(|| view! {
+                    <Segmented
+                        options=Signal::derive(sort_options)
+                        value=sort
+                        on_change=Callback::new(move |v| sort.set(v))
+                        aria_label="Sort live channels"
+                        small=true
+                    />
+                })}
+            </div>
+            {move || match lead.get() {
+                Some(id) => view! { <LeadStage id/> }.into_any(),
+                None => view! { <EmptyState icon=Icon::Live message="Nobody is live right now." compact=true/> }.into_any(),
+            }}
+            <div class="rows" data-primary-rows="true">
+                <For each=move || others.get() key=|id| id.clone() children=|id| view! { <LiveRow id/> }/>
+            </div>
+            {move || {
+                let list = offline.get();
+                (!list.is_empty()).then(|| {
+                    let primary = list.iter().filter(|o| o.tier == StreamerTier::Primary).count();
+                    let summary = format!("{} offline · {primary} primary", plural(list.len(), "channel", "channels"));
+                    view! {
+                        <div class="panel-foot">
+                            <Disclosure summary=summary flush=true>
+                                <OfflineChips streamers=list/>
+                            </Disclosure>
+                        </div>
+                    }
+                })
+            }}
+        </Panel>
+    }
+}
+
+#[component]
+fn ResearchPanel() -> impl IntoView {
+    let feed = use_workspace_feed();
+    let subjects = Memo::new(move |_| {
+        let mut list: Vec<(String, String, String, String, i64, u64)> = feed.workspaces.with(|w| {
+            w.iter()
+                .flatten()
+                .flat_map(|o| {
+                    o.subjects
+                        .iter()
+                        .filter(|s| s.status == WorkspaceSubjectStatus::Active)
+                        .map(|s| {
+                            (
+                                o.definition.id.clone(),
+                                o.definition.title.clone(),
+                                s.subject_id.clone(),
+                                s.title.clone(),
+                                s.updated_at,
+                                o.pending_action_count,
+                            )
+                        })
+                })
+                .collect()
+        });
+        list.sort_by_key(|s| std::cmp::Reverse(s.4));
+        list.truncate(4);
+        list
+    });
+    view! {
+        <Panel title="Research" head_end=ViewFn::from(|| view! { <Link to="/workspaces" class="textlink small">"Workspaces"</Link> })>
+            {move || {
+                if let Some(e) = feed.error.get().filter(|_| feed.workspaces.with(Option::is_none)) {
+                    return view! { <ErrorState title="Research could not be refreshed" raw=e retry=Callback::new(move |()| feed.refresh())/> }.into_any();
+                }
+                if feed.workspaces.with(Option::is_none) {
+                    return view! { <SkeletonRows count=3/> }.into_any();
+                }
+                let list = subjects.get();
+                if list.is_empty() {
+                    return view! { <EmptyState compact=true message="No active research." action=ViewFn::from(|| view! { <Link to="/workspaces" class="textlink">"Start a workspace"</Link> })/> }.into_any();
+                }
+                view! {
+                    <div class="rows">
+                        {list.into_iter().map(|(w, w_title, s, title, updated, _)| view! {
+                            <Link to=format!("/workspaces/{}/{}", encode_uri_component(&w), encode_uri_component(&s)) class="row">
+                                <span class="row-main">
+                                    <span class="row-title truncate">{title}</span>
+                                    <span class="row-sub">{format!("{w_title} · updated {}", format_relative(updated as f64))}</span>
+                                </span>
+                            </Link>
+                        }).collect_view()}
+                    </div>
+                }
+                .into_any()
+            }}
+        </Panel>
+    }
+}
+
+#[component]
+fn InboxPanel(
+    emails: RwSignal<Option<Vec<EmailActivity>>>,
+    error: RwSignal<Option<String>>,
+) -> impl IntoView {
+    let counts = Memo::new(move |_| {
+        let now = now_ms();
+        emails.with(|e| {
+            e.as_ref().map(|e| {
+                let today: Vec<&EmailActivity> = e
+                    .iter()
+                    .filter(|a| a.processed_at as f64 >= now - DAY_MS)
+                    .collect();
+                let processed = today
+                    .iter()
+                    .filter(|a| {
+                        matches!(
+                            a.outcome,
+                            EmailActivityOutcome::Processed | EmailActivityOutcome::Partial
+                        )
+                    })
+                    .count();
+                let filtered = today
+                    .iter()
+                    .filter(|a| {
+                        matches!(
+                            a.outcome,
+                            EmailActivityOutcome::Filtered
+                                | EmailActivityOutcome::Skipped
+                                | EmailActivityOutcome::NoMatches
+                        )
+                    })
+                    .count();
+                let failed = today
+                    .iter()
+                    .filter(|a| {
+                        matches!(
+                            a.outcome,
+                            EmailActivityOutcome::Failed | EmailActivityOutcome::Error
+                        )
+                    })
+                    .count();
+                (processed, filtered, failed)
+            })
+        })
+    });
+    view! {
+        <Panel title="Inbox" head_end=ViewFn::from(|| view! { <span class="panel-meta">"24 h"</span> <Link to="/emails" class="textlink small">"Email"</Link> })>
+            {move || match (counts.get(), error.get()) {
+                (Some((processed, filtered, failed)), _) => view! {
+                    <div class="readouts" style="--cols: 3">
+                        <Readout label="Processed" value=processed.to_string() size=ReadoutSize::M/>
+                        <Readout label="Filtered" value=filtered.to_string() size=ReadoutSize::M/>
+                        <Readout label="Failed" value=failed.to_string() size=ReadoutSize::M tone={if failed > 0 { Tone::Fault } else { Tone::Neutral }}/>
+                    </div>
+                }.into_any(),
+                (None, Some(e)) => view! { <ErrorState title="Email activity could not be loaded" raw=e/> }.into_any(),
+                (None, None) => view! { <div class="panel-body"><Skeleton kind=SkeletonKind::Readout/></div> }.into_any(),
+            }}
+        </Panel>
+    }
+}
+
+#[component]
+fn SpendPanel() -> impl IntoView {
+    let costs = RwSignal::new(None::<CostsResponse>);
+    let error = RwSignal::new(None::<String>);
+    spawn_scoped(async move {
+        match api::fetch_costs(CostRange::Days(30)).await {
+            Ok(res) => costs.set(Some(res)),
+            Err(e) => error.set(Some(e.message().to_owned())),
+        }
+    });
+    view! {
+        <Panel title="Spend" head_end=ViewFn::from(|| view! { <span class="panel-meta">"30 days"</span> <Link to="/costs" class="textlink small">"Costs"</Link> })>
+            {move || match (costs.get(), error.get()) {
+                (Some(c), _) => {
+                    let max = c.daily.iter().map(|d| d.cost_cents).fold(0.0, f64::max).max(1e-9);
+                    let top = c.by_feature.iter().max_by(|a, b| a.cost_cents.total_cmp(&b.cost_cents)).map(|f| f.feature.clone());
+                    view! {
+                        <div class="panel-body stack">
+                            <Readout label="Last 30 days" value=format_cents(Some(c.summary.selected_cost_cents)).unwrap_or_default()>
+                                {top.map(|t| view! { <span>"Largest: " {t}</span> })}
+                            </Readout>
+                            <div class="mini-bars" role="img" aria-label="Daily spend, last 30 days">
+                                {c.daily.iter().map(|d| view! {
+                                    <i style=format!("height: {:.1}%", d.cost_cents / max * 100.0) title=format!("{} · {}", d.date, format_cents(Some(d.cost_cents)).unwrap_or_default())></i>
+                                }).collect_view()}
+                            </div>
+                        </div>
+                    }.into_any()
+                }
+                (None, Some(e)) => view! { <ErrorState title="Costs could not be loaded" raw=e/> }.into_any(),
+                (None, None) => view! { <div class="panel-body"><Skeleton kind=SkeletonKind::Readout/></div> }.into_any(),
+            }}
+        </Panel>
+    }
 }
 
 #[component]
 pub fn HomePage() -> impl IntoView {
     let live = use_live_data();
-    let workspaces = RwSignal::new(None::<Vec<WorkspaceOverview>>);
-    let recent_email_problems = RwSignal::new(None::<usize>);
-    let workspace_error = RwSignal::new(false);
-    let email_error = RwSignal::new(false);
-    let refresh = RwSignal::new(0u64);
-    let latest_run_at = Memo::new(move |_| {
-        live.snapshot.with(|s| {
-            s.as_ref()
-                .and_then(|s| s.runs.first()?.finished_at)
-                .unwrap_or(0)
-        })
+    let feed = use_workspace_feed();
+    let now = use_now(30_000);
+    let emails = RwSignal::new(None::<Vec<EmailActivity>>);
+    let email_error = RwSignal::new(None::<String>);
+    let newest_run = Memo::new(move |_| {
+        live.snapshot
+            .with(|s| s.as_ref().and_then(|s| s.runs.first()?.finished_at))
     });
-
-    let on_updated = Closure::<dyn FnMut()>::new(move || refresh.update(|n| *n += 1));
-    let win = window();
-    let _ = win
-        .add_event_listener_with_callback("workspace-updated", on_updated.as_ref().unchecked_ref());
-    on_cleanup_local(move || {
-        let _ = win.remove_event_listener_with_callback(
-            "workspace-updated",
-            on_updated.as_ref().unchecked_ref(),
-        );
-    });
-
     Effect::new(move |_| {
-        latest_run_at.track();
-        refresh.track();
-        spawn_scoped(async move {
-            match api::fetch_workspaces().await {
-                Ok(response) => {
-                    workspaces.set(Some(response.workspaces));
-                    workspace_error.set(false);
-                }
-                Err(_) => workspace_error.set(true),
-            }
-        });
+        newest_run.track();
         spawn_scoped(async move {
             match api::fetch_email_activity(None, Some(500)).await {
-                Ok(response) => {
-                    let since = now_ms() - 24.0 * 60.0 * 60.0 * 1000.0;
-                    let problems = response
-                        .activities
-                        .iter()
-                        .filter(|a| {
-                            a.processed_at as f64 >= since
-                                && matches!(
-                                    a.outcome,
-                                    EmailActivityOutcome::Partial
-                                        | EmailActivityOutcome::Failed
-                                        | EmailActivityOutcome::Error
-                                )
-                        })
-                        .count();
-                    recent_email_problems.set(Some(problems));
-                    email_error.set(false);
+                Ok(res) => {
+                    emails.set(Some(res.activities));
+                    email_error.set(None);
                 }
-                Err(_) => email_error.set(true),
+                Err(e) => email_error.set(Some(e.message().to_owned())),
             }
         });
     });
 
-    let active_subjects = Memo::new(move |_| {
-        let mut subjects: Vec<(String, String, omni_api::workspaces::WorkspaceSubject)> =
-            workspaces.with(|w| {
-                w.iter()
-                    .flatten()
-                    .flat_map(|ws| {
-                        ws.subjects
-                            .iter()
-                            .filter(|s| s.status == WorkspaceSubjectStatus::Active)
-                            .map(|s| {
-                                (
-                                    ws.definition.id.clone(),
-                                    ws.definition.title.clone(),
-                                    s.clone(),
-                                )
-                            })
-                    })
-                    .collect()
-            });
-        subjects.sort_by_key(|s| std::cmp::Reverse(s.2.updated_at));
-        subjects.truncate(4);
-        subjects
-    });
-
-    let has_snapshot = Memo::new(move |_| live.snapshot.with(Option::is_some));
-    move || {
-        if has_snapshot.get() {
-            return view! {
-                <HomeContent workspaces recent_email_problems workspace_error email_error active_subjects/>
-            }
-            .into_any();
-        }
-        match live.error.get() {
-            Some(error) => view! {
-                <div class="error">
-                    <div>"Failed to load home"</div>
-                    <div class="error-detail">{error}</div>
-                </div>
-            }
-            .into_any(),
-            None => view! { <div class="loading">"Loading…"</div> }.into_any(),
-        }
-    }
-}
-
-#[component]
-fn HomeContent(
-    workspaces: RwSignal<Option<Vec<WorkspaceOverview>>>,
-    recent_email_problems: RwSignal<Option<usize>>,
-    workspace_error: RwSignal<bool>,
-    email_error: RwSignal<bool>,
-    active_subjects: Memo<Vec<(String, String, omni_api::workspaces::WorkspaceSubject)>>,
-) -> impl IntoView {
-    let live = use_live_data();
-    let snapshot = Signal::derive(move || live.snapshot.get().unwrap_or_else(empty_snapshot));
-    let failing = Memo::new(move |_| {
-        snapshot.with(|s| {
-            s.tasks
-                .iter()
-                .filter(|t| {
-                    t.last_run
-                        .as_ref()
-                        .is_some_and(|r| r.status == RunStatus::Error)
-                })
-                .count()
-        })
-    });
-    let pending_actions = Memo::new(move |_| {
-        workspaces.with(|w| {
-            w.iter()
-                .flatten()
-                .map(|ws| ws.pending_action_count as usize)
-                .sum::<usize>()
-        })
-    });
-    let open_papercuts = Memo::new(move |_| {
-        workspaces.with(|w| {
-            w.iter()
-                .flatten()
-                .map(|ws| ws.open_papercut_count as usize)
-                .sum::<usize>()
-        })
-    });
-    let attention_count = Memo::new(move |_| {
-        failing.get()
-            + pending_actions.get()
-            + open_papercuts.get()
-            + recent_email_problems.get().unwrap_or(0)
-    });
-    let unavailable = Memo::new(move |_| {
-        workspace_error.get() || email_error.get() || live.error.with(Option::is_some)
-    });
-    let loading = Memo::new(move |_| {
-        (workspaces.with(Option::is_none) && !workspace_error.get())
-            || (recent_email_problems.get().is_none() && !email_error.get())
-    });
-
-    let panel_class = move || {
-        let count = attention_count.get();
-        format!(
-            "attention-panel {} {}",
-            if count == 0 {
-                "attention-compact"
-            } else {
-                "attention-actionable"
-            },
-            if unavailable.get() {
-                "attention-unknown"
-            } else if loading.get() {
-                "attention-loading"
-            } else {
-                ""
-            }
-        )
-    };
-    let heading = move || {
-        if attention_count.get() > 0 {
-            "Needs Attention"
-        } else if unavailable.get() {
-            "Status Unavailable"
-        } else if loading.get() {
-            "Checking In"
-        } else {
-            "All Clear"
-        }
-    };
-    let detail = move || {
-        let count = attention_count.get();
-        if unavailable.get() {
-            format!(
-                "{count} known item{}; some status is unavailable.",
-                plural(count)
+    let items = Memo::new(move |_| {
+        let now = now.get();
+        let pending = feed.pending_actions() as usize;
+        let failures = emails.with(|e| e.as_deref().map_or(0, |e| email_failures(e, now)));
+        live.snapshot.with(|s| {
+            attention_items(
+                s.as_ref().map_or(&[][..], |s| &s.tasks),
+                pending,
+                failures,
+                now,
             )
-        } else if loading.get() {
-            "Checking research and email activity…".to_owned()
-        } else if count == 0 {
-            "Everything is running cleanly.".to_owned()
-        } else {
-            format!("{count} item{} need a look.", plural(count))
-        }
-    };
-    let total = move || {
-        let count = attention_count.get();
-        if unavailable.get() {
-            "!".to_owned()
-        } else if loading.get() {
-            "…".to_owned()
-        } else if count == 0 {
-            "✓".to_owned()
-        } else {
-            count.to_string()
-        }
-    };
-    let links = move || {
-        (attention_count.get() > 0).then(|| {
-            let pending = pending_actions.get();
-            let failing = failing.get();
-            let email = recent_email_problems.get().unwrap_or(0);
-            let papercuts = open_papercuts.get();
-            view! {
-                <div class="attention-links">
-                    {(pending > 0).then(|| view! {
-                        <Link to="/workspaces" class="attention-item">
-                            <strong>{pending}</strong>
-                            <span>{format!("Research Approval{}", plural(pending))}</span>
-                        </Link>
-                    })}
-                    {(failing > 0).then(|| view! {
-                        <Link to="/operations" class="attention-item attention-danger">
-                            <strong>{failing}</strong>
-                            <span>{format!("Failed Task{}", plural(failing))}</span>
-                        </Link>
-                    })}
-                    {(email > 0).then(|| view! {
-                        <Link to="/emails" class="attention-item attention-danger">
-                            <strong>{email}</strong>
-                            <span>{format!("Email Issue{}", plural(email))}</span>
-                        </Link>
-                    })}
-                    {(papercuts > 0).then(|| view! {
-                        <Link to="/workspaces" class="attention-item">
-                            <strong>{papercuts}</strong>
-                            <span>{format!("Papercut{}", plural(papercuts))}</span>
-                        </Link>
-                    })}
-                </div>
-            }
         })
-    };
-    let unavailable_notes = move || {
-        unavailable.get().then(|| {
-            view! {
-                <div class="attention-unavailable">
-                    {move || workspace_error.get().then(|| view! { <span>"Research status could not be refreshed."</span> })}
-                    {move || email_error.get().then(|| view! { <span>"Email status could not be refreshed."</span> })}
-                </div>
-            }
-        })
-    };
-    let research = move || {
-        let subjects = active_subjects.get();
-        if !subjects.is_empty() {
-            let cards = subjects
-                .into_iter()
-                .map(|(workspace_id, workspace_title, subject)| {
-                    let to = format!(
-                        "/workspaces/{}/{}",
-                        encode_uri_component(&workspace_id),
-                        encode_uri_component(&subject.subject_id)
-                    );
-                    let summary = if subject.summary.is_empty() {
-                        "Research in progress.".to_owned()
-                    } else {
-                        subject.summary.clone()
-                    };
-                    view! {
-                        <Link to=to class="home-research-card">
-                            <span class="home-research-workspace">{workspace_title}</span>
-                            <strong>{subject.title.clone()}</strong>
-                            <p>{summary}</p>
-                            <small>{format!("Updated {}", format_relative(subject.updated_at as f64))}</small>
-                        </Link>
-                    }
-                })
-                .collect_view();
-            view! { <div class="home-research-grid">{cards}</div> }.into_any()
-        } else if workspace_error.get() {
-            view! {
-                <p class="error-inline">
-                    "Research could not be refreshed. "
-                    <Link to="/workspaces">"Open Workspaces"</Link>
-                </p>
-            }
-            .into_any()
-        } else if workspaces.with(Option::is_none) {
-            view! { <p class="loading-inline">"Loading your research…"</p> }.into_any()
-        } else {
-            view! {
-                <Link to="/workspaces" class="home-research-empty">"Start an ongoing workspace ›"</Link>
-            }
-            .into_any()
-        }
+    });
+    let loading = Signal::derive(move || {
+        live.snapshot.with(Option::is_none)
+            || feed.workspaces.with(Option::is_none)
+            || emails.with(Option::is_none)
+    });
+    let sentence = Memo::new(move |_| {
+        let live_count = live_list(live).len();
+        status_sentence(
+            &items.get(),
+            live_count,
+            live.snapshot.with(Option::is_some),
+        )
+    });
+    let date = move || {
+        date_locale_string(
+            now.get(),
+            &[
+                ("weekday", "short"),
+                ("month", "short"),
+                ("day", "numeric"),
+                ("hour", "2-digit"),
+                ("minute", "2-digit"),
+            ],
+        )
     };
 
     view! {
-        <div class="page-header home-header">
-            <div class="page-header-stack">
-                <span class="home-eyebrow">"Overview"</span>
-                <h1>"Home"</h1>
-                <p class="page-subtitle">"Live streams, fresh picks, and ongoing research."</p>
-            </div>
-        </div>
         {move || {
-            live.error.get().map(|error| view! {
-                <div class="error-inline stale-note">
-                    {format!("Refresh failed ({error}), showing last known state.")}
+            if live.snapshot.with(Option::is_none) {
+                return match live.error.get() {
+                    Some(e) => view! {
+                        <ErrorState
+                            title="Home could not load"
+                            detail="The dashboard snapshot is unavailable."
+                            raw=e
+                            retry=Callback::new(|()| { let _ = window().location().reload(); })
+                            link=("Operations".to_owned(), "/operations".to_owned())
+                            page=true
+                        />
+                    }.into_any(),
+                    None => view! {
+                        <div class="stack-lg">
+                            <Skeleton kind=SkeletonKind::Title width="40%"/>
+                            <Skeleton width="60%"/>
+                            <SkeletonRows count=5/>
+                        </div>
+                    }.into_any(),
+                };
+            }
+            view! {
+                <PageHead
+                    title=Signal::derive(move || sentence.get().0)
+                    eyebrow=Signal::derive(date)
+                    lede=Signal::derive(move || Some(sentence.get().1))
+                    sentence=true
+                />
+                {move || live.error.get().map(|e| view! {
+                    <p class="inline-note warn" role="status">{format!("Refresh failed ({e}); showing the last known state.")}</p>
+                })}
+                <div class="split home-top">
+                    <OnAir/>
+                    <div class="sticky-side">
+                        <NeedsYou items=items.into() loading/>
+                        <UpNext/>
+                    </div>
                 </div>
-            })
+                {move || live.snapshot.with(|s| s.as_ref().is_some_and(|s| !s.on_deck.is_empty())).then(|| view! {
+                    <section class="section">
+                        <div class="section-head">
+                            <h2 class="section-title">"On deck"</h2>
+                            <div class="section-end"><Link to="/media" class="textlink small">"All picks"</Link></div>
+                        </div>
+                        <OnDeck items=Signal::derive(move || live.snapshot.with(|s| s.as_ref().map(|s| s.on_deck.clone()).unwrap_or_default()))/>
+                    </section>
+                })}
+                <div class="grid-3 home-panels">
+                    <ResearchPanel/>
+                    <InboxPanel emails error=email_error/>
+                    <SpendPanel/>
+                </div>
+            }
+            .into_any()
         }}
-        <section class=panel_class aria-label="System attention">
-            <div class="attention-heading">
-                <div>
-                    <span class="section-title">{heading}</span>
-                    <p>{detail}</p>
-                </div>
-                <span class=move || {
-                    format!(
-                        "attention-total {}",
-                        if attention_count.get() > 0 || unavailable.get() { "has-items" } else { "" },
-                    )
-                }>{total}</span>
-            </div>
-            {links}
-            {unavailable_notes}
-        </section>
-
-        <LiveNow streamers=Signal::derive(move || snapshot.with(|s| s.streamers.clone()))/>
-        <OnDeck items=Signal::derive(move || snapshot.with(|s| s.on_deck.clone()))/>
-
-        <section class="page-section home-research">
-            <div class="section-heading-row">
-                <h2 class="section-title">"Research"</h2>
-                <Link to="/workspaces" class="section-view-all">"View Workspaces ›"</Link>
-            </div>
-            {research}
-        </section>
-
-        <section class="page-section home-system-health">
-            <div class="section-heading-row">
-                <h2 class="section-title">"System Health"</h2>
-                <Link to="/operations" class="section-view-all">"Open Operations ›"</Link>
-            </div>
-            <StatStrip snapshot/>
-        </section>
     }
 }
 
-pub(crate) fn empty_snapshot() -> api::Snapshot {
-    api::Snapshot {
-        tasks: Vec::new(),
-        streamers: Vec::new(),
-        runs: Vec::new(),
-        on_deck: Vec::new(),
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sentence_reads_quiet_or_counts_items() {
+        let (head, line) = status_sentence(&[], 4, true);
+        assert_eq!(head, "All quiet.");
+        assert_eq!(
+            line,
+            "4 channels on air, every task healthy, nothing waiting on you."
+        );
+        let items = attention_items(&[], 2, 1, 0.0);
+        let (head, line) = status_sentence(&items, 0, true);
+        assert_eq!(head, "3 things need you.");
+        assert_eq!(
+            line,
+            "2 workspace actions waiting, 1 email failed today; nobody on air."
+        );
     }
 }

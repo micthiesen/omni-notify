@@ -483,6 +483,8 @@ struct RetrySummary {
     attempts: i64,
     next_attempt_at: i64,
     created_at: i64,
+    awaiting_build: Option<String>,
+    signature: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -750,6 +752,8 @@ impl EmailTools {
                 attempts: r.attempts,
                 next_attempt_at: r.next_attempt_at,
                 created_at: r.created_at,
+                awaiting_build: r.awaiting_build,
+                signature: r.signature,
             })
             .collect();
         Ok(paginate(items, input.cursor, input.limit))

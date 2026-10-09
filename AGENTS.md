@@ -144,8 +144,9 @@ change; reuse authorization already given in the conversation.
   copies, compose, email MCP reads.
 - `omni-email`: email dispatch, retry queue, watchdog, activity, triage, sender
   rules, feedback.
-- `omni-parcel` and `omni-calendar`: Parcel and calendar email handlers
-  (CalDAV writes in `omni-calendar`).
+- `omni-parcel`: Parcel email handler and the budgeted delivery-status cache.
+- `omni-calendar`: calendar email handler, CalDAV writes, and the primary
+  calendar mirror, change feed and MCP tools.
 - `omni-live`: `channels.json`, aggregate streamer state, notifications, viewer
   metrics and records, DGG discovery, `LiveCheckTask`.
 - `omni-ios-controls`: signed iOS control routes, live slots, APNs pushes.
@@ -179,6 +180,11 @@ The frontend is Leptos 0.8 client-side rendering built by trunk into
 `crates/omni-web/dist` and served from `OMNI_WEB_DIST`. It talks only to the
 REST API in `omni-api`. Live data arrives over one `/api/events` SSE stream per
 tab and falls back to polling `/api/snapshot` every 10 s while the stream is down.
+The UI is dark only and follows `docs/design-system.md` ("Instrument"): tokens
+and layered CSS in `crates/omni-web/style/`, self-hosted Geist fonts in
+`crates/omni-web/assets/fonts/`, kit components in
+`crates/omni-web-kit/src/components/`, and the rail, top bar, phone tab bar and
+command palette in `crates/omni-web/src/shell/`. Change the doc with the UI.
 
 ## Failure-sensitive invariants
 
@@ -214,6 +220,9 @@ suppress rather than alert.
 Missing, empty or corrupt livestream speech or speaker model files disable
 livestream intelligence at boot (`Livestream intelligence disabled: ...`) and
 leave live checks running; they never crash boot.
+A capture that finds the stream has ended (yt-dlp "not currently live", an m3u8
+404, or a `post_live`/`was_live`/`not_live`/`is_upcoming` status) is
+`AudioError::NotLive`: never retried, recorded as a Skipped stage, no WARN.
 
 ### Email
 
@@ -233,10 +242,45 @@ leave live checks running; they never crash boot.
 - Calendar output is sanitized before persistence. Cancellations require an
   explicit event reference; receipts and bills never imply cancellation.
 - CalDAV discovery follows RFC 6764 from principal to home set to a VEVENT
-  collection. Never hardcode an iCloud `pXX` shard. Cross-calendar moves can
-  return 403 and require delete plus recreate.
+  collection. Never hardcode an iCloud `pXX` shard. The pipeline updates an
+  event by GET, merging only the fields it owns, and PUT with If-Match; a 412
+  re-reads and merges at most three times, never clobbering manual or agent
+  edits. A 403 `no-uid-conflict` merges into the moved copy in place.
+- A create whose title matches one active tracked event on the same day at
+  another time, or on another date within 45 days when the email uses
+  reschedule language, updates that event instead of duplicating it.
+- The primary calendar is the one VEVENT calendar named "iCloud" that matches
+  `schedule-default-calendar-URL` when reported. Re-pin automatically only when
+  that is unambiguous; otherwise fail closed with a `calendar_status` error.
+- Calendar MCP writes reserve an idempotency key durably, use If-Match or
+  If-None-Match, and verify by GET. Uncertain writes settle only by reading,
+  never by resending. Invitations are read-only; organizer events with
+  attendees need `attendeeNotifications: "send"`. The change feed is durable
+  and cursor-paged. `calendar.event_changed` publishes feed rows after they
+  commit, skips Omni tool writes by default and never delivers history;
+  `calendar.event_starting` scans only while subscribed and dedups by
+  occurrence start, so a reschedule fires again. See `docs/calendar.md`.
 - Network and 5xx failures enter the durable retry queue. Re-fetch by email id;
   handler dedup makes replay safe.
+- Systemic extraction failures (non-retryable 4xx, invalid output schema,
+  missing key) park the retry row for the running build
+  (`omni-email/src/systemic.rs`): they log at WARN and alert once per pipeline
+  and signature per day. A boot under a different build releases at most 20
+  parked rows (plus recent systemic `error` activity without a row), once per
+  build and at most three builds per email. Only dedup-safe pipelines
+  (`CalendarEvents`, `ParcelTracker`) replay.
+
+### Parcel delivery status
+
+Parcel's API limits are very low (about 20 reads per hour and 20 adds per day,
+failed requests included). Only the `ParcelDeliveries` task reads deliveries:
+every 30 minutes while anything is active or Omni submitted a number since the
+last read, every 3 hours otherwise. A durable budget (at most 4 attempts per
+rolling hour) is reserved before each request, a 429 pauses reads for at least
+an hour, and `SideEffectMode::Record` never reads. `GET /api/parcels`,
+`parcels_list` and `parcels_get` serve only the cache; never add a manual or
+on-demand refresh. The add path (`parcel_api.rs`) is separate and unchanged.
+See `crates/omni-parcel/src/deliveries/`.
 
 ### Notifications and runs
 
@@ -244,6 +288,15 @@ Throttle each notification path at exactly one layer. Preserve distinct incident
 keys for distinct users, URLs, subjects, or tracking numbers. Logs emitted during
 a tracked task run remain attributable through async work and are bounded before
 persistence.
+
+A run that completes but skips its real work because an upstream failed calls
+`omni_tasks::report_degraded` inside the run and is stored as `degraded` with the
+reason in `error`; "no work due" and missing configuration stay `success`.
+`TaskHealth` judges durable run history with the shared persistent-failure rule
+(three consecutive failed or degraded runs spanning twelve hours, less five
+minutes of jitter) and sends one Pushover note per incident whose streak includes a
+degraded run, plus one recovery note after the next success. Plain error streaks
+stay on the ERROR-log alert path and its gates, such as Castro's.
 
 `CodexResets` polls Reset Beacon's public alert feed and history every minute.
 Keep predictions, announcements, observed rollouts and reported landings distinct.
@@ -272,6 +325,19 @@ Higgs denoise uses the `arnndn` filter with
 `assets/press-pods/denoise.rnnn` (`DENOISE_MODEL_ASSET`); the model must remain
 in the Docker image and runtime FFmpeg must include that filter.
 `omni-notify doctor --image` checks both at image build.
+
+### Pet health watch
+
+`PetTracker` evaluates the health rules after every sync
+(`omni-personal/src/pets/health.rs`). Whisker timestamps are UTC without an
+offset. Weights are robust 7-day medians that drop readings over 1 lb from the
+window median (visit misattribution). The `pet-health-alert` row per pet and rule
+is the only throttle: one push per episode, at most one per pet and rule per
+week, reserved as `sending` before the push and never resent when uncertain.
+No reading from any pet for 48 h fails the run; `PetGapAlertGate` keeps that
+failure off the ERROR-alert path while the watch tracks the gap. Pushes report
+numbers and never diagnose. Recalibrate against a production copy with the
+`prod_copy` replay test; see `docs/pet-health.md`.
 
 ### Castro
 
@@ -354,14 +420,21 @@ SMTP/IMAP authentication identities remain separate. Tools never accept a sender
 or From option; invalid legacy `EMAIL_FROM` configuration fails boot. Preserve
 historical Sent MIME during copy repair and never retransmit it to change identity.
 
-MCP Events (`email.received`, `claude.session.turn_finished`) share one outbox;
-each event keeps ordinary polling tools for clients without event support. Never
-hold the outbox lock across webhook or authorization I/O. Events deliver only
-with a stored delegated token that validates at
-delivery time. Executor tokens expire hourly; advertise `refreshBefore` no later
-than the delegated token's expiry, hold events as `withheld` until a refresh
-stores a valid token or the subscription ends, and never extend access to
-deliver sooner. See `docs/mcp-events.md`.
+MCP Events (`email.received`, `claude.session.turn_finished`,
+`livestream.status_changed`, `workspace.updated`, `presspods.job_finished`,
+`task.run_finished`, `calendar.event_changed`, `calendar.event_starting`) share
+one outbox; each event keeps ordinary polling tools for
+clients without event support. Subsystems publish only through the
+`EventPublisher` port (unset when events are disabled), outside their own
+transactions and locks, with a stable dedup key, a payload the catalog schema
+accepts (identifiers, state and at most one 200-character title; no bodies,
+notes, error text or full URLs), and a publish failure that never fails or
+repeats the source work. Never hold the outbox lock across webhook or
+authorization I/O. Events deliver only with a stored delegated token that
+validates at delivery time. Executor tokens expire hourly; advertise
+`refreshBefore` no later than the delegated token's expiry, hold events as
+`withheld` until a refresh stores a valid token or the subscription ends, and
+never extend access to deliver sooner. See `docs/mcp-events.md`.
 
 Each MCP tool's contract (name, title, description, annotations, policy, and
 input/output schemas derived from `schemars::JsonSchema` types) is a `ToolDef`

@@ -178,6 +178,10 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     if let Some(watcher) = mcp.watcher() {
         let _ = ports.set_claude_session_notifier(Arc::new(watcher.clone()));
     }
+    // Subsystems built above read this port when they publish, not at build time.
+    if let Some(publisher) = mcp.event_publisher() {
+        let _ = ports.set_event_publisher(Arc::new(publisher));
+    }
 
     let retry_handlers: Vec<Arc<dyn EmailHandler>> = parcel_handlers
         .iter()
@@ -221,7 +225,10 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
 pub const TASK_ORDER: &[&str] = &[
     "McpEventDelivery",
     "ClaudeSessionEvents",
+    "TaskRunEvents",
     "RemindersSession",
+    "CalendarPrimarySync",
+    "CalendarStartingEvents",
     "LiveCheckTask",
     "PetTracker",
     // briefings
@@ -238,6 +245,7 @@ pub const TASK_ORDER: &[&str] = &[
     "WorkspaceNotifications",
     "CodexResets",
     "ClaudeResets",
+    "ParcelDeliveries",
     "EmailArchive",
     "EmailWatchdog",
     "EmailRetry",
@@ -249,7 +257,9 @@ pub fn runnable_from_cli(name: &str) -> bool {
     ![
         "McpEventDelivery",
         "ClaudeSessionEvents",
+        "TaskRunEvents",
         "RemindersSession",
+        "CalendarStartingEvents",
         "EmailArchive",
         "EmailWatchdog",
         "EmailRetry",

@@ -1,20 +1,18 @@
-//! Pet weight and litter-box visit trends.
+//! Pet weight and litter-box visit trends: one panel per pet.
 
-use leptos::html::Div;
 use leptos::prelude::*;
 use omni_api::pets::{DailyVisit, Pet, PetsResponse, WeightEntry};
 use omni_web_kit::api;
 use omni_web_kit::charts::{Curve, LineChart, LinePoint, LineSeries};
-use omni_web_kit::task::{on_cleanup_local, spawn_scoped};
+use omni_web_kit::components::{
+    ButtonLink, ButtonSize, ButtonVariant, EmptyState, ErrorState, Icon, PageHead, Panel, Readout,
+    SegOption, Segmented, Skeleton, SkeletonKind,
+};
+use omni_web_kit::task::spawn_scoped;
 use omni_web_kit::utils::js::{
     date_locale_date_string, iso_string, js_round, now_ms, number_string, parse_date_ms, to_fixed,
 };
-use wasm_bindgen::JsCast as _;
-use wasm_bindgen::closure::Closure;
 
-const COLORS: [&str; 6] = [
-    "#4fc3f7", "#81c784", "#ffb74d", "#e57373", "#ba68c8", "#4db6ac",
-];
 const MS_PER_DAY: f64 = 86_400_000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,9 +37,9 @@ impl Range {
 
     fn label(self) -> &'static str {
         match self {
-            Range::Days7 => "7d",
-            Range::Days30 => "30d",
-            Range::Days90 => "90d",
+            Range::Days7 => "7D",
+            Range::Days30 => "30D",
+            Range::Days90 => "90D",
             Range::All => "All",
         }
     }
@@ -177,7 +175,7 @@ fn round2(value: f64) -> f64 {
     js_round(value * 100.0) / 100.0
 }
 
-/// `buildChartConfig`: smoothing, trend and y domain for `(epoch, value)` points.
+/// Smoothing, trend and y domain for `(epoch, value)` points.
 pub fn build_chart(points: &[(f64, f64)], y_min_zero: bool, range: Range) -> ChartBuild {
     let t0 = points.first().map_or(0.0, |p| p.0);
     let values: Vec<f64> = points.iter().map(|p| p.1).collect();
@@ -256,46 +254,30 @@ fn tooltip_date(ms: f64) -> String {
     )
 }
 
-/// A tooltip row's swatch and label.
-struct TooltipLine {
-    stroke: String,
-    width: f64,
-    dash: Option<&'static str>,
-    opacity: f64,
-    label: &'static str,
+/// `+0.12 lbs/wk` (a gain is not an error: no hue either way).
+pub fn trend_label(slope_per_week: f64) -> String {
+    format!(
+        "{}{} lbs/wk",
+        if slope_per_week >= 0.0 { "+" } else { "" },
+        to_fixed(slope_per_week, 2)
+    )
+}
+
+/// One tooltip line: swatch style, label and value.
+fn tooltip_row(swatch: &'static str, label: &'static str, value: String) -> impl IntoView {
+    view! {
+        <div class="chart-tooltip-row">
+            <i class=format!("chart-tooltip-swatch {swatch}")></i>
+            <span>{label}</span>
+            <span class="num">{value}</span>
+        </div>
+    }
 }
 
 #[component]
-fn PetCard(pet: Pet, color_index: usize) -> impl IntoView {
+fn PetPanel(pet: Pet) -> impl IntoView {
     let range = RwSignal::new(Range::Days30);
     let mode = RwSignal::new(ChartMode::Weight);
-    let tooltip_active = RwSignal::new(false);
-    let chart_ref = NodeRef::<Div>::new();
-    let color = COLORS[color_index % COLORS.len()];
-
-    // A tap outside the chart dismisses a touch tooltip.
-    let on_pointer =
-        Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |event: web_sys::PointerEvent| {
-            let Some(chart) = chart_ref.get_untracked() else {
-                return;
-            };
-            let chart: &web_sys::Node = chart.as_ref();
-            let target = event
-                .target()
-                .and_then(|t| t.dyn_into::<web_sys::Node>().ok());
-            if !chart.contains(target.as_ref()) {
-                tooltip_active.set(false);
-            }
-        });
-    let doc = document();
-    let _ =
-        doc.add_event_listener_with_callback("pointerdown", on_pointer.as_ref().unchecked_ref());
-    on_cleanup_local(move || {
-        let _ = doc.remove_event_listener_with_callback(
-            "pointerdown",
-            on_pointer.as_ref().unchecked_ref(),
-        );
-    });
 
     let mut sorted: Vec<(f64, WeightEntry)> = pet
         .weight_history
@@ -364,7 +346,7 @@ fn PetCard(pet: Pet, color_index: usize) -> impl IntoView {
     let series = Signal::stored(vec![
         LineSeries {
             key: "value".into(),
-            stroke: color.into(),
+            stroke: "var(--signal)".into(),
             width: 2.0,
             dash: None,
             opacity: 1.0,
@@ -373,89 +355,34 @@ fn PetCard(pet: Pet, color_index: usize) -> impl IntoView {
         },
         LineSeries {
             key: "smoothed".into(),
-            stroke: "var(--text)".into(),
-            width: 2.0,
+            stroke: "var(--text-2)".into(),
+            width: 1.5,
             dash: None,
-            opacity: 0.6,
+            opacity: 0.7,
             dot: false,
             curve: Curve::Monotone,
         },
         LineSeries {
             key: "trend".into(),
-            stroke: color.into(),
+            stroke: "var(--text-3)".into(),
             width: 1.5,
             dash: Some("6 4".into()),
-            opacity: 0.5,
+            opacity: 0.8,
             dot: false,
             curve: Curve::Linear,
         },
     ]);
     let tooltip = Callback::new(move |index: usize| {
-        if !tooltip_active.get_untracked() {
-            return ().into_any();
-        }
         let Some(point) = chart.with_untracked(|c| c.data.get(index).cloned()) else {
             return ().into_any();
         };
         let unit = unit.get_untracked();
-        let lines = [
-            (
-                point.value,
-                TooltipLine {
-                    stroke: color.into(),
-                    width: 2.0,
-                    dash: None,
-                    opacity: 1.0,
-                    label: label.get_untracked(),
-                },
-            ),
-            (
-                point.smoothed,
-                TooltipLine {
-                    stroke: "var(--text)".into(),
-                    width: 2.0,
-                    dash: None,
-                    opacity: 0.6,
-                    label: "Smoothed",
-                },
-            ),
-            (
-                point.trend,
-                TooltipLine {
-                    stroke: color.into(),
-                    width: 1.5,
-                    dash: Some("4 3"),
-                    opacity: 0.5,
-                    label: "Trend",
-                },
-            ),
-        ];
+        let value = |v: f64| format!("{} {unit}", number_string(v));
         view! {
-            <div class="custom-tooltip">
-                <div class="tooltip-label">{tooltip_date(point.epoch)}</div>
-                {lines
-                    .into_iter()
-                    .map(|(value, style)| {
-                        view! {
-                            <div class="tooltip-row">
-                                <svg width="20" height="12" class="tooltip-swatch">
-                                    <line
-                                        x1="0"
-                                        y1="6"
-                                        x2="20"
-                                        y2="6"
-                                        stroke=style.stroke
-                                        stroke-width=style.width
-                                        stroke-dasharray=style.dash
-                                        stroke-opacity=style.opacity
-                                    ></line>
-                                </svg>
-                                <span>{format!("{}: {} {unit}", style.label, number_string(value))}</span>
-                            </div>
-                        }
-                    })
-                    .collect_view()}
-            </div>
+            <div class="chart-tooltip-label">{tooltip_date(point.epoch)}</div>
+            {tooltip_row("pet-swatch-value", label.get_untracked(), value(point.value))}
+            {tooltip_row("pet-swatch-smooth", "Smoothed", value(point.smoothed))}
+            {tooltip_row("pet-swatch-trend", "Trend", value(point.trend))}
         }
         .into_any()
     });
@@ -469,170 +396,180 @@ fn PetCard(pet: Pet, color_index: usize) -> impl IntoView {
 
     let pet_id = pet.pet_id.clone();
     let pet_name = pet.name.clone();
+    let chart_label = pet.name.clone();
+    let trend = Memo::new(move |_| {
+        (filtered_weight.with(Vec::len) >= 2)
+            .then(|| weight_result.with(|w| (w.slope_per_week, w.r2)))
+    });
+    let mode_options = Signal::stored(vec![
+        SegOption::new(ChartMode::Weight, "Weight"),
+        SegOption::new(ChartMode::Visits, "Visits"),
+    ]);
+    let range_options = Signal::stored(
+        Range::ALL
+            .into_iter()
+            .map(|r| SegOption::new(r, r.label()))
+            .collect::<Vec<_>>(),
+    );
     view! {
-        <div class="pet-card">
-            <div class="pet-header">
-                <div class="meta-row">
-                    <span class="pet-name">{pet.name.clone()}</span>
-                    <span class="pet-weight">{format!("{} lbs", number_string(pet.current_weight))}</span>
+        <Panel class="pet" aria_label=pet.name.clone()>
+            <div class="pet-head">
+                <h2 class="pet-name">{pet.name.clone()}</h2>
+                <span class="spacer"></span>
+                {move || {
+                    let href = export_url(&pet_id, range.get());
+                    view! {
+                        <ButtonLink
+                            to=href
+                            download=true
+                            variant=ButtonVariant::Ghost
+                            size=ButtonSize::Sm
+                            icon=Icon::Download
+                            title="Export the selected range as CSV"
+                            aria_label=format!("Export {pet_name} weight data as CSV")
+                        >
+                            "CSV"
+                        </ButtonLink>
+                    }
+                }}
+            </div>
+            <div class="pet-figures">
+                <Readout label="Weight" value=number_string(pet.current_weight) unit="lbs">
                     {move || {
-                        (filtered_weight.with(Vec::len) >= 2)
-                            .then(|| {
-                                let (slope, r2) = weight_result.with(|w| (w.slope_per_week, w.r2));
-                                view! {
-                                    <span
-                                        class=format!("pet-trend {}", if slope >= 0.0 { "up" } else { "down" })
-                                        title=fit_title(r2)
-                                    >
-                                        {format!(
-                                            "{}{} lbs/wk",
-                                            if slope >= 0.0 { "+" } else { "" },
-                                            to_fixed(slope, 2),
-                                        )}
-                                    </span>
-                                }
-                            })
+                        match trend.get() {
+                            Some((slope, r2)) => view! {
+                                <span class="mono" title=fit_title(r2)>{trend_label(slope)}</span>
+                            }
+                                .into_any(),
+                            None => view! { <span>"Not enough readings for a trend"</span> }.into_any(),
+                        }
                     }}
-                    <span class="pet-visits">{format!("{visits_today} today")}</span>
-                    <span class="pet-visits">{move || format!("avg {}/day", to_fixed(avg_per_day(), 1))}</span>
-                </div>
-                <div class="range-controls">
-                    <div class="mode-toggle">
-                        <button
-                            class=move || format!("range-btn {}", if mode.get() == ChartMode::Weight { "active" } else { "" })
-                            aria-pressed=move || (mode.get() == ChartMode::Weight).to_string()
-                            on:click=move |_| mode.set(ChartMode::Weight)
-                        >
-                            "Weight"
-                        </button>
-                        <button
-                            class=move || format!("range-btn {}", if mode.get() == ChartMode::Visits { "active" } else { "" })
-                            aria-pressed=move || (mode.get() == ChartMode::Visits).to_string()
-                            on:click=move |_| mode.set(ChartMode::Visits)
-                        >
-                            "Visits"
-                        </button>
-                    </div>
-                    <a
-                        href=move || export_url(&pet_id, range.get())
-                        class="export-btn"
-                        title="Export CSV"
-                        aria-label=format!("Export {pet_name} weight data as CSV")
-                    >
-                        <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M8 2v8M5 7l3 3 3-3M3 12h10M3 14h10"></path>
-                        </svg>
-                    </a>
-                    <div class="range-buttons">
-                        {Range::ALL
-                            .into_iter()
-                            .map(|r| {
-                                view! {
-                                    <button
-                                        class=move || format!("range-btn {}", if range.get() == r { "active" } else { "" })
-                                        aria-pressed=move || (range.get() == r).to_string()
-                                        on:click=move |_| range.set(r)
-                                    >
-                                        {r.label()}
-                                    </button>
-                                }
-                            })
-                            .collect_view()}
-                    </div>
-                </div>
+                </Readout>
+                <Readout label="Visits today" value=visits_today.to_string()>
+                    <span class="mono">{move || format!("avg {}/day", to_fixed(avg_per_day(), 1))}</span>
+                </Readout>
+            </div>
+            <div class="pet-controls">
+                <Segmented
+                    options=mode_options
+                    value=mode
+                    on_change=Callback::new(move |m| mode.set(m))
+                    aria_label="Chart"
+                    small=true
+                />
+                <Segmented
+                    options=range_options
+                    value=range
+                    on_change=Callback::new(move |r| range.set(r))
+                    aria_label="Range"
+                    small=true
+                />
             </div>
             {move || {
                 if chart.with(|c| c.data.is_empty()) {
                     let what = if mode.get() == ChartMode::Weight { "weight" } else { "visit" };
-                    view! { <div class="no-data">{format!("No {what} data for this range")}</div> }.into_any()
-                } else {
                     view! {
-                        <div
-                            class="chart-container"
-                            node_ref=chart_ref
-                            on:mousemove=move |_| tooltip_active.set(true)
-                            on:mouseleave=move |_| tooltip_active.set(false)
-                        >
-                            <LineChart
-                                data=data
-                                series=series
-                                y_domain=Signal::derive(move || Some(chart.with(|c| c.y_domain)))
-                                x_tick=Callback::new(short_date)
-                                y_tick=y_tick
-                                tooltip=tooltip
-                                show_brush=Signal::derive(move || chart.with(|c| c.show_brush))
-                            />
+                        <div class="pet-chart">
+                            <EmptyState compact=true message=format!("No {what} data for this range.") />
+                        </div>
+                    }
+                        .into_any()
+                } else {
+                    let name = chart_label.clone();
+                    view! {
+                        <div class="pet-chart">
+                            <div class="chart-container">
+                                <LineChart
+                                    data=data
+                                    series=series
+                                    y_domain=Signal::derive(move || Some(chart.with(|c| c.y_domain)))
+                                    x_tick=Callback::new(short_date)
+                                    y_tick=y_tick
+                                    tooltip=tooltip
+                                    show_brush=Signal::derive(move || chart.with(|c| c.show_brush))
+                                    label=Signal::derive(move || {
+                                        Some(format!("{name} {} over the selected range", label.get().to_lowercase()))
+                                    })
+                                />
+                            </div>
+                            <div class="chart-legend">
+                                <span class="chart-legend-item"><i class="chart-tooltip-swatch pet-swatch-value"></i>{move || label.get()}</span>
+                                <span class="chart-legend-item"><i class="chart-tooltip-swatch pet-swatch-smooth"></i>"Smoothed"</span>
+                                <span class="chart-legend-item"><i class="chart-tooltip-swatch pet-swatch-trend"></i>"Trend"</span>
+                            </div>
                         </div>
                     }
                         .into_any()
                 }
             }}
-        </div>
+        </Panel>
     }
 }
 
 #[component]
 pub fn PetsPage() -> impl IntoView {
-    let pets = RwSignal::new(Vec::<Pet>::new());
-    let loading = RwSignal::new(true);
+    let pets = RwSignal::new(None::<Vec<Pet>>);
     let error = RwSignal::new(None::<String>);
+    let reload = RwSignal::new(0u32);
 
-    spawn_scoped(async move {
-        match api::get::<PetsResponse>("/api/pets").await {
-            Ok(data) => {
-                pets.set(data);
-                loading.set(false);
+    Effect::new(move |_| {
+        reload.track();
+        error.set(None);
+        spawn_scoped(async move {
+            match api::get::<PetsResponse>("/api/pets").await {
+                Ok(data) => pets.set(Some(data)),
+                Err(err) => error.set(Some(err.message().to_owned())),
             }
-            Err(err) => {
-                error.set(Some(err.message().to_owned()));
-                loading.set(false);
-            }
-        }
+        });
+    });
+
+    let lede = Signal::derive(move || {
+        pets.with(|p| {
+            p.as_ref().map(|p| match p.len() {
+                0 => "Weight trends and litter-box visits.".to_owned(),
+                1 => "Weight trend and litter-box visits.".to_owned(),
+                n => format!("Weight trends and litter-box visits for {n} pets."),
+            })
+        })
     });
 
     view! {
-        <div class="page-header">
-            <div class="page-header-stack">
-                <h1>"Pet Weight Tracker"</h1>
-                <p class="page-subtitle">"Weight trends and daily visit activity."</p>
-            </div>
-        </div>
-        {move || loading.get().then(|| view! { <div class="loading">"Loading..."</div> })}
+        <PageHead title="Pets" eyebrow="Personal" lede />
         {move || {
-            error
-                .get()
-                .map(|e| {
-                    view! {
-                        <div class="error">
-                            <div>"Failed to load pet data"</div>
-                            <div class="error-detail">{e}</div>
-                        </div>
-                    }
-                })
-        }}
-        {move || {
-            (!loading.get() && error.with(Option::is_none) && pets.with(Vec::is_empty))
-                .then(|| view! { <div class="no-data">"No pets are being tracked yet."</div> })
-        }}
-        {move || {
-            (!loading.get() && error.with(Option::is_none))
-                .then(|| {
-                    pets.get()
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, pet)| view! { <PetCard pet=pet color_index=i /> })
-                        .collect_view()
-                })
+            match (pets.get(), error.get()) {
+                (None, Some(e)) => view! {
+                    <ErrorState
+                        title="Pet data could not load"
+                        raw=e
+                        retry=Callback::new(move |()| reload.update(|n| *n += 1))
+                        page=true
+                    />
+                }
+                .into_any(),
+                (None, None) => view! {
+                    <div class="pets-grid" aria-busy="true">
+                        {(0..2)
+                            .map(|_| view! {
+                                <div class="panel pet">
+                                    <div class="pet-head"><Skeleton kind=SkeletonKind::Title width="30%" /></div>
+                                    <div class="pet-figures"><Skeleton kind=SkeletonKind::Readout /><Skeleton kind=SkeletonKind::Readout /></div>
+                                    <div class="pet-chart"><div class="chart-container"></div></div>
+                                </div>
+                            })
+                            .collect_view()}
+                    </div>
+                }
+                .into_any(),
+                (Some(list), _) if list.is_empty() => {
+                    view! { <EmptyState message="No pets are being tracked yet." icon=Icon::Paw /> }.into_any()
+                }
+                (Some(list), _) => view! {
+                    <div class="pets-grid">
+                        {list.into_iter().map(|pet| view! { <PetPanel pet /> }).collect_view()}
+                    </div>
+                }
+                .into_any(),
+            }
         }}
     }
 }
@@ -644,7 +581,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn regression_and_smoothing_match_the_ts_math() {
+    fn regression_and_smoothing_match_pinned_values() {
         let (slope, intercept, r2) = linear_regression(&[(0.0, 1.0), (1.0, 3.0), (2.0, 5.0)]);
         assert!((slope - 2.0).abs() < 1e-12 && (intercept - 1.0).abs() < 1e-12);
         assert!((r2 - 1.0).abs() < 1e-12);
@@ -707,5 +644,7 @@ mod tests {
         assert_eq!(filter_visits(&visits, cutoff).len(), 2);
         assert_eq!(filter_visits(&visits, None).len(), 3);
         assert_eq!(fit_title(0.5), "R² = 0.500 (moderate fit)");
+        assert_eq!(trend_label(0.123), "+0.12 lbs/wk");
+        assert_eq!(trend_label(-0.5), "-0.50 lbs/wk");
     }
 }

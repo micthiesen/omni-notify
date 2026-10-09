@@ -297,10 +297,7 @@ impl CalendarEventPipeline {
             .deps
             .ai
             .model_for(&self.deps.config, ModelRole::CalendarExtraction)
-            .map_err(|e| CalendarExtractionError {
-                cause: e.to_string(),
-                transient: true,
-            })?;
+            .map_err(|e| CalendarExtractionError::from_ai(&e))?;
         let input = ExtractionInput {
             email: EmailContent {
                 subject: &email.subject,
@@ -340,18 +337,34 @@ impl CalendarEventPipeline {
         let extraction = match self.extract(email, &contexts, run_log.as_ref()).await {
             Ok(extraction) => extraction,
             Err(error) => {
-                tracing::error!(
-                    target: LOG,
-                    "Extraction failed for \"{}\" from {}: {error}",
-                    email.subject,
-                    email.from
-                );
+                // A systemic failure alerts once per signature (in `report_systemic`),
+                // not once per email through the ERROR log.
+                if error.systemic.is_some() {
+                    tracing::warn!(
+                        target: LOG,
+                        "Extraction failed for \"{}\" from {}: {error}",
+                        email.subject,
+                        email.from
+                    );
+                } else {
+                    tracing::error!(
+                        target: LOG,
+                        "Extraction failed for \"{}\" from {}: {error}",
+                        email.subject,
+                        email.from
+                    );
+                }
                 let mut entry = activity(ActivityOutcome::Error);
                 entry.detail = Some(format!("extraction failed: {error}"));
                 // Extraction failed, so its cost is unknown; only triage may count.
                 entry.cost_cents = sum_cost_cents(&[triage_cost]);
                 self.record(entry).await?;
-                if error.transient {
+                if let Some(signature) = &error.systemic {
+                    self.deps
+                        .support
+                        .report_systemic(PIPELINE, &email.id, &error.to_string(), signature)
+                        .await?;
+                } else if error.transient {
                     self.enqueue_retry(&email.id, &error.to_string()).await?;
                 }
                 return Ok(());
@@ -374,15 +387,24 @@ impl CalendarEventPipeline {
             email.subject
         );
 
+        let reschedule_hint =
+            persistence::mentions_reschedule(&format!("{}\n{}", email.subject, email.text_body));
         let mut items = Vec::new();
         let mut items_ok = Vec::new();
         let mut transient_failures = Vec::new();
         for event in &extraction.events {
+            // An email that lists the same title more than once describes
+            // several bookings, never a move of one of them.
+            let reschedule =
+                (!persistence::title_repeats(event, &extraction.events)).then_some(reschedule_hint);
             let outcome = match event.action {
-                EventAction::Create => self.handle_create(event, &email.id, session).await,
+                EventAction::Create => {
+                    self.handle_create(event, &email.id, &handles, reschedule, session)
+                        .await
+                }
                 EventAction::Cancel => self.handle_cancel(event, &handles, session).await,
                 EventAction::Update => {
-                    self.handle_update(event, &handles, &email.id, session)
+                    self.handle_update(event, &handles, &email.id, reschedule, session)
                         .await
                 }
             };
@@ -437,6 +459,8 @@ impl CalendarEventPipeline {
         &'a self,
         event: &'a ExtractedEvent,
         email_id: &'a str,
+        handles: &'a EventHandles,
+        reschedule: Option<bool>,
         session: &'a CaldavSession,
     ) -> BoxFuture<'a, Result<ItemResult, OpError>> {
         Box::pin(async move {
@@ -454,6 +478,20 @@ impl CalendarEventPipeline {
                     format!("{label}: duplicate, skipped"),
                     true,
                 ));
+            }
+            // A new time or date for an already tracked event updates it
+            // instead of creating a second copy.
+            if let Some(language) = reschedule
+                && let Some(record) =
+                    persistence::find_reschedule_target(event, handles.values(), language)
+            {
+                tracing::info!(
+                    target: LOG,
+                    "\"{}\" reschedules the event on {}; updating it",
+                    event.title,
+                    record.start_date
+                );
+                return self.apply_update(event, record, email_id, session).await;
             }
             let uid = compute_calendar_event_uid(&event_hash);
             let event_uid = match self
@@ -552,9 +590,9 @@ impl CalendarEventPipeline {
         event: &ExtractedEvent,
         handles: &EventHandles,
         email_id: &str,
+        reschedule: Option<bool>,
         session: &CaldavSession,
     ) -> Result<ItemResult, OpError> {
-        let label = format!("\"{}\" on {}", event.title, event.start_date);
         let Some(record) = resolve_event_reference(
             event.event_id.as_deref(),
             &event.title,
@@ -567,8 +605,23 @@ impl CalendarEventPipeline {
                 "Update requested for unknown event: \"{}\", treating as create",
                 event.title
             );
-            return self.handle_create(event, email_id, session).await;
+            return self
+                .handle_create(event, email_id, handles, reschedule, session)
+                .await;
         };
+        self.apply_update(event, record, email_id, session).await
+    }
+
+    /// Merge-updates `record`'s calendar event with the email's fields and
+    /// re-keys the tracked row.
+    async fn apply_update(
+        &self,
+        event: &ExtractedEvent,
+        record: &CreatedCalendarEvent,
+        email_id: &str,
+        session: &CaldavSession,
+    ) -> Result<ItemResult, OpError> {
+        let label = format!("\"{}\" on {}", event.title, event.start_date);
 
         // The model cannot see description/duration/reminderMinutes/recurrence, so
         // a full-PUT update would drop them: backfill from the stored record.
@@ -601,7 +654,12 @@ impl CalendarEventPipeline {
             .deps
             .caldav
             .writer()
-            .update(session, &merged, &record.calendar_event_id)
+            .update(
+                session,
+                &record.to_event(),
+                &merged,
+                &record.calendar_event_id,
+            )
             .await?
         {
             UpdateOutcome::Success { .. } => {}

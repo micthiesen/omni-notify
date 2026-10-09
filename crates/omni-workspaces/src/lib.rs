@@ -28,6 +28,7 @@ pub mod email;
 pub mod engine;
 pub mod entities;
 pub mod error;
+pub mod events;
 pub mod mcp;
 pub mod notifications;
 pub mod persistence;

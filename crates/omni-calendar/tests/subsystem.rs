@@ -26,9 +26,20 @@ async fn without_credentials_only_tools_and_entities_are_registered() {
     let app = TestApp::new().await;
     let s = subsystem(&app.ctx, deps()).unwrap();
     assert_eq!(s.name, "CalendarEvents");
-    assert_eq!(s.mcp_tools.len(), 7);
-    assert_eq!(s.entities.len(), 1);
-    assert_eq!(s.entities[0].name, "calendar-created-event");
+    assert_eq!(s.mcp_tools.len(), 11);
+    let names: Vec<&str> = s.entities.iter().map(|e| e.name).collect();
+    assert_eq!(
+        names,
+        [
+            "calendar-created-event",
+            "calendar-primary-pin",
+            "calendar-primary-state",
+            "calendar-primary-resource",
+            "calendar-primary-change",
+            "calendar-primary-write-echo",
+            "calendar-mcp-operation",
+        ]
+    );
     assert_eq!(s.managed_entities[0].slug, "calendar-created-event");
     assert_eq!(s.managed_entities[0].primary_key, ["eventHash"]);
     assert!(s.email_handlers.is_empty());
@@ -48,10 +59,13 @@ async fn with_credentials_the_handler_and_reconcile_step_are_registered() {
     let s = subsystem(&app.ctx, deps()).unwrap();
     assert_eq!(s.email_handlers.len(), 1);
     assert_eq!(s.email_handlers[0].name(), "CalendarEvents");
-    assert_eq!(s.boot_steps.len(), 1);
-    assert_eq!(s.boot_steps[0].phase, BootPhase::Reconcile);
-    let step = s.boot_steps.into_iter().next().unwrap();
-    (step.run)(app.ctx.clone()).await.unwrap();
+    assert_eq!(s.boot_steps.len(), 2);
+    assert!(s.boot_steps.iter().all(|b| b.phase == BootPhase::Reconcile));
+    let tasks: Vec<&str> = s.tasks.iter().map(|t| t.name()).collect();
+    assert_eq!(tasks, ["CalendarPrimarySync", "CalendarStartingEvents"]);
+    for step in s.boot_steps {
+        (step.run)(app.ctx.clone()).await.unwrap();
+    }
 }
 
 #[tokio::test]

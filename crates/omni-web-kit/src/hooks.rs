@@ -1,4 +1,4 @@
-//! Shared view hooks (`frontend/src/hooks/*`).
+//! Shared view hooks.
 
 use std::rc::Rc;
 use std::time::Duration;
@@ -137,7 +137,7 @@ pub fn use_modal(on_close: impl Fn() + 'static) -> NodeRef<Div> {
         }
         let panel_el: web_sys::Element = panel.clone().into();
         let close_button = panel_el
-            .query_selector(".log-modal-close")
+            .query_selector(".inspector-close, .palette-close")
             .ok()
             .flatten()
             .and_then(|el| el.dyn_into::<web_sys::HtmlElement>().ok());
@@ -249,4 +249,98 @@ pub fn scroll_into_view_center(id: &str) {
 /// target)` query parameters, read once on mount.
 pub fn use_deep_link_target() -> (Option<String>, Option<String>) {
     (query_param("section"), query_param("target"))
+}
+
+/// `matchMedia(query).matches`, kept current.
+pub fn use_media_query(query: &'static str) -> ReadSignal<bool> {
+    let list = window().match_media(query).ok().flatten();
+    let (matches, set_matches) =
+        signal(list.as_ref().is_some_and(web_sys::MediaQueryList::matches));
+    if let Some(list) = list {
+        let watched = list.clone();
+        let handler = Closure::<dyn FnMut()>::new(move || set_matches.set(watched.matches()));
+        let _ = list.add_event_listener_with_callback("change", handler.as_ref().unchecked_ref());
+        on_cleanup_local(move || {
+            let _ = list
+                .remove_event_listener_with_callback("change", handler.as_ref().unchecked_ref());
+        });
+    }
+    matches
+}
+
+/// The wide tier (>= 1280 px): two-column layouts and docked inspectors.
+pub fn use_is_wide() -> ReadSignal<bool> {
+    use_media_query("(min-width: 1280px)")
+}
+
+/// The phone tier (<= 899 px).
+pub fn use_is_phone() -> ReadSignal<bool> {
+    use_media_query("(max-width: 899px)")
+}
+
+/// Replaces `?name=` in the URL without navigating (`None` removes it).
+pub fn replace_query_param(name: &str, value: Option<&str>) {
+    let location = window().location();
+    let Ok(href) = location.href() else { return };
+    let Ok(url) = web_sys::Url::new(&href) else {
+        return;
+    };
+    let params = url.search_params();
+    match value {
+        Some(value) => params.set(name, value),
+        None => params.delete(name),
+    }
+    replace_url(&url);
+}
+
+/// `#key=value` of the current URL.
+pub fn hash_param(key: &str) -> Option<String> {
+    let hash = window().location().hash().ok()?;
+    let rest = hash.strip_prefix('#')?;
+    let value = rest.strip_prefix(key)?.strip_prefix('=')?;
+    crate::utils::js::decode_component(value)
+}
+
+/// Sets or clears `#key=value` without navigating.
+pub fn replace_hash_param(key: &str, value: Option<&str>) {
+    let Ok(href) = window().location().href() else {
+        return;
+    };
+    let Ok(url) = web_sys::Url::new(&href) else {
+        return;
+    };
+    match value {
+        Some(value) => url.set_hash(&format!(
+            "{key}={}",
+            omni_api::common::encode_uri_component(value)
+        )),
+        None => url.set_hash(""),
+    }
+    replace_url(&url);
+}
+
+fn replace_url(url: &web_sys::Url) {
+    let path = format!("{}{}{}", url.pathname(), url.search(), url.hash());
+    if let Ok(history) = window().history() {
+        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&path));
+    }
+}
+
+/// A per-viewer preference from `localStorage`; `None` when storage is
+/// missing, blocked or throws.
+pub fn stored_pref(key: &str) -> Option<String> {
+    window()
+        .local_storage()
+        .ok()
+        .flatten()?
+        .get_item(key)
+        .ok()
+        .flatten()
+}
+
+/// Saves a per-viewer preference; failures are ignored.
+pub fn store_pref(key: &str, value: &str) {
+    if let Ok(Some(storage)) = window().local_storage() {
+        let _ = storage.set_item(key, value);
+    }
 }

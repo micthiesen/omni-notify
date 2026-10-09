@@ -1,7 +1,10 @@
-//! MCP policy and call status pills.
+//! MCP policy tag and call status.
 
 use leptos::prelude::*;
 use omni_api::mcp_activity::{McpCallStatus, RecommendedPolicy};
+
+use super::badges::{Status, Tag};
+use super::tone::{StatusKind, Tone};
 
 pub fn policy_str(policy: RecommendedPolicy) -> &'static str {
     match policy {
@@ -22,23 +25,34 @@ pub fn call_status_str(status: McpCallStatus) -> &'static str {
 
 fn policy_label(policy: &str) -> String {
     match policy {
-        "allow" => "Allow".to_owned(),
-        "require_approval" => "Approval".to_owned(),
-        "block" => "Block".to_owned(),
+        "allow" => "allow".to_owned(),
+        "require_approval" => "approval".to_owned(),
+        "block" => "block".to_owned(),
         other => other.to_owned(),
     }
 }
 
-/// `mcp-policy mcp-policy-<policy>`; unknown policies show their raw value.
+fn policy_tone(policy: &str) -> Tone {
+    match policy {
+        "require_approval" => Tone::Warn,
+        "block" => Tone::Fault,
+        _ => Tone::Neutral,
+    }
+}
+
+/// Policy as a [`Tag`]; unknown policies show their raw value.
 #[component]
 pub fn PolicyBadge(#[prop(into)] policy: String) -> impl IntoView {
-    view! {
-        <span
-            class=format!("mcp-policy mcp-policy-{policy}")
-            title=format!("Recommended policy: {}", policy.replace('_', " "))
-        >
-            {policy_label(&policy)}
-        </span>
+    let title = format!("Recommended policy: {}", policy.replace('_', " "));
+    view! { <Tag tone=policy_tone(&policy) title=title>{policy_label(&policy)}</Tag> }
+}
+
+pub fn call_status_kind(status: McpCallStatus) -> StatusKind {
+    match status {
+        McpCallStatus::Running => StatusKind::Running,
+        McpCallStatus::Ok => StatusKind::Ok,
+        McpCallStatus::Error => StatusKind::Fault,
+        McpCallStatus::Interrupted => StatusKind::Warn,
     }
 }
 
@@ -50,10 +64,5 @@ pub fn CallStatusPill(status: McpCallStatus) -> impl IntoView {
         McpCallStatus::Error => "Error",
         McpCallStatus::Interrupted => "Interrupted",
     };
-    view! {
-        <span class=format!("mcp-status mcp-status-{}", call_status_str(status))>
-            <span class="mcp-status-dot" aria-hidden="true"></span>
-            {label}
-        </span>
-    }
+    view! { <Status kind=call_status_kind(status) label=label/> }
 }

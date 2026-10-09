@@ -1,5 +1,4 @@
-//! Port of `frontend/src/components/WorkspaceMarkdown.spec.tsx`
-//! (`wasm-bindgen-test`; also runs natively).
+//! Workspace Markdown rendering (`wasm-bindgen-test`; also runs natively).
 
 use omni_web_kit::markdown::render_markdown_html;
 use wasm_bindgen_test::wasm_bindgen_test;

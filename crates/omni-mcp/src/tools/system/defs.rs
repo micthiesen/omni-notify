@@ -219,6 +219,7 @@ pub enum Status {
     Running,
     Success,
     Error,
+    Degraded,
 }
 
 #[derive(JsonSchema)]

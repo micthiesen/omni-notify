@@ -47,6 +47,7 @@ omni-device-link.workspace = true
 omni-email.workspace = true
 omni-imap.workspace = true
 omni-media.workspace = true
+omni-parcel.workspace = true
 omni-personal.workspace = true
 omni-podcasts.workspace = true
 omni-presspods.workspace = true

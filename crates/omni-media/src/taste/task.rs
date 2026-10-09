@@ -83,6 +83,7 @@ impl MediaTasteReflectionTask {
             FetchResult::Unavailable { reason } => {
                 self.set_summary(format!("skipped: {reason}"));
                 tracing::warn!(target: LOG, "Taste reflection skipped: {reason}");
+                omni_tasks::report_degraded(format!("watch history unavailable: {reason}"));
                 return Ok(());
             }
         };

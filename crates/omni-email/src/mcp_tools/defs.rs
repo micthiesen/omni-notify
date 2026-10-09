@@ -214,7 +214,7 @@ pub static EMAIL_RETRY_LIST: ToolDef<EmailRetryListInput, EmailRetryListOutput> 
     ToolInfo {
         name: "email_retry_list",
         title: "List Email Retries",
-        description: "List bounded persisted retries for transient parcel or calendar pipeline failures, ordered by next attempt.",
+        description: "List bounded persisted retries for transient parcel or calendar pipeline failures, ordered by next attempt. Rows with awaitingBuild failed systemically and replay once a new build is running.",
         annotations: Annotations {
             read_only_hint: true,
             destructive_hint: false,
@@ -702,6 +702,10 @@ pub struct EmailRetryListItem {
     pub attempts: f64,
     pub next_attempt_at: f64,
     pub created_at: f64,
+    /// Set while a systemically failed email waits for a different build to replay it.
+    pub awaiting_build: Option<String>,
+    /// The systemic failure's signature key.
+    pub signature: Option<String>,
 }
 
 #[derive(JsonSchema)]

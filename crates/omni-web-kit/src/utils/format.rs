@@ -276,7 +276,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn title_case_matches_ts() {
+    fn title_case_cases() {
         assert_eq!(to_title_case("Task runs"), "Task Runs");
         assert_eq!(to_title_case("CastroInboxCleanup"), "Castro Inbox Cleanup");
         assert_eq!(to_title_case("HTMLParser"), "HTML Parser");

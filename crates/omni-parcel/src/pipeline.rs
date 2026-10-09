@@ -11,6 +11,7 @@ use omni_email::activity::{
     self, AdmitTier, EmailActivityOutcome, EmailPipelineName, LlmCost, NewActivity,
     derive_items_outcome, sum_cost_cents,
 };
+use omni_email::systemic::SystemicReporter;
 use omni_email::triage::{EmailTriage, TriageEmail};
 use omni_email::{activity_logs, retry};
 use omni_store::{Store, StoreError};
@@ -46,6 +47,8 @@ pub struct PipelineDeps {
     pub tz: jiff::tz::TimeZone,
     /// Submission sequences run to completion on this tracker.
     pub tracker: TaskTracker,
+    /// Parks systemically failed emails until a new build and alerts once per signature.
+    pub systemic: SystemicReporter,
 }
 
 /// A short per-delivery result and whether it counts as success.
@@ -210,12 +213,23 @@ impl DeliveryPipeline {
                     .map_err(ParcelError::persistence("record parcel activity"))
                 }
                 Err(error) => {
-                    tracing::error!(
-                        target: LOG,
-                        error = %error,
-                        "Failed to process email \"{}\"",
-                        email.subject
-                    );
+                    // A systemic failure alerts once per signature (in the reporter),
+                    // not once per email through the ERROR log.
+                    if error.systemic().is_some() {
+                        tracing::warn!(
+                            target: LOG,
+                            error = %error,
+                            "Failed to process email \"{}\"",
+                            email.subject
+                        );
+                    } else {
+                        tracing::error!(
+                            target: LOG,
+                            error = %error,
+                            "Failed to process email \"{}\"",
+                            email.subject
+                        );
+                    }
                     activity::record(
                         &deps.store,
                         NewActivity {
@@ -228,7 +242,12 @@ impl DeliveryPipeline {
                     )
                     .await
                     .map_err(ParcelError::persistence("record parcel activity"))?;
-                    if error.is_transient() {
+                    if let Some(signature) = error.systemic() {
+                        deps.systemic
+                            .report(NAME, &email.id, &error.to_string(), signature)
+                            .await
+                            .map_err(ParcelError::persistence("park parcel email for replay"))?;
+                    } else if error.is_transient() {
                         retry::enqueue(&deps.store, NAME, &email.id, &error.to_string())
                             .await
                             .map_err(ParcelError::persistence("enqueue parcel email retry"))?;

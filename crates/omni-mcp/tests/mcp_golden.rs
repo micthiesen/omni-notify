@@ -1,7 +1,7 @@
 //! The committed MCP snapshots are generated from the Rust tool definitions:
 //! `crates/omni-mcp-kit/golden/tools-list.json`, both copies of the policy
-//! inventory, and every `tools/list` result embedded in
-//! `tests/golden/protocol.json`. This test fails when a definition and a snapshot
+//! inventory, and every `tools/list` and `events/list` result embedded in
+//! `tests/golden/protocol.json` (the latter from the MCP Events catalog). This test fails when a definition and a snapshot
 //! differ; `cargo xtask mcp-golden` (which runs it with `OMNI_MCP_GOLDEN=write`)
 //! rewrites the snapshots so the change can be reviewed as a JSON diff.
 
@@ -31,8 +31,10 @@ fn read(relative: &str) -> String {
         .unwrap_or_else(|e| panic!("reading {relative}: {e}"))
 }
 
-/// `protocol` with every `tools/list` result's `tools` replaced by `tools`.
+/// `protocol` with every `tools/list` result's `tools` replaced by `tools`
+/// and every `events/list` result's `events` by the event catalog.
 fn with_tools(mut protocol: Value, tools: &Value) -> (Value, usize) {
+    let catalog = omni_mcp::events::catalog::event_catalog();
     let mut replaced = 0;
     for exchange in protocol["exchanges"].as_array_mut().unwrap() {
         let Some(messages) = exchange["response"]["messages"].as_array_mut() else {
@@ -45,6 +47,13 @@ fn with_tools(mut protocol: Value, tools: &Value) -> (Value, usize) {
             {
                 *listed = tools.clone();
                 replaced += 1;
+            }
+            if let Some(events) = message
+                .get_mut("result")
+                .and_then(|result| result.get_mut("events"))
+                .filter(|events| events.is_array())
+            {
+                *events = catalog.clone();
             }
         }
     }

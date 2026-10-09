@@ -1,11 +1,12 @@
 //! Personal services: Whisker pet weights, the LAN printer, the Hister
 //! browser-history archive, and Codex / Claude Code reset alerts.
 //!
-//! [`subsystem`] builds the routes (`/api/pets`, CSV export), the tasks
-//! (`PetTracker`, `CodexResets`, `ClaudeResets`), the MCP tools (`pets_read`,
-//! `costs_read`, printer and browser-history tools) and the entity
-//! descriptors (`codex-reset-delivery`, `claude-reset-delivery`,
-//! `printer-accepted-job`) for app wiring.
+//! [`subsystem`] builds the routes (`/api/pets`, `/api/pets/health`, CSV
+//! export), the tasks (`PetTracker`, `CodexResets`, `ClaudeResets`), the MCP
+//! tools (`pets_read`, `costs_read`, printer and browser-history tools), the
+//! PetTracker data-gap alert gate and the entity descriptors
+//! (`codex-reset-delivery`, `claude-reset-delivery`, `printer-accepted-job`,
+//! `pet-health-alert`) for app wiring.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -26,6 +27,9 @@ pub mod reset_alerts;
 use crate::claude_resets::task::{ClaudeSource, claude_reset_task};
 use crate::codex_resets::task::{CodexSource, codex_reset_task};
 use crate::hister::HisterService;
+use crate::pets::alerts::{
+    HealthLedger, HealthNotifier, PetGapAlertGate, PetHealthAlert, PushoverHealthNotifier,
+};
 use crate::pets::api::WhiskerApi;
 use crate::pets::auth::WhiskerAuth;
 use crate::pets::persistence::PetStore;
@@ -68,6 +72,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<CodexResetDelivery>(),
         EntityDescriptor::of::<ClaudeResetDelivery>(),
         EntityDescriptor::of::<AcceptedPrintRecord>(),
+        EntityDescriptor::of::<PetHealthAlert>(),
     ]
 }
 
@@ -136,6 +141,12 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
     let tz = time_zone(&ctx.config.tz)?;
     let pets = PetStore::open(&ctx.store).await?;
 
+    let health_notifier = PushoverHealthNotifier::new(ctx.pushover.clone());
+    let health_notifier: Option<Arc<dyn HealthNotifier>> = health_notifier
+        .enabled()
+        .then(|| Arc::new(health_notifier) as Arc<dyn HealthNotifier>);
+    let ledger = HealthLedger::new(ctx.store.clone(), health_notifier);
+
     let mut tasks: Vec<Arc<dyn Task>> = Vec::new();
     if let Some(credentials) = &ctx.config.whisker_credentials {
         let auth = Arc::new(WhiskerAuth::new(
@@ -148,6 +159,7 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
             auth,
             WhiskerApi::new(ctx.http.clone()),
             pets.clone(),
+            ledger.clone(),
             ctx.clock.clone(),
             tz.clone(),
         )?));
@@ -178,6 +190,7 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
 
     let mut mcp_tools = mcp::personal::tools(
         pets.clone(),
+        ledger.clone(),
         ctx.store.clone(),
         ctx.clock.clone(),
         tz.clone(),
@@ -187,10 +200,11 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
 
     Ok(Subsystem {
         name: NAME,
-        router: pets::routes::router(pets, ctx.clock.clone(), tz),
+        router: pets::routes::router(pets, ledger, ctx.clock.clone(), tz),
         tasks,
         mcp_tools,
         entities: entities(),
+        alert_gates: vec![Arc::new(PetGapAlertGate::new(ctx.store.clone()))],
         ..Subsystem::default()
     })
 }

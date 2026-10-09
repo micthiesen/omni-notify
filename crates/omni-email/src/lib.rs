@@ -27,10 +27,11 @@ pub mod retry;
 pub mod retry_task;
 pub mod routes;
 pub mod sender_rules;
+pub mod systemic;
 pub mod triage;
 pub mod watchdog;
 
-use omni_runtime::{AppContext, ManagedEntity, Subsystem};
+use omni_runtime::{AppContext, BootError, BootPhase, BootStep, ManagedEntity, Subsystem};
 use omni_store::entity::EntityDescriptor;
 
 /// Why the email subsystem could not be built.
@@ -51,6 +52,8 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<retry::EmailRetryData>(),
         EntityDescriptor::of::<sender_rules::EmailRuleData>(),
         EntityDescriptor::of::<feedback::EmailFeedbackData>(),
+        EntityDescriptor::of::<systemic::EmailReplayData>(),
+        EntityDescriptor::of::<systemic::EmailSystemicAlertData>(),
     ]
 }
 
@@ -115,8 +118,20 @@ pub fn managed_entities() -> Vec<ManagedEntity> {
         managed(
             EntityDescriptor::of::<retry::EmailRetryData>(),
             "Email retries",
-            "Emails queued for reprocessing after transient failures.",
+            "Emails queued for reprocessing after transient failures, or parked until a new build after systemic ones.",
             &["retryKey"],
+        ),
+        managed(
+            EntityDescriptor::of::<systemic::EmailReplayData>(),
+            "Email replays",
+            "Builds each systemically failed email was replayed under; limits replays to one per build.",
+            &["retryKey"],
+        ),
+        managed(
+            EntityDescriptor::of::<systemic::EmailSystemicAlertData>(),
+            "Email failure signatures",
+            "Systemic extraction failures by error signature; one alert per signature per day.",
+            &["alertKey"],
         ),
         managed(
             EntityDescriptor::of::<sender_rules::EmailRuleData>(),
@@ -156,6 +171,43 @@ pub fn subsystem(ctx: &AppContext, booted_at: i64) -> Result<Subsystem, EmailSub
         mcp_tools: tools,
         entities: entities(),
         managed_entities: managed_entities(),
+        boot_steps: vec![replay_boot_step()],
         ..Subsystem::named("email")
     })
+}
+
+/// Releases emails parked by a systemic failure when a different build boots.
+/// A failure is logged and never fails boot: the rows stay parked.
+fn replay_boot_step() -> BootStep {
+    const NAME: &str = "email-systemic-replay";
+    BootStep {
+        phase: BootPhase::Reconcile,
+        name: NAME,
+        run: Box::new(|ctx: AppContext| {
+            Box::pin(async move {
+                let build = systemic::current_build().await;
+                match systemic::release_for_build(
+                    &ctx.store,
+                    &build,
+                    systemic::MAX_RELEASES_PER_BOOT,
+                )
+                .await
+                {
+                    Ok(report) if report == systemic::ReleaseReport::default() => {}
+                    Ok(report) => tracing::info!(
+                        target: "Main:EmailRetry",
+                        "Build {build}: released {} systemically failed email(s) for replay, {} deferred to a later boot, {} expired",
+                        report.released,
+                        report.deferred,
+                        report.expired
+                    ),
+                    Err(error) => tracing::warn!(
+                        target: "Main:EmailRetry",
+                        "Could not release systemically failed emails for replay: {error}"
+                    ),
+                }
+                Ok::<(), BootError>(())
+            })
+        }),
+    }
 }

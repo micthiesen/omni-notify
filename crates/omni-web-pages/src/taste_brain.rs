@@ -1,8 +1,11 @@
-//! "Taste Brain" section shared by the media and podcast pages.
+//! "Taste brain" panel shared by the media and podcast pages: the profile
+//! summary, behaviour stats and claim groups as key-value bars.
 
 use leptos::prelude::*;
 use omni_api::media::{TasteClaim, TasteProfile};
 use omni_api::podcasts::{PodcastTasteClaim, PodcastTasteProfile};
+use omni_web_kit::components::{Disclosure, EmptyState, ErrorState, Meter, Panel, Skeleton};
+use omni_web_kit::hooks::use_is_wide;
 use omni_web_kit::utils::format::{format_absolute, format_relative};
 use omni_web_kit::utils::js::{js_round, number_string};
 
@@ -87,6 +90,9 @@ impl From<&PodcastTasteProfile> for TasteBrainProfile {
     }
 }
 
+/// Claims shown per group before the rest fold into a disclosure.
+const CLAIMS_SHOWN: usize = 4;
+
 fn evidence_title(count: usize) -> String {
     format!(
         "{count} supporting evidence item{}",
@@ -94,130 +100,127 @@ fn evidence_title(count: usize) -> String {
     )
 }
 
-fn claim_list(claims: Vec<TasteClaimView>) -> impl IntoView {
+fn percent(confidence: f64) -> String {
+    format!("{}%", number_string(js_round(confidence * 100.0)))
+}
+
+fn claim_row(item: TasteClaimView) -> impl IntoView {
+    let value = (item.confidence * 100.0).clamp(0.0, 100.0);
     view! {
-        <ul class="taste-claim-list">
-            {claims
-                .into_iter()
-                .map(|item| {
-                    view! {
-                        <li>
-                            <span>{item.claim}</span>
-                            <span class="taste-confidence" title=evidence_title(item.evidence_count)>
-                                {format!("{}%", number_string(js_round(item.confidence * 100.0)))}
-                            </span>
-                        </li>
-                    }
-                })
-                .collect_view()}
-        </ul>
+        <li title=evidence_title(item.evidence_count)>
+            <span class="taste-claim">{item.claim}</span>
+            <Meter value=value max=100.0 width=48 label=format!("Confidence {}", percent(item.confidence))/>
+            <span class="num taste-pct">{percent(item.confidence)}</span>
+        </li>
     }
 }
 
-fn tag_group(label: &'static str, claims: Vec<TasteClaimView>, explore: bool) -> impl IntoView {
-    let class = format!(
-        "taste-tag {}",
-        if explore { "taste-tag-explore" } else { "" }
-    );
+fn claim_group(title: &'static str, claims: Vec<TasteClaimView>) -> impl IntoView {
+    let count = claims.len();
+    let mut shown = claims;
+    let rest = shown.split_off(count.min(CLAIMS_SHOWN));
+    let more = (!rest.is_empty()).then(|| {
+        let n = rest.len();
+        view! {
+            <Disclosure summary=format!("{n} more") flush=true>
+                <ul class="taste-claims">{rest.into_iter().map(claim_row).collect_view()}</ul>
+            </Disclosure>
+        }
+    });
     view! {
-        <div>
-            <span class="taste-tags-label">{label}</span>
-            <div class="taste-tags">
-                {claims
-                    .into_iter()
-                    .map(|target| {
-                        view! {
-                            <span
-                                class=class.clone()
-                                title=format!(
-                                    "{} supporting evidence item(s)",
-                                    target.evidence_count,
-                                )
-                            >
-                                {target.claim}
-                            </span>
-                        }
-                    })
-                    .collect_view()}
-            </div>
+        <div class="taste-group">
+            <h4 class="label">{title} <span class="seg-n">{count}</span></h4>
+            <ul class="taste-claims">{shown.into_iter().map(claim_row).collect_view()}</ul>
+            {more}
         </div>
     }
 }
 
-fn version_badge(profile: &TasteBrainProfile) -> impl IntoView + use<> {
+/// Free-text notes (exploration targets, saturation) as quiet prose lines.
+fn note_group(title: &'static str, claims: Vec<TasteClaimView>, accent: bool) -> impl IntoView {
+    view! {
+        <div class="taste-group">
+            <h4 class="label">{title}</h4>
+            <ul class=if accent { "taste-notes accent" } else { "taste-notes" }>
+                {claims
+                    .into_iter()
+                    .map(|claim| view! {
+                        <li title=evidence_title(claim.evidence_count)>{claim.claim}</li>
+                    })
+                    .collect_view()}
+            </ul>
+        </div>
+    }
+}
+
+fn version_meta(profile: &TasteBrainProfile) -> impl IntoView + use<> {
     let at = profile.generated_at as f64;
     view! {
-        <span class="taste-version meta-row" title=format_absolute(at)>
-            <span>{format!("v{}", profile.version)}</span>
-            <span>{format_relative(at)}</span>
+        <span class="num" title=format_absolute(at)>
+            {format!("v{} · {}", profile.version, format_relative(at))}
         </span>
     }
 }
 
-fn profile_card(
+fn profile_body(
     profile: TasteBrainProfile,
     stats: Vec<(String, String)>,
     footer: Option<AnyView>,
 ) -> impl IntoView {
-    let columns: Vec<(&'static str, Vec<TasteClaimView>)> = vec![
-        ("Reliable Preferences", profile.stable_preferences),
-        ("Depends on Context", profile.conditional_preferences),
+    let groups: Vec<(&'static str, Vec<TasteClaimView>)> = vec![
+        ("Reliable preferences", profile.stable_preferences),
+        ("Depends on context", profile.conditional_preferences),
         ("Avoid", profile.aversions),
-        ("Still Learning", profile.uncertainties),
+        ("Still learning", profile.uncertainties),
     ];
     let explore = profile.exploration_targets;
     let saturated = profile.current_saturation;
-    let tags = (!explore.is_empty() || !saturated.is_empty()).then(|| {
-        view! {
-            <div class="taste-tags-row">
-                {(!explore.is_empty()).then(|| tag_group("Explore", explore, true))}
-                {(!saturated.is_empty()).then(|| tag_group("Currently Saturated", saturated, false))}
-            </div>
-        }
-    });
+    let claim_count = groups.iter().map(|(_, c)| c.len()).sum::<usize>();
+    let detail_meta = format!(
+        "{claim_count} claim{}",
+        if claim_count == 1 { "" } else { "s" }
+    );
     view! {
-        <div class="taste-card">
+        <div class="taste">
             <p class="taste-summary">{profile.summary}</p>
-            {(!stats.is_empty())
-                .then(|| {
-                    view! {
-                        <div class="taste-stats">
-                            {stats
-                                .into_iter()
-                                .map(|(name, value)| {
-                                    view! {
-                                        <div class="taste-stat">
-                                            <span>{name}</span>
-                                            <strong>{value}</strong>
-                                        </div>
-                                    }
-                                })
-                                .collect_view()}
-                        </div>
-                    }
-                })}
-            <div class="taste-columns">
-                {columns
-                    .into_iter()
-                    .filter(|(_, claims)| !claims.is_empty())
-                    .map(|(title, claims)| {
-                        view! {
+            {(!stats.is_empty()).then(|| view! {
+                <dl class="taste-stats">
+                    {stats
+                        .into_iter()
+                        .map(|(name, value)| view! {
                             <div>
-                                <h3>{title}</h3>
-                                {claim_list(claims)}
+                                <dt>{name}</dt>
+                                <dd class="num">{value}</dd>
                             </div>
-                        }
-                    })
-                    .collect_view()}
-            </div>
-            {tags}
-            {footer}
+                        })
+                        .collect_view()}
+                </dl>
+            })}
+            <Disclosure
+                summary="How it decides"
+                meta=detail_meta
+                flush=true
+                class="taste-more"
+            >
+                <div class="taste">
+                    {groups
+                        .into_iter()
+                        .filter(|(_, claims)| !claims.is_empty())
+                        .map(|(title, claims)| claim_group(title, claims))
+                        .collect_view()}
+                    {(!explore.is_empty()).then(|| note_group("Explore next", explore, true))}
+                    {(!saturated.is_empty()).then(|| note_group("Currently saturated", saturated, false))}
+                    {footer}
+                </div>
+            </Disclosure>
         </div>
     }
 }
 
 /// `stats` and `footer` are derived from the profile by the caller; `footer`
-/// renders only while a profile is present.
+/// renders only while a profile is present. With `collapsible` the panel
+/// becomes a disclosure below the wide tier (where it no longer sits in the
+/// side column).
 #[component]
 pub fn TasteBrain(
     #[prop(into)] profile: Signal<Option<TasteBrainProfile>>,
@@ -229,56 +232,54 @@ pub fn TasteBrain(
     #[prop(optional, into)] footer: Option<ViewFn>,
     #[prop(optional)] collapsible: bool,
 ) -> impl IntoView {
-    let content = move || {
-        let loading = loading.get();
-        let error = error.get();
-        let profile = profile.get();
+    let wide = use_is_wide();
+    let body = move || {
         let footer = footer.clone();
-        view! {
-            {loading.then(|| view! { <div class="loading-inline">"Loading taste profile…"</div> })}
-            {match (&error, loading) {
-                (Some(error), false) => {
-                    Some(view! { <div class="error-inline">"Taste profile unavailable: " {error.clone()}</div> })
-                }
-                _ => None,
-            }}
-            {(!loading && error.is_none() && profile.is_none())
-                .then(|| view! { <div class="taste-empty">{empty_text}</div> })}
-            {profile.map(|profile| profile_card(profile, stats.get(), footer.map(|f| f.run())))}
+        if let Some(profile) = profile.get() {
+            return profile_body(profile, stats.get(), footer.map(|f| f.run())).into_any();
         }
-    };
-
-    if collapsible {
-        view! {
-            <details class="page-section taste-brain taste-disclosure">
-                <summary>
-                    <span class="taste-heading">
-                        <span>
-                            <span class="section-title" role="heading" aria-level="2">
-                                "Taste Brain"
-                            </span>
-                            <span class="muted taste-subtitle">{subtitle}</span>
-                        </span>
-                        {move || profile.with(|p| p.as_ref().map(version_badge))}
-                    </span>
-                </summary>
-                <div class="taste-disclosure-body">{content}</div>
-            </details>
+        if let Some(error) = error.get().filter(|_| !loading.get()) {
+            return view! { <ErrorState title="Taste profile unavailable" raw=error/> }.into_any();
         }
-        .into_any()
-    } else {
-        view! {
-            <section class="page-section taste-brain">
-                <div class="taste-heading">
-                    <div>
-                        <h2 class="section-title">"Taste Brain"</h2>
-                        <div class="muted taste-subtitle">{subtitle}</div>
-                    </div>
-                    {move || profile.with(|p| p.as_ref().map(version_badge))}
+        if loading.get() {
+            return view! {
+                <div class="taste stack" role="status" aria-label="Loading taste profile">
+                    <Skeleton width="90%"/>
+                    <Skeleton width="75%"/>
+                    <Skeleton width="60%"/>
                 </div>
-                {content}
-            </section>
+            }
+            .into_any();
         }
-        .into_any()
+        view! { <EmptyState message=empty_text compact=true/> }.into_any()
+    };
+    let meta = move || profile.with(|p| p.as_ref().map(version_meta));
+    move || {
+        let body = body.clone();
+        if collapsible && !wide.get() {
+            let summary_meta = Signal::derive(move || {
+                profile.with(|p| p.as_ref().map(|p| format!("v{}", p.version)))
+            });
+            view! {
+                <Disclosure summary="Taste brain" meta=summary_meta class="taste-disclosure">
+                    <p class="small muted">{subtitle}</p>
+                    {body}
+                </Disclosure>
+            }
+            .into_any()
+        } else {
+            view! {
+                <Panel
+                    title="Taste brain"
+                    head_end=ViewFn::from(move || meta)
+                    pad=true
+                    class="taste-panel"
+                    aria_label=subtitle
+                >
+                    {body}
+                </Panel>
+            }
+            .into_any()
+        }
     }
 }

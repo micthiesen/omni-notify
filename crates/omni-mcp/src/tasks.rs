@@ -1,5 +1,6 @@
-//! Scheduled tasks: `McpEventDelivery` (30 s outbox sweep) and
-//! `ClaudeSessionEvents` (15 s host poll while subscribed).
+//! Scheduled tasks: `McpEventDelivery` (30 s outbox sweep),
+//! `ClaudeSessionEvents` (15 s host poll while subscribed) and
+//! `TaskRunEvents` (30 s run history scan while subscribed).
 
 use std::time::Duration;
 
@@ -8,9 +9,11 @@ use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 
 use crate::events::claude_sessions::ClaudeSessionWatcher;
 use crate::events::service::McpEventService;
+use crate::events::task_runs::TaskRunWatcher;
 
 pub const MCP_EVENT_DELIVERY_SCHEDULE: &str = "*/30 * * * * *";
 pub const CLAUDE_SESSION_EVENTS_SCHEDULE: &str = "*/15 * * * * *";
+pub const TASK_RUN_EVENTS_SCHEDULE: &str = "15,45 * * * * *";
 
 fn options() -> TaskOptions {
     TaskOptions {
@@ -82,5 +85,41 @@ impl Task for ClaudeSessionEventsTask {
 
     fn run<'a>(&'a self, _cx: &'a RunContext) -> BoxFuture<'a, Result<(), TaskError>> {
         Box::pin(async move { self.watcher.poll().await.map_err(TaskError::from_error) })
+    }
+}
+
+/// Publishes `task.run_finished` while a subscription is active.
+pub struct TaskRunEventsTask {
+    watcher: TaskRunWatcher,
+    schedule: CronSchedule,
+}
+
+impl TaskRunEventsTask {
+    pub fn new(watcher: TaskRunWatcher, schedule: CronSchedule) -> Self {
+        Self { watcher, schedule }
+    }
+}
+
+impl Task for TaskRunEventsTask {
+    fn name(&self) -> &str {
+        "TaskRunEvents"
+    }
+
+    fn schedule(&self) -> &CronSchedule {
+        &self.schedule
+    }
+
+    fn options(&self) -> TaskOptions {
+        options()
+    }
+
+    fn run<'a>(&'a self, _cx: &'a RunContext) -> BoxFuture<'a, Result<(), TaskError>> {
+        Box::pin(async move {
+            self.watcher
+                .poll()
+                .await
+                .map(|_| ())
+                .map_err(TaskError::from_error)
+        })
     }
 }

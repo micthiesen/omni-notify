@@ -27,6 +27,8 @@ async fn due_row(store: &Store, pipeline: &str, email_id: &str, attempts: i64) {
         attempts,
         next_attempt_at: NOW - 1000,
         created_at: NOW - 60_000,
+        awaiting_build: None,
+        signature: None,
         extra: Extra::new(),
     };
     store

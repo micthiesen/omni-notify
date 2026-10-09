@@ -123,7 +123,19 @@ async fn advertises_events_and_handles_list_subscribe_unsubscribe_on_the_authent
         .iter()
         .map(|e| e["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["email.received", "claude.session.turn_finished"]);
+    assert_eq!(
+        names,
+        [
+            "email.received",
+            "claude.session.turn_finished",
+            "livestream.status_changed",
+            "workspace.updated",
+            "presspods.job_finished",
+            "task.run_finished",
+            "calendar.event_changed",
+            "calendar.event_starting",
+        ]
+    );
     let requests = events.store().requests().await.unwrap();
     assert!(requests.iter().any(|r| r.method == EventRequestMethod::List
         && r.owner == format!("executor:{}", "a".repeat(12))

@@ -1,16 +1,19 @@
-//! One-tap feedback cards linked from Pushover notifications.
+//! One-tap feedback linked from Pushover notifications: a focused single
+//! column (no rail, no tab bar) that works one-handed at 390 px.
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
 use omni_api::media::{MediaType, RecommendationFeedback};
 use omni_api::podcasts::PodcastFeedback;
 use omni_web_kit::api::{self, ApiClientError};
-use omni_web_kit::components::ImageWithFallback;
-use omni_web_kit::router::Link;
+use omni_web_kit::components::{
+    Button, ButtonLink, ButtonSize, ButtonVariant, ErrorState, InlineNote, Poster, Skeleton,
+    SkeletonKind, Tone,
+};
 use omni_web_kit::task::{spawn_detached, spawn_scoped};
 use omni_web_kit::utils::js::number_string;
 
-use crate::common::active_if;
+use crate::rec_ui::{Choice, ChoiceGlyph, ChoiceStyle, Choices};
 
 /// Which feedback form `/feedback/:kind/:id` shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -37,50 +40,46 @@ impl FeedbackKind {
     }
 }
 
-/// A rating option: the serialized value, emoji and label.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct FeedbackOption {
-    value: &'static str,
-    emoji: &'static str,
-    label: &'static str,
+/// The serialized values (`good_pick`, …) with their labels and glyphs.
+fn media_options() -> Vec<Choice<&'static str>> {
+    vec![
+        Choice {
+            value: "good_pick",
+            label: "Good pick",
+            glyph: ChoiceGlyph::Up,
+        },
+        Choice {
+            value: "not_for_me",
+            label: "Not for me",
+            glyph: ChoiceGlyph::Down,
+        },
+        Choice {
+            value: "already_watched",
+            label: "Already watched",
+            glyph: ChoiceGlyph::Seen,
+        },
+    ]
 }
 
-const MEDIA_OPTIONS: [FeedbackOption; 3] = [
-    FeedbackOption {
-        value: "good_pick",
-        emoji: "👍",
-        label: "Good Pick",
-    },
-    FeedbackOption {
-        value: "not_for_me",
-        emoji: "👎",
-        label: "Not for Me",
-    },
-    FeedbackOption {
-        value: "already_watched",
-        emoji: "✅",
-        label: "Already Watched",
-    },
-];
+fn podcast_options() -> Vec<Choice<&'static str>> {
+    media_options().into_iter().take(2).collect()
+}
 
-const PODCAST_OPTIONS: [FeedbackOption; 2] = [
-    FeedbackOption {
-        value: "good_pick",
-        emoji: "👍",
-        label: "Good Pick",
-    },
-    FeedbackOption {
-        value: "not_for_me",
-        emoji: "👎",
-        label: "Not for Me",
-    },
-];
+fn option_label(value: &str) -> &'static str {
+    match value {
+        "good_pick" => "Good pick",
+        "not_for_me" => "Not for me",
+        "already_watched" => "Already watched",
+        _ => "Saved",
+    }
+}
 
 /// What the shell shows for the loaded recommendation.
 #[derive(Clone, Debug, PartialEq)]
 struct ShellData {
     art_src: Option<String>,
-    art_alt: String,
+    /// Podcast artwork is square; movie posters are 2:3.
+    square: bool,
     title: String,
     subtitle: Option<String>,
     why: Option<String>,
@@ -127,8 +126,8 @@ fn media_shell(rec: &omni_api::media::Recommendation, id: &str) -> ShellData {
         art_src: rec
             .poster_path
             .as_ref()
-            .map(|p| format!("https://image.tmdb.org/t/p/w185{p}")),
-        art_alt: format!("{} poster", rec.title),
+            .map(|p| format!("https://image.tmdb.org/t/p/w342{p}")),
+        square: false,
         title: match rec.year {
             Some(year) if year != 0.0 => format!("{} ({})", rec.title, number_string(year)),
             _ => rec.title.clone(),
@@ -148,7 +147,7 @@ fn media_shell(rec: &omni_api::media::Recommendation, id: &str) -> ShellData {
 fn podcast_shell(rec: &omni_api::podcasts::PodcastRecommendation, id: &str) -> ShellData {
     ShellData {
         art_src: rec.artwork_url.clone(),
-        art_alt: format!("{} artwork", rec.show_title),
+        square: true,
         title: rec.episode_title.clone(),
         subtitle: Some(rec.show_title.clone()),
         why: rec.why_for_user.clone(),
@@ -184,92 +183,139 @@ async fn save(
     }
 }
 
+/// What the last successful save changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Saved {
+    Rating,
+    Note,
+}
+
+fn check_mark() -> impl IntoView {
+    view! {
+        <svg class="fb-check" viewBox="0 0 48 48" aria-hidden="true">
+            <circle cx="24" cy="24" r="21"></circle>
+            <path d="m15 24.5 6.5 6.5L33.5 18"></path>
+        </svg>
+    }
+}
+
 #[component]
 fn FeedbackShell(
-    #[prop(into)] data: Signal<ShellData>,
-    options: &'static [FeedbackOption],
+    data: ShellData,
+    #[prop(into)] current: Signal<Option<&'static str>>,
+    options: Vec<Choice<&'static str>>,
     on_save: SaveFn,
     saving: RwSignal<bool>,
-    saved: RwSignal<bool>,
+    saved: RwSignal<Option<Saved>>,
     save_error: RwSignal<Option<String>>,
 ) -> impl IntoView {
-    let note_text = RwSignal::new(data.with_untracked(|d| d.note.clone().unwrap_or_default()));
-    let select = move |value: &'static str| {
+    let note_text = RwSignal::new(data.note.clone().unwrap_or_default());
+    // The choices stay hidden behind the confirmation until "Change".
+    let changing = RwSignal::new(false);
+    let pick = Callback::new(move |value: &'static str| {
         if saving.get_untracked() {
             return;
         }
+        changing.set(false);
         on_save.run((Some(value), None));
-    };
-    let save_note = move |_| {
+    });
+    let save_note = Callback::new(move |_| {
         if saving.get_untracked() {
             return;
         }
         on_save.run((None, Some(note_text.get_untracked())));
-    };
-    let header = move || {
-        let d = data.get();
-        view! {
-            <ImageWithFallback
-                src=d.art_src.clone()
-                alt=d.art_alt.clone()
-                class="feedback-art"
-                placeholder_class="feedback-art-placeholder"
-                placeholder=|| "🎯"
-            />
-            <h1 class="feedback-title">{d.title.clone()}</h1>
-            {d.subtitle.clone().filter(|s| !s.is_empty()).map(|s| view! { <div class="feedback-sub">{s}</div> })}
-            {d.why.clone().filter(|s| !s.is_empty()).map(|why| view! { <p class="feedback-why">{why}</p> })}
-        }
-    };
-    let buttons = options
-        .iter()
-        .map(|option| {
-            let value = option.value;
-            let pressed = move || data.with(|d| d.current == Some(value));
-            view! {
-                <button
-                    type="button"
-                    class=move || format!("feedback-option {}", active_if(pressed()))
-                    aria-pressed=move || pressed().to_string()
-                    disabled=move || saving.get()
-                    on:click=move |_| select(value)
-                >
-                    <span aria-hidden="true">{option.emoji}</span>
-                    {option.label}
-                </button>
-            }
-        })
-        .collect_view();
+    });
+    let confirmed = Memo::new(move |_| {
+        saved.get() == Some(Saved::Rating) && current.get().is_some() && !changing.get()
+    });
+    let blank = Signal::derive(move || note_text.with(|t| t.trim().is_empty()));
+    let ShellData {
+        art_src,
+        square,
+        title,
+        subtitle,
+        why,
+        details_to,
+        ..
+    } = data;
     view! {
-        <div class="feedback-card">
-            {header}
-            <div class="feedback-options">{buttons}</div>
-            <div class="feedback-note">
+        <article class="fb">
+            <header class="fb-head">
+                <div class=if square { "fb-art square" } else { "fb-art" }>
+                    <Poster src=art_src title=title.clone() square eager=true/>
+                </div>
+                <div class="fb-title">
+                    {subtitle.filter(|s| !s.is_empty()).map(|s| view! { <span class="label">{s}</span> })}
+                    <h1>{title}</h1>
+                </div>
+            </header>
+            {why.filter(|s| !s.is_empty()).map(|why| view! { <p class="fb-why">{why}</p> })}
+            {move || {
+                if confirmed.get() {
+                    let label = option_label(current.get().unwrap_or_default());
+                    view! {
+                        <div class="fb-saved" role="status">
+                            {check_mark()}
+                            <div class="fb-saved-text">
+                                <span class="label">"Saved"</span>
+                                <strong>{label}</strong>
+                            </div>
+                            <Button
+                                size=ButtonSize::Sm
+                                variant=ButtonVariant::Ghost
+                                on_click=Callback::new(move |_| changing.set(true))
+                            >
+                                "Change"
+                            </Button>
+                        </div>
+                    }
+                    .into_any()
+                } else {
+                    view! {
+                        <Choices
+                            choices=options.clone()
+                            current
+                            saving
+                            on_pick=pick
+                            style=ChoiceStyle::Large
+                            aria_label="Rate this pick"
+                        />
+                    }
+                    .into_any()
+                }
+            }}
+            <div class="field">
+                <label class="field-label" for="fb-note">"Note (optional)"</label>
                 <textarea
-                    class="feedback-note-input"
-                    placeholder="Optional note about this pick…"
+                    id="fb-note"
+                    class="textarea"
+                    rows="3"
+                    placeholder="Anything to remember about this pick…"
                     prop:value=move || note_text.get()
                     on:input=move |event| note_text.set(event_target_value(&event))
                     disabled=move || saving.get()
                 ></textarea>
-                <button
-                    type="button"
-                    class="feedback-note-save-btn"
-                    disabled=move || saving.get() || note_text.with(|t| t.trim().is_empty())
-                    on:click=save_note
-                >
-                    "Save Note"
-                </button>
             </div>
+            <Button
+                block=true
+                busy=Signal::derive(move || saving.get())
+                disabled=blank
+                disabled_reason="Write a note first"
+                on_click=save_note
+            >
+                "Save note"
+            </Button>
             {move || {
-                (saved.get() && save_error.with(Option::is_none))
-                    .then(|| view! { <div class="feedback-saved">"Thanks — feedback saved."</div> })
+                (saved.get() == Some(Saved::Note) && save_error.with(Option::is_none))
+                    .then(|| view! { <InlineNote tone=Tone::Ok role="status">"Note saved."</InlineNote> })
             }}
-            {move || save_error.get().map(|e| view! { <div class="error-inline">{e}</div> })}
-            <Link to=data.with_untracked(|d| d.details_to.clone()) class="feedback-details-link">
-                "View Full Recommendation →"
-            </Link>
-        </div>
+            {move || save_error.get().map(|e| view! {
+                <ErrorState title="That didn't save. Try again." raw=e/>
+            })}
+            <ButtonLink to=details_to variant=ButtonVariant::Ghost block=true>
+                "See details"
+            </ButtonLink>
+        </article>
     }
 }
 
@@ -278,16 +324,24 @@ fn FeedbackShell(
 pub fn FeedbackPage(kind: FeedbackKind, #[prop(into)] id: String) -> impl IntoView {
     let data = RwSignal::new(None::<ShellData>);
     let error = RwSignal::new(None::<String>);
+    let reload = RwSignal::new(0u32);
     let saving = RwSignal::new(false);
-    let saved = RwSignal::new(false);
+    let saved = RwSignal::new(None::<Saved>);
     let save_error = RwSignal::new(None::<String>);
 
     let load_id = id.clone();
-    spawn_scoped(async move {
-        match load(kind, &load_id).await {
-            Ok(shell) => data.set(Some(shell)),
-            Err(err) => error.set(Some(err.message().to_owned())),
-        }
+    Effect::new(move |_| {
+        reload.track();
+        let id = load_id.clone();
+        spawn_scoped(async move {
+            match load(kind, &id).await {
+                Ok(shell) => {
+                    data.set(Some(shell));
+                    error.set(None);
+                }
+                Err(err) => error.set(Some(err.message().to_owned())),
+            }
+        });
     });
 
     let on_save: SaveFn = Callback::new(
@@ -299,7 +353,11 @@ pub fn FeedbackPage(kind: FeedbackKind, #[prop(into)] id: String) -> impl IntoVi
                 match save(kind, &id, value, note.as_deref()).await {
                     Ok(shell) => {
                         data.set(Some(shell));
-                        saved.set(true);
+                        saved.set(Some(if value.is_some() {
+                            Saved::Rating
+                        } else {
+                            Saved::Note
+                        }));
                     }
                     Err(err) => save_error.set(Some(err.message().to_owned())),
                 }
@@ -309,49 +367,77 @@ pub fn FeedbackPage(kind: FeedbackKind, #[prop(into)] id: String) -> impl IntoVi
     );
 
     let loaded = Memo::new(move |_| data.with(Option::is_some));
+    let current = Signal::derive(move || data.with(|d| d.as_ref().and_then(|d| d.current)));
     view! {
-        <div class="feedback-page">
+        <div class="fb-page">
             {move || {
-                if let Some(error) = error.get() {
+                if let Some(err) = error.get().filter(|_| !loaded.get()) {
                     return view! {
-                        <div class="error">
-                            <div>"Couldn't load this recommendation"</div>
-                            <div class="error-detail">{error}</div>
-                        </div>
+                        <ErrorState
+                            title="This recommendation could not load"
+                            raw=err
+                            retry=Callback::new(move |()| reload.update(|n| *n += 1))
+                            page=true
+                        />
                     }
                     .into_any();
                 }
                 if !loaded.get() {
-                    return view! { <div class="loading">"Loading…"</div> }.into_any();
+                    return view! {
+                        <div class="fb" role="status" aria-label="Loading">
+                            <div class="fb-head">
+                                <div class="fb-art"><Skeleton kind=SkeletonKind::Poster/></div>
+                                <div class="fb-title stack"><Skeleton width="40%"/><Skeleton kind=SkeletonKind::Title/></div>
+                            </div>
+                            <Skeleton width="90%"/>
+                            <Skeleton width="70%"/>
+                        </div>
+                    }
+                    .into_any();
                 }
-                let options: &'static [FeedbackOption] = match kind {
-                    FeedbackKind::Recommendations => &MEDIA_OPTIONS,
-                    FeedbackKind::Podcasts => &PODCAST_OPTIONS,
+                let options = match kind {
+                    FeedbackKind::Recommendations => media_options(),
+                    FeedbackKind::Podcasts => podcast_options(),
                 };
-                let shell = Signal::derive(move || {
-                    data.get().unwrap_or_else(|| ShellData {
-                        art_src: None,
-                        art_alt: String::new(),
-                        title: String::new(),
-                        subtitle: None,
-                        why: None,
-                        current: None,
-                        note: None,
-                        details_to: String::new(),
-                    })
-                });
+                let shell = data.get_untracked().unwrap_or_else(|| unreachable!("loaded"));
                 view! {
                     <FeedbackShell
                         data=shell
-                        options=options
-                        on_save=on_save
-                        saving=saving
-                        saved=saved
-                        save_error=save_error
+                        current
+                        options
+                        on_save
+                        saving
+                        saved
+                        save_error
                     />
                 }
                 .into_any()
             }}
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn segments_round_trip() {
+        for kind in [FeedbackKind::Recommendations, FeedbackKind::Podcasts] {
+            assert_eq!(FeedbackKind::from_segment(kind.as_str()), Some(kind));
+        }
+        assert_eq!(FeedbackKind::from_segment("other"), None);
+    }
+
+    #[test]
+    fn option_values_parse_for_their_kind() {
+        for option in media_options() {
+            assert!(media_value(option.value).is_some(), "{}", option.value);
+            assert_eq!(option_label(option.value), option.label);
+        }
+        for option in podcast_options() {
+            assert!(podcast_value(option.value).is_some(), "{}", option.value);
+        }
+        assert!(podcast_value("already_watched").is_none());
     }
 }

@@ -106,6 +106,8 @@ impl PressPodsTask {
                     existing.episode_id
                 );
                 let normalized = job_normalized_url(&job);
+                crate::events::publish(&service.ports, crate::events::published(&existing, &job))
+                    .await;
                 service
                     .replace_older_episodes(&normalized, &existing.episode_id)
                     .await?;
@@ -129,6 +131,7 @@ impl PressPodsTask {
                 return Ok(JobOutcome::Requeued);
             }
             tracing::error!(target: LOG, "Giving up on {}: crashed {} times mid-run", job.url, updated.attempts);
+            crate::events::publish(&service.ports, crate::events::failed(&updated)).await;
             return Ok(JobOutcome::Failed);
         }
 
@@ -151,7 +154,11 @@ impl PressPodsTask {
             .create_episode_from_url(&job.url, run_id.map(str::to_owned))
             .await
         {
-            Ok(_) => {
+            Ok(episode) => {
+                // Before completing: a crash in between recovers this episode
+                // from the job and replays the same event key.
+                crate::events::publish(&service.ports, crate::events::published(&episode, &job))
+                    .await;
                 persistence.complete_job(&job.job_id).await?;
                 Ok(JobOutcome::Processed)
             }
@@ -169,9 +176,13 @@ impl PressPodsTask {
                         "Episode creation failed, will retry (attempt {}/{MAX_JOB_ATTEMPTS})",
                         updated.attempts
                     );
+                    omni_tasks::report_degraded(format!(
+                        "episode creation failed, will retry: {summary}"
+                    ));
                     Ok(JobOutcome::Requeued)
                 } else {
                     tracing::error!(target: LOG, "Episode creation failed permanently for {} {summary}", job.url);
+                    crate::events::publish(&service.ports, crate::events::failed(&updated)).await;
                     Ok(JobOutcome::Failed)
                 }
             }

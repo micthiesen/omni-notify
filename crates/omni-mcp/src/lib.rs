@@ -15,7 +15,8 @@
 //!    [`host::ClaudeHost`] port when `OMNI_DEVICE_LINK_TOKEN` is set), set the
 //!    `ArchiveEcho` port (`omni_imap::transport::StoreArchiveEcho`), then build
 //!    [`McpPackage::new`].
-//! 2. Register [`McpPackage::email_handler`] first on the email dispatcher.
+//! 2. Register [`McpPackage::email_handler`] first on the email dispatcher,
+//!    and set the `EventPublisher` port from [`McpPackage::event_publisher`].
 //! 3. Collect every other subsystem's `mcp_tools`, append
 //!    [`McpPackage::tools`], and call [`McpPackage::subsystem`]; it serves
 //!    them in [`tools::TOOL_ORDER`] and fails when the set differs from that
@@ -47,13 +48,15 @@ use crate::activity::{ActivityRecorder, McpCallData};
 use crate::events::claude_sessions::{ClaudeSessionWatch, ClaudeSessionWatcher};
 use crate::events::executor_auth::{EventAuthorizer, ExecutorEventAuthorizer};
 use crate::events::persistence::{EventDelivery, EventReceipt, EventRequest, EventSubscription};
+use crate::events::publisher::McpEventPublisher;
 use crate::events::service::McpEventService;
+use crate::events::task_runs::TaskRunWatcher;
 use crate::events::webhook::{LiveWebhookTransport, WebhookClient};
 use crate::host::ClaudeHost;
 use crate::rpc::{McpProtocol, ProtocolSetupError};
 use crate::tasks::{
     CLAUDE_SESSION_EVENTS_SCHEDULE, ClaudeSessionEventsTask, MCP_EVENT_DELIVERY_SCHEDULE,
-    McpEventDeliveryTask,
+    McpEventDeliveryTask, TASK_RUN_EVENTS_SCHEDULE, TaskRunEventsTask,
 };
 use crate::tools::claude_sessions::ClaudeDeps;
 use crate::tools::system::{ConfiguredFeatures, SystemDeps};
@@ -185,6 +188,11 @@ impl McpPackage {
         self.watcher.as_ref()
     }
 
+    /// The `EventPublisher` port over this outbox, when MCP Events are enabled.
+    pub fn event_publisher(&self) -> Option<McpEventPublisher> {
+        self.events.clone().map(McpEventPublisher::new)
+    }
+
     /// The `McpEvents` email handler (register it before every other handler).
     pub fn email_handler(&self) -> Option<Arc<dyn EmailHandler>> {
         self.events.as_ref().map(McpEventService::email_handler)
@@ -271,6 +279,10 @@ impl McpPackage {
             subsystem.tasks.push(Arc::new(McpEventDeliveryTask::new(
                 events.clone(),
                 schedule(MCP_EVENT_DELIVERY_SCHEDULE)?,
+            )));
+            subsystem.tasks.push(Arc::new(TaskRunEventsTask::new(
+                TaskRunWatcher::new(events.clone(), ctx.store.clone(), ctx.clock.clone()),
+                schedule(TASK_RUN_EVENTS_SCHEDULE)?,
             )));
             let worker = events.clone();
             subsystem.services.push(BackgroundService {

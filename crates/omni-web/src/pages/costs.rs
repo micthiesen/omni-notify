@@ -1,15 +1,19 @@
-//! Usage and estimated spend.
+//! Costs: usage and estimated spend by feature, service and event.
 
 use leptos::prelude::*;
 use omni_api::costs::{
     CostCategory, CostPriceStatus, CostRange, CostRecentEvent, CostServiceRow, CostsResponse,
 };
 use omni_web_kit::api;
-use omni_web_kit::charts::{AxisStyle, BarChart, BarPoint, BarSeries};
+use omni_web_kit::charts::{BarChart, BarPoint, BarSeries};
+use omni_web_kit::components::{
+    EmptyState, ErrorState, InlineNote, Meter, PageHead, Panel, Readout, ReadoutBand, ReadoutSize,
+    SegOption, Segmented, SkeletonRows, Tag, Tone,
+};
 use omni_web_kit::task::spawn_scoped;
 use omni_web_kit::utils::format::{
-    format_absolute_with_year, format_calendar_date, format_cents, format_compact_number,
-    to_title_case,
+    format_absolute, format_absolute_with_year, format_calendar_date, format_cents,
+    format_compact_number, to_title_case,
 };
 use omni_web_kit::utils::js::locale_number;
 
@@ -19,9 +23,15 @@ const RANGES: [CostRange; 4] = [
     CostRange::Days(90),
     CostRange::All,
 ];
-const FEATURE_COLORS: [&str; 8] = [
-    "#38bdf8", "#a770ff", "#4ade80", "#fbbf24", "#fb7185", "#2dd4bf", "#f97316", "#818cf8",
-];
+const SERIES_COLORS: usize = 8;
+
+fn series_color(index: usize) -> String {
+    if index < SERIES_COLORS {
+        format!("var(--series-{})", index + 1)
+    } else {
+        "var(--series-other)".to_owned()
+    }
+}
 
 pub fn cost_label(value: &str) -> String {
     match value.to_lowercase().as_str() {
@@ -65,7 +75,7 @@ fn event_count_label(count: u64) -> String {
 fn range_label(range: CostRange) -> String {
     match range {
         CostRange::All => "All".to_owned(),
-        CostRange::Days(days) => format!("{days}d"),
+        CostRange::Days(days) => format!("{days}D"),
     }
 }
 
@@ -116,132 +126,192 @@ fn DailyChart(data: CostsResponse) -> impl IntoView {
     let features: Vec<String> = data.by_feature.iter().map(|f| f.feature.clone()).collect();
     let has_priced = data.daily.iter().any(|d| d.priced_event_count > 0);
     if !has_priced || data.daily.is_empty() || features.is_empty() {
-        return view! { <div class="no-data">"No priced cost data in this range"</div> }.into_any();
+        return view! { <EmptyState compact=true message="No priced cost data in this range."/> }
+            .into_any();
     }
-    let series: Vec<BarSeries> = features
+    let hidden = RwSignal::new(Vec::<String>::new());
+    let as_table = RwSignal::new(false);
+    let all_series: Vec<BarSeries> = features
         .iter()
         .enumerate()
         .map(|(i, f)| BarSeries {
             key: f.clone(),
-            color: FEATURE_COLORS[i % FEATURE_COLORS.len()].to_owned(),
+            color: series_color(i),
         })
         .collect();
-    let points: Vec<BarPoint> = data
-        .daily
-        .iter()
-        .map(|day| BarPoint {
-            x: day.date.clone(),
-            values: features
+    let daily = data.daily.clone();
+    let shown_features = Memo::new(move |_| {
+        let hidden = hidden.get();
+        features
+            .iter()
+            .filter(|f| !hidden.contains(f))
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let series = {
+        let all = all_series.clone();
+        Signal::derive(move || {
+            let shown = shown_features.get();
+            all.iter()
+                .filter(|s| shown.contains(&s.key))
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+    };
+    let points = {
+        let daily = daily.clone();
+        Signal::derive(move || {
+            let shown = shown_features.get();
+            daily
                 .iter()
-                .map(|f| day.by_feature.get(f).copied().unwrap_or(0.0))
-                .collect(),
+                .map(|day| BarPoint {
+                    x: day.date.clone(),
+                    values: shown
+                        .iter()
+                        .map(|f| day.by_feature.get(f).copied().unwrap_or(0.0))
+                        .collect(),
+                })
+                .collect::<Vec<_>>()
         })
-        .collect();
-    let legend = series
-        .iter()
-        .map(|s| {
-            view! {
-                <span>
-                    <i style=format!("background: {}", s.color)></i>
-                    {to_title_case(&s.key)}
-                </span>
-            }
-        })
-        .collect_view();
-    let tooltip_points = points.clone();
-    let tooltip_series = series.clone();
+    };
     let tooltip = Callback::new(move |index: usize| {
-        let Some(point) = tooltip_points.get(index) else {
+        let Some(point) = points.with_untracked(|p| p.get(index).cloned()) else {
             return ().into_any();
         };
-        let rows = tooltip_series
-            .iter()
-            .zip(&point.values)
-            .map(|(s, value)| {
-                view! {
-                    <div class="tooltip-row">
-                        <i class="costs-tooltip-swatch" style=format!("background: {}", s.color)></i>
-                        <span>
-                            {format!(
-                                "{}: {}",
-                                to_title_case(&s.key),
-                                format_cents(Some(*value)).unwrap_or_default(),
-                            )}
-                        </span>
-                    </div>
-                }
+        let total: f64 = point.values.iter().sum();
+        let rows = series
+            .get_untracked()
+            .into_iter()
+            .zip(point.values.clone())
+            .filter(|(_, v)| *v > 0.0)
+            .map(|(s, value)| view! {
+                <div class="chart-tooltip-row">
+                    <i class="chart-tooltip-swatch" style=format!("background: {}", s.color)></i>
+                    <span>{cost_label(&s.key)}</span>
+                    <span class="num">{format_cents(Some(value)).unwrap_or_default()}</span>
+                </div>
             })
             .collect_view();
         view! {
-            <div class="custom-tooltip">
-                <div class="tooltip-label">{format_calendar_date(&point.x, true)}</div>
-                {rows}
-            </div>
+            <div class="chart-tooltip-label">{format_calendar_date(&point.x, true)}</div>
+            <div class="chart-tooltip-value num">{format_cents(Some(total)).unwrap_or_default()}</div>
+            {rows}
         }
         .into_any()
     });
+    let legend = all_series
+        .iter()
+        .map(|s| {
+            let key = s.key.clone();
+            let toggle = key.clone();
+            view! {
+                <button
+                    type="button"
+                    class="chart-legend-item"
+                    aria-pressed=move || (!hidden.with(|h| h.contains(&key))).to_string()
+                    on:click=move |_| hidden.update(|h| {
+                        if let Some(i) = h.iter().position(|x| *x == toggle) {
+                            h.remove(i);
+                        } else {
+                            h.push(toggle.clone());
+                        }
+                    })
+                >
+                    <i class="chart-tooltip-swatch" style=format!("background: {}", s.color)></i>
+                    {cost_label(&s.key)}
+                </button>
+            }
+        })
+        .collect_view();
     view! {
-        <div class="costs-chart-legend">{legend}</div>
-        <div class="chart-container costs-chart">
-            <BarChart
-                data=Signal::stored(points)
-                series=Signal::stored(series)
-                x_tick=Callback::new(|date: String| format_calendar_date(&date, false))
-                y_tick=Callback::new(|value: f64| format_cents(Some(value)).unwrap_or_default())
-                tooltip
-                y_width=62.0
-                max_bar_size=36.0
-                axis=AxisStyle::default()
+        <div class="cluster chart-toolbar">
+            <div class="chart-legend" role="group" aria-label="Features">{legend}</div>
+            <span class="spacer"></span>
+            <Segmented
+                options=Signal::derive(|| vec![SegOption::new(false, "Chart"), SegOption::new(true, "Table")])
+                value=as_table
+                on_change=Callback::new(move |v| as_table.set(v))
+                aria_label="Show as"
+                small=true
             />
         </div>
+        {move || if as_table.get() {
+            let shown = shown_features.get();
+            view! {
+                <div class="table-wrap">
+                    <table class="table dense">
+                        <thead><tr>
+                            <th>"Day"</th>
+                            {shown.iter().map(|f| view! { <th class="numeric">{cost_label(f)}</th> }).collect_view()}
+                            <th class="numeric">"Total"</th>
+                        </tr></thead>
+                        <tbody>
+                            {daily.iter().rev().map(|day| {
+                                let values: Vec<f64> = shown.iter().map(|f| day.by_feature.get(f).copied().unwrap_or(0.0)).collect();
+                                let total: f64 = values.iter().sum();
+                                view! {
+                                    <tr>
+                                        <td class="num">{format_calendar_date(&day.date, true)}</td>
+                                        {values.into_iter().map(|v| view! { <td class="numeric num">{if v > 0.0 { format_cents(Some(v)).unwrap_or_default() } else { "—".to_owned() }}</td> }).collect_view()}
+                                        <td class="numeric num">{format_cents(Some(total)).unwrap_or_default()}</td>
+                                    </tr>
+                                }
+                            }).collect_view()}
+                        </tbody>
+                    </table>
+                </div>
+            }.into_any()
+        } else {
+            view! {
+                <div class="chart-container">
+                    <BarChart
+                        data=points
+                        series
+                        x_tick=Callback::new(|date: String| format_calendar_date(&date, false))
+                        y_tick=Callback::new(|value: f64| format_cents(Some(value)).unwrap_or_default())
+                        tooltip
+                        y_width=62.0
+                        max_bar_size=36.0
+                        label="Daily spend by feature"
+                    />
+                </div>
+            }.into_any()
+        }}
     }
     .into_any()
 }
 
 #[component]
-fn CostsContent(data: CostsResponse) -> impl IntoView {
+fn CostsContent(data: CostsResponse, #[prop(into)] refreshing: Signal<bool>) -> impl IntoView {
     let summary = data.summary.clone();
     let highest = summary.highest_day.clone();
-    let usage = {
-        let tokens = (summary.input_tokens > 0.0 || summary.output_tokens > 0.0).then(|| {
-            view! {
-                <span>{format!("{} input tokens", format_compact_number(summary.input_tokens))}</span>
-                <span>{format!("{} output tokens", format_compact_number(summary.output_tokens))}</span>
-            }
-        });
-        let characters = (summary.characters > 0.0).then(|| {
-            view! { <span>{format!("{} characters", format_compact_number(summary.characters))}</span> }
-        });
-        let credits = (summary.credits > 0.0).then(
-            || view! { <span>{format!("{} credits", locale_number(summary.credits))}</span> },
-        );
-        view! {
-            <span>{format!("{} requests", locale_number(summary.requests))}</span>
-            {tokens}
-            {characters}
-            {credits}
-        }
-    };
+    let feature_max = data
+        .by_feature
+        .iter()
+        .map(|f| f.cost_cents)
+        .fold(0.0, f64::max);
+    let service_max = data
+        .by_service
+        .iter()
+        .map(|f| f.cost_cents)
+        .fold(0.0, f64::max);
     let features = data
         .by_feature
         .iter()
         .map(|item| {
-            let unpriced = if item.unknown_event_count > 0 {
-                format!(
-                    ", {} unpriced",
-                    locale_number(item.unknown_event_count as f64)
-                )
-            } else {
-                String::new()
-            };
+            let cost = item.cost_cents;
             view! {
-                <div class="costs-row">
-                    <div class="costs-row-main">
-                        <strong>{to_title_case(&item.feature)}</strong>
-                        <span>{format!("{}{unpriced}", event_count_label(item.event_count))}</span>
-                    </div>
-                    <span class="costs-row-value">{format_cents(Some(item.cost_cents))}</span>
-                </div>
+                <tr>
+                    <td class="grow">
+                        <div class="row-title">{cost_label(&item.feature)}</div>
+                        <div class="row-sub">
+                            {event_count_label(item.event_count)}
+                            {(item.unknown_event_count > 0).then(|| format!(" · {} unpriced", locale_number(item.unknown_event_count as f64)))}
+                        </div>
+                    </td>
+                    <td class="hide-phone"><Meter value=cost max=feature_max width=96 label=format!("{} share", cost_label(&item.feature))/></td>
+                    <td class="numeric num">{format_cents(Some(cost))}</td>
+                </tr>
             }
         })
         .collect_view();
@@ -258,136 +328,95 @@ fn CostsContent(data: CostsResponse) -> impl IntoView {
                 format_cents(Some(item.cost_cents)).unwrap_or_default()
             };
             view! {
-                <div class="costs-row">
-                    <div class="costs-row-main">
-                        <strong>{cost_label(&item.service)}</strong>
-                        <span class="costs-model">
-                            {item.model.clone().unwrap_or_else(|| cost_label(category_str(item.category)))}
-                        </span>
-                        {(!usage.is_empty()).then(|| view! {
-                            <span class="meta-row costs-service-usage">
-                                {usage.into_iter().map(|part| view! { <span>{part}</span> }).collect_view()}
-                            </span>
-                        })}
-                        {(item.unknown_event_count > 0).then(|| view! {
-                            <span>{format!("{} unpriced", locale_number(item.unknown_event_count as f64))}</span>
-                        })}
-                    </div>
-                    <span class="costs-row-value">{value}</span>
-                </div>
+                <tr>
+                    <td class="grow">
+                        <div class="row-title">
+                            {cost_label(&item.service)} " "
+                            <span class="mono dim small">{item.model.clone().unwrap_or_else(|| cost_label(category_str(item.category)))}</span>
+                        </div>
+                        <div class="row-sub">{usage.join(" · ")}</div>
+                    </td>
+                    <td class="hide-phone"><Meter value=item.cost_cents max=service_max width=96 label=format!("{} share", cost_label(&item.service))/></td>
+                    <td class="numeric num">{value}</td>
+                </tr>
             }
         })
         .collect_view();
     let recent = data
         .recent
-        .iter()
+        .clone()
+        .into_iter()
         .map(|event| {
             view! {
-                <div class="costs-event-row">
-                    <div class="costs-event-when">
-                        <strong>{format_absolute_with_year(event.incurred_at as f64)}</strong>
-                        <span>{cost_label(&event.feature)}</span>
-                    </div>
-                    <div class="costs-event-detail">
-                        <strong>{cost_label(&event.operation)}</strong>
-                        <span class="meta-row">
-                            <span>{cost_label(&event.service)}</span>
-                            {event.model.clone().map(|m| view! { <span>{m}</span> })}
-                            <span>{cost_label(category_str(event.category))}</span>
-                        </span>
-                    </div>
-                    <span class=format!(
-                        "costs-event-value {}",
-                        if event.cost_cents.is_none() { "unknown" } else { "" },
-                    )>{event_cost(event)}</span>
-                </div>
+                <tr>
+                    <td class="num dim nowrap hide-phone">{format_absolute_with_year(event.incurred_at as f64)}</td>
+                    <td class="grow">
+                        <div class="row-title">{cost_label(&event.operation)}</div>
+                        <div class="row-sub">
+                            <span class="only-phone num">{format_absolute(event.incurred_at as f64)} " · "</span>
+                            {cost_label(&event.feature)} " · " {cost_label(&event.service)}
+                            {event.model.clone().map(|m| view! { " · " <span class="mono">{m}</span> })}
+                        </div>
+                    </td>
+                    <td class="hide-phone"><Tag>{cost_label(category_str(event.category))}</Tag></td>
+                    <td class=if event.cost_cents.is_none() { "numeric num text-warn" } else { "numeric num" }>{event_cost(&event)}</td>
+                </tr>
             }
         })
         .collect_view();
     let no_features = data.by_feature.is_empty();
     let no_services = data.by_service.is_empty();
     let no_recent = data.recent.is_empty();
+    let unknown = summary.unknown_event_count;
     view! {
-        <div class="stat-strip costs-stat-strip">
-            <div class="stat-tile accent">
-                <span class="stat-label">"Selected Total"</span>
-                <span class="stat-value">{format_cents(Some(summary.selected_cost_cents))}</span>
-                <span class="stat-detail">
-                    {format!("{} tracked events", locale_number(summary.event_count as f64))}
-                </span>
-            </div>
-            <div class="stat-tile">
-                <span class="stat-label">"Daily Average"</span>
-                <span class="stat-value">{format_cents(Some(summary.average_daily_cost_cents))}</span>
-                <span class="stat-detail">"in selected range"</span>
-            </div>
-            <div class="stat-tile">
-                <span class="stat-label">"Highest Day"</span>
-                <span class="stat-value">
-                    {format_cents(highest.as_ref().map(|d| d.cost_cents)).unwrap_or_else(|| "—".to_owned())}
-                </span>
-                <span class="stat-detail">
-                    {highest
-                        .as_ref()
-                        .map(|d| format_calendar_date(&d.date, true))
-                        .unwrap_or_else(|| "No priced usage".to_owned())}
-                </span>
-            </div>
-            <div class="stat-tile">
-                <span class="stat-label">"All-Time Total"</span>
-                <span class="stat-value">{format_cents(Some(summary.all_time_cost_cents))}</span>
-                <span class="stat-detail">
-                    {if summary.all_time_unknown_event_count > 0 {
-                        format!(
-                            "{} unpriced excluded",
-                            locale_number(summary.all_time_unknown_event_count as f64),
-                        )
-                    } else {
-                        "all recorded usage".to_owned()
-                    }}
-                </span>
-            </div>
-            <div class=format!(
-                "stat-tile {}",
-                if summary.unknown_event_count != 0 { "danger" } else { "" },
-            )>
-                <span class="stat-label">"Unpriced Events"</span>
-                <span class="stat-value">{locale_number(summary.unknown_event_count as f64)}</span>
-                <span class="stat-detail">"excluded from totals"</span>
-            </div>
-        </div>
-
-        <div class="meta-row costs-usage-summary">{usage}</div>
-
-        <section class="page-section">
-            <h2 class="section-title">"Daily Spend by Feature"</h2>
+        <ReadoutBand cols=4 aria_label="Spend summary" class=Signal::derive(move || Some(if refreshing.get() { "refreshing".to_owned() } else { String::new() }))>
+            <Readout label="Range total" value=format_cents(Some(summary.selected_cost_cents)).unwrap_or_default() size=ReadoutSize::Xl tone=Tone::Signal>
+                {format!("all time {}", format_cents(Some(summary.all_time_cost_cents)).unwrap_or_default())}
+            </Readout>
+            <Readout label="Average per day" value=format_cents(Some(summary.average_daily_cost_cents)).unwrap_or_default()/>
+            <Readout label="Highest day" value=format_cents(highest.as_ref().map(|d| d.cost_cents)).unwrap_or_else(|| "—".to_owned())>
+                {highest.as_ref().map(|d| format_calendar_date(&d.date, true)).unwrap_or_else(|| "No priced usage".to_owned())}
+            </Readout>
+            <Readout label="Events" value=locale_number(summary.event_count as f64)>
+                {format!("{} requests", locale_number(summary.requests))}
+            </Readout>
+        </ReadoutBand>
+        {(unknown > 0).then(|| view! {
+            <InlineNote tone=Tone::Warn>{format!("{} unpriced events are excluded from these totals.", locale_number(unknown as f64))}</InlineNote>
+        })}
+        <Panel title="Daily spend by feature" pad=true refreshing>
             <DailyChart data=data.clone()/>
-        </section>
-
-        <div class="costs-breakdown-grid">
-            <section class="page-section">
-                <h2 class="section-title">"By Feature"</h2>
-                <div class="costs-list">
-                    {features}
-                    {no_features.then(|| view! { <div class="muted">"No feature costs in this range."</div> })}
-                </div>
-            </section>
-            <section class="page-section">
-                <h2 class="section-title">"By Service"</h2>
-                <div class="costs-list">
-                    {services}
-                    {no_services.then(|| view! { <div class="muted">"No service costs in this range."</div> })}
-                </div>
-            </section>
+        </Panel>
+        <div class="grid-2">
+            <Panel title="By feature" refreshing>
+                {if no_features {
+                    view! { <EmptyState compact=true message="No feature costs in this range."/> }.into_any()
+                } else {
+                    view! { <div class="table-wrap"><table class="table"><tbody>{features}</tbody></table></div> }.into_any()
+                }}
+            </Panel>
+            <Panel title="By model" refreshing>
+                {if no_services {
+                    view! { <EmptyState compact=true message="No service costs in this range."/> }.into_any()
+                } else {
+                    view! { <div class="table-wrap"><table class="table"><tbody>{services}</tbody></table></div> }.into_any()
+                }}
+            </Panel>
         </div>
-
-        <section class="page-section">
-            <h2 class="section-title">"Recent Cost Events"</h2>
-            <div class="costs-event-list">
-                {recent}
-                {no_recent.then(|| view! { <div class="muted">"No recent cost events in this range."</div> })}
-            </div>
-        </section>
+        <Panel title="Recent events" refreshing>
+            {if no_recent {
+                view! { <EmptyState compact=true message="No recent cost events in this range."/> }.into_any()
+            } else {
+                view! {
+                    <div class="table-wrap">
+                        <table class="table dense">
+                            <thead><tr><th class="hide-phone">"When"</th><th class="grow">"Operation"</th><th class="hide-phone">"Kind"</th><th class="numeric">"Cost"</th></tr></thead>
+                            <tbody>{recent}</tbody>
+                        </table>
+                    </div>
+                }.into_any()
+            }}
+        </Panel>
     }
 }
 
@@ -398,9 +427,11 @@ pub fn CostsPage() -> impl IntoView {
     let error = RwSignal::new(None::<String>);
     let loading = RwSignal::new(true);
     let displayed_range = RwSignal::new(CostRange::Days(30));
+    let retry = RwSignal::new(0u32);
 
     Effect::new(move |_| {
         let selected = range.get();
+        retry.track();
         loading.set(true);
         error.set(None);
         spawn_scoped(async move {
@@ -415,63 +446,44 @@ pub fn CostsPage() -> impl IntoView {
         });
     });
 
-    let range_buttons = RANGES
-        .into_iter()
-        .map(|item| {
-            view! {
-                <button
-                    type="button"
-                    class=move || format!("range-btn {}", if range.get() == item { "active" } else { "" })
-                    aria-pressed=move || (range.get() == item).to_string()
-                    on:click=move |_| range.set(item)
-                >
-                    {range_label(item)}
-                </button>
-            }
+    let range_options = Signal::derive(|| {
+        RANGES
+            .into_iter()
+            .map(|r| SegOption::new(r, range_label(r)))
+            .collect::<Vec<_>>()
+    });
+    let title = Signal::derive(move || {
+        data.with(|d| {
+            d.as_ref().map_or_else(
+                || "Costs".to_owned(),
+                |d| {
+                    format!(
+                        "{} over {}.",
+                        format_cents(Some(d.summary.selected_cost_cents)).unwrap_or_default(),
+                        match displayed_range.get() {
+                            CostRange::All => "all time".to_owned(),
+                            CostRange::Days(n) => format!("{n} days"),
+                        }
+                    )
+                },
+            )
         })
-        .collect_view();
-
+    });
+    let refreshing = Signal::derive(move || loading.get() && data.with(Option::is_some));
     view! {
-        <div class="page-header costs-header">
-            <div class="page-header-stack">
-                <h1>"Costs"</h1>
-                <p class="page-subtitle">"Usage and estimated spend across Omni Notify services."</p>
-            </div>
-            <div class="range-buttons" aria-label="Cost date range">{range_buttons}</div>
-        </div>
-        {move || {
-            let has_data = data.with(Option::is_some);
-            let err = error.get();
-            match (has_data, err) {
-                (false, None) => Some(view! { <div class="loading">"Loading…"</div> }.into_any()),
-                (false, Some(err)) => Some(
-                    view! {
-                        <div class="error">
-                            <div>"Failed to load costs"</div>
-                            <div class="error-detail">{err}</div>
-                        </div>
-                    }
-                    .into_any(),
-                ),
-                (true, Some(err)) => Some(
-                    view! {
-                        <div role="alert" class="error-inline">
-                            {format!("{err}. Showing {} data.", range_text(displayed_range.get()))}
-                        </div>
-                    }
-                    .into_any(),
-                ),
-                (true, None) => None,
-            }
+        <PageHead title eyebrow="Costs" sentence=true actions=ViewFn::from(move || view! {
+            <Segmented options=range_options value=range on_change=Callback::new(move |r| range.set(r)) aria_label="Cost date range"/>
+        })/>
+        {move || match (data.with(Option::is_some), error.get()) {
+            (false, None) => Some(view! { <SkeletonRows count=8/> }.into_any()),
+            (false, Some(e)) => Some(view! {
+                <ErrorState title="Costs could not load" raw=e retry=Callback::new(move |()| retry.update(|n| *n += 1)) page=true/>
+            }.into_any()),
+            (true, Some(e)) => Some(view! {
+                <ErrorState title=format!("Could not load that range; showing {} data.", range_text(displayed_range.get())) raw=e retry=Callback::new(move |()| retry.update(|n| *n += 1))/>
+            }.into_any()),
+            (true, None) => None,
         }}
-        {move || {
-            (loading.get() && data.with(Option::is_some))
-                .then(|| view! {
-                    <div class="stale-note muted" role="status">
-                        {format!("Updating… Showing {} data.", range_text(displayed_range.get()))}
-                    </div>
-                })
-        }}
-        {move || data.get().map(|data| view! { <CostsContent data/> })}
+        {move || data.get().map(|data| view! { <div class="stack-lg"><CostsContent data refreshing/></div> })}
     }
 }

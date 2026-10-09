@@ -334,6 +334,16 @@ async fn spa_cache_middleware(req: Request, next: Next) -> Response {
         .get(CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.starts_with("text/html"));
+    // A missing asset falls back to index.html; answer 404 instead so a browser
+    // never caches HTML under an immutable asset path.
+    if path.starts_with("/assets/") && is_html {
+        let mut missing = Response::new(Body::from("Not found"));
+        *missing.status_mut() = StatusCode::NOT_FOUND;
+        missing
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return missing;
+    }
     let cache = if path.starts_with("/assets/") {
         Some("public, max-age=31536000, immutable")
     } else if is_html {
@@ -456,5 +466,38 @@ mod tests {
         ));
         assert!(!bearer_digest_eq(header("Basic secret").as_ref(), "secret"));
         assert!(!bearer_digest_eq(None, "secret"));
+    }
+
+    #[tokio::test]
+    async fn missing_assets_are_not_served_as_cached_html() {
+        let dist = tempfile::tempdir().unwrap();
+        std::fs::write(dist.path().join("index.html"), "<html></html>").unwrap();
+        std::fs::create_dir(dist.path().join("assets")).unwrap();
+        std::fs::write(dist.path().join("assets/app.css"), "body{}").unwrap();
+        let get = |uri: &str| {
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap_or_default()
+        };
+        let router = spa_service(dist.path().to_path_buf());
+        let missing = router
+            .clone()
+            .oneshot(get("/assets/fonts/none.woff2"))
+            .await;
+        let missing = missing.unwrap_or_else(|never| match never {});
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        assert_eq!(missing.headers()[CACHE_CONTROL], "no-store");
+        let found = router.clone().oneshot(get("/assets/app.css")).await;
+        let found = found.unwrap_or_else(|never| match never {});
+        assert_eq!(found.status(), StatusCode::OK);
+        assert_eq!(
+            found.headers()[CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        let route = router.oneshot(get("/streamers/x")).await;
+        let route = route.unwrap_or_else(|never| match never {});
+        assert_eq!(route.status(), StatusCode::OK);
+        assert_eq!(route.headers()[CACHE_CONTROL], "no-cache");
     }
 }

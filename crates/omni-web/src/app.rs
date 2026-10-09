@@ -1,7 +1,7 @@
-//! Router and shell (`App.tsx`, `main.tsx`).
+//! Router and application shell.
 
 use leptos::prelude::*;
-use omni_web_kit::components::{NavBar, SectionNav};
+use omni_web_kit::components::{ButtonLink, ButtonVariant, Glyph, Icon, IconSize};
 use omni_web_kit::live::provide_live_data;
 use omni_web_kit::router::{Link, provide_router};
 use omni_web_pages::{
@@ -11,19 +11,52 @@ use omni_web_pages::{
 use wasm_bindgen::JsCast as _;
 
 use crate::pages::{
-    CostsPage, DataPage, EmailActivityPage, HomePage, LivestreamIntelligencePage, OperationsPage,
-    StreamerPage,
+    CostsPage, DataPage, EmailActivityPage, HomePage, LivePage, LivestreamIntelligencePage,
+    OperationsPage, StreamerPage,
 };
 use crate::routes::{Route, match_route, normalize_path, page_title, workspace_ids};
+use crate::shell::{Shell, ShellContext};
+
+const MAIN_DESTINATIONS: [(&str, &str, Icon); 5] = [
+    ("Live", "/live", Icon::Live),
+    ("Movies & TV", "/media", Icon::Film),
+    ("Workspaces", "/workspaces", Icon::Flask),
+    ("Email", "/emails", Icon::Mail),
+    ("Operations", "/operations", Icon::Pulse),
+];
 
 #[component]
-fn NotFound() -> impl IntoView {
+fn NotFound(path: Memo<String>) -> impl IntoView {
+    let shell = use_context::<ShellContext>();
     view! {
         <div class="not-found-page">
-            <span class="home-eyebrow">"404"</span>
-            <h1>"Page Not Found"</h1>
-            <p class="page-subtitle">"This link does not lead to a page in Omni Notify."</p>
-            <Link to="/" class="section-view-all">"Back to Home ›"</Link>
+            <span class="eyebrow">"404"</span>
+            <h1 class="page-title">"Nothing at " <span class="mono">{move || path.get()}</span></h1>
+            <p class="lede">"This link does not lead to a page in Omni Notify."</p>
+            <div class="cluster">
+                <ButtonLink to="/" variant=ButtonVariant::Primary icon=Icon::Home>"Home"</ButtonLink>
+                {shell.map(|shell| view! {
+                    <button type="button" class="btn" on:click=move |_| shell.palette_open.set(true)>
+                        <Glyph icon=Icon::Search size=IconSize::Medium/>
+                        "Search"
+                        <kbd class="kbd">"⌘K"</kbd>
+                    </button>
+                })}
+            </div>
+            <div class="panel">
+                <div class="rows">
+                    {MAIN_DESTINATIONS
+                        .iter()
+                        .map(|(label, href, icon)| view! {
+                            <Link to=*href class="row">
+                                <Glyph icon=*icon/>
+                                <span class="row-main"><span class="row-title">{*label}</span></span>
+                                <span class="row-end"><Glyph icon=Icon::ChevronRight size=IconSize::Small/></span>
+                            </Link>
+                        })
+                        .collect_view()}
+                </div>
+            </div>
         </div>
     }
 }
@@ -31,6 +64,7 @@ fn NotFound() -> impl IntoView {
 fn render(route: Route, path: Memo<String>) -> AnyView {
     match route {
         Route::Home => view! { <HomePage/> }.into_any(),
+        Route::Live => view! { <LivePage/> }.into_any(),
         Route::Media => view! { <MediaPage/> }.into_any(),
         Route::MediaDetail(id) => view! { <MediaDetailPage id/> }.into_any(),
         Route::Podcasts => view! { <PodcastsPage/> }.into_any(),
@@ -57,7 +91,7 @@ fn render(route: Route, path: Memo<String>) -> AnyView {
         Route::Pets => view! { <PetsPage/> }.into_any(),
         Route::Mcp => view! { <McpPage/> }.into_any(),
         Route::Claude => view! { <ClaudePage/> }.into_any(),
-        Route::NotFound => view! { <NotFound/> }.into_any(),
+        Route::NotFound => view! { <NotFound path/> }.into_any(),
     }
 }
 
@@ -84,19 +118,9 @@ pub fn App() -> impl IntoView {
     });
     Effect::new(move |_| document().set_title(&path.with(|p| page_title(p))));
 
-    let nav_path = Signal::derive(move || path.get());
     view! {
-        <div class="app-shell">
-            <a href="#main-content" class="skip-link">"Skip to Content"</a>
-            <NavBar path=nav_path/>
-            <main
-                id="main-content"
-                tabindex="-1"
-                class=move || format!("page {}", if path.get() == "/data" { "page-data" } else { "" })
-            >
-                <SectionNav path=nav_path/>
-                {move || render(route.get(), path)}
-            </main>
-        </div>
+        <Shell route path>
+            {move || render(route.get(), path)}
+        </Shell>
     }
 }

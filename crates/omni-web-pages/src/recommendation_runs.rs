@@ -1,29 +1,34 @@
-//! Recent runs of a recommendation task.
+//! Recent runs of a recommendation task, as a disclosure of run rows.
 //!
-//! Shared by the media and podcast pages. Refetches whenever `latest_run_id`
-//! changes so a fresh run appears without a manual refresh.
+//! Shared by the recommendation pages. Refetches whenever `latest_run_id`
+//! changes so a fresh run appears without a manual refresh. Each row opens
+//! the run's logs.
 
 use leptos::prelude::*;
 use omni_api::runs::{Run, RunStatus};
 use omni_web_kit::api;
-use omni_web_kit::components::LogViewer;
+use omni_web_kit::components::{
+    Disclosure, EmptyState, InlineNote, LogViewer, SkeletonRows, Status, StatusKind, Tone,
+};
 use omni_web_kit::task::spawn_scoped;
 use omni_web_kit::utils::format::{format_absolute, format_relative};
 
-/// `(label, tone)` of a run row.
-pub fn run_outcome(run: &Run) -> (&'static str, &'static str) {
+/// `(label, status shape)` of a run row. A successful run that added
+/// nothing ("no_add: …") is a warning, not a failure.
+pub fn run_outcome(run: &Run) -> (&'static str, StatusKind) {
     match run.status {
-        RunStatus::Running => ("Running", "running"),
-        RunStatus::Error => ("Error", "error"),
+        RunStatus::Running => ("Running", StatusKind::Running),
+        RunStatus::Error => ("Error", StatusKind::Fault),
+        RunStatus::Degraded => ("Skipped", StatusKind::Warn),
         RunStatus::Success
             if run
                 .summary
                 .as_deref()
                 .is_some_and(|s| s.starts_with("no_add:")) =>
         {
-            ("No Pick", "no-add")
+            ("No pick", StatusKind::Warn)
         }
-        RunStatus::Success => ("Completed", "success"),
+        RunStatus::Success => ("Completed", StatusKind::Ok),
     }
 }
 
@@ -59,52 +64,58 @@ pub fn RecommendationRuns(
         runs.get()
             .into_iter()
             .map(|run| {
-                let (label, tone) = run_outcome(&run);
+                let (label, kind) = run_outcome(&run);
                 let detail = run.error.clone().or_else(|| run.summary.clone());
-                let detail_class = if run.error.is_some() {
-                    "run-error"
-                } else {
-                    "run-summary"
-                };
                 let started = run.started_at as f64;
                 let target = run.clone();
                 view! {
                     <button
                         type="button"
-                        class="rec-run-row row-btn"
+                        class="row rec-run"
                         title="View logs"
                         on:click=move |_| log_run.set(Some(target.clone()))
                     >
-                        <span class=format!("rec-run-outcome rec-run-{tone}")>{label}</span>
-                        <span class="rec-run-time" title=format_absolute(started)>
+                        <Status kind=kind label=label dot_only=kind == StatusKind::Ok/>
+                        <span class="row-main">
+                            <span class="row-title">{label}</span>
+                            {detail.map(|d| view! { <span class="row-sub">{d}</span> })}
+                        </span>
+                        <span class="row-end num small muted" title=format_absolute(started)>
                             {format_relative(started)}
                         </span>
-                        {detail.map(|detail| view! { <span class=detail_class>{detail}</span> })}
                     </button>
                 }
             })
             .collect_view()
     };
 
+    let summary = Signal::derive(move || {
+        let n = runs.with(Vec::len);
+        if n == 0 {
+            "Recent runs".to_owned()
+        } else {
+            format!("Recent runs · {n}")
+        }
+    });
+
     view! {
-        <details class="page-section rec-activity-section content-disclosure">
-            <summary>"Recent Activity"</summary>
+        <Disclosure summary class="rec-runs">
             {move || {
-                load_error
-                    .get()
-                    .then(|| view! { <div class="error-inline">"Activity could not be refreshed."</div> })
+                load_error.get().then(|| view! {
+                    <InlineNote tone=Tone::Warn>"Run history could not be refreshed."</InlineNote>
+                })
             }}
             {move || {
                 if !loaded.get() {
-                    view! { <div class="muted">"Loading activity…"</div> }.into_any()
+                    view! { <SkeletonRows count=3 label="Loading runs"/> }.into_any()
                 } else if runs.with(Vec::is_empty) && !load_error.get() {
-                    view! { <div class="muted">"No recommendation runs recorded yet."</div> }
+                    view! { <EmptyState message="No recommendation runs recorded yet." compact=true/> }
                         .into_any()
                 } else {
-                    view! { <div class="rec-run-list">{rows}</div> }.into_any()
+                    view! { <div class="rows">{rows}</div> }.into_any()
                 }
             }}
-        </details>
+        </Disclosure>
         {move || {
             log_run
                 .get()
@@ -118,6 +129,7 @@ pub fn RecommendationRuns(
 #[cfg(test)]
 mod tests {
     use omni_api::runs::{Run, RunStatus, RunTrigger};
+    use omni_web_kit::components::StatusKind;
 
     use super::run_outcome;
 
@@ -138,14 +150,17 @@ mod tests {
     #[test]
     fn outcomes_follow_status_and_no_add_summaries() {
         assert_eq!(run_outcome(&run(RunStatus::Running, None)).0, "Running");
-        assert_eq!(run_outcome(&run(RunStatus::Error, None)).1, "error");
+        assert_eq!(
+            run_outcome(&run(RunStatus::Error, None)).1,
+            StatusKind::Fault
+        );
         assert_eq!(
             run_outcome(&run(RunStatus::Success, Some("no_add: dupes"))),
-            ("No Pick", "no-add")
+            ("No pick", StatusKind::Warn)
         );
         assert_eq!(
             run_outcome(&run(RunStatus::Success, Some("added 1"))),
-            ("Completed", "success")
+            ("Completed", StatusKind::Ok)
         );
     }
 }

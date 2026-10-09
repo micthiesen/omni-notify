@@ -64,7 +64,7 @@ impl ClaudeActionKind {
         }
     }
 
-    /// The TS string value (`"link_status"` etc.), used as a CSS suffix.
+    /// The wire value (`"link_status"` etc.), used as a CSS suffix.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Start => "start",

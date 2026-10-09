@@ -1,6 +1,8 @@
 //! Durable retry queue for transiently failed email processing.
 //! A retry re-fetches the email by id and reruns the
 //! owning pipeline's handler; pipeline dedup gates make replay idempotent.
+//! Rows parked by a systemic failure (`awaitingBuild`) are not due until a
+//! boot under a different build releases them (see [`crate::systemic`]).
 
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, EntityOps as _, EntityWrite as _, UpsertOpts};
@@ -27,6 +29,12 @@ pub struct EmailRetryData {
     pub attempts: i64,
     pub next_attempt_at: i64,
     pub created_at: i64,
+    /// Set while the row waits for a build other than this one (systemic failure).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub awaiting_build: Option<String>,
+    /// The systemic failure's signature key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }
@@ -53,7 +61,8 @@ pub fn retry_delay_ms(attempts: i64) -> i64 {
 }
 
 /// Coalesces repeated signals without consuming
-/// attempts or moving an existing schedule.
+/// attempts or moving an existing schedule. A transient signal unparks a row
+/// parked by a systemic failure and schedules it normally.
 pub fn plan_enqueue(
     existing: Option<&EmailRetryData>,
     pipeline: &str,
@@ -61,6 +70,7 @@ pub fn plan_enqueue(
     reason: &str,
     now: i64,
 ) -> EmailRetryData {
+    let scheduled = existing.filter(|e| e.awaiting_build.is_none());
     EmailRetryData {
         retry_key: retry_key(pipeline, email_id),
         pipeline: pipeline.to_owned(),
@@ -68,9 +78,30 @@ pub fn plan_enqueue(
         reason: reason.to_owned(),
         enqueue_count: Some(existing.and_then(|e| e.enqueue_count).unwrap_or(0) + 1),
         attempts: existing.map_or(0, |e| e.attempts),
-        next_attempt_at: existing.map_or(now + retry_delay_ms(1), |e| e.next_attempt_at),
+        next_attempt_at: scheduled.map_or(now + retry_delay_ms(1), |e| e.next_attempt_at),
         created_at: existing.map_or(now, |e| e.created_at),
+        awaiting_build: None,
+        signature: None,
         extra: existing.map(|e| e.extra.clone()).unwrap_or_default(),
+    }
+}
+
+/// Parks the row until a build other than `build` runs, keeping its attempts
+/// and creation time; counts as an enqueue signal.
+pub fn plan_enqueue_systemic(
+    existing: Option<&EmailRetryData>,
+    pipeline: &str,
+    email_id: &str,
+    reason: &str,
+    signature: &str,
+    build: &str,
+    now: i64,
+) -> EmailRetryData {
+    EmailRetryData {
+        awaiting_build: Some(build.to_owned()),
+        signature: Some(signature.to_owned()),
+        next_attempt_at: existing.map_or(now, |e| e.next_attempt_at),
+        ..plan_enqueue(existing, pipeline, email_id, reason, now)
     }
 }
 
@@ -83,11 +114,15 @@ pub fn plan_claim(row: &EmailRetryData, now: i64) -> EmailRetryData {
     }
 }
 
-/// Due now, exhausted rows excluded, oldest schedule first.
+/// Due now, exhausted and parked rows excluded, oldest schedule first.
 pub fn select_due(rows: &[EmailRetryData], now: i64) -> Vec<EmailRetryData> {
     let mut due: Vec<EmailRetryData> = rows
         .iter()
-        .filter(|r| r.attempts < MAX_RETRY_ATTEMPTS && r.next_attempt_at <= now)
+        .filter(|r| {
+            r.attempts < MAX_RETRY_ATTEMPTS
+                && r.next_attempt_at <= now
+                && r.awaiting_build.is_none()
+        })
         .cloned()
         .collect();
     due.sort_by_key(|r| r.next_attempt_at);
@@ -159,6 +194,8 @@ mod retry_spec {
             attempts,
             next_attempt_at,
             created_at: NOW - 60_000,
+            awaiting_build: None,
+            signature: None,
             extra: Extra::new(),
         }
     }
@@ -203,6 +240,36 @@ mod retry_spec {
         assert_eq!(second.enqueue_count, Some(2));
         assert_eq!(second.reason, "b");
         assert_eq!(second.next_attempt_at, first.next_attempt_at);
+    }
+
+    #[test]
+    fn parked_rows_are_never_due() {
+        let parked = EmailRetryData {
+            awaiting_build: Some("sha256:aaa".to_owned()),
+            ..make_retry("parked", 1, NOW - 1)
+        };
+        assert!(select_due(&[parked], NOW).is_empty());
+    }
+
+    #[test]
+    fn a_systemic_signal_parks_the_row_and_keeps_its_attempts() {
+        let first = plan_enqueue(None, "CalendarEvents", "email-1", "503", NOW);
+        let claimed = plan_claim(&first, NOW + 1);
+        let parked = plan_enqueue_systemic(
+            Some(&claimed),
+            "CalendarEvents",
+            "email-1",
+            "provider error 400",
+            "abc",
+            "b1",
+            NOW + 2,
+        );
+        assert_eq!(parked.attempts, 1);
+        assert_eq!(parked.awaiting_build.as_deref(), Some("b1"));
+        assert_eq!(parked.enqueue_count, Some(2));
+        let unparked = plan_enqueue(Some(&parked), "CalendarEvents", "email-1", "503", NOW + 3);
+        assert_eq!(unparked.awaiting_build, None);
+        assert_eq!(unparked.next_attempt_at, NOW + 3 + retry_delay_ms(1));
     }
 
     #[test]

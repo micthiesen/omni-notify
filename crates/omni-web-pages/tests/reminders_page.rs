@@ -1,7 +1,6 @@
-//! Port of `frontend/src/pages/RemindersPage.spec.tsx`.
+//! The Reminders page.
 //!
-//! The TS spec rendered the page with `renderToStaticMarkup` and stubbed
-//! `fetch`. Here the page's visible parts come from `reminders_view` (the
+//! The page's visible parts come from `reminders_view` (the
 //! component renders exactly those parts plus the constant intro), and
 //! requests go through the `RemindersTransport` seam with a recording fake.
 
@@ -208,4 +207,35 @@ fn code_submissions_post_the_challenge_and_code() {
     assert!(!omni_web_pages::reminders::is_six_digit_code(
         "１２３４５６"
     ));
+}
+
+#[test]
+fn badges_the_connection_phase_with_a_shape_and_word() {
+    use omni_web_kit::components::StatusKind;
+    use omni_web_pages::reminders::phase_badge;
+
+    assert_eq!(phase_badge(None), (StatusKind::Running, "Checking"));
+    let connected = PublicStatus::new(true, Phase::Authenticated);
+    assert_eq!(phase_badge(Some(&connected)), (StatusKind::Ok, "Connected"));
+    let needs_auth = PublicStatus::new(true, Phase::AuthenticationNeeded);
+    assert_eq!(
+        phase_badge(Some(&needs_auth)),
+        (StatusKind::Warn, "Sign-in needed")
+    );
+    let challenged = PublicStatus {
+        challenge_id: Some("c1".into()),
+        ..needs_auth.clone()
+    };
+    assert_eq!(
+        phase_badge(Some(&challenged)),
+        (StatusKind::Warn, "Code needed")
+    );
+    let unsupported = PublicStatus::new(true, Phase::UnsupportedProtocol);
+    assert_eq!(phase_badge(Some(&unsupported)).0, StatusKind::Fault);
+
+    // Check access leads only when it is the sole action.
+    assert!(!reminders_view(true, Some(&needs_auth)).verify_is_primary());
+    assert!(!reminders_view(true, Some(&challenged)).verify_is_primary());
+    let approval = PublicStatus::new(true, Phase::AwaitingDeviceApproval);
+    assert!(reminders_view(true, Some(&approval)).verify_is_primary());
 }

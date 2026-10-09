@@ -17,6 +17,7 @@ pub mod directory;
 pub mod display;
 pub mod display_order;
 pub mod error;
+pub mod events;
 pub mod format;
 pub mod identity;
 pub mod metrics;
@@ -246,7 +247,8 @@ impl LiveModule {
             bus: Some(ctx.bus.clone()),
         };
         let mut check = LiveCheck::new(self.roster.clone(), deps)
-            .with_intelligence(Arc::new(PortIntelligence::new(ctx.ports.clone())));
+            .with_intelligence(Arc::new(PortIntelligence::new(ctx.ports.clone())))
+            .with_events(ctx.ports.clone());
         if self.dgg_top_embeds > 0 {
             let learner = ProfileIdentityLearner::new(
                 ctx.store.clone(),

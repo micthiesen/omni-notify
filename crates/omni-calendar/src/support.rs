@@ -171,6 +171,15 @@ pub trait EmailSupport: Send + Sync {
         email_id: &'a str,
         reason: &'a str,
     ) -> BoxFuture<'a, Result<(), SupportError>>;
+    /// Parks the email until a different build runs and sends the
+    /// per-signature alert (`omni_email::systemic::SystemicReporter`).
+    fn report_systemic<'a>(
+        &'a self,
+        pipeline: &'static str,
+        email_id: &'a str,
+        reason: &'a str,
+        signature: &'a omni_email::systemic::Signature,
+    ) -> BoxFuture<'a, Result<(), SupportError>>;
     /// `withEmailLogCaptureEffect(activityId, pipeline, work)`: runs `work` with
     /// its log lines attributed to the email's activity row, persists them, and
     /// returns the work's own result unchanged.

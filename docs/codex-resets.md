@@ -61,6 +61,8 @@ is the available delivery confirmation; it cannot establish that a device displa
 
 Each run logs a bounded source snapshot: fetch time, feed generation time, newest
 alert ID, original post time, alert publication time and history fallback count.
+The snapshot and run summary log at INFO only when they change (feed generation
+time alone does not count) or a delivery happens; unchanged runs log at debug.
 These distinguish local polling delay from upstream publication changes. They do
 not establish when a tracker first made an event publicly available.
 

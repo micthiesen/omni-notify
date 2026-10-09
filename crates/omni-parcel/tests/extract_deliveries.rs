@@ -173,13 +173,13 @@ async fn extracts_ranked_candidates_and_the_call_cost() {
 }
 
 #[tokio::test]
-async fn provider_failures_are_transient_and_schema_failures_are_not() {
+async fn rejected_requests_are_systemic_and_schema_failures_are_not_retried() {
     let app = omni_testkit::TestApp::new().await;
     app.ai.script_failure(
         ModelRole::Extraction,
         omni_testkit::FakeFailure {
             status: 400,
-            message: "model timeout".to_owned(),
+            message: "Invalid schema for response_format: 'oneOf' is not permitted.".to_owned(),
         },
     );
     app.ai.script(
@@ -191,14 +191,16 @@ async fn provider_failures_are_transient_and_schema_failures_are_not() {
     );
     let (extractor, _server) = extractor(&app).await;
     let first = extractor.extract(&shipment(), None).await.unwrap_err();
-    assert!(matches!(
-        first,
-        ParcelError::Extraction {
-            transient: true,
-            ..
-        }
-    ));
-    assert!(first.to_string().starts_with("Parcel extraction failed: "));
+    assert!(matches!(first, ParcelError::SystemicExtraction { .. }));
+    assert!(!first.is_transient());
+    assert_eq!(
+        first.to_string(),
+        "Parcel extraction failed: provider error 400: Invalid schema for response_format: 'oneOf' is not permitted."
+    );
+    assert_eq!(
+        first.systemic().cloned(),
+        omni_email::systemic::classify_recorded(&first.to_string())
+    );
     let second = extractor.extract(&shipment(), None).await.unwrap_err();
     assert!(matches!(
         second,

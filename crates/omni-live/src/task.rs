@@ -16,6 +16,7 @@ use futures::StreamExt;
 use futures::future::BoxFuture;
 use indexmap::IndexMap;
 use jiff::tz::TimeZone;
+use omni_api::events::LivestreamTransition;
 use omni_api::streamers::StreamerTier;
 use omni_core::clock::SharedClock;
 use omni_runtime::ports::{self, LiveIntelligence, LiveTransition, Ports};
@@ -204,6 +205,8 @@ pub struct LiveCheck {
     dgg: Option<DggDiscovery>,
     reconcile: Option<Arc<dyn TickHook>>,
     intelligence: Option<Arc<dyn IntelligenceObserver>>,
+    /// MCP Events publishing (through the `EventPublisher` port).
+    events: Option<Ports>,
     metrics: ViewerMetricsService,
     state: Mutex<TickState>,
 }
@@ -221,6 +224,7 @@ impl LiveCheck {
             dgg: None,
             reconcile: None,
             intelligence: None,
+            events: None,
             metrics,
             state: Mutex::default(),
         }
@@ -238,6 +242,12 @@ impl LiveCheck {
 
     pub fn with_intelligence(mut self, observer: Arc<dyn IntelligenceObserver>) -> Self {
         self.intelligence = Some(observer);
+        self
+    }
+
+    /// Publishes `livestream.status_changed` through `ports`' event publisher.
+    pub fn with_events(mut self, ports: Ports) -> Self {
+        self.events = Some(ports);
         self
     }
 
@@ -342,6 +352,7 @@ impl LiveCheck {
             Err(error) => {
                 let message = format!("fetch DGG feed failed: {error}");
                 tracing::warn!(target: LOG, "Failed to refresh Destiny.gg embeds: {message}");
+                omni_tasks::report_degraded(message.clone());
                 let mut state = self.state();
                 for status in state.dgg_statuses.values_mut() {
                     *status = FetchedStatus::unknown(message.clone());
@@ -758,6 +769,17 @@ impl LiveCheck {
             .seed(&streamer.id, &next.primary_title, now);
         // Persist the edge before notifying.
         upsert_status(&self.deps.store, StreamerStatus::Live(next.clone())).await?;
+        crate::events::publish(
+            self.events.as_ref(),
+            crate::events::status_changed(
+                streamer,
+                &next,
+                LivestreamTransition::WentLive,
+                None,
+                now,
+            ),
+        )
+        .await;
 
         if self.permissions(streamer).went_live {
             let message = LiveMessage {
@@ -890,7 +912,20 @@ impl LiveCheck {
 
         // The live state stays the retry marker until the alert is delivered;
         // the session is closed only afterwards so retries cannot duplicate it.
+        // The event is published before that write for the same reason: a
+        // replay keeps its dedup key.
         let ended_at = next.last_ended_at.unwrap_or(now);
+        crate::events::publish(
+            self.events.as_ref(),
+            crate::events::status_changed(
+                streamer,
+                previous_live,
+                LivestreamTransition::WentOffline,
+                Some(ended_at),
+                now,
+            ),
+        )
+        .await;
         record_completed_session(&self.deps.store, previous_live, ended_at).await?;
         upsert_status(&self.deps.store, StreamerStatus::Offline(next)).await?;
 

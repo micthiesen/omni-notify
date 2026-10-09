@@ -463,3 +463,40 @@ async fn checkpoints_a_profile_and_skips_the_model_when_evidence_is_unchanged() 
     ));
     assert_eq!(app.ai.requests().len(), 2, "no model call when unchanged");
 }
+
+#[tokio::test]
+async fn an_unreadable_listen_history_skips_the_reflection_as_degraded() {
+    use std::sync::Arc;
+
+    use common::{FakeAccount, FakeAccounts};
+    use omni_podcasts::account::Unavailable;
+    use omni_podcasts::reflection::task::PodcastTasteReflectionTask;
+    use omni_tasks::{CronSchedule, Task as _};
+
+    let app = TestApp::new().await;
+    let account = FakeAccount {
+        history: Err(Unavailable::new("Castro GET /episodes failed: HTTP 502")),
+        ..FakeAccount::default()
+    };
+    let task = PodcastTasteReflectionTask::new(
+        CronSchedule::parse("0 0 4 * * 0", &jiff::tz::TimeZone::UTC).unwrap(),
+        app.ctx.store.clone(),
+        app.ctx.clock.clone(),
+        Models {
+            ai: app.ctx.ai.clone(),
+            config: app.ctx.config.clone(),
+        },
+        Arc::new(FakeAccounts(Arc::new(account))),
+    );
+    let (result, degraded) = omni_tasks::collect_degraded(task.run_once()).await;
+    result.unwrap();
+    assert_eq!(
+        task.last_run_summary().as_deref(),
+        Some("skipped: Castro GET /episodes failed: HTTP 502")
+    );
+    assert_eq!(
+        degraded,
+        vec!["listen history unavailable: Castro GET /episodes failed: HTTP 502"]
+    );
+    assert!(app.ai.requests().is_empty());
+}

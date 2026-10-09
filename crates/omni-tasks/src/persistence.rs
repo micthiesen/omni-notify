@@ -22,6 +22,10 @@ pub enum TaskRunStatus {
     Running,
     Success,
     Error,
+    /// Completed without an error but skipped its real work because an
+    /// upstream failed; `error` holds the reason. Rows written before this
+    /// variant existed never contain it, so they decode as before.
+    Degraded,
 }
 
 /// `task-run`, keyed by `runId` (`"<task>:<uuidv4>"`).
@@ -449,6 +453,7 @@ impl From<&TaskRunData> for omni_api::runs::Run {
                 TaskRunStatus::Running => RunStatus::Running,
                 TaskRunStatus::Success => RunStatus::Success,
                 TaskRunStatus::Error => RunStatus::Error,
+                TaskRunStatus::Degraded => RunStatus::Degraded,
             },
             error: run.error.clone(),
             summary: run.summary.clone(),

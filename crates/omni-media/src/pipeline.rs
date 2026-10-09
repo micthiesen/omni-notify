@@ -324,6 +324,7 @@ pub async fn run_recommendation_pipeline(
                 selected_pick.candidate_id
             );
             stop_reason = Some("selection returned an unknown candidate id".to_owned());
+            omni_tasks::report_degraded("selection returned an unknown candidate id");
             break;
         };
 
@@ -378,8 +379,10 @@ pub async fn run_recommendation_pipeline(
     ))
 }
 
+/// Local state was unreadable: the run skips its work and is degraded.
 fn skipped(reason: &str) -> String {
     tracing::warn!(target: LOG, "Recommendation run skipped: {reason}");
+    omni_tasks::report_degraded(format!("media state unavailable: {reason}"));
     format!("skipped: {reason}")
 }
 

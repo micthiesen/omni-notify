@@ -459,8 +459,10 @@ async fn skips_when_view_unavailable(view: &str) {
         }
         _ => *h.library.library.lock().expect("lock") = FetchResult::unavailable("Plex offline"),
     }
-    let summary = run(&h, PipelineOptions::default()).await.expect("run");
-    assert_eq!(summary, "skipped: Plex offline");
+    let (summary, degraded) =
+        omni_tasks::collect_degraded(run(&h, PipelineOptions::default())).await;
+    assert_eq!(summary.expect("run"), "skipped: Plex offline");
+    assert_eq!(degraded, vec!["media state unavailable: Plex offline"]);
     assert!(!h.catalog.calls().iter().any(|c| c == "trending"));
 }
 

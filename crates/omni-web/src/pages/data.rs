@@ -1,17 +1,21 @@
-//! Browse and delete stored entity rows.
+//! Data: browse, inspect, download and delete stored entity rows.
 
 use std::collections::HashMap;
 
 use leptos::prelude::*;
 use omni_web_kit::api::{self, DataRow, ManagedDataSummary, ManagedEntitySummary};
-use omni_web_kit::components::{ShowMoreButton, Toast, ToastKind, use_show_more, use_toast};
-use omni_web_kit::hooks::use_modal;
+use omni_web_kit::components::{
+    Button, ButtonSize, ButtonVariant, ConfirmButton, EmptyState, ErrorState, Icon, InlineNote,
+    Inspector, PageHead, Readout, ReadoutBand, ReadoutSize, SearchField, ShowMoreButton,
+    SkeletonRows, ToastKind, Tone, use_show_more, use_toast,
+};
+use omni_web_kit::hooks::use_is_wide;
 use omni_web_kit::task::{spawn_detached, spawn_scoped};
 use omni_web_kit::utils::download::download_file;
 use omni_web_kit::utils::format::to_title_case;
 use omni_web_kit::utils::js::{
-    locale_compare, locale_compare_numeric, locale_lowercase, number_string, to_fixed, utf16_len,
-    utf16_slice,
+    locale_compare, locale_compare_numeric, locale_lowercase, locale_number, number_string,
+    to_fixed, utf16_len, utf16_slice,
 };
 use serde_json::{Map, Value};
 
@@ -261,65 +265,58 @@ fn columns_for(rows: &[DataRow], selected: &ManagedEntitySummary) -> Vec<String>
 }
 
 #[component]
-fn RowDetail(
+fn RowInspector(
     entity: ManagedEntitySummary,
     row: DataRow,
+    #[prop(into)] docked: Signal<bool>,
     #[prop(into)] deleting: Signal<bool>,
     on_close: Callback<()>,
     on_delete: Callback<()>,
 ) -> impl IntoView {
-    let modal_ref = use_modal(move || on_close.run(()));
-    let key = json_row(&key_for(&row, &entity.primary_key));
+    let key = malformed_metadata(&row).map_or_else(
+        || json_row(&key_for(&row, &entity.primary_key)),
+        |m| m.raw_key,
+    );
     let pretty = serde_json::to_string_pretty(&Value::Object(row.clone())).unwrap_or_default();
+    let file = format!("{}-row.json", entity.slug);
+    let title = to_title_case(&entity.label);
+    let download = StoredValue::new((file, pretty.clone()));
+    let pretty = StoredValue::new(pretty);
+    let key = StoredValue::new(key);
     view! {
-        <div class="modal-root">
-            <button
-                class="modal-backdrop"
-                tabindex="-1"
-                type="button"
-                on:click=move |_| on_close.run(())
-                aria-label="Close"
-            ></button>
-            <div
-                class="data-detail-modal"
-                node_ref=modal_ref
-                tabindex="-1"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Row detail"
-            >
-                <div class="data-detail-header">
-                    <div>
-                        <div class="data-detail-label">{to_title_case(&entity.label)}</div>
-                        <code>{key}</code>
-                    </div>
-                    <button
-                        class="log-modal-close"
-                        type="button"
-                        on:click=move |_| on_close.run(())
-                        aria-label="Close"
-                    >
-                        "✕"
-                    </button>
-                </div>
-                <pre class="data-detail-json">{pretty}</pre>
-                <div class="data-detail-footer">
-                    <button
-                        class="data-delete-btn"
-                        type="button"
-                        disabled=move || deleting.get()
-                        on:click=move |_| on_delete.run(())
-                    >
-                        {move || if deleting.get() { "Deleting…" } else { "Delete Row" }}
-                    </button>
-                </div>
-            </div>
-        </div>
+        <Inspector
+            title=title
+            docked
+            on_close
+            actions=ViewFn::from(move || view! {
+                <Button size=ButtonSize::Sm variant=ButtonVariant::Ghost icon=Icon::Download on_click=Callback::new(move |_| {
+                    download.with_value(|(name, content)| download_file(name, content, "application/json"));
+                })>"Download"</Button>
+                <ConfirmButton
+                    label="Delete row"
+                    destructive=true
+                    size=ButtonSize::Sm
+                    variant=ButtonVariant::Ghost
+                    icon=Icon::Trash
+                    busy=deleting
+                    on_confirm=on_delete
+                />
+            })
+        >
+            <section class="inspector-section">
+                <div class="label">"Key"</div>
+                <code class="mono small">{key.get_value()}</code>
+            </section>
+            <section class="inspector-section">
+                <pre class="json-block">{pretty.get_value()}</pre>
+            </section>
+        </Inspector>
     }
 }
 
 #[component]
 pub fn DataPage() -> impl IntoView {
+    let wide = use_is_wide();
     let entities = RwSignal::new(Vec::<ManagedEntitySummary>::new());
     let storage = RwSignal::new(None::<ManagedDataSummary>);
     let selected_slug = RwSignal::new(String::new());
@@ -458,7 +455,7 @@ pub fn DataPage() -> impl IntoView {
         Signal::derive(move || format!("{}|{}", selected_slug.get(), query.get())),
     );
 
-    let download_rows = move |_| {
+    let download_rows = Callback::new(move |_| {
         let Some(entity) = selected.get_untracked() else {
             return;
         };
@@ -474,7 +471,7 @@ pub fn DataPage() -> impl IntoView {
             &content,
             "application/json",
         );
-    };
+    });
     let select_sort = move |column: String| {
         sort.update(|current| {
             *current = Some(match current {
@@ -498,14 +495,6 @@ pub fn DataPage() -> impl IntoView {
             return;
         };
         let key = key_for(&row, &entity.primary_key);
-        let label = malformed_metadata(&row).map_or_else(|| json_row(&key), |m| m.raw_key);
-        let message = format!(
-            "Delete {} row {label}? This cannot be undone.",
-            entity.label
-        );
-        if !window().confirm_with_message(&message).unwrap_or(false) {
-            return;
-        }
         let id = row_id(&row, &entity.primary_key);
         deleting_id.set(Some(id.clone()));
         spawn_detached(async move {
@@ -549,13 +538,13 @@ pub fn DataPage() -> impl IntoView {
                             }
                             _ => "none",
                         }
-                        class=format!("data-col-{width} {}", if is_pk { "data-pk-column" } else { "" })
+                        class=format!("col-{width} {}", if is_pk { "col-pk" } else { "" })
                     >
-                        <button type="button" on:click=move |_| select_sort(sort_column.clone())>
-                            {if column == MALFORMED_ROW_KEY { "Malformed Record".to_owned() } else { column.clone() }}
+                        <button type="button" class="th-sort" on:click=move |_| select_sort(sort_column.clone())>
+                            {if column == MALFORMED_ROW_KEY { "Malformed record".to_owned() } else { column.clone() }}
                             {move || match sort.get() {
                                 Some(s) if s.column == label_column => Some(view! {
-                                    <span>{if s.direction == Direction::Asc { " ↑" } else { " ↓" }}</span>
+                                    <span aria-hidden="true">{if s.direction == Direction::Asc { " ↑" } else { " ↓" }}</span>
                                 }),
                                 _ => None,
                             }}
@@ -585,7 +574,7 @@ pub fn DataPage() -> impl IntoView {
                             && let Some(m) = &malformed
                         {
                             return view! {
-                                <td class="data-malformed-cell" title=m.error.clone()>
+                                <td class="text-fault" title=m.error.clone()>
                                     {format!("Malformed: {}", m.error)}
                                 </td>
                             }
@@ -593,150 +582,45 @@ pub fn DataPage() -> impl IntoView {
                         }
                         let (text, title) = display_value(row.get(column));
                         let width = widths.get(column).copied().unwrap_or("medium");
-                        view! { <td class=format!("data-col-{width}") title=title>{text}</td> }.into_any()
+                        view! { <td class=format!("col-{width} mono") title=title>{text}</td> }.into_any()
                     })
                     .collect_view();
                 let open_row = row.clone();
-                let view_row = row.clone();
-                let delete_target = row.clone();
-                let busy_id = id.clone();
-                let disabled_id = id.clone();
+                let key_row = row.clone();
+                let selected_id = id.clone();
+                let class_id = id.clone();
+                let entity_pk = entity.primary_key.clone();
+                let class_pk = entity.primary_key.clone();
+                let is_selected = move || {
+                    detail_row.with(|d| d.as_ref().is_some_and(|d| row_id(d, &entity_pk) == selected_id))
+                };
+                let malformed_row = malformed.is_some();
                 view! {
                     <tr
-                        class=if malformed.is_some() { "data-row-malformed" } else { "" }
+                        data-row="true"
+                        tabindex="0"
+                        class=move || {
+                            let selected = detail_row.with(|d| d.as_ref().is_some_and(|d| row_id(d, &class_pk) == class_id));
+                            match (selected, malformed_row) {
+                                (true, _) => "clickable selected",
+                                (false, true) => "clickable row-fault",
+                                (false, false) => "clickable",
+                            }
+                        }
+                        aria-selected=move || is_selected().to_string()
                         on:click=move |_| detail_row.set(Some(open_row.clone()))
+                        on:keydown=move |ev: web_sys::KeyboardEvent| {
+                            if ev.key() == "Enter" {
+                                detail_row.set(Some(key_row.clone()));
+                            }
+                        }
                     >
                         {cells}
-                        <td class="data-actions-column">
-                            <button
-                                class="data-view-btn"
-                                type="button"
-                                on:click=move |event| {
-                                    event.stop_propagation();
-                                    detail_row.set(Some(view_row.clone()));
-                                }
-                            >
-                                "View"
-                            </button>
-                            <button
-                                class="data-trash-btn"
-                                type="button"
-                                title="Delete row"
-                                aria-label="Delete row"
-                                disabled=move || deleting_id.get().as_ref() == Some(&disabled_id)
-                                on:click=move |event| {
-                                    event.stop_propagation();
-                                    delete_row(delete_target.clone());
-                                }
-                            >
-                                {move || if deleting_id.get().as_ref() == Some(&busy_id) { "…" } else { "×" }}
-                            </button>
-                        </td>
                     </tr>
                 }
             })
             .collect_view()
             .into_any()
-    };
-
-    let selected_present = Memo::new(move |_| selected.with(Option::is_some));
-    let browser = move || {
-        selected_present.get().then(|| {
-            let entity = move || selected.get().unwrap_or_else(empty_entity);
-            let row_count = move || {
-                let visible = visible_rows.with(Vec::len);
-                let total = rows.with(Vec::len);
-                if visible == total {
-                    format!("{total} rows")
-                } else {
-                    format!("{visible} of {total} rows")
-                }
-            };
-            view! {
-                <div class="data-browser-heading">
-                    <div>
-                        <h2>{move || to_title_case(&entity().label)}</h2>
-                        <p>{move || entity().description}</p>
-                    </div>
-                    <div class="data-browser-aside">
-                        <code>{move || entity().slug}</code>
-                        <span class="data-selected-size">
-                            {move || format!("{} payload", format_bytes(entity().storage_bytes as f64))}
-                        </span>
-                    </div>
-                </div>
-                {move || {
-                    entity()
-                        .warning
-                        .filter(|w| !w.is_empty())
-                        .map(|w| view! { <div class="data-warning">{w}</div> })
-                }}
-                <div class="data-controls">
-                    <input
-                        class="data-search"
-                        type="search"
-                        prop:value=move || query.get()
-                        on:input=move |ev| query.set(event_target_value(&ev))
-                        placeholder="Search every field…"
-                        aria-label="Search rows"
-                    />
-                    <span class="data-row-count">{row_count}</span>
-                    <button
-                        class="data-download-btn"
-                        type="button"
-                        disabled=move || visible_rows.with(Vec::is_empty)
-                        title=move || {
-                            if query.get().trim().is_empty() {
-                                "Download all rows as JSON"
-                            } else {
-                                "Download the filtered rows as JSON"
-                            }
-                        }
-                        on:click=download_rows
-                    >
-                        "Download JSON"
-                    </button>
-                </div>
-                {move || error.get().map(|e| view! { <div class="error-inline">{e}</div> })}
-                <div class="data-table-wrap">
-                    {move || {
-                        if loading_rows.get() && rows.with(Vec::is_empty) {
-                            view! { <div class="loading-inline">"Loading rows…"</div> }.into_any()
-                        } else if visible_rows.with(Vec::is_empty) {
-                            let text = if rows.with(Vec::is_empty) {
-                                "No rows in this entity."
-                            } else {
-                                "No rows match your search."
-                            };
-                            view! { <div class="data-empty">{text}</div> }.into_any()
-                        } else {
-                            view! {
-                                <table class="data-table">
-                                    <thead>
-                                        <tr>
-                                            {header_cells}
-                                            <th class="data-actions-column">
-                                                <span class="sr-only">"Actions"</span>
-                                            </th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>{body_rows}</tbody>
-                                </table>
-                            }
-                            .into_any()
-                        }
-                    }}
-                </div>
-                {move || {
-                    paged.has_more.get().then(|| view! {
-                        <ShowMoreButton
-                            remaining=paged.remaining
-                            on_click=Callback::new(move |()| paged.show_more())
-                        />
-                    })
-                }}
-            }
-        })
     };
 
     let entity_options = move || {
@@ -759,42 +643,114 @@ pub fn DataPage() -> impl IntoView {
             .into_iter()
             .map(|entity| {
                 let slug = entity.slug.clone();
+                let current_slug = slug.clone();
                 let click_slug = slug.clone();
                 view! {
                     <button
-                        class=move || {
-                            format!(
-                                "data-entity-item {}",
-                                if selected_slug.get() == slug { "active" } else { "" },
-                            )
-                        }
+                        class=move || if selected_slug.get() == slug { "row dense entity-item selected" } else { "row dense entity-item" }
+                        aria-current=move || (selected_slug.get() == current_slug).then_some("true")
                         type="button"
                         on:click=move |_| selected_slug.set(click_slug.clone())
                     >
-                        <span class="data-entity-name">{to_title_case(&entity.label)}</span>
-                        <span class="data-entity-meta">
-                            <span>{format_bytes(entity.storage_bytes as f64)}</span>
-                            <span class="data-entity-count">{number_string(entity.count as f64)}</span>
+                        <span class="row-main">
+                            <span class="row-title truncate">{to_title_case(&entity.label)}</span>
+                            <span class="row-sub num">{format_bytes(entity.storage_bytes as f64)}</span>
                         </span>
+                        <span class="row-end num">{locale_number(entity.count as f64)}</span>
                     </button>
                 }
             })
             .collect_view()
     };
 
+    let docked = Signal::derive(move || wide.get());
     let detail = move || {
         let row = detail_row.get()?;
         let entity = selected.get()?;
         let id = row_id(&row, &entity.primary_key);
         let delete_target = row.clone();
         Some(view! {
-            <RowDetail
+            <RowInspector
                 entity
                 row
+                docked
                 deleting=Signal::derive(move || deleting_id.get().as_ref() == Some(&id))
                 on_close=Callback::new(move |()| detail_row.set(None))
                 on_delete=Callback::new(move |()| delete_row(delete_target.clone()))
             />
+        })
+    };
+
+    let row_count = move || {
+        let visible = visible_rows.with(Vec::len);
+        let total = rows.with(Vec::len);
+        if visible == total {
+            format!("{} rows", locale_number(total as f64))
+        } else {
+            format!(
+                "{} of {} rows",
+                number_string(visible as f64),
+                number_string(total as f64)
+            )
+        }
+    };
+
+    let browser = move || {
+        let entity = selected.get()?;
+        Some(view! {
+            <div class="stack">
+                <div class="section-head">
+                    <div>
+                        <h2 class="section-title">{to_title_case(&entity.label)}</h2>
+                        <p class="small dim">{entity.description.clone()}</p>
+                    </div>
+                    <span class="section-meta mono">{entity.slug.clone()}</span>
+                </div>
+                {entity.warning.clone().filter(|w| !w.is_empty()).map(|w| view! { <InlineNote tone=Tone::Warn>{w}</InlineNote> })}
+                <ReadoutBand cols=3 aria_label="Entity size">
+                    <Readout label="Rows" value=locale_number(entity.count as f64)/>
+                    <Readout label="Payload" value=format_bytes(entity.storage_bytes as f64)/>
+                    <Readout label="Primary key" value=entity.primary_key.join(", ") size=ReadoutSize::M/>
+                </ReadoutBand>
+                <div class="toolbar">
+                    <SearchField value=query on_input=Callback::new(move |v| query.set(v)) placeholder="Search every field" aria_label="Search rows" shortcut=true/>
+                    <span class="small dim num">{row_count}</span>
+                    <span class="spacer"></span>
+                    <Button
+                        size=ButtonSize::Sm
+                        icon=Icon::Download
+                        disabled=Signal::derive(move || visible_rows.with(Vec::is_empty))
+                        title=Signal::derive(move || Some(if query.get().trim().is_empty() { "Download all rows as JSON".to_owned() } else { "Download the filtered rows as JSON".to_owned() }))
+                        on_click=download_rows
+                    >
+                        "JSON"
+                    </Button>
+                </div>
+                {move || error.get().map(|e| view! {
+                    <ErrorState title="Rows could not load" raw=e retry=Callback::new(move |()| load_rows())/>
+                })}
+                {move || {
+                    if loading_rows.get() && rows.with(Vec::is_empty) {
+                        view! { <SkeletonRows count=8 label="Loading rows"/> }.into_any()
+                    } else if visible_rows.with(Vec::is_empty) {
+                        let message = if rows.with(Vec::is_empty) { "No rows in this entity." } else { "No rows match your search." };
+                        view! { <EmptyState compact=true message/> }.into_any()
+                    } else {
+                        view! {
+                            <div class="table-wrap panel data-table-wrap">
+                                <table class="table dense data-table" data-primary-rows="true">
+                                    <thead><tr>{header_cells}</tr></thead>
+                                    <tbody>{body_rows}</tbody>
+                                </table>
+                            </div>
+                        }
+                        .into_any()
+                    }
+                }}
+                {move || paged.has_more.get().then(|| view! {
+                    <ShowMoreButton remaining=paged.remaining noun="rows" on_click=Callback::new(move |()| paged.show_more())/>
+                })}
+            </div>
         })
     };
 
@@ -810,73 +766,62 @@ pub fn DataPage() -> impl IntoView {
     });
     move || {
         match page_state.get() {
-            Some(None) => return view! { <div class="loading">"Loading data…"</div> }.into_any(),
-            Some(Some(err)) => return view! { <div class="error">{err}</div> }.into_any(),
+            Some(None) => {
+                return view! { <SkeletonRows count=10 label="Loading data"/> }.into_any();
+            }
+            Some(Some(err)) => {
+                return view! {
+                    <ErrorState title="Data could not load" raw=err retry=Callback::new(move |()| refresh_entities(true)) page=true/>
+                }
+                .into_any();
+            }
             None => {}
         }
+        let lede = Signal::derive(move || {
+            storage.get().map(|s| {
+                format!(
+                    "{} database, {} in entities.",
+                    format_bytes(s.database_size_bytes as f64),
+                    format_bytes(s.entity_storage_bytes as f64)
+                )
+            })
+        });
         view! {
-            <div class="page-header data-page-header">
-                <div class="page-header-stack">
-                    <h1>"Data"</h1>
-                    <p class="page-subtitle">"Browse and remove records stored by mitools Entities."</p>
-                </div>
-                <div class="data-header-actions">
-                    {move || storage.get().map(|storage| view! {
-                        <div class="data-storage-summary">
-                            <span title="SQLite allocated pages, including relational tables and indexes">
-                                <strong>{format_bytes(storage.database_size_bytes as f64)}</strong>
-                                " database"
-                            </span>
-                            <span title="Encoded payload bytes across registered mitools Entities">
-                                <strong>{format_bytes(storage.entity_storage_bytes as f64)}</strong>
-                                " entities"
-                            </span>
-                        </div>
-                    })}
-                    <button
-                        class="run-btn"
-                        type="button"
-                        on:click=move |_| {
+            <PageHead
+                title="Data"
+                eyebrow="System"
+                lede
+                actions=ViewFn::from(move || view! {
+                    <Button
+                        icon=Icon::Refresh
+                        busy=loading_rows
+                        on_click=Callback::new(move |_| {
                             load_rows();
                             refresh_entities(false);
-                        }
-                        disabled=move || loading_rows.get()
+                        })
                     >
-                        {move || if loading_rows.get() { "Refreshing…" } else { "Refresh" }}
-                    </button>
-                </div>
-            </div>
-            <div class="data-layout">
-                <aside class="data-entity-panel" aria-label="Entities">
-                    <label class="data-mobile-select-label" for="data-entity-select">"Entity"</label>
+                        "Refresh"
+                    </Button>
+                })
+            />
+            <div class=move || if detail_row.with(Option::is_some) && wide.get() { "data-layout docked" } else { "data-layout" }>
+                <aside class="data-entities" aria-label="Entities">
+                    <label class="label only-phone" for="data-entity-select">"Entity"</label>
                     <select
                         id="data-entity-select"
-                        class="data-entity-select"
+                        class="select only-phone"
                         prop:value=move || selected_slug.get()
                         on:change=move |ev| selected_slug.set(event_target_value(&ev))
                     >
                         {entity_options}
                     </select>
-                    <div class="data-entity-list">{entity_list}</div>
+                    <nav class="rows hide-phone" aria-label="Entities">{entity_list}</nav>
                 </aside>
                 <section class="data-browser">{browser}</section>
+                {detail}
             </div>
-            {detail}
-            <Toast toast=toast.toast/>
         }
         .into_any()
-    }
-}
-
-fn empty_entity() -> ManagedEntitySummary {
-    ManagedEntitySummary {
-        slug: String::new(),
-        label: String::new(),
-        description: String::new(),
-        warning: None,
-        primary_key: Vec::new(),
-        count: 0,
-        storage_bytes: 0,
     }
 }
 
@@ -887,7 +832,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn helpers_match_the_ts_page() {
+    fn page_helpers() {
         assert_eq!(format_bytes(512.0), "512 B");
         assert_eq!(format_bytes(2048.0), "2.0 KB");
         assert_eq!(format_bytes(20.0 * 1024.0 * 1024.0), "20 MB");

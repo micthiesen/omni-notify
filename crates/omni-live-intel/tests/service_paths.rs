@@ -48,6 +48,7 @@ impl Clock for FixedClock {
 
 struct Capture {
     calls: AtomicUsize,
+    failure: Mutex<Option<AudioError>>,
 }
 
 impl AudioSource for Capture {
@@ -57,7 +58,11 @@ impl AudioSource for Capture {
         seconds: u32,
     ) -> BoxFuture<'a, Result<CapturedAudio, AudioError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        let failure = self.failure.lock().expect("lock").clone();
         Box::pin(async move {
+            if let Some(error) = failure {
+                return Err(error);
+            }
             Ok(CapturedAudio {
                 samples: vec![0.0; seconds as usize * 16_000],
                 sample_rate: 16_000,
@@ -154,6 +159,7 @@ impl Harness {
             classifier: Arc::new(Classifier::default()),
             capture: Arc::new(Capture {
                 calls: AtomicUsize::new(0),
+                failure: Mutex::new(None),
             }),
         }
     }
@@ -219,6 +225,75 @@ async fn wait_for_event(store: &Store, title: &str) {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
     panic!("event {title:?} not recorded");
+}
+
+async fn settled_voice_status(store: &Store) -> PipelineStatus {
+    for _ in 0..500 {
+        let diagnostics = get_diagnostics(store, "guest").await.expect("read");
+        if let Some(stage) = diagnostics.and_then(|d| d.stages.get("voice").cloned())
+            && stage.status != PipelineStatus::Running
+            && stage.status != PipelineStatus::Idle
+        {
+            return stage.status;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    panic!("voice stage never settled");
+}
+
+#[tokio::test]
+async fn a_stream_that_stopped_broadcasting_skips_the_voice_scan_without_a_failure() {
+    let harness = Harness::new(None).await;
+    *harness.capture.failure.lock().expect("lock") = Some(AudioError::NotLive {
+        detail: "[kick:live] guest: The channel is not currently live".into(),
+    });
+    let service = harness.service();
+    service
+        .observe_live(guest(StreamerTier::Background))
+        .await
+        .expect("observe");
+    service.after_tick().await.expect("tick");
+    assert_eq!(
+        settled_voice_status(&harness.store).await,
+        PipelineStatus::Skipped
+    );
+    service.close().await;
+    let events = get_events(&harness.store, Some("guest"), 200)
+        .await
+        .expect("events");
+    assert!(
+        events.iter().all(|e| e.title != "Voice scan failed"),
+        "{events:?}"
+    );
+    let diagnostics = get_diagnostics(&harness.store, "guest")
+        .await
+        .expect("read")
+        .expect("present");
+    assert_eq!(
+        diagnostics.stages["voice"].detail.as_deref(),
+        Some("Stream is not live: [kick:live] guest: The channel is not currently live")
+    );
+}
+
+#[tokio::test]
+async fn a_capture_process_failure_still_records_a_voice_scan_failure() {
+    let harness = Harness::new(None).await;
+    *harness.capture.failure.lock().expect("lock") = Some(AudioError::Process {
+        message: "ffmpeg timed out after 51000ms".into(),
+        retryable: false,
+    });
+    let service = harness.service();
+    service
+        .observe_live(guest(StreamerTier::Background))
+        .await
+        .expect("observe");
+    service.after_tick().await.expect("tick");
+    wait_for_event(&harness.store, "Voice scan failed").await;
+    service.close().await;
+    assert_eq!(
+        settled_voice_status(&harness.store).await,
+        PipelineStatus::Error
+    );
 }
 
 #[tokio::test]

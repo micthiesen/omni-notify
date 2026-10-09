@@ -11,12 +11,14 @@ use tokio_util::sync::CancellationToken;
 
 pub mod catch_up;
 mod cron;
+pub mod health;
 pub mod log_capture;
 pub mod persistence;
 mod registry;
 mod scheduler;
 
 pub use cron::{CronSchedule, InvalidScheduleError};
+pub use health::{collect_degraded, report_degraded};
 pub use log_capture::{RunAttribution, RunLogLayer, RunLogs, current_run};
 pub use omni_api::tasks::TaskInfo;
 pub use omni_store::LogLine;

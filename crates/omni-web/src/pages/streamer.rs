@@ -1,29 +1,33 @@
-//! One monitored streamer: live header, intelligence, viewer records, chart
-//! and recent sessions.
+//! One monitored streamer: hero, readout Stage, daily peak chart, streams by
+//! week, and the Now, Baseline, Bindings and Records panels.
 
 use std::collections::HashMap;
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
 use omni_api::intelligence::{FeedbackVerdict, LivestreamIntelligence, PresenceState};
-use omni_api::streamers::{StreamSessionView, StreamerMetricsResponse, StreamerView};
+use omni_api::streamers::{
+    LiveStreamerView, StreamSessionView, StreamerMetricsResponse, StreamerTier, StreamerView,
+};
 use omni_web_kit::api;
-use omni_web_kit::charts::{AxisStyle, BarChart, BarPoint, BarSeries};
-use omni_web_kit::components::live_now::streamer_intelligence;
-use omni_web_kit::components::{DggPresenceTag, PlatformIcon, ShowMoreButton, use_show_more};
+use omni_web_kit::charts::{BarChart, BarPoint, BarSeries};
+use omni_web_kit::chrome::use_page_label;
+use omni_web_kit::components::streamers::{platform_label, streamer_intelligence, viewer_number};
+use omni_web_kit::components::{
+    Avatar, ButtonLink, ButtonVariant, Chip, Delta, Disclosure, EmptyState, ErrorState, Icon,
+    LiveTag, Meter, Panel, PlatformIcon, Presence, Readout, ReadoutSize, SegOption, Segmented,
+    ShowMoreButton, Skeleton, SkeletonKind, SkeletonRows, Sparkline, Tag, Tone,
+};
 use omni_web_kit::hooks::use_now;
-use omni_web_kit::router::Link;
+use omni_web_kit::live::use_live_data;
 use omni_web_kit::task::{spawn_detached, spawn_scoped};
-use omni_web_kit::use_live_data;
 use omni_web_kit::utils::format::{
     format_compact_number, format_date_only, format_duration, format_relative, format_uptime,
 };
 use omni_web_kit::utils::js::{
     civil_from_days, date_locale_date_string, date_locale_time_string, days_from_civil, js_round,
-    local_date_ms, locale_number, now_ms, number_string,
+    local_date_ms, local_day_index, locale_number, now_ms, number_string, week_start,
 };
-
-const MAX_SESSION_ROWS: usize = 25;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Range {
@@ -43,8 +47,8 @@ impl Range {
 
     fn label(self) -> &'static str {
         match self {
-            Range::Days30 => "30d",
-            Range::Days90 => "90d",
+            Range::Days30 => "30D",
+            Range::Days90 => "90D",
             Range::All => "All",
         }
     }
@@ -162,109 +166,122 @@ fn format_day_full(date: &str) -> String {
     )
 }
 
-fn window_max(metrics: &StreamerMetricsResponse, days: i64) -> i64 {
-    let cutoff = days_ago(days);
-    metrics
-        .daily_buckets
-        .iter()
-        .filter(|b| b.date >= cutoff)
-        .map(|b| b.max_viewers)
-        .fold(0, i64::max)
+fn format_session_time(timestamp: i64) -> String {
+    date_locale_time_string(
+        timestamp as f64,
+        &[("hour", "numeric"), ("minute", "2-digit")],
+    )
 }
 
-#[component]
-fn StreamerStats(metrics: StreamerMetricsResponse) -> impl IntoView {
-    let cutoff = days_ago(30);
-    let days_streamed = metrics
-        .daily_buckets
+const WEEKS_SHOWN: usize = 4;
+const TYPICAL_SESSIONS: usize = 10;
+
+/// Median peak of the most recent completed sessions.
+pub fn typical_peak(sessions: &[StreamSessionView]) -> Option<f64> {
+    let mut peaks: Vec<i64> = sessions
         .iter()
-        .filter(|b| b.date >= cutoff)
-        .count();
-    let highs: Vec<(&str, i64, Option<String>)> = vec![
-        ("7-Day High", window_max(&metrics, 7), None),
-        ("30-Day High", window_max(&metrics, 30), None),
-        ("90-Day High", window_max(&metrics, 90), None),
-        (
-            "All-Time Record",
-            metrics.all_time_max,
-            (metrics.all_time_max_timestamp != 0)
-                .then(|| format_date_only(metrics.all_time_max_timestamp as f64)),
-        ),
-    ];
-    view! {
-        <div class="stat-strip">
-            {highs
-                .into_iter()
-                .map(|(label, value, detail)| view! {
-                    <div class="stat-tile">
-                        <span class="stat-label">{label}</span>
-                        <span class="stat-value">
-                            {if value > 0 { format_compact_number(value as f64) } else { "—".to_owned() }}
-                        </span>
-                        {detail.map(|d| view! { <span class="stat-detail">{d}</span> })}
-                    </div>
-                })
-                .collect_view()}
-            <div class="stat-tile">
-                <span class="stat-label">"Days Streamed"</span>
-                <span class="stat-value">{days_streamed}</span>
-                <span class="stat-detail">"of last 30"</span>
-            </div>
-        </div>
+        .take(TYPICAL_SESSIONS)
+        .map(|s| s.peak_viewers)
+        .filter(|p| *p > 0)
+        .collect();
+    if peaks.is_empty() {
+        return None;
     }
-}
-
-#[component]
-fn PlatformStats(metrics: StreamerMetricsResponse) -> impl IntoView {
-    (!metrics.platforms.is_empty()).then(|| view! {
-        <section class="page-section">
-            <h2 class="section-title">"Platform Records"</h2>
-            <div class="stat-strip">
-                {metrics
-                    .platforms
-                    .into_iter()
-                    .map(|source| view! {
-                        <div class="stat-tile">
-                            <span class="stat-label">
-                                <PlatformIcon platform=source.platform.clone() size=13/>
-                                {format!(" {}", source.platform)}
-                            </span>
-                            <span class="stat-value">
-                                {if source.all_time_max > 0 {
-                                    format_compact_number(source.all_time_max as f64)
-                                } else {
-                                    "—".to_owned()
-                                }}
-                            </span>
-                            <span class="stat-detail">{format!("{} all-time", source.username)}</span>
-                        </div>
-                    })
-                    .collect_view()}
-            </div>
-        </section>
+    peaks.sort_unstable();
+    let mid = peaks.len() / 2;
+    Some(if peaks.len().is_multiple_of(2) {
+        (peaks[mid - 1] + peaks[mid]) as f64 / 2.0
+    } else {
+        peaks[mid] as f64
     })
 }
 
-#[component]
-fn ViewerChart(metrics: StreamerMetricsResponse) -> impl IntoView {
-    let range = RwSignal::new(Range::Days30);
-    let series = Memo::new(move |_| build_day_series(&metrics, range.get()));
-    let buttons = [Range::Days30, Range::Days90, Range::All]
+/// One week of sessions (newest first).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Week {
+    pub start_day: i64,
+    pub sessions: Vec<StreamSessionView>,
+}
+
+impl Week {
+    fn hours(&self) -> f64 {
+        self.sessions
+            .iter()
+            .map(|s| s.duration_ms as f64)
+            .sum::<f64>()
+            / 3_600_000.0
+    }
+
+    fn peak(&self) -> i64 {
+        self.sessions
+            .iter()
+            .map(|s| s.peak_viewers)
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+/// Newest-first sessions grouped by local Monday-start week.
+pub fn group_by_week(sessions: &[StreamSessionView], day_of: impl Fn(i64) -> i64) -> Vec<Week> {
+    let mut weeks: Vec<Week> = Vec::new();
+    for session in sessions {
+        let start = week_start(day_of(session.started_at));
+        match weeks.last_mut() {
+            Some(week) if week.start_day == start => week.sessions.push(session.clone()),
+            _ => weeks.push(Week {
+                start_day: start,
+                sessions: vec![session.clone()],
+            }),
+        }
+    }
+    weeks
+}
+
+fn week_label(start_day: i64, today: i64) -> String {
+    let this_week = week_start(today);
+    if start_day == this_week {
+        return "This week".to_owned();
+    }
+    if start_day == this_week - 7 {
+        return "Last week".to_owned();
+    }
+    let (y, m, d) = civil_from_days(start_day);
+    format!(
+        "Week of {}",
+        date_locale_date_string(
+            local_date_ms(y as i32, m as i32, d as i32),
+            &[("month", "short"), ("day", "numeric")]
+        )
+    )
+}
+
+fn range_options() -> Vec<SegOption<Range>> {
+    [Range::Days30, Range::Days90, Range::All]
         .into_iter()
-        .map(|r| view! {
-            <button
-                type="button"
-                class=move || format!("range-btn {}", if range.get() == r { "active" } else { "" })
-                on:click=move |_| range.set(r)
-            >
-                {r.label()}
-            </button>
+        .map(|r| SegOption::new(r, r.label()))
+        .collect()
+}
+
+#[component]
+fn ViewerChart(
+    metrics: StreamerMetricsResponse,
+    #[prop(into)] typical: Signal<Option<f64>>,
+) -> impl IntoView {
+    let range = RwSignal::new(Range::Days90);
+    let record = metrics.all_time_max;
+    let series = Memo::new(move |_| build_day_series(&metrics, range.get()));
+    let meta = Signal::derive(move || {
+        series.with(|s| {
+            let streamed = s.iter().filter(|p| p.streamed).count();
+            Some(format!("{streamed} of {} days streamed", s.len()))
         })
-        .collect_view();
+    });
+    let today = date_string(local_day_index(now_ms()));
     let chart = move || {
         let points = series.get();
         if points.iter().all(|p| !p.streamed) {
-            return view! { <div class="no-data">"No streams in this range"</div> }.into_any();
+            return view! { <EmptyState compact=true message="No streams in this range."/> }
+                .into_any();
         }
         let bars: Vec<BarPoint> = points
             .iter()
@@ -273,245 +290,185 @@ fn ViewerChart(metrics: StreamerMetricsResponse) -> impl IntoView {
                 values: vec![p.max_viewers as f64],
             })
             .collect();
+        let marks: Vec<Option<String>> = points
+            .iter()
+            .map(|p| {
+                if p.streamed && p.max_viewers == record && record > 0 {
+                    Some("bar-record".to_owned())
+                } else if p.date == today {
+                    Some("bar-today".to_owned())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let tip_points = points.clone();
         let tooltip = Callback::new(move |index: usize| {
-            let Some(point) = points.get(index) else {
+            let Some(point) = tip_points.get(index) else {
                 return ().into_any();
             };
-            let row = if point.streamed {
-                format!("{} peak viewers", locale_number(point.max_viewers as f64))
-            } else {
-                "No stream".to_owned()
-            };
             view! {
-                <div class="custom-tooltip">
-                    <div class="tooltip-label">{format_day_full(&point.date)}</div>
-                    <div class="tooltip-row">{row}</div>
+                <div class="chart-tooltip-label">{format_day_full(&point.date)}</div>
+                <div class="chart-tooltip-value num">
+                    {if point.streamed { locale_number(point.max_viewers as f64) } else { "No stream".to_owned() }}
                 </div>
+                {(point.streamed && point.max_viewers == record).then(|| view! { <div class="text-signal">"All-time record"</div> })}
             }
             .into_any()
         });
+        let label = format!("Daily peak viewers, {} days", points.len());
         view! {
             <div class="chart-container">
                 <BarChart
                     data=Signal::stored(bars)
-                    series=Signal::stored(vec![BarSeries { key: "maxViewers".into(), color: "#38bdf8".into() }])
+                    series=Signal::stored(vec![BarSeries { key: "maxViewers".into(), color: "var(--bar)".into() }])
                     x_tick=Callback::new(|date: String| format_day_tick(&date))
                     y_tick=Callback::new(format_compact_number)
                     tooltip
-                    y_width=44.0
-                    max_bar_size=28.0
-                    radius=3.0
-                    cursor_fill="rgba(56, 189, 248, 0.08)"
-                    axis=AxisStyle { tick: "#8888a8".into(), line: "#3a3a5a".into() }
+                    radius=2.0
+                    bar_class=Callback::new(move |i: usize| marks.get(i).cloned().flatten())
+                    reference=Signal::derive(move || typical.get().map(|t| (t, format!("typical {}", format_compact_number(t)))))
+                    label=label
                 />
+            </div>
+            <div class="chart-legend">
+                <span class="chart-legend-item"><i class="chart-tooltip-swatch swatch-bar"></i>"Daily peak"</span>
+                <span class="chart-legend-item"><i class="chart-tooltip-swatch swatch-record"></i>"Record"</span>
+                <span class="chart-legend-item"><i class="chart-tooltip-swatch swatch-today"></i>"Today"</span>
             </div>
         }
         .into_any()
     };
     view! {
-        <section class="page-section">
-            <h2 class="section-title">
-                "Peak Viewers by Day"
-                <span class="range-buttons">{buttons}</span>
-            </h2>
+        <Panel
+            title="Daily peak viewers"
+            head_end=ViewFn::from(move || view! {
+                <span class="panel-meta">{move || meta.get()}</span>
+                <Segmented options=Signal::derive(range_options) value=range on_change=Callback::new(move |r| range.set(r)) aria_label="Chart range" small=true/>
+            })
+            pad=true
+        >
             {chart}
-        </section>
+        </Panel>
     }
 }
 
-fn format_session_date(timestamp: i64) -> String {
-    date_locale_date_string(
-        timestamp as f64,
-        &[("weekday", "short"), ("month", "short"), ("day", "numeric")],
-    )
-}
-
-fn format_session_time(timestamp: i64) -> String {
-    date_locale_time_string(
-        timestamp as f64,
-        &[("hour", "numeric"), ("minute", "2-digit")],
-    )
-}
-
 #[component]
-fn RecentSessions(sessions: Vec<StreamSessionView>) -> impl IntoView {
-    let count = sessions.len();
-    let shown = use_show_more(
-        Signal::stored(sessions),
-        MAX_SESSION_ROWS,
-        Signal::stored(String::new()),
+fn SessionRow(
+    session: StreamSessionView,
+    longest: f64,
+    record: i64,
+    typical: Option<f64>,
+) -> impl IntoView {
+    let day = local_day_index(session.started_at as f64);
+    let (y, m, d) = civil_from_days(day);
+    let weekday = date_locale_date_string(
+        local_date_ms(y as i32, m as i32, d as i32),
+        &[("weekday", "short")],
     );
+    let is_record = record > 0 && session.peak_viewers == record;
+    let strong = typical.is_some_and(|t| session.peak_viewers as f64 >= 1.3 * t);
+    let peak_class = if is_record {
+        "row-value readout-m text-signal"
+    } else if strong {
+        "row-value readout-m strong"
+    } else {
+        "row-value readout-m"
+    };
     view! {
-        <section class="page-section">
-            <h2 class="section-title">
-                "Recent Streams"
-                <span class="section-count">{count}</span>
-            </h2>
-            <ul class="session-list">
-                {move || {
-                    shown
-                        .visible
-                        .get()
-                        .into_iter()
-                        .map(|session| view! {
-                            <li class="session-row">
-                                <div class="session-when">
-                                    <span class="session-date">{format_session_date(session.started_at)}</span>
-                                    <span class="session-time">
-                                        {format!(
-                                            "{} – {}",
-                                            format_session_time(session.started_at),
-                                            format_session_time(session.ended_at),
-                                        )}
-                                    </span>
-                                </div>
-                                <div class="session-title" title=session.title.clone()>
-                                    <PlatformIcon platform=session.platform.clone() size=13/>
-                                    <span>
-                                        {if session.title.is_empty() { "Untitled stream".to_owned() } else { session.title.clone() }}
-                                    </span>
-                                </div>
-                                <div class="session-stats">
-                                    <span>{format_duration(session.duration_ms as f64)}</span>
-                                    <span class="session-peak">
-                                        {if session.peak_viewers > 0 {
-                                            format!("{} peak", format_compact_number(session.peak_viewers as f64))
-                                        } else {
-                                            "—".to_owned()
-                                        }}
-                                    </span>
-                                </div>
-                            </li>
-                        })
-                        .collect_view()
-                }}
-            </ul>
-            {move || shown.has_more.get().then(|| view! {
-                <ShowMoreButton remaining=shown.remaining on_click=Callback::new(move |()| shown.show_more())/>
-            })}
-        </section>
-    }
-}
-
-#[component]
-fn StreamerHeader(#[prop(into)] streamer: Signal<StreamerView>) -> impl IntoView {
-    let now = use_now(1000);
-    let title = move || match streamer.get() {
-        StreamerView::Live(live) => view! {
-            {live.display_name.clone()}
-            <span class="live-badge">
-                <span class="live-badge-dot"></span>
-                "LIVE"
+        <div class="row session-row">
+            <span class="date-block" aria-hidden="true">
+                <span class="date-day num">{d}</span>
+                <span class="date-dow">{weekday}</span>
             </span>
-            <DggPresenceTag dgg=live.dgg/>
-        }
-        .into_any(),
-        StreamerView::Offline(offline) => view! {
-            {offline.display_name.clone()}
-            <DggPresenceTag dgg=offline.dgg/>
-        }
-        .into_any(),
-    };
-    let sub = move || match streamer.get() {
-        StreamerView::Live(live) => {
-            let started = live.started_at as f64;
-            let viewers = match live.viewer_count {
-                Some(count) => Some(view! { <span>{format!("{} watching", format_compact_number(count as f64))}</span> }.into_any()),
-                None => (live.max_viewer_count > 0).then(|| view! {
-                    <span>{format!("{} peak viewers this stream", format_compact_number(live.max_viewer_count as f64))}</span>
-                }.into_any()),
-            };
-            let sources = (live.sources.len() > 1).then(|| {
-                live.sources
-                    .iter()
-                    .filter_map(|source| {
-                        let count = source.viewer_count?;
-                        Some(view! {
-                            <span>
-                                <PlatformIcon platform=source.platform.clone() size=12/>
-                                {format!(" {} {}", format_compact_number(count as f64), source.platform)}
-                            </span>
-                        })
-                    })
-                    .collect_view()
-            });
-            view! {
-                <div class="streamer-sub">
-                    <span class="streamer-title-text">{live.title.clone()}</span>
-                    <span class="muted meta-row">
-                        <span>{move || format_uptime(now.get() - started)}</span>
-                        {viewers}
-                        {sources}
-                        {live.category.clone().map(|c| view! { <span>{c}</span> })}
-                    </span>
-                </div>
-            }
-            .into_any()
-        }
-        StreamerView::Offline(offline) => {
-            let text = match offline.last_ended_at {
-                Some(ended) => {
-                    let duration = offline
-                        .last_started_at
-                        .map(|started| {
-                            format!(" for {}", format_duration((ended - started) as f64))
-                        })
-                        .unwrap_or_default();
-                    let peak = match offline.last_max_viewer_count {
-                        Some(peak) if peak != 0 => {
-                            format!(", peak {} viewers", format_compact_number(peak as f64))
-                        }
-                        _ => String::new(),
-                    };
-                    format!(
-                        "Last live {}{duration}{peak}",
-                        format_relative(ended as f64)
-                    )
-                }
-                None => "No streams seen yet".to_owned(),
-            };
-            view! { <div class="streamer-sub muted">{text}</div> }.into_any()
-        }
-    };
-    let bindings = move || {
-        let s = streamer.get();
-        let (id, bindings) = match &s {
-            StreamerView::Live(l) => (l.id.clone(), l.bindings.clone()),
-            StreamerView::Offline(o) => (o.id.clone(), o.bindings.clone()),
-        };
-        view! {
-            <Link
-                class="binding-chip intelligence-details-link"
-                to=format!("/streamers/{}/intelligence", encode_uri_component(&id))
-            >
-                "Intelligence Details"
-            </Link>
-            {bindings
-                .into_iter()
-                .map(|binding| view! {
-                    <a class="binding-chip" href=binding.url.clone() target="_blank" rel="noreferrer">
-                        <PlatformIcon platform=binding.platform.clone() size=14/>
-                        <span>{binding.username.clone()}</span>
-                    </a>
-                })
-                .collect_view()}
-        }
-    };
-    view! {
-        <div class="page-header streamer-header">
-            <div>
-                <h1>{title}</h1>
-                {sub}
-            </div>
-            <div class="streamer-bindings">{bindings}</div>
+            <span class="row-main">
+                <span class="row-title truncate" title=session.title.clone()>
+                    {if session.title.is_empty() { "Untitled stream".to_owned() } else { session.title.clone() }}
+                </span>
+                <span class="row-sub cluster">
+                    <Meter value=session.duration_ms as f64 max=longest width=64 label=format!("Length {}", format_duration(session.duration_ms as f64))/>
+                    <span class="num">{format_session_time(session.started_at)}</span>
+                    <span class="num dim">{format_duration(session.duration_ms as f64)}</span>
+                    <PlatformIcon platform=session.platform.clone() size=12/>
+                </span>
+            </span>
+            <span class="row-end">
+                <span class=peak_class title="Session peak">
+                    {if session.peak_viewers > 0 { locale_number(session.peak_viewers as f64) } else { "—".to_owned() }}
+                    {is_record.then_some(" ★")}
+                </span>
+            </span>
         </div>
     }
 }
 
 #[component]
-fn LivestreamIntelligencePanel(
+fn Streams(
+    sessions: Vec<StreamSessionView>,
+    record: i64,
+    typical: Option<f64>,
+    #[prop(into)] live: Signal<Option<LiveStreamerView>>,
+) -> impl IntoView {
+    let today = local_day_index(now_ms());
+    let weeks = group_by_week(&sessions, |ms| local_day_index(ms as f64));
+    let longest = sessions
+        .iter()
+        .map(|s| s.duration_ms)
+        .max()
+        .unwrap_or(1)
+        .max(1) as f64;
+    let total_weeks = weeks.len();
+    let shown = RwSignal::new(WEEKS_SHOWN);
+    let weeks = StoredValue::new(weeks);
+    let older = Signal::derive(move || {
+        weeks.with_value(|w| {
+            w.iter()
+                .skip(shown.get())
+                .map(|w| w.sessions.len())
+                .sum::<usize>()
+        })
+    });
+    let now = use_now(1000);
+    view! {
+        <Panel title="Streams" head_end=ViewFn::from(move || view! { <span class="panel-meta">{format!("{} tracked", sessions.len())}</span> })>
+            {move || live.get().map(|l| view! {
+                <div class="row session-row live-session">
+                    <span class="date-block" aria-hidden="true"><LiveTag/></span>
+                    <span class="row-main">
+                        <span class="row-title truncate">{l.title.clone()}</span>
+                        <span class="row-sub num">{format!("started {} · {}", format_session_time(l.started_at), format_uptime(now.get() - l.started_at as f64))}</span>
+                    </span>
+                    <span class="row-end"><span class="row-value readout-m">{locale_number(l.max_viewer_count as f64)}</span></span>
+                </div>
+            })}
+            {move || weeks.with_value(|w| w.iter().take(shown.get()).cloned().collect::<Vec<_>>()).into_iter().map(|week| {
+                let label = week_label(week.start_day, today);
+                view! {
+                    <div class="group-head">
+                        <span>{label}</span>
+                        <span class="num dim">
+                            {format!("{} stream{} · {:.1} h · peak {}", week.sessions.len(), if week.sessions.len() == 1 { "" } else { "s" }, week.hours(), format_compact_number(week.peak() as f64))}
+                        </span>
+                    </div>
+                    <div class="rows">
+                        {week.sessions.into_iter().map(|session| view! { <SessionRow session longest record typical/> }).collect_view()}
+                    </div>
+                }
+            }).collect_view()}
+            {move || (shown.get() < total_weeks).then(|| view! {
+                <div class="panel-foot">
+                    <ShowMoreButton remaining=older noun="older streams" on_click=Callback::new(move |()| shown.update(|n| *n += WEEKS_SHOWN))/>
+                </div>
+            })}
+        </Panel>
+    }
+}
+
+#[component]
+fn NowPanel(
     streamer_id: String,
     #[prop(into)] intelligence: Signal<Option<LivestreamIntelligence>>,
+    is_live: bool,
 ) -> impl IntoView {
     let submitted = RwSignal::new(false);
     let alert_id = Memo::new(move |_| {
@@ -524,13 +481,13 @@ fn LivestreamIntelligencePanel(
         alert_id.track();
         submitted.set(false);
     });
-    let id = streamer_id.clone();
+    let id = StoredValue::new(streamer_id);
     let submit = move |verdict: FeedbackVerdict| {
         let Some(alert) = alert_id.get_untracked() else {
             return;
         };
         submitted.set(true);
-        let id = id.clone();
+        let id = id.get_value();
         spawn_detached(async move {
             if api::submit_livestream_feedback(&id, &alert, verdict, None)
                 .await
@@ -540,120 +497,154 @@ fn LivestreamIntelligencePanel(
             }
         });
     };
-    let details_to = format!(
-        "/streamers/{}/intelligence",
-        encode_uri_component(&streamer_id)
-    );
-    move || {
-        let details_to = details_to.clone();
-        let submit = submit.clone();
-        intelligence.get().map(|intelligence| {
-            let chapters: Vec<_> = intelligence.chapters.iter().rev().take(8).cloned().collect();
-            let summary_text = intelligence
-                .summary
-                .as_ref()
-                .map(|s| s.text.clone())
-                .or_else(|| intelligence.semantic.as_ref().map(|s| s.headline.clone()))
-                .unwrap_or_else(|| "Building a current summary…".to_owned());
-            let alert = intelligence.latest_alert.clone();
-            let feedback = alert.map(|alert| {
-                let (s1, s2, s3) = (submit.clone(), submit.clone(), submit.clone());
-                view! {
-                    <div class="intelligence-alert-feedback">
-                        <div>
-                            <strong>{format!("Latest Alert: {}", alert.title)}</strong>
-                            <span>{alert.reason.clone()}</span>
-                        </div>
-                        {move || {
-                            let (s1, s2, s3) = (s1.clone(), s2.clone(), s3.clone());
-                            if submitted.get() {
-                                view! { <span class="muted">"Feedback saved"</span> }.into_any()
-                            } else {
-                                view! {
-                                    <div class="intelligence-feedback-actions">
-                                        <button type="button" on:click=move |_| s1(FeedbackVerdict::Useful)>"Useful"</button>
-                                        <button type="button" on:click=move |_| s2(FeedbackVerdict::NotUseful)>"Not Useful"</button>
-                                        <button type="button" on:click=move |_| s3(FeedbackVerdict::FalsePositive)>"False Positive"</button>
-                                    </div>
-                                }
-                                .into_any()
-                            }
-                        }}
-                    </div>
-                }
-            });
-            view! {
-                <section class="page-section intelligence-panel">
-                    <h2 class="section-title intelligence-panel-title">
-                        "Live Intelligence"
-                        <Link class="section-action-link" to=details_to>"Details ›"</Link>
-                    </h2>
-                    <div class="intelligence-summary-card">
-                        <div class="intelligence-summary-heading">
-                            <strong>
-                                {intelligence.summary.as_ref().map_or_else(|| "Current Read".to_owned(), |s| s.topic.clone())}
-                            </strong>
-                            <span class="intelligence-score">
-                                {format!("Relevance {}", number_string(intelligence.relevance_score))}
-                            </span>
-                        </div>
-                        <p>{summary_text}</p>
-                        <div class="meta-row">
-                            {intelligence.summary.as_ref().map(|s| view! {
-                                <span>{format!("Updated {}", format_relative(s.updated_at as f64))}</span>
+    let title = if is_live { "Now" } else { "Last session" };
+    view! {
+        <Panel title=title pad=true>
+            {move || match intelligence.get() {
+                None => view! { <p class="dim">{if is_live { "No live read yet." } else { "No session summary." }}</p> }.into_any(),
+                Some(i) => {
+                    let chapter = i.chapters.last().cloned();
+                    let summary = i.summary.clone();
+                    let alert = i.latest_alert.clone();
+                    let confidence = summary.as_ref().map(|s| s.confidence);
+                    view! {
+                        <div class="stack">
+                            {chapter.map(|c| view! {
+                                <div class="now-chapter">
+                                    <span class="label">{format!("Since {}", format_relative(c.started_at))}</span>
+                                    <h3>{c.title}</h3>
+                                    <p>{c.summary}</p>
+                                </div>
                             })}
-                            {intelligence.trend.as_ref().filter(|t| t.anomalous).map(|t| view! {
-                                <span>{t.reason.clone()}</span>
-                            })}
-                            {intelligence
-                                .destiny_presence
-                                .as_ref()
-                                .filter(|p| p.state == PresenceState::Confirmed)
-                                .map(|p| view! {
-                                    <span>
-                                        {format!(
-                                            "Destiny detected, {}% confidence",
-                                            number_string(js_round(p.confidence * 100.0)),
-                                        )}
-                                    </span>
+                            {summary.as_ref().map(|s| view! { <p class="dim">{s.text.clone()}</p> })}
+                            <div class="cluster">
+                                {confidence.map(|c| view! { <Tag>{format!("confidence {}%", number_string(js_round(c * 100.0)))}</Tag> })}
+                                <Tag tone=Tone::Info>{format!("relevance {}", number_string(js_round(i.relevance_score * 10.0) / 10.0))}</Tag>
+                                {i.destiny_presence.as_ref().filter(|p| p.state == PresenceState::Confirmed).map(|p| view! {
+                                    <Tag tone=Tone::Signal>{format!("Destiny {}%", number_string(js_round(p.confidence * 100.0)))}</Tag>
                                 })}
-                        </div>
-                        {(!intelligence.relevance_reasons.is_empty()).then(|| view! {
-                            <div class="intelligence-reasons">
-                                {intelligence
-                                    .relevance_reasons
-                                    .iter()
-                                    .map(|reason| view! { <span>{reason.clone()}</span> })
-                                    .collect_view()}
                             </div>
-                        })}
-                    </div>
-                    {(!chapters.is_empty()).then(|| view! {
-                        <div class="intelligence-chapters">
-                            <h3>"Recent Topics"</h3>
-                            {chapters
-                                .into_iter()
-                                .map(|chapter| view! {
-                                    <div class="intelligence-chapter">
-                                        <div>
-                                            <strong>{chapter.title}</strong>
-                                            <span>{format_relative(chapter.started_at)}</span>
-                                        </div>
-                                        <p>{chapter.summary}</p>
-                                    </div>
-                                })
-                                .collect_view()}
+                            {alert.map(|alert| view! {
+                                <div class="now-alert">
+                                    <p><strong>{alert.title}</strong> " " <span class="dim">{alert.reason}</span></p>
+                                    {move || if submitted.get() {
+                                        view! { <p class="small dim" role="status">"Feedback saved."</p> }.into_any()
+                                    } else {
+                                        view! {
+                                            <div class="cluster" role="group" aria-label="Was this alert useful?">
+                                                <span class="small dim">"Was this alert right?"</span>
+                                                <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::Useful))>"Useful"</Chip>
+                                                <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::NotUseful))>"Not useful"</Chip>
+                                                <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::FalsePositive))>"False positive"</Chip>
+                                            </div>
+                                        }.into_any()
+                                    }}
+                                </div>
+                            })}
+                            {summary.filter(|s| !s.transcript_excerpt.is_empty()).map(|s| view! {
+                                <Disclosure summary=format!("Transcript excerpt · {} s", number_string(js_round(s.window_seconds))) flush=true>
+                                    <p class="prose small">{s.transcript_excerpt}</p>
+                                </Disclosure>
+                            })}
                         </div>
-                    })}
-                    {feedback}
-                </section>
-            }
+                    }
+                    .into_any()
+                }
+            }}
+        </Panel>
+    }
+}
+
+fn kv_num(value: Option<f64>) -> String {
+    value
+        .map(|v| locale_number(js_round(v)))
+        .unwrap_or_else(|| "—".to_owned())
+}
+
+#[component]
+fn BaselinePanel(
+    #[prop(into)] intelligence: Signal<Option<LivestreamIntelligence>>,
+) -> impl IntoView {
+    move || {
+        intelligence.get().and_then(|i| i.trend).map(|t| view! {
+            <Panel title="Baseline" pad=true>
+                <dl class="kv">
+                    <dt>"Current"</dt><dd class="num">{kv_num(t.current_viewers)}</dd>
+                    <dt>"Baseline 5–20 min"</dt><dd class="num">{kv_num(t.baseline_viewers)}</dd>
+                    <dt>"Change"</dt><dd><Delta percent=Some(t.percent_change) surge=t.anomalous/></dd>
+                    <dt>"Slope"</dt><dd class="num">{format!("{}/min", number_string(js_round(t.viewers_per_minute)))}</dd>
+                    <dt>"DGG now / base"</dt><dd class="num">{format!("{} / {}", kv_num(t.current_dgg_viewers), kv_num(t.baseline_dgg_viewers))}</dd>
+                    <dt>"Samples"</dt><dd class="num">{kv_num(t.baseline_samples)}</dd>
+                    <dt>"Surge gate"</dt><dd class="num">{kv_num(t.typical_peak_viewers)}</dd>
+                    {t.suppression_reason.map(|r| view! { <dt>"Suppressed"</dt><dd class="text-warn">{r}</dd> })}
+                    {t.reason.map(|r| view! { <dt>"Reason"</dt><dd>{r}</dd> })}
+                    <dt>"Updated"</dt><dd class="num">{format_relative(t.updated_at as f64)}</dd>
+                </dl>
+            </Panel>
         })
     }
 }
 
-fn find_streamer(streamers: &[StreamerView], id: &str) -> Option<StreamerView> {
-    streamers.iter().find(|s| s.id() == id).cloned()
+#[component]
+fn BindingsPanel(#[prop(into)] streamer: Signal<StreamerView>) -> impl IntoView {
+    view! {
+        <Panel title="Bindings">
+            <div class="rows">
+                {move || {
+                    let s = streamer.get();
+                    let (bindings, sources, primary) = match &s {
+                        StreamerView::Live(l) => (l.bindings.clone(), l.sources.clone(), Some(l.primary.clone())),
+                        StreamerView::Offline(o) => (o.bindings.clone(), Vec::new(), None),
+                    };
+                    bindings.into_iter().map(|b| {
+                        let viewers = sources.iter().find(|src| src.platform == b.platform && src.username == b.username).and_then(|src| src.viewer_count);
+                        let is_primary = primary.as_ref().is_some_and(|p| p.platform == b.platform && p.username == b.username);
+                        view! {
+                            <a class="row dense" href=b.url.clone() target="_blank" rel="noopener">
+                                <PlatformIcon platform=b.platform.clone()/>
+                                <span class="row-main">
+                                    <span class="row-title">{b.username.clone()}</span>
+                                    <span class="row-sub">{platform_label(&b.platform)}</span>
+                                </span>
+                                <span class="row-end">
+                                    {is_primary.then(|| view! { <Tag tone=Tone::Signal>"primary"</Tag> })}
+                                    {viewers.map(|v| view! { <span class="num">{locale_number(v as f64)}</span> })}
+                                </span>
+                            </a>
+                        }
+                    }).collect_view()
+                }}
+            </div>
+        </Panel>
+    }
+}
+
+#[component]
+fn RecordsPanel(
+    metrics: StreamerMetricsResponse,
+    sessions: Vec<StreamSessionView>,
+) -> impl IntoView {
+    let longest = sessions.iter().max_by_key(|s| s.duration_ms).cloned();
+    view! {
+        <Panel title="Records" pad=true>
+            <dl class="kv">
+                <dt>"All-time peak"</dt>
+                <dd class="num">
+                    {if metrics.all_time_max > 0 { locale_number(metrics.all_time_max as f64) } else { "—".to_owned() }}
+                    {(metrics.all_time_max_timestamp != 0).then(|| view! { <span class="dim">{format!(" · {}", format_date_only(metrics.all_time_max_timestamp as f64))}</span> })}
+                </dd>
+                {longest.map(|l| view! {
+                    <dt>"Longest stream"</dt>
+                    <dd class="num">{format_duration(l.duration_ms as f64)} <span class="dim">{format!(" · {}", format_date_only(l.started_at as f64))}</span></dd>
+                })}
+                <dt>"Streams tracked"</dt><dd class="num">{sessions.len()}</dd>
+                {metrics.platforms.into_iter().filter(|p| p.all_time_max > 0).map(|p| view! {
+                    <dt>{format!("{} record", platform_label(&p.platform))}</dt>
+                    <dd class="num">{locale_number(p.all_time_max as f64)}</dd>
+                }).collect_view()}
+            </dl>
+        </Panel>
+    }
 }
 
 fn display_name(streamer: &StreamerView) -> String {
@@ -663,115 +654,273 @@ fn display_name(streamer: &StreamerView) -> String {
     }
 }
 
+fn days_streamed_since(metrics: &StreamerMetricsResponse, days: i64) -> usize {
+    let cutoff = days_ago(days);
+    metrics
+        .daily_buckets
+        .iter()
+        .filter(|b| b.date >= cutoff)
+        .count()
+}
+
 #[component]
 pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
     let live = use_live_data();
+    let now = use_now(1000);
     let metrics = RwSignal::new(None::<StreamerMetricsResponse>);
     let error = RwSignal::new(None::<String>);
     let sessions = RwSignal::new(None::<Vec<StreamSessionView>>);
     let id = streamer_id.clone();
     let streamer = Memo::new(move |_| {
-        live.snapshot
-            .with(|s| s.as_ref().and_then(|s| find_streamer(&s.streamers, &id)))
+        live.snapshot.with(|s| {
+            s.as_ref()
+                .and_then(|s| s.streamers.iter().find(|v| v.id() == id).cloned())
+        })
     });
     Effect::new(move |_| {
         if let Some(s) = streamer.get() {
             document().set_title(&format!("{} · Omni Notify", display_name(&s)));
         }
     });
+    use_page_label(move || streamer.with(|s| s.as_ref().map(display_name)));
 
     let metrics_id = streamer_id.clone();
-    spawn_scoped(async move {
-        match api::fetch_streamer_metrics(&metrics_id).await {
-            Ok(m) => metrics.set(Some(m)),
-            Err(e) => error.set(Some(e.message().to_owned())),
-        }
-    });
+    let load_metrics = move || {
+        let id = metrics_id.clone();
+        error.set(None);
+        spawn_scoped(async move {
+            match api::fetch_streamer_metrics(&id).await {
+                Ok(m) => metrics.set(Some(m)),
+                Err(e) => error.set(Some(e.message().to_owned())),
+            }
+        });
+    };
+    load_metrics();
     let sessions_id = streamer_id.clone();
     spawn_scoped(async move {
         // Session history is supplementary; the page stays useful without it.
-        sessions.set(
+        sessions.set(Some(
             api::fetch_streamer_sessions(&sessions_id)
                 .await
-                .ok()
-                .map(|r| r.sessions),
-        );
+                .map(|r| r.sessions)
+                .unwrap_or_default(),
+        ));
     });
 
-    let has_snapshot = Memo::new(move |_| live.snapshot.with(Option::is_some));
-    let present = Memo::new(move |_| streamer.with(Option::is_some));
-    let intelligence = Memo::new(move |_| {
-        streamer.with(|s| match s {
-            Some(StreamerView::Live(live)) => streamer_intelligence(live),
-            _ => None,
+    let live_view = Memo::new(move |_| match streamer.get() {
+        Some(StreamerView::Live(l)) => Some(l),
+        _ => None,
+    });
+    let intelligence =
+        Memo::new(move |_| live_view.with(|l| l.as_ref().and_then(streamer_intelligence)));
+    let typical = Memo::new(move |_| {
+        intelligence
+            .with(|i| {
+                i.as_ref()
+                    .and_then(|i| i.trend.as_ref()?.typical_peak_viewers)
+            })
+            .or_else(|| sessions.with(|s| s.as_deref().and_then(typical_peak)))
+    });
+    let history_id = streamer_id.clone();
+    let points = Signal::derive(move || {
+        live.viewer_history.with(|h| {
+            h.get(&history_id)
+                .map(|v| v.iter().map(|(_, n)| *n).collect())
+                .unwrap_or_default()
         })
     });
     let page_id = streamer_id.clone();
+    let retry = Callback::new(move |()| load_metrics());
+
     move || {
-        if !has_snapshot.get() {
-            return view! { <div class="loading">"Loading…"</div> }.into_any();
-        }
-        if !present.get() {
-            let id = page_id.clone();
+        let Some(initial) = streamer.get_untracked().or_else(|| streamer.get()) else {
+            if live.snapshot.with(Option::is_none) {
+                return view! { <Skeleton kind=SkeletonKind::Title width="30%"/> <SkeletonRows count=6/> }.into_any();
+            }
             return view! {
-                <Link to="/" class="back-link">"← Home"</Link>
-                <div class="error">
-                    <div>"Unknown streamer"</div>
-                    <div class="error-detail">{format!("No channel named “{id}” is being monitored.")}</div>
-                </div>
+                <ErrorState
+                    title="Unknown streamer"
+                    detail=format!("No channel named \u{201c}{page_id}\u{201d} is being monitored.")
+                    link=("All streamers".to_owned(), "/live".to_owned())
+                    page=true
+                />
             }
             .into_any();
-        }
-        let current = Signal::derive(move || {
-            streamer
-                .get()
-                .unwrap_or_else(|| StreamerView::Offline(empty_offline()))
+        };
+        let is_live = live_view.with(Option::is_some);
+        let current = Signal::derive(move || streamer.get().unwrap_or_else(|| initial.clone()));
+        let name = current.with_untracked(display_name);
+        let (bindings, tier) = current.with_untracked(|s| match s {
+            StreamerView::Live(l) => (l.bindings.clone(), l.tier),
+            StreamerView::Offline(o) => (o.bindings.clone(), o.tier),
+        });
+        let primary = current.with_untracked(|s| match s {
+            StreamerView::Live(l) => Some(l.primary.clone()),
+            StreamerView::Offline(o) => o.bindings.first().cloned(),
+        });
+        let intel_href = format!("/streamers/{}/intelligence", encode_uri_component(&page_id));
+        let sub_line = move || match current.get() {
+            StreamerView::Live(l) => l.title,
+            StreamerView::Offline(o) => match o.last_ended_at {
+                Some(ended) => format!(
+                    "Last live {}{}",
+                    format_relative(ended as f64),
+                    o.last_max_viewer_count
+                        .filter(|p| *p > 0)
+                        .map(|p| format!(" · peak {}", locale_number(p as f64)))
+                        .unwrap_or_default()
+                ),
+                None => "No streams seen yet".to_owned(),
+            },
+        };
+        let watch = primary.clone().map(|p| {
+            let label = if is_live { format!("Watch on {}", platform_label(&p.platform)) } else { "Open channel".to_owned() };
+            view! { <ButtonLink to=p.url variant=ButtonVariant::Primary external=true>{label}</ButtonLink> }
         });
         view! {
-            <Link to="/" class="back-link">"← Home"</Link>
-            <StreamerHeader streamer=current/>
-            <LivestreamIntelligencePanel streamer_id=page_id.clone() intelligence/>
-            {move || error.get().map(|e| view! { <div class="error-inline">{format!("Failed to load viewer metrics: {e}")}</div> })}
-            {move || {
-                match (metrics.get(), error.with(Option::is_some)) {
-                    (None, false) => Some(view! { <div class="loading-inline">"Loading viewer metrics…"</div> }.into_any()),
-                    (None, true) => None,
-                    (Some(m), _) => {
-                        let has_metrics = !m.daily_buckets.is_empty() || m.all_time_max > 0;
-                        Some(if has_metrics {
-                            view! {
-                                <StreamerStats metrics=m.clone()/>
-                                <PlatformStats metrics=m.clone()/>
-                                <ViewerChart metrics=m/>
-                            }
-                            .into_any()
-                        } else {
-                            view! { <div class="no-data">"No viewer data recorded yet"</div> }.into_any()
-                        })
+            <header class="page-head streamer-hero">
+                <Avatar name=name.clone() size=64 presence=if is_live { Presence::Live } else { Presence::Offline } platform=primary.as_ref().map(|p| p.platform.clone()).unwrap_or_default()/>
+                <div class="page-head-text">
+                    <div class="cluster">
+                        {move || live_view.get().map(|l| view! { <LiveTag detail=format_uptime(now.get() - l.started_at as f64)/> })}
+                        {(tier == StreamerTier::Background).then(|| view! {
+                            <Tag title="Background tier: live, offline and title notifications are muted">"Background tier"</Tag>
+                        })}
+                    </div>
+                    <h1 class="sentence">{name.clone()}</h1>
+                    <p class="lede">{sub_line}</p>
+                    <div class="chips">
+                        {bindings.into_iter().map(|b| view! {
+                            <a class="chip" href=b.url.clone() target="_blank" rel="noopener">
+                                <PlatformIcon platform=b.platform.clone() size=14/>
+                                {b.username.clone()}
+                            </a>
+                        }).collect_view()}
+                        {move || current.with(|s| match s {
+                            StreamerView::Live(l) => l.dgg,
+                            StreamerView::Offline(o) => o.dgg,
+                        }).map(|d| view! { <omni_web_kit::components::DggPresenceTag dgg=Some(d)/> })}
+                    </div>
+                </div>
+                <div class="page-actions">
+                    <ButtonLink to=intel_href icon=Icon::Pulse>"Intelligence"</ButtonLink>
+                    {watch}
+                </div>
+            </header>
+
+            <Panel stage=is_live aria_label="Viewers" class="readouts streamer-readouts">
+                {if is_live {
+                    view! {
+                        <Readout
+                            label="Watching now"
+                            value=Signal::derive(move || live_view.with(|l| l.as_ref().map(|l| locale_number(viewer_number(l) as f64)).unwrap_or_default()))
+                            size=ReadoutSize::Xl
+                            tone=Tone::Signal
+                        >
+                            <Sparkline points reference=typical tone=Tone::Signal height=40 label="Viewers this session"/>
+                        </Readout>
+                        <Readout
+                            label="Session peak"
+                            value=Signal::derive(move || live_view.with(|l| l.as_ref().map(|l| locale_number(l.max_viewer_count as f64)).unwrap_or_default()))
+                        >
+                            {move || live_view.with(|l| l.as_ref().map(|l| format!("since {}", format_session_time(l.started_at))))}
+                        </Readout>
+                        <Readout
+                            label="DGG"
+                            value=Signal::derive(move || live_view.with(|l| l.as_ref().and_then(|l| l.dgg).map(|d| if d.hosted { "Hosted".to_owned() } else { d.viewers.map(|v| locale_number(v as f64)).unwrap_or_else(|| "Embedded".to_owned()) })).unwrap_or_else(|| "—".to_owned()))
+                        >
+                            <Delta percent=Signal::derive(move || intelligence.with(|i| i.as_ref().and_then(|i| i.trend.as_ref()?.dgg_percent_change)))/>
+                        </Readout>
+                        <Readout label="Typical peak" value=Signal::derive(move || typical.get().map(|t| locale_number(js_round(t))).unwrap_or_else(|| "—".to_owned()))>
+                            {move || metrics.with(|m| m.as_ref().filter(|m| m.all_time_max > 0).map(|m| format!("record {} · {}", format_compact_number(m.all_time_max as f64), format_date_only(m.all_time_max_timestamp as f64))))}
+                        </Readout>
                     }
-                }
-            }}
-            {move || {
-                sessions
-                    .get()
-                    .filter(|s| !s.is_empty())
-                    .map(|sessions| view! { <RecentSessions sessions/> })
-            }}
+                    .into_any()
+                } else {
+                    view! {
+                        <Readout label="Last peak" value=Signal::derive(move || current.with(|s| match s {
+                            StreamerView::Offline(o) => o.last_max_viewer_count.map(|p| locale_number(p as f64)),
+                            StreamerView::Live(_) => None,
+                        }).unwrap_or_else(|| "—".to_owned()))/>
+                        <Readout label="Typical peak" value=Signal::derive(move || typical.get().map(|t| locale_number(js_round(t))).unwrap_or_else(|| "—".to_owned()))/>
+                        <Readout label="All-time" value=Signal::derive(move || metrics.with(|m| m.as_ref().filter(|m| m.all_time_max > 0).map(|m| locale_number(m.all_time_max as f64))).unwrap_or_else(|| "—".to_owned()))>
+                            {move || metrics.with(|m| m.as_ref().filter(|m| m.all_time_max_timestamp != 0).map(|m| format_date_only(m.all_time_max_timestamp as f64)))}
+                        </Readout>
+                        <Readout label="Streams in 30 days" value=Signal::derive(move || metrics.with(|m| m.as_ref().map(|m| days_streamed_since(m, 30).to_string())).unwrap_or_else(|| "—".to_owned()))/>
+                    }
+                    .into_any()
+                }}
+            </Panel>
+
+            <div class="split">
+                <div class="stack-lg">
+                    {move || match (metrics.get(), error.get()) {
+                        (Some(m), _) if !m.daily_buckets.is_empty() || m.all_time_max > 0 => view! { <ViewerChart metrics=m typical/> }.into_any(),
+                        (Some(_), _) => view! { <Panel title="Daily peak viewers" pad=true><EmptyState compact=true message="No viewer data recorded yet."/></Panel> }.into_any(),
+                        (None, Some(e)) => view! { <ErrorState title="Viewer metrics could not load" raw=e retry/> }.into_any(),
+                        (None, None) => view! { <Panel title="Daily peak viewers" pad=true><div class="chart-container"><Skeleton width="100%"/></div></Panel> }.into_any(),
+                    }}
+                    {move || match sessions.get() {
+                        None => view! { <SkeletonRows count=5 label="Loading streams"/> }.into_any(),
+                        Some(list) if list.is_empty() && !is_live => view! { <EmptyState compact=true message="No completed streams yet."/> }.into_any(),
+                        Some(list) => {
+                            let record = metrics.with(|m| m.as_ref().map_or(0, |m| m.all_time_max));
+                            view! { <Streams sessions=list record typical=typical.get_untracked() live=live_view/> }.into_any()
+                        }
+                    }}
+                </div>
+                <div class="sticky-side">
+                    <NowPanel streamer_id=page_id.clone() intelligence is_live/>
+                    {is_live.then(|| view! { <BaselinePanel intelligence/> })}
+                    <BindingsPanel streamer=current/>
+                    {move || metrics.get().map(|m| view! { <RecordsPanel metrics=m sessions=sessions.get().unwrap_or_default()/> })}
+                </div>
+            </div>
         }
         .into_any()
     }
 }
 
-fn empty_offline() -> omni_api::streamers::OfflineStreamerView {
-    omni_api::streamers::OfflineStreamerView {
-        id: String::new(),
-        display_name: String::new(),
-        bindings: Vec::new(),
-        tier: Default::default(),
-        dgg: None,
-        live: omni_api::streamers::LiveFalse,
-        last_started_at: None,
-        last_ended_at: None,
-        last_max_viewer_count: None,
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session(started: i64, peak: i64) -> StreamSessionView {
+        StreamSessionView {
+            started_at: started,
+            ended_at: started + 3_600_000,
+            duration_ms: 3_600_000,
+            peak_viewers: peak,
+            title: String::new(),
+            platform: "twitch".into(),
+            username: "x".into(),
+        }
+    }
+
+    #[test]
+    fn typical_peak_is_the_recent_median() {
+        let list = [
+            session(0, 100),
+            session(0, 300),
+            session(0, 200),
+            session(0, 0),
+        ];
+        assert_eq!(typical_peak(&list), Some(200.0));
+        assert_eq!(typical_peak(&[]), None);
+    }
+
+    #[test]
+    fn sessions_group_by_week() {
+        let day = 86_400_000;
+        let monday = days_from_civil(2026, 10, 5);
+        let list = [
+            session((monday + 8) * day, 1),
+            session((monday + 7) * day, 1),
+            session((monday + 6) * day, 1),
+            session(monday * day, 1),
+        ];
+        let weeks = group_by_week(&list, |ms| ms.div_euclid(day));
+        let sizes: Vec<usize> = weeks.iter().map(|w| w.sessions.len()).collect();
+        assert_eq!(sizes, [2, 2]);
     }
 }

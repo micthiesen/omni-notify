@@ -62,6 +62,7 @@ impl EmailWatchdogTask {
                 target: LOG,
                 "No email has been dispatched since {since} — the email pipeline may be stuck"
             );
+            omni_tasks::report_degraded(format!("no email dispatched since {since}"));
             return Ok(());
         }
         let Some(last) = last else {

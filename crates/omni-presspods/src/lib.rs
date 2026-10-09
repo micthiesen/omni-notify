@@ -12,6 +12,7 @@ pub mod costs;
 pub mod dates;
 pub mod doctor;
 pub mod error;
+pub mod events;
 pub mod formatting;
 pub mod karakeep;
 pub mod mcp;

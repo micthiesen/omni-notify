@@ -15,6 +15,7 @@ use tokio_util::task::TaskTracker;
 use tracing::Instrument as _;
 
 use crate::catch_up::{self, CatchUpDecision};
+use crate::health::{self, collect_degraded};
 use crate::log_capture::run_span;
 use crate::persistence::{self, RunEnd, RunLogsData, RunStart, TaskRunData, TaskRunStatus};
 use crate::{
@@ -394,7 +395,7 @@ impl TaskRegistry {
             scheduled_for,
             cancel: inner.shutdown.child_token(),
         };
-        let outcome = {
+        let (outcome, degraded) = {
             let manual_input = input.filter(|_| actual_trigger == Trigger::Manual);
             let work = async {
                 match manual_input {
@@ -402,8 +403,7 @@ impl TaskRegistry {
                     None => task.run(&cx).await,
                 }
             };
-            AssertUnwindSafe(work)
-                .catch_unwind()
+            collect_degraded(AssertUnwindSafe(work).catch_unwind())
                 .instrument(run_span(&run.run_id, &name))
                 .await
         };
@@ -412,14 +412,16 @@ impl TaskRegistry {
             Ok(Err(error)) => Some(error.message),
             Err(panic) => Some(format!("panic: {}", panic_message(panic.as_ref()))),
         };
+        let degraded = health::degraded_message(&degraded);
 
+        let (status, error) = match (&failure, degraded) {
+            (Some(message), _) => (TaskRunStatus::Error, Some(message.clone())),
+            (None, Some(reason)) => (TaskRunStatus::Degraded, Some(reason)),
+            (None, None) => (TaskRunStatus::Success, None),
+        };
         let end = RunEnd {
-            status: if failure.is_some() {
-                TaskRunStatus::Error
-            } else {
-                TaskRunStatus::Success
-            },
-            error: failure.clone(),
+            status,
+            error,
             summary: task.last_run_summary(),
             finished_at: inner.clock.now_ms(),
         };

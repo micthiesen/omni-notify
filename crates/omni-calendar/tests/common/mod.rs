@@ -29,6 +29,8 @@ pub enum Triage {
 pub struct Recorded {
     pub activity: Vec<ActivityEntry>,
     pub retries: Vec<(String, String, String)>,
+    /// `(pipeline, email id, signature key)`.
+    pub systemic: Vec<(String, String, String)>,
     pub classify_calls: usize,
     pub captures: Vec<String>,
 }
@@ -87,6 +89,10 @@ impl FakeSupport {
         self.recorded.lock().unwrap().retries.clone()
     }
 
+    pub fn systemic(&self) -> Vec<(String, String, String)> {
+        self.recorded.lock().unwrap().systemic.clone()
+    }
+
     pub fn classify_calls(&self) -> usize {
         self.recorded.lock().unwrap().classify_calls
     }
@@ -141,6 +147,21 @@ impl EmailSupport for FakeSupport {
             pipeline.to_owned(),
             email_id.to_owned(),
             reason.to_owned(),
+        ));
+        Box::pin(async { Ok(()) })
+    }
+
+    fn report_systemic<'a>(
+        &'a self,
+        pipeline: &'static str,
+        email_id: &'a str,
+        _reason: &'a str,
+        signature: &'a omni_email::systemic::Signature,
+    ) -> BoxFuture<'a, Result<(), SupportError>> {
+        self.recorded.lock().unwrap().systemic.push((
+            pipeline.to_owned(),
+            email_id.to_owned(),
+            signature.key.clone(),
         ));
         Box::pin(async { Ok(()) })
     }

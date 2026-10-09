@@ -1,7 +1,7 @@
-//! Omni Notify domain pages (WP16).
+//! Omni Notify domain pages.
 //!
 //! `omni-web`'s router mounts exactly these exports; their names and props
-//! are the WP15/WP16 contract:
+//! are this crate's contract with the router:
 //!
 //! | Export | Route | Props |
 //! |---|---|---|
@@ -29,8 +29,10 @@ pub mod pets;
 mod podcasts;
 mod pods;
 mod pods_detail;
+mod rec_ui;
 mod recommendation_runs;
 pub mod reminders;
+mod research_nav;
 mod taste_brain;
 mod workspaces;
 

@@ -1,4 +1,4 @@
-//! Leptos CSR kit for the Omni Notify frontend (WP15).
+//! Leptos CSR kit for the Omni Notify frontend.
 //!
 //! `omni-web` (router, shell, ops pages) and `omni-web-pages` (domain pages)
 //! build on these modules: the API client, live dashboard data, hooks,
@@ -6,7 +6,9 @@
 
 pub mod api;
 pub mod charts;
+pub mod chrome;
 pub mod components;
+pub mod feeds;
 pub mod hooks;
 pub mod live;
 pub mod markdown;

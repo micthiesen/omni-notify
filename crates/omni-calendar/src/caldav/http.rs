@@ -24,6 +24,7 @@ pub struct CaldavResponse {
     /// The canonical reason phrase (`statusText`).
     pub reason: String,
     pub location: Option<String>,
+    pub etag: Option<String>,
     pub body: Vec<u8>,
 }
 
@@ -131,14 +132,18 @@ pub(crate) async fn request(
             other => CaldavError::new(operation, other.to_string(), true),
         })?;
     let status = response.status;
+    let header = |name: &str| {
+        response
+            .headers
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned)
+    };
     Ok(CaldavResponse {
         status: status.as_u16(),
         reason: reason_phrase(status),
-        location: response
-            .headers
-            .get("location")
-            .and_then(|v| v.to_str().ok())
-            .map(str::to_owned),
+        location: header("location"),
+        etag: header("etag"),
         body: response.body.to_vec(),
     })
 }

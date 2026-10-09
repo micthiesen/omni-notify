@@ -96,6 +96,31 @@
     }
   }
 
+  // Connection badge: Status kind and word (mirrors `phase_badge` in omni-web-pages).
+  function phaseBadge(value) {
+    if (!value) return ["running", "Checking"];
+    switch (value.phase) {
+      case "disabled":
+        return ["idle", "Disabled"];
+      case "authenticated":
+        return ["ok", "Connected"];
+      case "authentication-needed":
+        return ["warn", value.challengeId ? "Code needed" : "Sign-in needed"];
+      case "awaiting-device-approval":
+        return ["warn", "Awaiting approval"];
+      case "terms-required":
+        return ["warn", "Terms required"];
+      case "rate-limited":
+        return ["warn", "Rate limited"];
+      case "transient-outage":
+        return ["warn", "Apple unavailable"];
+      case "unsupported-protocol":
+        return ["fault", "Unsupported response"];
+      default:
+        return ["idle", "Unknown"];
+    }
+  }
+
   function showError(message) {
     const node = $("error");
     node.textContent = message;
@@ -127,6 +152,10 @@
     $("start").disabled = busy;
     $("verify").hidden = !(status && status.enabled && status.phase !== "disabled");
     $("verify").disabled = busy;
+    $("verify").classList.toggle("primary", !canStart && !challenge);
+    const [kind, word] = phaseBadge(status);
+    $("phase").className = `status ${kind}`;
+    $("phase").textContent = word;
   }
 
   function run(operation, input) {

@@ -5,12 +5,15 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
+use omni_alerts::{Pushover, PushoverChannel};
 use omni_core::clock::TestClock;
 use omni_core::email::FetchedEmail;
 use omni_email::activity::LlmCost;
+use omni_email::systemic::SystemicReporter;
 use omni_email::triage::{
     Classified, EmailTriage, TriageClassifier, TriageEmail, TriageError, TriageVerdict,
 };
+use omni_http::SideEffectMode;
 use omni_http::public::PublicHttpClient;
 use omni_parcel::carriers::carrier_map::CarrierDirectory;
 use omni_parcel::error::ParcelError;
@@ -147,6 +150,8 @@ pub struct Harness {
     pub clock: Arc<TestClock>,
     pub pipeline: DeliveryPipeline,
     pub server: MockServer,
+    /// Records the systemic-failure alerts.
+    pub pushover: Pushover,
 }
 
 pub async fn harness(
@@ -162,6 +167,12 @@ pub async fn harness(
     let clock = TestClock::new(NOW);
     let store = TestStore::new(clock.clone()).await;
     let http = omni_testkit::mock_http(&server, &["https://api.parcel.app"]);
+    let pushover = Pushover::with_credentials(
+        http.clone(),
+        Some("user".to_owned()),
+        [(PushoverChannel::General, "token".to_owned())],
+        SideEffectMode::Record,
+    );
     let carriers = Arc::new(
         CarrierDirectory::new(
             PublicHttpClient::new(&http).allow_loopback_for_tests(),
@@ -180,12 +191,14 @@ pub async fn harness(
         logs_path: None,
         tz: jiff::tz::TimeZone::UTC,
         tracker: TaskTracker::new(),
+        systemic: SystemicReporter::new(store.store.clone(), pushover.clone()),
     });
     Harness {
         store,
         clock,
         pipeline,
         server,
+        pushover,
     }
 }
 

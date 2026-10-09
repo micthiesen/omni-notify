@@ -48,13 +48,14 @@ async fn serves_every_tool_and_registers_tasks_entities_and_the_email_handler() 
     let package = McpPackage::new(&with_token(&app, Some(TOKEN))).unwrap();
     let own = package.tools().unwrap();
     assert_eq!(own.len(), 16);
+    assert!(package.event_publisher().is_some());
     let handler = package.email_handler().unwrap();
     assert_eq!(handler.name(), "McpEvents");
     let mut all = other_tools(&own);
     all.extend(own);
     let mut subsystem = package.subsystem(all).unwrap();
     let names: Vec<&str> = subsystem.tasks.iter().map(|t| t.name()).collect();
-    assert_eq!(names, ["McpEventDelivery"]);
+    assert_eq!(names, ["McpEventDelivery", "TaskRunEvents"]);
     assert_eq!(subsystem.entities.len(), 6);
     assert_eq!(subsystem.services.len(), 1);
     assert!(subsystem.mcp_tools.is_empty());

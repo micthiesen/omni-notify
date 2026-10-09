@@ -6,17 +6,21 @@ use std::time::Duration;
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
 use omni_api::intelligence::{
-    EventKind, EventStatus, IntelligenceDetailsResponse, LivestreamEvent, MetricMap,
-    PipelineStatus, StageDiagnostic,
+    EventKind, EventStatus, IntelligenceDetailsResponse, LivestreamEvent, LivestreamIntelligence,
+    MetricMap, PipelineStatus, StageDiagnostic,
 };
 use omni_api::streamers::StreamerView;
 use omni_web_kit::api;
-use omni_web_kit::hooks::use_now;
-use omni_web_kit::router::Link;
-use omni_web_kit::task::{sleep, spawn_scoped};
+use omni_web_kit::chrome::use_page_label;
+use omni_web_kit::components::{
+    ButtonLink, Disclosure, EmptyState, ErrorState, Icon, InlineNote, Meter, PageHead, Panel,
+    Readout, ReadoutBand, ReadoutSize, SegOption, Segmented, ShowMoreButton, SkeletonRows, Status,
+    StatusKind, Tone,
+};
+use omni_web_kit::hooks::{use_now, use_visible_poll};
 use omni_web_kit::use_live_data;
 use omni_web_kit::utils::format::{format_duration, format_relative};
-use omni_web_kit::utils::js::{js_round, number_string, to_fixed};
+use omni_web_kit::utils::js::{date_locale_time_string, js_round, number_string, to_fixed};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,13 +32,17 @@ enum TimelineFilter {
     Errors,
 }
 
+/// Timeline events shown before "Show more" (the page refreshes every 10 s,
+/// so the limit outlives each re-render).
+const EVENTS_PAGE: usize = 20;
+
 const STAGES: [(&str, &str); 3] = [
-    ("voice", "Voice Detection"),
-    ("summary", "Now Summary"),
+    ("voice", "Voice detection"),
+    ("summary", "Now summary"),
     ("alert", "Alerts"),
 ];
 const FILTERS: [(TimelineFilter, &str); 5] = [
-    (TimelineFilter::Key, "Key Events"),
+    (TimelineFilter::Key, "Key events"),
     (TimelineFilter::All, "All"),
     (TimelineFilter::Voice, "Voice"),
     (TimelineFilter::Alerts, "Alerts"),
@@ -81,8 +89,8 @@ fn event_kind_str(kind: EventKind) -> &'static str {
 
 fn stage_status(stage: Option<&StageDiagnostic>) -> String {
     match stage {
-        None => "Not Run".to_owned(),
-        Some(stage) if stage.eligible == Some(false) => "Not Eligible".to_owned(),
+        None => "not run".to_owned(),
+        Some(stage) if stage.eligible == Some(false) => "not eligible".to_owned(),
         Some(stage) => status_str(stage.status).replace('_', " "),
     }
 }
@@ -114,71 +122,84 @@ fn metric_value(value: &Value) -> String {
     }
 }
 
+fn stage_kind(stage: Option<&StageDiagnostic>) -> StatusKind {
+    match stage {
+        None => StatusKind::Idle,
+        Some(s) if s.eligible == Some(false) => StatusKind::Idle,
+        Some(s) => match s.status {
+            PipelineStatus::Idle | PipelineStatus::Skipped => StatusKind::Idle,
+            PipelineStatus::Running => StatusKind::Running,
+            PipelineStatus::Success => StatusKind::Ok,
+            PipelineStatus::Error => StatusKind::Fault,
+        },
+    }
+}
+
+fn event_tone(status: EventStatus) -> StatusKind {
+    match status {
+        EventStatus::Info => StatusKind::Info,
+        EventStatus::Success => StatusKind::Ok,
+        EventStatus::Warning => StatusKind::Warn,
+        EventStatus::Error => StatusKind::Fault,
+    }
+}
+
 fn metrics_list(metrics: &MetricMap) -> impl IntoView + use<> {
     let rows = metrics
         .iter()
         .map(|(key, value)| {
             view! {
-                <div>
-                    <dt>{metric_label(key)}</dt>
-                    <dd>{metric_value(value)}</dd>
-                </div>
+                <dt>{metric_label(key)}</dt>
+                <dd class="num">{metric_value(value)}</dd>
             }
         })
         .collect_view();
-    view! { <dl class="intelligence-metrics">{rows}</dl> }
+    view! { <dl class="kv">{rows}</dl> }
 }
 
 #[component]
-fn PipelineStageCard(
-    label: &'static str,
-    stage: Option<StageDiagnostic>,
-    now: f64,
-) -> impl IntoView {
-    let class = format!(
-        "intelligence-stage-card stage-{}",
-        stage.as_ref().map_or("idle", |s| status_str(s.status))
-    );
+fn StagePanel(label: &'static str, stage: Option<StageDiagnostic>, now: f64) -> impl IntoView {
+    let kind = stage_kind(stage.as_ref());
     let status = stage_status(stage.as_ref());
     let detail = stage
         .as_ref()
         .and_then(|s| s.detail.clone())
-        .unwrap_or_else(|| "No diagnostic state has been recorded yet.".to_owned());
-    let meta = stage.as_ref().map(|s| {
-        view! {
-            {s.finished_at.filter(|f| *f != 0).map(|f| view! { <span>{format!("Last {}", format_relative(f as f64))}</span> })}
-            {(s.status == PipelineStatus::Running)
-                .then_some(s.started_at)
-                .flatten()
-                .filter(|v| *v != 0)
-                .map(|started| view! { <span>{format!("Running {}", format_duration(now - started as f64))}</span> })}
-            {s.next_at.filter(|n| *n != 0).map(|next| view! {
-                <span>
-                    {format!(
-                        "{} {}",
-                        if (next as f64) <= now { "Due" } else { "Next" },
-                        format_relative(next as f64),
-                    )}
-                </span>
-            })}
-            {s.duration_ms.map(|d| view! { <span>{format!("{} processing", format_duration(d as f64))}</span> })}
+        .unwrap_or_else(|| "No diagnostic state recorded yet.".to_owned());
+    let mut facts = Vec::new();
+    if let Some(s) = &stage {
+        if let Some(f) = s.finished_at.filter(|f| *f != 0) {
+            facts.push(format!("last {}", format_relative(f as f64)));
         }
-    });
+        if s.status == PipelineStatus::Running
+            && let Some(started) = s.started_at.filter(|v| *v != 0)
+        {
+            facts.push(format!("running {}", format_duration(now - started as f64)));
+        }
+        if let Some(next) = s.next_at.filter(|n| *n != 0) {
+            facts.push(format!(
+                "{} {}",
+                if (next as f64) <= now { "due" } else { "next" },
+                format_relative(next as f64)
+            ));
+        }
+        if let Some(d) = s.duration_ms {
+            facts.push(format!("{} processing", format_duration(d as f64)));
+        }
+    }
     let metrics = stage
         .as_ref()
         .and_then(|s| s.metrics.as_ref())
         .filter(|m| !m.is_empty())
-        .map(metrics_list);
+        .map(|m| {
+            let list = metrics_list(m);
+            view! { <Disclosure summary="Metrics" flush=true>{list}</Disclosure> }
+        });
     view! {
-        <article class=class>
-            <div class="intelligence-stage-heading">
-                <h3>{label}</h3>
-                <span class="intelligence-stage-status">{status}</span>
-            </div>
-            <p>{detail}</p>
-            <div class="meta-row intelligence-stage-meta">{meta}</div>
+        <Panel title=label pad=true head_end=ViewFn::from(move || view! { <Status kind=kind label=status.clone()/> })>
+            <p class="small">{detail}</p>
+            {(!facts.is_empty()).then(|| view! { <p class="small dim num">{facts.join(" · ")}</p> })}
             {metrics}
-        </article>
+        </Panel>
     }
 }
 
@@ -196,29 +217,30 @@ fn event_visible(event: &LivestreamEvent, filter: TimelineFilter) -> bool {
 
 #[component]
 fn TimelineEvent(event: LivestreamEvent) -> impl IntoView {
-    let status = event_status_str(event.status);
+    let mut facts = vec![event_kind_str(event.kind).replace('_', " ")];
+    if let Some(d) = event.duration_ms {
+        facts.push(format!("{} processing", format_duration(d as f64)));
+    }
+    if let Some(c) = event.cost_cents {
+        facts.push(if c == 0.0 {
+            "$0 local".to_owned()
+        } else {
+            money_from_cents(c)
+        });
+    }
     view! {
-        <li class=format!("intelligence-event event-{status}")>
-            <span class="intelligence-event-dot" aria-hidden="true"></span>
-            <div class="intelligence-event-body">
-                <div class="intelligence-event-heading">
-                    <strong>{event.title.clone()}</strong>
-                    <span>{format_relative(event.created_at as f64)}</span>
-                </div>
-                {event.detail.clone().filter(|d| !d.is_empty()).map(|d| view! { <p>{d}</p> })}
-                <div class="meta-row">
-                    <span>{event_kind_str(event.kind).replace('_', " ")}</span>
-                    <span>{status}</span>
-                    {event.duration_ms.map(|d| view! { <span>{format!("{} processing", format_duration(d as f64))}</span> })}
-                    {event.cost_cents.map(|c| view! {
-                        <span>{if c == 0.0 { "$0 local".to_owned() } else { money_from_cents(c) }}</span>
-                    })}
-                </div>
-                {event.metrics.as_ref().filter(|m| !m.is_empty()).map(|m| view! {
-                    <details class="intelligence-event-evidence">
-                        <summary>"Evidence"</summary>
-                        {metrics_list(m)}
-                    </details>
+        <li class="timeline-event">
+            <span class="timeline-time num dim">
+                {date_locale_time_string(event.created_at as f64, &[("hour", "numeric"), ("minute", "2-digit")])}
+            </span>
+            <span class="timeline-mark"><Status kind=event_tone(event.status) dot_only=true label=event_status_str(event.status)/></span>
+            <div class="timeline-body">
+                <div class="row-title">{event.title.clone()}</div>
+                {event.detail.clone().filter(|d| !d.is_empty()).map(|d| view! { <p class="small">{d}</p> })}
+                <div class="small dim">{facts.join(" · ")}</div>
+                {event.metrics.as_ref().filter(|m| !m.is_empty()).map(|m| {
+                    let list = metrics_list(m);
+                    view! { <Disclosure summary="Evidence" flush=true>{list}</Disclosure> }
                 })}
             </div>
         </li>
@@ -230,6 +252,76 @@ fn stage_of(details: &IntelligenceDetailsResponse, key: &str) -> Option<StageDia
     serde_json::from_value(value.clone()).ok()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum View {
+    Timeline,
+    Diagnostics,
+}
+
+#[component]
+fn Evidence(intelligence: Option<LivestreamIntelligence>) -> impl IntoView {
+    let Some(intel) = intelligence else {
+        return ().into_any();
+    };
+    let transcript = match &intel.summary {
+        Some(summary) => view! {
+            <h3>{summary.topic.clone()}</h3>
+            <p class="prose small">{summary.transcript_excerpt.clone()}</p>
+            <p class="small dim num">
+                {format!(
+                    "{}% confidence · {} s window",
+                    number_string(js_round(summary.confidence * 100.0)),
+                    number_string(summary.window_seconds)
+                )}
+            </p>
+        }
+        .into_any(),
+        None => {
+            view! { <p class="dim">"No transcript-backed summary for this session."</p> }.into_any()
+        }
+    };
+    let surge = match &intel.trend {
+        Some(trend) => {
+            let headline = if trend.anomalous {
+                "Confirmed".to_owned()
+            } else {
+                trend
+                    .suppression_reason
+                    .clone()
+                    .unwrap_or_else(|| "No unusual rise".to_owned())
+            };
+            let opt =
+                |v: Option<f64>| v.map_or_else(|| "—".to_owned(), |v| number_string(js_round(v)));
+            view! {
+                <h3 class=if trend.anomalous { "text-signal" } else { "" }>{headline}</h3>
+                <dl class="kv">
+                    <dt>"Platform now / base"</dt>
+                    <dd class="num">{format!("{} / {}", opt(trend.current_viewers), opt(trend.baseline_viewers))}</dd>
+                    <dt>"DGG now / base"</dt>
+                    <dd class="num">{format!("{} / {}", opt(trend.current_dgg_viewers), opt(trend.baseline_dgg_viewers))}</dd>
+                    <dt>"Typical peak"</dt>
+                    <dd class="num">{opt(trend.typical_peak_viewers)}</dd>
+                    <dt>"Baseline samples"</dt>
+                    <dd class="num">{number_string(trend.baseline_samples.unwrap_or(0.0))}</dd>
+                    <dt>"Confirmations"</dt>
+                    <dd class="num">{format!("{} of 2", number_string(trend.candidate_observations.unwrap_or(0.0).min(2.0)))}</dd>
+                </dl>
+            }
+            .into_any()
+        }
+        None => {
+            view! { <p class="dim">"No viewer baseline collected for this session."</p> }.into_any()
+        }
+    };
+    view! {
+        <div class="grid-2">
+            <Panel title="Latest transcript window" pad=true>{transcript}</Panel>
+            <Panel title="Viewer surge" pad=true>{surge}</Panel>
+        </div>
+    }
+    .into_any()
+}
+
 #[component]
 pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl IntoView {
     let live = use_live_data();
@@ -237,6 +329,8 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
     let details = RwSignal::new(None::<IntelligenceDetailsResponse>);
     let error = RwSignal::new(None::<String>);
     let filter = RwSignal::new(TimelineFilter::Key);
+    let event_limit = RwSignal::new(EVENTS_PAGE);
+    let view_mode = RwSignal::new(View::Timeline);
     let id = streamer_id.clone();
     let streamer = Memo::new(move |_| {
         live.snapshot.with(|s| {
@@ -244,29 +338,35 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
                 .and_then(|s| s.streamers.iter().find(|x| x.id() == id).cloned())
         })
     });
-
-    let fetch_id = streamer_id.clone();
-    spawn_scoped(async move {
-        loop {
-            match api::fetch_livestream_intelligence_details(&fetch_id, 100).await {
-                Ok(next) => {
-                    details.set(Some(next));
-                    error.set(None);
-                }
-                Err(e) => error.set(Some(e.message().to_owned())),
-            }
-            sleep(Duration::from_secs(10)).await;
-        }
-    });
-    Effect::new(move |_| {
-        if let Some(s) = streamer.get() {
-            let name = match &s {
+    let display = Memo::new(move |_| {
+        streamer.with(|s| {
+            s.as_ref().map(|s| match s {
                 StreamerView::Live(l) => l.display_name.clone(),
                 StreamerView::Offline(o) => o.display_name.clone(),
-            };
+            })
+        })
+    });
+
+    let fetch_id = streamer_id.clone();
+    let reload = use_visible_poll(
+        Signal::derive(String::new),
+        move || {
+            let id = fetch_id.clone();
+            async move { api::fetch_livestream_intelligence_details(&id, 100).await }
+        },
+        move |next| {
+            details.set(Some(next));
+            error.set(None);
+        },
+        move |e: api::ApiClientError| error.set(Some(e.message().to_owned())),
+        Duration::from_secs(10),
+    );
+    Effect::new(move |_| {
+        if let Some(name) = display.get() {
             document().set_title(&format!("{name} Intelligence · Omni Notify"));
         }
     });
+    use_page_label(move || Some("Intelligence".to_owned()));
 
     let back_to = format!("/streamers/{}", encode_uri_component(&streamer_id));
     move || {
@@ -274,13 +374,19 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
         let has_details = details.with(Option::is_some);
         let err = error.get();
         if !has_snapshot || (!has_details && err.is_none()) {
-            return view! { <div class="loading">"Loading…"</div> }.into_any();
+            return view! { <SkeletonRows count=8 label="Loading intelligence"/> }.into_any();
         }
         let Some(current) = streamer.get() else {
-            return view! { <div class="error-banner">"Streamer not found."</div> }.into_any();
+            return view! {
+                <ErrorState title="Unknown streamer" detail="This channel is not being monitored." link=("All streamers".to_owned(), "/live".to_owned()) page=true/>
+            }
+            .into_any();
         };
         let Some(data) = details.get() else {
-            return view! { <div class="error-banner">{err}</div> }.into_any();
+            return view! {
+                <ErrorState title="Intelligence could not load" raw=err.unwrap_or_default() retry=reload page=true/>
+            }
+            .into_any();
         };
         let (name, is_live) = match &current {
             StreamerView::Live(l) => (l.display_name.clone(), true),
@@ -298,90 +404,16 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
                 .values()
                 .any(|stage| stage.get("status").and_then(Value::as_str) == Some("error"))
         });
-        let budget_percent = runtime.as_ref().map_or(0.0, |r| {
-            if r.budget.limit_cents > 0.0 {
-                (r.budget.spent_cents / r.budget.limit_cents * 100.0).min(100.0)
-            } else {
-                100.0
-            }
-        });
+        let (pipeline_word, pipeline_kind) = match (&runtime, has_stage_error) {
+            (None, _) => ("Unavailable", StatusKind::Idle),
+            (Some(_), true) => ("Needs attention", StatusKind::Fault),
+            (Some(_), false) => ("Healthy", StatusKind::Ok),
+        };
+        let budget = runtime
+            .as_ref()
+            .map(|r| (r.budget.spent_cents, r.budget.limit_cents));
         let intelligence = data.intelligence.clone();
-        let evidence = intelligence.as_ref().map(|intel| {
-            let transcript = match &intel.summary {
-                Some(summary) => view! {
-                    <strong>{summary.topic.clone()}</strong>
-                    <p class="intelligence-transcript-excerpt">{summary.transcript_excerpt.clone()}</p>
-                    <div class="meta-row">
-                        <span>{format!("{}% confidence", number_string(js_round(summary.confidence * 100.0)))}</span>
-                        <span>{format!("{}s window", number_string(summary.window_seconds))}</span>
-                    </div>
-                }
-                .into_any(),
-                None => view! { <p>"No transcript-backed summary has been produced for this session."</p> }.into_any(),
-            };
-            let surge = match &intel.trend {
-                Some(trend) => {
-                    let headline = if trend.anomalous {
-                        "Confirmed".to_owned()
-                    } else {
-                        trend.suppression_reason.clone().unwrap_or_else(|| "No unusual rise".to_owned())
-                    };
-                    let platform = format!(
-                        "Platform: {}{}",
-                        trend.current_viewers.map_or_else(|| "Unavailable".to_owned(), number_string),
-                        trend
-                            .baseline_viewers
-                            .map(|b| format!(" vs {} baseline", number_string(js_round(b))))
-                            .unwrap_or_default()
-                    );
-                    let dgg = trend.current_dgg_viewers.map(|current| {
-                        format!(
-                            "DGG: {}{}",
-                            number_string(current),
-                            trend
-                                .baseline_dgg_viewers
-                                .map(|b| format!(" vs {} baseline", number_string(js_round(b))))
-                                .unwrap_or_default()
-                        )
-                    });
-                    let typical = trend
-                        .typical_peak_viewers
-                        .map(|p| format!("Typical session peak: {}", number_string(js_round(p))));
-                    view! {
-                        <strong>{headline}</strong>
-                        <p>{platform}</p>
-                        {dgg.map(|d| view! { <p>{d}</p> })}
-                        {typical.map(|t| view! { <p>{t}</p> })}
-                        <div class="meta-row">
-                            <span>{format!("{} baseline samples", number_string(trend.baseline_samples.unwrap_or(0.0)))}</span>
-                            <span>
-                                {format!(
-                                    "{} of 2 confirmations",
-                                    number_string(trend.candidate_observations.unwrap_or(0.0).min(2.0)),
-                                )}
-                            </span>
-                        </div>
-                    }
-                    .into_any()
-                }
-                None => view! { <p>"No viewer baseline has been collected for this session."</p> }.into_any(),
-            };
-            view! {
-                <section class="page-section intelligence-current-evidence">
-                    <h2 class="section-title">"Current Evidence"</h2>
-                    <div class="intelligence-evidence-grid">
-                        <article>
-                            <h3>"Latest Transcript Window"</h3>
-                            {transcript}
-                        </article>
-                        <article>
-                            <h3>"Viewer Surge"</h3>
-                            {surge}
-                        </article>
-                    </div>
-                </section>
-            }
-        });
+        let chapters = intelligence.as_ref().map_or(0, |i| i.chapters.len());
         let stages_data = data.clone();
         let stages = move || {
             let now = now.get();
@@ -389,11 +421,29 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
                 .iter()
                 .map(|(key, label)| {
                     let stage = stage_of(&stages_data, key);
-                    view! { <PipelineStageCard label=*label stage now/> }
+                    view! { <StagePanel label=*label stage now/> }
                 })
                 .collect_view()
         };
         let events_data = data.events.clone();
+        let counts: Vec<(TimelineFilter, usize)> = FILTERS
+            .iter()
+            .map(|(f, _)| {
+                (
+                    *f,
+                    events_data.iter().filter(|e| event_visible(e, *f)).count(),
+                )
+            })
+            .collect();
+        let filter_options = Signal::derive(move || {
+            FILTERS
+                .iter()
+                .map(|(f, label)| {
+                    let n = counts.iter().find(|(c, _)| c == f).map_or(0, |(_, n)| *n);
+                    SegOption::new(*f, *label).with_count(n)
+                })
+                .collect::<Vec<_>>()
+        });
         let events = move || {
             let selected = filter.get();
             let visible: Vec<LivestreamEvent> = events_data
@@ -402,114 +452,103 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
                 .cloned()
                 .collect();
             if visible.is_empty() {
-                view! { <div class="no-data">"No events match this filter yet."</div> }.into_any()
+                view! { <EmptyState compact=true message="No events match this filter yet."/> }
+                    .into_any()
             } else {
+                let limit = event_limit.get();
+                let remaining = visible.len().saturating_sub(limit);
                 view! {
-                    <ol class="intelligence-event-list">
-                        {visible.into_iter().map(|event| view! { <TimelineEvent event/> }).collect_view()}
+                    <ol class="timeline">
+                        {visible
+                            .into_iter()
+                            .take(limit)
+                            .map(|event| view! { <TimelineEvent event/> })
+                            .collect_view()}
                     </ol>
+                    {(remaining > 0).then(|| view! {
+                        <ShowMoreButton
+                            remaining=Signal::stored(remaining)
+                            noun="events"
+                            on_click=Callback::new(move |()| event_limit.update(|n| *n += EVENTS_PAGE))
+                        />
+                    })}
                 }
                 .into_any()
             }
         };
-        let filter_buttons = FILTERS
-            .into_iter()
-            .map(|(value, label)| view! {
-                <button
-                    type="button"
-                    class=move || format!("chip-btn {}", if filter.get() == value { "active" } else { "" })
-                    on:click=move |_| filter.set(value)
-                >
-                    {label}
-                </button>
-            })
-            .collect_view();
+        let event_count = data.events.len();
         view! {
-            <div class="page-header intelligence-details-header">
-                <div class="page-header-stack">
-                    <Link class="back-link" to=back_to.clone()>{format!("← {name}")}</Link>
-                    <h1>"Intelligence Details"</h1>
-                    <p class="page-subtitle">
-                        "What the pipeline is doing, why it made each decision, and what it cost."
-                    </p>
-                </div>
-                <span class=format!("intelligence-live-state {}", if is_live { "is-live" } else { "" })>
-                    {if is_live { "Live Session" } else { "Last Session" }}
-                </span>
-            </div>
-            {err.map(|e| view! { <div class="error-banner">{format!("Latest refresh failed: {e}")}</div> })}
-            <section class="intelligence-health-grid" aria-label="Intelligence health">
-                <article>
-                    <span class="stat-label">"Pipeline"</span>
-                    <strong>
-                        {if runtime.is_some() {
-                            if has_stage_error { "Needs Attention" } else { "Healthy" }
-                        } else {
-                            "Unavailable"
-                        }}
-                    </strong>
-                    <span>
-                        {if has_stage_error {
-                            "A pipeline stage failed".to_owned()
+            <PageHead
+                title=format!("{name} intelligence")
+                eyebrow=if is_live { "Live session" } else { "Last session" }
+                lede="What the pipeline is doing, why it made each decision, and what it cost."
+                actions=ViewFn::from({
+                    let back_to = back_to.clone();
+                    move || view! { <ButtonLink to=back_to.clone() icon=Icon::Live>"Streamer"</ButtonLink> }
+                })
+            />
+            {err.map(|e| view! { <InlineNote tone=Tone::Warn role="alert">{format!("Latest refresh failed: {e}")}</InlineNote> })}
+            <div class="summary-bar sticky-summary" aria-label="Intelligence health">
+                <ReadoutBand cols=4>
+                    <Readout label="Pipeline" value=pipeline_word size=ReadoutSize::M tone={if has_stage_error { Tone::Fault } else { Tone::Neutral }}>
+                        <Status kind=pipeline_kind label=if has_stage_error {
+                            "A stage failed".to_owned()
                         } else if queue_total == 0 {
                             "Queues clear".to_owned()
                         } else {
                             format!("{queue_total} queued or running")
-                        }}
-                    </span>
-                </article>
-                <article>
-                    <span class="stat-label">"Voice Model"</span>
-                    <strong>{if runtime.as_ref().is_some_and(|r| r.voiceprint_loaded) { "Ready" } else { "Unavailable" }}</strong>
-                    <span>
+                        }/>
+                    </Readout>
+                    <Readout
+                        label="Voice model"
+                        value=if runtime.as_ref().is_some_and(|r| r.voiceprint_loaded) { "Ready" } else { "Unavailable" }
+                        size=ReadoutSize::M
+                    >
                         {runtime.as_ref().map_or_else(
                             || "No runtime connection".to_owned(),
                             |r| format!("{} of {} live targets", r.active_voice_target_count, r.active_stream_count),
                         )}
-                    </span>
-                </article>
-                <article>
-                    <span class="stat-label">"Monthly Budget"</span>
-                    <strong>
-                        {runtime.as_ref().map_or_else(
-                            || "—".to_owned(),
-                            |r| format!(
-                                "{} of {}",
-                                money_from_cents(r.budget.spent_cents),
-                                money_from_cents(r.budget.limit_cents),
-                            ),
-                        )}
-                    </strong>
-                    <div
-                        class="intelligence-budget-track"
-                        aria-label=format!("{}% used", number_string(js_round(budget_percent)))
+                    </Readout>
+                    <Readout
+                        label="Monthly budget"
+                        value=budget.map_or_else(|| "—".to_owned(), |(spent, _)| money_from_cents(spent))
+                        size=ReadoutSize::M
                     >
-                        <span style=format!("width: {}%", number_string(budget_percent))></span>
-                    </div>
-                </article>
-                <article>
-                    <span class="stat-label">"Timeline"</span>
-                    <strong>{format!("{} recent events", data.events.len())}</strong>
-                    <span>
-                        {format!(
-                            "{} topic chapters retained",
-                            intelligence.as_ref().map_or(0, |i| i.chapters.len()),
-                        )}
-                    </span>
-                </article>
-            </section>
-            {evidence}
-            <section class="page-section">
-                <h2 class="section-title">"Current Pipeline"</h2>
-                <div class="intelligence-stage-grid">{stages}</div>
-            </section>
-            <section class="page-section">
-                <div class="intelligence-timeline-header">
-                    <h2 class="section-title">"Decision Timeline"</h2>
-                    <div class="intelligence-filter-row" aria-label="Timeline filters">{filter_buttons}</div>
-                </div>
-                {events}
-            </section>
+                        {budget.map(|(spent, limit)| view! {
+                            <Meter value=spent max=limit.max(0.01) tone={if spent >= limit { Tone::Fault } else { Tone::Neutral }} label=format!("of {}", money_from_cents(limit))/>
+                            <span class="small dim">{format!("of {}", money_from_cents(limit))}</span>
+                        })}
+                    </Readout>
+                    <Readout label="Timeline" value=format!("{event_count}") size=ReadoutSize::M>
+                        {format!("events · {chapters} chapters")}
+                    </Readout>
+                </ReadoutBand>
+            </div>
+            <Evidence intelligence/>
+            <div class="toolbar">
+                <Segmented
+                    options=Signal::derive(|| vec![SegOption::new(View::Timeline, "Timeline"), SegOption::new(View::Diagnostics, "Diagnostics")])
+                    value=view_mode
+                    on_change=Callback::new(move |v| view_mode.set(v))
+                    aria_label="Intelligence view"
+                />
+                {move || (view_mode.get() == View::Timeline).then(|| view! {
+                    <Segmented options=filter_options value=filter on_change=Callback::new(move |f| {
+                        filter.set(f);
+                        event_limit.set(EVENTS_PAGE);
+                    }) aria_label="Timeline filter" small=true/>
+                })}
+            </div>
+            {move || match view_mode.get() {
+                View::Timeline => {
+                    let events = events.clone();
+                    view! { <Panel title="Decision timeline">{events}</Panel> }.into_any()
+                }
+                View::Diagnostics => {
+                    let stages = stages.clone();
+                    view! { <div class="grid-3">{stages}</div> }.into_any()
+                }
+            }}
         }
         .into_any()
     }

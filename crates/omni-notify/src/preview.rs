@@ -340,6 +340,16 @@ pub fn seed_documents(now: i64) -> Vec<(&'static str, Value)> {
         "success",
         json!({ "trigger": "manual", "summary": "Picked The Iron Harvest (2025); added to watchlist." }),
     ));
+    docs.push(run(
+        "Recommendations",
+        now - 70 * HOUR,
+        4_000,
+        "degraded",
+        json!({
+            "error": "media state unavailable: Plex request failed: connection refused",
+            "summary": "skipped: Plex request failed: connection refused",
+        }),
+    ));
     let rec = |id: &str,
                canonical: &str,
                tmdb: i64,
@@ -431,6 +441,59 @@ pub fn seed_documents(now: i64) -> Vec<(&'static str, Value)> {
             "outcome": "processed",
             "admitReason": "triage: shipment notification with a UPS tracking number",
             "items": ["1Z999AA10123456784 (ups): submitted"],
+        }),
+    ));
+    docs.push((
+        "parcel-submitted-delivery",
+        json!({
+            "trackingNumber": "1Z999AA10123456784",
+            "carrierCode": "ups",
+            "description": "Your order has shipped!",
+            "submittedAt": now - 3 * HOUR + 20_000,
+            "emailId": "preview-1",
+            "status": "submitted",
+            "attempts": 1,
+        }),
+    ));
+    docs.push((
+        "parcel-deliveries-snapshot",
+        json!({
+            "key": "parcel",
+            "fetchedAt": now - 12 * MIN,
+            "deliveries": [
+                {
+                    "trackingNumber": "1Z999AA10123456784",
+                    "carrierCode": "ups",
+                    "carrierName": "UPS",
+                    "description": "Camera",
+                    "statusCode": 4,
+                    "expected": "2026-10-09 00:00:00",
+                    "events": [
+                        {"description": "Out for delivery", "date": "2026-10-09 08:12:00", "location": "Springfield ST"},
+                        {"description": "Arrived at facility", "date": "2026-10-08 21:40:00", "location": "Shelbyville ST"},
+                    ],
+                    "eventCount": 2,
+                },
+                {
+                    "trackingNumber": "LP00123456789012CN",
+                    "carrierCode": "aliex",
+                    "carrierName": "AliExpress",
+                    "description": "Cable kit",
+                    "statusCode": 0,
+                    "events": [{"description": "Delivered", "date": "07.10.2026 15:44"}],
+                    "eventCount": 1,
+                },
+            ],
+        }),
+    ));
+    docs.push((
+        "parcel-deliveries-read-state",
+        json!({
+            "key": "parcel",
+            "attempts": [now - 12 * MIN],
+            "lastAttemptAt": now - 12 * MIN,
+            "lastSuccessAt": now - 12 * MIN,
+            "lastStatus": 200,
         }),
     ));
     docs

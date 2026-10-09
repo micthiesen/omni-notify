@@ -1,232 +1,561 @@
-//! Media recommendations and one pick's
-//! detail page.
+//! Movies & TV: the picks wall with its inspector, and one pick's detail
+//! page.
 
-use std::collections::HashMap;
+use std::time::Duration;
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
 use omni_api::media::{
-    MediaType, Recommendation, RecommendationFeedback, RecommendationStatus, TasteProfile,
+    MediaType, Recommendation, RecommendationFeedback, RecommendationStatus, ShortlistScores,
+    TasteProfile, WatchlistResult,
 };
 use omni_web_kit::api;
 use omni_web_kit::components::{
-    ImageWithFallback, OnDeck, ShowMoreButton, StatusFilterChips, Toast, ToastKind, use_show_more,
-    use_toast,
+    Button, ButtonLink, ButtonSize, ButtonVariant, EmptyState, ErrorState, Icon, Inspector, Meter,
+    OnDeck, PageHead, Panel, Poster, RunButton, SegOption, Segmented, ShowMoreButton, Skeleton,
+    SkeletonKind, Status, Tag, ToastKind, Tone, use_toast,
 };
-use omni_web_kit::hooks::use_rec_highlight;
+use omni_web_kit::hooks::{
+    query_param, scroll_into_view_center, store_pref, stored_pref, use_is_phone,
+};
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::Link;
-use omni_web_kit::task::{spawn_detached, spawn_scoped};
-use omni_web_kit::utils::format::format_date_only;
+use omni_web_kit::task::{sleep, spawn_detached, spawn_scoped};
+use omni_web_kit::utils::format::{format_absolute_with_year, format_date_only, format_relative};
 use omni_web_kit::utils::js::{js_round, number_string, to_fixed};
 use omni_web_kit::utils::rec_labels::{
     REC_FEEDBACK_ACTIONS, REC_STATUS_ORDER, rec_status_label, watchlist_label,
 };
 
-use crate::common::{
-    BackLink, DetailField, RunControls, ScoreRow, TimelineRow, active_if, format_minutes,
-};
-use crate::recommendation_runs::RecommendationRuns;
+use crate::common::format_minutes;
+use crate::rec_ui::{ChoiceStyle, Choices, MediaSwitch, media_choices, rec_status_kind};
 use crate::taste_brain::{TasteBrain, TasteBrainProfile};
 
 const TASK_NAME: &str = "Recommendations";
 const TASTE_TASK_NAME: &str = "TasteReflection";
+const MAX_PICKS: u32 = 10;
+const PAGE: usize = 24;
+const VIEW_PREF: &str = "omni.media-view";
 
-fn media_badge(media_type: MediaType) -> impl IntoView {
-    view! {
-        <span class=format!("media-badge media-{}", media_type.as_str())>
-            {if media_type == MediaType::Tv { "TV" } else { "Movie" }}
-        </span>
+fn poster_url(path: Option<&str>, size: &str) -> Option<String> {
+    path.map(|p| format!("https://image.tmdb.org/t/p/{size}{p}"))
+}
+
+fn kind_label(media_type: MediaType) -> &'static str {
+    if media_type == MediaType::Tv {
+        "TV"
+    } else {
+        "Movie"
     }
 }
 
+fn year_text(rec: &Recommendation) -> Option<String> {
+    rec.year.filter(|y| *y != 0.0).map(number_string)
+}
+
+/// Feedback opens once a pick has been delivered.
 fn can_rate(status: RecommendationStatus) -> bool {
     status != RecommendationStatus::Pending && status != RecommendationStatus::Failed
 }
 
-fn title_with_year(rec: &Recommendation) -> impl IntoView + use<> {
-    let year = rec.year.map(|year| {
-        view! { <span class="rec-year">{format!(" ({})", number_string(year))}</span> }
+fn watchlist_tone(result: WatchlistResult) -> Tone {
+    match result {
+        WatchlistResult::Error => Tone::Fault,
+        WatchlistResult::Available => Tone::Ok,
+        WatchlistResult::Added | WatchlistResult::AlreadyExists => Tone::Neutral,
+    }
+}
+
+fn feedback_label(feedback: RecommendationFeedback) -> String {
+    REC_FEEDBACK_ACTIONS
+        .iter()
+        .find(|(v, _)| *v == feedback)
+        .map_or_else(|| feedback.as_str().to_owned(), |(_, l)| (*l).to_owned())
+}
+
+/// "3 new picks waiting · 41 watched" for the page lede.
+pub fn picks_lede(recs: &[Recommendation]) -> String {
+    let count = |status| recs.iter().filter(|r| r.status == status).count();
+    let fresh = count(RecommendationStatus::Notified);
+    let watched = count(RecommendationStatus::Watched);
+    let mut parts = Vec::new();
+    match fresh {
+        0 => parts.push("No new picks waiting".to_owned()),
+        1 => parts.push("1 new pick waiting".to_owned()),
+        n => parts.push(format!("{n} new picks waiting")),
+    }
+    if watched > 0 {
+        parts.push(format!("{watched} watched"));
+    }
+    parts.join(" · ")
+}
+
+/// The ids in display order for `filter` (`None` = every status).
+pub fn filtered(
+    recs: &[Recommendation],
+    filter: Option<RecommendationStatus>,
+) -> impl Iterator<Item = &Recommendation> {
+    recs.iter()
+        .filter(move |r| filter.is_none_or(|status| r.status == status))
+}
+
+/// How many cards to reveal so the pick at `index` is visible.
+pub fn limit_to_show(index: usize) -> usize {
+    (index / PAGE + 1) * PAGE
+}
+
+fn status_line(rec: &Recommendation) -> impl IntoView + use<> {
+    let kind = rec_status_kind(rec.status);
+    view! {
+        <Status kind=kind label=rec_status_label(rec.status)/>
+        {rec.watchlist_result.filter(|r| matches!(r, WatchlistResult::Available | WatchlistResult::Error)).map(|result| view! {
+            <Tag tone=watchlist_tone(result)>{watchlist_label(result)}</Tag>
+        })}
+    }
+}
+
+fn caveat_list(items: &[String]) -> impl IntoView + use<> {
+    view! {
+        <ul class="rec-caveats">
+            {items.iter().map(|c| view! { <li>{c.clone()}</li> }).collect_view()}
+        </ul>
+    }
+}
+
+fn score_rows(scores: &ShortlistScores) -> impl IntoView + use<> {
+    let rows = [
+        ("Taste match", scores.taste_match),
+        ("Novelty", scores.novelty),
+        ("Effort fit", scores.effort_fit),
+        ("Composite", scores.composite),
+    ];
+    let top = rows.iter().map(|(_, v)| *v).fold(f64::MIN, f64::max);
+    let risks = (!scores.risks.is_empty()).then(|| {
+        view! {
+            <div class="rec-risks">
+                <h4 class="label">"Risks"</h4>
+                {caveat_list(&scores.risks)}
+            </div>
+        }
     });
     view! {
-        {rec.title.clone()}
-        {year}
-    }
-}
-
-fn status_badges(rec: &Recommendation) -> impl IntoView + use<> {
-    view! {
-        {media_badge(rec.media_type)}
-        <span class=format!("status-chip status-chip-{}", rec.status.as_str())>
-            {rec_status_label(rec.status)}
-        </span>
-        {rec
-            .watchlist_result
-            .map(|result| {
-                view! {
-                    <span class=format!("watchlist-badge watchlist-{}", result.as_str())>
-                        {watchlist_label(result)}
-                    </span>
-                }
-            })}
-    }
-}
-
-/// The rating buttons; `current` is the stored feedback.
-fn feedback_buttons(
-    current: Option<RecommendationFeedback>,
-    saving: Signal<bool>,
-    on_feedback: Callback<RecommendationFeedback>,
-) -> impl IntoView {
-    view! {
-        <div class="rec-feedback" aria-label="Recommendation feedback">
-            {REC_FEEDBACK_ACTIONS
-                .iter()
-                .map(|(value, label)| {
-                    let value = *value;
-                    let pressed = current == Some(value);
+        <div class="rec-scores">
+            {rows
+                .into_iter()
+                .map(|(label, value)| {
+                    let tone = if value == top { Tone::Signal } else { Tone::Neutral };
                     view! {
-                        <button
-                            type="button"
-                            class=format!("feedback-btn {}", active_if(pressed))
-                            aria-pressed=pressed.to_string()
-                            disabled=move || saving.get()
-                            on:click=move |_| on_feedback.run(value)
-                        >
-                            {*label}
-                        </button>
+                        <div class="rec-score">
+                            <span class="small">{label}</span>
+                            <Meter value=value max=100.0 tone=tone label=format!("{label} score")/>
+                            <span class="num">{number_string(js_round(value))}</span>
+                        </div>
                     }
                 })
                 .collect_view()}
         </div>
+        {risks}
     }
 }
 
+fn timeline(rec: &Recommendation) -> impl IntoView + use<> {
+    let mut events: Vec<(String, f64)> = vec![("Recommended".to_owned(), rec.recommended_at)];
+    if let Some(at) = rec.notified_at {
+        events.push(("Notified".to_owned(), at));
+    }
+    if let Some(at) = rec.started_at {
+        events.push(("Started watching".to_owned(), at));
+    }
+    if let Some(at) = rec.resolved_at {
+        events.push((format!("Resolved · {}", rec_status_label(rec.status)), at));
+    }
+    if let (Some(feedback), Some(at)) = (rec.feedback, rec.feedback_at) {
+        events.push((format!("Feedback · {}", feedback_label(feedback)), at));
+    }
+    view! {
+        <ol class="rec-timeline">
+            {events
+                .into_iter()
+                .map(|(label, at)| view! {
+                    <li>
+                        <span>{label}</span>
+                        <time class="num">{format_absolute_with_year(at)}</time>
+                    </li>
+                })
+                .collect_view()}
+        </ol>
+    }
+}
+
+/// Facts as key-value rows; absent fields are skipped.
+pub fn rec_facts(rec: &Recommendation) -> Vec<(&'static str, String)> {
+    let join = |items: &[String]| items.join(", ");
+    let mut fields = Vec::new();
+    if !rec.genres.is_empty() {
+        fields.push(("Genres", join(&rec.genres)));
+    }
+    if let Some(minutes) = rec.runtime_minutes {
+        fields.push(("Runtime", format_minutes(minutes)));
+    }
+    if let Some(seasons) = rec.season_count {
+        let episodes = rec
+            .episode_count
+            .map(|e| format!(" ({} episodes)", number_string(e)))
+            .unwrap_or_default();
+        fields.push(("Seasons", format!("{}{episodes}", number_string(seasons))));
+    }
+    if let Some(status) = rec.series_status.clone().filter(|s| !s.is_empty()) {
+        fields.push(("Series status", status));
+    }
+    if let Some(rated) = rec.certification.clone().filter(|s| !s.is_empty()) {
+        fields.push(("Rated", rated));
+    }
+    if let Some(language) = rec.original_language.as_ref().filter(|s| !s.is_empty()) {
+        fields.push(("Language", language.to_uppercase()));
+    }
+    if !rec.origin_countries.is_empty() {
+        fields.push(("Country", join(&rec.origin_countries)));
+    }
+    if !rec.creators.is_empty() {
+        let label = if rec.media_type == MediaType::Movie {
+            "Directed by"
+        } else {
+            "Created by"
+        };
+        fields.push((label, join(&rec.creators)));
+    }
+    if !rec.cast.is_empty() {
+        fields.push(("Cast", join(&rec.cast)));
+    }
+    if !rec.keywords.is_empty() {
+        fields.push(("Keywords", join(&rec.keywords)));
+    }
+    if let Some(source) = rec.source.clone().filter(|s| !s.is_empty()) {
+        fields.push(("Source", source));
+    }
+    if let Some(confidence) = rec.confidence {
+        fields.push((
+            "Confidence",
+            format!("{}%", number_string(js_round(confidence * 100.0))),
+        ));
+    }
+    fields
+}
+
+fn fact_list(rec: &Recommendation) -> impl IntoView + use<> {
+    view! {
+        <dl class="kv rec-facts">
+            {rec_facts(rec)
+                .into_iter()
+                .map(|(label, value)| view! { <dt>{label}</dt><dd>{value}</dd> })
+                .collect_view()}
+        </dl>
+    }
+}
+
+fn manager_name(media_type: MediaType) -> &'static str {
+    if media_type == MediaType::Movie {
+        "Radarr"
+    } else {
+        "Sonarr"
+    }
+}
+
+fn service_links(rec: &Recommendation, size: ButtonSize) -> impl IntoView + use<> {
+    let manager = manager_name(rec.media_type);
+    view! {
+        <ButtonLink
+            to=rec.links.plex.clone()
+            external=true
+            size
+            aria_label=format!("Open {} in Plex", rec.title)
+        >
+            "Plex"
+        </ButtonLink>
+        <ButtonLink
+            to=rec.links.manager.clone()
+            external=true
+            size
+            aria_label=format!("Open {} in {manager}", rec.title)
+        >
+            {manager}
+        </ButtonLink>
+        <ButtonLink
+            to=rec.links.tmdb.clone()
+            external=true
+            size
+            variant=ButtonVariant::Ghost
+            aria_label=format!("View {} on TMDB", rec.title)
+        >
+            "TMDB"
+        </ButtonLink>
+    }
+}
+
+/// Rating choices plus the optional note. `note_id` names the textarea on
+/// the detail page (`#rec-feedback-note`); `bar_on_phone` hides these
+/// choices on phones, where the page pins its own choice bar to the bottom.
 #[component]
-fn RecommendationCard(
+fn RecTake(
+    #[prop(into)] current: Signal<Option<RecommendationFeedback>>,
+    #[prop(into)] note: Signal<Option<String>>,
+    #[prop(into)] saving: Signal<bool>,
+    on_pick: Callback<RecommendationFeedback>,
+    on_note: Callback<String>,
+    #[prop(optional)] note_id: Option<&'static str>,
+    #[prop(optional)] bar_on_phone: bool,
+) -> impl IntoView {
+    let text = RwSignal::new(note.get_untracked().unwrap_or_default());
+    let blank = Signal::derive(move || text.with(|t| t.trim().is_empty()));
+    view! {
+        <div class=if bar_on_phone { "rec-take-choices hide-phone" } else { "rec-take-choices" }>
+            <Choices
+                choices=media_choices()
+                current
+                saving
+                on_pick
+                aria_label="Rate this pick"
+            />
+        </div>
+        <div class="field rec-note">
+            <label class="field-label" for=note_id>"Note"</label>
+            <textarea
+                id=note_id
+                class="textarea"
+                rows="3"
+                aria-label=note_id.is_none().then_some("Note")
+                placeholder="What worked, what didn't…"
+                prop:value=move || text.get()
+                on:input=move |event| text.set(event_target_value(&event))
+                disabled=move || saving.get()
+            ></textarea>
+            <div class="cluster">
+                <Button
+                    size=ButtonSize::Sm
+                    busy=saving
+                    disabled=blank
+                    disabled_reason="Write a note first"
+                    on_click=Callback::new(move |_| on_note.run(text.get_untracked().trim().to_owned()))
+                >
+                    "Save note"
+                </Button>
+            </div>
+        </div>
+    }
+}
+
+/// A poster card on the picks wall. The poster and title open the inspector.
+#[component]
+fn PickCard(
     rec: Recommendation,
     #[prop(into)] saving: Signal<bool>,
     highlighted: bool,
+    on_open: Callback<()>,
     on_feedback: Callback<RecommendationFeedback>,
 ) -> impl IntoView {
-    let detail_path = format!("/media/{}", encode_uri_component(&rec.recommendation_id));
-    let poster = rec
-        .poster_path
-        .as_ref()
-        .map(|p| format!("https://image.tmdb.org/t/p/w185{p}"));
-    let caveats = (!rec.caveats.is_empty()).then(|| {
-        view! {
-            <details class="content-disclosure rec-caveat-disclosure">
-                <summary>"Before You Watch"</summary>
-                <ul class="rec-caveats">
-                    {rec.caveats.iter().map(|c| view! { <li>{c.clone()}</li> }).collect_view()}
-                </ul>
-            </details>
+    let current = rec.feedback;
+    let year = year_text(&rec);
+    let why = rec.why_for_user.clone().filter(|w| !w.is_empty());
+    view! {
+        <article
+            id=format!("recommendation-{}", rec.recommendation_id)
+            class=if highlighted { "pick deep-link-target" } else { "pick" }
+        >
+            <button
+                type="button"
+                class="pick-hit"
+                aria-label=format!("Details for {}", rec.title)
+                on:click=move |_| on_open.run(())
+            >
+                <Poster
+                    src=poster_url(rec.poster_path.as_deref(), "w342")
+                    title=rec.title.clone()
+                    kind=kind_label(rec.media_type)
+                />
+                <span class="pick-title">
+                    {rec.title.clone()}
+                    {year.map(|y| view! { <span class="num">{y}</span> })}
+                </span>
+            </button>
+            <div class="pick-meta">{status_line(&rec)}</div>
+            {why.map(|why| view! { <p class="pick-why">{why}</p> })}
+            {can_rate(rec.status).then(|| view! {
+                <Choices
+                    choices=media_choices()
+                    current=Signal::stored(current)
+                    saving
+                    on_pick=on_feedback
+                    style=ChoiceStyle::Compact
+                    aria_label=format!("Rate {}", rec.title)
+                />
+            })}
+        </article>
+    }
+}
+
+/// The selected pick in a drawer (bottom sheet on phone).
+#[component]
+fn PickInspector(
+    #[prop(into)] rec: Signal<Option<Recommendation>>,
+    #[prop(into)] saving: Signal<bool>,
+    on_feedback: Callback<RecommendationFeedback>,
+    on_note: Callback<String>,
+    on_close: Callback<()>,
+) -> impl IntoView {
+    let title = Signal::derive(move || {
+        rec.with(|r| {
+            r.as_ref().map_or_else(String::new, |r| match year_text(r) {
+                Some(y) => format!("{} ({y})", r.title),
+                None => r.title.clone(),
+            })
+        })
+    });
+    let status = ViewFn::from(move || {
+        move || {
+            rec.with(|r| {
+                r.as_ref().map(|r| {
+                    let kind = kind_label(r.media_type);
+                    view! {
+                        <Tag>{kind}</Tag>
+                        {status_line(r)}
+                    }
+                })
+            })
         }
     });
-    let title = title_with_year(&rec);
-    view! {
-        <div
-            id=format!("recommendation-{}", rec.recommendation_id)
-            class=format!("rec-card {}", if highlighted { "rec-card-highlighted" } else { "" })
-        >
-            <ImageWithFallback
-                src=poster
-                alt=format!("{} poster", rec.title)
-                class="rec-poster"
-                placeholder_class="rec-poster-placeholder"
-                lazy=true
-                placeholder=|| {
+    let actions = ViewFn::from(move || {
+        move || {
+            rec.with(|r| {
+                r.as_ref().map(|r| {
+                    let page = format!("/media/{}", encode_uri_component(&r.recommendation_id));
                     view! {
-                        <svg
-                            width="28"
-                            height="28"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-                            <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                            <path d="M3 9h18M7 4v5M12 4v5M17 4v5"></path>
-                        </svg>
+                        {service_links(r, ButtonSize::Sm)}
+                        <ButtonLink to=page size=ButtonSize::Sm variant=ButtonVariant::Ghost>
+                            "Open page"
+                        </ButtonLink>
                     }
-                }
-            />
-            <div class="rec-body">
-                <div class="rec-title-row">
-                    <Link to=detail_path.clone() class="rec-title rec-title-link" title="View details">
-                        {title}
-                    </Link>
-                </div>
-                <div class="rec-badges">{status_badges(&rec)}</div>
-                {rec.why_for_user.clone().filter(|w| !w.is_empty()).map(|why| view! { <p class="rec-why">{why}</p> })}
-                {caveats}
-                <div class="rec-meta meta-row">
-                    <span>{format!("Recommended {}", format_date_only(rec.recommended_at))}</span>
-                </div>
-                <div class="rec-links">
-                    <a
-                        class="content-primary-link"
-                        href=rec.links.plex.clone()
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        "Open in Plex "
-                        <span aria-hidden="true">"↗"</span>
-                    </a>
-                    <Link to=detail_path>"Details " <span aria-hidden="true">"→"</span></Link>
-                </div>
-                {can_rate(rec.status).then(|| feedback_buttons(rec.feedback, saving, on_feedback))}
-            </div>
-        </div>
+                })
+            })
+        }
+    });
+    let rec_id = Memo::new(move |_| rec.with(|r| r.as_ref().map(|r| r.recommendation_id.clone())));
+    let current = Signal::derive(move || rec.with(|r| r.as_ref().and_then(|r| r.feedback)));
+    let note =
+        Signal::derive(move || rec.with(|r| r.as_ref().and_then(|r| r.feedback_note.clone())));
+    let rateable = Memo::new(move |_| rec.with(|r| r.as_ref().is_some_and(|r| can_rate(r.status))));
+    view! {
+        <Inspector title status actions on_close>
+            {move || {
+                // Rebuilt only when another pick is selected, so a note being
+                // typed survives a rating save.
+                rec_id.track();
+                rec.get_untracked().map(|r| {
+                    let why = r.why_for_user.clone().filter(|w| !w.is_empty());
+                    let facts = rec_facts(&r);
+                    view! {
+                        <div class="rec-inspector-art">
+                            <Poster
+                                src=poster_url(r.poster_path.as_deref(), "w342")
+                                title=r.title.clone()
+                                eager=true
+                            />
+                            {why.map(|why| view! { <p class="rec-why">{why}</p> })}
+                        </div>
+                        {(!r.caveats.is_empty()).then(|| view! {
+                            <section class="inspector-section">
+                                <h3>"Before you watch"</h3>
+                                {caveat_list(&r.caveats)}
+                            </section>
+                        })}
+                        {move || rateable.get().then(|| view! {
+                            <section class="inspector-section rec-take">
+                                <h3>"Your take"</h3>
+                                <RecTake current note saving on_pick=on_feedback on_note/>
+                            </section>
+                        })}
+                        {r.shortlist_scores.as_ref().map(|s| view! {
+                            <section class="inspector-section">
+                                <h3>"Shortlist scores"</h3>
+                                {score_rows(s)}
+                            </section>
+                        })}
+                        {(!facts.is_empty()).then(|| view! {
+                            <section class="inspector-section">
+                                <h3>"Details"</h3>
+                                {fact_list(&r)}
+                            </section>
+                        })}
+                        <section class="inspector-section">
+                            <h3>"Timeline"</h3>
+                            {move || rec.with(|r| r.as_ref().map(timeline))}
+                        </section>
+                    }
+                })
+            }}
+        </Inspector>
     }
 }
 
 fn media_stats(profile: &TasteProfile) -> Vec<(String, String)> {
     let stats = &profile.stats;
     vec![
+        ("Movies finished".into(), stats.completed_movies.to_string()),
+        ("Series finished".into(), stats.completed_series.to_string()),
+        ("Rewatched".into(), stats.rewatched_titles.to_string()),
         (
-            "Completed Movies".into(),
-            stats.completed_movies.to_string(),
-        ),
-        (
-            "Completed Series".into(),
-            stats.completed_series.to_string(),
-        ),
-        (
-            "Rewatched Titles".into(),
-            stats.rewatched_titles.to_string(),
-        ),
-        (
-            "Recommendations Watched".into(),
+            "Picks watched".into(),
             format!(
                 "{}/{}",
                 stats.recommendations.watched, stats.recommendations.total
             ),
         ),
-        ("Good Picks".into(), stats.feedback.good_pick.to_string()),
+        ("Good picks".into(), stats.feedback.good_pick.to_string()),
         (
-            "Average Time to Start".into(),
+            "Time to start".into(),
             match stats.average_hours_to_start {
-                None => "Not enough data".into(),
+                None => "–".into(),
                 Some(hours) => format!("{}h", to_fixed(hours, 1)),
             },
         ),
     ]
 }
 
-/// The Watch page: run controls, On Deck, taste brain, filterable picks.
+/// Grid of posters, or (phone only) a list with thumbnails.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WallView {
+    Grid,
+    List,
+}
+
+/// What the picks wall shows; the wall re-renders only when this changes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum WallState {
+    Loading,
+    Error(String),
+    Empty,
+    NoMatch,
+    List,
+}
+
+/// `/media` (and `/recommendations`).
 #[component]
 pub fn MediaPage() -> impl IntoView {
     let recs = RwSignal::new(None::<Vec<Recommendation>>);
     let recs_error = RwSignal::new(None::<String>);
-    let status_filter = RwSignal::new(String::new());
+    let reload = RwSignal::new(0u32);
+    let status_filter = RwSignal::new(None::<RecommendationStatus>);
+    let limit = RwSignal::new(PAGE);
     let saving_id = RwSignal::new(None::<String>);
+    let selected = RwSignal::new(None::<String>);
+    let picks = RwSignal::new(1u32);
     let taste_profile = RwSignal::new(None::<TasteProfile>);
     let taste_loading = RwSignal::new(true);
     let taste_error = RwSignal::new(None::<String>);
+    let wall_view = RwSignal::new(match stored_pref(VIEW_PREF).as_deref() {
+        Some("list") => WallView::List,
+        _ => WallView::Grid,
+    });
+    let phone = use_is_phone();
     let live = use_live_data();
     let toast = use_toast();
 
@@ -247,21 +576,18 @@ pub fn MediaPage() -> impl IntoView {
         None => true,
         Some(found) => found.is_some(),
     });
-    let latest_run = move |task: &'static str| {
-        Memo::new(move |_| {
-            live.snapshot.with(|s| {
-                s.as_ref()
-                    .and_then(|s| s.runs.iter().find(|r| r.task_name == task))
-                    .map(|r| r.run_id.clone())
-            })
+    let latest_taste_run_id = Memo::new(move |_| {
+        live.snapshot.with(|s| {
+            s.as_ref()
+                .and_then(|s| s.runs.iter().find(|r| r.task_name == TASTE_TASK_NAME))
+                .map(|r| r.run_id.clone())
         })
-    };
-    let latest_taste_run_id = latest_run(TASTE_TASK_NAME);
-    let latest_recommendation_run_id = latest_run(TASK_NAME);
+    });
 
     // Load once, then reload whenever the task finishes running so fresh
     // picks appear without a manual refresh.
     Effect::new(move |_| {
+        reload.track();
         if running.get() {
             return;
         }
@@ -283,32 +609,72 @@ pub fn MediaPage() -> impl IntoView {
                 Ok(data) => {
                     taste_profile.set(data.profile);
                     taste_error.set(None);
-                    taste_loading.set(false);
                 }
-                Err(err) => {
-                    taste_error.set(Some(err.message().to_owned()));
-                    taste_loading.set(false);
-                }
+                Err(err) => taste_error.set(Some(err.message().to_owned())),
             }
+            taste_loading.set(false);
         });
     });
 
-    let on_feedback = move |recommendation_id: String, feedback: RecommendationFeedback| {
-        saving_id.set(Some(recommendation_id.clone()));
+    // `?recommendation=<id>`: switch to the pick's status, reveal it, scroll
+    // to it and pulse it (once, on first load).
+    let highlight = query_param("recommendation");
+    let target = highlight.clone();
+    Effect::new(move |done: Option<bool>| {
+        if done == Some(true) {
+            return true;
+        }
+        let Some(id) = target.clone() else {
+            return true;
+        };
+        let found = recs.with(|list| {
+            list.as_ref().map(|list| {
+                list.iter()
+                    .find(|r| r.recommendation_id == id)
+                    .map(|r| r.status)
+            })
+        });
+        let Some(found) = found else { return false };
+        if let Some(status) = found {
+            let index = recs.with(|list| {
+                list.as_deref()
+                    .map(|list| {
+                        filtered(list, Some(status))
+                            .position(|r| r.recommendation_id == id)
+                            .unwrap_or(0)
+                    })
+                    .unwrap_or(0)
+            });
+            status_filter.set(Some(status));
+            limit.set(limit_to_show(index));
+            spawn_detached(async move {
+                sleep(Duration::from_millis(60)).await;
+                scroll_into_view_center(&format!("recommendation-{id}"));
+            });
+        }
+        true
+    });
+
+    let save = move |id: String, feedback: Option<RecommendationFeedback>, note: Option<String>| {
+        saving_id.set(Some(id.clone()));
         spawn_detached(async move {
-            match api::send_recommendation_feedback(&recommendation_id, Some(feedback), None).await
-            {
+            match api::send_recommendation_feedback(&id, feedback, note.as_deref()).await {
                 Ok(result) => {
                     recs.update(|list| {
                         if let Some(list) = list {
                             for rec in list.iter_mut() {
-                                if rec.recommendation_id == recommendation_id {
+                                if rec.recommendation_id == id {
                                     *rec = result.recommendation.clone();
                                 }
                             }
                         }
                     });
-                    toast.show("Feedback saved", ToastKind::Info);
+                    let message = if feedback.is_some() {
+                        "Feedback saved"
+                    } else {
+                        "Note saved"
+                    };
+                    toast.show(message, ToastKind::Info);
                 }
                 Err(err) => toast.show(err.message(), ToastKind::Error),
             }
@@ -316,202 +682,336 @@ pub fn MediaPage() -> impl IntoView {
         });
     };
 
-    let highlighted_id = use_rec_highlight(Signal::derive(move || recs.with(Option::is_some)));
-
-    let status_counts = Memo::new(move |_| {
-        let mut counts = HashMap::<String, usize>::new();
+    let counts = Memo::new(move |_| {
         recs.with(|list| {
-            for rec in list.iter().flatten() {
-                *counts.entry(rec.status.as_str().to_owned()).or_default() += 1;
-            }
-        });
-        counts
+            let list = list.as_deref().unwrap_or_default();
+            REC_STATUS_ORDER
+                .iter()
+                .map(|s| (*s, list.iter().filter(|r| r.status == *s).count()))
+                .collect::<Vec<_>>()
+        })
+    });
+    let total = Memo::new(move |_| recs.with(|r| r.as_ref().map_or(0, Vec::len)));
+    let filter_options = Signal::derive(move || {
+        let mut options = vec![SegOption::new(None, "All").with_count(total.get())];
+        options.extend(counts.get().into_iter().map(|(status, n)| {
+            SegOption::new(Some(status), rec_status_label(status)).with_count(n)
+        }));
+        options
     });
     let visible = Memo::new(move |_| {
         let filter = status_filter.get();
         recs.with(|list| {
-            list.as_ref().map(|list| {
-                list.iter()
-                    .filter(|r| filter.is_empty() || r.status.as_str() == filter)
-                    .cloned()
-                    .collect::<Vec<_>>()
-            })
+            list.as_deref()
+                .map(|list| filtered(list, filter).cloned().collect::<Vec<_>>())
         })
     });
-    let show = use_show_more(
-        Signal::derive(move || visible.get().unwrap_or_default()),
-        20,
-        status_filter.into(),
-    );
+    let shown = Memo::new(move |_| {
+        let n = limit.get();
+        visible.with(|v| {
+            v.as_deref()
+                .map(|v| v.iter().take(n).cloned().collect::<Vec<_>>())
+                .unwrap_or_default()
+        })
+    });
+    let remaining = Signal::derive(move || {
+        visible
+            .with(|v| v.as_ref().map_or(0, Vec::len))
+            .saturating_sub(limit.get())
+    });
+    let selected_rec = Signal::derive(move || {
+        let id = selected.get()?;
+        recs.with(|list| {
+            list.as_ref()?
+                .iter()
+                .find(|r| r.recommendation_id == id)
+                .cloned()
+        })
+    });
+    let on_deck = Signal::derive(move || {
+        live.snapshot
+            .with(|s| s.as_ref().map(|s| s.on_deck.clone()).unwrap_or_default())
+    });
+    let lede = Signal::derive(move || recs.with(|r| r.as_deref().map(picks_lede)));
 
     let taste =
         Signal::derive(move || taste_profile.with(|p| p.as_ref().map(TasteBrainProfile::from)));
     let taste_stats = Signal::derive(move || {
         taste_profile.with(|p| p.as_ref().map(media_stats).unwrap_or_default())
     });
+    // Run inside the taste body, which re-renders when the profile changes.
     let footer = ViewFn::from(move || {
-        taste_profile.with(|p| {
+        taste_profile.with_untracked(|p| {
             p.as_ref().map(|p| {
                 let c = &p.commitment_preferences;
+                let fit = |label: &'static str, pref: &str| {
+                    view! { <dt>{label}</dt><dd>{pref.to_owned()}</dd> }
+                };
                 view! {
-                    <div class="taste-commitments">
-                        <span>"Commitment Fit"</span>
-                        <span>{format!("Movies: {}", c.movies.preference.as_str())}</span>
-                        <span>{format!("Limited Series: {}", c.limited_series.preference.as_str())}</span>
-                        <span>{format!("Long Series: {}", c.long_series.preference.as_str())}</span>
+                    <div class="taste-group">
+                        <h4 class="label">"Commitment fit"</h4>
+                        <dl class="kv">
+                            {fit("Movies", c.movies.preference.as_str())}
+                            {fit("Limited series", c.limited_series.preference.as_str())}
+                            {fit("Long series", c.long_series.preference.as_str())}
+                        </dl>
                     </div>
                 }
             })
         })
     });
 
-    let order: Vec<(String, String)> = REC_STATUS_ORDER
-        .iter()
-        .map(|s| (s.as_str().to_owned(), rec_status_label(*s).to_owned()))
-        .collect();
-    let on_deck = Signal::derive(move || {
-        live.snapshot
-            .with(|s| s.as_ref().map(|s| s.on_deck.clone()).unwrap_or_default())
+    let picks_select = (1..=MAX_PICKS)
+        .map(|n| view! { <option value=n.to_string() prop:selected=move || picks.get() == n>{n}</option> })
+        .collect_view();
+    let actions = ViewFn::from(move || {
+        let picks_select = picks_select.clone();
+        move || {
+            if available.get() {
+                view! {
+                <label class="picks-count">
+                    <span class="label">"Picks"</span>
+                    <select
+                        class="select"
+                        aria-label="Maximum recommendations"
+                        disabled=move || running.get()
+                        on:change=move |event| picks.set(event_target_value(&event).parse().unwrap_or(1))
+                    >
+                        {picks_select.clone()}
+                    </select>
+                </label>
+                <RunButton
+                    task=TASK_NAME
+                    running
+                    label="Run picks"
+                    primary=true
+                    max_recommendations=Signal::derive(move || Some(picks.get()))
+                />
+            }
+            .into_any()
+            } else {
+                view! {
+                    <Button
+                        icon=Icon::Play
+                        disabled=true
+                        disabled_reason="Task disabled: missing TMDB/OpenAI/Tavily API keys"
+                    >
+                        "Run picks"
+                    </Button>
+                    <span class="small muted only-phone">
+                        "Runs are off: the TMDB, OpenAI and Tavily keys are missing."
+                    </span>
+                }
+                .into_any()
+            }
+        }
     });
-    let highlight = highlighted_id.clone();
+
+    let view_options = vec![
+        SegOption::new(WallView::Grid, "Grid"),
+        SegOption::new(WallView::List, "List"),
+    ];
+    let wall_class = move || {
+        if phone.get() && wall_view.get() == WallView::List {
+            "pick-wall list"
+        } else {
+            "pick-wall"
+        }
+    };
+    let highlight_id = StoredValue::new(highlight);
+    let wall_state = Memo::new(move |_| {
+        if recs.with(Option::is_none) {
+            return match recs_error.get() {
+                Some(error) => WallState::Error(error),
+                None => WallState::Loading,
+            };
+        }
+        if total.get() == 0 {
+            WallState::Empty
+        } else if visible.with(|v| v.as_ref().is_some_and(Vec::is_empty)) {
+            WallState::NoMatch
+        } else {
+            WallState::List
+        }
+    });
+
+    let wall = move || {
+        let state = wall_state.get();
+        if let WallState::Error(error) = &state {
+            return view! {
+                <ErrorState
+                    title="Picks could not load"
+                    raw=error.clone()
+                    retry=Callback::new(move |()| reload.update(|n| *n += 1))
+                />
+            }
+            .into_any();
+        }
+        if state == WallState::Loading {
+            return view! {
+                <div class="pick-wall" role="status" aria-label="Loading picks">
+                    {(0..8).map(|_| view! {
+                        <div class="pick">
+                            <Skeleton kind=SkeletonKind::Poster/>
+                            <Skeleton width="70%"/>
+                        </div>
+                    }).collect_view()}
+                </div>
+            }
+            .into_any();
+        }
+        if state == WallState::Empty {
+            let message = if available.get_untracked() {
+                "No picks yet · Run picks to get the first one."
+            } else {
+                "No picks yet · Add the recommendation service credentials to enable runs."
+            };
+            return view! { <EmptyState message icon=Icon::Film/> }.into_any();
+        }
+        if state == WallState::NoMatch {
+            return view! {
+                <EmptyState
+                    message="No picks with this status."
+                    compact=true
+                    action=ViewFn::from(move || view! {
+                        <Button
+                            size=ButtonSize::Sm
+                            variant=ButtonVariant::Ghost
+                            on_click=Callback::new(move |_| {
+                                status_filter.set(None);
+                                limit.set(PAGE);
+                            })
+                        >
+                            "Show all"
+                        </Button>
+                    })
+                />
+            }
+            .into_any();
+        }
+        view! {
+            <div class=wall_class aria-label="Recommendations">
+                <For
+                    each=move || shown.get()
+                    key=|rec| format!("{}|{rec:?}", rec.recommendation_id)
+                    children=move |rec| {
+                        let id = rec.recommendation_id.clone();
+                        let saving_key = id.clone();
+                        let open_id = id.clone();
+                        let highlighted = highlight_id
+                            .with_value(|h| h.as_deref() == Some(id.as_str()));
+                        view! {
+                            <PickCard
+                                rec
+                                saving=Signal::derive(move || {
+                                    saving_id.with(|s| s.as_deref() == Some(saving_key.as_str()))
+                                })
+                                highlighted
+                                on_open=Callback::new(move |()| selected.set(Some(open_id.clone())))
+                                on_feedback=Callback::new(move |feedback| {
+                                    save(id.clone(), Some(feedback), None)
+                                })
+                            />
+                        }
+                    }
+                />
+            </div>
+            {move || (remaining.get() > 0).then(|| view! {
+                <ShowMoreButton
+                    remaining
+                    noun="picks"
+                    on_click=Callback::new(move |()| limit.update(|n| *n += PAGE))
+                />
+            })}
+        }
+        .into_any()
+    };
+
+    let inspector_saving =
+        Signal::derive(move || saving_id.with(|s| s.is_some() && *s == selected.get()));
 
     view! {
-        <div class="page-header">
-            <div class="page-header-stack">
-                <h1>"Watch"</h1>
-                <p class="page-subtitle">"Films and series picked for your next night in."</p>
-            </div>
-            <RunControls
-                task_name=TASK_NAME
-                select_label="Maximum recommendations"
-                max_options=10
-                disabled_title="Task disabled: missing TMDB/OpenAI/Tavily API keys"
-                running=running
-                available=available
-                live=live
-                toast=toast
-            />
-        </div>
-        <Toast toast=toast.toast />
+        <PageHead title="Movies & TV" lede=lede actions>
+            <MediaSwitch/>
+        </PageHead>
 
-        <OnDeck items=on_deck />
+        {move || on_deck.with(|items| !items.is_empty()).then(|| view! {
+            <section class="section rec-deck" aria-label="On deck">
+                <div class="section-head">
+                    <h2 class="section-title">"On deck"</h2>
+                    <span class="section-meta">"Ready in Plex, picked for you"</span>
+                </div>
+                <OnDeck items=on_deck/>
+            </section>
+        })}
 
-        <TasteBrain
-            profile=taste
-            loading=taste_loading
-            error=taste_error
-            subtitle="What your watching and feedback say about your taste."
-            empty_text="No profile yet. The reflection task will build one from Plex watching and recommendation feedback."
-            stats=taste_stats
-            footer=footer
-            collapsible=true
-        />
-
-        {move || {
-            let total = recs.with(|r| r.as_ref().map_or(0, Vec::len));
-            (total > 0)
-                .then(|| {
-                    view! {
-                        <StatusFilterChips
-                            order=order.clone()
-                            counts=status_counts
-                            total=total
-                            active=status_filter
-                            on_change=Callback::new(move |key: String| status_filter.set(key))
+        <div class="split rec-layout">
+            <section class="section rec-main" aria-label="Picks">
+                <div class="section-head">
+                    <h2 class="section-title">"Picks"</h2>
+                </div>
+                <div class="toolbar">
+                    <div class="rec-filter">
+                        <Segmented
+                            options=filter_options
+                            value=status_filter
+                            on_change=Callback::new(move |status| {
+                                status_filter.set(status);
+                                limit.set(PAGE);
+                            })
+                            aria_label="Filter picks by status"
+                            small=true
                         />
-                    }
-                })
-        }}
+                    </div>
+                    <div class="only-phone rec-view-toggle">
+                        <Segmented
+                            options=view_options
+                            value=wall_view
+                            on_change=Callback::new(move |view| {
+                                wall_view.set(view);
+                                store_pref(VIEW_PREF, if view == WallView::List { "list" } else { "grid" });
+                            })
+                            aria_label="Picks layout"
+                            small=true
+                        />
+                    </div>
+                </div>
+                {wall}
+            </section>
+            <aside class="stack-lg rec-side">
+                <TasteBrain
+                    profile=taste
+                    loading=taste_loading
+                    error=taste_error
+                    subtitle="What your watching and feedback say about your taste."
+                    empty_text="No profile yet. The reflection task builds one from Plex watching and pick feedback."
+                    stats=taste_stats
+                    footer=footer
+                    collapsible=true
+                />
+                <Link to="/operations#inspect=Recommendations" class="textlink">
+                    "Runs in Operations →"
+                </Link>
+            </aside>
+        </div>
 
-        {move || {
-            (recs.with(Option::is_none) && recs_error.with(Option::is_none))
-                .then(|| view! { <div class="loading">"Loading…"</div> })
-        }}
-        {move || {
-            recs_error
-                .get()
-                .map(|error| {
-                    view! {
-                        <div class="error">
-                            <div>"Failed to load recommendations"</div>
-                            <div class="error-detail">{error}</div>
-                        </div>
+        {move || selected.with(Option::is_some).then(|| view! {
+            <PickInspector
+                rec=selected_rec
+                saving=inspector_saving
+                on_feedback=Callback::new(move |feedback| {
+                    if let Some(id) = selected.get_untracked() {
+                        save(id, Some(feedback), None);
                     }
                 })
-        }}
-        {move || {
-            recs.with(|r| r.as_ref().is_some_and(Vec::is_empty))
-                .then(|| {
-                    let text = if available.get() {
-                        "The Recommendations task hasn’t produced any picks. Run it to generate the first one."
-                    } else {
-                        "Add the required recommendation service credentials to enable the first run."
-                    };
-                    view! {
-                        <div class="rec-empty">
-                            <div class="rec-empty-title">"No recommendations yet"</div>
-                            <div class="muted">{text}</div>
-                        </div>
+                on_note=Callback::new(move |note: String| {
+                    if let Some(id) = selected.get_untracked() {
+                        save(id, None, Some(note));
                     }
                 })
-        }}
-        {move || {
-            let total = recs.with(|r| r.as_ref().map_or(0, Vec::len));
-            (total > 0 && visible.with(|v| v.as_ref().is_some_and(Vec::is_empty)))
-                .then(|| {
-                    view! {
-                        <div class="rec-empty">
-                            "No picks match this filter. Choose another status to see more."
-                        </div>
-                    }
-                })
-        }}
-        {move || {
-            visible
-                .with(|v| v.as_ref().is_some_and(|v| !v.is_empty()))
-                .then(|| {
-                    let highlight = highlight.clone();
-                    view! {
-                        <div class="rec-list" aria-label="Recommendations">
-                            <For
-                                each=move || show.visible.get()
-                                key=|rec| format!("{}|{rec:?}", rec.recommendation_id)
-                                children=move |rec| {
-                                    let id = rec.recommendation_id.clone();
-                                    let saving_key = id.clone();
-                                    let highlighted = highlight.as_deref() == Some(id.as_str());
-                                    view! {
-                                        <RecommendationCard
-                                            rec=rec
-                                            saving=Signal::derive(move || {
-                                                saving_id.with(|s| s.as_deref() == Some(saving_key.as_str()))
-                                            })
-                                            highlighted=highlighted
-                                            on_feedback=Callback::new(move |feedback| {
-                                                on_feedback(id.clone(), feedback)
-                                            })
-                                        />
-                                    }
-                                }
-                            />
-                        </div>
-                        {move || {
-                            show.has_more
-                                .get()
-                                .then(|| {
-                                    view! {
-                                        <ShowMoreButton
-                                            remaining=show.remaining
-                                            on_click=Callback::new(move |()| show.show_more())
-                                        />
-                                    }
-                                })
-                        }}
-                    }
-                })
-        }}
-
-        <RecommendationRuns task_name=TASK_NAME latest_run_id=latest_recommendation_run_id />
+                on_close=Callback::new(move |()| selected.set(None))
+            />
+        })}
     }
 }
 
@@ -520,284 +1020,253 @@ pub fn MediaPage() -> impl IntoView {
 pub fn MediaDetailPage(#[prop(into)] id: String) -> impl IntoView {
     let rec = RwSignal::new(None::<Recommendation>);
     let error = RwSignal::new(None::<String>);
+    let reload = RwSignal::new(0u32);
     let saving = RwSignal::new(false);
-    let note_text = RwSignal::new(String::new());
-    let saving_note = RwSignal::new(false);
     let toast = use_toast();
 
+    omni_web_kit::chrome::use_page_label(move || rec.with(|r| r.as_ref().map(|r| r.title.clone())));
+
     let load_id = id.clone();
-    spawn_scoped(async move {
-        match api::fetch_recommendation(&load_id).await {
-            Ok(res) => {
-                note_text.set(res.recommendation.feedback_note.clone().unwrap_or_default());
-                rec.set(Some(res.recommendation));
+    Effect::new(move |_| {
+        reload.track();
+        let id = load_id.clone();
+        spawn_scoped(async move {
+            match api::fetch_recommendation(&id).await {
+                Ok(res) => {
+                    rec.set(Some(res.recommendation));
+                    error.set(None);
+                }
+                Err(err) => error.set(Some(err.message().to_owned())),
             }
-            Err(err) => error.set(Some(err.message().to_owned())),
-        }
+        });
     });
 
-    let feedback_id = id.clone();
-    let on_feedback = Callback::new(move |feedback: RecommendationFeedback| {
+    let save_id = StoredValue::new(id);
+    let save = move |feedback: Option<RecommendationFeedback>, note: Option<String>| {
         saving.set(true);
-        let id = feedback_id.clone();
+        let id = save_id.get_value();
         spawn_detached(async move {
-            match api::send_recommendation_feedback(&id, Some(feedback), None).await {
+            match api::send_recommendation_feedback(&id, feedback, note.as_deref()).await {
                 Ok(result) => {
                     rec.set(Some(result.recommendation));
-                    toast.show("Feedback saved", ToastKind::Info);
+                    let message = if feedback.is_some() {
+                        "Feedback saved"
+                    } else {
+                        "Note saved"
+                    };
+                    toast.show(message, ToastKind::Info);
                 }
                 Err(err) => toast.show(err.message(), ToastKind::Error),
             }
             saving.set(false);
         });
-    });
-    let note_id = id.clone();
-    let save_note = move |_| {
-        saving_note.set(true);
-        let id = note_id.clone();
-        let note = note_text.get_untracked().trim().to_owned();
-        spawn_detached(async move {
-            match api::send_recommendation_feedback(&id, None, Some(&note)).await {
-                Ok(result) => {
-                    rec.set(Some(result.recommendation));
-                    toast.show("Note saved", ToastKind::Info);
-                }
-                Err(err) => toast.show(err.message(), ToastKind::Error),
-            }
-            saving_note.set(false);
-        });
     };
+    let on_pick = Callback::new(move |feedback| save(Some(feedback), None));
+    let on_note = Callback::new(move |note: String| save(None, Some(note)));
+    let current = Signal::derive(move || rec.with(|r| r.as_ref().and_then(|r| r.feedback)));
+    let note =
+        Signal::derive(move || rec.with(|r| r.as_ref().and_then(|r| r.feedback_note.clone())));
+
+    // Rebuild the page only when a different pick loads; rating updates
+    // flow through `current`/`note` so the note being typed survives.
+    let loaded_id =
+        Memo::new(move |_| rec.with(|r| r.as_ref().map(|r| r.recommendation_id.clone())));
+    let rateable = Memo::new(move |_| rec.with(|r| r.as_ref().is_some_and(|r| can_rate(r.status))));
 
     move || {
-        if let Some(error) = error.get() {
+        if let Some(err) = error.get().filter(|_| rec.with(Option::is_none)) {
             return view! {
-                <div class="error">
-                    <div>"Failed to load this recommendation"</div>
-                    <div class="error-detail">{error}</div>
+                <ErrorState
+                    title="This pick could not load"
+                    raw=err
+                    retry=Callback::new(move |()| reload.update(|n| *n += 1))
+                    link=("All picks".to_owned(), "/media".to_owned())
+                    page=true
+                />
+            }
+            .into_any();
+        }
+        if loaded_id.get().is_none() {
+            return view! {
+                <div class="rec-detail" role="status" aria-label="Loading pick">
+                    <div class="rec-detail-art"><Skeleton kind=SkeletonKind::Poster/></div>
+                    <div class="rec-detail-main stack">
+                        <Skeleton width="30%"/>
+                        <Skeleton kind=SkeletonKind::Title/>
+                        <Skeleton width="80%"/>
+                        <Skeleton width="65%"/>
+                    </div>
                 </div>
             }
             .into_any();
         }
-        let Some(rec) = rec.get() else {
-            return view! { <div class="loading">"Loading…"</div> }.into_any();
-        };
-        let rateable = can_rate(rec.status);
-        let manager = if rec.media_type == MediaType::Movie {
-            "Radarr"
-        } else {
-            "Sonarr"
-        };
-        let poster = rec
-            .poster_path
-            .as_ref()
-            .map(|p| format!("https://image.tmdb.org/t/p/w342{p}"));
-        let caveats = (!rec.caveats.is_empty()).then(|| {
-            view! {
-                <ul class="rec-caveats">
-                    {rec.caveats.iter().map(|c| view! { <li>{c.clone()}</li> }).collect_view()}
-                </ul>
-            }
-        });
-        let note_form = rateable.then(|| {
-            view! {
-                <div class="feedback-note">
-                    <label class="feedback-note-label" for="rec-feedback-note">
-                        "Note"
-                    </label>
-                    <textarea
-                        id="rec-feedback-note"
-                        class="feedback-note-input"
-                        placeholder="Optional note about this pick…"
-                        prop:value=move || note_text.get()
-                        on:input=move |event| note_text.set(event_target_value(&event))
-                        disabled=move || saving_note.get()
-                    ></textarea>
-                    <button
-                        type="button"
-                        class="feedback-note-save-btn"
-                        disabled=move || saving_note.get() || note_text.with(|t| t.trim().is_empty())
-                        on:click=save_note.clone()
-                    >
-                        {move || if saving_note.get() { "Saving…" } else { "Save Note" }}
-                    </button>
-                </div>
-            }
-        });
-        let details = media_details(&rec);
-        let scores = rec.shortlist_scores.clone().map(|scores| {
-            let risks = (!scores.risks.is_empty()).then(|| {
-                view! {
-                    <ul class="rec-caveats detail-risks">
-                        {scores.risks.iter().map(|r| view! { <li>{r.clone()}</li> }).collect_view()}
-                    </ul>
-                }
-            });
-            view! {
-                <section class="page-section">
-                    <h2 class="section-title">"Shortlist Scores"</h2>
-                    <div class="score-list">
-                        <ScoreRow label="Taste Match" value=scores.taste_match />
-                        <ScoreRow label="Novelty" value=scores.novelty />
-                        <ScoreRow label="Effort Fit" value=scores.effort_fit />
-                        <ScoreRow label="Composite" value=scores.composite />
-                    </div>
-                    {risks}
-                </section>
-            }
-        });
-        let feedback_label = rec.feedback.map(|f| {
-            REC_FEEDBACK_ACTIONS
-                .iter()
-                .find(|(v, _)| *v == f)
-                .map_or_else(|| f.as_str().to_owned(), |(_, l)| (*l).to_owned())
-        });
+        let r = rec
+            .get_untracked()
+            .unwrap_or_else(|| unreachable!("loaded"));
+        let why = r.why_for_user.clone().filter(|w| !w.is_empty());
+        let facts = (!rec_facts(&r).is_empty()).then(|| fact_list(&r));
+        let scores = r.shortlist_scores.as_ref().map(score_rows);
+        let kind = kind_label(r.media_type);
         view! {
-            <BackLink to="/media" label="All Media Picks" />
-            <Toast toast=toast.toast />
-
-            <div class="detail-head">
-                <ImageWithFallback
-                    src=poster
-                    alt=format!("{} poster", rec.title)
-                    class="detail-art"
-                    placeholder_class="detail-art-placeholder"
-                    placeholder=|| "🎬"
-                />
-                <div class="detail-head-body">
-                    <h1 class="detail-title">{title_with_year(&rec)}</h1>
-                    <div class="detail-badges">{status_badges(&rec)}</div>
-                    {rec.why_for_user.clone().filter(|w| !w.is_empty()).map(|why| view! { <p class="rec-why">{why}</p> })}
-                    {caveats}
-                    <nav class="detail-service-links" aria-label="Title links">
-                        <a
-                            href=rec.links.plex.clone()
-                            target="_blank"
-                            rel="noreferrer"
-                            class="detail-service-link detail-service-link-plex"
-                            aria-label=format!("Open {} in Plex", rec.title)
-                        >
-                            <span class="detail-service-link-label">"Open in Plex"</span>
-                            <span class="detail-service-link-hint">"Find in library"</span>
-                        </a>
-                        <a
-                            href=rec.links.manager.clone()
-                            target="_blank"
-                            rel="noreferrer"
-                            class=format!(
-                                "detail-service-link detail-service-link-manager detail-service-link-{}",
-                                manager.to_lowercase(),
-                            )
-                            aria-label=format!("Open {} in {manager}", rec.title)
-                        >
-                            <span class="detail-service-link-label">{format!("Open in {manager}")}</span>
-                            <span class="detail-service-link-hint">"Manage library"</span>
-                        </a>
-                        <a
-                            href=rec.links.tmdb.clone()
-                            target="_blank"
-                            rel="noreferrer"
-                            class="detail-metadata-link detail-metadata-link-tmdb"
-                        >
-                            "View metadata on TMDB"
-                        </a>
-                    </nav>
-                    {rateable.then(|| feedback_buttons(rec.feedback, saving.into(), on_feedback))}
-                    {note_form}
+            <div class="rec-detail">
+                <div class="rec-detail-art">
+                    <Poster
+                        src=poster_url(r.poster_path.as_deref(), "w500")
+                        title=r.title.clone()
+                        eager=true
+                    />
                 </div>
-            </div>
-
-            <div class="detail-sections">
-                <section class="page-section">
-                    <h2 class="section-title">"Details"</h2>
-                    <dl class="detail-grid">{details}</dl>
-                </section>
-                {scores}
-                <section class="page-section">
-                    <h2 class="section-title">"Timeline"</h2>
-                    <div class="timeline">
-                        <TimelineRow label="Recommended" at=rec.recommended_at />
-                        {rec.notified_at.map(|at| view! { <TimelineRow label="Notified" at=at /> })}
-                        {rec.started_at.map(|at| view! { <TimelineRow label="Started Watching" at=at /> })}
-                        {rec
-                            .resolved_at
-                            .map(|at| {
-                                view! {
-                                    <TimelineRow
-                                        label=format!("Resolved ({})", rec_status_label(rec.status))
-                                        at=at
-                                    />
-                                }
-                            })}
-                        {feedback_label
-                            .zip(rec.feedback_at)
-                            .map(|(label, at)| {
-                                view! { <TimelineRow label=format!("Feedback: {label}") at=at /> }
-                            })}
+                <div class="rec-detail-main">
+                    <div class="cluster">
+                        <Tag>{kind}</Tag>
+                        {year_text(&r).map(|y| view! { <Tag>{y}</Tag> })}
+                        {move || rec.with(|r| r.as_ref().map(status_line))}
                     </div>
-                </section>
+                    <h1 class="page-title rec-detail-title">{r.title.clone()}</h1>
+                    <p class="small muted">
+                        {format!("Picked {} · {}", format_date_only(r.recommended_at), format_relative(r.recommended_at))}
+                    </p>
+                    <div class="cluster">{service_links(&r, ButtonSize::Md)}</div>
+                    {why.map(|why| view! { <p class="rec-why prose">{why}</p> })}
+                    {(!r.caveats.is_empty()).then(|| view! {
+                        <div class="rec-caveat-block">
+                            <h2 class="label">"Before you watch"</h2>
+                            {caveat_list(&r.caveats)}
+                        </div>
+                    })}
+                    {move || rateable.get().then(|| view! {
+                        <Panel title="Your take" pad=true class="rec-take">
+                            <RecTake
+                                current
+                                note
+                                saving
+                                on_pick
+                                on_note
+                                note_id="rec-feedback-note"
+                                bar_on_phone=true
+                            />
+                        </Panel>
+                    })}
+                    <div class="grid-2">
+                        {scores.map(|scores| view! {
+                            <Panel title="Shortlist scores" pad=true>{scores}</Panel>
+                        })}
+                        <Panel title="Timeline" pad=true>
+                            {move || rec.with(|r| r.as_ref().map(timeline))}
+                        </Panel>
+                    </div>
+                    {facts.map(|facts| view! {
+                        <Panel title="Details" pad=true>{facts}</Panel>
+                    })}
+                    {move || rateable.get().then(|| view! {
+                        <div class="rec-take-bar only-phone">
+                            <Choices
+                                choices=media_choices()
+                                current
+                                saving
+                                on_pick
+                                aria_label="Rate this pick"
+                            />
+                        </div>
+                    })}
+                </div>
             </div>
         }
         .into_any()
     }
 }
 
-fn media_details(rec: &Recommendation) -> impl IntoView + use<> {
-    let field = |label: &str, value: String| {
-        let label = label.to_owned();
-        view! { <DetailField label=label>{value}</DetailField> }
-    };
-    let join = |items: &[String]| items.join(", ");
-    let mut fields = Vec::new();
-    if !rec.genres.is_empty() {
-        fields.push(field("Genres", join(&rec.genres)));
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rec(id: &str, status: RecommendationStatus) -> Recommendation {
+        serde_json::from_value(serde_json::json!({
+            "recommendationId": id,
+            "canonicalId": id,
+            "tmdbId": 1,
+            "mediaType": "movie",
+            "title": id,
+            "year": null,
+            "posterPath": null,
+            "status": status.as_str(),
+            "whyForUser": null,
+            "caveats": [],
+            "runDate": "2026-10-01",
+            "recommendedAt": 1,
+            "notifiedAt": null,
+            "startedAt": null,
+            "resolvedAt": null,
+            "watchlistResult": null,
+            "confidence": null,
+            "feedback": null,
+            "feedbackAt": null,
+            "feedbackNote": null,
+            "source": null,
+            "genres": [],
+            "runtimeMinutes": null,
+            "seasonCount": null,
+            "episodeCount": null,
+            "seriesStatus": null,
+            "originalLanguage": null,
+            "originCountries": [],
+            "creators": [],
+            "cast": [],
+            "keywords": [],
+            "certification": null,
+            "shortlistScores": null,
+            "links": {"tmdb": "t", "plex": "p", "manager": "m"}
+        }))
+        .expect("recommendation fixture")
     }
-    if let Some(minutes) = rec.runtime_minutes {
-        fields.push(field("Runtime", format_minutes(minutes)));
+
+    #[test]
+    fn lede_counts_new_and_watched_picks() {
+        let list = [
+            rec("a", RecommendationStatus::Notified),
+            rec("b", RecommendationStatus::Notified),
+            rec("c", RecommendationStatus::Watched),
+            rec("d", RecommendationStatus::Ignored),
+        ];
+        assert_eq!(picks_lede(&list), "2 new picks waiting · 1 watched");
+        assert_eq!(picks_lede(&list[3..]), "No new picks waiting");
     }
-    if let Some(seasons) = rec.season_count {
-        let episodes = rec
-            .episode_count
-            .map(|e| format!(" ({} episodes)", number_string(e)))
-            .unwrap_or_default();
-        fields.push(field(
-            "Seasons",
-            format!("{}{episodes}", number_string(seasons)),
-        ));
-    }
-    if let Some(status) = rec.series_status.clone().filter(|s| !s.is_empty()) {
-        fields.push(field("Series Status", status));
-    }
-    if let Some(rated) = rec.certification.clone().filter(|s| !s.is_empty()) {
-        fields.push(field("Rated", rated));
-    }
-    if let Some(language) = rec.original_language.as_ref().filter(|s| !s.is_empty()) {
-        fields.push(field("Language", language.to_uppercase()));
-    }
-    if !rec.origin_countries.is_empty() {
-        fields.push(field("Country", join(&rec.origin_countries)));
-    }
-    if !rec.creators.is_empty() {
-        let label = if rec.media_type == MediaType::Movie {
-            "Directed By"
-        } else {
-            "Created By"
+
+    #[test]
+    fn filter_keeps_order_and_none_means_all() {
+        let list = [
+            rec("a", RecommendationStatus::Watched),
+            rec("b", RecommendationStatus::Notified),
+            rec("c", RecommendationStatus::Watched),
+        ];
+        let ids = |f| {
+            filtered(&list, f)
+                .map(|r| r.recommendation_id.as_str())
+                .collect::<Vec<_>>()
         };
-        fields.push(field(label, join(&rec.creators)));
+        assert_eq!(ids(None), ["a", "b", "c"]);
+        assert_eq!(ids(Some(RecommendationStatus::Watched)), ["a", "c"]);
     }
-    if !rec.cast.is_empty() {
-        fields.push(field("Cast", join(&rec.cast)));
+
+    #[test]
+    fn deep_link_reveals_enough_pages() {
+        assert_eq!(limit_to_show(0), PAGE);
+        assert_eq!(limit_to_show(PAGE - 1), PAGE);
+        assert_eq!(limit_to_show(PAGE), PAGE * 2);
     }
-    if !rec.keywords.is_empty() {
-        fields.push(field("Keywords", join(&rec.keywords)));
+
+    #[test]
+    fn facts_skip_missing_fields() {
+        let mut r = rec("a", RecommendationStatus::Watched);
+        assert!(rec_facts(&r).is_empty());
+        r.runtime_minutes = Some(125.0);
+        r.creators = vec!["Ann".into()];
+        assert_eq!(
+            rec_facts(&r),
+            vec![
+                ("Runtime", "2h 5m".to_owned()),
+                ("Directed by", "Ann".to_owned())
+            ]
+        );
     }
-    if let Some(source) = rec.source.clone().filter(|s| !s.is_empty()) {
-        fields.push(field("Source", source));
-    }
-    if let Some(confidence) = rec.confidence {
-        fields.push(field(
-            "Confidence",
-            format!("{}%", number_string(js_round(confidence * 100.0))),
-        ));
-    }
-    fields
 }

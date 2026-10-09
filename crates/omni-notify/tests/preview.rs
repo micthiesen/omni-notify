@@ -23,7 +23,9 @@ async fn seeds_typed_fixture_data_the_routes_serve() {
     let (status, snapshot) = app.get_json(&router, "/api/snapshot").await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(snapshot["tasks"].as_array().unwrap().len(), 6);
-    assert_eq!(snapshot["runs"].as_array().unwrap().len(), 17);
+    let runs = snapshot["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 18);
+    assert!(runs.iter().any(|run| run["status"] == "degraded"));
     assert_eq!(snapshot["onDeck"].as_array().unwrap().len(), 3);
     let (_, recs) = app.get_json(&router, "/api/recommendations").await;
     assert_eq!(recs["recommendations"].as_array().unwrap().len(), 4);

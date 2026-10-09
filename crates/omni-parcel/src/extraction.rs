@@ -9,6 +9,7 @@ use omni_ai::{Ai, AiError, CostTag, GenerateRequest, ModelRole};
 use omni_config::Config;
 use omni_core::js::{json_stringify_pretty2, utf16_len, utf16_slice};
 use omni_email::activity::LlmCost;
+use omni_email::systemic::{FailureClass, classify_ai_error};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -166,7 +167,13 @@ impl ModelExtractor {
         let model = self
             .ai
             .model_for(&self.config, ModelRole::Extraction)
-            .map_err(transient)?;
+            .map_err(|error| match classify_ai_error(&error) {
+                FailureClass::Systemic(signature) => ParcelError::SystemicExtraction {
+                    message: error.to_string(),
+                    signature,
+                },
+                FailureClass::Content | FailureClass::Transient => transient(error),
+            })?;
         let (decoded, usage) = self
             .ai
             .generate_object::<DeliveryExtraction>(
@@ -175,13 +182,22 @@ impl ModelExtractor {
                 CostTag::for_role(ModelRole::Extraction),
             )
             .await
-            .map_err(|error| match error {
-                // The output did not match the schema: replaying will not help.
-                AiError::Schema(message) => ParcelError::Extraction {
-                    message,
-                    transient: false,
+            .map_err(|error| match classify_ai_error(&error) {
+                FailureClass::Systemic(signature) => ParcelError::SystemicExtraction {
+                    message: match error {
+                        AiError::Schema(message) => message,
+                        other => other.to_string(),
+                    },
+                    signature,
                 },
-                other => transient(other),
+                // The output did not match the schema: replaying will not help.
+                FailureClass::Content | FailureClass::Transient => match error {
+                    AiError::Schema(message) => ParcelError::Extraction {
+                        message,
+                        transient: false,
+                    },
+                    other => transient(other),
+                },
             })?;
         decoded
             .validate()

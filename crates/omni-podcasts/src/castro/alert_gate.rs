@@ -12,28 +12,18 @@
 use futures::future::BoxFuture;
 use omni_alerts::AlertGate;
 use omni_store::Store;
+use omni_tasks::TaskRunData;
+use omni_tasks::health::PERSISTENT_FAILURE;
 use omni_tasks::persistence::{self, KEEP_PER_TASK};
-use omni_tasks::{TaskRunData, TaskRunStatus};
 
 use super::cleanup::TASK_NAME;
 
-const MIN_FAILURE_SPAN_MS: i64 = 12 * 60 * 60_000;
-/// Cron jitter around the twelve-hour boundary.
-const JITTER_MS: i64 = 5 * 60_000;
-const MIN_CONSECUTIVE_FAILURES: usize = 3;
-
-/// History is newest first; the leading run of `error` statuses is the streak.
+/// History is newest first; the leading run of bad statuses is the streak,
+/// judged by the shared [`PERSISTENT_FAILURE`] rule (three runs spanning
+/// twelve hours, less five minutes of jitter). Cleanup never reports a
+/// degraded run, so its streaks are failed runs.
 pub fn has_persistent_castro_failure(runs: &[TaskRunData]) -> bool {
-    let failures: Vec<&TaskRunData> = runs
-        .iter()
-        .take_while(|run| run.status == TaskRunStatus::Error)
-        .collect();
-    match (failures.first(), failures.last()) {
-        (Some(newest), Some(oldest)) if failures.len() >= MIN_CONSECUTIVE_FAILURES => {
-            newest.started_at - oldest.started_at >= MIN_FAILURE_SPAN_MS - JITTER_MS
-        }
-        _ => false,
-    }
+    PERSISTENT_FAILURE.is_persistent(runs)
 }
 
 /// The client error logged when clearing one Inbox episode fails.

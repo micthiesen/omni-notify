@@ -122,10 +122,7 @@ struct Attempt {
 }
 
 fn extraction_error(error: &AiError) -> CalendarExtractionError {
-    CalendarExtractionError {
-        cause: error.to_string(),
-        transient: true,
-    }
+    CalendarExtractionError::from_ai(error)
 }
 
 async fn run_once(
@@ -204,7 +201,8 @@ fn add_cost(a: Option<f64>, b: Option<f64>) -> Option<f64> {
 
 /// Extracts calendar events from an email. A degenerate first answer gets one
 /// fresh retry; the cleaner of the two wins and both calls count toward cost.
-/// Model failures are transient (the email is queued for retry).
+/// Model failures are transient (the email is queued for retry) unless the
+/// request itself was rejected, which is systemic.
 pub async fn extract_calendar_events(
     ai: &Ai,
     model: &dyn LanguageModel,

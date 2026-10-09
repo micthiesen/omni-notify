@@ -31,7 +31,8 @@ from Boris. No DNS configuration was changed.
 The 48-hour event lookback applies on every run, including startup, so enabling
 the task does not replay old announcements or still-redeemable banked grants.
 Catalog edit dates are not a polling heartbeat: a quiet feed remains usable.
-Each run logs fetch time, catalog update date, event count, and newest event.
+Each run logs fetch time, catalog update date, event count, and newest event,
+at INFO only when they change and at debug otherwise.
 HTTP or schema errors fail the task visibly rather than masquerading as no news.
 
 Both providers use `omni-personal`'s `reset_alerts` module for bounded HTTP/JSON/schema reads,

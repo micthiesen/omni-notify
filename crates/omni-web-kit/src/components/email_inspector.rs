@@ -1,19 +1,27 @@
-//! Email processing logs plus actions: reprocess, feedback, block sender and
-//! per-item parcel "forget".
+//! The email inspector: processing logs plus actions (reprocess, feedback,
+//! block sender, per-item parcel "forget"). Destructive actions use
+//! [`ConfirmButton`] instead of `window.confirm()`.
 
 use std::collections::HashSet;
 
 use leptos::prelude::*;
 use omni_api::email::{
-    AdmitTier, BuiltinRules, EmailActivity, EmailFeedback, EmailFeedbackVerdict, EmailPipelineName,
-    EmailRule, EmailRuleInput, RuleScope, RuleUpsertStatus, RuleVerdict,
+    AdmitTier, BuiltinRules, EmailActivity, EmailActivityOutcome, EmailFeedback,
+    EmailFeedbackVerdict, EmailPipelineName, EmailRule, EmailRuleInput, RuleScope,
+    RuleUpsertStatus, RuleVerdict,
 };
 use omni_api::runs::RunLogLine;
 
+use super::badges::{Status, Tag};
+use super::button::{Button, ButtonSize, ButtonVariant, ConfirmButton};
+use super::controls::Chip;
+use super::icon::Icon;
+use super::inspector::Inspector;
 use super::log_viewer::LogLines;
-use super::toast::{Toast, ToastKind, use_toast};
+use super::states::{ErrorState, InlineNote, SkeletonRows};
+use super::toast::{ToastKind, use_toast};
+use super::tone::{StatusKind, Tone};
 use crate::api;
-use crate::hooks::use_modal;
 use crate::task::{spawn_detached, spawn_scoped};
 use crate::utils::email_labels::{outcome_label, pipeline_label};
 use crate::utils::format::{format_absolute, format_cents};
@@ -77,19 +85,29 @@ pub fn extract_sender_email(from: &str) -> String {
     inner.trim().to_lowercase()
 }
 
+/// Status shape of an email outcome.
+pub fn outcome_kind(outcome: EmailActivityOutcome) -> StatusKind {
+    match outcome {
+        EmailActivityOutcome::Processed => StatusKind::Ok,
+        EmailActivityOutcome::Partial => StatusKind::Warn,
+        EmailActivityOutcome::Failed | EmailActivityOutcome::Error => StatusKind::Fault,
+        EmailActivityOutcome::Filtered
+        | EmailActivityOutcome::Skipped
+        | EmailActivityOutcome::NoMatches => StatusKind::Idle,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Coverage {
     Rule,
     Builtin,
 }
 
-fn confirm(message: &str) -> bool {
-    window().confirm_with_message(message).unwrap_or(false)
-}
-
+/// Drawer (or docked pane) for one email activity.
 #[component]
-pub fn EmailLogModal(
+pub fn EmailInspector(
     activity: EmailActivity,
+    #[prop(into, optional)] docked: Signal<bool>,
     #[prop(optional)] feedback: Option<EmailFeedback>,
     #[prop(optional)] on_activity_change: Option<Callback<EmailActivity>>,
     #[prop(optional)] on_feedback_change: Option<Callback<(String, Option<EmailFeedback>)>>,
@@ -130,8 +148,6 @@ pub fn EmailLogModal(
             }
         });
     });
-
-    let modal_ref = use_modal(move || on_close.run(()));
 
     // Sender-rule coverage is decorative: the block button works without it.
     spawn_scoped(async move {
@@ -189,7 +205,7 @@ pub fn EmailLogModal(
         by_builtin.then_some(Coverage::Builtin)
     });
 
-    let handle_reprocess = move |_| {
+    let handle_reprocess = move || {
         if reprocessing.get_untracked() {
             return;
         }
@@ -239,7 +255,7 @@ pub fn EmailLogModal(
         });
     };
 
-    let handle_block = move |_| {
+    let handle_block = move || {
         if blocking.get_untracked() {
             return;
         }
@@ -251,16 +267,6 @@ pub fn EmailLogModal(
             at_domain
         };
         let scope = block_scope_value.get_untracked();
-        let scope_label = if scope == RuleScope::Both {
-            "Parcels & Calendar"
-        } else {
-            pipeline_label(current.with_untracked(|a| a.pipeline))
-        };
-        if !confirm(&format!(
-            "Block {pattern} for {scope_label}? Future emails from this sender will be filtered."
-        )) {
-            return;
-        }
         blocking.set(true);
         action_error.set(None);
         spawn_detached(async move {
@@ -307,11 +313,6 @@ pub fn EmailLogModal(
         if forgetting.with_untracked(Option::is_some) {
             return;
         }
-        if !confirm(&format!(
-            "Forget tracking number {tracking_number}? A future email will be able to resubmit it."
-        )) {
-            return;
-        }
         forgetting.set(Some(tracking_number.clone()));
         action_error.set(None);
         spawn_detached(async move {
@@ -325,45 +326,74 @@ pub fn EmailLogModal(
         });
     };
 
-    let header = move || {
+    let block_pattern = move || {
+        let at_domain = sender_at_domain.get();
+        if block_exact.get() || at_domain.is_empty() {
+            sender_email.get()
+        } else {
+            at_domain
+        }
+    };
+    let title = Signal::derive(move || {
+        current.with(|a| {
+            if a.subject.is_empty() {
+                "(no subject)".to_owned()
+            } else {
+                a.subject.clone()
+            }
+        })
+    });
+    let status = ViewFn::from(move || {
+        let a = current.get();
+        view! {
+            <Status kind=outcome_kind(a.outcome) label=outcome_label(a.outcome)/>
+            <Tag>{pipeline_label(a.pipeline)}</Tag>
+            {a.admit_tier.map(|tier| view! { <Tag title="Admitted by">{admit_tier_label(tier)}</Tag> })}
+        }
+    });
+    let actions = ViewFn::from(move || {
+        view! {
+            <Button
+                size=ButtonSize::Sm
+                icon=Icon::Refresh
+                busy=reprocessing
+                on_click=Callback::new(move |_| handle_reprocess())
+            >
+                {move || if reprocessing.get() { "Reprocessing" } else { "Reprocess" }}
+            </Button>
+            {move || {
+                let p = pipeline();
+                [EmailFeedbackVerdict::NotRelevant, EmailFeedbackVerdict::Missed]
+                    .into_iter()
+                    .map(|verdict| view! {
+                        <Chip
+                            pressed=Signal::derive(move || fb.with(|f| f.as_ref().map(|f| f.verdict)) == Some(verdict))
+                            on_click=Callback::new(move |()| handle_feedback(verdict))
+                            title="Feedback for the triage model"
+                        >
+                            {feedback_label(p, verdict)}
+                        </Chip>
+                    })
+                    .collect_view()
+            }}
+        }
+    });
+    let meta = move || {
         let a = current.get();
         let cost = a
             .cost_cents
             .filter(|c| *c > 0.0)
             .and_then(|c| format_cents(Some(c)));
         view! {
-            <div class="log-modal-title">
-                <span class=format!("mail-outcome mail-outcome-{}", a.outcome.as_str())>
-                    {outcome_label(a.outcome)}
-                </span>
-                <span class="log-modal-task email-log-subject">
-                    {if a.subject.is_empty() { "(no subject)".to_owned() } else { a.subject.clone() }}
-                </span>
-            </div>
-            <div class="log-modal-meta meta-row muted">
-                <span>{pipeline_label(a.pipeline)}</span>
-                <span class="email-log-from">{a.from.clone()}</span>
-                <span>{format_absolute(a.processed_at as f64)}</span>
-                {a.admit_tier.map(|tier| {
-                    view! {
-                        <span class=format!("email-tier email-tier-{}", tier.as_str())>
-                            {admit_tier_label(tier)}
-                        </span>
-                    }
-                })}
-                {cost.map(|cost| {
-                    view! { <span class="email-cost" title="LLM cost for this email">{cost}</span> }
-                })}
-            </div>
-        }
-    };
-    let details = move || {
-        let a = current.get();
-        view! {
-            {a.detail.filter(|d| !d.is_empty()).map(|d| view! { <div class="muted log-modal-error">{d}</div> })}
-            {a.admit_reason.filter(|r| !r.is_empty()).map(|r| {
-                view! { <div class="muted email-admit-line">"Admitted: " {r}</div> }
-            })}
+            <dl class="kv">
+                <dt>"From"</dt>
+                <dd class="truncate" title=a.from.clone()>{a.from.clone()}</dd>
+                <dt>"Processed"</dt>
+                <dd class="num">{format_absolute(a.processed_at as f64)}</dd>
+                {cost.map(|cost| view! { <dt>"LLM cost"</dt><dd class="num">{cost}</dd> })}
+                {a.admit_reason.filter(|r| !r.is_empty()).map(|r| view! { <dt>"Admitted"</dt><dd>{r}</dd> })}
+            </dl>
+            {a.detail.filter(|d| !d.is_empty()).map(|d| view! { <InlineNote tone=Tone::Warn>{d}</InlineNote> })}
         }
     };
     let items = move || {
@@ -380,192 +410,134 @@ pub fn EmailLogModal(
                             .as_ref()
                             .is_some_and(|t| forgotten.with(|f| f.contains(t)));
                         let button = tracking.clone().filter(|_| !is_forgotten).map(|number| {
-                            let label_number = number.clone();
+                            let busy_number = number.clone();
                             view! {
-                                <button
-                                    type="button"
-                                    class="email-item-forget"
-                                    disabled=move || forgetting.with(Option::is_some)
-                                    on:click=move |_| handle_forget(number.clone())
-                                >
-                                    {move || {
-                                        if forgetting.get().as_ref() == Some(&label_number) {
-                                            "Forgetting…"
-                                        } else {
-                                            "Forget"
-                                        }
-                                    }}
-                                </button>
+                                <ConfirmButton
+                                    label="Forget"
+                                    confirm_label="Forget number"
+                                    variant=ButtonVariant::Ghost
+                                    size=ButtonSize::Sm
+                                    title="A future email will be able to resubmit it"
+                                    busy=Signal::derive(move || forgetting.get().as_ref() == Some(&busy_number))
+                                    disabled=Signal::derive(move || forgetting.with(Option::is_some))
+                                    disabled_reason="Another number is being forgotten"
+                                    on_confirm=Callback::new(move |()| handle_forget(number.clone()))
+                                />
                             }
                         });
                         view! {
-                            <span class=is_forgotten.then_some("email-item-forgotten")>{item.clone()}</span>
-                            {is_forgotten.then(|| view! { <span class="email-item-note muted">"Forgotten"</span> })}
-                            {button}
+                            <span class=if is_forgotten { "row-main off" } else { "row-main" }>
+                                <span class="row-title mono">{item.clone()}</span>
+                            </span>
+                            <span class="row-end">
+                                {is_forgotten.then(|| view! { <span class="small dim">"Forgotten"</span> })}
+                                {button}
+                            </span>
                         }
                     };
-                    view! { <li>{row}</li> }
+                    view! { <div class="row dense">{row}</div> }
                 })
                 .collect_view();
-            view! { <ul class="email-modal-items">{rows}</ul> }
-        })
-    };
-    let feedback_buttons = move || {
-        let p = pipeline();
-        [
-            EmailFeedbackVerdict::NotRelevant,
-            EmailFeedbackVerdict::Missed,
-        ]
-        .into_iter()
-        .map(|verdict| {
             view! {
-                <button
-                    type="button"
-                    class=move || {
-                        let active = fb.with(|f| f.as_ref().map(|f| f.verdict)) == Some(verdict);
-                        format!("chip-btn {}", if active { "active" } else { "" })
-                    }
-                    disabled=move || fb_busy.get()
-                    on:click=move |_| handle_feedback(verdict)
-                >
-                    {feedback_label(p, verdict)}
-                </button>
+                <section class="inspector-section">
+                    <h3 class="label">"Items"</h3>
+                    <div class="rows">{rows}</div>
+                </section>
             }
         })
-        .collect_view()
     };
     let block_controls = move || match coverage.get() {
-        Some(Coverage::Rule) => view! {
-            <span class="email-rule-status email-rule-status-rule">"Sender Blocked"</span>
+        Some(Coverage::Rule) => {
+            view! { <Status kind=StatusKind::Ok label="Sender blocked"/> }.into_any()
         }
-        .into_any(),
-        Some(Coverage::Builtin) => view! {
-            <span class="email-rule-status email-rule-status-builtin">"Blocked by Built-in"</span>
+        Some(Coverage::Builtin) => {
+            view! { <Status kind=StatusKind::Idle label="Blocked by a built-in list"/> }.into_any()
         }
-        .into_any(),
         None => {
             let p = pipeline();
             let scope = block_scope(p);
             view! {
-                <select
-                    class="email-block-scope"
-                    prop:value=move || block_scope_value.get().as_str()
-                    on:change=move |ev| {
-                        let value = event_target_value(&ev);
-                        block_scope_value.set(if value == "both" { RuleScope::Both } else { scope });
-                    }
-                    disabled=move || blocking.get()
-                    aria-label="Block scope"
-                >
-                    <option value="both">"Both Pipelines"</option>
-                    <option value=scope.as_str()>{format!("{} Only", pipeline_label(p))}</option>
-                </select>
-                <label class="email-block-exact">
-                    <input
-                        type="checkbox"
-                        prop:checked=move || block_exact.get()
+                <div class="toolbar">
+                    <select
+                        class="select"
+                        prop:value=move || block_scope_value.get().as_str()
+                        on:change=move |ev| {
+                            let value = event_target_value(&ev);
+                            block_scope_value.set(if value == "both" { RuleScope::Both } else { scope });
+                        }
                         disabled=move || blocking.get()
-                        on:change=move |ev| block_exact.set(event_target_checked(&ev))
-                    />
-                    "Exact Address Only"
-                </label>
-                <button
-                    type="button"
-                    class="email-block-btn"
-                    disabled=move || blocking.get()
-                    on:click=handle_block
-                >
-                    {move || if blocking.get() { "Blocking…" } else { "Block Sender" }}
-                </button>
+                        aria-label="Block scope"
+                    >
+                        <option value="both">"Both pipelines"</option>
+                        <option value=scope.as_str()>{format!("{} only", pipeline_label(p))}</option>
+                    </select>
+                    <label class="checkbox">
+                        <input
+                            type="checkbox"
+                            prop:checked=move || block_exact.get()
+                            disabled=move || blocking.get()
+                            on:change=move |ev| block_exact.set(event_target_checked(&ev))
+                        />
+                        "Exact address only"
+                    </label>
+                </div>
+                <ConfirmButton
+                    label=Signal::derive(move || format!("Block {}", block_pattern()))
+                    confirm_label="Confirm block"
+                    variant=ButtonVariant::Danger
+                    size=ButtonSize::Sm
+                    busy=blocking
+                    title="Future emails from this sender will be filtered"
+                    on_confirm=Callback::new(move |()| handle_block())
+                />
             }
             .into_any()
         }
     };
-    let body = move || {
+    let logs = move || {
         if let Some(err) = error.get() {
-            return view! { <div class="error-inline">"Failed to load logs: " {err}</div> }
-                .into_any();
+            return view! {
+                <ErrorState
+                    title="Could not load the processing log"
+                    raw=err
+                    retry=Callback::new(move |()| logs_version.update(|v| *v += 1))
+                />
+            }
+            .into_any();
         }
         match lines.get() {
-            None => view! { <div class="loading-inline">"Loading logs…"</div> }.into_any(),
+            None => view! { <SkeletonRows count=4 label="Loading log"/> }.into_any(),
             Some(l) if l.is_empty() => view! {
-                <div class="muted log-empty">
-                    "No processing logs for this email — it never reached extraction."
+                <p class="log-note">"No processing log: this email never reached extraction."</p>
+            }
+            .into_any(),
+            Some(l) => view! {
+                <div class="logwell bounded" role="log">
+                    {move || {
+                        let dropped = dropped.get();
+                        (dropped > 0).then(|| view! { <p class="log-note warn">{format!("{dropped} oldest lines were dropped.")}</p> })
+                    }}
+                    <LogLines lines=Signal::stored(l)/>
                 </div>
             }
             .into_any(),
-            Some(l) => view! { <LogLines lines=Signal::stored(l)/> }.into_any(),
         }
     };
 
     view! {
-        <div class="modal-root">
-            <button
-                type="button"
-                class="modal-backdrop"
-                tabindex="-1"
-                on:click=move |_| on_close.run(())
-                aria-label="Close log viewer"
-            ></button>
-            <div
-                class="log-modal"
-                node_ref=modal_ref
-                tabindex="-1"
-                aria-modal="true"
-                role="dialog"
-                aria-label=move || {
-                    let subject = current.with(|a| a.subject.clone());
-                    format!("Logs for {}", if subject.is_empty() { "email".to_owned() } else { subject })
-                }
-            >
-                <Toast toast=toast.toast/>
-                <div class="log-modal-header">
-                    {header}
-                    <button
-                        type="button"
-                        class="log-modal-close"
-                        on:click=move |_| on_close.run(())
-                        aria-label="Close"
-                    >
-                        "✕"
-                    </button>
-                </div>
-                {details}
-                {items}
-                <div class="email-actions">
-                    <button
-                        type="button"
-                        class="run-btn"
-                        disabled=move || reprocessing.get()
-                        on:click=handle_reprocess
-                    >
-                        {move || {
-                            reprocessing.get().then(|| view! { <span class="spinner" aria-hidden="true"></span> })
-                        }}
-                        {move || if reprocessing.get() { "Reprocessing…" } else { "Reprocess" }}
-                    </button>
-                    {feedback_buttons}
-                    {block_controls}
-                </div>
-                {move || {
-                    action_error
-                        .get()
-                        .map(|e| view! { <div class="email-action-error error-inline">{e}</div> })
-                }}
-                <div class="log-modal-body">{body}</div>
-                {move || {
-                    let dropped = dropped.get();
-                    (dropped > 0)
-                        .then(|| {
-                            view! {
-                                <div class="log-modal-footer muted">
-                                    {format!("{dropped} oldest lines dropped")}
-                                </div>
-                            }
-                        })
-                }}
-            </div>
-        </div>
+        <Inspector title status actions on_close docked>
+            {move || action_error.get().map(|e| view! { <ErrorState title="That action failed" detail=e/> })}
+            <section class="inspector-section">{meta}</section>
+            {items}
+            <section class="inspector-section">
+                <h3 class="label">"Sender"</h3>
+                {block_controls}
+            </section>
+            <section class="inspector-section">
+                <h3 class="label">"Processing log"</h3>
+                {logs}
+            </section>
+        </Inspector>
     }
 }
 

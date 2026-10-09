@@ -3,12 +3,14 @@
 //! capture.
 
 use futures::future::BoxFuture;
+use omni_alerts::Pushover;
 use omni_core::email::FetchedEmail;
 use omni_email::activity::{
     self, ActivityEmail, AdmitTier as EmailAdmitTier, EmailActivityOutcome, EmailPipelineName,
     LlmCost, NewActivity,
 };
 use omni_email::sender_rules::{self, RuleTarget};
+use omni_email::systemic::{Signature, SystemicReporter};
 use omni_email::triage::{EmailTriage, TriageEmail};
 use omni_email::{activity_logs, retry};
 use omni_store::Store;
@@ -25,13 +27,15 @@ pub struct OmniEmailSupport {
     store: Store,
     run_logs: RunLogs,
     triage: EmailTriage,
+    systemic: SystemicReporter,
 }
 
 impl OmniEmailSupport {
     /// `triage` must be the instance shared with the parcel pipeline so one
     /// email is classified once.
-    pub fn new(store: Store, run_logs: RunLogs, triage: EmailTriage) -> Self {
+    pub fn new(store: Store, run_logs: RunLogs, triage: EmailTriage, pushover: Pushover) -> Self {
         Self {
+            systemic: SystemicReporter::new(store.clone(), pushover),
             store,
             run_logs,
             triage,
@@ -156,6 +160,21 @@ impl EmailSupport for OmniEmailSupport {
                 .await
                 .map(drop)
                 .map_err(store_error("enqueue calendar email retry"))
+        })
+    }
+
+    fn report_systemic<'a>(
+        &'a self,
+        pipeline: &'static str,
+        email_id: &'a str,
+        reason: &'a str,
+        signature: &'a Signature,
+    ) -> BoxFuture<'a, Result<(), SupportError>> {
+        Box::pin(async move {
+            self.systemic
+                .report(pipeline, email_id, reason, signature)
+                .await
+                .map_err(store_error("park calendar email for replay"))
         })
     }
 

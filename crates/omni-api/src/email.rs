@@ -356,3 +356,45 @@ pub mod paths {
         )
     }
 }
+
+/// A queued email retry (`EmailRetryData`). `awaitingBuild` is set while a
+/// systemically failed email waits for a different build to replay it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailRetry {
+    pub retry_key: String,
+    pub pipeline: String,
+    pub email_id: String,
+    pub reason: String,
+    pub attempts: i64,
+    pub next_attempt_at: Ms,
+    pub created_at: Ms,
+    pub awaiting_build: Option<String>,
+    /// The systemic failure's signature key.
+    pub signature: Option<String>,
+}
+
+/// One systemic extraction failure signature (`EmailSystemicAlertData`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailFailureSignature {
+    pub pipeline: String,
+    pub signature: String,
+    pub summary: String,
+    /// The build the latest failure ran under.
+    pub build: String,
+    pub failures: i64,
+    pub first_seen_at: Ms,
+    pub last_seen_at: Ms,
+    pub last_alerted_at: Ms,
+}
+
+/// `GET /api/email-retries`: the retry queue, newest signature first.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmailRetriesResponse {
+    /// The running build, as recorded on parked rows.
+    pub current_build: String,
+    pub retries: Vec<EmailRetry>,
+    pub signatures: Vec<EmailFailureSignature>,
+}

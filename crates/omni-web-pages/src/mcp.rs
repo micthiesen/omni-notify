@@ -1,7 +1,7 @@
-//! MCP tool-call activity: visibility-aware 10 s polling,
-//! status/tool filters and "Load Older" paging.
+//! MCP tool-call activity: visibility-aware 10 s polling, a tools table,
+//! status/tool filters, "Load older" paging and a call inspector.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use leptos::prelude::*;
@@ -9,16 +9,18 @@ use omni_api::mcp_activity::{
     McpActivityResponse, McpActivitySummary, McpCall, McpCallStatus, McpToolSummary,
 };
 use omni_web_kit::api::{self, ApiClientError};
-use omni_web_kit::components::mcp_badges::policy_str;
-use omni_web_kit::components::{CallStatusPill, PolicyBadge};
-use omni_web_kit::hooks::{use_now, use_visible_poll};
+use omni_web_kit::components::mcp_badges::{call_status_kind, policy_str};
+use omni_web_kit::components::{
+    Button, ButtonLink, ButtonSize, ButtonVariant, CallStatusPill, CellKind, EmptyState,
+    ErrorState, Icon, InlineNote, Inspector, PageHead, Panel, PolicyBadge, Readout, ReadoutBand,
+    RunCell, RunStrip, SegOption, Segmented, SkeletonRows, Status, StatusKind, Tone,
+};
+use omni_web_kit::hooks::{use_is_wide, use_now, use_visible_poll};
 use omni_web_kit::router::Link;
 use omni_web_kit::task::{TaskHandle, spawn_detached};
 use omni_web_kit::utils::claude_activity::{format_json, is_claude_tool};
 use omni_web_kit::utils::format::{format_absolute, format_duration, format_relative_at};
 use omni_web_kit::utils::js::{js_round, locale_number, number_string};
-
-use crate::common::active_if;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum StatusFilter {
@@ -50,222 +52,14 @@ const STATUS_FILTERS: [(StatusFilter, &str); 3] = [
     (StatusFilter::Error, "Errors"),
     (StatusFilter::Running, "Running"),
 ];
+const STRIP: usize = 12;
 
-/// `errorMessage`: the error's message, else the fallback.
+/// The error's message, else the fallback.
 pub(crate) fn error_message(message: &str, fallback: &str) -> String {
     if message.is_empty() {
         fallback.to_owned()
     } else {
         message.to_owned()
-    }
-}
-
-fn stat_tiles(summary: McpActivitySummary) -> impl IntoView {
-    let tone = |on: bool, tone: &'static str| if on { tone } else { "" };
-    let tiles = [
-        ("Stored Calls", summary.stored, ""),
-        ("Last 24h", summary.last24h, ""),
-        (
-            "Errors 24h",
-            summary.errors24h,
-            tone(summary.errors24h > 0, "danger"),
-        ),
-        (
-            "Running",
-            summary.running,
-            tone(summary.running > 0, "accent"),
-        ),
-        (
-            "Approval Calls 24h",
-            summary.approval_calls24h,
-            tone(summary.approval_calls24h > 0, "warn"),
-        ),
-    ];
-    view! {
-        <div class="stat-strip">
-            {tiles
-                .into_iter()
-                .map(|(label, value, tone)| {
-                    view! {
-                        <div class=format!("stat-tile {tone}")>
-                            <span class="stat-label">{label}</span>
-                            <span class="stat-value">{locale_number(value as f64)}</span>
-                        </div>
-                    }
-                })
-                .collect_view()}
-        </div>
-    }
-}
-
-fn tool_card(
-    tool: McpToolSummary,
-    active_tool: RwSignal<String>,
-    now: ReadSignal<f64>,
-) -> impl IntoView {
-    let error_rate = if tool.calls > 0 {
-        tool.errors as f64 / tool.calls as f64
-    } else {
-        0.0
-    };
-    let name = tool.tool.clone();
-    let is_active = {
-        let name = name.clone();
-        move || active_tool.with(|t| *t == name)
-    };
-    let class_active = is_active.clone();
-    let pressed = is_active.clone();
-    let last_at = tool.last_at as f64;
-    view! {
-        <button
-            type="button"
-            class=move || format!("mcp-tool-card {}", active_if(class_active()))
-            aria-pressed=move || pressed().to_string()
-            on:click=move |_| active_tool.set(if is_active() { String::new() } else { name.clone() })
-        >
-            <span class="mcp-tool-card-head">
-                <span class="mcp-tool-title">{tool.title.clone()}</span>
-                <PolicyBadge policy=policy_str(tool.recommended_policy) />
-            </span>
-            <code class="mcp-tool-name">{tool.tool.clone()}</code>
-            <span class="mcp-tool-stats">
-                <span>
-                    <strong>{locale_number(tool.calls as f64)}</strong>
-                    " calls"
-                </span>
-                <span class=(tool.errors > 0).then_some("mcp-tool-errors")>
-                    <strong>{locale_number(tool.errors as f64)}</strong>
-                    " errors"
-                    {(tool.errors > 0)
-                        .then(|| format!(" ({}%)", number_string(js_round(error_rate * 100.0))))}
-                </span>
-                {tool
-                    .avg_duration_ms
-                    .map(|avg| view! { <span>{format!("avg {}", format_duration(avg as f64))}</span> })}
-            </span>
-            <span class="mcp-tool-last" title=format_absolute(last_at)>
-                {move || format!("Last used {}", format_relative_at(last_at, now.get()))}
-            </span>
-        </button>
-    }
-}
-
-fn status_str(status: McpCallStatus) -> &'static str {
-    match status {
-        McpCallStatus::Running => "running",
-        McpCallStatus::Ok => "ok",
-        McpCallStatus::Error => "error",
-        McpCallStatus::Interrupted => "interrupted",
-    }
-}
-
-fn call_details(call: &McpCall) -> impl IntoView + use<> {
-    let claude = is_claude_tool(&call.tool);
-    let has_output = !call.output.is_null();
-    view! {
-        <div class="mcp-call-details">
-            <div class="mcp-call-facts meta-row muted">
-                <span>{format_absolute(call.started_at as f64)}</span>
-                {call
-                    .finished_at
-                    .map(|f| view! { <span>{format!("finished {}", format_absolute(f as f64))}</span> })}
-                <span>{if call.read_only { "read-only" } else { "writes" }}</span>
-                <span class="mcp-call-id">{call.call_id.clone()}</span>
-            </div>
-            {call
-                .error
-                .clone()
-                .filter(|e| !e.is_empty())
-                .map(|e| {
-                    view! {
-                        <div class="mcp-detail-block">
-                            <div class="mcp-detail-label">"Error"</div>
-                            <pre class="mcp-json mcp-json-error">{e}</pre>
-                        </div>
-                    }
-                })}
-            <div class="mcp-detail-block">
-                <div class="mcp-detail-label">"Input"</div>
-                <pre class="mcp-json">{format_json(&call.input)}</pre>
-            </div>
-            {has_output
-                .then(|| {
-                    let output = format_json(&call.output);
-                    view! {
-                        <div class="mcp-detail-block">
-                            <div class="mcp-detail-label">"Output"</div>
-                            <pre class="mcp-json">{output}</pre>
-                        </div>
-                    }
-                })}
-            {claude.then(|| view! { <Link to="/claude" class="section-view-all">"View in Claude Code ›"</Link> })}
-        </div>
-    }
-}
-
-/// One call; its open state lives in `open_calls` so it survives polls.
-fn call_row(
-    call: McpCall,
-    open_calls: RwSignal<HashSet<String>>,
-    now: ReadSignal<f64>,
-) -> impl IntoView {
-    let id = call.call_id.clone();
-    let open = {
-        let id = id.clone();
-        Memo::new(move |_| open_calls.with(|set| set.contains(&id)))
-    };
-    let status = status_str(call.status);
-    let started = call.started_at as f64;
-    let duration_ms = call.duration_ms;
-    let running = call.status == McpCallStatus::Running;
-    let duration = move || match duration_ms {
-        Some(ms) => format_duration(ms as f64),
-        None if running => format_duration(now.get() - started),
-        None => "—".to_owned(),
-    };
-    let error_line = call.error.clone().filter(|e| !e.is_empty());
-    let detail_call = call.clone();
-    view! {
-        <li class=move || format!("mcp-call mcp-call-{status} {}", if open.get() { "open" } else { "" })>
-            <div class="mcp-call-head">
-                <button
-                    type="button"
-                    class="mcp-call-toggle"
-                    aria-expanded=move || open.get().to_string()
-                    on:click=move |_| {
-                        open_calls
-                            .update(|set| {
-                                if !set.remove(&id) {
-                                    set.insert(id.clone());
-                                }
-                            })
-                    }
-                >
-                    <span class="mcp-caret" aria-hidden="true">
-                        {move || if open.get() { "▾" } else { "▸" }}
-                    </span>
-                    <span class="mcp-call-main">
-                        <span class="mcp-call-title">{call.title.clone()}</span>
-                        <code class="mcp-tool-name">{call.tool.clone()}</code>
-                    </span>
-                    <span class="mcp-call-meta">
-                        <CallStatusPill status=call.status />
-                        <PolicyBadge policy=policy_str(call.recommended_policy) />
-                        <span class="mcp-call-duration">{duration}</span>
-                        <span class="mcp-call-time" title=format_absolute(started)>
-                            {move || format_relative_at(started, now.get())}
-                        </span>
-                    </span>
-                </button>
-            </div>
-            {move || {
-                error_line
-                    .clone()
-                    .filter(|_| !open.get())
-                    .map(|e| view! { <div class="mcp-call-error-line">{e}</div> })
-            }}
-            {move || open.get().then(|| call_details(&detail_call))}
-        </li>
     }
 }
 
@@ -278,9 +72,209 @@ pub(crate) fn merge_calls(head: &[McpCall], older: &[McpCall]) -> Vec<McpCall> {
         .collect()
 }
 
+fn cell_kind(status: McpCallStatus) -> CellKind {
+    match status {
+        McpCallStatus::Ok => CellKind::Ok,
+        McpCallStatus::Error => CellKind::Fault,
+        McpCallStatus::Running => CellKind::Running,
+        McpCallStatus::Interrupted => CellKind::Warn,
+    }
+}
+
+/// The newest `slots` outcomes per tool from newest-first calls, oldest first.
+pub(crate) fn recent_cells(calls: &[McpCall], slots: usize) -> HashMap<String, Vec<RunCell>> {
+    let mut by_tool: HashMap<String, Vec<RunCell>> = HashMap::new();
+    for call in calls {
+        let cells = by_tool.entry(call.tool.clone()).or_default();
+        if cells.len() < slots {
+            let duration = call
+                .duration_ms
+                .map(|d| format!(" · {}", format_duration(d as f64)))
+                .unwrap_or_default();
+            cells.push(RunCell {
+                kind: cell_kind(call.status),
+                title: format!("{}{duration}", format_absolute(call.started_at as f64)),
+            });
+        }
+    }
+    for cells in by_tool.values_mut() {
+        cells.reverse();
+    }
+    by_tool
+}
+
+fn duration_text(call: &McpCall, now: f64) -> String {
+    match call.duration_ms {
+        Some(ms) => format_duration(ms as f64),
+        None if call.status == McpCallStatus::Running => {
+            format_duration(now - call.started_at as f64)
+        }
+        None => "—".to_owned(),
+    }
+}
+
+#[component]
+fn ToolsTable(
+    tools: Memo<Vec<McpToolSummary>>,
+    strips: RwSignal<HashMap<String, Vec<RunCell>>>,
+    active_tool: RwSignal<String>,
+    now: ReadSignal<f64>,
+) -> impl IntoView {
+    let row = move |tool: McpToolSummary| {
+        let name = tool.tool.clone();
+        let selected = {
+            let name = name.clone();
+            Memo::new(move |_| active_tool.with(|t| *t == name))
+        };
+        let toggle = {
+            let name = name.clone();
+            move || {
+                active_tool.set(if selected.get_untracked() {
+                    String::new()
+                } else {
+                    name.clone()
+                })
+            }
+        };
+        let toggle_key = toggle.clone();
+        let rate = if tool.calls > 0 {
+            tool.errors as f64 / tool.calls as f64
+        } else {
+            0.0
+        };
+        let last_at = tool.last_at as f64;
+        let strip_name = name.clone();
+        let cells = Signal::derive(move || {
+            strips.with(|s| s.get(&strip_name).cloned().unwrap_or_default())
+        });
+        view! {
+            <tr
+                data-row="true"
+                tabindex="0"
+                class=move || if selected.get() { "clickable selected" } else { "clickable" }
+                aria-selected=move || selected.get().to_string()
+                title="Show only this tool's calls"
+                on:click=move |_| toggle()
+                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                    if ev.key() == "Enter" {
+                        toggle_key();
+                    }
+                }
+            >
+                <td class="grow">
+                    <div class="cell-two">
+                        <span class="truncate strong">{tool.title.clone()}</span>
+                        <span class="truncate mono small muted">{tool.tool.clone()}</span>
+                    </div>
+                </td>
+                <td class="numeric">{locale_number(tool.calls as f64)}</td>
+                <td class={if tool.errors > 0 { "numeric text-fault" } else { "numeric muted" }}>
+                    {locale_number(tool.errors as f64)}
+                    {(tool.errors > 0).then(|| view! { <span class="small">{format!(" {}%", number_string(js_round(rate * 100.0)))}</span> })}
+                </td>
+                <td class="numeric hide-below-desk">
+                    {tool.avg_duration_ms.map_or_else(|| "—".to_owned(), |avg| format_duration(avg as f64))}
+                </td>
+                <td class="hide-below-wide"><PolicyBadge policy=policy_str(tool.recommended_policy) /></td>
+                <td class="hide-below-wide">
+                    <RunStrip cells slots=STRIP label=format!("Recent {} outcomes", tool.title) />
+                </td>
+                <td class="numeric nowrap hide-below-desk" title=format_absolute(last_at)>
+                    {move || format_relative_at(last_at, now.get())}
+                </td>
+            </tr>
+        }
+    };
+    view! {
+        <div class="table-wrap">
+            <table class="table dense mcp-tools" data-primary-rows="true">
+                <thead>
+                    <tr>
+                        <th>"Tool"</th>
+                        <th class="numeric">"Calls"</th>
+                        <th class="numeric">"Errors"</th>
+                        <th class="numeric hide-below-desk">"Avg"</th>
+                        <th class="hide-below-wide">"Policy"</th>
+                        <th class="hide-below-wide">"Recent"</th>
+                        <th class="numeric hide-below-desk">"Last used"</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <For each=move || tools.get() key=|t| format!("{t:?}") children=row />
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+#[component]
+fn CallInspector(
+    call: Signal<McpCall>,
+    docked: Signal<bool>,
+    on_close: Callback<()>,
+) -> impl IntoView {
+    let title = Signal::derive(move || call.with(|c| c.title.clone()));
+    let now = use_now(1000);
+    view! {
+        <Inspector
+            title
+            docked
+            on_close
+            status=ViewFn::from(move || {
+                let status = call.with(|c| c.status);
+                view! { <CallStatusPill status /> }
+            })
+        >
+            {move || {
+                let c = call.get();
+                let claude = is_claude_tool(&c.tool);
+                let started = c.started_at as f64;
+                let running_call = c.clone();
+                view! {
+                    <section class="inspector-section">
+                        <dl class="kv">
+                            <dt>"Tool"</dt>
+                            <dd class="mono">{c.tool.clone()}</dd>
+                            <dt>"Started"</dt>
+                            <dd class="num">{format_absolute(started)}</dd>
+                            {c.finished_at.map(|f| view! { <dt>"Finished"</dt><dd class="num">{format_absolute(f as f64)}</dd> })}
+                            <dt>"Duration"</dt>
+                            <dd class="num">{move || duration_text(&running_call, now.get())}</dd>
+                            <dt>"Access"</dt>
+                            <dd>{if c.read_only { "Read-only" } else { "Writes" }}</dd>
+                            <dt>"Policy"</dt>
+                            <dd><PolicyBadge policy=policy_str(c.recommended_policy) /></dd>
+                            <dt>"Call id"</dt>
+                            <dd class="mono small">{c.call_id.clone()}</dd>
+                        </dl>
+                        {claude.then(|| view! { <Link to="/claude" class="textlink small">"View in Claude Code"</Link> })}
+                    </section>
+                    {c.error.clone().filter(|e| !e.is_empty()).map(|e| view! {
+                        <section class="inspector-section">
+                            <h3>"Error"</h3>
+                            <pre class="json-block mcp-error">{e}</pre>
+                        </section>
+                    })}
+                    <section class="inspector-section">
+                        <h3>"Input"</h3>
+                        <pre class="json-block">{format_json(&c.input)}</pre>
+                    </section>
+                    {(!c.output.is_null()).then(|| view! {
+                        <section class="inspector-section">
+                            <h3>"Output"</h3>
+                            <pre class="json-block">{format_json(&c.output)}</pre>
+                        </section>
+                    })}
+                }
+            }}
+        </Inspector>
+    }
+}
+
 #[component]
 pub fn McpPage() -> impl IntoView {
     let now = use_now(15_000);
+    let wide = use_is_wide();
     let status_filter = RwSignal::new(StatusFilter::All);
     let tool = RwSignal::new(String::new());
     let head = RwSignal::new(None::<McpActivityResponse>);
@@ -289,14 +283,15 @@ pub fn McpPage() -> impl IntoView {
     let head_key = RwSignal::new(String::new());
     let loading_older = RwSignal::new(false);
     let older_error = RwSignal::new(None::<String>);
-    let open_calls = RwSignal::new(HashSet::<String>::new());
+    let selected = RwSignal::new(None::<McpCall>);
+    let strips = RwSignal::new(HashMap::<String, Vec<RunCell>>::new());
     let cancel_older = StoredValue::new(None::<TaskHandle>);
 
     let filter_key = Memo::new(move |_| format!("{}:{}", status_filter.get().as_str(), tool.get()));
     let filter_status = move || status_filter.get_untracked().status();
     let filter_tool = move || Some(tool.get_untracked()).filter(|t| !t.is_empty());
 
-    use_visible_poll(
+    let reload = use_visible_poll(
         filter_key.into(),
         move || {
             let tool = filter_tool();
@@ -309,6 +304,10 @@ pub fn McpPage() -> impl IntoView {
             }
         },
         move |(key, response): (String, McpActivityResponse)| {
+            // Recent outcomes per tool come only from the unfiltered page.
+            if key == "all:" {
+                strips.set(recent_cells(&response.calls, STRIP));
+            }
             head.set(Some(response));
             head_key.set(key);
             error.set(None);
@@ -397,9 +396,15 @@ pub fn McpPage() -> impl IntoView {
         }
     });
 
+    let summary = Memo::new(move |_| head.with(|h| h.as_ref().map(|h| h.summary)));
+    let tools =
+        Memo::new(move |_| head.with(|h| h.as_ref().map(|h| h.tools.clone()).unwrap_or_default()));
+    let max_calls =
+        Memo::new(move |_| head.with(|h| h.as_ref().map_or(0, |h| h.retention.max_calls)));
+
     let tool_select = move || {
         let current = tool.get();
-        let options = head.with(|h| h.as_ref().map(|h| h.tools.clone()).unwrap_or_default());
+        let options = tools.get();
         let extra =
             (!current.is_empty() && !options.iter().any(|o| o.tool == current)).then(|| {
                 let value = current.clone();
@@ -407,7 +412,7 @@ pub fn McpPage() -> impl IntoView {
             });
         view! {
             <select
-                class="task-search mcp-tool-select"
+                class="select mcp-tool-select"
                 aria-label="Filter by tool"
                 on:change=move |event| tool.set(event_target_value(&event))
             >
@@ -419,7 +424,7 @@ pub fn McpPage() -> impl IntoView {
                         let selected = option.tool == current;
                         view! {
                             <option value=option.tool.clone() prop:selected=selected>
-                                {format!("{} ({})", option.title, option.tool)}
+                                {option.title.clone()}
                             </option>
                         }
                     })
@@ -428,145 +433,293 @@ pub fn McpPage() -> impl IntoView {
         }
     };
 
-    let summary = Memo::new(move |_| head.with(|h| h.as_ref().map(|h| h.summary)));
-    let tools =
-        Memo::new(move |_| head.with(|h| h.as_ref().map(|h| h.tools.clone()).unwrap_or_default()));
-    let max_calls =
-        Memo::new(move |_| head.with(|h| h.as_ref().map_or(0, |h| h.retention.max_calls)));
-    let body = move || {
+    let stat = move |pick: fn(&McpActivitySummary) -> u64| {
+        Signal::derive(move || summary.get().map_or(0, |s| pick(&s)))
+    };
+    let (last24h, stored, errors, approvals, running) = (
+        stat(|s| s.last24h),
+        stat(|s| s.stored),
+        stat(|s| s.errors24h),
+        stat(|s| s.approval_calls24h),
+        stat(|s| s.running),
+    );
+    let readouts = move || {
         view! {
-            {move || {
-                error
-                    .get()
-                    .map(|e| {
-                        view! {
-                            <div class="error-inline stale-note">
-                                {format!("Refresh failed ({e}), showing last known state.")}
-                            </div>
-                        }
-                    })
-            }}
-            {move || summary.get().map(stat_tiles)}
+            <ReadoutBand cols=4 aria_label="Last 24 hours">
+                <Readout label="Calls · 24h" value=Signal::derive(move || locale_number(last24h.get() as f64))>
+                    {move || format!("{} stored", locale_number(stored.get() as f64))}
+                </Readout>
+                <Readout
+                    label="Errors · 24h"
+                    value=Signal::derive(move || locale_number(errors.get() as f64))
+                    tone=Signal::derive(move || if errors.get() > 0 { Tone::Fault } else { Tone::Neutral })
+                />
+                <Readout label="Approvals · 24h" value=Signal::derive(move || locale_number(approvals.get() as f64))>
+                    "Calls under an approval policy"
+                </Readout>
+                <Readout
+                    label="Running"
+                    value=Signal::derive(move || locale_number(running.get() as f64))
+                    tone=Signal::derive(move || if running.get() > 0 { Tone::Signal } else { Tone::Neutral })
+                />
+            </ReadoutBand>
+        }
+    };
 
-            <section class="page-section">
-                <div class="section-heading-row">
-                    <h2 class="section-title">
-                        "Tools " <span class="section-count">{move || tools.with(Vec::len)}</span>
-                    </h2>
-                </div>
-                {move || {
-                    let tools = tools.get();
-                    if tools.is_empty() {
-                        view! { <div class="muted">"No tools called yet."</div> }.into_any()
-                    } else {
-                        view! {
-                            <div class="mcp-tool-grid">
-                                {tools.into_iter().map(|t| tool_card(t, tool, now)).collect_view()}
-                            </div>
-                        }
-                            .into_any()
+    let call_row = move |call: McpCall| {
+        let id = call.call_id.clone();
+        let is_selected = {
+            let id = id.clone();
+            Memo::new(move |_| selected.with(|s| s.as_ref().is_some_and(|s| s.call_id == id)))
+        };
+        let open = {
+            let call = call.clone();
+            move || selected.set(Some(call.clone()))
+        };
+        let open_key = open.clone();
+        let started = call.started_at as f64;
+        let kind = call_status_kind(call.status);
+        let duration_call = call.clone();
+        let error_line = call.error.clone().filter(|e| !e.is_empty());
+        view! {
+            <tr
+                data-row="true"
+                tabindex="0"
+                class=move || if is_selected.get() { "clickable selected" } else { "clickable" }
+                aria-selected=move || is_selected.get().to_string()
+                on:click=move |_| open()
+                on:keydown=move |ev: web_sys::KeyboardEvent| {
+                    if ev.key() == "Enter" {
+                        open_key();
                     }
-                }}
-            </section>
-
-            <section class="page-section">
-                <div class="section-heading-row">
-                    <h2 class="section-title">"Calls"</h2>
-                    <span class="muted mcp-retention">
-                        {move || format!("Keeps the latest {}", locale_number(max_calls.get() as f64))}
-                    </span>
-                </div>
-                <div class="task-toolbar">
-                    <div class="task-filters" role="group" aria-label="Call status">
-                        {STATUS_FILTERS
-                            .iter()
-                            .map(|(value, label)| {
-                                let value = *value;
-                                view! {
-                                    <button
-                                        type="button"
-                                        class=move || format!("chip-btn {}", active_if(status_filter.get() == value))
-                                        aria-pressed=move || (status_filter.get() == value).to_string()
-                                        on:click=move |_| status_filter.set(value)
-                                    >
-                                        {*label}
-                                    </button>
-                                }
-                            })
-                            .collect_view()}
+                }
+            >
+                <td class="cell-status">
+                    <Status kind=kind label=omni_web_kit::components::mcp_badges::call_status_str(call.status).to_owned() dot_only=kind == StatusKind::Ok />
+                </td>
+                <td class="grow">
+                    <div class="cell-two">
+                        <span class="truncate strong">{call.title.clone()}</span>
+                        {match error_line {
+                            Some(e) => view! { <span class="truncate small text-fault">{e}</span> }.into_any(),
+                            None => view! { <span class="truncate mono small muted">{call.tool.clone()}</span> }.into_any(),
+                        }}
                     </div>
+                </td>
+                <td class="hide-below-wide"><PolicyBadge policy=policy_str(call.recommended_policy) /></td>
+                <td class="numeric nowrap hide-below-desk">{move || duration_text(&duration_call, now.get())}</td>
+                <td class="numeric nowrap" title=format_absolute(started)>
+                    {move || format_relative_at(started, now.get())}
+                </td>
+            </tr>
+        }
+    };
+
+    let status_options = Signal::stored(
+        STATUS_FILTERS
+            .iter()
+            .map(|(value, label)| SegOption::new(*value, *label))
+            .collect::<Vec<_>>(),
+    );
+    let calls_panel = move || {
+        view! {
+            <Panel
+                title="Calls"
+                class="mcp-calls"
+                refreshing=Signal::derive(move || head.with(Option::is_some) && !calls_current.get())
+                head_end=ViewFn::from(move || view! {
+                    <span>{move || format!("Keeps the latest {}", locale_number(max_calls.get() as f64))}</span>
+                })
+            >
+                <div class="toolbar mcp-toolbar">
+                    <Segmented
+                        options=status_options
+                        value=status_filter
+                        on_change=Callback::new(move |v| status_filter.set(v))
+                        aria_label="Call status"
+                        small=true
+                    />
                     {tool_select}
+                    {move || {
+                        (!tool.with(String::is_empty))
+                            .then(|| view! {
+                                <Button variant=ButtonVariant::Ghost size=ButtonSize::Sm on_click=Callback::new(move |_| tool.set(String::new()))>
+                                    "Clear tool"
+                                </Button>
+                            })
+                    }}
                 </div>
                 {move || {
-                    if !calls_current.get() {
-                        view! { <div class="loading-inline">"Loading calls…"</div> }.into_any()
+                    if !calls_current.get() && calls.with(Vec::is_empty) {
+                        view! { <SkeletonRows count=8 label="Loading calls" /> }.into_any()
                     } else if calls.with(Vec::is_empty) {
-                        view! { <div class="muted">"No calls match this view."</div> }.into_any()
+                        view! {
+                            <EmptyState
+                                compact=true
+                                message="No calls in this view."
+                                action=ViewFn::from(move || view! {
+                                    <Button size=ButtonSize::Sm on_click=Callback::new(move |_| {
+                                        status_filter.set(StatusFilter::All);
+                                        tool.set(String::new());
+                                    })>
+                                        "Clear filters"
+                                    </Button>
+                                })
+                            />
+                        }
+                            .into_any()
                     } else {
                         view! {
-                            <ul class="mcp-call-list">
-                                <For
-                                    each=move || calls.get()
-                                    key=|call| format!("{}|{call:?}", call.call_id)
-                                    children=move |call| call_row(call, open_calls, now)
-                                />
-                            </ul>
+                            <div class="table-wrap">
+                                <table class="table dense mcp-call-table" data-primary-rows="true">
+                                    <thead>
+                                        <tr>
+                                            <th class="cell-status"><span class="sr-only">"Status"</span></th>
+                                            <th>"Call"</th>
+                                            <th class="hide-below-wide">"Policy"</th>
+                                            <th class="numeric hide-below-desk">"Duration"</th>
+                                            <th class="numeric">"Started"</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <For
+                                            each=move || calls.get()
+                                            key=|call| format!("{}|{call:?}", call.call_id)
+                                            children=call_row
+                                        />
+                                    </tbody>
+                                </table>
+                            </div>
                         }
                             .into_any()
                     }
                 }}
-                {move || older_error.get().map(|e| view! { <div class="error-inline">{e}</div> })}
+                {move || older_error.get().map(|e| view! { <div class="panel-body"><ErrorState title="Older calls could not load" raw=e /></div> })}
                 {move || {
                     next_before
                         .get()
                         .is_some()
                         .then(|| {
                             view! {
-                                <button
-                                    type="button"
-                                    class="show-more-btn"
-                                    on:click=load_older
-                                    disabled=move || loading_older.get()
-                                >
-                                    {move || if loading_older.get() { "Loading…" } else { "Load Older" }}
-                                </button>
+                                <div class="panel-foot mcp-older">
+                                    <Button
+                                        variant=ButtonVariant::Ghost
+                                        size=ButtonSize::Sm
+                                        busy=loading_older
+                                        on_click=Callback::new(load_older)
+                                    >
+                                        "Load older calls"
+                                    </Button>
+                                </div>
                             }
                         })
                 }}
-            </section>
+            </Panel>
         }
+    };
+
+    // The inspector follows the polled copy of the selected call.
+    let live_selected = Signal::derive(move || {
+        let chosen = selected.get()?;
+        Some(
+            calls
+                .with(|c| c.iter().find(|c| c.call_id == chosen.call_id).cloned())
+                .unwrap_or(chosen),
+        )
+    });
+    let inspector = move || {
+        live_selected.with(Option::is_some).then(|| {
+            view! {
+                <CallInspector
+                    call=Signal::derive(move || live_selected.get().unwrap_or_else(blank_call))
+                    docked=Signal::derive(move || wide.get())
+                    on_close=Callback::new(move |()| selected.set(None))
+                />
+            }
+        })
     };
 
     let has_head = Memo::new(move |_| head.with(Option::is_some));
     view! {
-        <div class="page-header">
-            <div class="page-header-stack">
-                <h1>"MCP Activity"</h1>
-                <p class="page-subtitle">
-                    "Every tool call agents made through Omni's MCP server. "
-                    <Link to="/claude" class="mcp-inline-link">"Claude Code actions ›"</Link>
-                </p>
-            </div>
-        </div>
-
+        <PageHead
+            title="MCP activity"
+            eyebrow="System"
+            lede="Every tool call agents made through Omni's MCP server."
+            actions=ViewFn::from(|| view! {
+                <ButtonLink to="/claude" icon=Icon::Terminal>"Claude Code"</ButtonLink>
+            })
+        />
         {move || {
-            (!has_head.get() && error.with(Option::is_none))
-                .then(|| view! { <div class="loading">"Loading…"</div> })
+            if has_head.get() {
+                return None;
+            }
+            Some(match error.get() {
+                Some(e) => view! {
+                    <ErrorState
+                        title="MCP activity could not load"
+                        raw=e
+                        retry=Callback::new(move |()| reload.run(()))
+                        page=true
+                    />
+                }
+                .into_any(),
+                None => view! { <SkeletonRows count=8 label="Loading MCP activity" /> }.into_any(),
+            })
         }}
         {move || {
-            error
+            has_head
                 .get()
-                .filter(|_| !has_head.get())
-                .map(|e| {
+                .then(|| {
                     view! {
-                        <div class="error">
-                            <div>"Failed to load MCP activity"</div>
-                            <div class="error-detail">{e}</div>
+                        {move || {
+                            error
+                                .get()
+                                .map(|e| view! {
+                                    <InlineNote tone=Tone::Warn role="status">
+                                        {format!("Refresh failed ({e}). Showing the last loaded state.")}
+                                    </InlineNote>
+                                })
+                        }}
+                        {readouts}
+                        <div class=move || if selected.with(Option::is_some) && wide.get() { "split docked mcp-layout" } else { "mcp-layout" }>
+                            <div class="stack-lg">
+                                <Panel
+                                    title="Tools"
+                                    head_end=ViewFn::from(move || view! { <span class="num">{move || tools.with(Vec::len)}</span> })
+                                >
+                                    {move || {
+                                        if tools.with(Vec::is_empty) {
+                                            view! { <EmptyState compact=true message="No tools called yet." /> }.into_any()
+                                        } else {
+                                            view! { <ToolsTable tools strips active_tool=tool now /> }.into_any()
+                                        }
+                                    }}
+                                </Panel>
+                                {calls_panel}
+                            </div>
+                            {inspector}
                         </div>
                     }
                 })
         }}
-        {move || has_head.get().then(body)}
+    }
+}
+
+/// Stand-in read once while the inspector unmounts; never shown.
+fn blank_call() -> McpCall {
+    McpCall {
+        call_id: String::new(),
+        tool: String::new(),
+        title: String::new(),
+        recommended_policy: omni_api::mcp_activity::RecommendedPolicy::Allow,
+        read_only: true,
+        started_at: 0,
+        finished_at: None,
+        duration_ms: None,
+        status: McpCallStatus::Ok,
+        error: None,
+        input: serde_json::Value::Null,
+        output: serde_json::Value::Null,
     }
 }
 
@@ -575,7 +728,8 @@ mod tests {
     use omni_api::mcp_activity::{McpCall, McpCallStatus, RecommendedPolicy};
     use serde_json::Value;
 
-    use super::{error_message, merge_calls};
+    use super::{error_message, merge_calls, recent_cells};
+    use omni_web_kit::components::CellKind;
 
     fn call(id: &str) -> McpCall {
         McpCall {
@@ -599,6 +753,18 @@ mod tests {
         let merged = merge_calls(&[call("a"), call("b")], &[call("b"), call("c")]);
         let ids: Vec<&str> = merged.iter().map(|c| c.call_id.as_str()).collect();
         assert_eq!(ids, ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn recent_cells_keep_the_newest_per_tool_oldest_first() {
+        let mut calls: Vec<McpCall> = (0..15).map(|i| call(&i.to_string())).collect();
+        calls[0].status = McpCallStatus::Error;
+        calls[14].tool = "other".into();
+        let cells = recent_cells(&calls, 12);
+        let mine = &cells["t"];
+        assert_eq!(mine.len(), 12);
+        assert_eq!(mine.last().map(|c| c.kind), Some(CellKind::Fault));
+        assert_eq!(cells["other"].len(), 1);
     }
 
     #[test]

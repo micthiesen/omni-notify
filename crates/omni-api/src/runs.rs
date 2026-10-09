@@ -25,6 +25,10 @@ pub enum RunStatus {
     Success,
     #[serde(rename = "error")]
     Error,
+    /// Completed but skipped its real work because an upstream failed;
+    /// `error` holds the reason.
+    #[serde(rename = "degraded")]
+    Degraded,
 }
 
 /// One task run; optional fields are explicit `null`s.
@@ -38,6 +42,7 @@ pub struct Run {
     pub started_at: Ms,
     pub finished_at: Option<Ms>,
     pub status: RunStatus,
+    /// The failure message, or the reason a `degraded` run skipped its work.
     pub error: Option<String>,
     pub summary: Option<String>,
 }

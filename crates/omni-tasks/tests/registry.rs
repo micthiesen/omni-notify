@@ -332,3 +332,57 @@ async fn shutdown_abandons_queued_runs_that_have_not_started() {
     h.tracker.wait().await;
     assert_eq!(task.runs(), 1);
 }
+
+#[tokio::test]
+async fn a_run_that_reports_degraded_is_recorded_as_degraded_with_its_reasons() {
+    let h = harness(TestClock::new(local_time(15, 10))).await;
+    let task = Arc::new(FakeTask::new("Skips", "0 0 5 * * *").behaving(|_| {
+        Box::pin(async {
+            omni_tasks::report_degraded("Plex offline");
+            futures::future::ready(()).await;
+            omni_tasks::report_degraded("selection returned an unknown candidate id");
+            Ok(())
+        })
+    }));
+    h.registry.track(task).unwrap();
+    let outcome = h.registry.run_now_and_wait("Skips", None).await.unwrap();
+    assert_eq!(outcome.run.status, TaskRunStatus::Degraded);
+    let last = persistence::get_last_run(&h.store, "Skips")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(last.status, TaskRunStatus::Degraded);
+    assert_eq!(
+        last.error.as_deref(),
+        Some("Plex offline; selection returned an unknown candidate id")
+    );
+    assert_eq!(
+        omni_api::runs::Run::from(&last).status,
+        omni_api::runs::RunStatus::Degraded
+    );
+}
+
+#[tokio::test]
+async fn a_failure_outranks_a_degraded_report_and_reports_never_leak_into_later_runs() {
+    let h = harness(TestClock::new(local_time(15, 10))).await;
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = calls.clone();
+    let task = Arc::new(FakeTask::new("Mixed", "0 0 5 * * *").behaving(move |_| {
+        let call = seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            if call == 0 {
+                omni_tasks::report_degraded("upstream down");
+                return Err(TaskError::new("then it failed"));
+            }
+            Ok(())
+        })
+    }));
+    h.registry.track(task).unwrap();
+    let first = h.registry.run_now_and_wait("Mixed", None).await;
+    assert!(
+        matches!(first, Err(RunNowError::RunFailed { ref message, .. }) if message == "then it failed")
+    );
+    let second = h.registry.run_now_and_wait("Mixed", None).await.unwrap();
+    assert_eq!(second.run.status, TaskRunStatus::Success);
+    assert_eq!(second.run.error, None);
+}

@@ -89,8 +89,6 @@ mod tests {
         }
     }
 
-    /// `effect.spec.ts`: "interrupts in-flight browser callback work when its
-    /// scope closes".
     #[test]
     fn interrupts_in_flight_callback_work_when_its_scope_closes() {
         let finalized = Rc::new(Cell::new(false));

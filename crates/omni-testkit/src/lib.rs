@@ -9,6 +9,10 @@
 //! `TestStore` and `TestApp` use the real `Store::open` and `Config::from_env`;
 //! setup failures panic with the step name.
 
+pub mod events;
+
+pub use events::RecordedEvents;
+
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

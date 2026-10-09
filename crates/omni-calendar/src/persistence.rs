@@ -107,6 +107,29 @@ impl CreatedCalendarEvent {
     }
 }
 
+impl CreatedCalendarEvent {
+    /// The event this row describes, as the pipeline last wrote it (the base
+    /// of a merge update).
+    pub fn to_event(&self) -> ExtractedEvent {
+        let mut event = ExtractedEvent::new(
+            crate::extraction::schema::EventAction::Create,
+            self.title.clone(),
+            self.start_date.clone(),
+            self.all_day.unwrap_or(self.start_time.is_none()),
+        );
+        event.start_time = self.start_time.clone();
+        event.end_date = self.end_date.clone();
+        event.end_time = self.end_time.clone();
+        event.location = self.location.clone();
+        event.time_zone = self.time_zone.clone();
+        event.description = self.description.clone();
+        event.duration = self.duration.clone();
+        event.reminder_minutes = self.reminder_minutes;
+        event.recurrence = self.recurrence.clone();
+        event
+    }
+}
+
 static NON_WORD: LazyLock<Option<Regex>> =
     LazyLock::new(|| Regex::new(r"[^\p{L}\p{N}\s\x{FEFF}]").ok());
 static SPACES: LazyLock<Option<Regex>> = LazyLock::new(|| Regex::new(r"[\s\x{FEFF}]+").ok());
@@ -208,6 +231,76 @@ pub fn find_event<'a>(
         .filter(|e| !e.is_cancelled() && normalize_title(&e.title) == normalized)
         .collect();
     pick_by_start_date(&active, start_date)
+}
+
+/// How far a reschedule may move an event.
+pub const RESCHEDULE_WINDOW_DAYS: i64 = 45;
+
+static RESCHEDULE_WORDS: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b(re-?schedul\w*|postpon\w*|moved|new (date|time)|date (has )?changed|time (has )?changed|changed to|updated (date|time|appointment))\b",
+    )
+    .ok()
+});
+
+/// Whether an email talks about moving an event.
+pub fn mentions_reschedule(text: &str) -> bool {
+    RESCHEDULE_WORDS
+        .as_ref()
+        .is_some_and(|re| re.is_match(text))
+}
+
+fn days_apart(a: &str, b: &str) -> Option<i64> {
+    let a = a.parse::<jiff::civil::Date>().ok()?;
+    let b = b.parse::<jiff::civil::Date>().ok()?;
+    Some(i64::from(a.until(b).ok()?.get_days()).abs())
+}
+
+/// Whether another create or update in the same extraction has `event`'s
+/// normalized title (several bookings, so none of them is a reschedule).
+pub fn title_repeats(event: &ExtractedEvent, batch: &[ExtractedEvent]) -> bool {
+    let title = normalize_title(&event.title);
+    batch
+        .iter()
+        .filter(|other| {
+            !matches!(other.action, crate::extraction::schema::EventAction::Cancel)
+                && normalize_title(&other.title) == title
+        })
+        .count()
+        > 1
+}
+
+/// The tracked event that a `create` actually reschedules: an active event
+/// with the same normalized title that is not this exact event and either
+/// (a) is on the same day at a different time (both timed, not recurring), or
+/// (b) is on another day within [`RESCHEDULE_WINDOW_DAYS`] when the email
+/// talks about rescheduling. Several candidates create as before.
+pub fn find_reschedule_target<'a>(
+    event: &ExtractedEvent,
+    candidates: impl IntoIterator<Item = &'a CreatedCalendarEvent>,
+    reschedule_language: bool,
+) -> Option<&'a CreatedCalendarEvent> {
+    if event.recurrence.is_some() {
+        return None;
+    }
+    let title = normalize_title(&event.title);
+    let hash = compute_event_hash(&event.title, &event.start_date, event.start_time.as_deref());
+    let mut matches = candidates.into_iter().filter(|c| {
+        if c.is_cancelled() || normalize_title(&c.title) != title || c.event_hash == hash {
+            return false;
+        }
+        if c.start_date == event.start_date {
+            return c.recurrence.is_none()
+                && c.start_time.is_some()
+                && event.start_time.is_some()
+                && c.start_time != event.start_time;
+        }
+        reschedule_language
+            && days_apart(&c.start_date, &event.start_date)
+                .is_some_and(|d| d <= RESCHEDULE_WINDOW_DAYS)
+    });
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
 }
 
 /// Per-prompt handles (`evt_N`) to the events shown to the model.
