@@ -47,6 +47,7 @@ code, kbd, pre, samp { font-family: var(--mono); }
 .text-live { color: var(--live); }
 .text-ok { color: var(--ok); }
 .truncate { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.nowrap { white-space: nowrap; }
 .clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .spacer { flex: 1; }

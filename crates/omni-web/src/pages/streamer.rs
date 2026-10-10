@@ -387,7 +387,7 @@ fn SessionRow(
                 <span class="row-title truncate" title=session.title.clone()>
                     {if session.title.is_empty() { "Untitled stream".to_owned() } else { session.title.clone() }}
                 </span>
-                <span class="row-sub cluster">
+                <span class="row-sub parts">
                     <Meter value=session.duration_ms as f64 max=longest width=64 label=format!("Length {}", format_duration(session.duration_ms as f64))/>
                     <span class="num">{format_session_time(session.started_at)}</span>
                     <span class="num dim">{format_duration(session.duration_ms as f64)}</span>
@@ -448,7 +448,7 @@ fn Streams(
                 view! {
                     <div class="group-head">
                         <span>{label}</span>
-                        <span class="num dim">
+                        <span class="num dim truncate">
                             {format!("{} stream{} · {:.1} h · peak {}", week.sessions.len(), if week.sessions.len() == 1 { "" } else { "s" }, week.hours(), format_compact_number(week.peak() as f64))}
                         </span>
                     </div>

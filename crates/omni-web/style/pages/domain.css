@@ -322,8 +322,8 @@ a.pod-title:hover { color: var(--signal); }
 a.agenda-tile-head { color: inherit; text-decoration: none; }
 a.agenda-tile-head:hover { color: var(--signal); }
 .agenda-row { gap: var(--sp-4); }
-.agenda-when { flex: none; width: 10.5rem; color: var(--text-2); font: var(--t-read-s); }
-.rows.dense .agenda-when { width: 8.5rem; }
+.agenda-when { flex: none; width: 10.5rem; color: var(--text-2); font: var(--t-read-s); white-space: nowrap; }
+.rows.dense .agenda-when { width: 9.75rem; }
 .agenda-row.now { box-shadow: inset 2px 0 0 var(--signal); }
 .agenda-row.now .agenda-when { color: var(--signal); }
 .agenda-row.past .row-title, .agenda-row.past .agenda-when { color: var(--text-3); }

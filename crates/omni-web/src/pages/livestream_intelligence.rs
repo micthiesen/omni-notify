@@ -334,7 +334,7 @@ fn Evidence(intelligence: Option<LivestreamIntelligence>) -> impl IntoView {
         }
     };
     view! {
-        <div class="grid-2">
+        <div class="grid-2 intel-evidence">
             <Panel title="Latest transcript window" pad=true>{transcript}</Panel>
             <Panel title="Viewer surge" pad=true>{surge}</Panel>
         </div>

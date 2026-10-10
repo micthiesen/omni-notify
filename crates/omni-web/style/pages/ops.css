@@ -156,7 +156,7 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
 }
 
 /* ---------- Intelligence ---------- */
-.summary-bar { margin-bottom: var(--sp-6); }
+.summary-bar, .intel-evidence { margin-bottom: var(--sp-6); }
 @media (min-width: 900px) {
   .sticky-summary { position: sticky; top: calc(var(--top-h) + var(--sp-2)); z-index: var(--z-sticky); }
 }

@@ -442,9 +442,14 @@ a.row:focus-visible, button.row:focus-visible { outline-offset: -2px; }
 .row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .row-title { font: 500 0.875rem/1.25rem var(--font); color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row-sub { font: var(--t-small); color: var(--text-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* A sub-line of inline parts stays on one line; its meter gives up width
+   first. */
+.row-sub.parts { display: flex; align-items: center; gap: var(--sp-2); }
+.row-sub .meter { flex-shrink: 1; min-width: 16px; }
 .row-end { margin-left: auto; display: flex; align-items: center; gap: var(--sp-3); flex: none; }
 .row-value { font: var(--t-read-m); font-variant-numeric: tabular-nums; text-align: right; }
 .group-head { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-5) var(--pad) var(--sp-2); font: var(--t-h3); font-size: 0.8125rem; }
+.group-head > :first-child { flex: none; white-space: nowrap; }
 .group-head .seg-n, .group-head .meta { color: var(--text-3); font: var(--t-small); }
 .group-head .meta.mono { font: var(--t-read-s); }
 .group-head .end { margin-left: auto; }
@@ -665,13 +670,19 @@ a:hover .avatar.offline, .avatar.offline:hover { filter: none; }
 }
 a:hover > .poster, a:focus-visible > .poster { transform: translateY(-2px); box-shadow: inset 0 0 0 1px var(--line-strong); }
 .poster-rail { display: grid; grid-template-columns: repeat(var(--cols, 4), minmax(0, 1fr)); gap: var(--sp-6); }
-.poster-card { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+/* Each card spans three shared rows (art, title, caption), so captions start
+   on one line across the rail whatever each title's length. */
+.poster-card { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: var(--sp-3); align-content: start; min-width: 0; }
 .poster-card-title { font: var(--t-h3); }
 .poster-card-title .num { color: var(--text-3); font-weight: 450; margin-left: var(--sp-1); }
 .poster-card-why { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; color: var(--text-2); font: var(--t-small); }
 @media (max-width: 899px) {
   .poster-rail {
-    display: flex;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-template-rows: repeat(3, auto);
+    /* Two cards and a clear slice of the third show the rail scrolls. */
+    grid-auto-columns: 40%;
     gap: var(--sp-3);
     margin: 0 calc(var(--gutter) * -1);
     padding: 0 var(--gutter) var(--sp-2);
@@ -681,8 +692,7 @@ a:hover > .poster, a:focus-visible > .poster { transform: translateY(-2px); box-
     scrollbar-width: none;
   }
   .poster-rail::-webkit-scrollbar { display: none; }
-  /* Two cards and a clear slice of the third show the rail scrolls. */
-  .poster-rail > * { flex: 0 0 40%; scroll-snap-align: start; }
+  .poster-rail > * { scroll-snap-align: start; }
 }
 
 /* Without scroll-driven animations (Firefox, Safari), the phone poster rail,

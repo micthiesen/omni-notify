@@ -800,7 +800,7 @@ pub fn PodcastsPage() -> impl IntoView {
                                     <span class="poster-card-title clamp-2">{rec.episode_title.clone()}</span>
                                     <span class="poster-card-why">
                                         {rec.show_title.clone()}
-                                        {duration.map(|d| view! { <span class="num">{format!(" · {d}")}</span> })}
+                                        {duration.map(|d| view! { <span class="num nowrap">{format!(" · {d}")}</span> })}
                                     </span>
                                 </Link>
                             }

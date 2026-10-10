@@ -397,7 +397,7 @@ fn OnAir() -> impl IntoView {
             // open state; only the chips re-render.
             {move || has_offline.get().then(|| view! {
                 <div class="panel-foot">
-                    <Disclosure summary=offline_summary flush=true>
+                    <Disclosure summary=offline_summary>
                         {move || view! { <OfflineChips streamers=offline.get()/> }}
                     </Disclosure>
                 </div>
