@@ -2,7 +2,7 @@
 //!
 //! config + redacted log -> open store -> delete retired entities ->
 //! `migrate_all` over every entity -> `import_historical_costs` -> subsystem construction (intelligence,
-//! channels.json, iOS controls, tasks, Reminders; `Migrate` and `Services`
+//! live streamers, iOS controls, tasks, Reminders; `Migrate` and `Services`
 //! boot steps) -> `registry.initialize` (interrupted runs) -> `Reconcile`
 //! boot steps (`markInterruptedCalls`, calendar hash reconcile) -> HTTP
 //! server -> `AfterServer` boot steps -> register tasks -> background

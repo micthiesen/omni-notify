@@ -17,16 +17,11 @@ struct Fixture {
     roster: Roster,
     service: StreamerConfigService,
     tools: Vec<McpTool>,
-    _dir: tempfile::TempDir,
 }
 
-/// A booted module with no `channels.json` (an empty configuration).
+/// A booted module over an empty store.
 async fn fixture() -> Fixture {
-    let mut app = TestApp::new().await;
-    let dir = tempfile::tempdir().unwrap();
-    let mut config = (*app.ctx.config).clone();
-    config.channels_config_path = Some(dir.path().join("channels.json").display().to_string());
-    app.ctx.config = std::sync::Arc::new(config);
+    let app = TestApp::new().await;
     let module = LiveModule::load(&app.ctx).unwrap();
     let (roster, service) = (module.roster(), module.config_service());
     let mut subsystem = module.into_subsystem(None).unwrap();
@@ -40,7 +35,6 @@ async fn fixture() -> Fixture {
         roster,
         service,
         tools,
-        _dir: dir,
     }
 }
 
@@ -277,7 +271,7 @@ async fn mcp_tools_manage_streamers_but_never_accept_pushover_tokens() {
 }
 
 #[tokio::test]
-async fn configuration_survives_a_restart_without_the_file() {
+async fn configuration_survives_a_restart() {
     let f = fixture().await;
     f.service
         .create(omni_api::streamer_config::StreamerConfigCreate {
@@ -298,24 +292,6 @@ async fn configuration_survives_a_restart_without_the_file() {
         .map(|s| s.display_name)
         .collect();
     assert_eq!(names, ["Jerma"]);
-}
-
-#[tokio::test]
-async fn a_missing_file_does_not_block_a_later_import() {
-    let f = fixture().await;
-    std::fs::write(
-        f._dir.path().join("channels.json"),
-        br#"{"Jerma": {"twitch": "jerma985"}, "dggTopEmbeds": 2}"#,
-    )
-    .unwrap();
-    let module = LiveModule::load(&f.app.ctx).unwrap();
-    let service = module.config_service();
-    let mut subsystem = module.into_subsystem(None).unwrap();
-    let step = subsystem.boot_steps.remove(0);
-    (step.run)(f.app.ctx.clone()).await.unwrap();
-    let listed = service.list().await.unwrap();
-    assert_eq!(listed.streamers.len(), 1);
-    assert_eq!(listed.settings.dgg_top_embeds, 2);
 }
 
 #[tokio::test]

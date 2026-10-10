@@ -20,9 +20,7 @@ services:
     restart: unless-stopped
 ```
 
-Tracked streamers are stored in the database and managed on the Live page's streamer editor or through the `streamer_config_*` MCP tools (create, edit, delete, reorder, settings). Each streamer has a display name, one or more YouTube handles, Twitch logins or Kick slugs, a tier and an optional live-notification override. A source can belong to only one streamer. A per-streamer Pushover app token can be set or cleared in the UI only; it is never returned by the API or accepted over MCP.
-
-On first boot with an empty configuration, Omni imports an existing `channels.json` (path overridable via `CHANNELS_CONFIG_PATH`) once and logs `Imported N streamer(s)`; afterwards the file is ignored and can be deleted. An invalid file fails that boot rather than silently dropping config.
+Tracked streamers are stored in the database and managed at `/live/streamers` (Live > Manage streamers) or through the `streamer_config_*` MCP tools (create, edit, delete, reorder, settings). Each streamer has a display name, one or more YouTube handles, Twitch logins or Kick slugs, a tier and an optional live-notification override. A source can belong to only one streamer. A per-streamer Pushover app token can be set or cleared in the UI only; it is never returned by the API or accepted over MCP.
 
 The `dggTopEmbeds` setting (0-20) adds that many currently hosted or most-watched embeds from Destiny.gg. These are refreshed on the relaxed background cadence, never send live/offline/title notifications, and disappear when they leave the top set. A source already represented by a configured streamer is enriched with its DGG audience/host status instead of duplicated; its configured tier, platform polling, and notification behavior remain authoritative. `0` disables discovery.
 
@@ -239,7 +237,6 @@ TRIAGE_MODEL=google:gemini-3.5-flash
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |
 | `TAVILY_API_KEY` | No | Tavily web search (required for recommendations) |
-| `CHANNELS_CONFIG_PATH` | No | Legacy `channels.json` imported once on first boot (default: `./channels.json`) |
 | `TMDB_API_KEY` | No | TMDB API key (required for recommendations; v3 key or v4 read token) |
 | `RECS_SCHEDULE` | No | Recommendation cron (default: `0 0 17 * * 1,3,5`) |
 | `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-6-luna`) |

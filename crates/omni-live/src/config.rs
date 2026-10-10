@@ -2,12 +2,8 @@
 //! row per streamer and one `live-settings` row. The UI and MCP edit it
 //! through [`StreamerConfigService`], which validates every change and
 //! applies it to the running live check without a restart.
-//!
-//! The first boot imports `channels.json` (when present) once; afterwards the
-//! file is never read.
 
 use std::collections::HashSet;
-use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -23,7 +19,6 @@ use omni_store::{Store, StoreError};
 use omni_tasks::{AppEvent, EventBus};
 use serde::{Deserialize, Serialize};
 
-use crate::channels::{self, LiveCheckConfig};
 use crate::platform::{Platform, PlatformBinding};
 use crate::streamers::{Roster, Streamer, js_trim, normalize_id};
 
@@ -36,7 +31,7 @@ pub const MAX_SOURCES_PER_PLATFORM: usize = 10;
 /// Longest display name or username, in characters.
 pub const MAX_NAME_CHARS: usize = 100;
 /// Upper bound for `dggTopEmbeds`.
-pub const MAX_DGG_TOP_EMBEDS: u32 = channels::MAX_DGG_TOP_EMBEDS;
+pub const MAX_DGG_TOP_EMBEDS: u32 = 20;
 
 const SETTINGS_KEY: &str = "settings";
 
@@ -100,7 +95,7 @@ impl Entity for StreamerConfigRow {
 pub struct LiveSettingsRow {
     pub key: String,
     pub dgg_top_embeds: u32,
-    /// When `channels.json` was imported (absent when there was no file).
+    /// When the retired `channels.json` file was imported, if it was.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported_at: Option<i64>,
     pub updated_at: i64,
@@ -145,10 +140,6 @@ pub enum ConfigError {
     NotFound(String),
     #[error("streamer config store failed: {0}")]
     Store(#[from] StoreError),
-    #[error(transparent)]
-    Import(#[from] channels::ChannelsConfigError),
-    #[error("invalid channels.json import: {0}")]
-    ImportInvalid(String),
 }
 
 impl ConfigError {
@@ -389,25 +380,25 @@ pub fn to_streamer(row: &StreamerConfigRow, kick_available: bool) -> Option<Stre
     })
 }
 
-/// Rows of an imported `channels.json`, in file order.
-fn import_rows(config: &LiveCheckConfig, now: i64) -> Result<Vec<StreamerConfigRow>, ConfigError> {
+/// Rows for `streamers`, validated as creates, in order (tests and the
+/// preview seed the store with them).
+pub fn rows_for(
+    streamers: Vec<StreamerConfigCreate>,
+    now: i64,
+) -> Result<Vec<StreamerConfigRow>, ConfigError> {
     let mut rows: Vec<StreamerConfigRow> = Vec::new();
-    for (position, (display_name, entry)) in config.channels.iter().enumerate() {
-        let names =
-            |u: &Option<channels::Usernames>| u.as_ref().map(|u| u.to_vec()).unwrap_or_default();
+    for (position, input) in streamers.into_iter().enumerate() {
         let draft = validate(Draft {
-            display_name: display_name.clone(),
-            youtube: names(&entry.youtube),
-            twitch: names(&entry.twitch),
-            kick: names(&entry.kick),
-            tier: entry.tier.unwrap_or_default(),
-            live_notifications: entry.live_notifications,
-            pushover_token: entry.pushover_token.clone(),
-        })
-        .map_err(|e| ConfigError::ImportInvalid(format!("{display_name}: {e}")))?;
+            display_name: input.display_name,
+            youtube: input.youtube,
+            twitch: input.twitch,
+            kick: input.kick,
+            tier: input.tier,
+            live_notifications: input.live_notifications,
+            pushover_token: input.pushover_token,
+        })?;
         let id = normalize_id(&draft.display_name);
-        check_conflicts(&draft, &id, &rows)
-            .map_err(|e| ConfigError::ImportInvalid(format!("{display_name}: {e}")))?;
+        check_conflicts(&draft, &id, &rows)?;
         rows.push(new_row(
             id,
             draft,
@@ -518,49 +509,6 @@ impl StreamerConfigService {
             .store
             .read(|docs| docs.get::<LiveSettingsRow>(&SETTINGS_KEY.to_owned()))
             .await?)
-    }
-
-    /// Imports `channels.json` from `path` while the stored configuration is
-    /// still untouched (no streamers, no settings), then loads the
-    /// configuration into the live check. A missing file imports nothing, so a
-    /// later boot with the file still imports it. A file that fails validation
-    /// fails boot instead of silently dropping or un-muting streamers.
-    pub async fn boot(&self, path: &Path) -> Result<(), ConfigError> {
-        let untouched = self.settings_row().await?.is_none() && self.rows().await?.is_empty();
-        if untouched && path.exists() {
-            let config = channels::load_channels_config(path)?;
-            let now = self.now();
-            let rows = import_rows(&config, now)?;
-            let count = rows.len();
-            let settings = LiveSettingsRow {
-                key: SETTINGS_KEY.to_owned(),
-                dgg_top_embeds: config.dgg_top_embeds,
-                imported_at: Some(now),
-                updated_at: now,
-                extra: Extra::new(),
-            };
-            self.inner
-                .store
-                .write(move |tx| {
-                    for row in &rows {
-                        tx.upsert(row, UpsertOpts::default())?;
-                    }
-                    tx.upsert(&settings, UpsertOpts::default())
-                })
-                .await?;
-            tracing::info!(
-                target: LOG,
-                "Imported {count} streamer(s) from {}; the file is no longer read",
-                path.display()
-            );
-        } else if path.exists() {
-            tracing::warn!(
-                target: LOG,
-                "{} is no longer read; streamers are configured in Omni",
-                path.display()
-            );
-        }
-        self.reload().await
     }
 
     /// Applies the stored configuration to the live check and the roster.

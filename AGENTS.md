@@ -198,9 +198,9 @@ the sticky primary for the session; a primary switch is silent. Viewer counts
 sum currently live bindings. Streamer configuration lives in the database
 (`omni-live/src/config.rs`) and changes only through `StreamerConfigService`,
 which validates every write (unique names and sources, no background override)
-and reloads the roster. Pushover tokens are write-only and never cross MCP. A
-one-time `channels.json` import that fails validation fails boot rather than
-silently unmuting a streamer.
+and reloads the roster; a streamer removed at runtime is retired on the next
+tick without an offline notification. Pushover tokens are write-only and never
+cross MCP.
 
 `tier: "background"` mutes live, offline, and title notifications, records only
 all-time viewer highs, and polls every third tick. It cannot be combined with an

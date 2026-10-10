@@ -11,6 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::future::BoxFuture;
+use omni_api::streamer_config::StreamerConfigCreate;
+use omni_api::streamers::StreamerTier;
 use omni_core::clock::{SharedClock, SystemClock};
 use omni_http::{HttpClient, HttpConfig, SideEffectMode};
 use omni_runtime::{AppContext, BootPhase};
@@ -176,14 +178,27 @@ pub fn fake_tasks() -> Result<Vec<Arc<dyn Task>>, omni_tasks::InvalidScheduleErr
     ])
 }
 
-/// The preview's `channels.json`.
-pub fn channels_json() -> Value {
-    json!({
-        "PixelDust": { "twitch": "pixeldust" },
-        "NovaByte": { "youtube": "@novabyte", "twitch": "novabyte" },
-        "RetroRex": { "kick": "retrorex" },
-        "LoopStation": { "twitch": "loopstation", "tier": "background" },
-    })
+/// The preview's tracked streamers.
+pub fn preview_streamers() -> Vec<StreamerConfigCreate> {
+    let streamer = |name: &str, youtube: &[&str], twitch: &[&str], kick: &[&str]| {
+        let names = |list: &[&str]| list.iter().map(|&n| n.to_owned()).collect();
+        StreamerConfigCreate {
+            display_name: name.to_owned(),
+            youtube: names(youtube),
+            twitch: names(twitch),
+            kick: names(kick),
+            ..StreamerConfigCreate::default()
+        }
+    };
+    vec![
+        streamer("PixelDust", &[], &["pixeldust"], &[]),
+        streamer("NovaByte", &["@novabyte"], &["novabyte"], &[]),
+        streamer("RetroRex", &[], &[], &["retrorex"]),
+        StreamerConfigCreate {
+            tier: StreamerTier::Background,
+            ..streamer("LoopStation", &[], &["loopstation"], &[])
+        },
+    ]
 }
 
 fn iso_date(ms: i64) -> String {
@@ -544,10 +559,6 @@ pub fn preview_env(dir: &Path, port: u16) -> std::collections::BTreeMap<String, 
         "DB_NAME".to_owned(),
         dir.join("docstore.db").display().to_string(),
     );
-    env.insert(
-        "CHANNELS_CONFIG_PATH".to_owned(),
-        dir.join("channels.json").display().to_string(),
-    );
     // Lets RetroRex's Kick binding through; nothing ever calls Kick.
     env.insert("KICK_CLIENT_ID".to_owned(), "preview".to_owned());
     env.insert("KICK_CLIENT_SECRET".to_owned(), "preview".to_owned());
@@ -558,10 +569,6 @@ pub fn preview_env(dir: &Path, port: u16) -> std::collections::BTreeMap<String, 
 }
 
 async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
-    std::fs::write(
-        dir.join("channels.json"),
-        omni_core::js::json_stringify_pretty2(&channels_json()),
-    )?;
     let config = Arc::new(omni_config::Config::from_env(&preview_env(dir, port))?);
     let clock: SharedClock = Arc::new(SystemClock);
     let http = HttpClient::new(HttpConfig {
@@ -589,6 +596,19 @@ async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
     let mut subsystems = crate::wiring::wire(&ctx, clock.now_ms()).await?.subsystems;
     let trace = BootTrace::default();
     boot::migrate(&ctx, boot::all_entities(&subsystems), &trace).await?;
+    let streamers = omni_live::config::rows_for(preview_streamers(), clock.now_ms())?;
+    ctx.store
+        .write(move |tx| {
+            for row in &streamers {
+                omni_store::entity::EntityWrite::upsert(
+                    tx,
+                    row,
+                    omni_store::entity::UpsertOpts::default(),
+                )?;
+            }
+            Ok::<_, omni_store::StoreError>(())
+        })
+        .await?;
     for phase in [BootPhase::Migrate, BootPhase::Services] {
         boot::run_steps(&ctx, &mut subsystems, phase, &trace).await?;
     }

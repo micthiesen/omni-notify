@@ -12,11 +12,9 @@
 //! let ios_subsystem = ios.into_subsystem();
 //! ```
 //!
-//! A `Migrate` boot step loads the configuration (importing `channels.json`
-//! once on the first boot); a stored configuration that cannot be read fails
+//! A `Migrate` boot step loads the configuration; a stored configuration that cannot be read fails
 //! boot.
 
-pub mod channels;
 pub mod config;
 pub mod config_routes;
 pub mod dgg;
@@ -51,10 +49,10 @@ use jiff::tz::TimeZone;
 use omni_runtime::{AppContext, BootError, BootPhase, BootStep, ManagedEntity, Subsystem};
 use omni_store::entity::EntityDescriptor;
 
-pub use channels::{ChannelsConfigError, LiveCheckConfig};
 pub use config::{ConfigError, StreamerConfigService, TopEmbeds};
 pub use directory::LiveDirectoryService;
 pub use error::LiveError;
+use omni_api::streamer_config::StreamerConfigCreate;
 pub use platform::{Platform, PlatformBinding};
 pub use streamers::{Roster, Streamer};
 pub use task::{LiveCheck, LiveCheckTask, TickHook};
@@ -75,9 +73,7 @@ const LOG: &str = "Main";
 #[derive(Debug, thiserror::Error)]
 pub enum LiveBootError {
     #[error(transparent)]
-    Channels(#[from] ChannelsConfigError),
-    #[error(transparent)]
-    Streamers(#[from] streamers::BuildStreamersError),
+    Config(#[from] ConfigError),
     #[error("invalid TZ {tz:?}: {message}")]
     TimeZone { tz: String, message: String },
     #[error("invalid LiveCheckTask schedule: {0}")]
@@ -175,11 +171,18 @@ impl LiveModule {
         Self::build(ctx, Vec::new(), 0, false)
     }
 
-    /// An in-memory configuration (tests). Kick bindings are dropped when Kick
-    /// credentials are missing.
-    pub fn from_config(ctx: &AppContext, config: LiveCheckConfig) -> Result<Self, LiveBootError> {
-        let configured = streamers::build_streamers(&config.channels)?;
-        Self::build(ctx, configured, config.dgg_top_embeds, true)
+    /// An in-memory configuration (tests), validated as creates and never
+    /// stored. Kick bindings are dropped when Kick credentials are missing.
+    pub fn preloaded(
+        ctx: &AppContext,
+        streamers: Vec<StreamerConfigCreate>,
+        dgg_top_embeds: u32,
+    ) -> Result<Self, LiveBootError> {
+        let configured = config::rows_for(streamers, 0)?
+            .iter()
+            .filter_map(|row| config::to_streamer(row, true))
+            .collect();
+        Self::build(ctx, configured, dgg_top_embeds, true)
     }
 
     fn build(
@@ -307,12 +310,10 @@ impl LiveModule {
             subsystem.boot_steps.push(BootStep {
                 phase: BootPhase::Migrate,
                 name: "live-streamer-config",
-                run: Box::new(move |ctx: AppContext| {
+                run: Box::new(move |_: AppContext| {
                     Box::pin(async move {
-                        let path =
-                            channels::config_path(ctx.config.channels_config_path.as_deref());
                         service
-                            .boot(&path)
+                            .reload()
                             .await
                             .map_err(|e| BootError::new("live-streamer-config", e.to_string()))
                     })

@@ -50,8 +50,7 @@ cargo deny --locked check
 Then a runtime smoke test of the real binary (catches config, boot and runtime breaks tests miss):
 
 ```
-echo '{"SmokeTest": {"twitch": "testuser"}}' > <scratch>/channels.json
-LOG_LEVEL=info DB_NAME=<scratch>/smoke.db CHANNELS_CONFIG_PATH=<scratch>/channels.json \
+LOG_LEVEL=info DB_NAME=<scratch>/smoke.db \
   FRONTEND_PORT=3199 timeout --signal=SIGTERM 15 \
   cargo run -p omni-notify -- --side-effects=record --web-dist crates/omni-web/dist
 ```

@@ -179,7 +179,7 @@ impl Pushover {
         }
     }
 
-    /// Sends with an explicit application token (channels.json streamers).
+    /// Sends with an explicit application token (per-streamer Pushover apps).
     pub async fn send_with_token(
         &self,
         token: &str,

@@ -1,5 +1,5 @@
 //! The four live control slots: primary first, then
-//! hottest, ties in channels.json order.
+//! hottest, ties in configured order.
 
 use omni_api::ios::{IOS_CONTROL_SLOT_COUNT, LiveSlotState};
 use omni_live::Streamer;

@@ -34,7 +34,7 @@ pub fn compare_live_display_order(a: &LiveRank, b: &LiveRank) -> Ordering {
     b.rank().cmp(&a.rank())
 }
 
-/// Stable sort: ties keep channels.json order.
+/// Stable sort: ties keep the configured order.
 pub fn sort_live_display<T>(items: &mut [T], rank: impl Fn(&T) -> LiveRank) {
     items.sort_by(|a, b| compare_live_display_order(&rank(a), &rank(b)));
 }

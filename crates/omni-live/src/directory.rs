@@ -50,7 +50,7 @@ fn to_values<T: Serialize>(items: &[T]) -> Result<Vec<Value>, PortError> {
 }
 
 impl LiveDirectory for LiveDirectoryService {
-    /// `LivestreamSummary` per streamer, in roster order (channels.json, then
+    /// `LivestreamSummary` per streamer, in roster order (configured order, then
     /// DGG discoveries).
     fn streamers(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>> {
         Box::pin(async move {

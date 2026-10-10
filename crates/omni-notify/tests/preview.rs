@@ -37,8 +37,8 @@ async fn seeds_typed_fixture_data_the_routes_serve() {
 }
 
 #[test]
-fn channels_config_builds_four_streamers() {
-    let config = omni_notify::preview::channels_json();
-    assert_eq!(config.as_object().unwrap().len(), 4);
-    assert_eq!(config["LoopStation"]["tier"], "background");
+fn preview_streamers_are_valid_and_one_is_background() {
+    let rows = omni_live::config::rows_for(omni_notify::preview::preview_streamers(), 0).unwrap();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[3].tier, omni_api::streamers::StreamerTier::Background);
 }

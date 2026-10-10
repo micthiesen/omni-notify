@@ -1,6 +1,6 @@
 [package]
 name = "omni-live"
-description = "Livestream monitoring: channels.json, aggregate streamer state, notifications, viewer metrics, sessions, DGG discovery and the LiveCheckTask."
+description = "Livestream monitoring: stored streamer configuration, aggregate streamer state, notifications, viewer metrics, sessions, DGG discovery and the LiveCheckTask."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

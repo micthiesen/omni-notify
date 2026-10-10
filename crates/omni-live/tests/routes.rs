@@ -2,31 +2,44 @@
 //! and subsystem assembly.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::io::Write;
-
+use omni_api::streamer_config::StreamerConfigCreate;
+use omni_api::streamers::StreamerTier;
 use omni_api::streamers::{LivestreamDetails, LivestreamSummary, StreamerView};
-use omni_live::channels::parse_channels_config;
 use omni_live::sessions::{StreamSession, StreamSessions};
 use omni_live::status::{LiveSource, LiveStatus, OfflineStatus, StreamerStatus, upsert_status};
-use omni_live::{LiveModule, Platform, PlatformBinding, Roster, StreamerConfigService};
+use omni_live::{LiveModule, Platform, PlatformBinding};
 use omni_runtime::ports::LiveDirectory;
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::{EntityWrite, UpsertOpts};
 use omni_store::{DocMeta, DocWrite};
 use serde_json::json;
 
-const CHANNELS: &str = r#"{
-  "Destiny": {"youtube": "@destiny", "kick": "destiny"},
-  "Jerma": {"twitch": "jerma985", "tier": "background"},
-  "Hutch": {"youtube": "@hutch"}
-}"#;
+fn streamers() -> Vec<StreamerConfigCreate> {
+    vec![
+        StreamerConfigCreate {
+            display_name: "Destiny".into(),
+            youtube: vec!["@destiny".into()],
+            kick: vec!["destiny".into()],
+            ..Default::default()
+        },
+        StreamerConfigCreate {
+            display_name: "Jerma".into(),
+            twitch: vec!["jerma985".into()],
+            tier: StreamerTier::Background,
+            ..Default::default()
+        },
+        StreamerConfigCreate {
+            display_name: "Hutch".into(),
+            youtube: vec!["@hutch".into()],
+            ..Default::default()
+        },
+    ]
+}
 
 async fn app() -> (omni_testkit::TestApp, axum::Router, LiveModule) {
     let app = omni_testkit::TestApp::new().await;
-    let module =
-        LiveModule::from_config(&app.ctx, parse_channels_config(CHANNELS).unwrap()).unwrap();
-    let again =
-        LiveModule::from_config(&app.ctx, parse_channels_config(CHANNELS).unwrap()).unwrap();
+    let module = LiveModule::preloaded(&app.ctx, streamers(), 0).unwrap();
+    let again = LiveModule::preloaded(&app.ctx, streamers(), 0).unwrap();
     let subsystem = module.into_subsystem(None).unwrap();
     let router = app.router(&subsystem);
     (app, router, again)
@@ -250,8 +263,7 @@ async fn implements_the_live_directory_port() {
 #[tokio::test]
 async fn registers_the_task_and_drops_kick_without_credentials() {
     let app = omni_testkit::TestApp::new().await;
-    let module =
-        LiveModule::from_config(&app.ctx, parse_channels_config(CHANNELS).unwrap()).unwrap();
+    let module = LiveModule::preloaded(&app.ctx, streamers(), 0).unwrap();
     // TestApp has no Kick credentials: Destiny keeps only its YouTube binding.
     let destiny = module.roster().get("destiny").unwrap();
     assert_eq!(
@@ -279,58 +291,4 @@ async fn registers_the_task_and_drops_kick_without_credentials() {
         .unwrap();
     assert_eq!(empty.tasks.len(), 1);
     assert_eq!(empty.boot_steps.len(), 1);
-}
-
-/// Runs the production boot step; returns the roster and config service.
-async fn boot(app: &omni_testkit::TestApp) -> Result<(Roster, StreamerConfigService), String> {
-    let module = LiveModule::load(&app.ctx).unwrap();
-    let (roster, service) = (module.roster(), module.config_service());
-    let mut subsystem = module.into_subsystem(None).unwrap();
-    let step = subsystem.boot_steps.remove(0);
-    (step.run)(app.ctx.clone())
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok((roster, service))
-}
-
-#[tokio::test]
-async fn imports_channels_json_once_and_fails_boot_when_it_is_invalid() {
-    let mut app = omni_testkit::TestApp::new().await;
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("channels.json");
-    std::fs::File::create(&path)
-        .unwrap()
-        .write_all(br#"{"Destiny": {"kick": ""}}"#)
-        .unwrap();
-    let mut config = (*app.ctx.config).clone();
-    config.channels_config_path = Some(path.display().to_string());
-    app.ctx.config = std::sync::Arc::new(config);
-    let error = boot(&app).await.err().expect("invalid config fails boot");
-    assert!(error.contains("Invalid channels config"), "{error}");
-
-    std::fs::write(
-        &path,
-        br#"{"Destiny": {"youtube": "@destiny", "pushoverToken": "abc123"}, "Jerma": {"twitch": "jerma985", "tier": "background"}, "dggTopEmbeds": 2}"#,
-    )
-    .unwrap();
-    let (roster, service) = boot(&app).await.unwrap();
-    let listed = service.list().await.unwrap();
-    let names: Vec<&str> = listed
-        .streamers
-        .iter()
-        .map(|s| s.display_name.as_str())
-        .collect();
-    assert_eq!(names, ["Destiny", "Jerma"]);
-    assert!(listed.streamers[0].has_pushover_token);
-    assert_eq!(listed.settings.dgg_top_embeds, 2);
-    assert_eq!(roster.len(), 2);
-    assert_eq!(
-        roster.get("destiny").unwrap().pushover_token.as_deref(),
-        Some("abc123")
-    );
-
-    // Later boots never read the file again.
-    std::fs::write(&path, br#"{"Hutch": {"youtube": "@hutch"}}"#).unwrap();
-    let (_, service) = boot(&app).await.unwrap();
-    assert_eq!(service.list().await.unwrap().streamers.len(), 2);
 }

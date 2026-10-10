@@ -114,8 +114,8 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     let ports = &ctx.ports;
     let mut subsystems = Vec::new();
 
-    // Livestreams: intelligence (port set by its boot step), channels.json
-    // (an invalid file fails boot), iOS controls reconciled after every tick.
+    // Livestreams: intelligence (port set by its boot step), stored streamers
+    // (loaded by a boot step), iOS controls reconciled after every tick.
     subsystems.push(omni_live_intel::subsystem(ctx));
     for warning in omni_config::legacy_warnings(&std::env::vars().collect()) {
         tracing::warn!(target: LOG, "{warning}");

@@ -214,7 +214,6 @@ config_struct! {
     openai_api_key: Option<String> = "OPENAI_API_KEY",
     tavily_api_key: Option<String> = "TAVILY_API_KEY",
     logs_path: Option<String> = "LOGS_PATH",
-    channels_config_path: Option<String> = "CHANNELS_CONFIG_PATH",
     icloud_username: Option<String> = "ICLOUD_USERNAME",
     icloud_reminders_enabled: Option<String> = "ICLOUD_REMINDERS_ENABLED",
     icloud_reminders_account: Option<String> = "ICLOUD_REMINDERS_ACCOUNT",
@@ -473,7 +472,6 @@ impl Config {
             openai_api_key: env.opt("OPENAI_API_KEY"),
             tavily_api_key: env.opt("TAVILY_API_KEY"),
             logs_path: env.opt("LOGS_PATH"),
-            channels_config_path: env.opt("CHANNELS_CONFIG_PATH"),
             icloud_username: env.opt("ICLOUD_USERNAME"),
             icloud_reminders_enabled: env.opt("ICLOUD_REMINDERS_ENABLED"),
             icloud_reminders_account: env.opt("ICLOUD_REMINDERS_ACCOUNT"),
@@ -938,6 +936,7 @@ const LEGACY_CHANNEL_ENV_VARS: &[&str] = &[
     "YT_CHANNEL_NAMES",
     "TWITCH_CHANNEL_NAMES",
     "KICK_CHANNEL_NAMES",
+    "CHANNELS_CONFIG_PATH",
 ];
 const LEGACY_EMAIL_ENV_VARS: &[&str] = &[
     "EMAIL_TRANSPORT",
@@ -964,7 +963,7 @@ pub fn legacy_warnings(vars: &BTreeMap<String, String>) -> Vec<String> {
         .iter()
         .copied()
         .filter(|key| is_set(key))
-        .map(|key| format!("{key} is no longer read, channels are configured in channels.json"));
+        .map(|key| format!("{key} is no longer read, streamers are configured in Omni"));
     let email = LEGACY_EMAIL_ENV_VARS
         .iter()
         .copied()
@@ -1015,7 +1014,7 @@ mod tests {
         assert_eq!(
             legacy_warnings(&vars),
             vec![
-                "YT_CHANNEL_NAMES is no longer read, channels are configured in channels.json",
+                "YT_CHANNEL_NAMES is no longer read, streamers are configured in Omni",
                 "CALDAV_PROVIDER is no longer read, email and calendar use iCloud credentials",
                 "BRIEFINGS_PATH is no longer read, briefings and workspaces were removed",
             ]
