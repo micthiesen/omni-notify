@@ -5916,7 +5916,7 @@
     {
       "name": "streamer_configs_reorder",
       "title": "Reorder Tracked Streamers",
-      "description": "Set the display order of tracked streamers. streamerIds must list every configured id exactly once (see streamer_configs_list). Order breaks ties in the live list and iOS live slots.",
+      "description": "Set the display order of tracked streamers. streamerIds must list every configured id exactly once (see streamer_configs_list). The order applies within each tier: primary streamers always list before background ones, and changing a tier with streamer_config_update moves the streamer to the boundary (last primary or first background). Order breaks ties in the live list and iOS live slots.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",

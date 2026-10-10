@@ -281,17 +281,62 @@ pub fn build_patch(original: &StreamerConfigView, draft: &StreamerDraft) -> Stre
     }
 }
 
-/// `ids` with `id` moved one place up or down; `None` at either end.
-pub fn move_order(ids: &[String], id: &str, up: bool) -> Option<Vec<String>> {
-    let index = ids.iter().position(|i| i == id)?;
+/// What an up or down arrow does to a streamer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Move {
+    /// Every id in the new order: a swap within the streamer's tier.
+    Reorder(Vec<String>),
+    /// Crosses into the other tier; the server places it at the boundary.
+    Tier(StreamerTier),
+}
+
+/// Moves `id` one place within `rows` (ids and tiers in display order,
+/// primary first). Past the end of Primary it becomes the first Background
+/// streamer and vice versa; `None` at the top of Primary and the bottom of
+/// Background.
+pub fn plan_move(rows: &[(String, StreamerTier)], id: &str, up: bool) -> Option<Move> {
+    let index = rows.iter().position(|(i, _)| i == id)?;
+    let tier = rows[index].1;
     let target = if up {
-        index.checked_sub(1)?
+        index.checked_sub(1)
     } else {
-        (index + 1 < ids.len()).then_some(index + 1)?
+        Some(index + 1).filter(|t| *t < rows.len())
     };
-    let mut next = ids.to_vec();
-    next.swap(index, target);
-    Some(next)
+    match target {
+        Some(target) if rows[target].1 == tier => {
+            let mut ids: Vec<String> = rows.iter().map(|(i, _)| i.clone()).collect();
+            ids.swap(index, target);
+            Some(Move::Reorder(ids))
+        }
+        _ => match (tier, up) {
+            (StreamerTier::Primary, false) => Some(Move::Tier(StreamerTier::Background)),
+            (StreamerTier::Background, true) => Some(Move::Tier(StreamerTier::Primary)),
+            _ => None,
+        },
+    }
+}
+
+/// Puts a saved `view` where the server lists it: in place when its tier is
+/// unchanged, otherwise at the boundary between the tiers (a new background
+/// streamer goes last).
+pub fn place_view(list: &mut Vec<StreamerConfigView>, view: StreamerConfigView) {
+    let previous = list.iter().position(|s| s.id == view.id);
+    if let Some(index) = previous {
+        if list[index].tier == view.tier {
+            list[index] = view;
+            return;
+        }
+        list.remove(index);
+    }
+    let boundary = list
+        .iter()
+        .take_while(|s| s.tier == StreamerTier::Primary)
+        .count();
+    let index = match (previous, view.tier) {
+        (None, StreamerTier::Background) => list.len(),
+        _ => boundary,
+    };
+    list.insert(index, view);
 }
 
 /// Parses the top-embeds field (0 to [`MAX_DGG_TOP_EMBEDS`]).
@@ -304,19 +349,12 @@ pub fn parse_top_embeds(input: &str) -> Result<u32, String> {
         .ok_or_else(|| format!("Enter a whole number from 0 to {MAX_DGG_TOP_EMBEDS}"))
 }
 
-/// The row's notification tag, when it deviates from the primary default.
+/// The row's notification tag, when it deviates from its tier's default.
 fn notification_tag(view: &StreamerConfigView) -> Option<(&'static str, &'static str)> {
-    match (view.tier, view.live_notifications) {
-        (StreamerTier::Background, _) => Some((
-            "Background",
-            "Muted notifications, all-time records only, polled every third check",
-        )),
-        (StreamerTier::Primary, Some(false)) => Some((
-            "Live alerts off",
-            "Live notifications are off for this streamer",
-        )),
-        _ => None,
-    }
+    (view.tier == StreamerTier::Primary && view.live_notifications == Some(false)).then_some((
+        "Live alerts off",
+        "Live notifications are off for this streamer",
+    ))
 }
 
 /// One editor save.
@@ -343,10 +381,7 @@ fn find(data: &Option<StreamerConfigResponse>, id: &str) -> Option<StreamerConfi
 fn replace_view(data: RwSignal<Option<StreamerConfigResponse>>, view: StreamerConfigView) {
     data.try_update(|d| {
         if let Some(d) = d {
-            match d.streamers.iter_mut().find(|s| s.id == view.id) {
-                Some(slot) => *slot = view,
-                None => d.streamers.push(view),
-            }
+            place_view(&mut d.streamers, view);
         }
     });
 }
@@ -375,13 +410,30 @@ pub fn StreamerConfigPage() -> impl IntoView {
 
     // Gate on loaded-ness only, so mutations never rebuild the page.
     let loaded = Memo::new(move |_| data.with(Option::is_some));
-    let ids = Memo::new(move |_| {
+    let rows = Memo::new(move |_| {
         data.with(|d| {
             d.as_ref()
-                .map(|d| d.streamers.iter().map(|s| s.id.clone()).collect::<Vec<_>>())
+                .map(|d| {
+                    d.streamers
+                        .iter()
+                        .map(|s| (s.id.clone(), s.tier))
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default()
         })
     });
+    let tier_ids = move |tier: StreamerTier| {
+        Memo::new(move |_| {
+            rows.with(|rows| {
+                rows.iter()
+                    .filter(|(_, t)| *t == tier)
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>()
+            })
+        })
+    };
+    let primary_ids = tier_ids(StreamerTier::Primary);
+    let background_ids = tier_ids(StreamerTier::Background);
     let kick_configured =
         Memo::new(move |_| data.with(|d| d.as_ref().is_none_or(|d| d.kick_configured)));
     let unpolled_kick = Memo::new(move |_| {
@@ -393,19 +445,28 @@ pub fn StreamerConfigPage() -> impl IntoView {
     });
 
     let on_move = Callback::new(move |(id, up): (String, bool)| {
-        let Some(next) = ids.with_untracked(|ids| move_order(ids, &id, up)) else {
+        let Some(step) = rows.with_untracked(|rows| plan_move(rows, &id, up)) else {
             return;
         };
         reordering.set(true);
         list_error.set(None);
         spawn_detached(async move {
-            match api::reorder_streamer_config(next).await {
-                Ok(response) => {
+            let result = match step {
+                Move::Reorder(next) => api::reorder_streamer_config(next).await.map(|response| {
                     data.try_set(Some(response));
+                }),
+                Move::Tier(tier) => {
+                    let patch = StreamerConfigPatch {
+                        tier: Some(tier),
+                        ..StreamerConfigPatch::default()
+                    };
+                    api::update_streamer_config(&id, &patch)
+                        .await
+                        .map(|view| replace_view(data, view))
                 }
-                Err(e) => {
-                    list_error.try_set(Some(e.message().to_owned()));
-                }
+            };
+            if let Err(e) = result {
+                list_error.try_set(Some(e.message().to_owned()));
             }
             reordering.try_set(false);
         });
@@ -437,9 +498,9 @@ pub fn StreamerConfigPage() -> impl IntoView {
 
     let lede = Signal::derive(move || {
         loaded.get().then(|| {
-            let n = ids.with(Vec::len);
+            let n = rows.with(Vec::len);
             format!(
-                "{n} tracked. The live check picks up changes on its next run; the order here is the order on Live."
+                "{n} tracked. The live check picks up changes on its next run; the order here is the order on Live. Moving a streamer past the end of its list changes its tier."
             )
         })
     });
@@ -476,42 +537,42 @@ pub fn StreamerConfigPage() -> impl IntoView {
             }
             view! {
                 <div class="stack-lg">
-                    <Panel
-                        title="Tracked streamers"
-                        head_end=ViewFn::from(move || view! {
-                            <span class="num">{move || ids.with(Vec::len)}</span>
-                        })
-                    >
-                        {move || unpolled_kick.get().then(|| view! {
-                            <div class="panel-body">
-                                <InlineNote tone=Tone::Warn>
-                                    "Kick sources are saved but not polled until Kick credentials are configured on the server."
-                                </InlineNote>
-                            </div>
-                        })}
-                        {move || list_error.get().map(|e| view! {
-                            <div class="panel-body">
-                                <p class="field-error" role="alert">{e}</p>
-                            </div>
-                        })}
-                        {move || if ids.with(Vec::is_empty) {
-                            view! {
+                    {move || unpolled_kick.get().then(|| view! {
+                        <InlineNote tone=Tone::Warn>
+                            "Kick sources are saved but not polled until Kick credentials are configured on the server."
+                        </InlineNote>
+                    })}
+                    {move || list_error.get().map(|e| view! {
+                        <p class="field-error" role="alert">{e}</p>
+                    })}
+                    {move || if rows.with(Vec::is_empty) {
+                        view! {
+                            <Panel title="Tracked streamers">
                                 <EmptyState
                                     compact=true
                                     icon=Icon::Live
                                     message="No streamers tracked yet. Add one to get live notifications."
                                 />
-                            }.into_any()
-                        } else {
-                            view! {
-                                <div class="rows streamer-config-rows">
-                                    <For each=move || ids.get() key=|id| id.clone() children=move |id| view! {
-                                        <StreamerRow id data ids reordering deleting on_move on_edit on_delete/>
-                                    }/>
-                                </div>
-                            }.into_any()
-                        }}
-                    </Panel>
+                            </Panel>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <TierPanel
+                                title="Primary"
+                                meta="Live, offline and title notifications; 7, 30 and 90-day records"
+                                empty="No primary streamers. Move one up from Background to get its notifications."
+                                ids=primary_ids
+                                rows data reordering deleting on_move on_edit on_delete
+                            />
+                            <TierPanel
+                                title="Background"
+                                meta="Muted, all-time records only, polled every third check"
+                                empty="No background streamers. Move one down from Primary to mute it."
+                                ids=background_ids
+                                rows data reordering deleting on_move on_edit on_delete
+                            />
+                        }.into_any()
+                    }}
                     <DggSettings data/>
                 </div>
             }.into_any()
@@ -527,11 +588,50 @@ pub fn StreamerConfigPage() -> impl IntoView {
     }
 }
 
+/// One tier's streamers; the arrows at either end cross into the other tier.
+#[allow(clippy::too_many_arguments)]
+#[component]
+fn TierPanel(
+    title: &'static str,
+    meta: &'static str,
+    empty: &'static str,
+    ids: Memo<Vec<String>>,
+    rows: Memo<Vec<(String, StreamerTier)>>,
+    data: RwSignal<Option<StreamerConfigResponse>>,
+    reordering: RwSignal<bool>,
+    deleting: RwSignal<Option<String>>,
+    on_move: Callback<(String, bool)>,
+    on_edit: Callback<String>,
+    on_delete: Callback<String>,
+) -> impl IntoView {
+    view! {
+        <Panel
+            title=title
+            head_end=ViewFn::from(move || view! {
+                <span class="panel-meta hide-phone">{meta}</span>
+                <span class="num">{move || ids.with(Vec::len)}</span>
+            })
+        >
+            {move || if ids.with(Vec::is_empty) {
+                view! { <EmptyState compact=true message=empty/> }.into_any()
+            } else {
+                view! {
+                    <div class="rows streamer-config-rows">
+                        <For each=move || ids.get() key=|id| id.clone() children=move |id| view! {
+                            <StreamerRow id data rows reordering deleting on_move on_edit on_delete/>
+                        }/>
+                    </div>
+                }.into_any()
+            }}
+        </Panel>
+    }
+}
+
 #[component]
 fn StreamerRow(
     id: String,
     data: RwSignal<Option<StreamerConfigResponse>>,
-    ids: Memo<Vec<String>>,
+    rows: Memo<Vec<(String, StreamerTier)>>,
     reordering: RwSignal<bool>,
     deleting: RwSignal<Option<String>>,
     on_move: Callback<(String, bool)>,
@@ -540,12 +640,18 @@ fn StreamerRow(
 ) -> impl IntoView {
     let key = StoredValue::new(id.clone());
     let item = Memo::new(move |_| data.with(|d| key.with_value(|id| find(d, id))));
-    let position = Memo::new(move |_| {
-        ids.with(|ids| {
-            let index = key.with_value(|id| ids.iter().position(|i| i == id));
-            (index.unwrap_or(0), ids.len())
+    // Where each arrow goes: `None` at the top of Primary or the bottom of
+    // Background, a tier at the boundary, otherwise a swap within the tier.
+    let step = move |up: bool| {
+        Memo::new(move |_| {
+            rows.with(|rows| key.with_value(|id| plan_move(rows, id, up)))
+                .map(|m| match m {
+                    Move::Tier(tier) => Some(tier),
+                    Move::Reorder(_) => None,
+                })
         })
-    });
+    };
+    let (up_step, down_step) = (step(true), step(false));
     let name = Memo::new(move |_| {
         item.with(|i| {
             i.as_ref()
@@ -553,11 +659,13 @@ fn StreamerRow(
                 .unwrap_or_default()
         })
     });
-    let is_first = Signal::derive(move || position.get().0 == 0);
-    let is_last = Signal::derive(move || {
-        let (index, len) = position.get();
-        index + 1 >= len
-    });
+    let arrow_label = move |up: bool, step: Memo<Option<Option<StreamerTier>>>| {
+        Signal::derive(move || match step.get() {
+            Some(Some(StreamerTier::Primary)) => format!("Move {} to Primary", name.get()),
+            Some(Some(StreamerTier::Background)) => format!("Move {} to Background", name.get()),
+            _ => format!("Move {} {}", name.get(), if up { "up" } else { "down" }),
+        })
+    };
     let busy_delete = Signal::derive(move || {
         deleting.with(|d| key.with_value(|id| d.as_deref() == Some(id.as_str())))
     });
@@ -598,8 +706,8 @@ fn StreamerRow(
                     size=ButtonSize::Sm
                     icon=Icon::ChevronUp
                     icon_only=true
-                    aria_label=Signal::derive(move || format!("Move {} up", name.get()))
-                    disabled=Signal::derive(move || is_first.get() || reordering.get())
+                    aria_label=arrow_label(true, up_step)
+                    disabled=Signal::derive(move || up_step.with(Option::is_none) || reordering.get())
                     disabled_reason=Signal::derive(move || if reordering.get() { "Saving the order".to_owned() } else { "Already first".to_owned() })
                     on_click=Callback::new(move |_| on_move.run((key.get_value(), true)))
                 />
@@ -608,8 +716,8 @@ fn StreamerRow(
                     size=ButtonSize::Sm
                     icon=Icon::ChevronDown
                     icon_only=true
-                    aria_label=Signal::derive(move || format!("Move {} down", name.get()))
-                    disabled=Signal::derive(move || is_last.get() || reordering.get())
+                    aria_label=arrow_label(false, down_step)
+                    disabled=Signal::derive(move || down_step.with(Option::is_none) || reordering.get())
                     disabled_reason=Signal::derive(move || if reordering.get() { "Saving the order".to_owned() } else { "Already last".to_owned() })
                     on_click=Callback::new(move |_| on_move.run((key.get_value(), false)))
                 />
@@ -1314,20 +1422,67 @@ mod tests {
         assert!(token_problem(&"a".repeat(MAX_TOKEN_CHARS + 1)).is_some());
     }
 
+    fn tiered(rows: &[(&str, StreamerTier)]) -> Vec<(String, StreamerTier)> {
+        rows.iter().map(|(id, t)| ((*id).to_owned(), *t)).collect()
+    }
+
+    fn ids(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
     #[test]
-    fn moves_stop_at_the_ends() {
-        let ids: Vec<String> = ["a", "b", "c"].map(String::from).to_vec();
+    fn moves_swap_within_a_tier_and_cross_at_the_boundary() {
+        use StreamerTier::{Background as B, Primary as P};
+        let rows = tiered(&[("a", P), ("b", P), ("x", B), ("y", B)]);
         assert_eq!(
-            move_order(&ids, "b", true),
-            Some(["b", "a", "c"].map(String::from).to_vec())
+            plan_move(&rows, "b", true),
+            Some(Move::Reorder(ids(&["b", "a", "x", "y"])))
         );
         assert_eq!(
-            move_order(&ids, "b", false),
-            Some(["a", "c", "b"].map(String::from).to_vec())
+            plan_move(&rows, "x", false),
+            Some(Move::Reorder(ids(&["a", "b", "y", "x"])))
         );
-        assert_eq!(move_order(&ids, "a", true), None);
-        assert_eq!(move_order(&ids, "c", false), None);
-        assert_eq!(move_order(&ids, "x", true), None);
+        assert_eq!(plan_move(&rows, "b", false), Some(Move::Tier(B)));
+        assert_eq!(plan_move(&rows, "x", true), Some(Move::Tier(P)));
+        assert_eq!(plan_move(&rows, "a", true), None);
+        assert_eq!(plan_move(&rows, "y", false), None);
+        assert_eq!(plan_move(&rows, "nobody", true), None);
+        // An empty tier still takes a crossing streamer.
+        let primary_only = tiered(&[("a", P), ("b", P)]);
+        assert_eq!(plan_move(&primary_only, "b", false), Some(Move::Tier(B)));
+        assert_eq!(
+            plan_move(&tiered(&[("x", B)]), "x", true),
+            Some(Move::Tier(P))
+        );
+        assert_eq!(plan_move(&tiered(&[("x", B)]), "x", false), None);
+    }
+
+    #[test]
+    fn saved_views_land_where_the_server_lists_them() {
+        use StreamerTier::{Background as B, Primary as P};
+        let view = |id: &str, tier| StreamerConfigView {
+            tier,
+            ..view(id, id)
+        };
+        let order = |list: &[StreamerConfigView]| -> Vec<String> {
+            list.iter().map(|s| s.id.clone()).collect()
+        };
+        let mut list = vec![view("a", P), view("b", P), view("x", B), view("y", B)];
+        place_view(&mut list, view("a", B));
+        assert_eq!(order(&list), ids(&["b", "a", "x", "y"]));
+        place_view(&mut list, view("y", P));
+        assert_eq!(order(&list), ids(&["b", "y", "a", "x"]));
+        place_view(&mut list, view("n", P));
+        assert_eq!(order(&list), ids(&["b", "y", "n", "a", "x"]));
+        place_view(&mut list, view("m", B));
+        assert_eq!(order(&list), ids(&["b", "y", "n", "a", "x", "m"]));
+        let renamed = StreamerConfigView {
+            display_name: "X2".to_owned(),
+            ..view("x", B)
+        };
+        place_view(&mut list, renamed);
+        assert_eq!(order(&list), ids(&["b", "y", "n", "a", "x", "m"]));
+        assert_eq!(list[4].display_name, "X2");
     }
 
     #[test]

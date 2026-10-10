@@ -437,9 +437,27 @@ fn apply_row(row: &mut StreamerConfigRow, draft: Draft, now: i64) {
     row.updated_at = now;
 }
 
+/// Display order: every primary streamer before every background one, then
+/// by position within each tier.
 fn sorted(mut rows: Vec<StreamerConfigRow>) -> Vec<StreamerConfigRow> {
-    rows.sort_by(|a, b| a.position.cmp(&b.position).then_with(|| a.id.cmp(&b.id)));
+    rows.sort_by(|a, b| {
+        (a.tier == StreamerTier::Background)
+            .cmp(&(b.tier == StreamerTier::Background))
+            .then(a.position.cmp(&b.position))
+            .then_with(|| a.id.cmp(&b.id))
+    });
     rows
+}
+
+/// The position for `id` moving into `tier`: the boundary between the tiers,
+/// so a promotion lands last among primary streamers and a demotion first
+/// among background ones.
+fn boundary_position(rows: &[StreamerConfigRow], id: &str, tier: StreamerTier) -> i64 {
+    let others = rows.iter().filter(|r| r.id != id && r.tier == tier);
+    match tier {
+        StreamerTier::Primary => others.map(|r| r.position).max().map_or(0, |p| p + 1),
+        StreamerTier::Background => others.map(|r| r.position).min().map_or(0, |p| p - 1),
+    }
 }
 
 struct Inner {
@@ -621,7 +639,8 @@ impl StreamerConfigService {
     }
 
     /// Applies `patch`. A tier change to background drops a live-notification
-    /// override unless the patch sets one (which is then rejected).
+    /// override unless the patch sets one (which is then rejected), and any
+    /// tier change moves the streamer to the boundary between the tiers.
     pub async fn update(
         &self,
         id: &str,
@@ -661,6 +680,9 @@ impl StreamerConfigService {
         }
         let draft = validate(draft)?;
         check_conflicts(&draft, id, &rows)?;
+        if draft.tier != row.tier {
+            row.position = boundary_position(&rows, id, draft.tier);
+        }
         apply_row(&mut row, draft, self.now());
         let stored = row.clone();
         self.inner
@@ -693,6 +715,7 @@ impl StreamerConfigService {
     }
 
     /// Reorders streamers; `ids` must list every configured id exactly once.
+    /// The order applies within each tier: primary streamers still list first.
     pub async fn reorder(&self, ids: Vec<String>) -> Result<(), ConfigError> {
         let _guard = self.inner.writes.lock().await;
         let rows = self.rows().await?;

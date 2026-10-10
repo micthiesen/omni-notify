@@ -5,6 +5,8 @@
 
 use axum::Router;
 use axum::http::Method;
+use omni_api::streamer_config::{StreamerConfigCreate, StreamerConfigPatch};
+use omni_api::streamers::StreamerTier;
 use omni_live::{LiveModule, Roster, StreamerConfigService};
 use omni_mcp_kit::registry::standalone_context;
 use omni_mcp_kit::{McpTool, ToolOutput, ToolPhase};
@@ -144,8 +146,9 @@ async fn the_ui_creates_edits_reorders_and_deletes_streamers() {
         )
         .await;
     assert_eq!(status, 200);
-    assert_eq!(listed["streamers"][0]["id"], "jerma");
-    assert_eq!(f.roster_names(), ["Jerma", "Steven"]);
+    // Jerma is background, so primary Steven still lists first.
+    assert_eq!(listed["streamers"][0]["id"], "destiny");
+    assert_eq!(f.roster_names(), ["Steven", "Jerma"]);
     let (status, _) = f
         .send(
             Method::PUT,
@@ -268,6 +271,59 @@ async fn mcp_tools_manage_streamers_but_never_accept_pushover_tokens() {
     assert_eq!(listed["streamers"].as_array().unwrap().len(), 1);
     assert!(!listed.to_string().contains("secret1"));
     assert_eq!(f.roster_names(), ["Vinesauce"]);
+}
+
+#[tokio::test]
+async fn primary_streamers_list_first_and_a_tier_change_crosses_the_boundary() {
+    let f = fixture().await;
+    let ids = || async {
+        f.service
+            .list()
+            .await
+            .unwrap()
+            .streamers
+            .into_iter()
+            .map(|s| s.id)
+            .collect::<Vec<_>>()
+    };
+    for (name, tier) in [
+        ("a", StreamerTier::Primary),
+        ("x", StreamerTier::Background),
+        ("b", StreamerTier::Primary),
+        ("y", StreamerTier::Background),
+        ("c", StreamerTier::Primary),
+    ] {
+        f.service
+            .create(StreamerConfigCreate {
+                display_name: name.into(),
+                twitch: vec![name.into()],
+                tier,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+    assert_eq!(ids().await, ["a", "b", "c", "x", "y"]);
+
+    // Demoting lands first among background; promoting lands last among primary.
+    let demote = StreamerConfigPatch {
+        tier: Some(StreamerTier::Background),
+        ..Default::default()
+    };
+    f.service.update("b", demote).await.unwrap();
+    assert_eq!(ids().await, ["a", "c", "b", "x", "y"]);
+    let promote = StreamerConfigPatch {
+        tier: Some(StreamerTier::Primary),
+        ..Default::default()
+    };
+    f.service.update("y", promote).await.unwrap();
+    assert_eq!(ids().await, ["a", "c", "y", "b", "x"]);
+
+    // An interleaved order applies within each tier.
+    let order = ["x", "y", "b", "c", "a"].map(String::from).to_vec();
+    f.service.reorder(order).await.unwrap();
+    assert_eq!(ids().await, ["y", "c", "a", "x", "b"]);
+    assert_eq!(f.roster_names(), ["y", "c", "a", "x", "b"]);
 }
 
 #[tokio::test]
