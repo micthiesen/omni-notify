@@ -275,8 +275,7 @@ and no sub-tab strip (`SectionNav` is removed).
 - Current item: `--raised` fill, 2 px Signal tick on the left edge,
   `aria-current="page"`. Streamer pages mark their On air row (or Live, when
   offline) as current.
-- Rail footer: connection state (section 8.1). Clicking it reloads when not live,
-  as today.
+- Rail footer: connection state (section 8.1). Clicking it always reloads.
 
 ### 5.2 Top bar
 
@@ -447,6 +446,12 @@ Rail footer (desktop) and a dot in the phone top bar, mapped 1:1 onto
 | Polling | warn diamond, "Polling · every 10 s" |
 | Connecting / Reconnecting | warn diamond pulsing, "Reconnecting…" |
 | Error | fault square, "Offline · retry" |
+| Update available | the state above plus a Signal pill tag "Update" beside the dot (phone top bar too; a Signal ring on the dot in the collapsed rail); tooltip "Update available (app, server, or app and server changed). Reload to update" |
+
+The readout is one button titled "Reload": clicking, tapping, Enter or Space
+always does `location.reload()`. Every snapshot carries the server's `build`
+identity (image revision and a hash of the served `index.html`); the first one a
+page sees is its loaded build, and any later difference shows the update state.
 
 Any panel whose data is older than twice its refresh interval shows
 `updated 3m ago` in warn in its header.

@@ -164,6 +164,18 @@ a.rail-label:hover { color: var(--text); }
 .conn-dot.fault { border-radius: 1px; background: var(--fault); box-shadow: none; }
 .conn.warn { color: var(--warn); }
 .conn.fault { color: var(--fault); }
+/* A newer build is serving: a Signal tag beside the dot ("this just changed"). */
+.conn-update {
+  flex: none;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--signal-line);
+  border-radius: var(--r-pill);
+  background: var(--signal-wash);
+  color: var(--signal);
+  font: var(--t-label);
+  line-height: 18px;
+}
+.conn.has-update:hover .conn-update { border-color: var(--signal); }
 
 /* Collapsed rail: icons only */
 .app[data-rail="collapsed"] .rail {
@@ -179,6 +191,7 @@ a.rail-label:hover { color: var(--text); }
   width: 44px;
   padding: 0;
 }
+.app[data-rail="collapsed"] .conn.has-update .conn-dot { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--signal); }
 .app[data-rail="collapsed"] .rail-item[aria-current="page"]::before { left: -8px; }
 .app[data-rail="collapsed"] .rail-nav { align-self: stretch; align-items: center; margin: 0 calc(var(--sp-2) * -1); padding-left: var(--sp-2); padding-right: var(--sp-2); }
 .app[data-rail="collapsed"] .rail-more { display: none; }
@@ -243,6 +256,7 @@ a.rail-label:hover { color: var(--text); }
   .crumbs .here { font: 600 1rem/1.25rem var(--font); }
   .topbar-phone { display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
   .topbar-phone .conn { flex: none; width: 44px; height: 44px; justify-content: center; padding: 0; }
+  .topbar-phone .conn.has-update { width: auto; gap: var(--sp-2); padding: 0 var(--sp-2) 0 var(--sp-3); }
   .content { padding: var(--sp-5) var(--gutter) calc(var(--tab-h) + var(--sp-6) + env(safe-area-inset-bottom)); }
   .focus-mode .content { padding-bottom: calc(var(--sp-10) + env(safe-area-inset-bottom)); }
   .tabbar {

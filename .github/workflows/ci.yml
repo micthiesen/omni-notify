@@ -135,6 +135,8 @@ jobs:
           context: .
           file: Dockerfile
           push: false
+          # Same build args as publish, so its build is a cache hit.
+          build-args: OMNI_REVISION=${{ github.sha }}
           # mode=max keeps every stage, including the cargo-chef dependency layers.
           cache-from: type=gha,scope=omni-notify
           cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,scope=omni-notify,mode=max,ignore-error=true' || '' }}
@@ -169,6 +171,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          build-args: OMNI_REVISION=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/omni-notify:latest
             ghcr.io/${{ github.repository_owner }}/omni-notify:${{ github.sha }}

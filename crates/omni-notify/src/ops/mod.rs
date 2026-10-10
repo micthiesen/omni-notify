@@ -72,8 +72,12 @@ fn internal(error: impl std::fmt::Display) -> Response {
     omni_server_kit::ApiError::internal(error).into_response()
 }
 
-async fn health() -> Response {
-    js_json(StatusCode::OK, &json!({ "status": "ok" }))
+async fn health(State(state): State<OpsState>) -> Response {
+    let body = omni_api::build::HealthResponse {
+        status: "ok".to_owned(),
+        build: state.dashboard.build().clone(),
+    };
+    js_json_of(StatusCode::OK, &body)
 }
 
 async fn tasks(State(state): State<OpsState>) -> Response {

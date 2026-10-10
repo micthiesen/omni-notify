@@ -923,6 +923,10 @@
         "whyForUser": "Synthetic text 425.",
         "recommendedAt": 1790985673524
       }
-    ]
+    ],
+    "build": {
+      "server": "0123456789ab",
+      "frontend": "fedcba987654"
+    }
   }
 }

@@ -186,6 +186,11 @@ USER node
 # the tool and model paths, so it needs no runtime secrets.
 RUN omni-notify doctor --image
 
+# The commit this image was built from (CI passes it); after the doctor so a new
+# revision rebuilds no layer. Open pages compare it to offer a reload.
+ARG OMNI_REVISION=
+ENV OMNI_IMAGE_REVISION=${OMNI_REVISION}
+
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["omni-notify", "healthcheck"]

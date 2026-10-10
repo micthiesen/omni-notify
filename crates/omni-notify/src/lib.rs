@@ -4,6 +4,7 @@
 
 pub mod app;
 pub mod boot;
+pub mod build_identity;
 pub mod cli;
 pub mod compat_audit;
 pub mod context;

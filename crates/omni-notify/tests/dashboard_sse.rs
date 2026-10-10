@@ -104,7 +104,7 @@ async fn sends_a_fresh_initial_snapshot_with_increasing_ids() {
     let snapshot: Value = serde_json::from_str(&frame.data).unwrap();
     assert_eq!(
         snapshot.as_object().unwrap().keys().collect::<Vec<_>>(),
-        vec!["tasks", "streamers", "runs", "onDeck"]
+        vec!["tasks", "streamers", "runs", "onDeck", "build"]
     );
     assert_eq!(runs(&frame.data), 1);
     assert_eq!(snapshot["runs"][0]["scheduledFor"], Value::Null);

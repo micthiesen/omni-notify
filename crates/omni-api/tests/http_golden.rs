@@ -111,13 +111,8 @@ macro_rules! golden {
     (@status $s:literal) => { $s };
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Health {
-    status: String,
-}
-
 golden! {
-    health: Health = "api_health";
+    health: omni_api::build::HealthResponse = "api_health";
     tasks: omni_api::tasks::TasksResponse = "api_tasks";
     task_runs: omni_api::runs::RunsResponse = "api_task-runs";
     task_runs_limited: omni_api::runs::RunsResponse = "api_task-runs__limit_5";

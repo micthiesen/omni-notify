@@ -2,6 +2,10 @@
   "route": "/api/health",
   "status": 200,
   "body": {
-    "status": "ok"
+    "status": "ok",
+    "build": {
+      "server": "0123456789ab",
+      "frontend": "fedcba987654"
+    }
   }
 }

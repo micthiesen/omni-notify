@@ -1,8 +1,10 @@
 //! The connection readout (rail footer and phone top bar), mapped 1:1 onto
-//! `ConnectionState`. The dot pops once per snapshot.
+//! `ConnectionState`, plus the "Update" state once a snapshot reports a newer
+//! build. The dot pops once per snapshot; activating it always reloads.
 
 use leptos::html::Span;
 use leptos::prelude::*;
+use omni_api::build::BuildChange;
 use omni_web_kit::hooks::use_now;
 use omni_web_kit::live::{ConnectionState, use_live_data};
 
@@ -33,8 +35,19 @@ pub fn connection_copy(
     }
 }
 
-/// `compact` renders only the dot (phone top bar). Clicking reloads unless
-/// live.
+/// The button's tooltip: always a reload, saying what it picks up.
+pub fn connection_title(change: Option<BuildChange>) -> String {
+    match change {
+        Some(change) => format!(
+            "Update available ({} changed). Reload to update",
+            change.describe()
+        ),
+        None => "Reload".to_owned(),
+    }
+}
+
+/// `compact` renders only the dot (phone top bar), and an "Update" tag while an
+/// update is available. Clicking or tapping always reloads the page.
 #[component]
 pub fn Connection(#[prop(optional)] compact: bool) -> impl IntoView {
     let live = use_live_data();
@@ -69,36 +82,37 @@ pub fn Connection(#[prop(optional)] compact: bool) -> impl IntoView {
         let pulse = live.connection.get() == ConnectionState::Connecting && tone == "warn";
         format!("conn-dot {tone}{}", if pulse { " pulse" } else { "" })
     };
+    let update = move || live.build_change.get().is_some();
     let label = move || {
         let (_, text, detail) = copy.get();
-        match detail {
+        let state = match detail {
             Some(d) => format!("{text} · {d}"),
             None => text,
+        };
+        if update() {
+            format!("{state}. Update available, reload")
+        } else {
+            format!("{state}. Reload")
         }
     };
     view! {
         <button
             type="button"
-            class=move || format!("conn {}", copy.get().0)
-            title=move || {
-                if live.connection.get() == ConnectionState::Live {
-                    "Connected: snapshots stream live".to_owned()
-                } else {
-                    "Reload".to_owned()
-                }
+            class=move || {
+                format!("conn {}{}", copy.get().0, if update() { " has-update" } else { "" })
             }
+            title=move || connection_title(live.build_change.get())
             aria-label=move || format!("Connection: {}", label())
             on:click=move |_| {
-                if live.connection.get_untracked() != ConnectionState::Live {
-                    let _ = window().location().reload();
-                }
+                let _ = window().location().reload();
             }
         >
             <span node_ref=dot class=dot_class aria-hidden="true"></span>
-            {(!compact).then(|| view! {
-                <span role="status">{move || copy.get().1}</span>
-                <span class="detail num">{move || copy.get().2}</span>
-            })}
+            {(!compact).then(|| view! { <span role="status">{move || copy.get().1}</span> })}
+            <Show when=update>
+                <span class="conn-update">"Update"</span>
+            </Show>
+            {(!compact).then(|| view! { <span class="detail num">{move || copy.get().2}</span> })}
         </button>
     }
 }
@@ -124,6 +138,15 @@ mod tests {
         assert_eq!(
             connection_copy(ConnectionState::Connecting, false, None).1,
             "Reconnecting…"
+        );
+    }
+
+    #[test]
+    fn title_always_offers_a_reload() {
+        assert_eq!(connection_title(None), "Reload");
+        assert_eq!(
+            connection_title(Some(BuildChange::Both)),
+            "Update available (app and server changed). Reload to update"
         );
     }
 }

@@ -6,6 +6,8 @@
 //! `#[serde(default, skip_serializing_if = "Option::is_none")]`; string unions
 //! are enums with explicit `rename`; never `deny_unknown_fields`.
 
+/// The running build's identity and `/api/health`.
+pub mod build;
 /// Error body, pagination, path builders.
 pub mod common;
 /// `/api/costs`.

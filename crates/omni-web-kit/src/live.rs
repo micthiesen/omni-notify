@@ -9,6 +9,9 @@
 //! The stream opens only after the document's `load` and closes while the tab
 //! is hidden: browsers allow six HTTP/1.1 connections per origin, and a held
 //! stream per background tab otherwise starves page loads and API fetches.
+//!
+//! The first snapshot's build identity is the one this page loaded with; a
+//! later snapshot from another build sets `build_change` until a reload.
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -17,6 +20,8 @@ use std::time::Duration;
 
 use futures::future::{Either, select};
 use leptos::prelude::*;
+
+use omni_api::build::{BuildChange, BuildIdentity};
 
 use crate::api::{self, ApiClientError, Snapshot};
 use crate::components::streamers::{live_streamers, viewer_number};
@@ -95,6 +100,20 @@ pub struct LiveData {
     /// Per live streamer: `(epoch ms, viewers)` samples observed in this tab,
     /// oldest first. Cleared when the streamer goes offline.
     pub viewer_history: RwSignal<HashMap<String, Vec<(f64, f64)>>>,
+    /// The build of the first snapshot this page saw.
+    pub loaded_build: StoredValue<Option<BuildIdentity>>,
+    /// Set once a snapshot reports a build other than [`Self::loaded_build`].
+    pub build_change: RwSignal<Option<BuildChange>>,
+}
+
+/// Records the first build seen in `loaded` and compares `current` with it.
+pub fn track_build(
+    loaded: &mut Option<BuildIdentity>,
+    current: &BuildIdentity,
+) -> Option<BuildChange> {
+    loaded
+        .get_or_insert_with(|| current.clone())
+        .change_to(current)
 }
 
 /// Appends one sample per live streamer and drops offline ones.
@@ -127,6 +146,13 @@ impl LiveData {
         self.viewer_history
             .update(|history| record_viewers(history, &next, now));
         self.updated_at.set(now);
+        let change = self
+            .loaded_build
+            .try_update_value(|loaded| track_build(loaded, &next.build))
+            .flatten();
+        if self.build_change.get_untracked() != change {
+            self.build_change.set(change);
+        }
         self.snapshot.set(Some(next));
     }
 
@@ -176,6 +202,8 @@ pub fn provide_live_data() -> LiveData {
         error: RwSignal::new(None),
         updated_at: RwSignal::new(0.0),
         viewer_history: RwSignal::new(HashMap::new()),
+        loaded_build: StoredValue::new(None),
+        build_change: RwSignal::new(None),
     };
     provide_context(live);
     let is_live = Rc::new(Cell::new(false));
@@ -268,6 +296,37 @@ pub fn use_live_data() -> LiveData {
             error: RwSignal::new(Some("Live data is unavailable".to_owned())),
             updated_at: RwSignal::new(0.0),
             viewer_history: RwSignal::new(HashMap::new()),
+            loaded_build: StoredValue::new(None),
+            build_change: RwSignal::new(None),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn build(server: &str, frontend: &str) -> BuildIdentity {
+        BuildIdentity {
+            server: server.to_owned(),
+            frontend: frontend.to_owned(),
+        }
+    }
+
+    #[test]
+    fn the_first_build_seen_is_the_loaded_one() {
+        let mut loaded = None;
+        assert_eq!(track_build(&mut loaded, &build("s1", "f1")), None);
+        assert_eq!(loaded, Some(build("s1", "f1")));
+        assert_eq!(
+            track_build(&mut loaded, &build("s1", "f2")),
+            Some(BuildChange::Frontend)
+        );
+        assert_eq!(
+            track_build(&mut loaded, &build("s2", "f2")),
+            Some(BuildChange::Both)
+        );
+        assert_eq!(loaded, Some(build("s1", "f1")), "never replaced");
+        assert_eq!(track_build(&mut loaded, &build("s1", "f1")), None);
     }
 }

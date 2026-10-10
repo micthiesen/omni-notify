@@ -10,6 +10,8 @@
 //! - Every client gets a `ping` frame (data: epoch ms) on connect, before
 //!   its initial snapshot, and every 25 s after.
 //! - Snapshot frame ids increase monotonically across all clients.
+//! - Every snapshot carries the process's build identity, computed once, so a
+//!   page reconnecting after a deploy sees the new build.
 
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -21,6 +23,7 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use futures::{Stream, StreamExt as _};
+use omni_api::build::BuildIdentity;
 use omni_api::snapshot::SNAPSHOT_RUN_LIMIT;
 use omni_runtime::AppContext;
 use omni_runtime::ports::PortError;
@@ -58,6 +61,7 @@ struct HubState {
 
 struct Inner {
     ctx: AppContext,
+    build: BuildIdentity,
     /// Serializes broadcasts and initial frames.
     lock: tokio::sync::Mutex<()>,
     state: Mutex<HubState>,
@@ -74,6 +78,7 @@ impl Dashboard {
     pub fn new(ctx: AppContext) -> Self {
         Self {
             inner: Arc::new(Inner {
+                build: crate::build_identity::current(&ctx.paths.web_dist),
                 ctx,
                 lock: tokio::sync::Mutex::new(()),
                 state: Mutex::new(HubState::default()),
@@ -96,7 +101,12 @@ impl Dashboard {
         state.clients.len()
     }
 
-    /// `{tasks, streamers, runs, onDeck}`.
+    /// This process's build identity.
+    pub fn build(&self) -> &BuildIdentity {
+        &self.inner.build
+    }
+
+    /// `{tasks, streamers, runs, onDeck, build}`.
     pub async fn snapshot(&self) -> Result<Value, SnapshotError> {
         let ctx = &self.inner.ctx;
         let tasks = serde_json::to_value(ctx.tasks.list().await?)?;
@@ -119,6 +129,7 @@ impl Dashboard {
         snapshot.insert("streamers".to_owned(), Value::Array(streamers));
         snapshot.insert("runs".to_owned(), serde_json::to_value(runs)?);
         snapshot.insert("onDeck".to_owned(), Value::Array(on_deck));
+        snapshot.insert("build".to_owned(), serde_json::to_value(self.build())?);
         Ok(omni_core::js::normalize_numbers(Value::Object(snapshot)))
     }
 

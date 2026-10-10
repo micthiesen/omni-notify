@@ -167,6 +167,15 @@ hashed `/assets/*` are immutable and Brotli-precompressed, `index.html` is
 `no-cache`, and unknown `/api/*` GETs return JSON 404. trunk injects no inline
 script, so the `/reminders` CSP needs only `'wasm-unsafe-eval'`.
 
+Build identity (`omni_api::build::BuildIdentity`, computed once at boot in
+`omni-notify/src/build_identity.rs`) rides on every snapshot and on
+`/api/health`. `server` is `OMNI_IMAGE_REVISION` (the Dockerfile sets it from the
+`OMNI_REVISION` build arg, which CI fills with the commit SHA), else a
+fingerprint of the executable's path, size and mtime. `frontend` is a hash of the
+served `index.html`, which names every content-hashed asset. A page records the
+first snapshot's build and shows the update state (design system, section 8.1)
+when a later one differs.
+
 ## Deployment pipeline
 
 `Dockerfile` stages, all pinned and SHA-256 verified:

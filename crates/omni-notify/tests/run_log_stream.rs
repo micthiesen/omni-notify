@@ -163,10 +163,16 @@ async fn task_routes_map_registry_errors() {
         (StatusCode::OK, serde_json::json!({"runs": []}))
     );
     let (status, body) = app.get_json(&router, "/api/health").await;
-    assert_eq!(
-        (status, body),
-        (StatusCode::OK, serde_json::json!({"status": "ok"}))
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "ok");
+    let (_, snapshot) = app.get_json(&router, "/api/snapshot").await;
+    assert_eq!(body["build"], snapshot["build"], "one identity per process");
+    assert!(
+        body["build"]["server"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
     );
+    assert!(body["build"]["frontend"].is_string());
     let (status, body) = app.get_json(&router, "/api/costs?days=14").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(

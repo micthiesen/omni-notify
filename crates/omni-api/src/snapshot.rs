@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::build::BuildIdentity;
 use crate::media::OnDeckItem;
 use crate::runs::Run;
 use crate::streamers::StreamerView;
@@ -21,6 +22,8 @@ pub struct Snapshot {
     /// Newest first, at most [`SNAPSHOT_RUN_LIMIT`].
     pub runs: Vec<Run>,
     pub on_deck: Vec<OnDeckItem>,
+    /// Constant per server process; a change means a deploy replaced it.
+    pub build: BuildIdentity,
 }
 
 /// SSE event names on `/api/events`.

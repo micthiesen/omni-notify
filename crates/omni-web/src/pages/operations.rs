@@ -750,6 +750,7 @@ pub(crate) fn empty_snapshot() -> api::Snapshot {
         streamers: Vec::new(),
         runs: Vec::new(),
         on_deck: Vec::new(),
+        build: omni_api::build::BuildIdentity::default(),
     }
 }
 
