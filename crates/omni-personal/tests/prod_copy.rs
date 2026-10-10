@@ -9,6 +9,7 @@
 #![allow(clippy::print_stdout, clippy::unwrap_used, clippy::expect_used)]
 
 use omni_personal::pets::alerts::PetHealthAlert;
+use omni_personal::pets::dismissals::PetHealthDismissal;
 use omni_personal::pets::persistence::PetStore;
 use omni_personal::printer::AcceptedPrintRecord;
 use omni_personal::reset_alerts::{ClaudeResetDelivery, CodexResetDelivery};
@@ -87,6 +88,10 @@ async fn production_rows_decode_and_round_trip() {
         (
             "pet-health-alert",
             check::<PetHealthAlert>(&copy.store).await,
+        ),
+        (
+            "pet-health-dismissal",
+            check::<PetHealthDismissal>(&copy.store).await,
         ),
     ] {
         println!(

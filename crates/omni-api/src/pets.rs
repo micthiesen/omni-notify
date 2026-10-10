@@ -1,4 +1,5 @@
-//! `GET /api/pets` and `GET /api/pets/health`.
+//! `GET /api/pets`, `GET /api/pets/health` and the finding dismissals
+//! (`POST /api/pets/health/dismiss`, `POST /api/pets/health/restore`).
 //!
 //! Numbers are JS doubles; the backend serializes responses with
 //! `JSON.stringify` semantics so integral weights render as `12`, not `12.0`.
@@ -110,6 +111,27 @@ pub struct PetHealthFinding {
     /// Percent drop, visit ratio, or hours without readings.
     pub value: f64,
     pub message: String,
+    /// When this episode was dismissed in the UI; absent while it needs
+    /// attention. A new episode or a later push clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismissed_at: Option<String>,
+}
+
+/// `POST /api/pets/health/dismiss` and `POST /api/pets/health/restore`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetHealthDismissRequest {
+    pub pet_id: String,
+    pub kind: PetHealthKind,
+}
+
+/// The finding's dismissal after the request (`null` once restored).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PetHealthDismissResponse {
+    pub pet_id: String,
+    pub kind: PetHealthKind,
+    pub dismissed_at: Option<String>,
 }
 
 /// One pet's trend card.
@@ -203,6 +225,11 @@ mod tests {
                     "kind": "weight-drop-2w",
                     "value": 3.03,
                     "message": "Sam: 13.41 lb"
+                }, {
+                    "kind": "weight-drop-90d",
+                    "value": 5.2,
+                    "message": "Sam: 13.41 lb",
+                    "dismissedAt": "2026-10-09T11:00:00.000Z"
                 }]
             }],
             "alerts": [{

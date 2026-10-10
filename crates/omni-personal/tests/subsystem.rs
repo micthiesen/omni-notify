@@ -88,7 +88,8 @@ async fn registers_tasks_tools_and_entities() {
             "codex-reset-delivery",
             "claude-reset-delivery",
             "printer-accepted-job",
-            "pet-health-alert"
+            "pet-health-alert",
+            "pet-health-dismissal"
         ]
     );
     assert_eq!(subsystem.alert_gates.len(), 1);

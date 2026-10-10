@@ -48,6 +48,30 @@ failure off the ERROR-alert Pushover path while the gap row is active, so the ga
 pushes through one layer. Any other PetTracker failure, or a gap the ledger did
 not record, still alerts.
 
+## Dismissing a finding
+
+A long episode (Sandy's 90-day decline stays one episode) would otherwise stay
+a warning on `/pets` and in Home's "pet health alerts" count. Each per-pet
+finding row has a Dismiss button (`POST /api/pets/health/dismiss` with
+`{petId, kind}`; `POST /api/pets/health/restore` undoes it). The `data-gap`
+finding cannot be dismissed: it ends when readings resume.
+
+A dismissal is one `pet-health-dismissal` row per `(petId, kind)` holding
+`dismissedAt`. It hides that rule's current episode only:
+
+- The rule's clear signal deletes it on the next PetTracker pass, so the next
+  episode starts undismissed. This works without Pushover, when no alert rows
+  are written.
+- An alert row whose `episodeStartedAt` or `lastNotifiedAt` is newer than
+  `dismissedAt` lifts it: a new episode, or the repeat push of a worsening weight
+  episode (4 weeks on, 2 points worse), needs attention again. PetTracker then
+  deletes the superseded row.
+
+Dismissed findings stay in `GET /api/pets/health` and `pets_read` with
+`dismissedAt` set; the page shows them muted with a Restore button and leaves
+them out of the headline, the warn colouring and Home's count. Dismissal never
+changes the `pet-health-alert` rows or Pushover delivery.
+
 ## Calibration
 
 `OMNI_PROD_COPY=<copy> cargo test -p omni-personal --test prod_copy

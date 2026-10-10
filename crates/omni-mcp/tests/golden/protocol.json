@@ -19647,6 +19647,10 @@
                                   },
                                   "message": {
                                     "type": "string"
+                                  },
+                                  "dismissedAt": {
+                                    "type": "string",
+                                    "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                   }
                                 },
                                 "required": [
@@ -19803,6 +19807,10 @@
                                       },
                                       "message": {
                                         "type": "string"
+                                      },
+                                      "dismissedAt": {
+                                        "type": "string",
+                                        "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                       }
                                     },
                                     "required": [
@@ -42828,6 +42836,10 @@
                                   },
                                   "message": {
                                     "type": "string"
+                                  },
+                                  "dismissedAt": {
+                                    "type": "string",
+                                    "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                   }
                                 },
                                 "required": [
@@ -42984,6 +42996,10 @@
                                       },
                                       "message": {
                                         "type": "string"
+                                      },
+                                      "dismissedAt": {
+                                        "type": "string",
+                                        "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                       }
                                     },
                                     "required": [
@@ -66143,6 +66159,10 @@
                                   },
                                   "message": {
                                     "type": "string"
+                                  },
+                                  "dismissedAt": {
+                                    "type": "string",
+                                    "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                   }
                                 },
                                 "required": [
@@ -66299,6 +66319,10 @@
                                       },
                                       "message": {
                                         "type": "string"
+                                      },
+                                      "dismissedAt": {
+                                        "type": "string",
+                                        "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                       }
                                     },
                                     "required": [
@@ -89517,6 +89541,10 @@
                                   },
                                   "message": {
                                     "type": "string"
+                                  },
+                                  "dismissedAt": {
+                                    "type": "string",
+                                    "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                   }
                                 },
                                 "required": [
@@ -89673,6 +89701,10 @@
                                       },
                                       "message": {
                                         "type": "string"
+                                      },
+                                      "dismissedAt": {
+                                        "type": "string",
+                                        "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                       }
                                     },
                                     "required": [
@@ -112813,6 +112845,10 @@
                                   },
                                   "message": {
                                     "type": "string"
+                                  },
+                                  "dismissedAt": {
+                                    "type": "string",
+                                    "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                   }
                                 },
                                 "required": [
@@ -112969,6 +113005,10 @@
                                       },
                                       "message": {
                                         "type": "string"
+                                      },
+                                      "dismissedAt": {
+                                        "type": "string",
+                                        "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                       }
                                     },
                                     "required": [
@@ -136225,6 +136265,10 @@
                                   },
                                   "message": {
                                     "type": "string"
+                                  },
+                                  "dismissedAt": {
+                                    "type": "string",
+                                    "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                   }
                                 },
                                 "required": [
@@ -136381,6 +136425,10 @@
                                       },
                                       "message": {
                                         "type": "string"
+                                      },
+                                      "dismissedAt": {
+                                        "type": "string",
+                                        "description": "When the user dismissed this episode in the UI; absent while it needs attention"
                                       }
                                     },
                                     "required": [

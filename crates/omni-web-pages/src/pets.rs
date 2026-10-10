@@ -4,19 +4,21 @@ use std::collections::HashMap;
 
 use leptos::prelude::*;
 use omni_api::pets::{
-    DailyVisit, Pet, PetHealthAlertInfo, PetHealthFinding, PetHealthKind, PetHealthResponse,
-    PetTrend, PetWeek, PetsResponse, WeightEntry,
+    DailyVisit, Pet, PetHealthAlertInfo, PetHealthDismissRequest, PetHealthDismissResponse,
+    PetHealthFinding, PetHealthKind, PetHealthResponse, PetTrend, PetWeek, PetsResponse,
+    WeightEntry,
 };
 use omni_web_kit::api;
 use omni_web_kit::charts::{Curve, LineChart, LinePoint, LineSeries};
 use omni_web_kit::components::badges::delta_parts;
 use omni_web_kit::components::{
-    ButtonLink, ButtonSize, ButtonVariant, EmptyState, ErrorState, Icon, Meter, PageHead, Panel,
-    Readout, ReadoutSize, SegOption, Segmented, Skeleton, SkeletonKind, Sparkline, Status,
-    StatusKind, Tone,
+    Button, ButtonLink, ButtonSize, ButtonVariant, EmptyState, ErrorState, Icon, Meter, PageHead,
+    Panel, Readout, ReadoutSize, SegOption, Segmented, Skeleton, SkeletonKind, Sparkline, Status,
+    StatusKind, ToastHandle, ToastKind, Tone, use_toast,
 };
 use omni_web_kit::feeds::use_task_backed;
 use omni_web_kit::hooks::{use_now, use_query_highlight};
+use omni_web_kit::task::spawn_detached;
 use omni_web_kit::utils::format::{format_absolute, format_relative_at};
 use omni_web_kit::utils::js::{
     date_locale_date_string, iso_string, js_round, now_ms, number_string, parse_date_ms, to_fixed,
@@ -295,12 +297,17 @@ pub fn change_label(weeks: u32) -> String {
     format!("{weeks} wk")
 }
 
-/// The change windows a tripped rule covers: the two-week drop rule
-/// compares against two and four weeks back; the 90-day rule shows on the
-/// 12-week window.
+/// Findings that still need attention (not dismissed for this episode).
+pub fn open_findings(findings: &[PetHealthFinding]) -> impl Iterator<Item = &PetHealthFinding> {
+    findings.iter().filter(|f| f.dismissed_at.is_none())
+}
+
+/// The change windows an undismissed tripped rule covers: the two-week drop
+/// rule compares against two and four weeks back; the 90-day rule shows on
+/// the 12-week window.
 pub fn flagged_weeks(findings: &[PetHealthFinding]) -> Vec<u32> {
     let mut weeks = Vec::new();
-    for f in findings {
+    for f in open_findings(findings) {
         match f.kind {
             PetHealthKind::WeightDrop2w => weeks.extend([2, 4]),
             PetHealthKind::WeightDrop90d => weeks.push(12),
@@ -381,7 +388,7 @@ pub fn pets_sentence(health: &PetHealthResponse, now: f64) -> (String, String) {
     let flagged: Vec<&PetTrend> = health
         .pets
         .iter()
-        .filter(|p| !p.findings.is_empty())
+        .filter(|p| open_findings(&p.findings).next().is_some())
         .collect();
     let reading = last.map(|h| {
         if h < 1.0 {
@@ -390,17 +397,29 @@ pub fn pets_sentence(health: &PetHealthResponse, now: f64) -> (String, String) {
             format!("Last reading {} h ago.", js_round(h))
         }
     });
+    let reading = reading.map(|r| format!(" {r}")).unwrap_or_default();
     if flagged.is_empty() {
+        let dismissed: Vec<String> = health
+            .pets
+            .iter()
+            .flat_map(|p| {
+                p.findings
+                    .iter()
+                    .map(move |f| format!("{}: {}", p.name, finding_title(f.kind).to_lowercase()))
+            })
+            .collect();
+        if !dismissed.is_empty() {
+            return (
+                "Nothing new needs a look.".to_owned(),
+                format!("Dismissed: {}.{reading}", dismissed.join("; ")),
+            );
+        }
         let head = match names.len() {
             1 => format!("{} is steady.", names[0]),
             2 => "Both pets are steady.".to_owned(),
             n => format!("All {n} pets are steady."),
         };
-        let lede = format!(
-            "No weight or visit alerts.{}",
-            reading.map(|r| format!(" {r}")).unwrap_or_default()
-        );
-        return (head, lede);
+        return (head, format!("No weight or visit alerts.{reading}"));
     }
     let flagged_names: Vec<String> = flagged.iter().map(|p| p.name.clone()).collect();
     let verb = if flagged.len() > 1 { "need" } else { "needs" };
@@ -408,8 +427,7 @@ pub fn pets_sentence(health: &PetHealthResponse, now: f64) -> (String, String) {
     let lede = flagged
         .iter()
         .flat_map(|p| {
-            p.findings
-                .iter()
+            open_findings(&p.findings)
                 .map(move |f| format!("{}: {}", p.name, finding_title(f.kind).to_lowercase()))
         })
         .collect::<Vec<_>>()
@@ -458,6 +476,96 @@ fn ChangeCell(
     }
 }
 
+/// Dismisses (`dismiss`) or restores a finding, then reloads the health data.
+fn set_dismissed(
+    pet_id: String,
+    kind: PetHealthKind,
+    dismiss: bool,
+    busy: RwSignal<bool>,
+    on_change: Option<Callback<()>>,
+    toast: ToastHandle,
+) {
+    busy.set(true);
+    spawn_detached(async move {
+        let path = if dismiss {
+            "/api/pets/health/dismiss"
+        } else {
+            "/api/pets/health/restore"
+        };
+        let body = PetHealthDismissRequest { pet_id, kind };
+        match api::post::<PetHealthDismissResponse, _>(path, Some(&body)).await {
+            Ok(_) => {
+                if let Some(on_change) = on_change {
+                    on_change.run(());
+                }
+            }
+            Err(e) => toast.show(
+                format!(
+                    "Could not {} the alert: {}",
+                    if dismiss { "dismiss" } else { "restore" },
+                    e.message()
+                ),
+                ToastKind::Error,
+            ),
+        }
+        busy.try_set(false);
+    });
+}
+
+/// One tripped rule: warn with a Dismiss button, or quiet once dismissed for
+/// this episode with a Restore button.
+#[component]
+fn FindingRow(
+    pet_id: String,
+    finding: PetHealthFinding,
+    alert: Option<PetHealthAlertInfo>,
+    on_change: Option<Callback<()>>,
+) -> impl IntoView {
+    let now = use_now(60_000);
+    let busy = RwSignal::new(false);
+    let toast = use_toast();
+    let kind = finding.kind;
+    let title = finding_title(kind);
+    let notified = alert
+        .as_ref()
+        .and_then(|a| a.last_notified_at.as_deref().and_then(parse_date_ms));
+    let dismissed = finding.dismissed_at.as_deref().and_then(parse_date_ms);
+    let is_dismissed = finding.dismissed_at.is_some();
+    let toggle =
+        move |_| set_dismissed(pet_id.clone(), kind, !is_dismissed, busy, on_change, toast);
+    view! {
+        <div class=if is_dismissed { "row pet-finding dismissed" } else { "row pet-finding" }>
+            {if is_dismissed {
+                view! { <Status kind=StatusKind::Idle label=format!("{title} · dismissed")/> }.into_any()
+            } else {
+                view! { <Status kind=StatusKind::Warn label=title/> }.into_any()
+            }}
+            <span class="row-main"><span class="row-sub">{finding.message.clone()}</span></span>
+            <span class="row-end small muted num">
+                {move || match (dismissed, notified) {
+                    (Some(t), _) => format!("dismissed {}", format_relative_at(t, now.get())),
+                    (None, Some(t)) => format!("notified {}", format_relative_at(t, now.get())),
+                    (None, None) => "not notified yet".to_owned(),
+                }}
+                <Button
+                    variant=ButtonVariant::Ghost
+                    size=ButtonSize::Sm
+                    busy=busy
+                    title=if is_dismissed {
+                        "Show this alert as needing attention again".to_owned()
+                    } else {
+                        "Hide this alert until a new episode or a repeat push".to_owned()
+                    }
+                    aria_label=format!("{} {}", if is_dismissed { "Restore" } else { "Dismiss" }, title.to_lowercase())
+                    on_click=Callback::new(toggle)
+                >
+                    {if is_dismissed { "Restore" } else { "Dismiss" }}
+                </Button>
+            </span>
+        </div>
+    }
+}
+
 /// The trend card: robust weight with its 26-week sparkline, 2/4/12-week
 /// changes, visit frequency, reading age and the active alerts.
 #[component]
@@ -465,15 +573,13 @@ fn PetTrendBlock(
     trend: PetTrend,
     alerts: Vec<PetHealthAlertInfo>,
     household_gap: bool,
+    on_change: Option<Callback<()>>,
 ) -> impl IntoView {
     let now = use_now(60_000);
     let flagged = flagged_weeks(&trend.findings);
     let points = spark_points(&trend.weekly);
     let weeks_shown = points.len();
-    let visit_flag = trend
-        .findings
-        .iter()
-        .any(|f| f.kind == PetHealthKind::VisitDrop);
+    let visit_flag = open_findings(&trend.findings).any(|f| f.kind == PetHealthKind::VisitDrop);
     let latest = trend.latest_reading_at.clone();
     let latest_ms = latest.as_deref().and_then(parse_date_ms);
     let name = trend.name.clone();
@@ -537,23 +643,9 @@ fn PetTrendBlock(
             </div>
             {(!findings.is_empty()).then(|| view! {
                 <div class="rows pet-findings">
-                    {findings.into_iter().map(|f| {
-                        let alert = alert_for(&alerts, Some(&pet_id), f.kind).cloned();
-                        let notified = alert
-                            .as_ref()
-                            .and_then(|a| a.last_notified_at.as_deref().and_then(parse_date_ms));
-                        view! {
-                            <div class="row">
-                                <Status kind=StatusKind::Warn label=finding_title(f.kind)/>
-                                <span class="row-main"><span class="row-sub">{f.message.clone()}</span></span>
-                                <span class="row-end small muted num">
-                                    {move || notified.map_or_else(
-                                        || "not notified yet".to_owned(),
-                                        |t| format!("notified {}", format_relative_at(t, now.get())),
-                                    )}
-                                </span>
-                            </div>
-                        }
+                    {findings.into_iter().map(|finding| {
+                        let alert = alert_for(&alerts, Some(&pet_id), finding.kind).cloned();
+                        view! { <FindingRow pet_id=pet_id.clone() finding alert on_change/> }
                     }).collect_view()}
                 </div>
             })}
@@ -567,6 +659,9 @@ fn PetPanel(
     #[prop(optional)] health_trend: Option<PetTrend>,
     #[prop(optional)] alerts: Vec<PetHealthAlertInfo>,
     #[prop(optional)] household_gap: bool,
+    /// Reloads the health data after a finding is dismissed or restored.
+    #[prop(optional)]
+    on_health_change: Option<Callback<()>>,
     #[prop(optional)] highlighted: bool,
     /// Owned by the page so the selection survives data reloads.
     range: RwSignal<Range>,
@@ -731,7 +826,7 @@ fn PetPanel(
                 }}
             </div>
             {match health_trend {
-                Some(trend) => view! { <PetTrendBlock trend alerts household_gap/> }.into_any(),
+                Some(trend) => view! { <PetTrendBlock trend alerts household_gap on_change=on_health_change/> }.into_any(),
                 None => view! {
             <div class="pet-figures">
                 <Readout label="Weight" value=number_string(pet.current_weight) unit="lbs">
@@ -851,6 +946,7 @@ pub fn PetsPage() -> impl IntoView {
     // Each pet's chart controls, created under the page's owner so they
     // outlive a rebuild of the grid.
     let owner = Owner::current();
+    let reload_health = Callback::new(move |()| health.reload());
     let controls =
         StoredValue::new(HashMap::<String, (RwSignal<Range>, RwSignal<ChartMode>)>::new());
     let controls_for = move |pet_id: &str| {
@@ -919,7 +1015,7 @@ pub fn PetsPage() -> impl IntoView {
                                 let alerts = alerts.clone();
                                 let (range, mode) = controls_for(&pet.pet_id);
                                 match trend {
-                                    Some(trend) => view! { <PetPanel pet health_trend=trend alerts household_gap=gap highlighted=hl range mode/> }.into_any(),
+                                    Some(trend) => view! { <PetPanel pet health_trend=trend alerts household_gap=gap on_health_change=reload_health highlighted=hl range mode/> }.into_any(),
                                     None => view! { <PetPanel pet highlighted=hl range mode/> }.into_any(),
                                 }
                             }).collect_view()}
@@ -946,12 +1042,12 @@ enum PetsBody {
     },
 }
 
-/// Pets with a tripped rule (and the household data gap), for Home.
+/// Pets with an undismissed tripped rule (and the household data gap), for Home.
 pub fn attention_count(health: &PetHealthResponse) -> usize {
     health
         .pets
         .iter()
-        .filter(|p| !p.findings.is_empty())
+        .filter(|p| open_findings(&p.findings).next().is_some())
         .count()
         + usize::from(health.data_gap.is_some())
 }
@@ -1043,6 +1139,7 @@ mod tests {
                     kind,
                     value: 3.0,
                     message: "m".into(),
+                    dismissed_at: None,
                 })
                 .collect(),
         }
@@ -1057,6 +1154,7 @@ mod tests {
                 kind: PetHealthKind::DataGap,
                 value: 52.0,
                 message: "gap".into(),
+                dismissed_at: None,
             }),
             pets,
             alerts: Vec::new(),
@@ -1118,6 +1216,40 @@ mod tests {
         let quiet = health(vec![trend("Sandy", vec![])], true);
         assert_eq!(pets_sentence(&quiet, now).0, "The scale has gone quiet.");
         assert_eq!(attention_count(&quiet), 1);
+    }
+
+    #[test]
+    fn dismissed_findings_leave_the_attention_views() {
+        let now = parse_date_ms("2026-10-09T12:00:00.000Z").unwrap();
+        let mut sandy = trend(
+            "Sandy",
+            vec![PetHealthKind::WeightDrop90d, PetHealthKind::VisitDrop],
+        );
+        sandy.findings[0].dismissed_at = Some("2026-10-09T11:00:00.000Z".into());
+        let partly = health(vec![sandy.clone(), trend("Mochi", vec![])], false);
+        assert_eq!(attention_count(&partly), 1);
+        assert_eq!(
+            pets_sentence(&partly, now),
+            (
+                "Sandy needs a look.".into(),
+                "Sandy: fewer litter-box visits.".into()
+            )
+        );
+        assert_eq!(flagged_weeks(&sandy.findings), Vec::<u32>::new());
+
+        sandy.findings[1].dismissed_at = Some("2026-10-09T11:00:00.000Z".into());
+        let all = health(vec![sandy, trend("Mochi", vec![])], false);
+        assert_eq!(attention_count(&all), 0);
+        assert_eq!(
+            pets_sentence(&all, now),
+            (
+                "Nothing new needs a look.".into(),
+                "Dismissed: Sandy: weight down over 90 days; Sandy: fewer litter-box visits. Last reading 2 h ago.".into()
+            )
+        );
+        // The data gap cannot be dismissed and always counts.
+        let gap = health(vec![trend("Sandy", vec![])], true);
+        assert_eq!(attention_count(&gap), 1);
     }
 
     #[test]

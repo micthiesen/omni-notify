@@ -1,20 +1,25 @@
-//! `GET /api/pets`, `GET /api/pets/health` and `GET /api/pets/:petId/export.csv`.
+//! `GET /api/pets`, `GET /api/pets/health`, `GET /api/pets/:petId/export.csv`,
+//! and `POST /api/pets/health/dismiss` and `/restore` for health findings.
 
 use axum::Router;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use jiff::tz::TimeZone;
-use omni_api::pets::{DailyVisit, Pet, WeightEntry};
+use omni_api::pets::{
+    DailyVisit, Pet, PetHealthDismissRequest, PetHealthDismissResponse, WeightEntry,
+};
 use omni_core::clock::SharedClock;
 use omni_core::js::{
     MAX_DATE_MS, date_parse, json_stringify, math_round, number_to_string, string_to_number,
+    to_iso_string,
 };
-use omni_server_kit::{ApiError, json_response};
+use omni_server_kit::{ApiError, JsonBody, json_response};
 use serde::Deserialize;
 
 use super::alerts::HealthLedger;
+use super::dismissals::dismissable;
 use super::health;
 use super::persistence::PetStore;
 
@@ -41,7 +46,16 @@ pub async fn health_response(
     let all = pets.all_pets_with_history().await?;
     let evaluation = health::evaluate(&all, now, tz, weeks);
     let alerts = ledger.all().await?.iter().map(|row| row.info()).collect();
-    Ok(health::response(&evaluation, alerts, now))
+    let dismissed = ledger.dismissed().await?;
+    let mut response = health::response(&evaluation, alerts, now);
+    for trend in &mut response.pets {
+        for finding in &mut trend.findings {
+            finding.dismissed_at = dismissed
+                .get(&(trend.pet_id.clone(), finding.kind))
+                .map(|&at| to_iso_string(at));
+        }
+    }
+    Ok(response)
 }
 
 /// `Math.round(n * 100) / 100`.
@@ -54,6 +68,8 @@ pub fn router(pets: PetStore, ledger: HealthLedger, clock: SharedClock, tz: Time
     Router::new()
         .route("/api/pets", get(list_pets))
         .route("/api/pets/health", get(pet_health))
+        .route("/api/pets/health/dismiss", post(dismiss_finding))
+        .route("/api/pets/health/restore", post(restore_finding))
         .route("/api/pets/{pet_id}/export.csv", get(export_csv))
         .with_state(PetsState {
             pets,
@@ -94,6 +110,72 @@ async fn pet_health(
     .await
     .map_err(ApiError::internal)?;
     let value = serde_json::to_value(&response).map_err(ApiError::internal)?;
+    Ok(json_response(StatusCode::OK, json_stringify(&value)))
+}
+
+/// Dismisses a currently tripped per-pet finding for its episode.
+async fn dismiss_finding(
+    State(state): State<PetsState>,
+    JsonBody(request): JsonBody<PetHealthDismissRequest>,
+) -> Result<Response, ApiError> {
+    if !dismissable(request.kind) {
+        return Err(ApiError::bad_request(format!(
+            "{} cannot be dismissed; it clears when readings resume",
+            request.kind.as_str()
+        )));
+    }
+    let now = state.clock.now_ms();
+    let all = state
+        .pets
+        .all_pets_with_history()
+        .await
+        .map_err(ApiError::internal)?;
+    let evaluation = health::evaluate(&all, now, &state.tz, 1);
+    let Some(trend) = evaluation
+        .trends
+        .iter()
+        .find(|t| t.pet_id == request.pet_id)
+    else {
+        return Err(ApiError::not_found("Pet not found"));
+    };
+    if !trend.findings.iter().any(|f| f.kind == request.kind) {
+        return Err(ApiError::conflict(format!(
+            "{} is not tripped for {}",
+            request.kind.as_str(),
+            trend.name
+        )));
+    }
+    state
+        .ledger
+        .dismiss(&request.pet_id, request.kind, now)
+        .await
+        .map_err(ApiError::internal)?;
+    dismiss_response(request, Some(to_iso_string(now)))
+}
+
+/// Shows a dismissed finding again (idempotent).
+async fn restore_finding(
+    State(state): State<PetsState>,
+    JsonBody(request): JsonBody<PetHealthDismissRequest>,
+) -> Result<Response, ApiError> {
+    state
+        .ledger
+        .undismiss(&request.pet_id, request.kind)
+        .await
+        .map_err(ApiError::internal)?;
+    dismiss_response(request, None)
+}
+
+fn dismiss_response(
+    request: PetHealthDismissRequest,
+    dismissed_at: Option<String>,
+) -> Result<Response, ApiError> {
+    let body = PetHealthDismissResponse {
+        pet_id: request.pet_id,
+        kind: request.kind,
+        dismissed_at,
+    };
+    let value = serde_json::to_value(&body).map_err(ApiError::internal)?;
     Ok(json_response(StatusCode::OK, json_stringify(&value)))
 }
 

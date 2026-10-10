@@ -287,6 +287,8 @@ a.pod-title:hover { color: var(--signal); }
 /* Marker and notified label share the first line; the sentence takes the
    full width below them at every size. */
 .pet-findings .row-main { order: 3; flex: 1 1 100%; }
+/* A dismissed episode stays listed but drops out of the attention views. */
+.pet-finding.dismissed .row-sub { color: var(--text-3); }
 @media (max-width: 899px) {
   .pet-trend-weight { grid-template-columns: minmax(0, 1fr); gap: var(--sp-3); }
   .pet-spark { align-items: stretch; }

@@ -454,6 +454,7 @@ pub fn findings(assessments: &[Assessment]) -> Vec<PetHealthFinding> {
                 kind: a.kind,
                 value: round2(*value),
                 message: message.clone(),
+                dismissed_at: None,
             }),
             _ => None,
         })

@@ -167,6 +167,12 @@ pub struct PetHealthFinding {
     #[schemars(description = "Percent drop, visit ratio, or hours without readings")]
     pub value: f64,
     pub message: String,
+    #[schemars(
+        skip_serializing_if = "Option::is_none",
+        rename = "dismissedAt",
+        description = "When the user dismissed this episode in the UI; absent while it needs attention"
+    )]
+    pub dismissed_at: Option<String>,
 }
 
 #[derive(JsonSchema)]

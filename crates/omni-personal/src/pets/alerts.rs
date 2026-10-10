@@ -7,6 +7,7 @@
 //! previous row so the next pass retries; an uncertain outcome keeps the
 //! reservation and is never resent.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -19,7 +20,8 @@ use omni_store::{EntityOps, EntityWrite, Store, StoreError};
 use omni_tasks::persistence::{self};
 use serde::{Deserialize, Serialize};
 
-use super::health::{Assessment, HOUSEHOLD, Notice, RuleState, decide};
+use super::dismissals::{PetHealthDismissal, still_dismissed};
+use super::health::{Assessment, HOUSEHOLD, Notice, RuleState, Signal, decide};
 use crate::reset_alerts::NotifyError;
 use crate::reset_alerts::delivery::send_general;
 
@@ -213,6 +215,90 @@ impl HealthLedger {
         );
         self.store
             .read(move |docs| docs.get::<PetHealthAlert>(&key))
+            .await
+    }
+
+    /// The dismissals that still apply, by `(petId, kind)`, as epoch ms.
+    pub async fn dismissed(&self) -> Result<HashMap<(String, PetHealthKind), i64>, StoreError> {
+        self.store
+            .read(|docs| {
+                let mut out = HashMap::new();
+                for dismissal in docs.get_all::<PetHealthDismissal>()? {
+                    let alert = docs.get::<PetHealthAlert>(&dismissal.key())?;
+                    let at = ms_i(dismissal.dismissed_at);
+                    if still_dismissed(at, alert.as_ref().map(PetHealthAlert::state).as_ref()) {
+                        out.insert((dismissal.pet_id, dismissal.kind), at);
+                    }
+                }
+                Ok(out)
+            })
+            .await
+    }
+
+    /// Hides the rule's current episode from the attention views as of `now`.
+    /// Never changes the alert row or its pushes.
+    pub async fn dismiss(
+        &self,
+        pet_id: &str,
+        kind: PetHealthKind,
+        now: i64,
+    ) -> Result<(), StoreError> {
+        let row = PetHealthDismissal {
+            pet_id: pet_id.to_owned(),
+            kind,
+            dismissed_at: ms_f(now),
+            extra: Extra::default(),
+        };
+        self.store
+            .write(move |tx| {
+                let extra = tx
+                    .get::<PetHealthDismissal>(&row.key())?
+                    .map(|previous| previous.extra)
+                    .unwrap_or_default();
+                tx.upsert(&PetHealthDismissal { extra, ..row }, UpsertOpts::default())
+            })
+            .await
+    }
+
+    /// Shows a dismissed finding again.
+    pub async fn undismiss(&self, pet_id: &str, kind: PetHealthKind) -> Result<(), StoreError> {
+        let key = (pet_id.to_owned(), kind.as_str().to_owned());
+        self.store
+            .write(move |tx| tx.delete::<PetHealthDismissal>(&key).map(|_| ()))
+            .await
+    }
+
+    /// Deletes dismissals whose episode ended (the rule cleared) or that a
+    /// newer episode or push superseded. Runs whether or not Pushover is
+    /// configured. Returns the number deleted.
+    pub async fn clear_ended_dismissals(
+        &self,
+        assessments: &[Assessment],
+    ) -> Result<u32, StoreError> {
+        let cleared: Vec<(String, PetHealthKind)> = assessments
+            .iter()
+            .filter(|a| matches!(a.signal, Signal::Clear { .. }))
+            .map(|a| (a.pet_id.clone(), a.kind))
+            .collect();
+        self.store
+            .write(move |tx| {
+                let mut deleted = 0;
+                for dismissal in tx.get_all::<PetHealthDismissal>()? {
+                    let key = dismissal.key();
+                    let alert = tx.get::<PetHealthAlert>(&key)?;
+                    let ended = cleared.iter().any(|(pet_id, kind)| {
+                        *pet_id == dismissal.pet_id && *kind == dismissal.kind
+                    });
+                    let superseded = !still_dismissed(
+                        ms_i(dismissal.dismissed_at),
+                        alert.as_ref().map(PetHealthAlert::state).as_ref(),
+                    );
+                    if (ended || superseded) && tx.delete::<PetHealthDismissal>(&key)? {
+                        deleted += 1;
+                    }
+                }
+                Ok(deleted)
+            })
             .await
     }
 

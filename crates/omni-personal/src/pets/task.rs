@@ -139,7 +139,13 @@ impl PetTrackerTask {
             summary = format!("{}; {summary}", gap.message);
         }
         self.set_summary(Some(summary));
+        // Dismissals end with their episode, with or without Pushover.
+        let cleared = self
+            .ledger
+            .clear_ended_dismissals(&evaluation.assessments)
+            .await;
         sent?;
+        cleared?;
         match (gap, evaluation.latest_reading) {
             (Some(_), Some(latest)) => {
                 #[allow(clippy::cast_precision_loss)]

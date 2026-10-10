@@ -32,6 +32,7 @@ use crate::pets::alerts::{
 };
 use crate::pets::api::WhiskerApi;
 use crate::pets::auth::WhiskerAuth;
+use crate::pets::dismissals::PetHealthDismissal;
 use crate::pets::persistence::PetStore;
 use crate::pets::task::PetTrackerTask;
 use crate::printer::ipp::IppPrinterClient;
@@ -73,6 +74,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<ClaudeResetDelivery>(),
         EntityDescriptor::of::<AcceptedPrintRecord>(),
         EntityDescriptor::of::<PetHealthAlert>(),
+        EntityDescriptor::of::<PetHealthDismissal>(),
     ]
 }
 

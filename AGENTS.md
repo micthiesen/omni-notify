@@ -338,9 +338,11 @@ window median (visit misattribution). The `pet-health-alert` row per pet and rul
 is the only throttle: one push per episode, at most one per pet and rule per
 week, reserved as `sending` before the push and never resent when uncertain.
 No reading from any pet for 48 h fails the run; `PetGapAlertGate` keeps that
-failure off the ERROR-alert path while the watch tracks the gap. Pushes report
-numbers and never diagnose. Recalibrate against a production copy with the
-`prod_copy` replay test; see `docs/pet-health.md`.
+failure off the ERROR-alert path while the watch tracks the gap. A UI dismissal
+(`pet-health-dismissal`) hides a per-pet finding until the episode clears or a
+newer episode or push is recorded; it never touches the alert rows or pushes.
+Pushes report numbers and never diagnose. Recalibrate against a production copy
+with the `prod_copy` replay test; see `docs/pet-health.md`.
 
 ### Castro
 
