@@ -1,6 +1,8 @@
 //! `/api/events` dashboard SSE: fresh initial snapshot, 150 ms debounce,
 //! identical-payload skip, 25 s ping, monotonically increasing ids, and
 //! updates on streamer changes (not only task runs).
+//! A writer failure releasing its parent scope is not tested: axum owns the SSE
+//! body, and a dropped client drops the stream future.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

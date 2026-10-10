@@ -4,11 +4,13 @@
 
 mod common;
 
+use omni_core::email::{EmailLink, EmailLinkMetadata, EmailLinkSource, ListUnsubscribe};
 use omni_email::activity::{self, EmailActivityOutcome, EmailPipelineName, LlmCost, NewActivity};
 use omni_email::mcp_tools::{EmailTools, tools};
 use omni_email::retry;
 use omni_mcp_kit::{McpTool, ToolContext, ToolOutput, ToolPhase};
-use omni_testkit::TestApp;
+use omni_runtime::ports::EmailFolderScope;
+use omni_testkit::{TestApp, capture_logs};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -280,4 +282,111 @@ async fn rule_tools_report_statuses() {
     .await
     .unwrap();
     assert_eq!(deleted, json!({"deleted": true}));
+}
+
+#[tokio::test]
+async fn bounds_email_body_output_and_returns_useful_tool_errors() {
+    let app = TestApp::new().await;
+    let tools = tool_set(&app);
+    let mut message = email("message-1");
+    message.subject = "Bounded message".to_owned();
+    message.from = "sender@example.test".to_owned();
+    message.message_id = Some("<bounded@example.test>".to_owned());
+    message.text_body = "x".repeat(50_000);
+    let metadata = EmailLinkMetadata {
+        links: vec![EmailLink {
+            url: "https://example.test/unsubscribe?token=private-test".to_owned(),
+            label: "Unsubscribe".to_owned(),
+            source: EmailLinkSource::Html,
+        }],
+        links_truncated: false,
+        list_unsubscribe: ListUnsubscribe {
+            urls: vec!["mailto:leave@example.test".to_owned()],
+            post: None,
+            present: true,
+            truncated: false,
+        },
+    };
+    message.link_metadata = Some(metadata.clone());
+    let reader = FakeReader::new(move |id| Ok((id == "message-1").then(|| message.clone())));
+    app.ctx.ports.set_email_reader(reader.clone()).ok().unwrap();
+
+    let logs = capture_logs();
+    let bounded = call(
+        &tools,
+        "email_get",
+        json!({"emailId": "message-1", "bodyChars": 1000}),
+    )
+    .await
+    .unwrap();
+    let excerpt = bounded["email"]["excerpt"].as_str().unwrap();
+    assert_eq!(excerpt.chars().count(), 1000);
+    assert_eq!(bounded["email"]["excerptTruncated"], true);
+    assert_eq!(bounded["email"]["from"], "sender@example.test");
+    assert_eq!(bounded["email"]["messageId"], "<bounded@example.test>");
+    assert_eq!(
+        bounded["email"]["linkMetadata"],
+        serde_json::to_value(&metadata).unwrap()
+    );
+    assert!(
+        logs.events()
+            .iter()
+            .all(|e| !e.message.contains("private-test")),
+        "a link token reached the logs"
+    );
+
+    call(
+        &tools,
+        "email_get",
+        json!({"emailId": "message-1", "fresh": true}),
+    )
+    .await
+    .unwrap();
+    let missing = call(&tools, "email_get", json!({"emailId": "missing"}))
+        .await
+        .unwrap_err();
+    assert_eq!(missing.phase, ToolPhase::Execute);
+    assert_eq!(
+        missing.message,
+        "Email no longer exists in the monitored mailbox"
+    );
+    assert_eq!(
+        *reader.fetches.lock().unwrap(),
+        [
+            ("message-1".to_owned(), false),
+            ("message-1".to_owned(), true),
+            ("missing".to_owned(), false),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn browses_recent_inbox_mail_without_invented_criteria_and_forwards_freshness() {
+    let app = TestApp::new().await;
+    let tools = tool_set(&app);
+    let reader = FakeReader::new(|_| Ok(None));
+    app.ctx.ports.set_email_reader(reader.clone()).ok().unwrap();
+    let result = call(
+        &tools,
+        "email_search",
+        json!({"folder": "inbox", "fresh": true, "limit": 5}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result, json!({"items": [], "count": 0}));
+    let searches = reader.searches.lock().unwrap();
+    let [search] = searches.as_slice() else {
+        panic!("expected one search, got {}", searches.len());
+    };
+    assert_eq!(search.folder, Some(EmailFolderScope::Inbox));
+    assert!(search.fresh);
+    assert_eq!(search.limit, 5);
+    assert_eq!(
+        (&search.query, &search.from, &search.to, &search.subject),
+        (&None, &None, &None, &None)
+    );
+    assert_eq!(
+        (search.unread, search.since_ms, search.before_ms),
+        (None, None, None)
+    );
 }

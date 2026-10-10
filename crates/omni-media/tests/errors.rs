@@ -1,4 +1,6 @@
 //! Recommendation error wrapping and cause messages.
+//! Accepting synchronous test doubles is not tested: Rust integrations have no
+//! synchronous and asynchronous variants to accept.
 #![allow(clippy::expect_used)]
 
 use omni_media::error::{IntegrationError, RecommendationError, cause_message};

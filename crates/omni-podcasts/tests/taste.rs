@@ -1,4 +1,6 @@
 //! Reading the podcast taste seed.
+//! Aborting the seed read on interruption is not tested: cancelling a task drops
+//! its future, which stops the read.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_podcasts::taste::{TasteSeedFailure, check_seed, load_taste_seed};

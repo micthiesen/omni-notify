@@ -83,6 +83,8 @@ type FetchFn = Box<dyn Fn(&str) -> Result<Option<FetchedEmail>, PortError> + Sen
 /// An `EmailReader` port answering `fetch_by_id` from a closure.
 pub struct FakeReader {
     pub fetch: FetchFn,
+    /// Every `fetch_by_id` call as `(id, fresh)`.
+    pub fetches: Mutex<Vec<(String, bool)>>,
     pub searches: Mutex<Vec<EmailSearch>>,
     pub search_results: Vec<FetchedEmail>,
     pub search_available: bool,
@@ -94,6 +96,7 @@ impl FakeReader {
     ) -> Arc<Self> {
         Arc::new(Self {
             fetch: Box::new(fetch),
+            fetches: Mutex::new(Vec::new()),
             searches: Mutex::new(Vec::new()),
             search_results: Vec::new(),
             search_available: true,
@@ -105,8 +108,9 @@ impl EmailReader for FakeReader {
     fn fetch_by_id<'a>(
         &'a self,
         id: &'a str,
-        _fresh: bool,
+        fresh: bool,
     ) -> BoxFuture<'a, Result<Option<FetchedEmail>, PortError>> {
+        self.fetches.lock().unwrap().push((id.to_owned(), fresh));
         let result = (self.fetch)(id);
         Box::pin(async move { result })
     }
