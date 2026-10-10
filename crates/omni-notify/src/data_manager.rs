@@ -42,7 +42,6 @@ pub const MANAGED_ORDER: &[&str] = &[
     "recs-taste-evidence",
     "recs-taste-profile",
     "recs-identity-alias",
-    "briefing-history",
     "press-pods-episode",
     "press-pods-job",
     "parcel-submitted-delivery",
@@ -58,14 +57,6 @@ pub const MANAGED_ORDER: &[&str] = &[
     "email-systemic-alert",
     "email-sender-rule",
     "email-feedback",
-    "workspace-subject",
-    "workspace-artifact-revision",
-    "workspace-message",
-    "workspace-source",
-    "workspace-action",
-    "workspace-email-scope",
-    "workspace-papercut",
-    "workspace-notification",
 ];
 
 /// Orders managed entities by [`MANAGED_ORDER`]; the first occurrence of

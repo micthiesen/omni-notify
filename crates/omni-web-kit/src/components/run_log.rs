@@ -180,16 +180,27 @@ pub fn RunLog(
         }
     });
 
-    let options = move || {
+    // Memoized so a snapshot that leaves the task list unchanged does not
+    // replace the <option>s, which would reset the select's shown value.
+    let task_options = Memo::new(move |_| {
         snapshot.with(|s| {
             s.tasks
                 .iter()
                 .map(|task: &TaskInfo| {
-                    let name = task.name.clone();
-                    view! { <option value=name>{task_label(&task.name, task.display_name.as_deref())}</option> }
+                    (
+                        task.name.clone(),
+                        task_label(&task.name, task.display_name.as_deref()),
+                    )
                 })
-                .collect_view()
+                .collect::<Vec<_>>()
         })
+    });
+    let options = move || {
+        task_options
+            .get()
+            .into_iter()
+            .map(|(name, label)| view! { <option value=name>{label}</option> })
+            .collect_view()
     };
     let modes = Signal::derive(|| {
         vec![

@@ -1,7 +1,7 @@
 //! `omni-notify --preview [--port N]`:
 //! the real HTTP server, subsystems and registry over a throwaway database
 //! seeded with fake streamers, statuses, viewer history, runs,
-//! recommendations, briefings, email activity and a pet, plus fake tasks that
+//! recommendations, email activity and a pet, plus fake tasks that
 //! take a few seconds to "run" so the realtime flow is observable. No
 //! credentials are configured, outgoing HTTP is refused and every side effect
 //! is recorded, so nothing leaves the machine.
@@ -57,7 +57,7 @@ impl FakeTask {
         })
     }
 
-    /// Mirrors the real Recommendations and workspace tasks' manual input.
+    /// Mirrors the real Recommendations task's manual input.
     pub fn with_manual_input(mut self) -> Self {
         self.manual_input = true;
         self
@@ -136,15 +136,15 @@ pub fn fake_tasks() -> Result<Vec<Arc<dyn Task>>, omni_tasks::InvalidScheduleErr
             false,
         )?),
         Arc::new(FakeTask::new(
-            "MorningBriefing",
-            "0 0 9 * * *",
+            "PressPods",
+            "0 */15 * * * *",
             6_000,
-            Some("Covered 4 stories: chip exports, new GPU rumors, and more."),
+            Some("Narrated 2 articles: chip exports and GPU supply."),
             false,
         )?),
         Arc::new(FakeTask::new(
-            "EveningBriefing",
-            "0 0 21 * * *",
+            "CastroInboxCleanup",
+            "0 0 */6 * * *",
             5_000,
             None,
             true,
@@ -166,16 +166,13 @@ pub fn fake_tasks() -> Result<Vec<Arc<dyn Task>>, omni_tasks::InvalidScheduleErr
             )?
             .with_manual_input(),
         ),
-        Arc::new(
-            FakeTask::new(
-                "PurchaseResearch",
-                "0 0 9 * * 0",
-                2_000,
-                Some("Updated one purchase dossier."),
-                false,
-            )?
-            .with_manual_input(),
-        ),
+        Arc::new(FakeTask::new(
+            "PodcastRecs",
+            "0 0 8 * * *",
+            2_000,
+            Some("Queued one episode in Castro."),
+            false,
+        )?),
     ])
 }
 
@@ -313,18 +310,18 @@ pub fn seed_documents(now: i64) -> Vec<(&'static str, Value)> {
         json!({ "error": "Twitch GQL returned 502 for pixeldust" }),
     ));
     docs.push(run(
-        "MorningBriefing",
+        "PressPods",
         now - 2 * HOUR,
         34_000,
         "success",
-        json!({ "summary": "Covered 5 stories: GPU supply, tape-out delays, and more." }),
+        json!({ "summary": "Narrated 2 articles: GPU supply and tape-out delays." }),
     ));
     docs.push(run(
-        "EveningBriefing",
+        "CastroInboxCleanup",
         now - 14 * HOUR,
         41_000,
         "error",
-        json!({ "error": "Tavily search failed after 3 retries: rate limited" }),
+        json!({ "error": "Castro returned HTTP 500 after 3 retries" }),
     ));
     docs.push(run(
         "PetTrackerTask",
@@ -411,23 +408,6 @@ pub fn seed_documents(now: i64) -> Vec<(&'static str, Value)> {
             "notifiedAt": now - 25 * DAY + MIN, "resolvedAt": now - 4 * DAY, "watchlistResult": "added",
         }),
     ));
-    docs.push(("briefing-history", json!({
-        "briefingName": "MorningBriefing",
-        "notifications": [
-            {
-                "title": "Chip exports tighten again",
-                "message": "New export rules land Friday; TSMC and ASML both issued guidance.",
-                "url": "https://example.com/chip-exports",
-                "timestamp": now - 2 * HOUR,
-            },
-            {
-                "title": "GPU supply loosens at the mid-range",
-                "message": "Street prices for mid-range cards fell 8% this month as the new generation ships in volume.",
-                "url": "https://example.com/gpu-supply",
-                "timestamp": now - 26 * HOUR,
-            },
-        ],
-    })));
     docs.push((
         "email-activity",
         json!({

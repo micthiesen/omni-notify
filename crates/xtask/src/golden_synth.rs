@@ -81,34 +81,17 @@ const KEEP_KEYS: &[&str] = &[
     "voiceName",
     "voiceProvider",
     "watchlistResult",
-    "workspaceId",
 ];
 
 /// `(parent key, key)` pairs kept only in that position (`tasks[].name` is a task
-/// name, `pets[].name` is not); the copy of data entities and workspace definitions.
+/// name, `pets[].name` is not); the copy of data entities.
 const KEEP_IN: &[(&str, &str)] = &[
-    ("artifacts", "instructions"),
     ("entities", "description"),
     ("entities", "label"),
     ("entities", "warning"),
     ("summary", "description"),
     ("summary", "label"),
     ("summary", "warning"),
-    ("workspace", "description"),
-    ("workspace", "followUpPlaceholder"),
-    ("workspace", "inputPlaceholder"),
-    ("workspace", "instructions"),
-    ("workspace", "subjectLabel"),
-    ("workspace", "subjectLabelPlural"),
-    ("workspaces", "description"),
-    ("workspaces", "followUpPlaceholder"),
-    ("workspaces", "inputPlaceholder"),
-    ("workspaces", "instructions"),
-    ("workspaces", "subjectLabel"),
-    ("workspaces", "subjectLabelPlural"),
-    ("artifacts", "key"),
-    ("artifacts", "title"),
-    ("briefings", "name"),
     ("calendar", "autoPass"),
     ("calendar", "blocked"),
     ("parcel", "autoPass"),
@@ -116,10 +99,6 @@ const KEEP_IN: &[(&str, &str)] = &[
     ("retrieverAttempts", "name"),
     ("tasks", "displayName"),
     ("tasks", "name"),
-    ("workspace", "id"),
-    ("workspace", "title"),
-    ("workspaces", "id"),
-    ("workspaces", "title"),
 ];
 
 /// Route and id words that are structural wherever they appear.

@@ -9,7 +9,6 @@ pub enum Icon {
     Film,
     Headphones,
     Mic,
-    Flask,
     Doc,
     Mail,
     CheckSquare,
@@ -23,6 +22,7 @@ pub enum Icon {
     Grid,
     ChevronRight,
     ChevronDown,
+    ChevronUp,
     Close,
     External,
     Download,
@@ -41,6 +41,7 @@ pub enum Icon {
     Alert,
     Package,
     Calendar,
+    Pencil,
 }
 
 /// Size modifier for [`Glyph`].
@@ -77,11 +78,6 @@ fn shapes(icon: Icon) -> AnyView {
         Icon::Mic => view! {
             <rect x="9" y="3" width="6" height="11" rx="3"></rect>
             <path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path>
-        }
-        .into_any(),
-        Icon::Flask => view! {
-            <path d="M9 3h6M10 3v6l-5.5 9.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3"></path>
-            <path d="M7.5 15h9"></path>
         }
         .into_any(),
         Icon::Doc => view! {
@@ -140,6 +136,7 @@ fn shapes(icon: Icon) -> AnyView {
         .into_any(),
         Icon::ChevronRight => view! { <path d="m9 6 6 6-6 6"></path> }.into_any(),
         Icon::ChevronDown => view! { <path d="m6 9 6 6 6-6"></path> }.into_any(),
+        Icon::ChevronUp => view! { <path d="m6 15 6-6 6 6"></path> }.into_any(),
         Icon::Close => view! { <path d="M6 6l12 12M18 6 6 18"></path> }.into_any(),
         Icon::External => view! { <path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path> }
             .into_any(),
@@ -184,6 +181,7 @@ fn shapes(icon: Icon) -> AnyView {
             <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"></path>
         }
         .into_any(),
+        Icon::Pencil => view! { <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"></path> }.into_any(),
     }
 }
 

@@ -553,9 +553,12 @@ pub fn LineChart(
     let range = RwSignal::new(None::<(usize, usize)>);
     let drag = StoredValue::new(None::<BrushDrag>);
 
-    // A new data set resets the brush to the full range.
+    // A new data set (another range starts elsewhere) resets the brush to
+    // the full range; a refresh of the same set, or one with points
+    // appended, keeps it.
+    let data_start = Memo::new(move |_| data.with(|d| d.first().map(|p| p.x.to_bits())));
     Effect::new(move |_| {
-        data.track();
+        data_start.track();
         range.set(None);
     });
 

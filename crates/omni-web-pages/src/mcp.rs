@@ -401,12 +401,23 @@ pub fn McpPage() -> impl IntoView {
         Memo::new(move |_| head.with(|h| h.as_ref().map(|h| h.tools.clone()).unwrap_or_default()));
     let max_calls =
         Memo::new(move |_| head.with(|h| h.as_ref().map_or(0, |h| h.retention.max_calls)));
+    // Only the names feed the select: polled counts must not rebuild it (an
+    // open dropdown would close and focus would drop).
+    let tool_options = Memo::new(move |_| {
+        tools.with(|t| {
+            t.iter()
+                .map(|o| (o.tool.clone(), o.title.clone()))
+                .collect::<Vec<_>>()
+        })
+    });
+    let tools_empty = Memo::new(move |_| tools.with(Vec::is_empty));
+    let calls_empty = Memo::new(move |_| calls.with(Vec::is_empty));
 
     let tool_select = move || {
         let current = tool.get();
-        let options = tools.get();
-        let extra =
-            (!current.is_empty() && !options.iter().any(|o| o.tool == current)).then(|| {
+        let options = tool_options.get();
+        let extra = (!current.is_empty() && !options.iter().any(|(name, _)| *name == current))
+            .then(|| {
                 let value = current.clone();
                 view! { <option value=value.clone() prop:selected=true>{value.clone()}</option> }
             });
@@ -420,11 +431,11 @@ pub fn McpPage() -> impl IntoView {
                 {extra}
                 {options
                     .into_iter()
-                    .map(|option| {
-                        let selected = option.tool == current;
+                    .map(|(name, title)| {
+                        let selected = name == current;
                         view! {
-                            <option value=option.tool.clone() prop:selected=selected>
-                                {option.title.clone()}
+                            <option value=name prop:selected=selected>
+                                {title}
                             </option>
                         }
                     })
@@ -550,9 +561,9 @@ pub fn McpPage() -> impl IntoView {
                     }}
                 </div>
                 {move || {
-                    if !calls_current.get() && calls.with(Vec::is_empty) {
+                    if !calls_current.get() && calls_empty.get() {
                         view! { <SkeletonRows count=8 label="Loading calls" /> }.into_any()
-                    } else if calls.with(Vec::is_empty) {
+                    } else if calls_empty.get() {
                         view! {
                             <EmptyState
                                 compact=true
@@ -618,8 +629,9 @@ pub fn McpPage() -> impl IntoView {
         }
     };
 
-    // The inspector follows the polled copy of the selected call.
-    let live_selected = Signal::derive(move || {
+    // The inspector follows the polled copy of the selected call. A Memo, so
+    // a poll that leaves the call unchanged does not rebuild the inspector.
+    let live_selected = Memo::new(move |_| {
         let chosen = selected.get()?;
         Some(
             calls
@@ -627,8 +639,9 @@ pub fn McpPage() -> impl IntoView {
                 .unwrap_or(chosen),
         )
     });
+    let has_selected = Memo::new(move |_| selected.with(Option::is_some));
     let inspector = move || {
-        live_selected.with(Option::is_some).then(|| {
+        has_selected.get().then(|| {
             view! {
                 <CallInspector
                     call=Signal::derive(move || live_selected.get().unwrap_or_else(blank_call))
@@ -640,6 +653,9 @@ pub fn McpPage() -> impl IntoView {
     };
 
     let has_head = Memo::new(move |_| head.with(Option::is_some));
+    // Failed polls set the same message again; only a change may rebuild the
+    // error state (its Details disclosure would collapse).
+    let error_text = Memo::new(move |_| error.get());
     view! {
         <PageHead
             title="MCP activity"
@@ -652,7 +668,7 @@ pub fn McpPage() -> impl IntoView {
             if has_head.get() {
                 return None;
             }
-            Some(match error.get() {
+            Some(match error_text.get() {
                 Some(e) => view! {
                     <ErrorState
                         title="MCP activity could not load"
@@ -687,7 +703,7 @@ pub fn McpPage() -> impl IntoView {
                                     head_end=ViewFn::from(move || view! { <span class="num">{move || tools.with(Vec::len)}</span> })
                                 >
                                     {move || {
-                                        if tools.with(Vec::is_empty) {
+                                        if tools_empty.get() {
                                             view! { <EmptyState compact=true message="No tools called yet." /> }.into_any()
                                         } else {
                                             view! { <ToolsTable tools strips active_tool=tool now /> }.into_any()

@@ -13,7 +13,7 @@ use omni_ai::{
 };
 use omni_api::costs::{CostCategory, CostPriceStatus};
 use omni_core::clock::SharedClock;
-use omni_store::cbor::{Extra, JsValue};
+use omni_store::cbor::JsValue;
 use omni_store::entity::{Entity, UpsertOpts};
 use omni_store::{DocOps, EntityOps, EntityWrite, Store};
 use omni_tasks::EventBus;
@@ -169,21 +169,21 @@ async fn run_attribution_overrides_the_static_feature() {
 async fn retryable_failures_are_retried_with_backoff() {
     let h = harness().await;
     h.fakes.script_failure(
-        ModelRole::Briefing,
+        ModelRole::Extraction,
         FakeFailure {
             status: 503,
             message: "overloaded".to_owned(),
         },
     );
     h.fakes
-        .script(ModelRole::Briefing, vec![GenerateResponse::text("done")]);
-    let model = h.model(ModelRole::Briefing);
+        .script(ModelRole::Extraction, vec![GenerateResponse::text("done")]);
+    let model = h.model(ModelRole::Extraction);
     let started = tokio::time::Instant::now();
     let (text, _) =
         h.ai.generate_text(
             model.as_ref(),
             GenerateRequest::prompt("x"),
-            CostTag::for_role(ModelRole::Briefing),
+            CostTag::for_role(ModelRole::Extraction),
         )
         .await
         .unwrap();
@@ -196,7 +196,7 @@ async fn retryable_failures_are_retried_with_backoff() {
     );
 
     h.fakes.script_failure(
-        ModelRole::Briefing,
+        ModelRole::Extraction,
         FakeFailure {
             status: 400,
             message: "bad request".to_owned(),
@@ -206,7 +206,7 @@ async fn retryable_failures_are_retried_with_backoff() {
         h.ai.generate_text(
             model.as_ref(),
             GenerateRequest::prompt("x"),
-            CostTag::for_role(ModelRole::Briefing),
+            CostTag::for_role(ModelRole::Extraction),
         )
         .await;
     assert!(matches!(result, Err(AiError::Provider { status: 400, .. })));
@@ -301,13 +301,13 @@ async fn tool_loop_runs_tools_and_feeds_results_back() {
     );
     let tools = ToolSet::new().with(Arc::new(search.clone()));
     h.fakes.script(
-        ModelRole::Workspace,
+        ModelRole::ObserverRepair,
         vec![
             GenerateResponse {
                 usage: usage(100, 0, 10, 0),
                 ..GenerateResponse::tool_calls(vec![
                     call("c1", "web_search", json!({"query": "rust"})),
-                    call("c2", "report_papercut", json!({})),
+                    call("c2", "missing_tool", json!({})),
                 ])
             },
             GenerateResponse {
@@ -316,7 +316,7 @@ async fn tool_loop_runs_tools_and_feeds_results_back() {
             },
         ],
     );
-    let model = h.model(ModelRole::Workspace);
+    let model = h.model(ModelRole::ObserverRepair);
     let mut steps: Vec<StepRecord> = Vec::new();
     let result =
         h.ai.run_tool_loop(
@@ -324,7 +324,7 @@ async fn tool_loop_runs_tools_and_feeds_results_back() {
             GenerateRequest::prompt("research"),
             &tools,
             12,
-            CostTag::with_operation(ModelRole::Workspace, "run"),
+            CostTag::with_operation(ModelRole::ObserverRepair, "run"),
             &mut |step| steps.push(step.clone()),
         )
         .await
@@ -352,8 +352,8 @@ async fn tool_loop_runs_tools_and_feeds_results_back() {
         second[2].content[1],
         ContentPart::ToolResult {
             call_id: "c2".to_owned(),
-            name: "report_papercut".to_owned(),
-            output: json!("Model tried to call unavailable tool 'report_papercut'"),
+            name: "missing_tool".to_owned(),
+            output: json!("Model tried to call unavailable tool 'missing_tool'"),
             is_error: true,
         }
     );
@@ -362,7 +362,7 @@ async fn tool_loop_runs_tools_and_feeds_results_back() {
     assert!(
         costs
             .iter()
-            .all(|c| c.feature == "workspaces" && c.operation == "run")
+            .all(|c| c.feature == "observer-repair" && c.operation == "run")
     );
 }
 
@@ -401,23 +401,6 @@ async fn tool_loop_stops_at_the_step_limit() {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct BriefingHistory {
-    briefing_name: String,
-    notifications: Vec<serde_json::Value>,
-    #[serde(flatten)]
-    extra: Extra,
-}
-
-impl Entity for BriefingHistory {
-    const NAME: &'static str = "briefing-history";
-    type Key = String;
-    fn key(&self) -> String {
-        self.briefing_name.clone()
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct Episode {
     episode_id: String,
     created_at: i64,
@@ -440,18 +423,6 @@ async fn historical_costs_are_imported_once() {
     h.store
         .write(|tx| {
             tx.upsert(
-                &BriefingHistory {
-                    briefing_name: "Morning".to_owned(),
-                    notifications: vec![
-                        json!({"title": "a", "timestamp": 1000, "costCents": 1.5, "runId": "Morning:1"}),
-                        json!({"title": "b", "timestamp": 2000}),
-                        json!({"title": "c", "timestamp": 3000, "costCents": null}),
-                    ],
-                    extra: Extra::new(),
-                },
-                UpsertOpts::default(),
-            )?;
-            tx.upsert(
                 &Episode {
                     episode_id: "ep1".to_owned(),
                     created_at: 5000,
@@ -468,26 +439,18 @@ async fn historical_costs_are_imported_once() {
         })
         .await
         .unwrap();
-    assert_eq!(import_historical_costs(&h.store).await.unwrap(), 4);
+    assert_eq!(import_historical_costs(&h.store).await.unwrap(), 2);
     assert_eq!(import_historical_costs(&h.store).await.unwrap(), 0);
     let mut costs = h.costs().await;
     costs.sort_by(|a, b| a.event_id.cmp(&b.event_id));
     let ids: Vec<&str> = costs.iter().map(|c| c.event_id.as_str()).collect();
     assert_eq!(
         ids,
-        [
-            "legacy:briefing:Morning:1000:0",
-            "legacy:briefing:Morning:3000:2",
-            "legacy:press-pods:llm:ep1",
-            "legacy:press-pods:tts:ep1"
-        ]
+        ["legacy:press-pods:llm:ep1", "legacy:press-pods:tts:ep1"]
     );
-    assert_eq!(costs[0].cost_cents, Some(1.5));
-    assert_eq!(costs[0].run_id.as_deref(), Some("Morning:1"));
-    assert_eq!(costs[1].price_status, CostPriceStatus::Unknown);
-    assert_eq!(costs[2].cost_cents, Some(3.5));
-    assert_eq!(costs[2].usage.input_tokens, Some(11.0));
-    assert_eq!(costs[3].service, "higgs");
-    assert_eq!(costs[3].price_status, CostPriceStatus::Free);
-    assert_eq!(costs[3].usage.characters, Some(2585.0));
+    assert_eq!(costs[0].cost_cents, Some(3.5));
+    assert_eq!(costs[0].usage.input_tokens, Some(11.0));
+    assert_eq!(costs[1].service, "higgs");
+    assert_eq!(costs[1].price_status, CostPriceStatus::Free);
+    assert_eq!(costs[1].usage.characters, Some(2585.0));
 }

@@ -1,5 +1,5 @@
 //! Home: the status sentence, the On air Stage, Needs you, Up next, On deck
-//! and the Research, Inbox and Spend panels.
+//! and the Inbox and Spend panels.
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
@@ -7,7 +7,6 @@ use omni_api::costs::{CostRange, CostsResponse};
 use omni_api::email::{EmailActivity, EmailActivityOutcome};
 use omni_api::streamers::{OfflineStreamerView, StreamerTier, StreamerView};
 use omni_api::tasks::TaskInfo;
-use omni_api::workspaces::WorkspaceSubjectStatus;
 use omni_web_kit::api;
 use omni_web_kit::components::streamers::streamer_path;
 use omni_web_kit::components::{
@@ -15,12 +14,12 @@ use omni_web_kit::components::{
     Panel, Presence, Readout, ReadoutSize, Segmented, Skeleton, SkeletonKind, SkeletonRows, Status,
     StatusKind, Tone,
 };
-use omni_web_kit::feeds::{use_task_backed, use_workspace_feed};
+use omni_web_kit::feeds::use_task_backed;
 use omni_web_kit::hooks::use_now;
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::Link;
 use omni_web_kit::task::spawn_scoped;
-use omni_web_kit::utils::format::{format_cents, format_relative, format_relative_at, task_label};
+use omni_web_kit::utils::format::{format_cents, format_relative_at, task_label};
 use omni_web_kit::utils::js::now_ms;
 use omni_web_kit::utils::tasks::{
     Cadence, TaskHealth, cadence, format_next, next_run_ms, period_ms, task_health,
@@ -55,11 +54,10 @@ pub struct PersonalAttention {
     pub pets: usize,
 }
 
-/// Attention items from the snapshot tasks, pending actions, failed emails
-/// in the last day and the personal sources.
+/// Attention items from the snapshot tasks, failed emails in the last day
+/// and the personal sources.
 pub fn attention_items(
     tasks: &[TaskInfo],
-    pending_actions: usize,
     email_failures: usize,
     personal: PersonalAttention,
     now: f64,
@@ -77,13 +75,6 @@ pub fn attention_items(
         .filter(|t| task_health(t, now) == TaskHealth::Degraded)
         .count();
     [
-        (
-            pending_actions,
-            "workspace action waiting",
-            "workspace actions waiting",
-            "/workspaces",
-            StatusKind::Info,
-        ),
         (
             failing,
             "task failing",
@@ -222,7 +213,6 @@ fn NeedsYou(items: Signal<Vec<Attention>>, loading: Signal<bool>) -> impl IntoVi
                     return view! {
                         <div class="rows">
                             <div class="row"><Status kind=StatusKind::Ok label="Tasks healthy"/></div>
-                            <div class="row"><Status kind=StatusKind::Ok label="No actions waiting"/></div>
                             <div class="row"><Status kind=StatusKind::Ok label="Email clean today"/></div>
                         </div>
                     }
@@ -360,6 +350,20 @@ fn OnAir() -> impl IntoView {
         list
     });
     let is_live = Signal::derive(move || lead.with(Option::is_some));
+    let can_sort = Memo::new(move |_| order.with(Vec::len) > 1);
+    let has_offline = Memo::new(move |_| offline.with(|list| !list.is_empty()));
+    let offline_summary = Signal::derive(move || {
+        offline.with(|list| {
+            let primary = list
+                .iter()
+                .filter(|o| o.tier == StreamerTier::Primary)
+                .count();
+            format!(
+                "{} offline · {primary} primary",
+                plural(list.len(), "channel", "channels")
+            )
+        })
+    });
     view! {
         <Panel stage=is_live aria_label="On air" class="on-air">
             <div class="panel-head">
@@ -372,7 +376,7 @@ fn OnAir() -> impl IntoView {
                 </h2>
                 <span class="panel-meta">{move || is_live.get().then(|| meta.get())}</span>
                 <span class="spacer"></span>
-                {move || (order.with(Vec::len) > 1).then(|| view! {
+                {move || can_sort.get().then(|| view! {
                     <Segmented
                         options=Signal::derive(sort_options)
                         value=sort
@@ -389,79 +393,15 @@ fn OnAir() -> impl IntoView {
             <div class="rows" data-primary-rows="true">
                 <For each=move || others.get() key=|id| id.clone() children=|id| view! { <LiveRow id/> }/>
             </div>
-            {move || {
-                let list = offline.get();
-                (!list.is_empty()).then(|| {
-                    let primary = list.iter().filter(|o| o.tier == StreamerTier::Primary).count();
-                    let summary = format!("{} offline · {primary} primary", plural(list.len(), "channel", "channels"));
-                    view! {
-                        <div class="panel-foot">
-                            <Disclosure summary=summary flush=true>
-                                <OfflineChips streamers=list/>
-                            </Disclosure>
-                        </div>
-                    }
-                })
-            }}
-        </Panel>
-    }
-}
-
-#[component]
-fn ResearchPanel() -> impl IntoView {
-    let feed = use_workspace_feed();
-    let subjects = Memo::new(move |_| {
-        let mut list: Vec<(String, String, String, String, i64, u64)> = feed.workspaces.with(|w| {
-            w.iter()
-                .flatten()
-                .flat_map(|o| {
-                    o.subjects
-                        .iter()
-                        .filter(|s| s.status == WorkspaceSubjectStatus::Active)
-                        .map(|s| {
-                            (
-                                o.definition.id.clone(),
-                                o.definition.title.clone(),
-                                s.subject_id.clone(),
-                                s.title.clone(),
-                                s.updated_at,
-                                o.pending_action_count,
-                            )
-                        })
-                })
-                .collect()
-        });
-        list.sort_by_key(|s| std::cmp::Reverse(s.4));
-        list.truncate(4);
-        list
-    });
-    view! {
-        <Panel title="Research" head_end=ViewFn::from(|| view! { <Link to="/workspaces" class="textlink small">"Workspaces"</Link> })>
-            {move || {
-                if let Some(e) = feed.error.get().filter(|_| feed.workspaces.with(Option::is_none)) {
-                    return view! { <ErrorState title="Research could not be refreshed" raw=e retry=Callback::new(move |()| feed.refresh())/> }.into_any();
-                }
-                if feed.workspaces.with(Option::is_none) {
-                    return view! { <SkeletonRows count=3/> }.into_any();
-                }
-                let list = subjects.get();
-                if list.is_empty() {
-                    return view! { <EmptyState compact=true message="No active research." action=ViewFn::from(|| view! { <Link to="/workspaces" class="textlink">"Start a workspace"</Link> })/> }.into_any();
-                }
-                view! {
-                    <div class="rows">
-                        {list.into_iter().map(|(w, w_title, s, title, updated, _)| view! {
-                            <Link to=format!("/workspaces/{}/{}", encode_uri_component(&w), encode_uri_component(&s)) class="row">
-                                <span class="row-main">
-                                    <span class="row-title truncate">{title}</span>
-                                    <span class="row-sub">{format!("{w_title} · updated {}", format_relative(updated as f64))}</span>
-                                </span>
-                            </Link>
-                        }).collect_view()}
-                    </div>
-                }
-                .into_any()
-            }}
+            // The disclosure stays mounted across snapshots so it keeps its
+            // open state; only the chips re-render.
+            {move || has_offline.get().then(|| view! {
+                <div class="panel-foot">
+                    <Disclosure summary=offline_summary flush=true>
+                        {move || view! { <OfflineChips streamers=offline.get()/> }}
+                    </Disclosure>
+                </div>
+            })}
         </Panel>
     }
 }
@@ -568,7 +508,6 @@ fn SpendPanel() -> impl IntoView {
 #[component]
 pub fn HomePage() -> impl IntoView {
     let live = use_live_data();
-    let feed = use_workspace_feed();
     let now = use_now(30_000);
     let emails = RwSignal::new(None::<Vec<EmailActivity>>);
     let email_error = RwSignal::new(None::<String>);
@@ -594,7 +533,6 @@ pub fn HomePage() -> impl IntoView {
 
     let items = Memo::new(move |_| {
         let now = now.get();
-        let pending = feed.pending_actions() as usize;
         let failures = emails.with(|e| e.as_deref().map_or(0, |e| email_failures(e, now)));
         let personal = PersonalAttention {
             deliveries: parcels.data.with(|p| {
@@ -612,17 +550,17 @@ pub fn HomePage() -> impl IntoView {
         live.snapshot.with(|s| {
             attention_items(
                 s.as_ref().map_or(&[][..], |s| &s.tasks),
-                pending,
                 failures,
                 personal,
                 now,
             )
         })
     });
-    let loading = Signal::derive(move || {
-        live.snapshot.with(Option::is_none)
-            || feed.workspaces.with(Option::is_none)
-            || emails.with(Option::is_none)
+    let loading =
+        Signal::derive(move || live.snapshot.with(Option::is_none) || emails.with(Option::is_none));
+    let has_on_deck = Memo::new(move |_| {
+        live.snapshot
+            .with(|s| s.as_ref().is_some_and(|s| !s.on_deck.is_empty()))
     });
     let sentence = Memo::new(move |_| {
         let live_count = live_list(live).len();
@@ -633,9 +571,13 @@ pub fn HomePage() -> impl IntoView {
         )
     });
 
+    // Gate on loaded-ness only: rebuilding the page on every snapshot would
+    // recreate On air and reset its sort.
+    let loaded = Memo::new(move |_| live.snapshot.with(Option::is_some));
+
     view! {
         {move || {
-            if live.snapshot.with(Option::is_none) {
+            if !loaded.get() {
                 return match live.error.get() {
                     Some(e) => view! {
                         <ErrorState
@@ -674,7 +616,7 @@ pub fn HomePage() -> impl IntoView {
                         <UpNext/>
                     </div>
                 </div>
-                {move || live.snapshot.with(|s| s.as_ref().is_some_and(|s| !s.on_deck.is_empty())).then(|| view! {
+                {move || has_on_deck.get().then(|| view! {
                     <section class="section">
                         <div class="section-head">
                             <h2 class="section-title">"On deck"</h2>
@@ -687,8 +629,7 @@ pub fn HomePage() -> impl IntoView {
                         <OnDeck items=Signal::derive(move || live.snapshot.with(|s| s.as_ref().map(|s| s.on_deck.clone()).unwrap_or_default()))/>
                     </section>
                 })}
-                <div class="grid-3 home-panels">
-                    <ResearchPanel/>
+                <div class="grid-2 home-panels">
                     <InboxPanel emails error=email_error/>
                     <SpendPanel/>
                 </div>
@@ -710,19 +651,16 @@ mod tests {
             line,
             "4 channels on air, every task healthy, nothing waiting on you."
         );
-        let items = attention_items(&[], 2, 1, PersonalAttention::default(), 0.0);
+        let items = attention_items(&[], 2, PersonalAttention::default(), 0.0);
         let (head, line) = status_sentence(&items, 0, true);
-        assert_eq!(head, "3 things need you.");
-        assert_eq!(
-            line,
-            "2 workspace actions waiting, 1 email failed today; nobody on air."
-        );
+        assert_eq!(head, "2 things need you.");
+        assert_eq!(line, "2 emails failed today; nobody on air.");
         let personal = PersonalAttention {
             deliveries: 1,
             calendar: true,
             pets: 2,
         };
-        let labels: Vec<String> = attention_items(&[], 0, 0, personal, 0.0)
+        let labels: Vec<String> = attention_items(&[], 0, personal, 0.0)
             .into_iter()
             .map(|i| i.label)
             .collect();
@@ -757,7 +695,7 @@ mod tests {
                 summary: None,
             }),
         };
-        let items = attention_items(&[task], 0, 0, PersonalAttention::default(), 0.0);
+        let items = attention_items(&[task], 0, PersonalAttention::default(), 0.0);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "1 task degraded");
         assert_eq!(items[0].kind, StatusKind::Warn);

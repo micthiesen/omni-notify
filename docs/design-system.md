@@ -202,10 +202,10 @@ zoom). Uppercase only for the `LIVE` tag and poster kind labels.
 no small uppercase or mono kicker ("LIVE", "OPERATIONS", "PERSONAL", a date
 over the Home sentence). The crumbs and the rail already say where you are.
 `PageHead` has no eyebrow slot and there is no eyebrow class. A label that
-carries information shown nowhere else (the parent workspace of a subject, which
-session an intelligence page shows) goes under the title as ordinary `small`
+carries information shown nowhere else (which session an intelligence page
+shows) goes under the title as ordinary `small`
 metadata in the `PageHead` children, never above it. Long-form
-prose (artifacts, transcripts, briefings) is 15/24 with a 68ch measure.
+prose (Markdown results, transcripts) is 15/24 with a 68ch measure.
 
 ## 4. Layout
 
@@ -265,13 +265,16 @@ and no sub-tab strip (`SectionNav` is removed).
 | **On air** *(from C)* | Header links to `/live`; below it one row per live streamer: platform tick, name, `read-s` viewer count updated in place. The row is the Watch target (see Watch targets, section 12); a chevron at its end links to `/streamers/:id`. When nobody is live: "Nobody live" in `--text-3`. | live count in `--live` |
 | **Watch** | Movies & TV (`/media`) | pending picks |
 | **Listen** | Podcasts (`/podcasts`), PressPods (`/pods`) | jobs in progress |
-| **Research** | Workspaces (`/workspaces`), Briefings (`/briefings`) | pending actions |
 | **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Deliveries (`/deliveries`), Pets (`/pets`) | email failures (fault) |
 | **System** | Operations (`/operations`), Costs (`/costs`), MCP (`/mcp-activity`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
 
 - `/live` is a **new route**: the full streamer roster (section 12). Add it to
   `routes.rs` with tests; every existing route, alias and normalization rule is
   unchanged.
+- `/live/streamers` (tracked-streamer management) has no rail row of its own:
+  it marks Live as current, its crumbs are `Live / Streamers`, and it is reached
+  from the Live page's "Manage streamers" action and the palette page entry
+  "Manage streamers".
 - Current item: `--raised` fill, 2 px Signal tick on the left edge,
   `aria-current="page"`. Streamer pages mark their On air row (or Live, when
   offline) as current.
@@ -280,7 +283,7 @@ and no sub-tab strip (`SectionNav` is removed).
 ### 5.2 Top bar
 
 - Breadcrumbs replace `BackLink`: `Live / Hutch / Intelligence`,
-  `Research / Marketplace Selling / 2022 NCM C7…`, `System / Operations`.
+  `Movies & TV / Dune`, `System / Operations`.
   Middle crumbs are links; the last is the page. Long crumbs truncate in the
   middle crumb first.
 - Right side: the page's own actions (at most one primary), then on wide screens
@@ -288,15 +291,14 @@ and no sub-tab strip (`SectionNav` is removed).
 
 ### 5.3 Phone tab bar
 
-Five tabs, 44 px minimum targets, icon over a 12 px label:
+Four tabs, 44 px minimum targets, icon over a 12 px label:
 
 1. **Home** `/`
 2. **Live** `/live` (count badge in `--live`)
 3. **Media**: lands on the last used of `/media`, `/podcasts`, `/pods` (remembered
    per viewer); those pages show a segmented control `Movies & TV | Podcasts |
    PressPods` under the title on phone only.
-4. **Research**: `/workspaces`, with `Workspaces | Briefings` segmented on phone.
-5. **Go**: opens the command palette as a sheet listing every destination grouped
+4. **Go**: opens the command palette as a sheet listing every destination grouped
    as in the rail, with search on top. It carries the fault badge for failing
    tasks and email failures. This replaces both the More sheet and the floating
    "…".
@@ -309,9 +311,8 @@ The active tab gets a Signal 2 px top tick and `--text`; inactive tabs are
 - Opens with ⌘K / Ctrl-K, `/` (when no page filter has focus), the rail search
   field, the phone search button and the Go tab.
 - Sources, all from data the SPA already loads: routes; streamers from the
-  snapshot (live first, with counts); tasks from the snapshot; workspace subjects
-  from `/api/workspaces`. No new endpoint.
-- Groups: Live now, Pages, Streamers, Tasks, Research. Choosing a task opens it in
+  snapshot (live first, with counts); tasks from the snapshot. No new endpoint.
+- Groups: Live now, Pages, Streamers, Tasks. Choosing a task opens it in
   the Operations inspector (`/operations#inspect=<Task>`); the palette never runs
   anything directly.
 - `role="dialog"` with a `listbox`; arrow keys move `aria-selected`; Enter opens;
@@ -324,7 +325,7 @@ The active tab gets a Signal 2 px top tick and `--text`; inactive tabs are
 | Keys | Action |
 |---|---|
 | ⌘K / Ctrl-K, `/` | Palette (or focus the page filter when one exists) |
-| `g` then `h` `l` `m` `p` `w` `b` `e` `o` `c` `d` | Home, Live, Media, Podcasts, Workspaces, Briefings, Email, Operations, Costs, Data |
+| `g` then `h` `l` `m` `p` `e` `a` `v` `o` `c` `d` | Home, Live, Media, Podcasts, Email, Calendar, Deliveries, Operations, Costs, Data |
 | `j` / `k`, Enter | Move row focus in the page's primary table, open or inspect |
 | `[` | Collapse or expand the rail |
 | Esc | Close palette, sheet, inspector or modal |
@@ -350,9 +351,9 @@ modifier, replacing every `format!("prefix-{}")` tone class.
 | **ConfirmButton** | wraps any Button | Two-step: first press arms it ("Confirm run", warn wash and outline, 3 s countdown bar along the bottom edge); second press acts; Escape, blur or timeout disarms. Irreversible deletes arm to fault "Delete permanently". Replaces every `window.confirm()`. |
 | **RunButton** | inline `sm` (visible on row hover or focus, always visible on phone) and inspector `primary` | ConfirmButton semantics; on success optimistic `running`, button `busy`; HTTP 409 shows the toast "<name> is already running" and does not flip `running` (existing `LiveData::run_task` contract). |
 | **Segmented** | range (`30D 90D All`), mode, filters with inline mono counts | Track `--surface` with `--line` border; active segment `--raised` with `--e-2`; `aria-pressed`; zero-count options stay visible but `--text-3`. `fill` stretches it to full width on phone (segments share it evenly) instead of scrolling sideways. Replaces `.range-buttons`, `.mode-toggle`, single-select chip groups and the old `StatusFilterChips` (removed). |
-| **Chip** | neutral, signal | Multi-select filters and tags; pressed = `--signal-wash` fill plus `--signal-line` border, `aria-pressed`. A chip that is a link is 44 px on phone and coarse pointers. |
+| **Chip** | neutral, signal, `removable` | Multi-select filters and tags; pressed = `--signal-wash` fill plus `--signal-line` border, `aria-pressed`. A chip that is a link is 44 px on phone and coarse pointers. A `removable` chip is one item of an editable list (`.chip.removable` with a `.chip-x` remove button labelled "Remove <value>", 28 px on phone); the list's add input sits below the chips and Enter adds without submitting the form. |
 | **Tag** | tone variants, mono 12 px, `--r-xs` | Static labels: tier, kind, policy, trigger (`schedule`, `manual`). |
-| **Status** | `ok` (dot only), `running` (spinner arc plus word), `warn` (diamond plus word), `fault` (square plus word), `idle` (ring plus word), `stale` (diamond plus "stale"); runs read Succeeded, Failed, Running or Degraded (warn) via `run_status_label` | Replaces `StatusDot`, `status-chip-*`, `mail-outcome-*`, `mcp-status-*`, `workspace-status`, `claude-tag-*`. Always has a text alternative. |
+| **Status** | `ok` (dot only), `running` (spinner arc plus word), `warn` (diamond plus word), `fault` (square plus word), `idle` (ring plus word), `stale` (diamond plus "stale"); runs read Succeeded, Failed, Running or Degraded (warn) via `run_status_label` | Replaces `StatusDot`, `status-chip-*`, `mail-outcome-*`, `mcp-status-*`, `claude-tag-*`. Always has a text alternative. |
 | **LiveTag** | `LIVE`, `LIVE · 4h 12m` | Pulsing dot; `--live-wash` fill; not rendered when offline. |
 | **Readout** | `xl`, `l`, `m` with key, sub-line, optional Delta and Sparkline | Value-tick flash on change (section 9); skeleton bar while loading; `stale` (figure `--text-2`, sub-line "as of 12:10" in warn). |
 | **Delta** | up (`--ok`, `↑`), down (`--text-2`, `↓`; a dip is not an error), flat, `surge` (Signal word "Surging" when the backend's surge or anomaly gate fires) | Mono `read-s`. The UI never computes its own surge. |
@@ -433,7 +434,7 @@ Usage rules:
 
 The data layer is unchanged: one `/api/events` SSE per tab, 10 s
 `/api/snapshot` poll while the stream is down, 5 s reconnect, keyed per-id memos,
-`use_visible_poll`, per-run log SSE, `workspace-updated`.
+`use_visible_poll`, per-run log SSE.
 
 ### 8.1 Connection
 
@@ -491,10 +492,17 @@ Any panel whose data is older than twice its refresh interval shows
 Previous data stays visible at 60% opacity with a 2 px Signal progress line at
 the top of the panel; nothing reflows. This is the Costs behavior generalised.
 
+A refresh never resets what the viewer chose. Snapshots arrive every few
+seconds, so a reactive view closure must not read refreshed data directly when
+it renders a subtree with local state (a sort or filter Segmented, an open
+Disclosure, a text input, a selection, scroll). Gate it on a `Memo` of exactly
+what selects the branch (for example `loaded = Memo::new(|_| data.with(Option::is_some))`),
+read the data inside nested closures, or hoist the state above the closure.
+Loaders keep the previous value while refetching instead of resetting to `None`.
+
 ### 8.5 Attention
 
-The Home status sentence and the "Needs you" panel aggregate: pending workspace
-actions, failing, degraded and stale tasks, email failures, MCP errors in 24 h,
+The Home status sentence and the "Needs you" panel aggregate: failing, degraded and stale tasks, email failures, MCP errors in 24 h,
 an unconfigured or offline Claude host link when sessions are expected,
 deliveries that need you (pickup, failed attempt, exception), unhealthy calendar
 sync and active pet health alerts. Each item
@@ -525,7 +533,7 @@ motion block is the only place `!important` is allowed.
 - **Empty:** EmptyState with one sentence and one action. Examples: Pods "Paste
   an article URL to make your first episode"; Media "No picks yet · Run picks";
   Emails filtered to nothing "No failed emails in the last 500 · Clear filter";
-  Briefings "No briefings yet"; MCP "No calls in this window".
+  MCP "No calls in this window".
 - **Error:** ErrorState inline in the panel that failed; the rest of the page
   keeps working. Page-level ErrorState only when the page's primary request fails.
   GET retries (502/503/504) stay in the API client; the UI shows a skeleton until
@@ -578,8 +586,7 @@ hairline dividers (2 columns on phone).
      count; each row is a Watch target with a details chevron.
      Footer Disclosure "9 channels offline · 3 primary" opens desaturated Avatar
      chips (primary first) with last-live time.
-   - Right: **Needs you / Nothing needs you** panel (check rows: workspace
-     actions, task failures, stale tasks, email failures, each linking) and
+   - Right: **Needs you / Nothing needs you** panel (check rows: task failures, stale tasks, email failures, each linking) and
      **Agenda** (today plus the next days, at most six lines, linking
      `/calendar?day=`), **Deliveries** (only while something is active: status,
      expected date with "Was due" in warn, cache age) and **Up next** (next
@@ -589,11 +596,10 @@ hairline dividers (2 columns on phone).
    age; "All picks" link. Phone: snap rail. A Poster without artwork (or while
    it loads, or after it fails) shows its typographic tile: hue from the title,
    a large dim initial (skipping The/A/An) and the title clamped to four lines.
-4. Three panels (4/4/4): **Research** (active subjects with pending actions),
-   **Inbox** (processed, filtered, failed readouts plus latest parcel events),
+4. Two panels (6/6): **Inbox** (processed, filtered, failed readouts plus latest parcel events),
    **Spend** (30-day `read-l`, daily mini bars, largest feature).
 5. Phone order: sentence, lead Stage, other live rows, Needs you, Up next, On
-   deck rail, Research, Inbox, Spend. The old System Health row is removed.
+   deck rail, Inbox, Spend. The old System Health row is removed.
 
 ### Watch targets
 
@@ -626,6 +632,29 @@ It opens in a new tab with `rel="noopener"`.
 - **Offline** table grouped by tier (Primary, Background): Avatar desaturated,
   name, last live (relative), last peak, typical peak. Rows link to the streamer.
 - Phone: two-line rows.
+
+### `/live/streamers`
+
+- h1 "Streamers" with a count lede; the one primary action is "Add streamer".
+- **Tracked streamers** Panel: one row per configured streamer in display order
+  (the order on Live), keyed by id so edits and moves update rows in place. Each
+  row: up/down icon buttons (disabled at the ends and while an order save is in
+  flight, saying why), name, a wrapping source line (platform glyph plus mono
+  usernames), Tags only for deviations (Background, Live alerts off, Own
+  Pushover app; hidden on phone), Edit, and a destructive ConfirmButton
+  "Delete" (history is kept). A warn InlineNote says Kick sources are not polled
+  while Kick credentials are missing.
+- **Destiny.gg embeds** Panel: a number field (0 to 20) and a secondary Save,
+  disabled while unchanged or invalid.
+- **Editor**: the Inspector drawer (sheet on phone) for add and edit. Display
+  name; Sources as one removable-chip list per platform with an add input and
+  an `n/10` count; Tier Segmented (Background hides the live-notification
+  control and clears its override); Live notifications Segmented `Default (on) |
+  On | Off`. Save sends only changed fields. Field problems show after the first
+  save attempt; server errors show inline as returned.
+- **Pushover token** is write-only and never displayed. On add it is an optional
+  password field; on edit it is its own section that saves immediately: "Set"
+  or "Replace" and a ConfirmButton "Remove".
 
 ### `/streamers/:id` live (e.g. `/streamers/hutch`)
 
@@ -741,47 +770,6 @@ details" link. Works one-handed at 390 px.
 - **Processing** section: chunks Table (warnings, re-split Tags), retriever
   attempts (winner Tag), cost breakdown; admin retry and delete as ConfirmButtons
   then `navigate("/pods")`.
-
-### `/workspaces`
-
-h1 "Research", status sentence ("1 subject active · 0 actions waiting").
-Workspace rows (not cards): title, description (one line), subject counts,
-pending actions badge, schedule (mono), "Start research" compose entry per
-workspace.
-
-### `/workspaces/:w` (e.g. `/workspaces/purchase-research`)
-
-Header: title, scope description, counts readouts, next sweep countdown. Subject
-Table (status, title, updated, pending actions). Compose form (textarea with the
-workspace placeholder, primary Send) docked at the top.
-
-### `/workspaces/:w/:s` (e.g. `/workspaces/marketplace-selling/f241c120-…`)
-
-- Header: crumbs, subject title (h1), status `<select>` styled as Segmented menu,
-  updated time.
-- Wide: two panes. Left sticky outline (200 px): Actions, Artifacts (each artifact
-  by name), Conversation, Sources, Papercuts, with counts. Right: the selected
-  section.
-- **Actions** pinned first when any are pending: cards with title, payload
-  Disclosure, Approve (primary) and Reject (danger ConfirmButton), result line.
-- **Artifacts**: one at a time with tabs per artifact key; Markdown at 15/24,
-  68ch, revision count.
-- **Conversation**: thread with the composer docked at the bottom of the section;
-  run progress shows a running Status while the 1 s log poll is active.
-- `?section=` selects the section; `target=action-<id>` / `artifact-<key>`
-  selects the right tab first, then scrolls and applies `deep-link-target`.
-  Element ids `action-<id>`, `artifact-<key>` and anchors `#actions`,
-  `#artifacts`, `#conversation`, `#sources` are kept (the selected section's
-  anchor always exists in the DOM; other sections render collapsed, not
-  removed, so the ids exist).
-- Phone: the outline becomes a sticky Segmented (Actions, Artifacts,
-  Conversation, Sources) plus a select for the artifact.
-
-### `/briefings`
-
-Day-grouped feed with source Chips. Each briefing is a row (source Tag, title,
-time, cost in mono) that expands in place to the message (15/24 prose) and a
-Logs button (inspector LogWell). ShowMore.
 
 ### `/emails`
 
@@ -954,14 +942,12 @@ no raw colors outside tokens.
 
 Routes and their tests (plus the new `/live` tests), `/recommendations` alias,
 trailing-slash and percent-decoding rules, `page_title()` and dynamic streamer
-titles; query and hash deep links (`?recommendation=`, `?section=&target=`);
+titles; query and hash deep links (`?recommendation=`);
 ids `article-url`, `article-url-error`, `data-entity-select`,
 `rec-feedback-note`, `podrec-feedback-note`, `episode-transcript`,
-`workspace-summary`, `task-history-<name>`, `recommendation-<id>`,
-`action-<id>`, `artifact-<key>`, section anchors; SSE plus poll fallback and
+`task-history-<name>`, `recommendation-<id>`, section anchors; SSE plus poll fallback and
 reconnect; keyed in-place live updates; the 409 toast semantics; PressPods
-refetch triggers; recommendation reload on run change; workspace run polling and
-`workspace-updated`; audio chapter seeking; `/reminders` full load and CSP; no
+refetch triggers; recommendation reload on run change; audio chapter seeking; `/reminders` full load and CSP; no
 inline scripts in the SPA (boot via hashed `js/boot.js`).
 
 ### 13.4 Performance budget

@@ -1,13 +1,11 @@
-//! System tools: capabilities, tasks and runs,
-//! livestreams and briefings. Livestream and briefing data come from the
-//! owning packages through `LiveDirectory`, `LiveIntelligence` and
-//! `BriefingsReader`; none of these tools polls a platform.
+//! System tools: capabilities, tasks and runs, and livestreams. Livestream
+//! data comes from the owning package through `LiveDirectory` and
+//! `LiveIntelligence`; none of these tools polls a platform.
 
 pub mod defs;
 
 use std::sync::Arc;
 
-use omni_api::briefings::BriefingHistory;
 use omni_api::runs::Run;
 use omni_api::streamers::LivestreamDetails;
 use omni_config::Config;
@@ -20,14 +18,10 @@ use serde_json::{Map, Value, json};
 
 use super::{TaskControl, conform, truncate};
 
-/// Task names of the workspace definitions.
-const WORKSPACE_TASKS: [&str; 2] = ["PurchaseResearch", "MarketplaceSelling"];
-
 /// Configuration facts `system_status` reports (never the values themselves).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ConfiguredFeatures {
     pub icloud: bool,
-    pub briefings: bool,
     pub web_search: bool,
     /// The iOS live-control service is always constructed in production.
     pub ios_controls: bool,
@@ -43,7 +37,6 @@ impl ConfiguredFeatures {
         Self {
             icloud: set(config.icloud_username.as_ref())
                 && set(config.icloud_app_password.as_ref()),
-            briefings: set(config.briefings_path.as_ref()),
             web_search: set(config.tavily_api_key.as_ref()),
             ios_controls: true,
             printing: set(config.printer_ipp_url.as_ref()),
@@ -120,9 +113,6 @@ mod defaults {
     pub fn session_limit() -> usize {
         20
     }
-    pub fn briefing_message_chars() -> usize {
-        1_500
-    }
 }
 
 #[derive(Deserialize)]
@@ -189,19 +179,6 @@ struct LivestreamGetInput {
     intelligence_event_limit: usize,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct BriefingsInput {
-    #[serde(default)]
-    briefing_name: Option<String>,
-    #[serde(default)]
-    cursor: usize,
-    #[serde(default = "defaults::limit")]
-    limit: usize,
-    #[serde(default = "defaults::briefing_message_chars")]
-    max_message_chars: usize,
-}
-
 /// Trims an already length-checked string, which must stay non-empty.
 fn trimmed(value: &str, field: &str) -> Result<String, ToolError> {
     let trimmed = value.trim();
@@ -220,10 +197,6 @@ fn livestream_json(summary: Value) -> Result<Value, ToolError> {
         .and_then(Value::as_array_mut)
         .and_then(|items| items.pop())
         .ok_or_else(|| ToolError::execute("invalid livestream summary"))
-}
-
-fn utf16_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    a.encode_utf16().cmp(b.encode_utf16())
 }
 
 pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
@@ -254,13 +227,11 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
                             "taskControls": !names.is_empty(),
                             "livestreams": livestreams,
                             "livestreamIntelligence": deps.ports.live_intelligence().is_some(),
-                            "briefings": features.briefings,
                             "iCloudEmail": deps.ports.email_reader().is_some() && features.icloud,
                             "iCloudCalendar": features.icloud,
                             "webSearch": features.web_search,
                             "iosControls": features.ios_controls,
                             "printing": features.printing,
-                            "workspaces": WORKSPACE_TASKS.iter().any(|t| names.iter().any(|n| n == t)),
                         }
                     }))
                 }
@@ -510,74 +481,6 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
         )?
     };
 
-    let briefings_list = {
-        let deps = deps.clone();
-        typed_tool(
-            &defs::BRIEFINGS_LIST,
-            move |input: BriefingsInput, _: ToolContext| {
-                let deps = deps.clone();
-                async move {
-                    let filter = input
-                        .briefing_name
-                        .as_deref()
-                        .map(|name| trimmed(name, "briefingName"))
-                        .transpose()?;
-                    let histories: Vec<BriefingHistory> = match deps.ports.briefings_reader() {
-                        Some(reader) => reader
-                            .histories()
-                            .await
-                            .map_err(port_error)?
-                            .into_iter()
-                            .map(decode)
-                            .collect::<Result<_, _>>()?,
-                        None => Vec::new(),
-                    };
-                    let mut names: Vec<String> =
-                        histories.iter().map(|h| h.briefing_name.clone()).collect();
-                    names.sort_by(|a, b| utf16_cmp(a, b));
-                    let mut notifications: Vec<(
-                        String,
-                        omni_api::briefings::BriefingNotification,
-                    )> = histories
-                        .into_iter()
-                        .filter(|h| filter.as_deref().is_none_or(|name| h.briefing_name == name))
-                        .flat_map(|h| {
-                            let name = h.briefing_name;
-                            h.notifications
-                                .into_iter()
-                                .map(move |item| (name.clone(), item))
-                        })
-                        .collect();
-                    notifications.sort_by_key(|(_, item)| std::cmp::Reverse(item.timestamp));
-                    let page = paginate(notifications, input.cursor, input.limit);
-                    let items: Vec<Value> = page
-                        .items
-                        .iter()
-                        .map(|(history, item)| {
-                            let (message, cut) = truncate(&item.message, input.max_message_chars);
-                            json!({
-                                "briefingName": history,
-                                "title": item.title,
-                                "message": message,
-                                "messageTruncated": cut,
-                                "url": item.url,
-                                "timestamp": item.timestamp,
-                                "runId": item.run_id,
-                                "costCents": item.cost_cents,
-                            })
-                        })
-                        .collect();
-                    Ok::<_, ToolError>(json!({
-                        "briefingNames": names,
-                        "notifications": items,
-                        "nextCursor": page.next_cursor,
-                        "total": page.total,
-                    }))
-                }
-            },
-        )?
-    };
-
     Ok(vec![
         status,
         tasks_list,
@@ -586,6 +489,5 @@ pub fn system_tools(deps: &SystemDeps) -> Result<Vec<McpTool>, ToolMetaError> {
         task_run_get,
         livestreams_list,
         livestream_get,
-        briefings_list,
     ])
 }

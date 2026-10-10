@@ -664,9 +664,25 @@ pub fn DataPage() -> impl IntoView {
     };
 
     let docked = Signal::derive(move || wide.get());
+    // The browser and inspector are gated on the selected slug alone and read
+    // entity fields reactively: Refresh rewrites the entity summary, and
+    // rebuilding on that would drop search focus and the open inspector.
+    let selected_slug_known =
+        Memo::new(move |_| selected.with(|e| e.as_ref().map(|e| e.slug.clone())));
+    let table_state = Memo::new(move |_| {
+        let no_rows = rows.with(Vec::is_empty);
+        if loading_rows.get() && no_rows {
+            TableState::Loading
+        } else if visible_rows.with(Vec::is_empty) {
+            TableState::Empty { no_rows }
+        } else {
+            TableState::Rows
+        }
+    });
     let detail = move || {
         let row = detail_row.get()?;
-        let entity = selected.get()?;
+        selected_slug_known.get()?;
+        let entity = selected.get_untracked()?;
         let id = row_id(&row, &entity.primary_key);
         let delete_target = row.clone();
         Some(view! {
@@ -695,22 +711,25 @@ pub fn DataPage() -> impl IntoView {
         }
     };
 
+    let entity_text = move |f: fn(&ManagedEntitySummary) -> String| {
+        Signal::derive(move || selected.with(|e| e.as_ref().map(f).unwrap_or_default()))
+    };
     let browser = move || {
-        let entity = selected.get()?;
+        let slug = selected_slug_known.get()?;
         Some(view! {
             <div class="stack">
                 <div class="section-head">
                     <div>
-                        <h2 class="section-title">{to_title_case(&entity.label)}</h2>
-                        <p class="small dim">{entity.description.clone()}</p>
+                        <h2 class="section-title">{entity_text(|e| to_title_case(&e.label))}</h2>
+                        <p class="small dim">{entity_text(|e| e.description.clone())}</p>
                     </div>
-                    <span class="section-meta mono">{entity.slug.clone()}</span>
+                    <span class="section-meta mono">{slug}</span>
                 </div>
-                {entity.warning.clone().filter(|w| !w.is_empty()).map(|w| view! { <InlineNote tone=Tone::Warn>{w}</InlineNote> })}
+                {move || selected.with(|e| e.as_ref().and_then(|e| e.warning.clone())).filter(|w| !w.is_empty()).map(|w| view! { <InlineNote tone=Tone::Warn>{w}</InlineNote> })}
                 <ReadoutBand cols=3 aria_label="Entity size">
-                    <Readout label="Rows" value=locale_number(entity.count as f64)/>
-                    <Readout label="Payload" value=format_bytes(entity.storage_bytes as f64)/>
-                    <Readout label="Primary key" value=entity.primary_key.join(", ") size=ReadoutSize::M/>
+                    <Readout label="Rows" value=entity_text(|e| locale_number(e.count as f64))/>
+                    <Readout label="Payload" value=entity_text(|e| format_bytes(e.storage_bytes as f64))/>
+                    <Readout label="Primary key" value=entity_text(|e| e.primary_key.join(", ")) size=ReadoutSize::M/>
                 </ReadoutBand>
                 <div class="toolbar">
                     <SearchField value=query on_input=Callback::new(move |v| query.set(v)) placeholder="Search every field" aria_label="Search rows" shortcut=true/>
@@ -730,12 +749,13 @@ pub fn DataPage() -> impl IntoView {
                     <ErrorState title="Rows could not load" raw=e retry=Callback::new(move |()| load_rows())/>
                 })}
                 {move || {
-                    if loading_rows.get() && rows.with(Vec::is_empty) {
-                        view! { <SkeletonRows count=8 label="Loading rows"/> }.into_any()
-                    } else if visible_rows.with(Vec::is_empty) {
-                        let message = if rows.with(Vec::is_empty) { "No rows in this entity." } else { "No rows match your search." };
-                        view! { <EmptyState compact=true message/> }.into_any()
-                    } else {
+                    match table_state.get() {
+                        TableState::Loading => view! { <SkeletonRows count=8 label="Loading rows"/> }.into_any(),
+                        TableState::Empty { no_rows } => {
+                            let message = if no_rows { "No rows in this entity." } else { "No rows match your search." };
+                            view! { <EmptyState compact=true message/> }.into_any()
+                        }
+                        TableState::Rows => {
                         view! {
                             <div class="table-wrap panel data-table-wrap">
                                 <table class="table dense data-table" data-primary-rows="true">
@@ -745,6 +765,7 @@ pub fn DataPage() -> impl IntoView {
                             </div>
                         }
                         .into_any()
+                        }
                     }
                 }}
                 {move || paged.has_more.get().then(|| view! {
@@ -822,6 +843,13 @@ pub fn DataPage() -> impl IntoView {
         }
         .into_any()
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TableState {
+    Loading,
+    Empty { no_rows: bool },
+    Rows,
 }
 
 #[cfg(test)]

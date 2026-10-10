@@ -8,7 +8,6 @@
 use serde::{Deserialize, Serialize};
 
 pub const LIVESTREAM_STATUS_CHANGED: &str = "livestream.status_changed";
-pub const WORKSPACE_UPDATED: &str = "workspace.updated";
 pub const PRESSPODS_JOB_FINISHED: &str = "presspods.job_finished";
 pub const TASK_RUN_FINISHED: &str = "task.run_finished";
 pub const CALENDAR_EVENT_CHANGED: &str = "calendar.event_changed";
@@ -66,28 +65,6 @@ pub struct LivestreamStatusChanged {
     pub ended_at: Option<String>,
     pub viewer_count: Option<i64>,
     pub max_viewer_count: Option<i64>,
-}
-
-/// What changed in a workspace.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorkspaceUpdateKind {
-    #[serde(rename = "action_pending")]
-    ActionPending,
-    #[serde(rename = "reply_ready")]
-    ReplyReady,
-}
-
-/// `workspace.updated`.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceUpdated {
-    pub workspace_id: String,
-    pub subject_id: Option<String>,
-    pub kind: WorkspaceUpdateKind,
-    pub action_id: Option<String>,
-    pub action_type: Option<String>,
-    pub title: Option<String>,
-    pub run_id: Option<String>,
 }
 
 /// How a PressPods job ended.

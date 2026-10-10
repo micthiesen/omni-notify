@@ -5,9 +5,9 @@ use omni_web_kit::components::{ButtonLink, ButtonVariant, Glyph, Icon, IconSize}
 use omni_web_kit::live::provide_live_data;
 use omni_web_kit::router::{Link, provide_router};
 use omni_web_pages::{
-    BriefingsPage, CalendarPage, ClaudePage, DeliveriesPage, FeedbackPage, McpPage,
-    MediaDetailPage, MediaPage, PetsPage, PodcastDetailPage, PodcastsPage, PodsDetailPage,
-    PodsPage, RemindersPage, WorkspacesPage,
+    CalendarPage, ClaudePage, DeliveriesPage, FeedbackPage, McpPage, MediaDetailPage, MediaPage,
+    PetsPage, PodcastDetailPage, PodcastsPage, PodsDetailPage, PodsPage, RemindersPage,
+    StreamerConfigPage,
 };
 use wasm_bindgen::JsCast as _;
 
@@ -15,13 +15,13 @@ use crate::pages::{
     CostsPage, DataPage, EmailActivityPage, HomePage, LivePage, LivestreamIntelligencePage,
     OperationsPage, StreamerPage,
 };
-use crate::routes::{Route, match_route, normalize_path, page_title, workspace_ids};
+use crate::routes::{Route, match_route, normalize_path, page_title};
 use crate::shell::{Shell, ShellContext};
 
 const MAIN_DESTINATIONS: [(&str, &str, Icon); 5] = [
     ("Live", "/live", Icon::Live),
     ("Movies & TV", "/media", Icon::Film),
-    ("Workspaces", "/workspaces", Icon::Flask),
+    ("Podcasts", "/podcasts", Icon::Headphones),
     ("Email", "/emails", Icon::Mail),
     ("Operations", "/operations", Icon::Pulse),
 ];
@@ -65,6 +65,7 @@ fn render(route: Route, path: Memo<String>) -> AnyView {
     match route {
         Route::Home => view! { <HomePage/> }.into_any(),
         Route::Live => view! { <LivePage/> }.into_any(),
+        Route::StreamerConfig => view! { <StreamerConfigPage/> }.into_any(),
         Route::Media => view! { <MediaPage/> }.into_any(),
         Route::MediaDetail(id) => view! { <MediaDetailPage id/> }.into_any(),
         Route::Podcasts => view! { <PodcastsPage/> }.into_any(),
@@ -76,13 +77,6 @@ fn render(route: Route, path: Memo<String>) -> AnyView {
         Route::StreamerIntelligence(streamer_id) => {
             view! { <LivestreamIntelligencePage streamer_id/> }.into_any()
         }
-        Route::Workspaces => {
-            let ids = Memo::new(move |_| path.with(|p| workspace_ids(p)));
-            let workspace_id = Signal::derive(move || ids.get().0);
-            let subject_id = Signal::derive(move || ids.get().1);
-            view! { <WorkspacesPage workspace_id subject_id/> }.into_any()
-        }
-        Route::Briefings => view! { <BriefingsPage/> }.into_any(),
         Route::Emails => view! { <EmailActivityPage/> }.into_any(),
         Route::Data => view! { <DataPage/> }.into_any(),
         Route::Costs => view! { <CostsPage/> }.into_any(),

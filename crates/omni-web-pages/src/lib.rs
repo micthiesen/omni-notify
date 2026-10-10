@@ -12,15 +12,13 @@
 //! | [`FeedbackPage`] | `/feedback/(recommendations\|podcasts)/:id` | `kind`, `id` |
 //! | [`PodsPage`] | `/pods` | none |
 //! | [`PodsDetailPage`] | `/pods/:id` | `id` |
-//! | [`WorkspacesPage`] | `/workspaces[/:w[/:s]]` | `workspace_id`, `subject_id` |
 //! | [`DeliveriesPage`], [`CalendarPage`] | `/deliveries` (`?tracking=`), `/calendar` (`?day=`) | none |
-//! | [`PetsPage`], [`RemindersPage`], [`BriefingsPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/briefings`, `/mcp-activity`, `/claude` | none |
+//! | [`StreamerConfigPage`] | `/live/streamers` | none |
+//! | [`PetsPage`], [`RemindersPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/mcp-activity`, `/claude` | none |
 //!
 //! Path parameters arrive already percent-decoded. Each detail page is
-//! re-created when its id changes; `WorkspacesPage` stays mounted and receives
-//! its ids as signals (as the React page received new props).
+//! re-created when its id changes.
 
-mod briefings;
 pub mod calendar;
 mod claude;
 mod common;
@@ -35,11 +33,9 @@ mod pods_detail;
 mod rec_ui;
 mod recommendation_runs;
 pub mod reminders;
-mod research_nav;
+pub mod streamer_config;
 mod taste_brain;
-mod workspaces;
 
-pub use briefings::BriefingsPage;
 pub use calendar::{AgendaTile, CalendarPage, CalendarSyncFacts, use_calendar_status};
 pub use claude::ClaudePage;
 pub use deliveries::{DeliveriesPage, DeliveriesTile, ParcelCacheFacts, use_parcels};
@@ -52,5 +48,5 @@ pub use pods::{PodsPage, format_audio_duration};
 pub use pods_detail::PodsDetailPage;
 pub use recommendation_runs::RecommendationRuns;
 pub use reminders::RemindersPage;
+pub use streamer_config::StreamerConfigPage;
 pub use taste_brain::{TasteBrain, TasteBrainProfile, TasteClaimView};
-pub use workspaces::WorkspacesPage;

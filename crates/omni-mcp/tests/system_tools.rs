@@ -11,8 +11,7 @@ use common::*;
 use futures::future::BoxFuture;
 use omni_mcp::tools::system::{ConfiguredFeatures, SystemDeps, system_tools};
 use omni_runtime::ports::{
-    BriefingsReader, LiveDirectory, LiveIntelligence, LiveObservation, LiveTransition, PortError,
-    Ports,
+    LiveDirectory, LiveIntelligence, LiveObservation, LiveTransition, PortError, Ports,
 };
 use omni_tasks::persistence::TaskRunData;
 use serde_json::{Value, json};
@@ -117,20 +116,6 @@ impl LiveIntelligence for Intelligence {
     }
 }
 
-struct Briefings;
-
-impl BriefingsReader for Briefings {
-    fn histories(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>> {
-        let note = |title: &str, at: i64| json!({"title": title, "message": "m".repeat(200), "url": "https://x.test", "timestamp": at, "runId": null, "costCents": 1.5});
-        Box::pin(async move {
-            Ok(vec![
-                json!({"briefingName": "Morning", "notifications": [note("m2", 20), note("m1", 10)]}),
-                json!({"briefingName": "Evening", "notifications": [note("e1", 15)]}),
-            ])
-        })
-    }
-}
-
 fn run(id: &str, task: &str) -> TaskRunData {
     serde_json::from_value(json!({
         "runId": id, "taskName": task, "trigger": "schedule", "startedAt": 1, "finishedAt": 2,
@@ -145,12 +130,11 @@ async fn router() -> (axum::Router, omni_testkit::TestStore) {
     let ports = Ports::default();
     ports.set_live_directory(Arc::new(Directory)).unwrap();
     ports.set_live_intelligence(Arc::new(Intelligence)).unwrap();
-    ports.set_briefings_reader(Arc::new(Briefings)).unwrap();
     let tasks = FakeTasks {
         tasks: vec![serde_json::from_value(json!({
-            "name": "PurchaseResearch", "schedule": "0 0 9 * * 0", "running": false,
+            "name": "PressPods", "schedule": "0 0 9 * * 0", "running": false,
             "nextRuns": ["2026-10-11T16:00:00.000Z"],
-            "lastRun": {"runId": "PurchaseResearch:1", "taskName": "PurchaseResearch", "trigger": "manual",
+            "lastRun": {"runId": "PressPods:1", "taskName": "PressPods", "trigger": "manual",
                         "scheduledFor": null, "startedAt": 1, "finishedAt": 2, "status": "error", "error": "boom", "summary": null}
         }))
         .unwrap()],
@@ -162,7 +146,6 @@ async fn router() -> (axum::Router, omni_testkit::TestStore) {
         ports,
         features: ConfiguredFeatures {
             icloud: true,
-            briefings: true,
             web_search: false,
             ios_controls: true,
             printing: false,
@@ -186,8 +169,8 @@ async fn reports_capabilities_without_configuration_values() {
         structured(&message)["capabilities"],
         json!({
             "taskControls": true, "livestreams": true, "livestreamIntelligence": true,
-            "briefings": true, "iCloudEmail": false, "iCloudCalendar": true, "webSearch": false,
-            "iosControls": true, "printing": false, "workspaces": true,
+            "iCloudEmail": false, "iCloudCalendar": true, "webSearch": false,
+            "iosControls": true, "printing": false,
         })
     );
 }
@@ -199,7 +182,7 @@ async fn lists_tasks_with_runs_in_the_task_run_shape() {
     let last = &structured(&message)["tasks"][0]["lastRun"];
     assert_eq!(
         *last,
-        json!({"runId": "PurchaseResearch:1", "taskName": "PurchaseResearch", "trigger": "manual",
+        json!({"runId": "PressPods:1", "taskName": "PressPods", "trigger": "manual",
                "startedAt": 1, "finishedAt": 2, "status": "error", "error": "boom"})
     );
     let runs = call_tool(&router, "task_runs_list", json!({"taskName": " B "})).await;
@@ -268,32 +251,4 @@ async fn gets_one_livestream_with_bounded_metrics_and_sessions() {
     assert_eq!(structured(&plain)["metrics"], Value::Null);
     let unknown = call_tool(&router, "livestream_get", json!({"streamerId": "nope"})).await;
     assert_eq!(error_text(&unknown), "Unknown livestream \"nope\"");
-}
-
-#[tokio::test]
-async fn lists_briefing_notifications_newest_first() {
-    let (router, _db) = router().await;
-    let message = call_tool(&router, "briefings_list", json!({"maxMessageChars": 100})).await;
-    let body = structured(&message);
-    assert_eq!(body["briefingNames"], json!(["Evening", "Morning"]));
-    let titles: Vec<&str> = body["notifications"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|n| n["title"].as_str().unwrap())
-        .collect();
-    assert_eq!(titles, ["m2", "e1", "m1"]);
-    assert_eq!(body["notifications"][0]["messageTruncated"], true);
-    assert_eq!(
-        body["notifications"][0]["message"].as_str().unwrap().len(),
-        100
-    );
-    assert_eq!(body["notifications"][0]["costCents"], 1.5);
-    let filtered = call_tool(
-        &router,
-        "briefings_list",
-        json!({"briefingName": "Evening"}),
-    )
-    .await;
-    assert_eq!(structured(&filtered)["total"], 1);
 }

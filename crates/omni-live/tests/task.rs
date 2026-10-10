@@ -181,7 +181,7 @@ impl Fixture {
         identity: Arc<dyn IdentityLearner>,
     ) -> LiveCheck {
         self.check(roster).with_dgg(DggDiscovery {
-            top_embeds: 1,
+            top_embeds: omni_live::TopEmbeds::new(1),
             available_platforms: Platform::ALL.into_iter().collect::<HashSet<_>>(),
             feed,
             identity,
@@ -879,4 +879,39 @@ async fn emits_streamer_updates_and_isolates_reconcile_failures() {
         .unwrap()
         .unwrap();
     assert!(matches!(event, AppEvent::StreamersChanged));
+}
+
+#[tokio::test]
+async fn retires_a_streamer_removed_while_live_without_an_offline_notification() {
+    let f = fixture(T0).await;
+    let s = streamer(
+        "dest",
+        "Destiny",
+        Platform::Kick,
+        "destiny",
+        StreamerTier::Primary,
+    );
+    let roster = Roster::new(vec![s.clone()]);
+    let check = f.check(&roster);
+    f.fetcher.set(Platform::Kick, live("A", Some(1_000)));
+    check.tick().await.unwrap();
+    assert_eq!(f.notifier.titles(), ["Destiny is LIVE!"]);
+
+    roster.replace(Vec::new());
+    f.clock.set(T0 + 60_000);
+    check.tick().await.unwrap();
+    assert!(matches!(
+        get_status(&f.store.store, "dest").await.unwrap(),
+        StreamerStatus::Offline(_)
+    ));
+    assert_eq!(f.notifier.count(), 1);
+
+    // Re-adding while still live starts a fresh session.
+    roster.replace(vec![s]);
+    f.clock.set(T0 + 120_000);
+    check.tick().await.unwrap();
+    assert_eq!(
+        f.notifier.titles(),
+        ["Destiny is LIVE!", "Destiny is LIVE!"]
+    );
 }

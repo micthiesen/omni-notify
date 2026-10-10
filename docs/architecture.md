@@ -15,8 +15,8 @@ names are `omni-*`; library names are `omni_*`.
   `omni-mcp-kit`, `omni-runtime`, `omni-api`. They know nothing about features.
 - **Subsystems:** `omni-imap`, `omni-email`, `omni-parcel`, `omni-calendar`,
   `omni-live`, `omni-ios-controls`, `omni-live-intel`, `omni-presspods`,
-  `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-workspaces`,
-  `omni-briefings`, `omni-mcp`, `omni-device-link`, `omni-personal`. Each exposes
+  `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
+  `omni-device-link`, `omni-personal`. Each exposes
   a constructor that returns an `omni_runtime::Subsystem`.
 - **App:** `omni-notify` builds the `AppContext`, constructs every subsystem,
   wires ports, and owns boot, the ops routes, dashboard SSE, the data manager and
@@ -52,8 +52,8 @@ tasks and tools, and starts the services.
 
 Cross-subsystem calls go through the port traits in
 `crates/omni-runtime/src/ports.rs`: `EmailReader`, `ArchiveEcho`,
-`EmailRetryHandlers`, `CalendarWriter`, `LiveDirectory`, `LiveIntelligence`,
-`OnDeckSource`, `BriefingsReader`, `ClaudeSessionNotifier`, `ClaudeHost` and
+`EmailRetryHandlers`, `CalendarConnection`, `LiveDirectory`, `LiveIntelligence`,
+`OnDeckSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
 `EventPublisher` (MCP Events publishing; `docs/mcp-events.md`). Each
 port is set once during wiring (`crates/omni-notify/src/wiring.rs`); a consumer
 must handle an unset port, because the providing subsystem may be disabled by

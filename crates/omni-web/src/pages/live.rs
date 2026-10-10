@@ -11,9 +11,9 @@ use omni_web_kit::components::streamers::{
     viewer_number,
 };
 use omni_web_kit::components::{
-    Avatar, Delta, EmptyState, ErrorState, Glyph, Icon, IconSize, LiveTag, Meter, PageHead, Panel,
-    PlatformIcon, Presence, Readout, ReadoutSize, SegOption, Segmented, SkeletonRows, Sparkline,
-    Tag, TickNum, Tone,
+    Avatar, ButtonLink, Delta, EmptyState, ErrorState, Glyph, Icon, IconSize, LiveTag, Meter,
+    PageHead, Panel, PlatformIcon, Presence, Readout, ReadoutSize, SegOption, Segmented,
+    SkeletonRows, Sparkline, Tag, TickNum, Tone,
 };
 use omni_web_kit::hooks::use_now;
 use omni_web_kit::live::{LiveData, use_live_data};
@@ -384,12 +384,22 @@ pub fn LivePage() -> impl IntoView {
         }
     });
     let now = use_now(60_000);
+    // Gate on loaded-ness only: reading the snapshot here would rebuild the
+    // roster, its sort control and every row on each refresh.
+    let loaded = Memo::new(move |_| live.snapshot.with(Option::is_some));
     view! {
-        <PageHead title sentence=true lede=Signal::derive(move || {
-            (order.with(|o| !o.is_empty())).then(|| meta.get())
-        })/>
+        <PageHead
+            title
+            sentence=true
+            lede=Signal::derive(move || (order.with(|o| !o.is_empty())).then(|| meta.get()))
+            actions=ViewFn::from(|| view! {
+                <ButtonLink to="/live/streamers" icon=Icon::Pencil title="Add, edit and reorder tracked streamers">
+                    "Manage streamers"
+                </ButtonLink>
+            })
+        />
         {move || {
-            if live.snapshot.with(Option::is_none) {
+            if !loaded.get() {
                 return match live.error.get() {
                     Some(e) => view! { <ErrorState title="Could not load streamers" raw=e page=true/> }.into_any(),
                     None => view! { <SkeletonRows count=6/> }.into_any(),

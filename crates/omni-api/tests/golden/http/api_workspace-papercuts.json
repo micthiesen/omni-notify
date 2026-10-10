@@ -1,7 +1,0 @@
-{
-  "route": "/api/workspace-papercuts",
-  "status": 200,
-  "body": {
-    "papercuts": []
-  }
-}

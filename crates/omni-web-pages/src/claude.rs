@@ -18,7 +18,7 @@ use omni_web_kit::components::{
     ShowMoreButton, SkeletonRows, Status, StatusKind, Tag, Tone,
 };
 use omni_web_kit::hooks::{use_now, use_visible_poll};
-use omni_web_kit::markdown::WorkspaceMarkdown;
+use omni_web_kit::markdown::Markdown;
 use omni_web_kit::task::spawn_scoped;
 use omni_web_kit::utils::claude_activity::{
     ClaudeActionGroup, ClaudeActionKind, boolean_field, claude_action_kind, explain_claude_error,
@@ -197,7 +197,7 @@ fn transcript_item(item: ClaudeTranscriptItem) -> impl IntoView {
         "assistant" => view! {
             <div class="tx-row">
                 <div class="tx-bubble">
-                    <WorkspaceMarkdown content=item.text.clone().unwrap_or_default() />
+                    <Markdown content=item.text.clone().unwrap_or_default() />
                     {foot()}
                 </div>
             </div>
@@ -418,6 +418,11 @@ fn SessionsPanel(
     let busy = Memo::new(move |_| {
         sessions.with(|s| s.iter().flatten().filter(|s| s.status == "busy").count())
     });
+    // Branch on memos so each poll updates the rows in place instead of
+    // rebuilding the table (and an unchanged error its Details disclosure).
+    let loaded = Memo::new(move |_| sessions.with(Option::is_some));
+    let empty = Memo::new(move |_| visible.with(Vec::is_empty));
+    let error_now = Memo::new(move |_| error.get());
 
     let row = move |session: ClaudeSession| {
         let started = parse_iso_ms(session.started_at.as_deref());
@@ -492,12 +497,12 @@ fn SessionsPanel(
                     "Include stopped"
                 </Chip>
             </div>
-            {move || error.get().map(|e| view! { <div class="panel-body">{claude_get_error(e, "Sessions could not load")}</div> })}
+            {move || error_now.get().map(|e| view! { <div class="panel-body">{claude_get_error(e, "Sessions could not load")}</div> })}
             {move || {
-                if sessions.with(Option::is_none) {
-                    return error.with(Option::is_none).then(|| view! { <SkeletonRows count=3 label="Asking the Mac" /> }.into_any());
+                if !loaded.get() {
+                    return error_now.with(Option::is_none).then(|| view! { <SkeletonRows count=3 label="Asking the Mac" /> }.into_any());
                 }
-                if visible.with(Vec::is_empty) {
+                if empty.get() {
                     let message = if include_stopped.get() { "No sessions." } else { "No running sessions." };
                     return Some(view! { <EmptyState compact=true message=message /> }.into_any());
                 }
@@ -644,7 +649,7 @@ fn action_body(call: &McpCall, state: TimelineState) -> AnyView {
                     let truncated = boolean_field(output, "truncated") == Some(true);
                     view! {
                         <div class="claude-result">
-                            <WorkspaceMarkdown content=result />
+                            <Markdown content=result />
                             {truncated.then(|| tag("truncated", Tone::Neutral))}
                         </div>
                     }
@@ -881,6 +886,8 @@ fn ActionsSection(
     });
     let hidden_groups =
         Signal::derive(move || visible.with(Vec::len).saturating_sub(groups_shown.get()));
+    // `actions` changes on every poll; only emptiness may rebuild the timeline.
+    let empty = Memo::new(move |_| actions.with(Vec::is_empty));
 
     view! {
         <section class="section">
@@ -897,7 +904,7 @@ fn ActionsSection(
                     .then(|| view! { <div class="chips claude-projects" role="group" aria-label="Filter actions by project">{project_chips(projects, project)}</div> })
             }}
             {move || {
-                if actions.with(Vec::is_empty) {
+                if empty.get() {
                     view! { <EmptyState compact=true message="No Claude Code actions recorded yet." icon=Icon::Terminal /> }.into_any()
                 } else {
                     view! {
@@ -1058,6 +1065,9 @@ pub fn ClaudePage() -> impl IntoView {
     let title =
         Signal::derive(move || state.get().map_or("Claude Code", |s| s.copy().0).to_owned());
     let lede = Signal::derive(move || state.get().map(|s| s.copy().1.to_owned()));
+    // Failed polls set the same message again; only a change may rebuild the
+    // error state (its Details disclosure would collapse).
+    let error_text = Memo::new(move |_| error.get());
 
     view! {
         <PageHead
@@ -1070,7 +1080,7 @@ pub fn ClaudePage() -> impl IntoView {
         />
         {move || {
             if has_activity.get() {
-                return error
+                return error_text
                     .get()
                     .map(|e| view! {
                         <InlineNote tone=Tone::Warn role="status">
@@ -1079,7 +1089,7 @@ pub fn ClaudePage() -> impl IntoView {
                     }
                     .into_any());
             }
-            Some(match error.get() {
+            Some(match error_text.get() {
                 Some(e) => view! {
                     <ErrorState
                         title="Claude activity could not load"

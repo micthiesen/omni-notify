@@ -524,28 +524,46 @@ pub fn PodsPage() -> impl IntoView {
         }
     };
 
-    let episodes_body = move || {
-        if let Some(message) = error.get().filter(|_| episodes.with(Option::is_none)) {
-            return view! {
-                <ErrorState
-                    title="Episodes did not load"
-                    raw=message
-                    retry=Callback::new(move |()| reload())
-                />
-            }
-            .into_any();
-        }
+    // Gate on the body's shape only: rebuilding the list on every reload
+    // would recreate each row and restart a playing episode.
+    let body_state = Memo::new(move |_| {
         if episodes.with(Option::is_none) {
-            return view! { <section class="panel"><SkeletonRows count=5 label="Loading episodes"/></section> }
-                .into_any();
+            return match error.get() {
+                Some(message) => EpisodesBody::Error(message),
+                None => EpisodesBody::Loading,
+            };
         }
         if episode_count.get() == 0 {
-            return view! {
-                <section class="panel">
-                    <EmptyState icon=Icon::Mic message="Paste an article URL to make your first episode."/>
-                </section>
+            EpisodesBody::Empty
+        } else {
+            EpisodesBody::List
+        }
+    });
+    let episodes_body = move || {
+        match body_state.get() {
+            EpisodesBody::Error(message) => {
+                return view! {
+                    <ErrorState
+                        title="Episodes did not load"
+                        raw=message
+                        retry=Callback::new(move |()| reload())
+                    />
+                }
+                .into_any();
             }
-            .into_any();
+            EpisodesBody::Loading => {
+                return view! { <section class="panel"><SkeletonRows count=5 label="Loading episodes"/></section> }
+                    .into_any();
+            }
+            EpisodesBody::Empty => {
+                return view! {
+                    <section class="panel">
+                        <EmptyState icon=Icon::Mic message="Paste an article URL to make your first episode."/>
+                    </section>
+                }
+                .into_any();
+            }
+            EpisodesBody::List => {}
         }
         view! {
             <section class="panel">
@@ -572,6 +590,23 @@ pub fn PodsPage() -> impl IntoView {
             }}
         }
         .into_any()
+    };
+
+    // Job rows are keyed by content, so a reload keeps unchanged rows (and
+    // an armed Dismiss confirmation) instead of rebuilding the queue.
+    let has_jobs = Memo::new(move |_| jobs.with(|list| !list.is_empty()));
+    let queue_meta = move || {
+        jobs.with(|list| {
+            let failed = list
+                .iter()
+                .filter(|j| j.status == PressPodsJobStatus::Failed)
+                .count();
+            if failed > 0 {
+                format!("{} in progress · {failed} failed", list.len() - failed)
+            } else {
+                format!("{} in progress", list.len())
+            }
+        })
     };
 
     let lede = move || -> Option<String> {
@@ -628,23 +663,23 @@ pub fn PodsPage() -> impl IntoView {
         </form>
 
         {move || {
-            let list = jobs.get();
-            (!list.is_empty())
+            has_jobs
+                .get()
                 .then(|| {
-                    let failed = list.iter().filter(|j| j.status == PressPodsJobStatus::Failed).count();
-                    let meta = if failed > 0 {
-                        format!("{} in progress · {failed} failed", list.len() - failed)
-                    } else {
-                        format!("{} in progress", list.len())
-                    };
                     view! {
                         <section class="section" aria-labelledby="pods-queue-title">
                             <div class="section-head">
                                 <h2 class="section-title" id="pods-queue-title">"Queue"</h2>
-                                <span class="section-meta">{meta}</span>
+                                <span class="section-meta">{queue_meta}</span>
                             </div>
                             <section class="panel">
-                                <ul class="pod-jobs">{list.into_iter().map(job_row).collect_view()}</ul>
+                                <ul class="pod-jobs">
+                                    <For
+                                        each=move || jobs.get()
+                                        key=|job| format!("{job:?}")
+                                        children=job_row
+                                    />
+                                </ul>
                             </section>
                         </section>
                     }
@@ -668,6 +703,15 @@ pub fn PodsPage() -> impl IntoView {
                 .map(|run| view! { <LogViewer run=run on_close=Callback::new(move |()| log_run.set(None)) /> })
         }}
     }
+}
+
+/// What the episodes section shows.
+#[derive(Clone, Debug, PartialEq)]
+enum EpisodesBody {
+    Error(String),
+    Loading,
+    Empty,
+    List,
 }
 
 #[cfg(test)]

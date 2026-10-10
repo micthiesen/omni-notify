@@ -24,6 +24,8 @@ pub mod snapshot;
 
 /// iOS live controls.
 pub mod ios;
+/// Tracked-streamer configuration.
+pub mod streamer_config;
 /// Streamers, metrics, sessions, trigger channels.
 pub mod streamers;
 
@@ -42,12 +44,8 @@ pub mod podcasts;
 /// Media recommendations, taste profile, on-deck items.
 pub mod media;
 
-/// Briefings.
-pub mod briefings;
 /// The primary iCloud calendar.
 pub mod calendar;
-/// Workspaces.
-pub mod workspaces;
 
 /// Claude activity, sessions and transcripts.
 pub mod claude;

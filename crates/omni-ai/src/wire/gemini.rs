@@ -1,7 +1,7 @@
 //! Gemini `models/{model}:generateContent` (used only when a `google:` model is
 //! configured). Structured output uses `responseMimeType: application/json` with
 //! `responseJsonSchema`; tools use `parametersJsonSchema`; the reasoning effort maps to
-//! `thinkingConfig.thinkingLevel` (the briefing agent uses `"high"`).
+//! `thinkingConfig.thinkingLevel` (callers that ask for deep reasoning use `"high"`).
 //! Model turns are replayed verbatim so thought signatures survive tool steps.
 
 use serde_json::{Map, Value, json};

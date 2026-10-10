@@ -10,7 +10,7 @@
 //! App wiring: build one [`triage::EmailTriage`] and hand it to every
 //! pipeline; register [`subsystem`]; start the dispatcher with
 //! [`dispatcher::service`] once the mail source and the ordered handlers
-//! (McpEvents, ParcelTracker, CalendarEvents, Workspaces) exist; set the
+//! (McpEvents, ParcelTracker, CalendarEvents) exist; set the
 //! `EmailReader` and `EmailRetryHandlers` ports for retry and reprocess.
 
 pub mod activity;

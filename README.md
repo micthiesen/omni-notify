@@ -1,6 +1,6 @@
 # Omni Notify
 
-Monitors YouTube, Twitch, and Kick channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs AI-powered briefing agents, email pipelines, media and podcast recommendations, PressPods, Arr download recovery, and durable Omni workspaces, all exposed through a web UI and an authenticated MCP endpoint.
+Monitors YouTube, Twitch, and Kick channels and sends [Pushover](https://pushover.net/) notifications when they go live or offline. Optionally runs email pipelines, media and podcast recommendations, PressPods, and Arr download recovery, all exposed through a web UI and an authenticated MCP endpoint.
 
 Omni Notify is a Rust workspace. One `omni-notify` binary runs every scheduled task and serves the JSON API, the `/mcp` endpoint and a Leptos single-page frontend from one HTTP port, over a SQLite document store. See [the architecture overview](docs/architecture.md) for the crate layout, boot order and deployment pipeline.
 
@@ -16,26 +16,17 @@ services:
       - KICK_CLIENT_ID=xxx # only if monitoring Kick channels
       - KICK_CLIENT_SECRET=xxx
     volumes:
-      - ./channels.json:/app/channels.json:ro
+      - ./data:/data
     restart: unless-stopped
 ```
 
-Channels are configured in `channels.json` (path overridable via `CHANNELS_CONFIG_PATH`), keyed by display name, with platform usernames and per-streamer options inline:
+Tracked streamers are stored in the database and managed on the Live page's streamer editor or through the `streamer_config_*` MCP tools (create, edit, delete, reorder, settings). Each streamer has a display name, one or more YouTube handles, Twitch logins or Kick slugs, a tier and an optional live-notification override. A source can belong to only one streamer. A per-streamer Pushover app token can be set or cleared in the UI only; it is never returned by the API or accepted over MCP.
 
-```json
-{
-  "dggTopEmbeds": 3,
-  "MKBHD": { "youtube": "@mkbhd" },
-  "Destiny": { "youtube": "@destiny", "kick": "destiny" },
-  "Shroud": { "twitch": "shroud", "tier": "background" }
-}
-```
+On first boot with an empty configuration, Omni imports an existing `channels.json` (path overridable via `CHANNELS_CONFIG_PATH`) once and logs `Imported N streamer(s)`; afterwards the file is ignored and can be deleted. An invalid file fails that boot rather than silently dropping config.
 
-Platform fields are `youtube` / `twitch` / `kick`; each takes one username or an array of them. An invalid file fails startup with a validation error rather than silently dropping config.
+The `dggTopEmbeds` setting (0-20) adds that many currently hosted or most-watched embeds from Destiny.gg. These are refreshed on the relaxed background cadence, never send live/offline/title notifications, and disappear when they leave the top set. A source already represented by a configured streamer is enriched with its DGG audience/host status instead of duplicated; its configured tier, platform polling, and notification behavior remain authoritative. `0` disables discovery.
 
-The optional top-level `dggTopEmbeds` count adds that many currently hosted or most-watched embeds from Destiny.gg. These are refreshed on the relaxed background cadence, never send live/offline/title notifications, and disappear when they leave the top set. A source already represented by an explicit channel entry is enriched with its DGG audience/host status instead of duplicated; its configured tier, platform polling, and notification behavior remain authoritative. Set it to `0` or omit it to disable discovery.
-
-**One entry = one streamer.** A streamer live on multiple platforms gets **one** "went live" notification when they start streaming anywhere and **one** "went offline" notification when all platforms go offline, so multistreams never double-ping.
+**One configured streamer = one identity.** A streamer live on multiple platforms gets **one** "went live" notification when they start streaming anywhere and **one** "went offline" notification when all platforms go offline, so multistreams never double-ping.
 
 ## How It Works
 
@@ -81,47 +72,15 @@ installation, and the physical-iPad validation checklist.
 
 ## Per-Streamer Options
 
-Alongside the platform fields, each `channels.json` entry accepts:
+Alongside its sources, each streamer has:
 
-- `pushoverToken`: override the Pushover token for this streamer's notifications.
-- `tier`: set to `"background"` for second-tier streamers you check on the dashboard but never want pushed about. Mutes live/offline/title-change notifications, restricts viewer-record notifications to all-time highs only, and polls at a relaxed cadence (every 60s instead of 20s). Tracking, the dashboard, and `/api/trigger-channels` are unaffected. Combining it with an explicit `liveNotifications` is a config error.
-- `liveNotifications`: set to `false` to mute live/offline/title-change notifications while keeping full-rate polling (e.g. for external integrations that need fast state). Viewer-record notifications (7d/30d/90d/all-time highs) still fire.
+- A Pushover app token (UI only): overrides the Pushover token for this streamer's notifications.
+- Tier: set to background for second-tier streamers you check on the dashboard but never want pushed about. Mutes live/offline/title-change notifications, restricts viewer-record notifications to all-time highs only, and polls at a relaxed cadence (every 60s instead of 20s). Tracking, the dashboard, and `/api/trigger-channels` are unaffected. It cannot be combined with a live-notification override.
+- Live notifications: turn off to mute live/offline/title-change notifications while keeping full-rate polling (e.g. for external integrations that need fast state). Viewer-record notifications (7d/30d/90d/all-time highs) still fire.
 
 Viewer records are confirmed once the count falls 5 percent below the peak, or when the stream goes offline. Primary-tier streamers are notified of new 7, 30 and 90-day highs as well as all-time highs; a record already confirmed today is not repeated.
 
 Title-change notifications are eagerly debounced: the first change fires immediately, further changes within 10 minutes are held with the last one winning.
-
-## Briefing Agents
-
-AI agents that search the web on a schedule and send notification summaries. Requires `TAVILY_API_KEY`, `BRIEFINGS_PATH`, and an API key for your chosen model provider.
-
-Create `.md` files in your briefings folder:
-
-```markdown
----
-schedule: "0 0 8 * * *"
----
-You are a morning news assistant. Today is {{date}}, {{time}}.
-
-{{history:10}}
-
-Search for the most important news from the past 24 hours.
-Do not cover topics from past notifications above.
-```
-
-- Filename becomes the task name (`CanadianNews.md` registers as "CanadianNews")
-- `schedule` is a 6-field cron expression (with seconds)
-- The body is the prompt sent to the AI agent
-
-### Placeholders
-
-| Placeholder | Description | Example |
-|---|---|---|
-| `{{date}}` | Current date (local timezone) | `Thursday, February 6, 2026` |
-| `{{time}}` | Current time (local timezone) | `9:00 AM EST` |
-| `{{history:N}}` | Last N notifications from this briefing | _(titles + URLs)_ |
-
-History is stored per-briefing in SQLite and auto-pruned to the last 50 entries.
 
 ## Media Recommendations
 
@@ -190,9 +149,8 @@ The built-in server (port `FRONTEND_PORT`, default 3000) serves the Omni Notify 
 - `/podcasts` lists podcast episode recommendations with show artwork, status filters, episode/discussion links, good-pick/not-for-me feedback controls, and the podcast taste profile.
 - `/feedback/recommendations/:id` and `/feedback/podcasts/:id` are mobile-first one-tap rating pages. Pushover recommendation notifications deep-link here ("Rate this pick"), and the page links onward to the full recommendation view.
 - `/pods` lists PressPods episodes with an inline player, costs, and processing logs, plus a submit-URL form and retry controls for failed jobs.
-- `/briefings` is a browsable archive of briefing notifications (the last 50 stored per briefing).
 - `/emails` shows what the parcel and calendar email pipelines did with each email (why it was admitted or filtered, per-item results, honest processed/partial/failed outcomes) with per-email processing logs, one-click reprocess, block-sender and not-relevant/missed feedback actions, a forget-tracking-number escape hatch, and a user-editable sender-rules section. A shared LLM triage call gates both pipelines; corrections feed back into its prompt.
-- `/workspaces`, `/streamers/:id` (with `/streamers/:id/intelligence`), `/costs`, `/data`, `/operations`, `/mcp-activity`, `/claude` and `/reminders` cover workspaces, per-streamer detail and livestream intelligence, model and service costs, the data manager, task operations, MCP call history, Claude Code sessions and server iCloud Reminders sign-in.
+- `/streamers/:id` (with `/streamers/:id/intelligence`), `/costs`, `/data`, `/operations`, `/mcp-activity`, `/claude` and `/reminders` cover per-streamer detail and livestream intelligence, model and service costs, the data manager, task operations, MCP call history, Claude Code sessions and server iCloud Reminders sign-in.
 
 Updates are pushed in realtime over SSE (`/api/events`) on the same HTTP port, so no extra ports are needed; the UI falls back to polling `/api/snapshot` (and shows a "Reconnecting" badge) if the stream drops. Task runs are persisted in SQLite (last 50 per task) so history survives restarts.
 
@@ -207,8 +165,8 @@ diversity. Generate and store the production token in deployment secrets; do
 not put it in this repository.
 
 The server provides bounded, typed tools for iCloud email and calendar,
-workspaces, tasks and run logs, livestreams, media and podcast services,
-PressPods, pets, costs, briefing history, and an optional fixed IPP printer. The
+tasks and run logs, livestreams, media and podcast services,
+PressPods, pets, costs, and an optional fixed IPP printer. The
 printer tools report status and print bounded public PDF URLs in monochrome,
 with long-edge duplex by default; every physical print requires approval. It
 calls the underlying services directly rather than looping through Omni's HTTP
@@ -225,7 +183,7 @@ file is generated from the same definitions registered by the server and is
 checked in tests for drift. See [the MCP operations guide](docs/mcp.md) for the
 transport, authentication, tool-family, and deployment contract.
 
-To iterate on the frontend without real credentials, `omni-notify --preview` boots the real server over a throwaway database seeded with fake streamers, runs, recommendations, briefings, email activity and a pet, with every side effect recorded and outgoing HTTP refused (see [Development](#development)).
+To iterate on the frontend without real credentials, `omni-notify --preview` boots the real server over a throwaway database seeded with fake streamers, runs, recommendations, email activity and a pet, with every side effect recorded and outgoing HTTP refused (see [Development](#development)).
 
 ## AI Model Configuration
 
@@ -233,7 +191,6 @@ Models are configured via environment variables using `provider:model` format. S
 
 | Variable | Default | Used for |
 |---|---|---|
-| `BRIEFING_MODEL` | `openai:gpt-6-luna` | Briefing agents |
 | `EXTRACTION_MODEL` | `openai:gpt-6-luna` | Parcel email extraction |
 | `CALENDAR_EXTRACTION_MODEL` | `openai:gpt-6-sol` | Calendar email extraction |
 | `TRIAGE_MODEL` | `openai:gpt-6-luna` | Shared email relevance triage |
@@ -246,9 +203,9 @@ Models are configured via environment variables using `provider:model` format. S
 Examples:
 
 ```bash
-BRIEFING_MODEL=openai:gpt-6-luna
-BRIEFING_MODEL=anthropic:claude-sonnet-5
-BRIEFING_MODEL=google:gemini-3.5-flash
+TRIAGE_MODEL=openai:gpt-6-luna
+TRIAGE_MODEL=anthropic:claude-sonnet-5
+TRIAGE_MODEL=google:gemini-3.5-flash
 ```
 
 ## Environment Variables
@@ -260,7 +217,7 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `OMNI_MCP_TOKEN` | In production | Random bearer token for authenticated streamable HTTP at `/mcp`; minimum 32 diverse characters |
 | `OMNI_DEVICE_LINK_TOKEN` | No | Device token for the Mac's `omni-link` agent; enables the `claude_*` MCP tools. Minimum 32 diverse characters, different from `OMNI_MCP_TOKEN` |
 | `PRINTER_IPP_URL` | No | Fixed `ipp://` or `ipps://` endpoint that enables MCP printer status and approved monochrome PDF printing |
-| `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)); required when `channels.json` has Kick channels |
+| `KICK_CLIENT_ID` | No | Kick OAuth client ID ([dev.kick.com](https://dev.kick.com)); required to poll Kick sources |
 | `KICK_CLIENT_SECRET` | No | Kick OAuth client secret |
 | `OFFLINE_NOTIFICATIONS` | No | Send offline notifications (default: `true`) |
 | `LIVESTREAM_INTELLIGENCE_ENABLED` | No | Enable Boris-local transcription, summaries, speaker detection, and semantic alerts (default: `false`) |
@@ -270,7 +227,6 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `LIVESTREAM_MAX_VOICE_TARGETS` | No | Maximum concurrent DGG voice targets (default: `3`) |
 | `LIVESTREAM_VOICE_SAMPLE_SECONDS` / `LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS` | No | Voice sample length / cadence (defaults: `18` / `45`) |
 | `LIVESTREAM_SUMMARY_SAMPLE_SECONDS` / `LIVESTREAM_SUMMARY_INTERVAL_SECONDS` | No | Summary sample length / cadence (defaults: `75` / `480`) |
-| `BRIEFING_MODEL` | No | AI model for briefings (default: `openai:gpt-6-luna`) |
 | `EXTRACTION_MODEL` | No | AI model for parcel email extraction (default: `openai:gpt-6-luna`) |
 | `CALENDAR_EXTRACTION_MODEL` | No | AI model for calendar email extraction (default: `openai:gpt-6-sol`) |
 | `TRIAGE_MODEL` | No | AI model for shared email triage (default: `openai:gpt-6-luna`) |
@@ -282,9 +238,8 @@ BRIEFING_MODEL=google:gemini-3.5-flash
 | `GOOGLE_GENERATIVE_AI_API_KEY` | No | Required for `google:` models |
 | `ANTHROPIC_API_KEY` | No | Required for `anthropic:` models |
 | `OPENAI_API_KEY` | No | Required for `openai:` models |
-| `TAVILY_API_KEY` | No | Tavily web search (required for briefings + recommendations) |
-| `BRIEFINGS_PATH` | No | Folder containing `.md` briefing configs |
-| `CHANNELS_CONFIG_PATH` | No | Path to `channels.json` (default: `./channels.json`) |
+| `TAVILY_API_KEY` | No | Tavily web search (required for recommendations) |
+| `CHANNELS_CONFIG_PATH` | No | Legacy `channels.json` imported once on first boot (default: `./channels.json`) |
 | `TMDB_API_KEY` | No | TMDB API key (required for recommendations; v3 key or v4 read token) |
 | `RECS_SCHEDULE` | No | Recommendation cron (default: `0 0 17 * * 1,3,5`) |
 | `TASTE_REFLECTION_MODEL` | No | Model for evidence-backed taste reflection (default: `openai:gpt-6-luna`) |

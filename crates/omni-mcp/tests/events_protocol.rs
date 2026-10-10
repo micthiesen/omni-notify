@@ -129,7 +129,6 @@ async fn advertises_events_and_handles_list_subscribe_unsubscribe_on_the_authent
             "email.received",
             "claude.session.turn_finished",
             "livestream.status_changed",
-            "workspace.updated",
             "presspods.job_finished",
             "task.run_finished",
             "calendar.event_changed",

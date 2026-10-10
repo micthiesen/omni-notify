@@ -1,5 +1,5 @@
 //! Transport-agnostic incoming email model, shared by
-//! the mail transport, the email pipelines, workspaces and MCP, and the handler
+//! the mail transport, the email pipelines and MCP, and the handler
 //! trait the dispatcher fans out to.
 
 use serde::{Deserialize, Serialize};
@@ -126,7 +126,7 @@ pub struct ListUnsubscribe {
 
 /// A pipeline that consumes dispatched emails.
 pub trait EmailHandler: Send + Sync {
-    /// `"McpEvents" | "ParcelTracker" | "CalendarEvents" | "Workspaces"`.
+    /// `"McpEvents" | "ParcelTracker" | "CalendarEvents"`.
     fn name(&self) -> &'static str;
     fn handle<'a>(&'a self, emails: &'a [FetchedEmail]) -> BoxFuture<'a, Result<(), HandlerError>>;
 }

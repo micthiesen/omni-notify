@@ -46,6 +46,7 @@ omni-calendar.workspace = true
 omni-device-link.workspace = true
 omni-email.workspace = true
 omni-imap.workspace = true
+omni-live.workspace = true
 omni-media.workspace = true
 omni-parcel.workspace = true
 omni-personal.workspace = true
@@ -53,7 +54,6 @@ omni-podcasts.workspace = true
 omni-presspods.workspace = true
 omni-reminders.workspace = true
 omni-testkit.workspace = true
-omni-workspaces.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true

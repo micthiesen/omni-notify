@@ -1,7 +1,7 @@
 //! Boot order:
 //!
-//! config + redacted log -> open store -> `migrate_all` over every entity ->
-//! `import_historical_costs` -> subsystem construction (intelligence,
+//! config + redacted log -> open store -> delete retired entities ->
+//! `migrate_all` over every entity -> `import_historical_costs` -> subsystem construction (intelligence,
 //! channels.json, iOS controls, tasks, Reminders; `Migrate` and `Services`
 //! boot steps) -> `registry.initialize` (interrupted runs) -> `Reconcile`
 //! boot steps (`markInterruptedCalls`, calendar hash reconcile) -> HTTP
@@ -18,6 +18,7 @@ use std::time::Duration;
 
 use omni_alerts::AlertGate;
 use omni_runtime::{AppContext, BootError, BootPhase, BootStep, Subsystem};
+use omni_store::DocWrite as _;
 use omni_store::entity::{EntityDescriptor, migrate_all};
 use omni_tasks::{CronSchedule, Scheduler, Task};
 use tokio::net::TcpListener;
@@ -84,12 +85,41 @@ pub fn all_entities(subsystems: &[Subsystem]) -> Vec<EntityDescriptor> {
     entities
 }
 
-/// `Entity.migrateAll()` then `importHistoricalCosts()`.
+/// Entities of removed features (briefings, workspaces). Their rows are
+/// deleted at boot; nothing reads them.
+pub const RETIRED_ENTITIES: &[&str] = &[
+    "briefing-history",
+    "briefing-delivery",
+    "workspace-subject",
+    "workspace-artifact-revision",
+    "workspace-message",
+    "workspace-source",
+    "workspace-action",
+    "workspace-email-scope",
+    "workspace-papercut",
+    "workspace-notification",
+];
+
+/// Deletes retired entities, then `Entity.migrateAll()` and
+/// `importHistoricalCosts()`.
 pub async fn migrate(
     ctx: &AppContext,
     entities: Vec<EntityDescriptor>,
     trace: &BootTrace,
 ) -> Result<(), AppError> {
+    let retired = ctx
+        .store
+        .write(|tx| {
+            RETIRED_ENTITIES.iter().try_fold(0, |sum, name| {
+                Ok::<_, omni_store::StoreError>(sum + tx.delete_docs_by_entity(name)?)
+            })
+        })
+        .await
+        .map_err(|e| AppError::other("delete retired entities", e))?;
+    trace.record("delete_retired_entities");
+    if retired > 0 {
+        tracing::info!(target: LOG, "Deleted {retired} row(s) of retired entities");
+    }
     let report = ctx
         .store
         .write(move |tx| migrate_all(tx, &entities))

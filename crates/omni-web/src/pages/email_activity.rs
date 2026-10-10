@@ -481,6 +481,11 @@ pub fn EmailActivityPage() -> impl IntoView {
         outcome.set(value);
     });
     let docked = Signal::derive(move || wide.get() && selected.with(Option::is_some));
+    // The list closure reads only these shapes; the rows read `shown`
+    // themselves, so an inspector edit or a refetch does not rebuild the
+    // outcome filter or the table shell.
+    let list_state = Memo::new(move |_| activities.with(|a| a.as_ref().map(Vec::is_empty)));
+    let none_match = Memo::new(move |_| filtered.with(Vec::is_empty));
 
     let table = move || {
         let rows = shown.visible.get();
@@ -566,18 +571,19 @@ pub fn EmailActivityPage() -> impl IntoView {
                             <Segmented options=pipeline_options value=pipeline on_change=Callback::new(move |p| pipeline.set(p)) aria_label="Pipeline" small=true/>
                             <SearchField value=query on_input=Callback::new(move |v| query.set(v)) placeholder="Filter subject, sender or item" aria_label="Filter emails" shortcut=true/>
                         </div>
-                        {move || activities.with(|a| a.as_ref().is_some_and(|a| !a.is_empty())).then(|| view! {
+                        {move || (list_state.get() == Some(false)).then(|| view! {
                             <Segmented options=outcome_options value=outcome on_change=set_outcome aria_label="Outcome" small=true/>
                         })}
                         {move || {
-                            let state = activities.with(|a| a.as_ref().map(Vec::is_empty));
-                            match (state, error.get()) {
-                                (None, None) => view! { <SkeletonRows count=8/> }.into_any(),
-                                (None, Some(e)) => view! {
-                                    <ErrorState title="Email activity could not load" raw=e retry=Callback::new(move |()| reload.update(|n| *n += 1)) page=true/>
-                                }.into_any(),
-                                (Some(true), _) => view! { <EmptyState message="No email activity yet. Activity appears here as new emails are processed."/> }.into_any(),
-                                (Some(false), _) if filtered.with(Vec::is_empty) => view! {
+                            match list_state.get() {
+                                None => match error.get() {
+                                    None => view! { <SkeletonRows count=8/> }.into_any(),
+                                    Some(e) => view! {
+                                        <ErrorState title="Email activity could not load" raw=e retry=Callback::new(move |()| reload.update(|n| *n += 1)) page=true/>
+                                    }.into_any(),
+                                },
+                                Some(true) => view! { <EmptyState message="No email activity yet. Activity appears here as new emails are processed."/> }.into_any(),
+                                Some(false) if none_match.get() => view! {
                                     <EmptyState
                                         message="No emails match these filters."
                                         action=ViewFn::from(move || view! {
@@ -588,7 +594,7 @@ pub fn EmailActivityPage() -> impl IntoView {
                                         })
                                     />
                                 }.into_any(),
-                                (Some(false), _) => view! {
+                                Some(false) => view! {
                                     <div class="table-wrap panel">
                                         <table class="table" data-primary-rows="true">
                                             <thead><tr>

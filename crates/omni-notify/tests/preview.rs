@@ -32,8 +32,6 @@ async fn seeds_typed_fixture_data_the_routes_serve() {
     let (_, pets) = app.get_json(&router, "/api/pets").await;
     assert_eq!(pets[0]["name"], "Mochi");
     assert_eq!(pets[0]["weightHistory"].as_array().unwrap().len(), 91);
-    let (_, briefings) = app.get_json(&router, "/api/briefings").await;
-    assert!(briefings.to_string().contains("Chip exports tighten again"));
     let (_, activity) = app.get_json(&router, "/api/email-activity").await;
     assert_eq!(activity["activities"].as_array().unwrap().len(), 1);
 }

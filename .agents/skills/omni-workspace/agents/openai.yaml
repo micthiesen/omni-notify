@@ -1,4 +1,0 @@
-interface:
-  display_name: "Omni Workspace"
-  short_description: "Create and manage ongoing Omni projects"
-  default_prompt: "Use $omni-workspace to start or update an ongoing purchase or selling project."

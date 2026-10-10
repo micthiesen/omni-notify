@@ -5,7 +5,6 @@
 use omni_api::intelligence::IntelligenceDetailsResponse;
 use omni_api::podcasts::PodcastRecommendation;
 use omni_api::presspods::PressPodsEpisodeDetail;
-use omni_api::workspaces::WorkspaceSubjectResponse;
 use omni_web_kit::api::Snapshot;
 use serde_json::{Value, json};
 
@@ -140,39 +139,6 @@ fn rejects_malformed_nested_press_pods_cost_accounting() {
             "detailTokens": {"metadata": {"input": 10, "output": "invalid"}},
             "detailChars": {"speech": 100}
         }
-    }));
-}
-
-#[test]
-fn rejects_malformed_nested_workspace_subject_state() {
-    rejects::<WorkspaceSubjectResponse>(json!({
-        "workspace": {
-            "id": "research",
-            "title": "Research",
-            "description": "Research workspace",
-            "subjectLabel": "Subject",
-            "subjectLabelPlural": "Subjects",
-            "taskName": "WorkspaceResearch",
-            "schedule": "0 12 * * *",
-            "instructions": "Research it",
-            "artifacts": []
-        },
-        "subject": {
-            "workspaceId": "research",
-            "subjectId": "subject_1",
-            "title": "A subject",
-            "status": "deleted",
-            "summary": "Summary",
-            "createdAt": 1,
-            "updatedAt": 2
-        },
-        "artifacts": [],
-        "artifactRevisions": [],
-        "messages": [],
-        "sources": [],
-        "actions": [],
-        "emailScope": null,
-        "papercuts": []
     }));
 }
 

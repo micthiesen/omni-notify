@@ -3,7 +3,6 @@
 
 pub mod client;
 
-use omni_api::briefings::BriefingsResponse;
 use omni_api::calendar::{CalendarEventsResponse, CalendarStatusResponse};
 use omni_api::claude::{
     ClaudeActivityResponse, ClaudeLinkFailure, ClaudeSessionsResponse, ClaudeTranscriptResponse,
@@ -32,15 +31,15 @@ use omni_api::presspods::{
     PressPodsDeletedResponse, PressPodsEpisodeResponse, PressPodsJobResponse, PressPodsListResponse,
 };
 use omni_api::runs::{RunLogsResponse, RunsResponse};
+use omni_api::streamer_config::{
+    LiveSettings, StreamerConfigCreate, StreamerConfigOrder, StreamerConfigPatch,
+    StreamerConfigResponse, StreamerConfigView,
+};
 use omni_api::streamers::{StreamSessionsResponse, StreamerMetricsResponse};
 use omni_api::tasks::{RunNowResponse, TasksResponse};
-use omni_api::workspaces::{
-    WorkspaceActionResponse, WorkspaceMessageAccepted, WorkspaceResponse, WorkspaceSubjectResponse,
-    WorkspaceSubjectStatus, WorkspaceSubjectUpdated, WorkspacesResponse,
-};
 use serde_json::{Map, Value, json};
 
-pub use client::{ApiClientError, NO_BODY, delete, get, post};
+pub use client::{ApiClientError, NO_BODY, delete, get, patch, post, put};
 pub use omni_api::data::{DataRow, ManagedDataSummary, ManagedEntitySummary};
 pub use omni_api::snapshot::Snapshot;
 
@@ -166,6 +165,52 @@ pub async fn fetch_calendar_events(
 }
 
 // ----- streamers -----
+
+/// Configured streamers in display order, plus the global live settings.
+pub async fn fetch_streamer_config() -> Result<StreamerConfigResponse, ApiClientError> {
+    get("/api/streamer-config").await
+}
+
+pub async fn create_streamer_config(
+    body: &StreamerConfigCreate,
+) -> Result<StreamerConfigView, ApiClientError> {
+    post("/api/streamer-config/streamers", Some(body)).await
+}
+
+/// Absent patch fields stay unchanged.
+pub async fn update_streamer_config(
+    id: &str,
+    body: &StreamerConfigPatch,
+) -> Result<StreamerConfigView, ApiClientError> {
+    patch(
+        &format!("/api/streamer-config/streamers/{}", enc(id)),
+        Some(body),
+    )
+    .await
+}
+
+pub async fn delete_streamer_config(id: &str) -> Result<StreamerConfigView, ApiClientError> {
+    delete(
+        &format!("/api/streamer-config/streamers/{}", enc(id)),
+        NO_BODY,
+    )
+    .await
+}
+
+/// `ids` lists every configured streamer in the new order.
+pub async fn reorder_streamer_config(
+    ids: Vec<String>,
+) -> Result<StreamerConfigResponse, ApiClientError> {
+    put(
+        "/api/streamer-config/order",
+        Some(&StreamerConfigOrder { ids }),
+    )
+    .await
+}
+
+pub async fn save_live_settings(settings: LiveSettings) -> Result<LiveSettings, ApiClientError> {
+    put("/api/streamer-config/settings", Some(&settings)).await
+}
 
 pub async fn fetch_streamer_metrics(id: &str) -> Result<StreamerMetricsResponse, ApiClientError> {
     get(&format!("/api/streamers/{}/metrics", enc(id))).await
@@ -322,87 +367,6 @@ pub async fn retry_press_pods_episode(
 ) -> Result<PressPodsJobResponse, ApiClientError> {
     post(
         &format!("/api/press-pods/episodes/{}/retry", enc(episode_id)),
-        NO_BODY,
-    )
-    .await
-}
-
-// ----- briefings and workspaces -----
-
-pub async fn fetch_briefings() -> Result<BriefingsResponse, ApiClientError> {
-    get("/api/briefings").await
-}
-
-pub async fn fetch_workspaces() -> Result<WorkspacesResponse, ApiClientError> {
-    get("/api/workspaces").await
-}
-
-pub async fn fetch_workspace(workspace_id: &str) -> Result<WorkspaceResponse, ApiClientError> {
-    get(&format!("/api/workspaces/{}", enc(workspace_id))).await
-}
-
-pub async fn fetch_workspace_subject(
-    workspace_id: &str,
-    subject_id: &str,
-) -> Result<WorkspaceSubjectResponse, ApiClientError> {
-    get(&format!(
-        "/api/workspaces/{}/subjects/{}",
-        enc(workspace_id),
-        enc(subject_id)
-    ))
-    .await
-}
-
-pub async fn send_workspace_message(
-    workspace_id: &str,
-    message: &str,
-    subject_id: Option<&str>,
-) -> Result<WorkspaceMessageAccepted, ApiClientError> {
-    let mut body = Map::new();
-    body.insert("message".into(), json!(message));
-    if let Some(subject_id) = subject_id {
-        body.insert("subjectId".into(), json!(subject_id));
-    }
-    post(
-        &format!("/api/workspaces/{}/messages", enc(workspace_id)),
-        Some(&Value::Object(body)),
-    )
-    .await
-}
-
-pub async fn set_workspace_subject_status(
-    workspace_id: &str,
-    subject_id: &str,
-    status: WorkspaceSubjectStatus,
-) -> Result<WorkspaceSubjectUpdated, ApiClientError> {
-    post(
-        &format!(
-            "/api/workspaces/{}/subjects/{}/status",
-            enc(workspace_id),
-            enc(subject_id)
-        ),
-        Some(&json!({ "status": status })),
-    )
-    .await
-}
-
-/// `"approve"` or `"reject"`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ActionResolution {
-    Approve,
-    Reject,
-}
-
-pub async fn resolve_workspace_action(
-    action_id: &str,
-    resolution: ActionResolution,
-) -> Result<WorkspaceActionResponse, ApiClientError> {
-    let verb = match resolution {
-        ActionResolution::Approve => "approve",
-        ActionResolution::Reject => "reject",
-    };
-    post(
-        &format!("/api/workspace-actions/{}/{verb}", enc(action_id)),
         NO_BODY,
     )
     .await

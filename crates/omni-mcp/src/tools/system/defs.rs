@@ -139,27 +139,8 @@ pub static LIVESTREAM_GET: ToolDef<LivestreamGetInput, LivestreamGetOutput> = To
     },
 );
 
-pub static BRIEFINGS_LIST: ToolDef<BriefingsListInput, BriefingsListOutput> = ToolDef::new(
-    ToolInfo {
-        name: "briefings_list",
-        title: "List Briefings",
-        description: "List a bounded, newest-first page of stored briefing notifications, optionally filtered by exact briefing name.",
-        annotations: Annotations {
-            read_only_hint: true,
-            destructive_hint: false,
-            idempotent_hint: true,
-            open_world_hint: false,
-        },
-        policy: Policy {
-            side_effects: &[],
-            cost: "none",
-            recommended: ExecutorPolicy::Allow,
-        },
-    },
-);
-
 /// Every system tool, in serving order.
-pub static TOOLS: [&dyn ToolDefinition; 8] = [
+pub static TOOLS: [&dyn ToolDefinition; 7] = [
     &SYSTEM_STATUS,
     &TASKS_LIST,
     &TASK_RUN,
@@ -167,7 +148,6 @@ pub static TOOLS: [&dyn ToolDefinition; 8] = [
     &TASK_RUN_GET,
     &LIVESTREAMS_LIST,
     &LIVESTREAM_GET,
-    &BRIEFINGS_LIST,
 ];
 
 #[derive(JsonSchema)]
@@ -180,13 +160,11 @@ pub struct Capabilities {
     pub task_controls: bool,
     pub livestreams: bool,
     pub livestream_intelligence: bool,
-    pub briefings: bool,
     pub i_cloud_email: bool,
     pub i_cloud_calendar: bool,
     pub web_search: bool,
     pub ios_controls: bool,
     pub printing: bool,
-    pub workspaces: bool,
 }
 
 #[derive(JsonSchema)]
@@ -767,39 +745,4 @@ pub struct LivestreamGetOutput {
     pub metrics: Option<Metrics>,
     pub sessions: Option<Vec<Session>>,
     pub intelligence: Option<Intelligence>,
-}
-
-#[derive(JsonSchema)]
-#[schemars(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BriefingsListInput {
-    #[schemars(length(min = 1, max = 200))]
-    pub briefing_name: Option<String>,
-    #[schemars(range(max = 4999), extend("default" = 0))]
-    pub cursor: Option<u64>,
-    #[schemars(range(min = 1, max = 100), extend("default" = 25))]
-    pub limit: Option<u64>,
-    #[schemars(range(min = 100, max = 4000), extend("default" = 1500))]
-    pub max_message_chars: Option<u64>,
-}
-
-#[derive(JsonSchema)]
-#[schemars(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Notification {
-    pub briefing_name: String,
-    pub title: String,
-    pub message: String,
-    pub message_truncated: bool,
-    pub url: String,
-    pub timestamp: f64,
-    pub run_id: Option<String>,
-    pub cost_cents: Option<f64>,
-}
-
-#[derive(JsonSchema)]
-#[schemars(rename_all = "camelCase", deny_unknown_fields)]
-pub struct BriefingsListOutput {
-    pub briefing_names: Vec<String>,
-    pub notifications: Vec<Notification>,
-    pub next_cursor: Option<u64>,
-    pub total: u64,
 }

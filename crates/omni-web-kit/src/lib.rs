@@ -2,7 +2,7 @@
 //!
 //! `omni-web` (router, shell, ops pages) and `omni-web-pages` (domain pages)
 //! build on these modules: the API client, live dashboard data, hooks,
-//! components, SVG charts, research markdown and pure display utilities.
+//! components, SVG charts, Markdown and pure display utilities.
 
 pub mod api;
 pub mod charts;

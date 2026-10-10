@@ -573,7 +573,7 @@ pub fn MediaPage() -> impl IntoView {
     let running = Signal::derive(move || task_found.get().flatten().unwrap_or(false));
     // Once the snapshot has loaded, a missing Recommendations task means it's
     // disabled server-side (missing API keys): no doomed Run button.
-    let available = Signal::derive(move || match task_found.get() {
+    let available = Memo::new(move |_| match task_found.get() {
         None => true,
         Some(found) => found.is_some(),
     });
@@ -729,10 +729,13 @@ pub fn MediaPage() -> impl IntoView {
                 .cloned()
         })
     });
-    let on_deck = Signal::derive(move || {
+    // Memos: every snapshot frame would otherwise rebuild the rail and reset
+    // its scroll position.
+    let on_deck = Memo::new(move |_| {
         live.snapshot
             .with(|s| s.as_ref().map(|s| s.on_deck.clone()).unwrap_or_default())
     });
+    let has_on_deck = Memo::new(move |_| on_deck.with(|items| !items.is_empty()));
     let lede = Signal::derive(move || recs.with(|r| r.as_deref().map(picks_lede)));
 
     let taste =
@@ -936,7 +939,7 @@ pub fn MediaPage() -> impl IntoView {
             <MediaSwitch/>
         </PageHead>
 
-        {move || on_deck.with(|items| !items.is_empty()).then(|| view! {
+        {move || has_on_deck.get().then(|| view! {
             <section class="section rec-deck" aria-label="On deck">
                 <div class="section-head">
                     <h2 class="section-title">"On deck"</h2>

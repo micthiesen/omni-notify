@@ -500,58 +500,69 @@ fn NowPanel(
         });
     };
     let title = if is_live { "Now" } else { "Last session" };
+    // Each part reads its own memo: intelligence changes with every viewer
+    // trend update, and rebuilding the panel would close the transcript
+    // disclosure and drop focus from the feedback chips.
+    let present = Memo::new(move |_| intelligence.with(Option::is_some));
+    let chapter = Memo::new(move |_| {
+        intelligence.with(|i| i.as_ref().and_then(|i| i.chapters.last().cloned()))
+    });
+    let summary =
+        Memo::new(move |_| intelligence.with(|i| i.as_ref().and_then(|i| i.summary.clone())));
+    let alert =
+        Memo::new(move |_| intelligence.with(|i| i.as_ref().and_then(|i| i.latest_alert.clone())));
     view! {
         <Panel title=title pad=true>
-            {move || match intelligence.get() {
-                None => view! { <p class="dim">{if is_live { "No live read yet." } else { "No session summary." }}</p> }.into_any(),
-                Some(i) => {
-                    let chapter = i.chapters.last().cloned();
-                    let summary = i.summary.clone();
-                    let alert = i.latest_alert.clone();
-                    let confidence = summary.as_ref().map(|s| s.confidence);
-                    view! {
-                        <div class="stack">
-                            {chapter.map(|c| view! {
-                                <div class="now-chapter">
-                                    <span class="label">{format!("Since {}", format_relative(c.started_at))}</span>
-                                    <h3>{c.title}</h3>
-                                    <p>{c.summary}</p>
-                                </div>
-                            })}
-                            {summary.as_ref().map(|s| view! { <p class="dim">{s.text.clone()}</p> })}
-                            <div class="cluster">
-                                {confidence.map(|c| view! { <Tag>{format!("confidence {}%", number_string(js_round(c * 100.0)))}</Tag> })}
-                                <Tag tone=Tone::Info>{format!("relevance {}", number_string(js_round(i.relevance_score * 10.0) / 10.0))}</Tag>
-                                {i.destiny_presence.as_ref().filter(|p| p.state == PresenceState::Confirmed).map(|p| view! {
-                                    <Tag tone=Tone::Signal>{format!("Destiny {}%", number_string(js_round(p.confidence * 100.0)))}</Tag>
-                                })}
+            {move || if !present.get() {
+                view! { <p class="dim">{if is_live { "No live read yet." } else { "No session summary." }}</p> }.into_any()
+            } else {
+                view! {
+                    <div class="stack">
+                        {move || chapter.get().map(|c| view! {
+                            <div class="now-chapter">
+                                <span class="label">{format!("Since {}", format_relative(c.started_at))}</span>
+                                <h3>{c.title}</h3>
+                                <p>{c.summary}</p>
                             </div>
-                            {alert.map(|alert| view! {
-                                <div class="now-alert">
-                                    <p><strong>{alert.title}</strong> " " <span class="dim">{alert.reason}</span></p>
-                                    {move || if submitted.get() {
-                                        view! { <p class="small dim" role="status">"Feedback saved."</p> }.into_any()
-                                    } else {
-                                        view! {
-                                            <div class="cluster" role="group" aria-label="Was this alert useful?">
-                                                <span class="small dim">"Was this alert right?"</span>
-                                                <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::Useful))>"Useful"</Chip>
-                                                <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::NotUseful))>"Not useful"</Chip>
-                                                <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::FalsePositive))>"False positive"</Chip>
-                                            </div>
-                                        }.into_any()
-                                    }}
+                        })}
+                        {move || summary.with(|s| s.as_ref().map(|s| view! { <p class="dim">{s.text.clone()}</p> }))}
+                        {move || intelligence.get().map(|i| {
+                            let confidence = i.summary.as_ref().map(|s| s.confidence);
+                            view! {
+                                <div class="cluster">
+                                    {confidence.map(|c| view! { <Tag>{format!("confidence {}%", number_string(js_round(c * 100.0)))}</Tag> })}
+                                    <Tag tone=Tone::Info>{format!("relevance {}", number_string(js_round(i.relevance_score * 10.0) / 10.0))}</Tag>
+                                    {i.destiny_presence.as_ref().filter(|p| p.state == PresenceState::Confirmed).map(|p| view! {
+                                        <Tag tone=Tone::Signal>{format!("Destiny {}%", number_string(js_round(p.confidence * 100.0)))}</Tag>
+                                    })}
                                 </div>
-                            })}
-                            {summary.filter(|s| !s.transcript_excerpt.is_empty()).map(|s| view! {
-                                <Disclosure summary=format!("Transcript excerpt · {} s", number_string(js_round(s.window_seconds))) flush=true>
-                                    <p class="prose small">{s.transcript_excerpt}</p>
-                                </Disclosure>
-                            })}
-                        </div>
-                    }
-                    .into_any()
+                            }
+                        })}
+                        {move || alert.get().map(|alert| view! {
+                            <div class="now-alert">
+                                <p><strong>{alert.title}</strong> " " <span class="dim">{alert.reason}</span></p>
+                                {move || if submitted.get() {
+                                    view! { <p class="small dim" role="status">"Feedback saved."</p> }.into_any()
+                                } else {
+                                    view! {
+                                        <div class="cluster" role="group" aria-label="Was this alert useful?">
+                                            <span class="small dim">"Was this alert right?"</span>
+                                            <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::Useful))>"Useful"</Chip>
+                                            <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::NotUseful))>"Not useful"</Chip>
+                                            <Chip pressed=false on_click=Callback::new(move |()| submit(FeedbackVerdict::FalsePositive))>"False positive"</Chip>
+                                        </div>
+                                    }.into_any()
+                                }}
+                            </div>
+                        })}
+                        {move || summary.get().filter(|s| !s.transcript_excerpt.is_empty()).map(|s| view! {
+                            <Disclosure summary=format!("Transcript excerpt · {} s", number_string(js_round(s.window_seconds))) flush=true>
+                                <p class="prose small">{s.transcript_excerpt}</p>
+                            </Disclosure>
+                        })}
+                    </div>
                 }
+                .into_any()
             }}
         </Panel>
     }
@@ -743,6 +754,10 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
     });
     let intelligence =
         Memo::new(move |_| live_view.with(|l| l.as_ref().and_then(streamer_intelligence)));
+    // The page layout depends only on live-ness; reading `live_view` in the
+    // page closure would rebuild it (resetting the chart range, expanded
+    // weeks and disclosures) on every snapshot.
+    let is_live = Memo::new(move |_| live_view.with(Option::is_some));
     let typical = Memo::new(move |_| {
         intelligence
             .with(|i| {
@@ -777,7 +792,7 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
             }
             .into_any();
         };
-        let is_live = live_view.with(Option::is_some);
+        let is_live = is_live.get();
         let current = Signal::derive(move || streamer.get().unwrap_or_else(|| initial.clone()));
         let name = current.with_untracked(display_name);
         let (bindings, tier) = current.with_untracked(|s| match s {

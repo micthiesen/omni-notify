@@ -229,8 +229,6 @@ pub fn current_cost_feature(fallback: &'static str) -> &'static str {
         "parcel-tracker"
     } else if name.contains("calendar") {
         "calendar-events"
-    } else if name.contains("briefing") {
-        "briefings"
     } else {
         fallback
     }
@@ -257,42 +255,6 @@ impl Entity for CostMigrationData {
 
 /// The one historical import version.
 pub const HISTORICAL_IMPORT_VERSION: &str = "historical-v1";
-
-/// Read-only view of `briefing-history` rows (owned by `omni-briefings`) for the import.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LegacyBriefingHistory {
-    briefing_name: String,
-    #[serde(default)]
-    notifications: Vec<LegacyBriefingNotification>,
-    #[serde(flatten)]
-    extra: Extra,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LegacyBriefingNotification {
-    timestamp: f64,
-    #[serde(default)]
-    run_id: Option<String>,
-    /// Absent: no cost recorded (skipped); `null`: unpriced; number: cents.
-    #[serde(default, deserialize_with = "present_nullable")]
-    cost_cents: Option<Option<f64>>,
-}
-
-fn present_nullable<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<Option<f64>>, D::Error> {
-    Option::<f64>::deserialize(deserializer).map(Some)
-}
-
-impl Entity for LegacyBriefingHistory {
-    const NAME: &'static str = "briefing-history";
-    type Key = String;
-    fn key(&self) -> String {
-        self.briefing_name.clone()
-    }
-}
 
 /// Read-only view of `press-pods-episode` rows (owned by `omni-presspods`) for the import.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -340,8 +302,7 @@ fn ms(value: f64) -> i64 {
     value as i64
 }
 
-/// Seeds the ledger once from briefing notifications and
-/// PressPods episodes that predate automatic capture. Returns the number of events
+/// Seeds the ledger once from PressPods episodes that predate automatic capture. Returns the number of events
 /// imported (0 when `historical-v1` already ran). Runs in one transaction.
 pub async fn import_historical_costs(store: &Store) -> Result<u64, StoreError> {
     store
@@ -351,34 +312,6 @@ pub async fn import_historical_costs(store: &Store) -> Result<u64, StoreError> {
             }
             let now = tx.now_ms();
             let mut events = Vec::new();
-            for history in tx.get_all::<LegacyBriefingHistory>()? {
-                for (index, notification) in history.notifications.iter().enumerate() {
-                    let Some(cost_cents) = notification.cost_cents else {
-                        continue;
-                    };
-                    let timestamp = omni_core::js::number_to_string(notification.timestamp);
-                    events.push(NewCostEvent {
-                        event_id: Some(format!(
-                            "legacy:briefing:{}:{timestamp}:{index}",
-                            history.briefing_name
-                        )),
-                        incurred_at: Some(ms(notification.timestamp)),
-                        category: CostCategory::Llm,
-                        feature: "briefings".to_owned(),
-                        operation: "historical-notification".to_owned(),
-                        service: "legacy".to_owned(),
-                        model: None,
-                        cost_cents,
-                        price_status: if cost_cents.is_none() {
-                            CostPriceStatus::Unknown
-                        } else {
-                            CostPriceStatus::Estimated
-                        },
-                        usage: CostUsage::default(),
-                        run_id: notification.run_id.clone(),
-                    });
-                }
-            }
             for episode in tx.get_all::<LegacyPressPodsEpisode>()? {
                 let Some(costs) = &episode.costs else {
                     continue;

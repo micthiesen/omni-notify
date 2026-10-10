@@ -1,24 +1,10 @@
 [
   {
-    "helper": "getBriefingModel",
-    "envKey": "BRIEFING_MODEL",
-    "defaultModel": "openai:gpt-6-luna",
-    "feature": "briefings",
-    "operation": "generate"
-  },
-  {
     "helper": "getLivestreamIntelligenceModel",
     "envKey": "LIVESTREAM_INTELLIGENCE_MODEL",
     "defaultModel": "openai:gpt-6-luna",
     "feature": "livestream-intelligence",
     "operation": null
-  },
-  {
-    "helper": "getWorkspaceModel",
-    "envKey": "WORKSPACE_MODEL",
-    "defaultModel": "openai:gpt-6-sol",
-    "feature": "workspaces",
-    "operation": "run"
   },
   {
     "helper": "getExtractionModel",

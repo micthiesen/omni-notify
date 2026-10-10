@@ -51,8 +51,6 @@ omni-personal = { path = "crates/omni-personal" }
 omni-live = { path = "crates/omni-live" }
 omni-ios-controls = { path = "crates/omni-ios-controls" }
 omni-podcasts = { path = "crates/omni-podcasts" }
-omni-workspaces = { path = "crates/omni-workspaces" }
-omni-briefings = { path = "crates/omni-briefings" }
 omni-mcp = { path = "crates/omni-mcp" }
 omni-device-link = { path = "crates/omni-device-link" }
 omni-web-kit = { path = "crates/omni-web-kit" }
@@ -105,7 +103,6 @@ sherpa-onnx-sys = "=1.13.8"
 ipp = { version = "=7.0.0", default-features = false, features = ["async-client-rustls"] }
 aws-cognito-srp = "=0.2.5"
 jsonwebtoken = { version = "=11.1.0", default-features = false, features = ["aws_lc_rs", "use_pem"] }
-serde_norway = "=0.9.42"
 sha1 = "=0.11.0"
 sha2 = "=0.11.0"
 hmac = "=0.13.0"

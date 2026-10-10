@@ -1,21 +1,19 @@
-//! The command palette: every destination, live streamers, tasks and
-//! research subjects from data the SPA already loads. It only navigates;
+//! The command palette: every destination, live streamers and tasks from
+//! data the SPA already loads. It only navigates;
 //! choosing a task opens `/operations#inspect=<Task>`.
 
 use leptos::html::Input;
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
 use omni_api::streamers::StreamerView;
-use omni_api::workspaces::WorkspaceSubjectStatus;
 use omni_web_kit::components::streamers::streamer_path;
 use omni_web_kit::components::{Glyph, Icon, IconSize};
-use omni_web_kit::feeds::use_workspace_feed;
 use omni_web_kit::hooks::use_modal;
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::navigate;
 use omni_web_kit::utils::format::{format_compact_number, task_label};
 
-use super::nav::{Group, LIVE_HREF, NAV};
+use super::nav::{Group, LIVE_HREF, NAV, STREAMER_CONFIG_HREF};
 
 /// One palette row.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,7 +25,7 @@ pub struct Entry {
     pub icon: Icon,
 }
 
-pub const GROUP_ORDER: [&str; 5] = ["Live now", "Pages", "Streamers", "Tasks", "Research"];
+pub const GROUP_ORDER: [&str; 4] = ["Live now", "Pages", "Streamers", "Tasks"];
 const PER_GROUP: usize = 8;
 
 /// Case-insensitive match of every query word against label plus hint.
@@ -94,13 +92,22 @@ fn page_entries() -> Vec<Entry> {
             icon: Icon::Live,
         },
     );
+    pages.insert(
+        2,
+        Entry {
+            group: "Pages",
+            label: "Manage streamers".to_owned(),
+            hint: Some("Live · add, edit, reorder".to_owned()),
+            href: STREAMER_CONFIG_HREF.to_owned(),
+            icon: Icon::Pencil,
+        },
+    );
     pages
 }
 
 #[component]
 pub fn Palette(on_close: Callback<()>) -> impl IntoView {
     let live = use_live_data();
-    let feed = use_workspace_feed();
     let query = RwSignal::new(String::new());
     let selected = RwSignal::new(0usize);
     let input = NodeRef::<Input>::new();
@@ -149,27 +156,6 @@ pub fn Palette(on_close: Callback<()>) -> impl IntoView {
             }
         });
         all.extend(page_entries());
-        feed.workspaces.with(|w| {
-            for overview in w.iter().flatten() {
-                for subject in overview
-                    .subjects
-                    .iter()
-                    .filter(|s| s.status == WorkspaceSubjectStatus::Active)
-                {
-                    all.push(Entry {
-                        group: "Research",
-                        label: subject.title.clone(),
-                        hint: Some(overview.definition.title.clone()),
-                        href: format!(
-                            "/workspaces/{}/{}",
-                            encode_uri_component(&subject.workspace_id),
-                            encode_uri_component(&subject.subject_id)
-                        ),
-                        icon: Icon::Flask,
-                    });
-                }
-            }
-        });
         all
     });
     let visible = Memo::new(move |_| query.with(|q| filter_entries(&entries.get(), q)));

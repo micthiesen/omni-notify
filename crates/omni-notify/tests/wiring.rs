@@ -28,10 +28,9 @@ async fn every_port_is_set_and_email_tasks_need_a_transport() {
     let ports = &app.ctx.ports;
     assert!(ports.archive_echo().is_some(), "ArchiveEcho");
     assert!(ports.email_retry_handlers().is_some(), "EmailRetryHandlers");
-    assert!(ports.calendar_writer().is_some(), "CalendarWriter");
+    assert!(ports.calendar_connection().is_some(), "CalendarConnection");
     assert!(ports.live_directory().is_some(), "LiveDirectory");
     assert!(ports.on_deck_source().is_some(), "OnDeckSource");
-    assert!(ports.briefings_reader().is_some(), "BriefingsReader");
     assert!(
         ports.claude_host().is_some(),
         "ClaudeHost (device link token set)"
@@ -59,7 +58,6 @@ async fn every_port_is_set_and_email_tasks_need_a_transport() {
     assert!(names.contains("ClaudeSessionEvents"));
     assert!(names.contains("TaskRunEvents"));
     assert!(names.contains("RemindersSession"));
-    assert!(names.contains("WorkspaceNotifications"));
     // `/api/tasks` lists them in registration order.
     let mut ordered: Vec<String> = names.into_iter().collect();
     ordered.sort_by_key(|n| omni_notify::wiring::task_rank(n));

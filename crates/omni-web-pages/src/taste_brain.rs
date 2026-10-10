@@ -233,6 +233,10 @@ pub fn TasteBrain(
     #[prop(optional)] collapsible: bool,
 ) -> impl IntoView {
     let wide = use_is_wide();
+    // Callers refetch and re-set the profile when runs land; only a changed
+    // profile may rebuild the body (and collapse "How it decides").
+    let profile = Memo::new(move |_| profile.get());
+    let stats = Memo::new(move |_| stats.get());
     let body = move || {
         let footer = footer.clone();
         if let Some(profile) = profile.get() {

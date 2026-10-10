@@ -7,6 +7,8 @@ pub enum Route {
     Home,
     /// The full streamer roster.
     Live,
+    /// Tracked-streamer configuration.
+    StreamerConfig,
     Media,
     MediaDetail(String),
     Podcasts,
@@ -16,9 +18,6 @@ pub enum Route {
     PodsDetail(String),
     Streamer(String),
     StreamerIntelligence(String),
-    /// Ids are passed to the page as signals; the page stays mounted.
-    Workspaces,
-    Briefings,
     Emails,
     Data,
     Costs,
@@ -84,9 +83,6 @@ pub fn match_route(path: &str) -> Route {
     if decode_uri_component(path).is_none() {
         return Route::NotFound;
     }
-    if segments(path, "/workspaces", 2).is_some() || segments(path, "/workspaces", 1).is_some() {
-        return Route::Workspaces;
-    }
     if let Some(parts) = segments(path, "/feedback", 2)
         && let Some(kind) = FeedbackKind::from_segment(parts[0])
     {
@@ -118,54 +114,37 @@ pub fn match_route(path: &str) -> Route {
         "/data" => Route::Data,
         "/podcasts" => Route::Podcasts,
         "/pods" => Route::Pods,
-        "/briefings" => Route::Briefings,
         "/emails" => Route::Emails,
         "/costs" => Route::Costs,
-        "/workspaces" => Route::Workspaces,
         "/operations" => Route::Operations,
         "/mcp-activity" => Route::Mcp,
         "/claude" => Route::Claude,
         "/live" => Route::Live,
+        "/live/streamers" => Route::StreamerConfig,
         "/" => Route::Home,
         _ => Route::NotFound,
     }
 }
 
-/// `(workspaceId, subjectId)` of a `/workspaces[/:w[/:s]]` path.
-pub fn workspace_ids(path: &str) -> (Option<String>, Option<String>) {
-    if let Some(parts) = segments(path, "/workspaces", 2) {
-        return (Some(decoded(parts[0])), Some(decoded(parts[1])));
-    }
-    if let Some(parts) = segments(path, "/workspaces", 1) {
-        return (Some(decoded(parts[0])), None);
-    }
-    (None, None)
-}
-
 /// `"<Section> · Omni Notify"` for the static sections.
 pub fn page_title(path: &str) -> String {
-    let section = if path.starts_with("/workspaces") {
-        Some("Workspaces")
-    } else {
-        match path {
-            "/live" => Some("Live"),
-            "/reminders" => Some("iCloud Reminders"),
-            "/pets" => Some("Pets"),
-            "/deliveries" => Some("Deliveries"),
-            "/calendar" => Some("Calendar"),
-            "/media" => Some("Watch"),
-            "/podcasts" => Some("Podcasts"),
-            "/pods" => Some("PressPods"),
-            "/briefings" => Some("Briefings"),
-            "/emails" => Some("Email Activity"),
-            "/data" => Some("Data"),
-            "/costs" => Some("Costs"),
-            "/workspaces" => Some("Workspaces"),
-            "/operations" => Some("Operations"),
-            "/mcp-activity" => Some("MCP Activity"),
-            "/claude" => Some("Claude Code"),
-            _ => None,
-        }
+    let section = match path {
+        "/live" => Some("Live"),
+        "/live/streamers" => Some("Streamers"),
+        "/reminders" => Some("iCloud Reminders"),
+        "/pets" => Some("Pets"),
+        "/deliveries" => Some("Deliveries"),
+        "/calendar" => Some("Calendar"),
+        "/media" => Some("Watch"),
+        "/podcasts" => Some("Podcasts"),
+        "/pods" => Some("PressPods"),
+        "/emails" => Some("Email Activity"),
+        "/data" => Some("Data"),
+        "/costs" => Some("Costs"),
+        "/operations" => Some("Operations"),
+        "/mcp-activity" => Some("MCP Activity"),
+        "/claude" => Some("Claude Code"),
+        _ => None,
     };
     match section {
         Some(section) => format!("{section} · Omni Notify"),
@@ -187,6 +166,9 @@ mod tests {
         assert_eq!(route("/live"), Route::Live);
         assert_eq!(route("/live/"), Route::Live);
         assert_eq!(route("/live/x"), Route::NotFound);
+        assert_eq!(route("/live/streamers"), Route::StreamerConfig);
+        assert_eq!(route("/live/streamers/"), Route::StreamerConfig);
+        assert_eq!(route("/live/streamers/x"), Route::NotFound);
         assert_eq!(route("/media"), Route::Media);
         assert_eq!(route("/recommendations"), Route::Media);
         assert_eq!(route("/recommendations/"), Route::Media);
@@ -213,19 +195,12 @@ mod tests {
             Route::StreamerIntelligence("destiny".into())
         );
         assert_eq!(route("/streamers/destiny/other"), Route::NotFound);
-        assert_eq!(route("/briefings"), Route::Briefings);
+        assert_eq!(route("/briefings"), Route::NotFound);
         assert_eq!(route("/emails"), Route::Emails);
         assert_eq!(route("/data"), Route::Data);
         assert_eq!(route("/costs"), Route::Costs);
-        assert_eq!(route("/workspaces"), Route::Workspaces);
-        assert_eq!(route("/workspaces/w"), Route::Workspaces);
-        assert_eq!(route("/workspaces/w/s"), Route::Workspaces);
-        assert_eq!(route("/workspaces/w/s/x"), Route::NotFound);
-        assert_eq!(
-            workspace_ids("/workspaces/a%20b/s"),
-            (Some("a b".into()), Some("s".into()))
-        );
-        assert_eq!(workspace_ids("/workspaces/a"), (Some("a".into()), None));
+        assert_eq!(route("/workspaces"), Route::NotFound);
+        assert_eq!(route("/workspaces/w/s"), Route::NotFound);
         assert_eq!(route("/operations"), Route::Operations);
         assert_eq!(route("/reminders"), Route::Reminders);
         assert_eq!(route("/pets"), Route::Pets);
@@ -245,9 +220,10 @@ mod tests {
     fn titles_follow_sections() {
         assert_eq!(page_title("/costs"), "Costs · Omni Notify");
         assert_eq!(page_title("/live"), "Live · Omni Notify");
+        assert_eq!(page_title("/live/streamers"), "Streamers · Omni Notify");
         assert_eq!(page_title("/deliveries"), "Deliveries · Omni Notify");
         assert_eq!(page_title("/calendar"), "Calendar · Omni Notify");
-        assert_eq!(page_title("/workspaces/w/s"), "Workspaces · Omni Notify");
+        assert_eq!(page_title("/workspaces/w/s"), "Omni Notify");
         assert_eq!(page_title("/streamers/x"), "Omni Notify");
         assert_eq!(page_title("/"), "Omni Notify");
     }

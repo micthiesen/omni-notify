@@ -14,7 +14,6 @@ use leptos::prelude::*;
 use omni_api::streamers::StreamerView;
 use omni_web_kit::chrome::{ChromeContext, provide_chrome};
 use omni_web_kit::components::{Inspector, ToastRegion, provide_toasts};
-use omni_web_kit::feeds::provide_workspace_feed;
 use omni_web_kit::hooks::{store_pref, stored_pref, use_now};
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::navigate;
@@ -28,7 +27,7 @@ use self::bars::{TabBar, TopBar};
 use self::nav::{CrumbNames, crumbs, current_href, shortcut_target};
 use self::palette::Palette;
 use self::rail::Rail;
-use crate::routes::{Route, workspace_ids};
+use crate::routes::Route;
 
 const RAIL_PREF: &str = "omni.rail";
 /// How long a `g` prefix waits for its second key.
@@ -164,8 +163,8 @@ fn install_shortcuts(shell: ShellContext) {
 const SHORTCUTS: [(&str, &str); 8] = [
     ("⌘K  /", "Search and go anywhere"),
     (
-        "g then h l m p w b e a v o c d",
-        "Home, Live, Media, Podcasts, Workspaces, Briefings, Email, Calendar, Deliveries, Operations, Costs, Data",
+        "g then h l m p e a v o c d",
+        "Home, Live, Media, Podcasts, Email, Calendar, Deliveries, Operations, Costs, Data",
     ),
     ("j  k", "Move through the page's rows"),
     ("Enter", "Open or inspect the focused row"),
@@ -207,7 +206,6 @@ pub fn Shell(route: Memo<Route>, path: Memo<String>, children: ChildrenFn) -> im
     provide_context(shell);
     provide_toasts();
     let chrome: ChromeContext = provide_chrome();
-    let feed = provide_workspace_feed();
     let live = use_live_data();
     install_shortcuts(shell);
 
@@ -226,35 +224,15 @@ pub fn Shell(route: Memo<Route>, path: Memo<String>, children: ChildrenFn) -> im
             }),
             _ => None,
         };
-        let workspace = path.with(|p| workspace_ids(p)).0.and_then(|w| {
-            feed.workspaces.with(|list| {
-                list.as_ref()?
-                    .iter()
-                    .find(|o| o.definition.id == w)
-                    .map(|o| o.definition.title.clone())
-            })
-        });
-        CrumbNames {
-            page,
-            streamer,
-            workspace,
-        }
+        CrumbNames { page, streamer }
     });
     let trail = Signal::derive(move || {
         let route = route.get();
-        path.with(|p| {
-            let ids = workspace_ids(p);
-            let detail = match &route {
-                Route::Streamer(id) | Route::StreamerIntelligence(id) => Some((id.clone(), None)),
-                Route::Workspaces => ids.0.map(|w| (w, ids.1)),
-                _ => None,
-            };
-            crumbs(
-                p,
-                detail.as_ref().map(|(a, b)| (a.as_str(), b.as_deref())),
-                &names.get(),
-            )
-        })
+        let streamer_id = match &route {
+            Route::Streamer(id) | Route::StreamerIntelligence(id) => Some(id.as_str()),
+            _ => None,
+        };
+        path.with(|p| crumbs(p, streamer_id, &names.get()))
     });
 
     let now = use_now(30_000);

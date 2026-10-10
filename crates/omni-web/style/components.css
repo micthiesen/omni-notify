@@ -150,8 +150,14 @@ button.chip:hover { border-color: var(--line-strong); color: var(--text); }
 .chip.empty { opacity: 0.45; }
 .chip.empty[aria-pressed="true"] { background: transparent; border-color: var(--line); color: var(--text-3); }
 .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* An editable list item: the value plus a remove button. */
+.chip.removable { gap: var(--sp-1); padding-right: var(--sp-1); color: var(--text); }
+.chip-x { display: grid; place-items: center; width: 20px; height: 20px; border-radius: var(--r-xs); color: var(--text-3); font: 500 0.875rem/1 var(--font); }
+.chip-x:hover { background: var(--hover); color: var(--fault); }
+.chip-x:focus-visible { outline-offset: 0; }
 @media (max-width: 899px) {
   .chip { height: 36px; }
+  .chip-x { width: 28px; height: 28px; }
   /* A chip that navigates is a primary touch target. */
   a.chip { height: 44px; }
 }
@@ -750,6 +756,7 @@ a:hover > .poster, a:focus-visible > .poster { transform: translateY(-2px); box-
 .field-label { font: var(--t-label); color: var(--text-2); }
 .field-error { font: var(--t-small); color: var(--fault); }
 .field-help { font: var(--t-small); color: var(--text-3); }
+.field-help.warn { color: var(--warn); }
 .search-field { position: relative; display: flex; align-items: center; min-width: 0; }
 .search-field .icon { position: absolute; left: var(--sp-3); color: var(--text-3); pointer-events: none; }
 .search-field .input { padding-left: 36px; }
@@ -1105,7 +1112,7 @@ button.chart-legend-item[aria-pressed="false"] .chart-tooltip-swatch { opacity: 
   .chart-container { height: 200px; }
 }
 
-/* ---------- Prose (research markdown, transcripts, briefings) ---------- */
+/* ---------- Prose (Markdown results and transcripts) ---------- */
 .prose {
   min-width: 0;
   max-width: var(--measure);
@@ -1128,7 +1135,7 @@ button.chart-legend-item[aria-pressed="false"] .chart-tooltip-swatch { opacity: 
 .prose pre code { padding: 0; background: none; overflow-wrap: normal; }
 .prose blockquote { margin-left: 0; padding-left: var(--sp-4); border-left: 2px solid var(--line-strong); color: var(--text-3); }
 .prose hr { border: 0; border-top: 1px solid var(--line); }
-.prose .workspace-markdown-table { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+.prose .markdown-table { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
 .prose table { width: 100%; font: var(--t-small); }
 .prose th, .prose td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line); text-align: left; }
 .prose th { color: var(--text-3); font: var(--t-label); }

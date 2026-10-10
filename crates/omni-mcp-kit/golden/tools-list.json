@@ -3253,9 +3253,6 @@
               "livestreamIntelligence": {
                 "type": "boolean"
               },
-              "briefings": {
-                "type": "boolean"
-              },
               "iCloudEmail": {
                 "type": "boolean"
               },
@@ -3270,22 +3267,17 @@
               },
               "printing": {
                 "type": "boolean"
-              },
-              "workspaces": {
-                "type": "boolean"
               }
             },
             "required": [
               "taskControls",
               "livestreams",
               "livestreamIntelligence",
-              "briefings",
               "iCloudEmail",
               "iCloudCalendar",
               "webSearch",
               "iosControls",
-              "printing",
-              "workspaces"
+              "printing"
             ],
             "additionalProperties": false
           }
@@ -5435,143 +5427,9 @@
       }
     },
     {
-      "name": "briefings_list",
-      "title": "List Briefings",
-      "description": "List a bounded, newest-first page of stored briefing notifications, optionally filtered by exact briefing name.",
-      "inputSchema": {
-        "type": "object",
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "briefingName": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "cursor": {
-            "default": 0,
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 4999
-          },
-          "limit": {
-            "default": 25,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "maxMessageChars": {
-            "default": 1500,
-            "type": "integer",
-            "minimum": 100,
-            "maximum": 4000
-          }
-        },
-        "additionalProperties": false
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "outputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "briefingNames": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "notifications": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "briefingName": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "message": {
-                  "type": "string"
-                },
-                "messageTruncated": {
-                  "type": "boolean"
-                },
-                "url": {
-                  "type": "string"
-                },
-                "timestamp": {
-                  "type": "number"
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "costCents": {
-                  "anyOf": [
-                    {
-                      "type": "number"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "briefingName",
-                "title",
-                "message",
-                "messageTruncated",
-                "url",
-                "timestamp",
-                "runId",
-                "costCents"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "nextCursor": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "briefingNames",
-          "notifications",
-          "nextCursor",
-          "total"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "workspaces_list",
-      "title": "List Workspaces",
-      "description": "List Omni's durable personal workspaces with compact definitions and current subject, approval, and papercut counts. Internal agent prompts are excluded.",
+      "name": "streamer_configs_list",
+      "title": "List Tracked Streamer Configuration",
+      "description": "List every tracked streamer's configuration in display order: id, display name, YouTube/Twitch/Kick usernames, tier (primary or background), live-notification override and whether a dedicated Pushover app is set; plus the Destiny.gg top-embeds setting and whether Kick credentials are configured. Use livestreams_list for live state.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5588,7 +5446,7 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "workspaces": {
+          "streamers": {
             "type": "array",
             "items": {
               "type": "object",
@@ -5596,1090 +5454,144 @@
                 "id": {
                   "type": "string"
                 },
-                "title": {
+                "displayName": {
                   "type": "string"
                 },
-                "description": {
-                  "type": "string"
-                },
-                "subjectLabel": {
-                  "type": "string"
-                },
-                "subjectLabelPlural": {
-                  "type": "string"
-                },
-                "scheduledRuns": {
-                  "type": "boolean"
-                },
-                "artifacts": {
+                "youtube": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "key": {
-                        "type": "string"
-                      },
-                      "title": {
-                        "type": "string"
-                      },
-                      "kind": {
-                        "type": "string",
-                        "enum": [
-                          "markdown",
-                          "structured",
-                          "evidence-ledger",
-                          "timeline",
-                          "collection"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "key",
-                      "title",
-                      "kind"
-                    ],
-                    "additionalProperties": false
+                    "type": "string"
                   }
                 },
-                "activeSubjectCount": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                "twitch": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
-                "pendingActionCount": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                "kick": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
-                "openPapercutCount": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "maximum": 9007199254740991
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "primary",
+                    "background"
+                  ]
+                },
+                "liveNotifications": {
+                  "description": "`null` uses the tier default (on for primary, off for background)",
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hasPushoverToken": {
+                  "type": "boolean",
+                  "description": "Whether a dedicated Pushover app is set (managed in the UI only)"
                 }
               },
               "required": [
                 "id",
-                "title",
-                "description",
-                "subjectLabel",
-                "subjectLabelPlural",
-                "scheduledRuns",
-                "artifacts",
-                "activeSubjectCount",
-                "pendingActionCount",
-                "openPapercutCount"
+                "displayName",
+                "youtube",
+                "twitch",
+                "kick",
+                "tier",
+                "liveNotifications",
+                "hasPushoverToken"
               ],
               "additionalProperties": false
             }
-          }
-        },
-        "required": [
-          "workspaces"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "workspace_get",
-      "title": "Get Workspace",
-      "description": "Get a workspace overview or one subject dossier. Subject results include bounded current artifacts, messages, sources, actions, email scope, and open papercuts.",
-      "inputSchema": {
-        "type": "object",
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "workspaceId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
           },
-          "subjectId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "messageLimit": {
-            "default": 30,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "sourceLimit": {
-            "default": 30,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "revisionLimit": {
-            "default": 30,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "actionLimit": {
-            "default": 30,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "maxContentChars": {
-            "default": 4000,
-            "type": "integer",
-            "minimum": 200,
-            "maximum": 10000
-          }
-        },
-        "required": [
-          "workspaceId"
-        ],
-        "additionalProperties": false
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "outputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "workspace": {
+          "settings": {
             "type": "object",
             "properties": {
-              "id": {
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "subjectLabel": {
-                "type": "string"
-              },
-              "subjectLabelPlural": {
-                "type": "string"
-              },
-              "scheduledRuns": {
-                "type": "boolean"
-              },
-              "artifacts": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "key": {
-                      "type": "string"
-                    },
-                    "title": {
-                      "type": "string"
-                    },
-                    "kind": {
-                      "type": "string",
-                      "enum": [
-                        "markdown",
-                        "structured",
-                        "evidence-ledger",
-                        "timeline",
-                        "collection"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "key",
-                    "title",
-                    "kind"
-                  ],
-                  "additionalProperties": false
-                }
-              },
-              "activeSubjectCount": {
+              "dggTopEmbeds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "pendingActionCount": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              "openPapercutCount": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
+                "maximum": 20
               }
             },
             "required": [
-              "id",
-              "title",
-              "description",
-              "subjectLabel",
-              "subjectLabelPlural",
-              "scheduledRuns",
-              "artifacts",
-              "activeSubjectCount",
-              "pendingActionCount",
-              "openPapercutCount"
+              "dggTopEmbeds"
             ],
             "additionalProperties": false
           },
-          "subjects": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "active",
-                    "paused",
-                    "completed",
-                    "archived"
-                  ]
-                },
-                "summary": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "updatedAt": {
-                  "type": "number"
-                },
-                "lastResearchedAt": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "workspaceId",
-                "subjectId",
-                "title",
-                "status",
-                "summary",
-                "createdAt",
-                "updatedAt"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "subjectsTruncated": {
-            "type": "boolean"
-          },
-          "subject": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "workspaceId": {
-                    "type": "string"
-                  },
-                  "subjectId": {
-                    "type": "string"
-                  },
-                  "title": {
-                    "type": "string"
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "active",
-                      "paused",
-                      "completed",
-                      "archived"
-                    ]
-                  },
-                  "summary": {
-                    "type": "string"
-                  },
-                  "createdAt": {
-                    "type": "number"
-                  },
-                  "updatedAt": {
-                    "type": "number"
-                  },
-                  "lastResearchedAt": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "workspaceId",
-                  "subjectId",
-                  "title",
-                  "status",
-                  "summary",
-                  "createdAt",
-                  "updatedAt"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "artifacts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "revisionId": {
-                  "type": "string"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "type": "string"
-                },
-                "artifactKey": {
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "markdown",
-                    "structured",
-                    "evidence-ledger",
-                    "timeline",
-                    "collection"
-                  ]
-                },
-                "content": {
-                  "type": "string"
-                },
-                "contentTruncated": {
-                  "type": "boolean"
-                },
-                "summary": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "revisionId",
-                "workspaceId",
-                "subjectId",
-                "artifactKey",
-                "kind",
-                "content",
-                "contentTruncated",
-                "summary",
-                "createdAt",
-                "runId"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "artifactRevisions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "revisionId": {
-                  "type": "string"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "type": "string"
-                },
-                "artifactKey": {
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "markdown",
-                    "structured",
-                    "evidence-ledger",
-                    "timeline",
-                    "collection"
-                  ]
-                },
-                "content": {
-                  "type": "string"
-                },
-                "contentTruncated": {
-                  "type": "boolean"
-                },
-                "summary": {
-                  "type": "string"
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "revisionId",
-                "workspaceId",
-                "subjectId",
-                "artifactKey",
-                "kind",
-                "content",
-                "contentTruncated",
-                "summary",
-                "createdAt",
-                "runId"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "messages": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "messageId": {
-                  "type": "string"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "role": {
-                  "type": "string",
-                  "enum": [
-                    "user",
-                    "assistant",
-                    "system"
-                  ]
-                },
-                "text": {
-                  "type": "string"
-                },
-                "textTruncated": {
-                  "type": "boolean"
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "messageId",
-                "workspaceId",
-                "subjectId",
-                "role",
-                "text",
-                "textTruncated",
-                "createdAt",
-                "runId"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "sources": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "sourceId": {
-                  "type": "string"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string",
-                  "enum": [
-                    "web",
-                    "email"
-                  ]
-                },
-                "title": {
-                  "type": "string"
-                },
-                "url": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "excerpt": {
-                  "type": "string"
-                },
-                "excerptTruncated": {
-                  "type": "boolean"
-                },
-                "emailId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "sourceId",
-                "workspaceId",
-                "subjectId",
-                "kind",
-                "title",
-                "url",
-                "excerpt",
-                "excerptTruncated",
-                "emailId",
-                "createdAt",
-                "runId"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "actions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "actionId": {
-                  "type": "string"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "type": "string"
-                },
-                "type": {
-                  "type": "string",
-                  "enum": [
-                    "email_scope",
-                    "calendar_event"
-                  ]
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "pending",
-                    "approved",
-                    "rejected",
-                    "failed"
-                  ]
-                },
-                "title": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "payload": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "senders": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "domains": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "subjectKeywords": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "bodyKeywords": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      },
-                      "required": [
-                        "senders",
-                        "domains",
-                        "subjectKeywords",
-                        "bodyKeywords"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "title": {
-                          "type": "string"
-                        },
-                        "startDate": {
-                          "type": "string"
-                        },
-                        "endDate": {
-                          "type": "string"
-                        },
-                        "startTime": {
-                          "type": "string"
-                        },
-                        "endTime": {
-                          "type": "string"
-                        },
-                        "location": {
-                          "type": "string"
-                        },
-                        "description": {
-                          "type": "string"
-                        },
-                        "timeZone": {
-                          "type": "string"
-                        },
-                        "allDay": {
-                          "type": "boolean"
-                        },
-                        "reminderMinutes": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "title",
-                        "startDate",
-                        "allDay"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "unavailable": {
-                          "type": "string",
-                          "const": "Stored action payload is invalid"
-                        }
-                      },
-                      "required": [
-                        "unavailable"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ]
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "resolvedAt": {
-                  "type": "number"
-                },
-                "result": {
-                  "type": "string"
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
-              },
-              "required": [
-                "actionId",
-                "workspaceId",
-                "subjectId",
-                "type",
-                "status",
-                "title",
-                "description",
-                "payload",
-                "createdAt",
-                "runId"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "emailScope": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "senders": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "domains": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "subjectKeywords": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "bodyKeywords": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "updatedAt": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "senders",
-                  "domains",
-                  "subjectKeywords",
-                  "bodyKeywords",
-                  "updatedAt"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "papercuts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "papercutId": {
-                  "type": "string"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "category": {
-                  "type": "string",
-                  "enum": [
-                    "missing-capability",
-                    "poor-source-data",
-                    "integration-friction",
-                    "workflow-gap",
-                    "prompt-problem",
-                    "ui-gap"
-                  ]
-                },
-                "title": {
-                  "type": "string"
-                },
-                "detail": {
-                  "type": "string"
-                },
-                "relatedTool": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "occurrences": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "firstSeenAt": {
-                  "type": "number"
-                },
-                "lastSeenAt": {
-                  "type": "number"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "open",
-                    "addressed",
-                    "dismissed"
-                  ]
-                },
-                "resolution": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "papercutId",
-                "workspaceId",
-                "subjectId",
-                "runId",
-                "category",
-                "title",
-                "detail",
-                "relatedTool",
-                "occurrences",
-                "firstSeenAt",
-                "lastSeenAt",
-                "status"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "papercutsTruncated": {
+          "kickConfigured": {
             "type": "boolean"
           }
         },
         "required": [
-          "workspace",
-          "subjects",
-          "subjectsTruncated",
-          "subject",
-          "artifacts",
-          "artifactRevisions",
-          "messages",
-          "sources",
-          "actions",
-          "emailScope",
-          "papercuts",
-          "papercutsTruncated"
+          "streamers",
+          "settings",
+          "kickConfigured"
         ],
         "additionalProperties": false
       }
     },
     {
-      "name": "workspace_search",
-      "title": "Search Workspaces",
-      "description": "Search subject titles and summaries, current artifacts, recent messages, and recent sources across one or all workspaces. Results contain bounded snippets.",
+      "name": "streamer_config_create",
+      "title": "Track a Streamer",
+      "description": "Start tracking a streamer under a display name with one or more sources: YouTube handles (\"@name\") or channel ids, Twitch logins and Kick slugs. Several usernames per platform are allowed; each source can belong to only one streamer. Tier primary (default) notifies go-live/offline/title changes; background mutes them, records only all-time viewer highs and polls less often. liveNotifications false mutes a primary streamer. Takes effect on the next live check without a restart.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "query": {
-            "type": "string",
-            "minLength": 2,
-            "maxLength": 300
-          },
-          "workspaceId": {
+          "displayName": {
             "type": "string",
             "minLength": 1,
             "maxLength": 100
           },
-          "cursor": {
-            "default": 0,
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 4999
-          },
-          "limit": {
-            "default": 25,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          },
-          "maxSnippetChars": {
-            "default": 400,
-            "type": "integer",
-            "minimum": 100,
-            "maximum": 1000
-          }
-        },
-        "required": [
-          "query"
-        ],
-        "additionalProperties": false
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "outputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "matches": {
+          "youtube": {
+            "maxItems": 10,
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "type": "string"
-                },
-                "resourceType": {
-                  "type": "string",
-                  "enum": [
-                    "subject",
-                    "artifact",
-                    "message",
-                    "source"
-                  ]
-                },
-                "resourceId": {
-                  "type": "string"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "snippet": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "workspaceId",
-                "subjectId",
-                "resourceType",
-                "resourceId",
-                "title",
-                "snippet",
-                "updatedAt"
-              ],
-              "additionalProperties": false
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
             }
           },
-          "nextCursor": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              {
-                "type": "null"
-              }
+          "twitch": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "kick": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "tier": {
+            "default": "primary",
+            "type": "string",
+            "enum": [
+              "primary",
+              "background"
             ]
           },
-          "total": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
+          "liveNotifications": {
+            "type": "boolean",
+            "description": "Override for a primary streamer; omit for the tier default"
           }
         },
         "required": [
-          "matches",
-          "nextCursor",
-          "total"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "workspace_message",
-      "title": "Message Workspace",
-      "description": "Send a user message to a workspace agent, optionally continuing an existing subject. This queues paid model and web-research work and may create reviewable action proposals, but does not approve them.",
-      "inputSchema": {
-        "type": "object",
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "workspaceId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "subjectId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "message": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 20000
-          }
-        },
-        "required": [
-          "workspaceId",
-          "message"
+          "displayName"
         ],
         "additionalProperties": false
       },
@@ -6687,74 +5599,140 @@
         "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": false,
-        "openWorldHint": true
+        "openWorldHint": false
       },
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "workspaceId": {
-            "type": "string"
-          },
-          "subjectId": {
-            "anyOf": [
-              {
+          "streamer": {
+            "type": "object",
+            "properties": {
+              "id": {
                 "type": "string"
               },
-              {
-                "type": "null"
+              "displayName": {
+                "type": "string"
+              },
+              "youtube": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "twitch": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kick": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "background"
+                ]
+              },
+              "liveNotifications": {
+                "description": "`null` uses the tier default (on for primary, off for background)",
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hasPushoverToken": {
+                "type": "boolean",
+                "description": "Whether a dedicated Pushover app is set (managed in the UI only)"
               }
+            },
+            "required": [
+              "id",
+              "displayName",
+              "youtube",
+              "twitch",
+              "kick",
+              "tier",
+              "liveNotifications",
+              "hasPushoverToken"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "streamer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "streamer_config_update",
+      "title": "Edit a Tracked Streamer",
+      "description": "Change a tracked streamer by streamerId. Only given fields change; a platform list replaces that platform's usernames (pass [] to remove the platform, keeping at least one source overall). liveNotifications null returns to the tier default. Switching to the background tier clears a liveNotifications override. The id stays the same when the display name changes, so history is kept.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "streamerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "youtube": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "twitch": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "kick": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "primary",
+              "background"
             ]
           },
-          "runId": {
-            "type": "string"
-          },
-          "queued": {
+          "liveNotifications": {
             "type": "boolean",
-            "const": true
+            "description": "true/false override; null returns to the tier default"
           }
         },
         "required": [
-          "workspaceId",
-          "subjectId",
-          "runId",
-          "queued"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "workspace_subject_set_status",
-      "title": "Set Workspace Subject Status",
-      "description": "Set a workspace subject to active, paused, completed, or archived. This is a local preference/state change and does not run the workspace agent.",
-      "inputSchema": {
-        "type": "object",
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "workspaceId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "subjectId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "paused",
-              "completed",
-              "archived"
-            ]
-          }
-        },
-        "required": [
-          "workspaceId",
-          "subjectId",
-          "status"
+          "streamerId"
         ],
         "additionalProperties": false
       },
@@ -6768,102 +5746,199 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "subject": {
+          "streamer": {
             "type": "object",
             "properties": {
-              "workspaceId": {
+              "id": {
                 "type": "string"
               },
-              "subjectId": {
+              "displayName": {
                 "type": "string"
               },
-              "title": {
-                "type": "string"
+              "youtube": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               },
-              "status": {
+              "twitch": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kick": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tier": {
                 "type": "string",
                 "enum": [
-                  "active",
-                  "paused",
-                  "completed",
-                  "archived"
+                  "primary",
+                  "background"
                 ]
               },
-              "summary": {
-                "type": "string"
+              "liveNotifications": {
+                "description": "`null` uses the tier default (on for primary, off for background)",
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
-              "createdAt": {
-                "type": "number"
-              },
-              "updatedAt": {
-                "type": "number"
-              },
-              "lastResearchedAt": {
-                "type": "number"
+              "hasPushoverToken": {
+                "type": "boolean",
+                "description": "Whether a dedicated Pushover app is set (managed in the UI only)"
               }
             },
             "required": [
-              "workspaceId",
-              "subjectId",
-              "title",
-              "status",
-              "summary",
-              "createdAt",
-              "updatedAt"
+              "id",
+              "displayName",
+              "youtube",
+              "twitch",
+              "kick",
+              "tier",
+              "liveNotifications",
+              "hasPushoverToken"
             ],
             "additionalProperties": false
           }
         },
         "required": [
-          "subject"
+          "streamer"
         ],
         "additionalProperties": false
       }
     },
     {
-      "name": "workspace_actions_list",
-      "title": "List Workspace Actions",
-      "description": "List reviewable workspace action proposals, optionally filtered by workspace, subject, or status. Payloads are parsed into typed JSON-compatible values.",
+      "name": "streamer_config_delete",
+      "title": "Stop Tracking a Streamer",
+      "description": "Stop tracking a streamer by streamerId. A live session is closed without an offline notification. Its sessions and viewer records are kept, so re-adding the same display name resumes them, but a dedicated Pushover app set in the UI is lost.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "workspaceId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "subjectId": {
+          "streamerId": {
             "type": "string",
             "minLength": 1,
             "maxLength": 200
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "approved",
-              "rejected",
-              "failed"
-            ]
-          },
-          "cursor": {
-            "default": 0,
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 4999
-          },
-          "limit": {
-            "default": 25,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
           }
         },
+        "required": [
+          "streamerId"
+        ],
         "additionalProperties": false
       },
       "annotations": {
-        "readOnlyHint": true,
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "streamer": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "youtube": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "twitch": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kick": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "primary",
+                  "background"
+                ]
+              },
+              "liveNotifications": {
+                "description": "`null` uses the tier default (on for primary, off for background)",
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hasPushoverToken": {
+                "type": "boolean",
+                "description": "Whether a dedicated Pushover app is set (managed in the UI only)"
+              }
+            },
+            "required": [
+              "id",
+              "displayName",
+              "youtube",
+              "twitch",
+              "kick",
+              "tier",
+              "liveNotifications",
+              "hasPushoverToken"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "streamer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "streamer_configs_reorder",
+      "title": "Reorder Tracked Streamers",
+      "description": "Set the display order of tracked streamers. streamerIds must list every configured id exactly once (see streamer_configs_list). Order breaks ties in the live list and iOS live slots.",
+      "inputSchema": {
+        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "streamerIds": {
+            "minItems": 1,
+            "maxItems": 200,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          }
+        },
+        "required": [
+          "streamerIds"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": false,
         "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": false
@@ -6872,411 +5947,113 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "actions": {
+          "streamers": {
             "type": "array",
             "items": {
               "type": "object",
               "properties": {
-                "actionId": {
+                "id": {
                   "type": "string"
                 },
-                "workspaceId": {
+                "displayName": {
                   "type": "string"
                 },
-                "subjectId": {
-                  "type": "string"
+                "youtube": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
-                "type": {
+                "twitch": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "kick": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "tier": {
                   "type": "string",
                   "enum": [
-                    "email_scope",
-                    "calendar_event"
+                    "primary",
+                    "background"
                   ]
                 },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "pending",
-                    "approved",
-                    "rejected",
-                    "failed"
-                  ]
-                },
-                "title": {
-                  "type": "string"
-                },
-                "description": {
-                  "type": "string"
-                },
-                "payload": {
+                "liveNotifications": {
+                  "description": "`null` uses the tier default (on for primary, off for background)",
                   "anyOf": [
                     {
-                      "type": "object",
-                      "properties": {
-                        "senders": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "domains": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "subjectKeywords": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        },
-                        "bodyKeywords": {
-                          "type": "array",
-                          "items": {
-                            "type": "string"
-                          }
-                        }
-                      },
-                      "required": [
-                        "senders",
-                        "domains",
-                        "subjectKeywords",
-                        "bodyKeywords"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "title": {
-                          "type": "string"
-                        },
-                        "startDate": {
-                          "type": "string"
-                        },
-                        "endDate": {
-                          "type": "string"
-                        },
-                        "startTime": {
-                          "type": "string"
-                        },
-                        "endTime": {
-                          "type": "string"
-                        },
-                        "location": {
-                          "type": "string"
-                        },
-                        "description": {
-                          "type": "string"
-                        },
-                        "timeZone": {
-                          "type": "string"
-                        },
-                        "allDay": {
-                          "type": "boolean"
-                        },
-                        "reminderMinutes": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "title",
-                        "startDate",
-                        "allDay"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "unavailable": {
-                          "type": "string",
-                          "const": "Stored action payload is invalid"
-                        }
-                      },
-                      "required": [
-                        "unavailable"
-                      ],
-                      "additionalProperties": false
-                    }
-                  ]
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "resolvedAt": {
-                  "type": "number"
-                },
-                "result": {
-                  "type": "string"
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
+                      "type": "boolean"
                     },
                     {
                       "type": "null"
                     }
                   ]
+                },
+                "hasPushoverToken": {
+                  "type": "boolean",
+                  "description": "Whether a dedicated Pushover app is set (managed in the UI only)"
                 }
               },
               "required": [
-                "actionId",
-                "workspaceId",
-                "subjectId",
-                "type",
-                "status",
-                "title",
-                "description",
-                "payload",
-                "createdAt",
-                "runId"
+                "id",
+                "displayName",
+                "youtube",
+                "twitch",
+                "kick",
+                "tier",
+                "liveNotifications",
+                "hasPushoverToken"
               ],
               "additionalProperties": false
             }
           },
-          "nextCursor": {
-            "anyOf": [
-              {
+          "settings": {
+            "type": "object",
+            "properties": {
+              "dggTopEmbeds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "actions",
-          "nextCursor",
-          "total"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "workspace_action_approve",
-      "title": "Approve Workspace Action",
-      "description": "Approve and execute one pending or failed workspace proposal. Email-scope approvals broaden local email ingestion; calendar-event approvals write to the configured external CalDAV calendar. Executor approval is required.",
-      "inputSchema": {
-        "type": "object",
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "actionId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          }
-        },
-        "required": [
-          "actionId"
-        ],
-        "additionalProperties": false
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": true
-      },
-      "outputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "object",
-            "properties": {
-              "actionId": {
-                "type": "string"
-              },
-              "workspaceId": {
-                "type": "string"
-              },
-              "subjectId": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "email_scope",
-                  "calendar_event"
-                ]
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "pending",
-                  "approved",
-                  "rejected",
-                  "failed"
-                ]
-              },
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "payload": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "senders": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "subjectKeywords": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "bodyKeywords": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "required": [
-                      "senders",
-                      "domains",
-                      "subjectKeywords",
-                      "bodyKeywords"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "title": {
-                        "type": "string"
-                      },
-                      "startDate": {
-                        "type": "string"
-                      },
-                      "endDate": {
-                        "type": "string"
-                      },
-                      "startTime": {
-                        "type": "string"
-                      },
-                      "endTime": {
-                        "type": "string"
-                      },
-                      "location": {
-                        "type": "string"
-                      },
-                      "description": {
-                        "type": "string"
-                      },
-                      "timeZone": {
-                        "type": "string"
-                      },
-                      "allDay": {
-                        "type": "boolean"
-                      },
-                      "reminderMinutes": {
-                        "type": "number"
-                      }
-                    },
-                    "required": [
-                      "title",
-                      "startDate",
-                      "allDay"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "unavailable": {
-                        "type": "string",
-                        "const": "Stored action payload is invalid"
-                      }
-                    },
-                    "required": [
-                      "unavailable"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
-              },
-              "createdAt": {
-                "type": "number"
-              },
-              "resolvedAt": {
-                "type": "number"
-              },
-              "result": {
-                "type": "string"
-              },
-              "runId": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
+                "maximum": 20
               }
             },
             "required": [
-              "actionId",
-              "workspaceId",
-              "subjectId",
-              "type",
-              "status",
-              "title",
-              "description",
-              "payload",
-              "createdAt",
-              "runId"
+              "dggTopEmbeds"
             ],
             "additionalProperties": false
+          },
+          "kickConfigured": {
+            "type": "boolean"
           }
         },
         "required": [
-          "action"
+          "streamers",
+          "settings",
+          "kickConfigured"
         ],
         "additionalProperties": false
       }
     },
     {
-      "name": "workspace_action_reject",
-      "title": "Reject Workspace Action",
-      "description": "Reject one pending workspace proposal without performing its proposed external effect.",
+      "name": "livestream_settings_update",
+      "title": "Update Livestream Settings",
+      "description": "Set how many of Destiny.gg's current hosted and top embeds Omni tracks as temporary streamers (0 turns discovery off, at most 20).",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "properties": {
-          "actionId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+          "dggTopEmbeds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 20
           }
         },
         "required": [
-          "actionId"
+          "dggTopEmbeds"
         ],
         "additionalProperties": false
       },
@@ -7290,486 +6067,23 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "action": {
+          "settings": {
             "type": "object",
             "properties": {
-              "actionId": {
-                "type": "string"
-              },
-              "workspaceId": {
-                "type": "string"
-              },
-              "subjectId": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "email_scope",
-                  "calendar_event"
-                ]
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "pending",
-                  "approved",
-                  "rejected",
-                  "failed"
-                ]
-              },
-              "title": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
-              "payload": {
-                "anyOf": [
-                  {
-                    "type": "object",
-                    "properties": {
-                      "senders": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "domains": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "subjectKeywords": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      },
-                      "bodyKeywords": {
-                        "type": "array",
-                        "items": {
-                          "type": "string"
-                        }
-                      }
-                    },
-                    "required": [
-                      "senders",
-                      "domains",
-                      "subjectKeywords",
-                      "bodyKeywords"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "title": {
-                        "type": "string"
-                      },
-                      "startDate": {
-                        "type": "string"
-                      },
-                      "endDate": {
-                        "type": "string"
-                      },
-                      "startTime": {
-                        "type": "string"
-                      },
-                      "endTime": {
-                        "type": "string"
-                      },
-                      "location": {
-                        "type": "string"
-                      },
-                      "description": {
-                        "type": "string"
-                      },
-                      "timeZone": {
-                        "type": "string"
-                      },
-                      "allDay": {
-                        "type": "boolean"
-                      },
-                      "reminderMinutes": {
-                        "type": "number"
-                      }
-                    },
-                    "required": [
-                      "title",
-                      "startDate",
-                      "allDay"
-                    ],
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "unavailable": {
-                        "type": "string",
-                        "const": "Stored action payload is invalid"
-                      }
-                    },
-                    "required": [
-                      "unavailable"
-                    ],
-                    "additionalProperties": false
-                  }
-                ]
-              },
-              "createdAt": {
-                "type": "number"
-              },
-              "resolvedAt": {
-                "type": "number"
-              },
-              "result": {
-                "type": "string"
-              },
-              "runId": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "actionId",
-              "workspaceId",
-              "subjectId",
-              "type",
-              "status",
-              "title",
-              "description",
-              "payload",
-              "createdAt",
-              "runId"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "action"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "workspace_papercuts_list",
-      "title": "List Workspace Papercuts",
-      "description": "List structured workspace friction reports, optionally filtered by workspace and resolution status. Internal deduplication fingerprints are excluded.",
-      "inputSchema": {
-        "type": "object",
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "workspaceId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "open",
-              "addressed",
-              "dismissed"
-            ]
-          },
-          "cursor": {
-            "default": 0,
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 4999
-          },
-          "limit": {
-            "default": 25,
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "additionalProperties": false
-      },
-      "annotations": {
-        "readOnlyHint": true,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "outputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "papercuts": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "papercutId": {
-                  "type": "string"
-                },
-                "workspaceId": {
-                  "type": "string"
-                },
-                "subjectId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "runId": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "category": {
-                  "type": "string",
-                  "enum": [
-                    "missing-capability",
-                    "poor-source-data",
-                    "integration-friction",
-                    "workflow-gap",
-                    "prompt-problem",
-                    "ui-gap"
-                  ]
-                },
-                "title": {
-                  "type": "string"
-                },
-                "detail": {
-                  "type": "string"
-                },
-                "relatedTool": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "occurrences": {
-                  "type": "integer",
-                  "exclusiveMinimum": 0,
-                  "maximum": 9007199254740991
-                },
-                "firstSeenAt": {
-                  "type": "number"
-                },
-                "lastSeenAt": {
-                  "type": "number"
-                },
-                "status": {
-                  "type": "string",
-                  "enum": [
-                    "open",
-                    "addressed",
-                    "dismissed"
-                  ]
-                },
-                "resolution": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "papercutId",
-                "workspaceId",
-                "subjectId",
-                "runId",
-                "category",
-                "title",
-                "detail",
-                "relatedTool",
-                "occurrences",
-                "firstSeenAt",
-                "lastSeenAt",
-                "status"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "nextCursor": {
-            "anyOf": [
-              {
+              "dggTopEmbeds": {
                 "type": "integer",
                 "minimum": 0,
-                "maximum": 9007199254740991
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "total": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          }
-        },
-        "required": [
-          "papercuts",
-          "nextCursor",
-          "total"
-        ],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "workspace_papercut_resolve",
-      "title": "Resolve Workspace Papercut",
-      "description": "Mark one workspace papercut addressed or dismissed with a durable local resolution note.",
-      "inputSchema": {
-        "type": "object",
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "properties": {
-          "papercutId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "addressed",
-              "dismissed"
-            ]
-          },
-          "resolution": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 2000
-          }
-        },
-        "required": [
-          "papercutId",
-          "status",
-          "resolution"
-        ],
-        "additionalProperties": false
-      },
-      "annotations": {
-        "readOnlyHint": false,
-        "destructiveHint": false,
-        "idempotentHint": true,
-        "openWorldHint": false
-      },
-      "outputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "papercut": {
-            "type": "object",
-            "properties": {
-              "papercutId": {
-                "type": "string"
-              },
-              "workspaceId": {
-                "type": "string"
-              },
-              "subjectId": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "runId": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "category": {
-                "type": "string",
-                "enum": [
-                  "missing-capability",
-                  "poor-source-data",
-                  "integration-friction",
-                  "workflow-gap",
-                  "prompt-problem",
-                  "ui-gap"
-                ]
-              },
-              "title": {
-                "type": "string"
-              },
-              "detail": {
-                "type": "string"
-              },
-              "relatedTool": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "occurrences": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "maximum": 9007199254740991
-              },
-              "firstSeenAt": {
-                "type": "number"
-              },
-              "lastSeenAt": {
-                "type": "number"
-              },
-              "status": {
-                "type": "string",
-                "enum": [
-                  "open",
-                  "addressed",
-                  "dismissed"
-                ]
-              },
-              "resolution": {
-                "type": "string"
+                "maximum": 20
               }
             },
             "required": [
-              "papercutId",
-              "workspaceId",
-              "subjectId",
-              "runId",
-              "category",
-              "title",
-              "detail",
-              "relatedTool",
-              "occurrences",
-              "firstSeenAt",
-              "lastSeenAt",
-              "status"
+              "dggTopEmbeds"
             ],
             "additionalProperties": false
           }
         },
         "required": [
-          "papercut"
+          "settings"
         ],
         "additionalProperties": false
       }
@@ -14062,7 +12376,7 @@
     {
       "name": "events_status",
       "title": "Check MCP Event Delivery",
-      "description": "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, workspace.updated, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
+      "description": "Report the MCP Events lifecycle Omni has observed for every event (email.received, claude.session.turn_finished, livestream.status_changed, presspods.job_finished, task.run_finished, calendar.event_changed, calendar.event_starting): recent events/list and subscription requests, subscriptions by event, arguments and callback host, and webhook delivery outcomes. Contains no secrets, tokens, callback paths, or message content.",
       "inputSchema": {
         "type": "object",
         "$schema": "https://json-schema.org/draft/2020-12/schema",

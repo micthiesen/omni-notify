@@ -1,7 +1,7 @@
 //! Calendar events from email: candidate filter, AI extraction and
 //! sanitization, iCloud CalDAV discovery (RFC 6764) and writes, tracked-event
 //! persistence, the `CalendarEvents` email handler, the calendar MCP tools and
-//! the `CalendarWriter` port.
+//! the `CalendarConnection` port.
 //!
 //! The pipeline reaches the email core (activity, retry queue, sender rules,
 //! triage, log capture) through the [`support::EmailSupport`] trait, implemented
@@ -10,6 +10,7 @@
 //! the `EmailReader` port by [`support::PortAttachments`].
 
 pub mod caldav;
+pub mod connection;
 pub mod email_core;
 pub mod error;
 pub mod extraction;
@@ -21,13 +22,12 @@ pub mod pipeline;
 pub mod primary;
 pub mod routes;
 pub mod support;
-pub mod writer;
 
 use std::sync::Arc;
 
 use omni_email::triage::EmailTriage;
 use omni_mcp_kit::ToolMetaError;
-use omni_runtime::ports::CalendarWriter;
+use omni_runtime::ports::CalendarConnection;
 use omni_runtime::{AppContext, BootError, BootPhase, BootStep, ManagedEntity, Subsystem};
 use omni_store::entity::EntityDescriptor;
 
@@ -75,9 +75,9 @@ pub fn caldav(ctx: &AppContext) -> Caldav {
     )
 }
 
-/// The `CalendarWriter` port implementation (wiring sets it on `ctx.ports`).
-pub fn calendar_writer(ctx: &AppContext) -> Arc<dyn CalendarWriter> {
-    Arc::new(writer::CaldavCalendarWriter::new(caldav(ctx)))
+/// The `CalendarConnection` port implementation (wiring sets it on `ctx.ports`).
+pub fn calendar_connection(ctx: &AppContext) -> Arc<dyn CalendarConnection> {
+    Arc::new(connection::CaldavConnection::new(caldav(ctx)))
 }
 
 /// The entity descriptors this crate owns.

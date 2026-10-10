@@ -456,7 +456,7 @@ pub fn PodcastsPage() -> impl IntoView {
         })
     });
     let running = Signal::derive(move || task_found.get().flatten().unwrap_or(false));
-    let available = Signal::derive(move || match task_found.get() {
+    let available = Memo::new(move |_| match task_found.get() {
         None => true,
         Some(found) => found.is_some(),
     });
@@ -607,6 +607,9 @@ pub fn PodcastsPage() -> impl IntoView {
                 .collect::<Vec<_>>()
         })
     });
+    // Only emptiness may rebuild the rail (and reset its scroll); feedback
+    // saves update its items in place.
+    let has_up_next = Memo::new(move |_| up_next.with(|items| !items.is_empty()));
     let selected_rec = Signal::derive(move || {
         let id = selected.get()?;
         recs.with(|list| {
@@ -779,7 +782,7 @@ pub fn PodcastsPage() -> impl IntoView {
             <MediaSwitch/>
         </PageHead>
 
-        {move || up_next.with(|items| !items.is_empty()).then(|| view! {
+        {move || has_up_next.get().then(|| view! {
             <section class="section rec-deck" aria-label="Up next">
                 <div class="section-head">
                     <h2 class="section-title">"Up next"</h2>

@@ -1,6 +1,6 @@
 //! Shell chrome shared with pages: the dynamic last crumb and the phone
 //! page title. A page calls [`use_page_label`] with a reactive label
-//! (streamer name, workspace subject); the override is keyed by path, so a
+//! (streamer name, pick title); the override is keyed by path, so a
 //! stale label from the previous page never shows on the next one.
 
 use leptos::prelude::*;

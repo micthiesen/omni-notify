@@ -23,6 +23,7 @@ use omni_runtime::ports::{self, LiveIntelligence, LiveTransition, Ports};
 use omni_store::Store;
 use omni_tasks::{AppEvent, CronSchedule, EventBus, RunContext, Task, TaskError, TaskOptions};
 
+use crate::config::TopEmbeds;
 use crate::dgg::{
     DggFeed, DggFeedSource, ResolvedDggStreams, canonical_binding, resolve_dgg_streams,
 };
@@ -164,7 +165,8 @@ pub trait TickHook: Send + Sync {
 /// Destiny.gg discovery configuration and seams.
 #[derive(Clone)]
 pub struct DggDiscovery {
-    pub top_embeds: usize,
+    /// Shared with the configuration; 0 disables discovery.
+    pub top_embeds: TopEmbeds,
     pub available_platforms: HashSet<Platform>,
     pub feed: Arc<dyn DggFeedSource>,
     pub identity: Arc<dyn IdentityLearner>,
@@ -195,12 +197,17 @@ struct TickState {
     debouncer: TitleChangeDebouncer,
     profile_identity_retry_at: HashMap<String, i64>,
     dgg_statuses: HashMap<String, FetchedStatus>,
+    /// Every streamer polled and not yet retired, by id. One that leaves the
+    /// roster (deleted, or a discovery dropped by a configuration change) is
+    /// retired on the next tick.
+    polled: IndexMap<String, Streamer>,
 }
 
 /// The live check: shared by the scheduled task and tests.
 pub struct LiveCheck {
     roster: Roster,
-    configured: Vec<Streamer>,
+    /// Configured streamers; the configuration service replaces them.
+    configured: Roster,
     deps: LiveCheckDeps,
     dgg: Option<DggDiscovery>,
     reconcile: Option<Arc<dyn TickHook>>,
@@ -212,9 +219,14 @@ pub struct LiveCheck {
 }
 
 impl LiveCheck {
-    /// `roster` starts as (and its configured part stays) `configured`.
+    /// `roster` starts as (and its configured part stays) its current list.
     pub fn new(roster: Roster, deps: LiveCheckDeps) -> Self {
-        let configured = roster.snapshot();
+        let configured = Roster::new(roster.snapshot());
+        Self::with_configured(roster, configured, deps)
+    }
+
+    /// A live check over a shared configured list (edited at runtime).
+    pub fn with_configured(roster: Roster, configured: Roster, deps: LiveCheckDeps) -> Self {
         let metrics =
             ViewerMetricsService::new(deps.store.clone(), deps.tz.clone(), deps.notifier.clone());
         Self {
@@ -302,6 +314,7 @@ impl LiveCheck {
     /// The DGG refresh (on the background cadence) and every due streamer.
     /// All due streamers finish before the first failure is returned.
     async fn poll(&self, tick: u64) -> Result<(), LiveError> {
+        let retired = self.retire_removed().await;
         // Background streamers skip ticks entirely; the startup tick includes them.
         if let Some(dgg) = &self.dgg
             && is_streamer_due(StreamerTier::Background, tick)
@@ -314,6 +327,12 @@ impl LiveCheck {
             .into_iter()
             .filter(|s| is_streamer_due(s.tier, tick))
             .collect();
+        {
+            let mut state = self.state();
+            for streamer in &due {
+                state.polled.insert(streamer.id.clone(), streamer.clone());
+            }
+        }
         let ticks: Vec<_> = due
             .iter()
             .map(|streamer| self.tick_streamer(streamer))
@@ -322,7 +341,7 @@ impl LiveCheck {
             .buffer_unordered(STREAMER_CONCURRENCY)
             .collect()
             .await;
-        outcomes.into_iter().collect()
+        retired.and(outcomes.into_iter().collect())
     }
 
     fn log_streamers(&self) {
@@ -347,6 +366,9 @@ impl LiveCheck {
     // --- DGG ----------------------------------------------------------------
 
     async fn refresh_dgg(&self, dgg: &DggDiscovery) -> Result<(), LiveError> {
+        if dgg.top_embeds.get() == 0 {
+            return self.clear_dgg().await;
+        }
         let feed = match dgg.feed.fetch().await {
             Ok(feed) => feed,
             Err(error) => {
@@ -364,6 +386,7 @@ impl LiveCheck {
         let mut resolution = self.resolve(&feed, dgg, &links);
         let configured_bindings: Vec<PlatformBinding> = self
             .configured
+            .snapshot()
             .iter()
             .flat_map(|s| s.bindings.iter().cloned())
             .collect();
@@ -425,7 +448,7 @@ impl LiveCheck {
             })
             .collect();
         for streamer in &removed {
-            self.retire_discovery(streamer).await?;
+            self.retire(streamer).await?;
         }
 
         {
@@ -445,6 +468,7 @@ impl LiveCheck {
 
         let enriched: Vec<Streamer> = self
             .configured
+            .snapshot()
             .iter()
             .map(|streamer| enrich_configured(streamer, &resolution, &links))
             .collect();
@@ -478,9 +502,26 @@ impl LiveCheck {
         tracing::debug!(
             target: LOG,
             "Destiny.gg discovery selected {selected_count}/{}{}",
-            dgg.top_embeds,
+            dgg.top_embeds.get(),
             if summary.is_empty() { String::new() } else { format!(": {summary}") }
         );
+        Ok(())
+    }
+
+    /// Discovery is off: retire discoveries and drop DGG presence.
+    async fn clear_dgg(&self) -> Result<(), LiveError> {
+        let roster = self.roster.snapshot();
+        if roster
+            .iter()
+            .all(|s| s.discovery_source.is_none() && s.dgg.is_none())
+        {
+            return Ok(());
+        }
+        for streamer in roster.iter().filter(|s| s.discovery_source.is_some()) {
+            self.retire(streamer).await?;
+        }
+        self.state().dgg_statuses.clear();
+        self.roster.replace(self.configured.snapshot());
         Ok(())
     }
 
@@ -496,8 +537,8 @@ impl LiveCheck {
             .collect();
         resolve_dgg_streams(
             feed,
-            dgg.top_embeds,
-            &self.configured,
+            dgg.top_embeds.get() as usize,
+            &self.configured.snapshot(),
             &dgg.available_platforms,
             &aliases,
         )
@@ -566,7 +607,36 @@ impl LiveCheck {
 
     /// Leaving DGG's top set is not proof the stream ended: retire the
     /// status without a completed session or a confirmed viewer record.
-    async fn retire_discovery(&self, streamer: &Streamer) -> Result<(), LiveError> {
+    /// Configured streamers removed since the last tick: closed like a
+    /// discovery that left the embeds (no offline notification).
+    /// Retires polled streamers that left the roster. A failed retire stays
+    /// pending for the next tick and does not stop this one.
+    async fn retire_removed(&self) -> Result<(), LiveError> {
+        let current: HashSet<String> = self.roster.snapshot().into_iter().map(|s| s.id).collect();
+        let removed: Vec<Streamer> = self
+            .state()
+            .polled
+            .values()
+            .filter(|s| !current.contains(&s.id))
+            .cloned()
+            .collect();
+        let mut result = Ok(());
+        for streamer in &removed {
+            match self.retire(streamer).await {
+                Ok(()) => {
+                    self.state().polled.shift_remove(&streamer.id);
+                }
+                Err(error) => {
+                    if result.is_ok() {
+                        result = Err(error);
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    async fn retire(&self, streamer: &Streamer) -> Result<(), LiveError> {
         if let StreamerStatus::Live(previous) = get_status(&self.deps.store, &streamer.id).await? {
             let mut offline = OfflineStatus::never_live(streamer.id.clone());
             offline.last_ended_at = Some(self.now());
@@ -578,6 +648,7 @@ impl LiveCheck {
             let mut state = self.state();
             state.unknown_streaks.shift_remove(&streamer.id);
             state.debouncer.clear(&streamer.id);
+            state.polled.shift_remove(&streamer.id);
             for binding in &streamer.bindings {
                 state
                     .dgg_statuses

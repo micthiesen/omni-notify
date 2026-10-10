@@ -256,14 +256,14 @@ async fn stale_and_unsafe_rows_are_never_released() {
         now(&app) - REPLAY_LOOKBACK_MS - 1,
     )
     .await;
-    park(store, "Workspaces", "w1", "build-1", now(&app)).await;
+    park(store, "McpEvents", "m1", "build-1", now(&app)).await;
     let report = systemic::release_for_build(store, "build-2", 20)
         .await
         .unwrap();
     assert_eq!((report.released, report.expired), (0, 1));
     assert!(row(store, "CalendarEvents", "old").await.is_none());
     assert!(
-        row(store, "Workspaces", "w1")
+        row(store, "McpEvents", "m1")
             .await
             .unwrap()
             .awaiting_build

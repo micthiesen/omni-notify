@@ -410,6 +410,24 @@ impl TestApp {
             .body(Body::from(body.to_string()));
         send_json(router, setup("TestApp::post_json request", request)).await
     }
+
+    /// `method path` with an optional JSON body and a same-origin `Origin`.
+    pub async fn request_json(
+        &self,
+        router: &Router,
+        method: Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::HOST, "localhost")
+            .header(header::ORIGIN, "http://localhost")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(body.map_or_else(Body::empty, |b| Body::from(b.to_string())));
+        send_json(router, setup("TestApp::request_json request", request)).await
+    }
 }
 
 async fn send_json(router: &Router, request: Request<Body>) -> (StatusCode, Value) {

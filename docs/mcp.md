@@ -35,7 +35,11 @@ families cover:
 - the primary iCloud calendar: status, occurrence listing and search, event
   detail, preview, idempotent create/update/delete, write status, a change feed,
   and the email-created event list (see "Calendar" below)
-- task status, task runs, livestreams, briefings, workspaces, actions, and papercuts
+- task status, task runs, and livestreams
+- tracked-streamer configuration: list, create, edit (sources, tier,
+  live-notification override), delete, reorder, and the Destiny.gg top-embeds
+  setting (`streamer_config_*`, `livestream_settings_update`). These tools never
+  accept or return Pushover tokens; set those in the UI
 - media library, watchlist, recommendations, podcast accounts, and podcast recommendations
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs

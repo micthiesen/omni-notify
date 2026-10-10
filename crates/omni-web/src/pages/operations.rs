@@ -258,6 +258,9 @@ fn OperationsContent() -> impl IntoView {
     let groups = Memo::new(move |_| {
         tasks.with(|t| grouped_tasks(t, filter.get(), &query.get(), minute.get()))
     });
+    // The table closure reads only emptiness; groups and rows are keyed
+    // `For`s, so reordering after a run moves rows instead of rebuilding them.
+    let no_groups = Memo::new(move |_| groups.with(Vec::is_empty));
     let counts = Memo::new(move |_| {
         let now = minute.get();
         tasks.with(|t| {
@@ -341,7 +344,14 @@ fn OperationsContent() -> impl IntoView {
         let name = inspect.get()?;
         tasks.with(|t| t.iter().find(|t| t.name == name).cloned())
     });
+    // The inspector reads its task live; rebuilding it on every task update
+    // would reset the selected run log and scroll.
+    let selected_name =
+        Memo::new(move |_| selected_task.with(|t| t.as_ref().map(|t| t.name.clone())));
 
+    // A row is built once per task name and every cell reads its own memo:
+    // re-creating the row on each snapshot or minute tick would disarm a
+    // pending Run confirmation and drop keyboard focus from the row.
     let row = move |name: String| {
         let task = Memo::new({
             let name = name.clone();
@@ -355,35 +365,51 @@ fn OperationsContent() -> impl IntoView {
             let name = name.clone();
             move || inspect.with(|i| i.as_deref() == Some(name.as_str()))
         };
-        let select_name = name.clone();
-        let key_name = name.clone();
-        move || {
-            let t = task.get()?;
-            let health = task_health(&t, minute.get());
-            let label = task_label(&t.name, t.display_name.as_deref());
-            let realtime = cadence(&t) == Cadence::Realtime;
-            let detail = t.last_run.as_ref().and_then(run_detail);
-            let status_title = (health == TaskHealth::Degraded)
-                .then(|| detail.as_ref().map(|d| d.1.clone()))
-                .flatten();
-            let cron = describe_cron(&t.schedule);
-            let last = t.last_run.clone();
-            let next_ms = next_run_ms(&t);
-            let next_list: Vec<f64> = t
-                .next_runs
-                .iter()
-                .filter_map(|n| parse_date_ms(n))
-                .collect();
-            let running = t.running;
-            let name = t.name.clone();
-            let select_name = select_name.clone();
-            let key_name = key_name.clone();
-            let selected = selected.clone();
-            let history_label = format!("Last {STRIP} runs of {label}");
-            // The history cell on desktop and the meta line on phone.
-            let history = move |phone: bool| {
-                let history_label = history_label.clone();
-                if realtime && !phone {
+        let exists = Memo::new(move |_| task.with(Option::is_some));
+        let health = Memo::new(move |_| {
+            let now = minute.get();
+            task.with(|t| t.as_ref().map_or(TaskHealth::Ok, |t| task_health(t, now)))
+        });
+        let label = Memo::new(move |_| {
+            task.with(|t| {
+                t.as_ref()
+                    .map(|t| task_label(&t.name, t.display_name.as_deref()))
+                    .unwrap_or_default()
+            })
+        });
+        let realtime = Memo::new(move |_| {
+            task.with(|t| t.as_ref().is_some_and(|t| cadence(t) == Cadence::Realtime))
+        });
+        let detail = Signal::derive(move || {
+            task.with(|t| {
+                t.as_ref()
+                    .and_then(|t| t.last_run.as_ref().and_then(run_detail))
+            })
+        });
+        let schedule = Memo::new(move |_| {
+            task.with(|t| t.as_ref().map(|t| t.schedule.clone()).unwrap_or_default())
+        });
+        let last = Memo::new(move |_| task.with(|t| t.as_ref().and_then(|t| t.last_run.clone())));
+        let next_ms = Memo::new(move |_| task.with(|t| t.as_ref().and_then(next_run_ms)));
+        let next_list = Memo::new(move |_| {
+            task.with(|t| {
+                t.as_ref()
+                    .map(|t| {
+                        t.next_runs
+                            .iter()
+                            .filter_map(|n| parse_date_ms(n))
+                            .collect::<Vec<f64>>()
+                    })
+                    .unwrap_or_default()
+            })
+        });
+        let running = Memo::new(move |_| task.with(|t| t.as_ref().is_some_and(|t| t.running)));
+        let no_runs = Memo::new(move |_| runs.with(Vec::is_empty));
+        let history_label = Signal::derive(move || format!("Last {STRIP} runs of {}", label.get()));
+        // The history cell on desktop and the meta line on phone.
+        let history = move |phone: bool| {
+            move || {
+                if realtime.get() && !phone {
                     let ticks = Signal::derive(move || {
                         runs.with(|r| {
                             r.iter()
@@ -391,10 +417,9 @@ fn OperationsContent() -> impl IntoView {
                                 .collect::<Vec<_>>()
                         })
                     });
-                    let next_list = next_list.clone();
                     view! { <TimeLane now ticks scheduled=next_list label=history_label/> }
                         .into_any()
-                } else if history_loaded.get() && runs.with(Vec::is_empty) {
+                } else if history_loaded.get() && no_runs.get() {
                     view! { <span class="small off">"No runs yet"</span> }.into_any()
                 } else {
                     let slots = if phone { 8 } else { STRIP };
@@ -423,7 +448,19 @@ fn OperationsContent() -> impl IntoView {
                     });
                     view! { <RunStrip cells slots label=history_label/> }.into_any()
                 }
-            };
+            }
+        };
+        let select_name = name.clone();
+        let key_name = name.clone();
+        move || {
+            if !exists.get() {
+                return None;
+            }
+            let select_name = select_name.clone();
+            let key_name = key_name.clone();
+            let selected = selected.clone();
+            let name = name.clone();
+            let mono = name.clone();
             Some(view! {
                 <tr
                     data-row="true"
@@ -440,29 +477,37 @@ fn OperationsContent() -> impl IntoView {
                         }
                     }
                 >
-                    <td class="cell-status"><Status kind=health_kind(health) label=health_word(health) title=status_title dot_only=health == TaskHealth::Ok/></td>
+                    <td class="cell-status">
+                        {move || {
+                            let health = health.get();
+                            let status_title = (health == TaskHealth::Degraded)
+                                .then(|| detail.get().map(|d| d.1))
+                                .flatten();
+                            view! { <Status kind=health_kind(health) label=health_word(health) title=status_title dot_only=health == TaskHealth::Ok/> }
+                        }}
+                    </td>
                     <td class="grow">
-                        <div class=if running { "task-name text-signal" } else { "task-name" }>{label.clone()}</div>
+                        <div class=move || if running.get() { "task-name text-signal" } else { "task-name" }>{move || label.get()}</div>
                         <div class="row-sub ops-task-sub">
-                            <span class="mono">{t.name.clone()}</span>
-                            {detail.map(|(tone, s)| view! {
+                            <span class="mono">{mono}</span>
+                            {move || detail.get().map(|(tone, s)| view! {
                                 <span class="ops-sep">" · "</span>
                                 <span class=format!("ops-detail {}", detail_class(tone))>{s}</span>
                             })}
                         </div>
                         <div class="ops-phone-meta">
                             {history(true)}
-                            {last.clone().map(|r| {
+                            {move || last.get().map(|r| {
                                 let started = r.started_at as f64;
                                 view! { <span class="num dim ops-last">{move || format_relative_at(started, now.get())}</span> }
                             })}
                         </div>
                     </td>
-                    <td class="hide-phone hide-below-wide nowrap" title=t.schedule.clone()>
-                        {cron.unwrap_or_else(|| t.schedule.clone())}
+                    <td class="hide-phone hide-below-wide nowrap" title=move || schedule.get()>
+                        {move || schedule.with(|s| describe_cron(s).unwrap_or_else(|| s.clone()))}
                     </td>
                     <td class="hide-phone nowrap">
-                        {last.map(|r| {
+                        {move || last.get().map(|r| {
                             let started = r.started_at as f64;
                             view! {
                                 <div class="num" title=format_absolute(started)>{move || format_relative_at(started, now.get())}</div>
@@ -472,10 +517,10 @@ fn OperationsContent() -> impl IntoView {
                     </td>
                     <td class="hide-phone">{history(false)}</td>
                     <td class="numeric num">
-                        {move || if running { "running".to_owned() } else { next_ms.map(|n| format_next(n - now.get())).unwrap_or_else(|| "—".to_owned()) }}
+                        {move || if running.get() { "running".to_owned() } else { next_ms.get().map(|n| format_next(n - now.get())).unwrap_or_else(|| "—".to_owned()) }}
                     </td>
                     <td class="cell-action" on:click=|ev| ev.stop_propagation()>
-                        <RunButton task=name running=running size=ButtonSize::Sm/>
+                        <RunButton task=name running size=ButtonSize::Sm/>
                     </td>
                 </tr>
             })
@@ -519,8 +564,7 @@ fn OperationsContent() -> impl IntoView {
                     <Segmented options=seg_options value=filter on_change=set_filter aria_label="Task status"/>
                 </div>
                 {move || {
-                    let groups = groups.get();
-                    if groups.is_empty() {
+                    if no_groups.get() {
                         return view! {
                             <EmptyState message="No tasks match this view." action=ViewFn::from(move || view! {
                                 <Button size=ButtonSize::Sm variant=ButtonVariant::Ghost on_click=Callback::new(move |_| {
@@ -545,12 +589,26 @@ fn OperationsContent() -> impl IntoView {
                                         <th><span class="sr-only">"Run"</span></th>
                                     </tr>
                                 </thead>
-                                {groups.into_iter().map(|(group, names)| view! {
-                                    <tbody>
-                                        <tr class="group-row"><th colspan="7" scope="colgroup">{group.label()} " " <span class="num off">{names.len()}</span></th></tr>
-                                        <For each=move || names.clone() key=|n| n.clone() children=row/>
-                                    </tbody>
-                                }).collect_view()}
+                                <For
+                                    each=move || groups.with(|g| g.iter().map(|(group, _)| *group).collect::<Vec<_>>())
+                                    key=|group| *group
+                                    children=move |group| {
+                                        let names = Memo::new(move |_| {
+                                            groups.with(|g| {
+                                                g.iter()
+                                                    .find(|(c, _)| *c == group)
+                                                    .map(|(_, names)| names.clone())
+                                                    .unwrap_or_default()
+                                            })
+                                        });
+                                        view! {
+                                            <tbody>
+                                                <tr class="group-row"><th colspan="7" scope="colgroup">{group.label()} " " <span class="num off">{move || names.with(Vec::len)}</span></th></tr>
+                                                <For each=move || names.get() key=|n| n.clone() children=row/>
+                                            </tbody>
+                                        }
+                                    }
+                                />
                             </table>
                         </div>
                     }
@@ -567,7 +625,7 @@ fn OperationsContent() -> impl IntoView {
                     </div>
                 </Panel>
             </div>
-            {move || selected_task.get().map(|task| view! {
+            {move || selected_name.get().and_then(|_| selected_task.get_untracked()).map(|task| view! {
                 <TaskInspector
                     task
                     runs=Signal::derive(move || inspect.with(|n| n.as_ref().and_then(|n| history.with(|h| h.get(n).cloned()))).unwrap_or_default())

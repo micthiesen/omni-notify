@@ -141,24 +141,6 @@ subscription is an explicit request.
   written, so a re-detected offline edge replays the same key.
 - Polling: `livestreams_list`, `livestream_get`.
 
-### `workspace.updated`
-
-Fires after a workspace run's output commits: one `action_pending` per action
-the run created, and one `reply_ready` for the run's assistant reply.
-
-- Arguments: `workspace` (optional exact workspace ID), `kind` (`any` default,
-  `action_pending`, `reply_ready`).
-- Payload: `workspaceId`, `subjectId`, `kind`, `actionId`, `actionType`,
-  `title` (the action title), `runId`.
-- Dedup keys: `<actionId>:pending`; `run:<runId>:reply`, or
-  `message:<messageId>:reply` for a run without an ID. A proposal identical to a
-  pending action is not created and publishes nothing, and a reprocessed run
-  keeps its reply key.
-- Source: `WorkspaceService::apply_output` in
-  `crates/omni-workspaces/src/engine.rs`, after the commit and before Pushover
-  delivery. A crash between them loses those events.
-- Polling: `workspace_actions_list`, `workspace_get`.
-
 ### `presspods.job_finished`
 
 Fires when the PressPods worker finishes a job: the episode was published, or
@@ -369,7 +351,7 @@ The parent must use the existing Executor connection to:
    source observation and confirm it does not create another event ID.
 5. Stop monitoring and confirm `events/unsubscribe` stops subsequent delivery.
 
-For the port-published events, after the Refresh in step 1 confirm all eight
+For the port-published events, after the Refresh in step 1 confirm all seven
 events are listed, then subscribe and observe one harmless delivery each:
 
 - `task.run_finished` with `{"task": "TaskRunEvents", "status": "any"}` fires
@@ -378,8 +360,6 @@ events are listed, then subscribe and observe one harmless delivery each:
   real go-live or offline edge.
 - `presspods.job_finished` fires after submitting a disposable article with
   `presspods_submit` (or on the next real job).
-- `workspace.updated` with `kind: reply_ready` fires after a harmless
-  `workspace_message`. Do not approve or reject any action to test it.
 - `calendar.event_changed` with `{}` fires within about a minute after editing
   a disposable `[omni-test]` event on a device; a tool-written change fires
   only with `origin: any`.

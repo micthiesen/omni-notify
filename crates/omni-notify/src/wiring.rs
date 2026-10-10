@@ -72,7 +72,7 @@ impl BodyEnricher for EmailBodyEnricher {
 }
 
 /// `EmailRetryHandlers`: the pipelines retry and reprocess can re-run
-/// (ParcelTracker, CalendarEvents, Workspaces; never McpEvents).
+/// (ParcelTracker, CalendarEvents; never McpEvents).
 pub struct RetryHandlers(HashMap<String, Arc<dyn EmailHandler>>);
 
 impl RetryHandlers {
@@ -99,8 +99,8 @@ const EMAIL_TASKS: &[&str] = &["EmailArchive", "EmailWatchdog", "EmailRetry"];
 pub struct Wired {
     /// Every subsystem in registration order; the MCP subsystem is last.
     pub subsystems: Vec<Subsystem>,
-    /// Ordered email handlers (McpEvents, ParcelTracker, CalendarEvents,
-    /// Workspaces) when a transport is configured.
+    /// Ordered email handlers (McpEvents, ParcelTracker, CalendarEvents)
+    /// when a transport is configured.
     pub email_handlers: Vec<Arc<dyn EmailHandler>>,
 }
 
@@ -126,15 +126,10 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     subsystems.push(ios.into_subsystem());
 
     subsystems.push(wire!("personal", omni_personal::subsystem(ctx).await));
-    subsystems.push(wire!("briefings", omni_briefings::subsystem(ctx)));
-    let _ = ports.set_briefings_reader(omni_briefings::briefings_reader(ctx.store.clone()));
     subsystems.push(wire!("presspods", omni_presspods::subsystem(ctx)));
     subsystems.push(wire!("media", omni_media::subsystem(ctx)));
     subsystems.push(omni_arr::subsystem(ctx));
     subsystems.push(wire!("podcasts", omni_podcasts::subsystem(ctx)));
-    let mut workspaces = wire!("workspaces", omni_workspaces::subsystem(ctx));
-    let workspace_handlers = take_handlers(&mut workspaces);
-    subsystems.push(workspaces);
     subsystems.push(wire!("reminders", omni_reminders::subsystem(ctx)));
 
     // Email: one shared triage for parcel and calendar.
@@ -153,7 +148,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     );
     let mut parcel = wire!("parcel", omni_parcel::subsystem(ctx, triage.clone()));
     let parcel_handlers = take_handlers(&mut parcel);
-    let _ = ports.set_calendar_writer(omni_calendar::calendar_writer(ctx));
+    let _ = ports.set_calendar_connection(omni_calendar::calendar_connection(ctx));
     let mut calendar = wire!(
         "calendar",
         omni_calendar::subsystem(ctx, omni_calendar::CalendarDeps::new(ctx, triage))
@@ -186,7 +181,6 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     let retry_handlers: Vec<Arc<dyn EmailHandler>> = parcel_handlers
         .iter()
         .chain(&calendar_handlers)
-        .chain(&workspace_handlers)
         .cloned()
         .collect();
     let mut email_handlers = Vec::new();
@@ -220,8 +214,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
 }
 
 /// Registration order: internal tasks, then the scheduled feature tasks, then
-/// the email tasks. Names not listed (briefings, whose names come from their
-/// files) sort right after `PetTracker`.
+/// the email tasks. Names not listed sort last.
 pub const TASK_ORDER: &[&str] = &[
     "McpEventDelivery",
     "ClaudeSessionEvents",
@@ -231,7 +224,6 @@ pub const TASK_ORDER: &[&str] = &[
     "CalendarStartingEvents",
     "LiveCheckTask",
     "PetTracker",
-    // briefings
     "PressPods",
     "Recommendations",
     "ArrRecovery",
@@ -240,9 +232,6 @@ pub const TASK_ORDER: &[&str] = &[
     "CastroInboxCleanup",
     "TasteReflection",
     "PodcastTasteReflection",
-    "PurchaseResearch",
-    "MarketplaceSelling",
-    "WorkspaceNotifications",
     "CodexResets",
     "ClaudeResets",
     "ParcelDeliveries",
@@ -269,14 +258,10 @@ pub fn runnable_from_cli(name: &str) -> bool {
 
 /// Sort rank for [`TASK_ORDER`].
 pub fn task_rank(name: &str) -> usize {
-    let briefings = TASK_ORDER
-        .iter()
-        .position(|n| *n == "PressPods")
-        .unwrap_or(TASK_ORDER.len());
     TASK_ORDER
         .iter()
         .position(|n| *n == name)
-        .map_or(briefings * 2 - 1, |i| i * 2)
+        .unwrap_or(TASK_ORDER.len())
 }
 
 #[cfg(test)]
@@ -284,24 +269,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn briefings_sort_between_pet_tracker_and_presspods() {
-        let mut names = vec![
-            "EmailRetry",
-            "PressPods",
-            "MorningBriefing",
-            "PetTracker",
-            "McpEventDelivery",
-        ];
+    fn unlisted_tasks_sort_last() {
+        let mut names = vec!["EmailRetry", "Unlisted", "PressPods", "McpEventDelivery"];
         names.sort_by_key(|n| task_rank(n));
         assert_eq!(
             names,
-            vec![
-                "McpEventDelivery",
-                "PetTracker",
-                "MorningBriefing",
-                "PressPods",
-                "EmailRetry"
-            ]
+            vec!["McpEventDelivery", "PressPods", "EmailRetry", "Unlisted"]
         );
     }
 

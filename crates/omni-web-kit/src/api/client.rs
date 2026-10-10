@@ -1,8 +1,8 @@
-//! Fetch client for GET, POST and DELETE.
+//! Fetch client for GET, POST, PATCH, PUT and DELETE.
 //!
 //! GETs ride out container restarts: network failures and 502/503/504 retry
 //! with exponential backoff from 500 ms capped at 8 s, at most 7 retries.
-//! POST and DELETE never retry. Application errors surface immediately.
+//! Mutations never retry. Application errors surface immediately.
 
 use std::fmt;
 use std::time::Duration;
@@ -132,6 +132,8 @@ pub fn decode_response<T: DeserializeOwned>(
 pub(crate) enum Method {
     Get,
     Post,
+    Patch,
+    Put,
     Delete,
 }
 
@@ -148,6 +150,8 @@ pub(crate) async fn send(
     let builder = match method {
         Method::Get => gloo_net::http::Request::get(path),
         Method::Post => gloo_net::http::Request::post(path),
+        Method::Patch => gloo_net::http::Request::patch(path),
+        Method::Put => gloo_net::http::Request::put(path),
         Method::Delete => gloo_net::http::Request::delete(path),
     };
     let request = match body {
@@ -208,6 +212,26 @@ pub async fn post<T: DeserializeOwned, B: Serialize>(
 ) -> Result<T, ApiClientError> {
     let body = encode_body(path, body)?;
     let response = send(Method::Post, path, body).await?;
+    decode_response(path, &response)
+}
+
+/// PATCHes a JSON body (never retried).
+pub async fn patch<T: DeserializeOwned, B: Serialize>(
+    path: &str,
+    body: Option<&B>,
+) -> Result<T, ApiClientError> {
+    let body = encode_body(path, body)?;
+    let response = send(Method::Patch, path, body).await?;
+    decode_response(path, &response)
+}
+
+/// PUTs a JSON body (never retried).
+pub async fn put<T: DeserializeOwned, B: Serialize>(
+    path: &str,
+    body: Option<&B>,
+) -> Result<T, ApiClientError> {
+    let body = encode_body(path, body)?;
+    let response = send(Method::Put, path, body).await?;
     decode_response(path, &response)
 }
 

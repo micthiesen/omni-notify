@@ -1,4 +1,5 @@
-//! Generated research rendered as safe HTML.
+//! Generated Markdown (Claude Code transcripts and results) rendered as
+//! safe HTML.
 //!
 //! Mirrors `react-markdown` + `remark-gfm` with `skipHtml`: raw HTML is
 //! dropped, text is escaped, link and image URLs pass `defaultUrlTransform`
@@ -65,7 +66,7 @@ fn align_attr(alignment: Option<&Alignment>) -> &'static str {
     }
 }
 
-/// Renders `content` to the HTML `WorkspaceMarkdown` mounts.
+/// Renders `content` to the HTML `Markdown` mounts.
 pub fn render_markdown_html(content: &str) -> String {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
@@ -133,8 +134,8 @@ pub fn render_markdown_html(content: &str) -> String {
                 Tag::Table(aligns) => {
                     alignments = aligns;
                     out.push_str(
-                        "<div class=\"workspace-markdown-table\" role=\"region\" \
-                         aria-label=\"Research table\" tabindex=\"0\"><table>",
+                        "<div class=\"markdown-table\" role=\"region\" \
+                         aria-label=\"Table\" tabindex=\"0\"><table>",
                     );
                 }
                 Tag::TableHead => {
@@ -261,11 +262,11 @@ pub fn render_markdown_html(content: &str) -> String {
     out
 }
 
-/// Research markdown inside `.workspace-markdown`.
+/// Markdown inside `.prose.markdown`.
 #[component]
-pub fn WorkspaceMarkdown(#[prop(into)] content: Signal<String>) -> impl IntoView {
+pub fn Markdown(#[prop(into)] content: Signal<String>) -> impl IntoView {
     let html = Memo::new(move |_| render_markdown_html(&content.get()));
-    view! { <div class="prose workspace-markdown" inner_html=move || html.get()></div> }
+    view! { <div class="prose markdown" inner_html=move || html.get()></div> }
 }
 
 #[cfg(test)]
@@ -273,7 +274,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renders_research_comparisons_as_headings_lists_and_semantic_gfm_tables() {
+    fn renders_headings_lists_and_semantic_gfm_tables() {
         let html = render_markdown_html(
             "# Shortlist\n\nA **durable** choice for daily use.\n\n- Replaceable battery\n- Two-year warranty\n\n| Model | Price |\n| --- | --- |\n| Example | $20 |\n\n[Manufacturer](https://example.com/product)\n",
         );
@@ -288,12 +289,12 @@ mod tests {
     }
 
     #[test]
-    fn does_not_execute_raw_html_embedded_in_generated_research() {
+    fn does_not_execute_raw_html_embedded_in_generated_text() {
         let html = render_markdown_html(
-            "Useful research.\n\n<script>alert(document.cookie)</script>\n\n<img src=x onerror=\"alert(1)\">\n\n<iframe src=\"https://example.com\"></iframe>\n\nStill useful research.",
+            "Useful text.\n\n<script>alert(document.cookie)</script>\n\n<img src=x onerror=\"alert(1)\">\n\n<iframe src=\"https://example.com\"></iframe>\n\nStill useful text.",
         );
-        assert!(html.contains("Useful research."));
-        assert!(html.contains("Still useful research."));
+        assert!(html.contains("Useful text."));
+        assert!(html.contains("Still useful text."));
         assert!(!html.contains("<script"));
         assert!(!html.contains("<img"));
         assert!(!html.contains("<iframe"));
@@ -308,8 +309,8 @@ mod tests {
             "data:text/html;base64,PHNjcmlwdD4=",
             "vbscript:msgbox%281%29",
         ] {
-            let html = render_markdown_html(&format!("[Research source]({destination})"));
-            assert!(html.contains("Research source"), "{destination}");
+            let html = render_markdown_html(&format!("[Source]({destination})"));
+            assert!(html.contains("Source"), "{destination}");
             assert!(!html.contains("href="), "{destination}");
             assert!(!html.contains(destination), "{destination}");
         }

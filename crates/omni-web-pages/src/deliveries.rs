@@ -421,64 +421,58 @@ pub fn DeliveriesPage() -> impl IntoView {
             .with(|d| d.as_ref().map(|d| deliveries_sentence(d, today.get())))
     });
 
-    move || {
-        let Some(res) = parcels.data.get() else {
-            return match parcels.error.get() {
-                Some(e) => view! {
-                    <ErrorState
-                        title="Deliveries could not load"
-                        raw=e
-                        retry=Callback::new(move |()| parcels.reload())
-                        page=true
-                    />
-                }
-                .into_any(),
-                None => view! {
-                    <div class="stack-lg" aria-busy="true">
-                        <PageHead title="Deliveries"/>
-                        <SkeletonRows count=4/>
-                    </div>
-                }
-                .into_any(),
-            };
-        };
-        let (head, lede) = sentence.get().unwrap_or_default();
+    // Gate on the page's shape and narrow each part to what it shows: a
+    // reload that only moves the read timestamps must not rebuild the lists
+    // (and close every opened tracking history).
+    let state = Memo::new(
+        move |_| match parcels.data.with(|d| d.as_ref().map(|r| r.configured)) {
+            Some(true) => PageState::Loaded,
+            Some(false) => PageState::Unconfigured,
+            None => match parcels.error.get() {
+                Some(e) => PageState::Error(e),
+                None => PageState::Loading,
+            },
+        },
+    );
+    let fresh = Memo::new(move |_| {
+        parcels
+            .data
+            .with(|d| d.as_ref().map(|r| freshness(r, now.get_untracked())))
+    });
+    let deliveries = Memo::new(move |_| {
+        parcels
+            .data
+            .with(|d| d.as_ref().map(|r| r.deliveries.clone()).unwrap_or_default())
+    });
+    let head = Signal::derive(move || sentence.get().unwrap_or_default().0);
+    let lede = Signal::derive(move || sentence.get().map(|(_, lede)| lede));
+
+    let notice = move || {
+        match fresh.get()? {
+        Freshness::Backoff { until, .. } => Some(view! {
+            <ErrorState
+                warn=true
+                title="Parcel is rate limiting Omni"
+                detail=format!("No reads until {}. The list below is the last good read.", format_absolute(until))
+            />
+        }.into_any()),
+        Freshness::Failed { message, .. } => Some(view! {
+            <ErrorState
+                warn=true
+                title="The last Parcel read failed"
+                detail="The list below is the last good read; the next scheduled read retries."
+                raw=message
+                link=("Operations".to_owned(), format!("/operations#inspect={PARCEL_TASK}"))
+            />
+        }.into_any()),
+        _ => None,
+    }
+    };
+
+    let lists = move || {
         let today = today.get();
-        let fresh = freshness(&res, now.get_untracked());
-        let notice = match &fresh {
-            Freshness::Backoff { until, .. } => Some(view! {
-                <ErrorState
-                    warn=true
-                    title="Parcel is rate limiting Omni"
-                    detail=format!("No reads until {}. The list below is the last good read.", format_absolute(*until))
-                />
-            }.into_any()),
-            Freshness::Failed { message, .. } => Some(view! {
-                <ErrorState
-                    warn=true
-                    title="The last Parcel read failed"
-                    detail="The list below is the last good read; the next scheduled read retries."
-                    raw=message.clone()
-                    link=("Operations".to_owned(), format!("/operations#inspect={PARCEL_TASK}"))
-                />
-            }.into_any()),
-            _ => None,
-        };
-        if fresh == Freshness::Unconfigured {
-            return view! {
-                <PageHead title="Deliveries"/>
-                <Panel>
-                    <EmptyState
-                        icon=Icon::Package
-                        title="Delivery tracking is off"
-                        message="Set PARCEL_API_KEY on the server. Tracking numbers found in email are then followed here."
-                    />
-                </Panel>
-            }
-            .into_any();
-        }
         let (active, delivered): (Vec<ParcelDelivery>, Vec<ParcelDelivery>) =
-            res.deliveries.into_iter().partition(|d| d.active);
+            deliveries.get().into_iter().partition(|d| d.active);
         let mark = |list: Vec<ParcelDelivery>| -> Vec<(ParcelDelivery, bool)> {
             list.into_iter()
                 .map(|d| {
@@ -492,8 +486,6 @@ pub fn DeliveriesPage() -> impl IntoView {
         let open_history = delivered.iter().any(|(_, hit)| *hit);
         let delivered_count = delivered.len();
         view! {
-            <PageHead title=head lede=lede sentence=true/>
-            {notice}
             <div class="stack-lg">
                 <Panel
                     title=format!("On the way · {}", active.len())
@@ -530,8 +522,54 @@ pub fn DeliveriesPage() -> impl IntoView {
                 })}
             </div>
         }
-        .into_any()
+    };
+
+    move || {
+        match state.get() {
+        PageState::Error(e) => view! {
+            <ErrorState
+                title="Deliveries could not load"
+                raw=e
+                retry=Callback::new(move |()| parcels.reload())
+                page=true
+            />
+        }
+        .into_any(),
+        PageState::Loading => view! {
+            <div class="stack-lg" aria-busy="true">
+                <PageHead title="Deliveries"/>
+                <SkeletonRows count=4/>
+            </div>
+        }
+        .into_any(),
+        PageState::Unconfigured => view! {
+            <PageHead title="Deliveries"/>
+            <Panel>
+                <EmptyState
+                    icon=Icon::Package
+                    title="Delivery tracking is off"
+                    message="Set PARCEL_API_KEY on the server. Tracking numbers found in email are then followed here."
+                />
+            </Panel>
+        }
+        .into_any(),
+        PageState::Loaded => view! {
+            <PageHead title=head lede=lede sentence=true/>
+            {notice}
+            {lists.clone()}
+        }
+        .into_any(),
     }
+    }
+}
+
+/// What the deliveries page shows.
+#[derive(Clone, Debug, PartialEq)]
+enum PageState {
+    Error(String),
+    Loading,
+    Unconfigured,
+    Loaded,
 }
 
 /// Active deliveries ordered for a glance: needs-you first, then out for

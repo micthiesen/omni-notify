@@ -448,64 +448,94 @@ pub fn CalendarPage() -> impl IntoView {
         })
     });
     let status = cal.status;
+    // Gate on the page's shape only; the parts below track the clock and the
+    // status reloads themselves, so neither rebuilds the page.
+    let state = Memo::new(
+        move |_| match status.data.with(|s| s.as_ref().map(|s| s.configured)) {
+            Some(true) => CalendarPageState::Loaded,
+            Some(false) => CalendarPageState::Unconfigured,
+            None => match status.error.get() {
+                Some(e) => CalendarPageState::Error(e),
+                None => CalendarPageState::Loading,
+            },
+        },
+    );
+    let health = Memo::new(move |_| {
+        status.data.with(|s| {
+            s.as_ref()
+                .map(|s| (sync_health(s, cal.now.get()), s.calendar_name.clone()))
+        })
+    });
+    let sentence = Memo::new(move |_| {
+        days.with(|d| {
+            d.as_ref()
+                .map(|d| agenda_sentence(d, cal.today.get(), cal.now.get()))
+        })
+        .unwrap_or_else(|| ("Calendar".to_owned(), String::new()))
+    });
+    let head = Signal::derive(move || sentence.get().0);
+    let lede = Signal::derive(move || Some(sentence.get().1));
 
     move || {
-        let Some(s) = status.data.get() else {
-            return match status.error.get() {
-                Some(e) => view! {
+        match state.get() {
+            CalendarPageState::Error(e) => {
+                return view! {
                     <ErrorState title="The calendar could not load" raw=e retry=Callback::new(move |()| status.reload()) page=true/>
                 }
-                .into_any(),
-                None => view! {
+                .into_any();
+            }
+            CalendarPageState::Loading => {
+                return view! {
                     <div class="stack-lg" aria-busy="true">
                         <PageHead title="Calendar"/>
                         <SkeletonRows count=5/>
                     </div>
                 }
-                .into_any(),
-            };
-        };
-        let now = cal.now.get();
-        let today = cal.today.get();
-        let (kind, label, message) = sync_health(&s, now);
-        if !s.configured {
-            return view! {
-                <PageHead title="Calendar"/>
-                <Panel>
-                    <EmptyState
-                        icon=Icon::Calendar
-                        title="The calendar isn't connected"
-                        message="No iCloud CalDAV credentials are configured on the server. Once they are, the primary calendar's next eight days show here."
-                    />
-                </Panel>
+                .into_any();
             }
-            .into_any();
+            CalendarPageState::Unconfigured => {
+                return view! {
+                    <PageHead title="Calendar"/>
+                    <Panel>
+                        <EmptyState
+                            icon=Icon::Calendar
+                            title="The calendar isn't connected"
+                            message="No iCloud CalDAV credentials are configured on the server. Once they are, the primary calendar's next eight days show here."
+                        />
+                    </Panel>
+                }
+                .into_any();
+            }
+            CalendarPageState::Loaded => {}
         }
-        let (head, lede) = days
-            .get()
-            .map(|d| agenda_sentence(&d, today, now))
-            .unwrap_or_else(|| ("Calendar".to_owned(), String::new()));
-        let sync_line = view! {
-            <p class="page-status">
-                <Status kind label=label.clone()/>
-                <span class="small muted">{format!("{} · read-only", s.calendar_name)}</span>
-            </p>
+        let sync_line = move || {
+            health.get().map(|((kind, label, _), name)| {
+                view! {
+                    <p class="page-status">
+                        <Status kind label=label/>
+                        <span class="small muted">{format!("{name} · read-only")}</span>
+                    </p>
+                }
+            })
         };
-        let problem = matches!(
-            kind,
-            StatusKind::Fault | StatusKind::Stale | StatusKind::Warn
-        )
-        .then(|| {
-            view! {
-                <ErrorState
-                    warn=kind != StatusKind::Fault
-                    title=format!("{label}: the agenda may be out of date")
-                    detail="It shows the last mirrored copy of the calendar."
-                    raw=message.clone().unwrap_or_default()
-                    link=("Operations".to_owned(), format!("/operations#inspect={CALENDAR_TASK}"))
-                />
-            }
-        });
+        let problem = move || {
+            let ((kind, label, message), _) = health.get()?;
+            matches!(
+                kind,
+                StatusKind::Fault | StatusKind::Stale | StatusKind::Warn
+            )
+            .then(|| {
+                view! {
+                    <ErrorState
+                        warn=kind != StatusKind::Fault
+                        title=format!("{label}: the agenda may be out of date")
+                        detail="It shows the last mirrored copy of the calendar."
+                        raw=message.unwrap_or_default()
+                        link=("Operations".to_owned(), format!("/operations#inspect={CALENDAR_TASK}"))
+                    />
+                }
+            })
+        };
         let hl = highlighted.clone();
         view! {
             <PageHead title=head lede=lede sentence=true>
@@ -561,6 +591,15 @@ pub fn CalendarPage() -> impl IntoView {
         }
         .into_any()
     }
+}
+
+/// What the calendar page shows.
+#[derive(Clone, Debug, PartialEq)]
+enum CalendarPageState {
+    Error(String),
+    Loading,
+    Unconfigured,
+    Loaded,
 }
 
 /// Home: today and the next days at a glance (at most six lines). Renders

@@ -18,8 +18,7 @@ use omni_api::events::{
     CALENDAR_EVENT_CHANGED, CALENDAR_EVENT_STARTING, CalendarChangeKind, CalendarChangeOrigin,
     CalendarEventChanged, CalendarEventStarting, CalendarStartTrigger, LIVESTREAM_STATUS_CHANGED,
     LivestreamStatusChanged, LivestreamTransition, PRESSPODS_JOB_FINISHED, PresspodsJobFinished,
-    PresspodsOutcome, TASK_RUN_FINISHED, TaskRunFinished, TaskRunOutcome, WORKSPACE_UPDATED,
-    WorkspaceUpdateKind, WorkspaceUpdated,
+    PresspodsOutcome, TASK_RUN_FINISHED, TaskRunFinished, TaskRunOutcome,
 };
 use omni_core::clock::{Clock as _, TestClock};
 use omni_mcp::events::catalog::event_definition;
@@ -165,20 +164,6 @@ async fn deliveries(store: &Store) -> Vec<EventDelivery> {
 fn every_payload_dto_matches_its_catalog_schema() {
     let samples = [
         live_event("a", omni_api::streamers::StreamerTier::Primary),
-        EventPublication {
-            name: WORKSPACE_UPDATED,
-            dedup_key: "w".to_owned(),
-            occurred_at_ms: 0,
-            data: object(WorkspaceUpdated {
-                workspace_id: "purchase-research".to_owned(),
-                subject_id: None,
-                kind: WorkspaceUpdateKind::ReplyReady,
-                action_id: None,
-                action_type: None,
-                title: None,
-                run_id: Some("PurchaseResearch:1".to_owned()),
-            }),
-        },
         EventPublication {
             name: PRESSPODS_JOB_FINISHED,
             dedup_key: "p".to_owned(),
@@ -338,7 +323,7 @@ async fn publishes_to_matching_subscriptions_once_per_dedup_key() {
     assert_eq!(arguments.len(), 2);
     assert!(arguments.iter().all(|a| a["transition"] == "any"));
     assert!(
-        port.active_arguments(WORKSPACE_UPDATED)
+        port.active_arguments(PRESSPODS_JOB_FINISHED)
             .await
             .unwrap()
             .is_empty()

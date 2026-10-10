@@ -1,6 +1,5 @@
 //! iCalendar bodies with recurrence. Every caller passes an explicit
-//! deterministic UID (pipeline `omni-<sha256>`, MCP `mcp-<sha256>`, workspaces
-//! `workspace-<actionId>`).
+//! deterministic UID (pipeline `omni-<sha256>`, MCP `mcp-<sha256>`).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use omni_calendar::caldav::ics::build_icalendar;

@@ -104,11 +104,9 @@ pub struct RecordedPush {
 }
 
 /// Every channel, for building token tables.
-const CHANNELS: [PushoverChannel; 8] = [
+const CHANNELS: [PushoverChannel; 6] = [
     PushoverChannel::General,
     PushoverChannel::Live,
-    PushoverChannel::Briefing,
-    PushoverChannel::Workspace,
     PushoverChannel::Calendar,
     PushoverChannel::Recs,
     PushoverChannel::Podcast,

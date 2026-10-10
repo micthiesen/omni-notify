@@ -1,17 +1,24 @@
-//! Livestream monitoring: `channels.json`, aggregate streamer state
-//! over platform bindings, edge notifications, viewer metrics and sessions,
+//! Livestream monitoring: the tracked-streamer configuration (stored in the
+//! docstore, edited through the UI and MCP), aggregate streamer state over
+//! platform bindings, edge notifications, viewer metrics and sessions,
 //! Destiny.gg discovery with durable profile identity links, the
 //! `LiveCheckTask`, the streamer routes and the `LiveDirectory` port.
 //!
 //! App wiring:
 //! ```text
-//! let live = omni_live::LiveModule::load(&ctx)?;              // fails boot on a bad channels.json
+//! let live = omni_live::LiveModule::load(&ctx)?;
 //! let ios = omni_ios_controls::IosControls::new(&ctx, live.roster()).await;
 //! let live_subsystem = live.into_subsystem(Some(ios.reconciler()))?;   // sets ports.live_directory
 //! let ios_subsystem = ios.into_subsystem();
 //! ```
+//!
+//! A `Migrate` boot step loads the configuration (importing `channels.json`
+//! once on the first boot); a stored configuration that cannot be read fails
+//! boot.
 
 pub mod channels;
+pub mod config;
+pub mod config_routes;
 pub mod dgg;
 pub mod directory;
 pub mod display;
@@ -20,6 +27,7 @@ pub mod error;
 pub mod events;
 pub mod format;
 pub mod identity;
+pub mod mcp;
 pub mod metrics;
 pub mod notification_policy;
 pub mod notify;
@@ -40,10 +48,11 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use jiff::tz::TimeZone;
-use omni_runtime::{AppContext, ManagedEntity, Subsystem};
+use omni_runtime::{AppContext, BootError, BootPhase, BootStep, ManagedEntity, Subsystem};
 use omni_store::entity::EntityDescriptor;
 
 pub use channels::{ChannelsConfigError, LiveCheckConfig};
+pub use config::{ConfigError, StreamerConfigService, TopEmbeds};
 pub use directory::LiveDirectoryService;
 pub use error::LiveError;
 pub use platform::{Platform, PlatformBinding};
@@ -73,11 +82,15 @@ pub enum LiveBootError {
     TimeZone { tz: String, message: String },
     #[error("invalid LiveCheckTask schedule: {0}")]
     Schedule(String),
+    #[error(transparent)]
+    Tools(#[from] omni_mcp_kit::ToolMetaError),
 }
 
 /// Every entity this crate owns (for `migrate_all` and the compat audit).
 pub fn entities() -> Vec<EntityDescriptor> {
     vec![
+        EntityDescriptor::of::<config::StreamerConfigRow>(),
+        EntityDescriptor::of::<config::LiveSettingsRow>(),
         EntityDescriptor::of::<StreamerStatus>(),
         EntityDescriptor::of::<StreamSessions>(),
         EntityDescriptor::of::<ViewerMetrics>(),
@@ -142,32 +155,43 @@ pub fn managed_entities() -> Vec<ManagedEntity> {
     ]
 }
 
-/// The loaded live configuration, before the subsystem is assembled.
+/// The live subsystem before it is assembled.
 pub struct LiveModule {
     ctx: AppContext,
     roster: Roster,
-    dgg_top_embeds: u32,
+    configured: Roster,
+    top_embeds: TopEmbeds,
     tz: TimeZone,
     kick: Option<KickCredentials>,
+    service: StreamerConfigService,
+    /// Streamers were given directly (tests); no boot step loads them.
+    preloaded: bool,
 }
 
 impl LiveModule {
-    /// Loads `CHANNELS_CONFIG_PATH` (default `./channels.json`). Any invalid
-    /// configuration fails boot; a missing file means no streamers.
+    /// The production module: streamers load from the docstore in a
+    /// `Migrate` boot step, after `migrate_all`.
     pub fn load(ctx: &AppContext) -> Result<Self, LiveBootError> {
-        let path = channels::config_path(ctx.config.channels_config_path.as_deref());
-        let config = channels::load_channels_config(&path)?;
-        Self::from_config(ctx, config)
+        Self::build(ctx, Vec::new(), 0, false)
     }
 
-    /// Builds streamers from an already-parsed configuration. Kick bindings
-    /// are dropped when Kick credentials are missing.
+    /// An in-memory configuration (tests). Kick bindings are dropped when Kick
+    /// credentials are missing.
     pub fn from_config(ctx: &AppContext, config: LiveCheckConfig) -> Result<Self, LiveBootError> {
+        let configured = streamers::build_streamers(&config.channels)?;
+        Self::build(ctx, configured, config.dgg_top_embeds, true)
+    }
+
+    fn build(
+        ctx: &AppContext,
+        configured: Vec<Streamer>,
+        dgg_top_embeds: u32,
+        preloaded: bool,
+    ) -> Result<Self, LiveBootError> {
         let tz = TimeZone::get(&ctx.config.tz).map_err(|e| LiveBootError::TimeZone {
             tz: ctx.config.tz.clone(),
             message: e.to_string(),
         })?;
-        let configured = streamers::build_streamers(&config.channels)?;
         let kick = match (&ctx.config.kick_client_id, &ctx.config.kick_client_secret) {
             (Some(id), Some(secret)) if !id.is_empty() && !secret.is_empty() => {
                 Some(KickCredentials {
@@ -180,34 +204,29 @@ impl LiveModule {
         let streamers = if kick.is_some() {
             configured
         } else {
-            let all_ids: Vec<(String, String)> = configured
-                .iter()
-                .map(|s| (s.id.clone(), s.display_name.clone()))
-                .collect();
-            let (remaining, dropped_any) =
-                streamers::drop_platform_bindings(configured, Platform::Kick);
-            if dropped_any {
-                tracing::warn!(
-                    target: LOG,
-                    "Kick channels configured but KICK_CLIENT_ID/KICK_CLIENT_SECRET missing; skipping Kick"
-                );
-                let fully_dropped: Vec<String> = all_ids
-                    .into_iter()
-                    .filter(|(id, _)| !remaining.iter().any(|s| &s.id == id))
-                    .map(|(_, name)| name)
-                    .collect();
-                if !fully_dropped.is_empty() {
-                    tracing::warn!(target: LOG, "Not tracked at all (Kick-only): {}", fully_dropped.join(", "));
-                }
-            }
-            remaining
+            streamers::drop_platform_bindings(configured, Platform::Kick).0
         };
+        let roster = Roster::new(streamers.clone());
+        let configured = Roster::new(streamers);
+        let top_embeds = TopEmbeds::new(dgg_top_embeds);
+        let service = StreamerConfigService::new(
+            ctx.store.clone(),
+            ctx.clock.clone(),
+            Some(ctx.bus.clone()),
+            configured.clone(),
+            roster.clone(),
+            top_embeds.clone(),
+            kick.is_some(),
+        );
         Ok(Self {
             ctx: ctx.clone(),
-            roster: Roster::new(streamers),
-            dgg_top_embeds: config.dgg_top_embeds,
+            roster,
+            configured,
+            top_embeds,
             tz,
             kick,
+            service,
+            preloaded,
         })
     }
 
@@ -218,6 +237,11 @@ impl LiveModule {
 
     pub fn time_zone(&self) -> &TimeZone {
         &self.tz
+    }
+
+    /// Reads and edits the tracked-streamer configuration.
+    pub fn config_service(&self) -> StreamerConfigService {
+        self.service.clone()
     }
 
     pub fn directory(&self) -> Arc<LiveDirectoryService> {
@@ -246,29 +270,26 @@ impl LiveModule {
                 .map(str::to_owned),
             bus: Some(ctx.bus.clone()),
         };
-        let mut check = LiveCheck::new(self.roster.clone(), deps)
-            .with_intelligence(Arc::new(PortIntelligence::new(ctx.ports.clone())))
-            .with_events(ctx.ports.clone());
-        if self.dgg_top_embeds > 0 {
-            let learner = ProfileIdentityLearner::new(
-                ctx.store.clone(),
-                ProfileFetcher::new(ctx.http.clone()),
-            );
-            check = check.with_dgg(DggDiscovery {
-                top_embeds: self.dgg_top_embeds as usize,
-                available_platforms: Platform::ALL.into_iter().collect::<HashSet<_>>(),
-                feed: Arc::new(WebSocketDggFeed::default()),
-                identity: Arc::new(learner),
-            });
-        }
+        let learner =
+            ProfileIdentityLearner::new(ctx.store.clone(), ProfileFetcher::new(ctx.http.clone()));
+        let mut check =
+            LiveCheck::with_configured(self.roster.clone(), self.configured.clone(), deps)
+                .with_intelligence(Arc::new(PortIntelligence::new(ctx.ports.clone())))
+                .with_events(ctx.ports.clone())
+                .with_dgg(DggDiscovery {
+                    top_embeds: self.top_embeds.clone(),
+                    available_platforms: Platform::ALL.into_iter().collect::<HashSet<_>>(),
+                    feed: Arc::new(WebSocketDggFeed::default()),
+                    identity: Arc::new(learner),
+                });
         if let Some(hook) = reconcile {
             check = check.with_reconcile(hook);
         }
         check
     }
 
-    /// Routes, the `LiveCheckTask` (when anything is tracked), entities, and
-    /// the `LiveDirectory` port.
+    /// Routes, the `LiveCheckTask`, the configuration boot step and MCP
+    /// tools, entities, and the `LiveDirectory` port.
     pub fn into_subsystem(
         self,
         reconcile: Option<Arc<dyn TickHook>>,
@@ -277,16 +298,33 @@ impl LiveModule {
             tracing::warn!(target: LOG, "LiveDirectory port was already set; keeping the existing one");
         }
         let mut subsystem = Subsystem::named("live");
-        if !self.roster.is_empty() || self.dgg_top_embeds > 0 {
-            let check = Arc::new(self.live_check(reconcile));
-            let task = LiveCheckTask::new(check, &self.tz)
-                .map_err(|e| LiveBootError::Schedule(e.to_string()))?;
-            subsystem.tasks.push(Arc::new(task));
+        let check = Arc::new(self.live_check(reconcile));
+        let task = LiveCheckTask::new(check, &self.tz)
+            .map_err(|e| LiveBootError::Schedule(e.to_string()))?;
+        subsystem.tasks.push(Arc::new(task));
+        if !self.preloaded {
+            let service = self.service.clone();
+            subsystem.boot_steps.push(BootStep {
+                phase: BootPhase::Migrate,
+                name: "live-streamer-config",
+                run: Box::new(move |ctx: AppContext| {
+                    Box::pin(async move {
+                        let path =
+                            channels::config_path(ctx.config.channels_config_path.as_deref());
+                        service
+                            .boot(&path)
+                            .await
+                            .map_err(|e| BootError::new("live-streamer-config", e.to_string()))
+                    })
+                }),
+            });
         }
         subsystem.router = routes::router(routes::LiveRoutesState {
             store: self.ctx.store.clone(),
             roster: self.roster.clone(),
-        });
+        })
+        .merge(config_routes::router(self.service.clone()));
+        subsystem.mcp_tools = mcp::tools(&self.service)?;
         subsystem.entities = entities();
         subsystem.managed_entities = managed_entities();
         Ok(subsystem)

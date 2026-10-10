@@ -8,7 +8,7 @@ use omni_api::streamers::{LivestreamDetails, LivestreamSummary, StreamerView};
 use omni_live::channels::parse_channels_config;
 use omni_live::sessions::{StreamSession, StreamSessions};
 use omni_live::status::{LiveSource, LiveStatus, OfflineStatus, StreamerStatus, upsert_status};
-use omni_live::{LiveModule, Platform, PlatformBinding};
+use omni_live::{LiveModule, Platform, PlatformBinding, Roster, StreamerConfigService};
 use omni_runtime::ports::LiveDirectory;
 use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::{EntityWrite, UpsertOpts};
@@ -248,7 +248,7 @@ async fn implements_the_live_directory_port() {
 }
 
 #[tokio::test]
-async fn registers_the_task_only_when_something_is_tracked_and_drops_kick_without_credentials() {
+async fn registers_the_task_and_drops_kick_without_credentials() {
     let app = omni_testkit::TestApp::new().await;
     let module =
         LiveModule::from_config(&app.ctx, parse_channels_config(CHANNELS).unwrap()).unwrap();
@@ -267,20 +267,34 @@ async fn registers_the_task_only_when_something_is_tracked_and_drops_kick_withou
         std::time::Duration::from_secs(3)
     );
     assert!(subsystem.tasks[0].options().run_on_startup);
-    assert_eq!(subsystem.entities.len(), 5);
+    assert_eq!(subsystem.entities.len(), 7);
+    assert_eq!(subsystem.mcp_tools.len(), 6);
+    // An in-memory configuration has no boot step.
+    assert!(subsystem.boot_steps.is_empty());
 
-    let empty = LiveModule::from_config(&app.ctx, parse_channels_config("{}").unwrap()).unwrap();
-    assert!(empty.into_subsystem(None).unwrap().tasks.is_empty());
-    let dgg_only = LiveModule::from_config(
-        &app.ctx,
-        parse_channels_config(r#"{"dggTopEmbeds": 2}"#).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(dgg_only.into_subsystem(None).unwrap().tasks.len(), 1);
+    // Streamers can be added at runtime, so the task always runs.
+    let empty = LiveModule::load(&app.ctx)
+        .unwrap()
+        .into_subsystem(None)
+        .unwrap();
+    assert_eq!(empty.tasks.len(), 1);
+    assert_eq!(empty.boot_steps.len(), 1);
+}
+
+/// Runs the production boot step; returns the roster and config service.
+async fn boot(app: &omni_testkit::TestApp) -> Result<(Roster, StreamerConfigService), String> {
+    let module = LiveModule::load(&app.ctx).unwrap();
+    let (roster, service) = (module.roster(), module.config_service());
+    let mut subsystem = module.into_subsystem(None).unwrap();
+    let step = subsystem.boot_steps.remove(0);
+    (step.run)(app.ctx.clone())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok((roster, service))
 }
 
 #[tokio::test]
-async fn loads_channels_json_from_the_configured_path_and_fails_boot_when_invalid() {
+async fn imports_channels_json_once_and_fails_boot_when_it_is_invalid() {
     let mut app = omni_testkit::TestApp::new().await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("channels.json");
@@ -291,16 +305,32 @@ async fn loads_channels_json_from_the_configured_path_and_fails_boot_when_invali
     let mut config = (*app.ctx.config).clone();
     config.channels_config_path = Some(path.display().to_string());
     app.ctx.config = std::sync::Arc::new(config);
-    let error = LiveModule::load(&app.ctx)
-        .err()
-        .expect("invalid config fails boot");
-    assert!(
-        error.to_string().contains("Invalid channels config"),
-        "{error}"
+    let error = boot(&app).await.err().expect("invalid config fails boot");
+    assert!(error.contains("Invalid channels config"), "{error}");
+
+    std::fs::write(
+        &path,
+        br#"{"Destiny": {"youtube": "@destiny", "pushoverToken": "abc123"}, "Jerma": {"twitch": "jerma985", "tier": "background"}, "dggTopEmbeds": 2}"#,
+    )
+    .unwrap();
+    let (roster, service) = boot(&app).await.unwrap();
+    let listed = service.list().await.unwrap();
+    let names: Vec<&str> = listed
+        .streamers
+        .iter()
+        .map(|s| s.display_name.as_str())
+        .collect();
+    assert_eq!(names, ["Destiny", "Jerma"]);
+    assert!(listed.streamers[0].has_pushover_token);
+    assert_eq!(listed.settings.dgg_top_embeds, 2);
+    assert_eq!(roster.len(), 2);
+    assert_eq!(
+        roster.get("destiny").unwrap().pushover_token.as_deref(),
+        Some("abc123")
     );
 
-    std::fs::write(&path, br#"{"Destiny": {"youtube": "@destiny"}}"#).unwrap();
-    assert_eq!(LiveModule::load(&app.ctx).unwrap().roster().len(), 1);
-    std::fs::remove_file(&path).unwrap();
-    assert!(LiveModule::load(&app.ctx).unwrap().roster().is_empty());
+    // Later boots never read the file again.
+    std::fs::write(&path, br#"{"Hutch": {"youtube": "@hutch"}}"#).unwrap();
+    let (_, service) = boot(&app).await.unwrap();
+    assert_eq!(service.list().await.unwrap().streamers.len(), 2);
 }

@@ -70,7 +70,7 @@ impl CaldavSettings {
     }
 }
 
-/// CalDAV access for the pipeline, MCP tools and the `CalendarWriter` port.
+/// CalDAV access for the pipeline, MCP tools and the `CalendarConnection` port.
 #[derive(Clone)]
 pub struct Caldav {
     http: HttpClient,

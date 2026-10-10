@@ -46,6 +46,9 @@ pub fn Segmented<T>(
 where
     T: Clone + PartialEq + Send + Sync + 'static,
 {
+    // Options are often derived from refreshed data; memoize so equal
+    // options do not recreate the buttons (and drop keyboard focus).
+    let options = Memo::new(move |_| options.get());
     let buttons = move || {
         options
             .get()

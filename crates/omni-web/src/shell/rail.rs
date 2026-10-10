@@ -8,7 +8,6 @@ use omni_web_kit::components::streamers::{
     platform_label, preferred_watch, streamer_path, viewer_number,
 };
 use omni_web_kit::components::{Glyph, Icon, IconSize, TickNum};
-use omni_web_kit::feeds::use_workspace_feed;
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::Link;
 use omni_web_kit::utils::js::locale_number;
@@ -18,22 +17,9 @@ use super::ShellContext;
 use super::connection::Connection;
 use super::nav::{Group, LIVE_HREF, NAV, NavItem};
 
-const GROUPS: [Group; 5] = [
-    Group::Watch,
-    Group::Listen,
-    Group::Research,
-    Group::Personal,
-    Group::System,
-];
+const GROUPS: [Group; 4] = [Group::Watch, Group::Listen, Group::Personal, Group::System];
 
 const MAX_RAIL_STREAMS: usize = 3;
-
-/// Count badge text for a rail item.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BadgeTone {
-    Plain,
-    Fault,
-}
 
 /// `path` is the streamer page `href` or one of its subpages.
 fn on_streamer(path: &str, href: &str) -> bool {
@@ -47,7 +33,9 @@ fn on_streamer(path: &str, href: &str) -> bool {
 fn RailItem(
     item: NavItem,
     current: Signal<Option<&'static str>>,
-    #[prop(into)] badge: Signal<Option<(usize, BadgeTone)>>,
+    /// Failure count badge.
+    #[prop(into)]
+    badge: Signal<Option<usize>>,
 ) -> impl IntoView {
     let is_current = move || current.get() == Some(item.href);
     view! {
@@ -60,11 +48,7 @@ fn RailItem(
             <Glyph icon=item.icon/>
             <span class="label">{item.label}</span>
             {item.key.map(|k| view! { <span class="kbd" aria-hidden="true">{format!("g {k}")}</span> })}
-            {move || badge.get().map(|(n, tone)| view! {
-                <span class=if tone == BadgeTone::Fault { "count fault" } else { "count" }>
-                    {n}
-                </span>
-            })}
+            {move || badge.get().map(|n| view! { <span class="count fault">{n}</span> })}
         </Link>
     }
 }
@@ -76,7 +60,6 @@ pub fn Rail(
     #[prop(into)] current: Signal<Option<&'static str>>,
 ) -> impl IntoView {
     let live = use_live_data();
-    let feed = use_workspace_feed();
     let now = omni_web_kit::hooks::use_now(30_000);
 
     let live_ids = Memo::new(move |_| {
@@ -115,16 +98,10 @@ pub fn Rail(
             })
         })
     });
-    let pending = Memo::new(move |_| feed.pending_actions() as usize);
 
-    let badge_for = move |href: &'static str| -> Signal<Option<(usize, BadgeTone)>> {
+    let badge_for = move |href: &'static str| -> Signal<Option<usize>> {
         Signal::derive(move || match href {
-            "/workspaces" => Some(pending.get())
-                .filter(|n| *n > 0)
-                .map(|n| (n, BadgeTone::Plain)),
-            "/operations" => Some(failing.get())
-                .filter(|n| *n > 0)
-                .map(|n| (n, BadgeTone::Fault)),
+            "/operations" => Some(failing.get()).filter(|n| *n > 0),
             _ => None,
         })
     };

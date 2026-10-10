@@ -26,8 +26,6 @@ const MIN_DISTINCT_TOKEN_CHARS: usize = 12;
 pub enum PushoverChannel {
     General,
     Live,
-    Briefing,
-    Workspace,
     Calendar,
     Recs,
     Podcast,
@@ -37,8 +35,6 @@ pub enum PushoverChannel {
 /// Language-model call sites; each has a code default and maybe an env override.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ModelRole {
-    Briefing,
-    Workspace,
     Extraction,
     CalendarExtraction,
     Triage,
@@ -57,12 +53,10 @@ impl ModelRole {
     /// Code default. Production deploys use these.
     pub fn default_model(self) -> &'static str {
         match self {
-            ModelRole::Workspace
-            | ModelRole::CalendarExtraction
+            ModelRole::CalendarExtraction
             | ModelRole::RecsSelection
             | ModelRole::PressPodsCleaning => "openai:gpt-6-sol",
-            ModelRole::Briefing
-            | ModelRole::Extraction
+            ModelRole::Extraction
             | ModelRole::Triage
             | ModelRole::RecsShortlist
             | ModelRole::TasteReflection
@@ -77,8 +71,6 @@ impl ModelRole {
     /// The environment variable that overrides the default, if any.
     pub fn env_key(self) -> Option<&'static str> {
         match self {
-            ModelRole::Briefing => Some("BRIEFING_MODEL"),
-            ModelRole::Workspace => Some("WORKSPACE_MODEL"),
             ModelRole::Extraction => Some("EXTRACTION_MODEL"),
             ModelRole::CalendarExtraction => Some("CALENDAR_EXTRACTION_MODEL"),
             ModelRole::Triage => Some("TRIAGE_MODEL"),
@@ -217,20 +209,12 @@ config_struct! {
     livestream_summary_sample_seconds: u32 = "LIVESTREAM_SUMMARY_SAMPLE_SECONDS",
     livestream_summary_interval_seconds: u32 = "LIVESTREAM_SUMMARY_INTERVAL_SECONDS",
     pushover_calendar_token: Option<String> = "PUSHOVER_CALENDAR_TOKEN",
-    pushover_briefing_token: Option<String> = "PUSHOVER_BRIEFING_TOKEN",
-    pushover_workspace_token: Option<String> = "PUSHOVER_WORKSPACE_TOKEN",
-    briefing_model: Option<String> = "BRIEFING_MODEL",
-    workspace_model: Option<String> = "WORKSPACE_MODEL",
-    workspace_schedule: String = "WORKSPACE_SCHEDULE",
-    /// Trailing slashes trimmed.
-    workspaces_public_url: String = "WORKSPACES_PUBLIC_URL",
     google_generative_ai_api_key: Option<String> = "GOOGLE_GENERATIVE_AI_API_KEY",
     anthropic_api_key: Option<String> = "ANTHROPIC_API_KEY",
     openai_api_key: Option<String> = "OPENAI_API_KEY",
     tavily_api_key: Option<String> = "TAVILY_API_KEY",
     logs_path: Option<String> = "LOGS_PATH",
     channels_config_path: Option<String> = "CHANNELS_CONFIG_PATH",
-    briefings_path: Option<String> = "BRIEFINGS_PATH",
     icloud_username: Option<String> = "ICLOUD_USERNAME",
     icloud_reminders_enabled: Option<String> = "ICLOUD_REMINDERS_ENABLED",
     icloud_reminders_account: Option<String> = "ICLOUD_REMINDERS_ACCOUNT",
@@ -484,21 +468,12 @@ impl Config {
             livestream_summary_interval_seconds: env
                 .positive_int_with_default("LIVESTREAM_SUMMARY_INTERVAL_SECONDS", 480)?,
             pushover_calendar_token: env.opt("PUSHOVER_CALENDAR_TOKEN"),
-            pushover_briefing_token: env.opt("PUSHOVER_BRIEFING_TOKEN"),
-            pushover_workspace_token: env.opt("PUSHOVER_WORKSPACE_TOKEN"),
-            briefing_model: env.opt("BRIEFING_MODEL"),
-            workspace_model: env.opt("WORKSPACE_MODEL"),
-            workspace_schedule: env.string("WORKSPACE_SCHEDULE", "0 0 9 * * 0"),
-            workspaces_public_url: trim_trailing_slashes(
-                &env.string("WORKSPACES_PUBLIC_URL", "http://omni.boris"),
-            ),
             google_generative_ai_api_key: env.opt("GOOGLE_GENERATIVE_AI_API_KEY"),
             anthropic_api_key: env.opt("ANTHROPIC_API_KEY"),
             openai_api_key: env.opt("OPENAI_API_KEY"),
             tavily_api_key: env.opt("TAVILY_API_KEY"),
             logs_path: env.opt("LOGS_PATH"),
             channels_config_path: env.opt("CHANNELS_CONFIG_PATH"),
-            briefings_path: env.opt("BRIEFINGS_PATH"),
             icloud_username: env.opt("ICLOUD_USERNAME"),
             icloud_reminders_enabled: env.opt("ICLOUD_REMINDERS_ENABLED"),
             icloud_reminders_account: env.opt("ICLOUD_REMINDERS_ACCOUNT"),
@@ -717,8 +692,6 @@ impl Config {
         let specific = match ch {
             PushoverChannel::General => None,
             PushoverChannel::Live => self.pushover_live_token.as_deref(),
-            PushoverChannel::Briefing => self.pushover_briefing_token.as_deref(),
-            PushoverChannel::Workspace => self.pushover_workspace_token.as_deref(),
             PushoverChannel::Calendar => self.pushover_calendar_token.as_deref(),
             PushoverChannel::Recs => self.pushover_recs_token.as_deref(),
             PushoverChannel::Podcast => self.pushover_podcast_token.as_deref(),
@@ -737,8 +710,6 @@ impl Config {
     /// The model id for a role: env override, else the code default.
     pub fn model(&self, role: ModelRole) -> &str {
         let configured = match role {
-            ModelRole::Briefing => self.briefing_model.as_deref(),
-            ModelRole::Workspace => self.workspace_model.as_deref(),
             ModelRole::Extraction => self.extraction_model.as_deref(),
             ModelRole::CalendarExtraction => self.calendar_extraction_model.as_deref(),
             ModelRole::Triage => self.triage_model.as_deref(),
@@ -976,6 +947,15 @@ const LEGACY_EMAIL_ENV_VARS: &[&str] = &[
     "FASTMAIL_USERNAME",
     "FASTMAIL_CALENDAR_ID",
 ];
+const LEGACY_FEATURE_ENV_VARS: &[&str] = &[
+    "BRIEFINGS_PATH",
+    "BRIEFING_MODEL",
+    "PUSHOVER_BRIEFING_TOKEN",
+    "WORKSPACE_MODEL",
+    "WORKSPACE_SCHEDULE",
+    "WORKSPACES_PUBLIC_URL",
+    "PUSHOVER_WORKSPACE_TOKEN",
+];
 
 /// Boot warnings for variables that are set but no longer read.
 pub fn legacy_warnings(vars: &BTreeMap<String, String>) -> Vec<String> {
@@ -990,7 +970,12 @@ pub fn legacy_warnings(vars: &BTreeMap<String, String>) -> Vec<String> {
         .copied()
         .filter(|key| is_set(key))
         .map(|key| format!("{key} is no longer read, email and calendar use iCloud credentials"));
-    channel.chain(email).collect()
+    let removed = LEGACY_FEATURE_ENV_VARS
+        .iter()
+        .copied()
+        .filter(|key| is_set(key))
+        .map(|key| format!("{key} is no longer read, briefings and workspaces were removed"));
+    channel.chain(email).chain(removed).collect()
 }
 
 #[cfg(test)]
@@ -1026,18 +1011,20 @@ mod tests {
         vars.insert("YT_CHANNEL_NAMES".to_owned(), "x".to_owned());
         vars.insert("CALDAV_PROVIDER".to_owned(), "fastmail".to_owned());
         vars.insert("KICK_CHANNEL_NAMES".to_owned(), String::new());
+        vars.insert("BRIEFINGS_PATH".to_owned(), "/briefings".to_owned());
         assert_eq!(
             legacy_warnings(&vars),
             vec![
                 "YT_CHANNEL_NAMES is no longer read, channels are configured in channels.json",
                 "CALDAV_PROVIDER is no longer read, email and calendar use iCloud credentials",
+                "BRIEFINGS_PATH is no longer read, briefings and workspaces were removed",
             ]
         );
     }
 
     #[test]
     fn model_defaults() {
-        assert_eq!(ModelRole::Workspace.default_model(), "openai:gpt-6-sol");
+        assert_eq!(ModelRole::RecsSelection.default_model(), "openai:gpt-6-sol");
         assert_eq!(ModelRole::Triage.default_model(), "openai:gpt-6-luna");
         assert_eq!(ModelRole::ArrRecovery.env_key(), None);
     }

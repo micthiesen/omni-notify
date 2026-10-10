@@ -64,7 +64,7 @@ pub struct EmailReaderHealth {
 }
 
 /// Implemented by `omni-imap`; used by `omni-email` (retry, reprocess, MCP email
-/// tools), `omni-calendar` (attachment download) and `omni-workspaces`.
+/// tools) and `omni-calendar` (attachment download).
 pub trait EmailReader: Send + Sync {
     /// Re-fetches one email by stable id; `None` when it is gone.
     fn fetch_by_id<'a>(
@@ -102,59 +102,22 @@ pub trait EmailRetryHandlers: Send + Sync {
     fn handler(&self, pipeline: &str) -> Option<Arc<dyn EmailHandler>>;
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CalendarEventInput {
-    pub title: String,
-    pub start_date: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_date: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_time: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub end_time: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub location: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub time_zone: Option<String>,
-    pub all_day: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reminder_minutes: Option<f64>,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CalendarCreateOutcome {
-    Created {
-        event_uid: String,
-    },
-    /// HTTP 412: an event with this UID already exists.
-    AlreadyExists,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CalendarWriterStatus {
+pub struct CalendarConnectionStatus {
     pub configured: bool,
     pub provider: Option<String>,
 }
 
-/// Implemented by `omni-calendar`; used by `omni-workspaces` (UID
-/// `workspace-<actionId>@omni-notify`).
-pub trait CalendarWriter: Send + Sync {
-    fn create_event<'a>(
-        &'a self,
-        uid: &'a str,
-        input: &'a CalendarEventInput,
-    ) -> BoxFuture<'a, Result<CalendarCreateOutcome, PortError>>;
-    fn status(&self) -> CalendarWriterStatus;
+/// Implemented by `omni-calendar`; used by `omni-email` (the MCP health report).
+pub trait CalendarConnection: Send + Sync {
+    fn status(&self) -> CalendarConnectionStatus;
 }
 
 /// Implemented by `omni-live`; used by `omni-live-intel`, `omni-mcp` and the
 /// dashboard snapshot. Values are serialized
 /// `omni_api::streamers` DTOs.
 pub trait LiveDirectory: Send + Sync {
-    /// Configured streamers (`channels.json` order).
+    /// Configured streamers, in configured order.
     fn streamers(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
     /// Current aggregate statuses.
     fn statuses(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
@@ -208,12 +171,6 @@ pub trait LiveIntelligence: Send + Sync {
 /// `omni_api::media::OnDeckItem`s.
 pub trait OnDeckSource: Send + Sync {
     fn on_deck(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
-}
-
-/// Implemented by `omni-briefings`; used by `omni-mcp` (`briefings_list`). Values are serialized
-/// `omni_api::briefings` history entries, newest first.
-pub trait BriefingsReader: Send + Sync {
-    fn histories(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
 }
 
 /// A turn Omni just started on the Claude Code host (`noteTurnStarted` input).
@@ -380,11 +337,10 @@ ports! {
     email_reader, set_email_reader: EmailReader,
     archive_echo, set_archive_echo: ArchiveEcho,
     email_retry_handlers, set_email_retry_handlers: EmailRetryHandlers,
-    calendar_writer, set_calendar_writer: CalendarWriter,
+    calendar_connection, set_calendar_connection: CalendarConnection,
     live_directory, set_live_directory: LiveDirectory,
     live_intelligence, set_live_intelligence: LiveIntelligence,
     on_deck_source, set_on_deck_source: OnDeckSource,
-    briefings_reader, set_briefings_reader: BriefingsReader,
     claude_session_notifier, set_claude_session_notifier: ClaudeSessionNotifier,
     claude_host, set_claude_host: ClaudeHost,
     event_publisher, set_event_publisher: EventPublisher,

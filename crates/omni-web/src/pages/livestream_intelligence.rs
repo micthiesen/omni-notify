@@ -157,48 +157,68 @@ fn metrics_list(metrics: &MetricMap) -> impl IntoView + use<> {
     view! { <dl class="kv">{rows}</dl> }
 }
 
+/// One pipeline stage. Reactive inside so the 1 s clock and 10 s refresh
+/// update facts in place instead of re-creating the panel (which would close
+/// its Metrics disclosure).
 #[component]
-fn StagePanel(label: &'static str, stage: Option<StageDiagnostic>, now: f64) -> impl IntoView {
-    let kind = stage_kind(stage.as_ref());
-    let status = stage_status(stage.as_ref());
-    let detail = stage
-        .as_ref()
-        .and_then(|s| s.detail.clone())
-        .unwrap_or_else(|| "No diagnostic state recorded yet.".to_owned());
-    let mut facts = Vec::new();
-    if let Some(s) = &stage {
-        if let Some(f) = s.finished_at.filter(|f| *f != 0) {
-            facts.push(format!("last {}", format_relative(f as f64)));
-        }
-        if s.status == PipelineStatus::Running
-            && let Some(started) = s.started_at.filter(|v| *v != 0)
-        {
-            facts.push(format!("running {}", format_duration(now - started as f64)));
-        }
-        if let Some(next) = s.next_at.filter(|n| *n != 0) {
-            facts.push(format!(
-                "{} {}",
-                if (next as f64) <= now { "due" } else { "next" },
-                format_relative(next as f64)
-            ));
-        }
-        if let Some(d) = s.duration_ms {
-            facts.push(format!("{} processing", format_duration(d as f64)));
-        }
-    }
-    let metrics = stage
-        .as_ref()
-        .and_then(|s| s.metrics.as_ref())
-        .filter(|m| !m.is_empty())
-        .map(|m| {
-            let list = metrics_list(m);
-            view! { <Disclosure summary="Metrics" flush=true>{list}</Disclosure> }
+fn StagePanel(
+    label: &'static str,
+    #[prop(into)] stage: Signal<Option<StageDiagnostic>>,
+    #[prop(into)] now: Signal<f64>,
+) -> impl IntoView {
+    let kind = Signal::derive(move || stage.with(|s| stage_kind(s.as_ref())));
+    let status = Signal::derive(move || stage.with(|s| stage_status(s.as_ref())));
+    let detail = move || {
+        stage.with(|s| {
+            s.as_ref()
+                .and_then(|s| s.detail.clone())
+                .unwrap_or_else(|| "No diagnostic state recorded yet.".to_owned())
+        })
+    };
+    let facts = move || {
+        let now = now.get();
+        let mut facts = Vec::new();
+        stage.with(|s| {
+            if let Some(s) = s {
+                if let Some(f) = s.finished_at.filter(|f| *f != 0) {
+                    facts.push(format!("last {}", format_relative(f as f64)));
+                }
+                if s.status == PipelineStatus::Running
+                    && let Some(started) = s.started_at.filter(|v| *v != 0)
+                {
+                    facts.push(format!("running {}", format_duration(now - started as f64)));
+                }
+                if let Some(next) = s.next_at.filter(|n| *n != 0) {
+                    facts.push(format!(
+                        "{} {}",
+                        if (next as f64) <= now { "due" } else { "next" },
+                        format_relative(next as f64)
+                    ));
+                }
+                if let Some(d) = s.duration_ms {
+                    facts.push(format!("{} processing", format_duration(d as f64)));
+                }
+            }
         });
+        (!facts.is_empty()).then(|| view! { <p class="small dim num">{facts.join(" · ")}</p> })
+    };
+    let metrics = Memo::new(move |_| {
+        stage.with(|s| {
+            s.as_ref()
+                .and_then(|s| s.metrics.clone())
+                .filter(|m| !m.is_empty())
+        })
+    });
+    let has_metrics = Memo::new(move |_| metrics.with(Option::is_some));
     view! {
-        <Panel title=label pad=true head_end=ViewFn::from(move || view! { <Status kind=kind label=status.clone()/> })>
+        <Panel title=label pad=true head_end=ViewFn::from(move || view! { <Status kind label=status/> })>
             <p class="small">{detail}</p>
-            {(!facts.is_empty()).then(|| view! { <p class="small dim num">{facts.join(" · ")}</p> })}
-            {metrics}
+            {facts}
+            {move || has_metrics.get().then(|| view! {
+                <Disclosure summary="Metrics" flush=true>
+                    {move || metrics.with(|m| m.as_ref().map(metrics_list))}
+                </Disclosure>
+            })}
         </Panel>
     }
 }
@@ -355,8 +375,13 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
             async move { api::fetch_livestream_intelligence_details(&id, 100).await }
         },
         move |next| {
-            details.set(Some(next));
-            error.set(None);
+            // Notify only on change so an unchanged poll re-renders nothing.
+            if details.with_untracked(|d| d.as_ref() != Some(&next)) {
+                details.set(Some(next));
+            }
+            if error.with_untracked(Option::is_some) {
+                error.set(None);
+            }
         },
         move |e: api::ApiClientError| error.set(Some(e.message().to_owned())),
         Duration::from_secs(10),
@@ -368,165 +393,86 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
     });
     use_page_label(move || Some("Intelligence".to_owned()));
 
-    let back_to = format!("/streamers/{}", encode_uri_component(&streamer_id));
-    move || {
-        let has_snapshot = live.snapshot.with(Option::is_some);
+    // The page closure reads only this phase; every section below reads its
+    // own memo, so snapshots (every few seconds), the 10 s poll and the 1 s
+    // clock update in place without resetting disclosures or scroll.
+    let phase = Memo::new(move |_| {
         let has_details = details.with(Option::is_some);
-        let err = error.get();
-        if !has_snapshot || (!has_details && err.is_none()) {
-            return view! { <SkeletonRows count=8 label="Loading intelligence"/> }.into_any();
+        if live.snapshot.with(Option::is_none) || (!has_details && error.with(Option::is_none)) {
+            Phase::Loading
+        } else if streamer.with(Option::is_none) {
+            Phase::Unknown
+        } else if !has_details {
+            Phase::Failed
+        } else {
+            Phase::Ready
         }
-        let Some(current) = streamer.get() else {
-            return view! {
-                <ErrorState title="Unknown streamer" detail="This channel is not being monitored." link=("All streamers".to_owned(), "/live".to_owned()) page=true/>
-            }
-            .into_any();
-        };
-        let Some(data) = details.get() else {
-            return view! {
-                <ErrorState title="Intelligence could not load" raw=err.unwrap_or_default() retry=reload page=true/>
-            }
-            .into_any();
-        };
-        let (name, is_live) = match &current {
-            StreamerView::Live(l) => (l.display_name.clone(), true),
-            StreamerView::Offline(o) => (o.display_name.clone(), false),
-        };
-        let runtime = data.runtime.clone();
-        let queue_total = runtime.as_ref().map_or(0, |r| {
-            [r.queues.capture, r.queues.speech, r.queues.llm]
-                .iter()
-                .map(|q| q.running + q.queued)
-                .sum::<u64>()
-        });
-        let has_stage_error = data.diagnostics.as_ref().is_some_and(|d| {
-            d.stages
-                .values()
-                .any(|stage| stage.get("status").and_then(Value::as_str) == Some("error"))
-        });
-        let (pipeline_word, pipeline_kind) = match (&runtime, has_stage_error) {
-            (None, _) => ("Unavailable", StatusKind::Idle),
-            (Some(_), true) => ("Needs attention", StatusKind::Fault),
-            (Some(_), false) => ("Healthy", StatusKind::Ok),
-        };
-        let budget = runtime
-            .as_ref()
-            .map(|r| (r.budget.spent_cents, r.budget.limit_cents));
-        let intelligence = data.intelligence.clone();
-        let chapters = intelligence.as_ref().map_or(0, |i| i.chapters.len());
-        let stages_data = data.clone();
-        let stages = move || {
-            let now = now.get();
-            STAGES
-                .iter()
-                .map(|(key, label)| {
-                    let stage = stage_of(&stages_data, key);
-                    view! { <StagePanel label=*label stage now/> }
-                })
-                .collect_view()
-        };
-        let events_data = data.events.clone();
-        let counts: Vec<(TimelineFilter, usize)> = FILTERS
-            .iter()
-            .map(|(f, _)| {
-                (
-                    *f,
-                    events_data.iter().filter(|e| event_visible(e, *f)).count(),
-                )
-            })
-            .collect();
-        let filter_options = Signal::derive(move || {
+    });
+    let is_live = Memo::new(move |_| streamer.with(|s| matches!(s, Some(StreamerView::Live(_)))));
+    let intelligence =
+        Memo::new(move |_| details.with(|d| d.as_ref().and_then(|d| d.intelligence.clone())));
+    let events_all = Memo::new(move |_| {
+        details.with(|d| d.as_ref().map(|d| d.events.clone()).unwrap_or_default())
+    });
+    let filter_options = Signal::derive(move || {
+        events_all.with(|events| {
             FILTERS
                 .iter()
                 .map(|(f, label)| {
-                    let n = counts.iter().find(|(c, _)| c == f).map_or(0, |(_, n)| *n);
+                    let n = events.iter().filter(|e| event_visible(e, *f)).count();
                     SegOption::new(*f, *label).with_count(n)
                 })
                 .collect::<Vec<_>>()
-        });
-        let events = move || {
-            let selected = filter.get();
-            let visible: Vec<LivestreamEvent> = events_data
+        })
+    });
+    let visible = Memo::new(move |_| {
+        let selected = filter.get();
+        events_all.with(|events| {
+            events
                 .iter()
                 .filter(|e| event_visible(e, selected))
                 .cloned()
-                .collect();
-            if visible.is_empty() {
-                view! { <EmptyState compact=true message="No events match this filter yet."/> }
-                    .into_any()
-            } else {
-                let limit = event_limit.get();
-                let remaining = visible.len().saturating_sub(limit);
-                view! {
-                    <ol class="timeline">
-                        {visible
-                            .into_iter()
-                            .take(limit)
-                            .map(|event| view! { <TimelineEvent event/> })
-                            .collect_view()}
-                    </ol>
-                    {(remaining > 0).then(|| view! {
-                        <ShowMoreButton
-                            remaining=Signal::stored(remaining)
-                            noun="events"
-                            on_click=Callback::new(move |()| event_limit.update(|n| *n += EVENTS_PAGE))
-                        />
-                    })}
-                }
-                .into_any()
-            }
-        };
-        let event_count = data.events.len();
-        view! {
+                .collect::<Vec<_>>()
+        })
+    });
+    let no_events = Memo::new(move |_| visible.with(Vec::is_empty));
+    let remaining = Memo::new(move |_| visible.with(Vec::len).saturating_sub(event_limit.get()));
+    let has_more = Memo::new(move |_| remaining.get() > 0);
+    let stages = STAGES.map(|(key, label)| {
+        let stage = Memo::new(move |_| details.with(|d| d.as_ref().and_then(|d| stage_of(d, key))));
+        (label, stage)
+    });
+
+    let back_to = format!("/streamers/{}", encode_uri_component(&streamer_id));
+    move || {
+        match phase.get() {
+        Phase::Loading => {
+            view! { <SkeletonRows count=8 label="Loading intelligence"/> }.into_any()
+        }
+        Phase::Unknown => view! {
+            <ErrorState title="Unknown streamer" detail="This channel is not being monitored." link=("All streamers".to_owned(), "/live".to_owned()) page=true/>
+        }
+        .into_any(),
+        Phase::Failed => view! {
+            <ErrorState title="Intelligence could not load" raw=Signal::derive(move || error.get().unwrap_or_default()) retry=reload page=true/>
+        }
+        .into_any(),
+        Phase::Ready => view! {
             <PageHead
-                title=format!("{name} intelligence")
+                title=Signal::derive(move || format!("{} intelligence", display.get().unwrap_or_default()))
                 lede="What the pipeline is doing, why it made each decision, and what it cost."
                 actions=ViewFn::from({
                     let back_to = back_to.clone();
                     move || view! { <ButtonLink to=back_to.clone() icon=Icon::Live>"Streamer"</ButtonLink> }
                 })
             >
-                <p class="small muted">{if is_live { "Showing the live session" } else { "Showing the last session" }}</p>
+                <p class="small muted">{move || if is_live.get() { "Showing the live session" } else { "Showing the last session" }}</p>
             </PageHead>
-            {err.map(|e| view! { <InlineNote tone=Tone::Warn role="alert">{format!("Latest refresh failed: {e}")}</InlineNote> })}
+            {move || error.get().map(|e| view! { <InlineNote tone=Tone::Warn role="alert">{format!("Latest refresh failed: {e}")}</InlineNote> })}
             <div class="summary-bar sticky-summary" aria-label="Intelligence health">
-                <ReadoutBand cols=4>
-                    <Readout label="Pipeline" value=pipeline_word size=ReadoutSize::M class="word" tone={if has_stage_error { Tone::Fault } else { Tone::Neutral }}>
-                        <Status kind=pipeline_kind label=if has_stage_error {
-                            "A stage failed".to_owned()
-                        } else if queue_total == 0 {
-                            "Queues clear".to_owned()
-                        } else {
-                            format!("{queue_total} queued or running")
-                        }/>
-                    </Readout>
-                    <Readout
-                        label="Voice model"
-                        value=if runtime.as_ref().is_some_and(|r| r.voiceprint_loaded) { "Ready" } else { "Unavailable" }
-                        size=ReadoutSize::M
-                        class="word"
-                    >
-                        {runtime.as_ref().map_or_else(
-                            || "No runtime connection".to_owned(),
-                            |r| format!("{} of {} live targets", r.active_voice_target_count, r.active_stream_count),
-                        )}
-                    </Readout>
-                    <Readout
-                        label="Monthly budget"
-                        value=budget.map_or_else(|| "—".to_owned(), |(spent, _)| money_from_cents(spent))
-                        size=ReadoutSize::M
-                    >
-                        {budget.map(|(spent, limit)| view! {
-                            <Meter value=spent max=limit.max(0.01) tone={if spent >= limit { Tone::Fault } else { Tone::Neutral }} label=format!("of {}", money_from_cents(limit))/>
-                            <span class="small dim">{format!("of {}", money_from_cents(limit))}</span>
-                        })}
-                    </Readout>
-                    <Readout label="Timeline" value=format!("{event_count}") size=ReadoutSize::M>
-                        {format!("events · {chapters} chapters")}
-                    </Readout>
-                </ReadoutBand>
+                {move || details.with(|d| d.as_ref().map(summary_band))}
             </div>
-            <Evidence intelligence/>
+            {move || view! { <Evidence intelligence=intelligence.get()/> }}
             <div class="toolbar">
                 <Segmented
                     options=Signal::derive(|| vec![SegOption::new(View::Timeline, "Timeline"), SegOption::new(View::Diagnostics, "Diagnostics")])
@@ -542,17 +488,113 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
                 })}
             </div>
             {move || match view_mode.get() {
-                View::Timeline => {
-                    let events = events.clone();
-                    view! { <Panel title="Decision timeline">{events}</Panel> }.into_any()
+                View::Timeline => view! {
+                    <Panel title="Decision timeline">
+                        {move || if no_events.get() {
+                            view! { <EmptyState compact=true message="No events match this filter yet."/> }.into_any()
+                        } else {
+                            view! {
+                                <ol class="timeline">
+                                    <For
+                                        each=move || visible.with(|v| v.iter().take(event_limit.get()).cloned().collect::<Vec<_>>())
+                                        key=|e| (e.event_id.clone(), event_status_str(e.status), e.title.clone(), e.detail.clone(), e.duration_ms)
+                                        children=|event| view! { <TimelineEvent event/> }
+                                    />
+                                </ol>
+                                {move || has_more.get().then(|| view! {
+                                    <ShowMoreButton
+                                        remaining
+                                        noun="events"
+                                        on_click=Callback::new(move |()| event_limit.update(|n| *n += EVENTS_PAGE))
+                                    />
+                                })}
+                            }
+                            .into_any()
+                        }}
+                    </Panel>
                 }
-                View::Diagnostics => {
-                    let stages = stages.clone();
-                    view! { <div class="grid-3">{stages}</div> }.into_any()
+                .into_any(),
+                View::Diagnostics => view! {
+                    <div class="grid-3">
+                        {stages.into_iter().map(|(label, stage)| view! { <StagePanel label stage now/> }).collect_view()}
+                    </div>
                 }
+                .into_any(),
             }}
         }
-        .into_any()
+        .into_any(),
+    }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Phase {
+    Loading,
+    Unknown,
+    Failed,
+    Ready,
+}
+
+/// The sticky health band; stateless, so it re-renders per refresh.
+fn summary_band(data: &IntelligenceDetailsResponse) -> impl IntoView + use<> {
+    let runtime = data.runtime.clone();
+    let queue_total = runtime.as_ref().map_or(0, |r| {
+        [r.queues.capture, r.queues.speech, r.queues.llm]
+            .iter()
+            .map(|q| q.running + q.queued)
+            .sum::<u64>()
+    });
+    let has_stage_error = data.diagnostics.as_ref().is_some_and(|d| {
+        d.stages
+            .values()
+            .any(|stage| stage.get("status").and_then(Value::as_str) == Some("error"))
+    });
+    let (pipeline_word, pipeline_kind) = match (&runtime, has_stage_error) {
+        (None, _) => ("Unavailable", StatusKind::Idle),
+        (Some(_), true) => ("Needs attention", StatusKind::Fault),
+        (Some(_), false) => ("Healthy", StatusKind::Ok),
+    };
+    let budget = runtime
+        .as_ref()
+        .map(|r| (r.budget.spent_cents, r.budget.limit_cents));
+    let chapters = data.intelligence.as_ref().map_or(0, |i| i.chapters.len());
+    let event_count = data.events.len();
+    view! {
+        <ReadoutBand cols=4>
+            <Readout label="Pipeline" value=pipeline_word size=ReadoutSize::M class="word" tone={if has_stage_error { Tone::Fault } else { Tone::Neutral }}>
+                <Status kind=pipeline_kind label=if has_stage_error {
+                    "A stage failed".to_owned()
+                } else if queue_total == 0 {
+                    "Queues clear".to_owned()
+                } else {
+                    format!("{queue_total} queued or running")
+                }/>
+            </Readout>
+            <Readout
+                label="Voice model"
+                value=if runtime.as_ref().is_some_and(|r| r.voiceprint_loaded) { "Ready" } else { "Unavailable" }
+                size=ReadoutSize::M
+                class="word"
+            >
+                {runtime.as_ref().map_or_else(
+                    || "No runtime connection".to_owned(),
+                    |r| format!("{} of {} live targets", r.active_voice_target_count, r.active_stream_count),
+                )}
+            </Readout>
+            <Readout
+                label="Monthly budget"
+                value=budget.map_or_else(|| "—".to_owned(), |(spent, _)| money_from_cents(spent))
+                size=ReadoutSize::M
+            >
+                {budget.map(|(spent, limit)| view! {
+                    <Meter value=spent max=limit.max(0.01) tone={if spent >= limit { Tone::Fault } else { Tone::Neutral }} label=format!("of {}", money_from_cents(limit))/>
+                    <span class="small dim">{format!("of {}", money_from_cents(limit))}</span>
+                })}
+            </Readout>
+            <Readout label="Timeline" value=format!("{event_count}") size=ReadoutSize::M>
+                {format!("events · {chapters} chapters")}
+            </Readout>
+        </ReadoutBand>
     }
 }
 

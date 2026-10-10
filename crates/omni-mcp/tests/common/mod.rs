@@ -59,10 +59,10 @@ pub fn all_defs() -> Vec<&'static dyn ToolDefinition> {
     let packages: [&[&'static dyn ToolDefinition]; 15] = [
         &omni_reminders::mcp::defs::TOOLS,
         &omni_mcp::tools::system::defs::TOOLS,
-        &omni_workspaces::mcp::defs::TOOLS,
         &omni_email::mcp_tools::defs::TOOLS,
         &omni_calendar::mcp::defs::TOOLS,
         &omni_imap::mcp_tools::defs::TOOLS,
+        &omni_live::mcp::defs::TOOLS,
         &omni_mcp::tools::events::defs::TOOLS,
         &omni_media::mcp::defs::TOOLS,
         &omni_podcasts::mcp::defs::TOOLS,

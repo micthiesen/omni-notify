@@ -129,7 +129,7 @@ After this first pairing, installs and updates can generally use the same comman
 
 - A control's main label is the current channel name. Its status text is the stream title.
 - Primary-tier channels always occupy earlier slots than background-tier channels, even when a background channel has more viewers.
-- Within a tier, higher current viewer count sorts first. The session peak is used when a platform does not report a current count. Equal counts retain `channels.json` order.
+- Within a tier, higher current viewer count sorts first. The session peak is used when a platform does not report a current count. Equal counts retain the configured streamer order.
 - The live poll runs every 20 seconds for primary channels and every 60 seconds for background channels. After a completed tick changes a displayed slot, Omni sends APNs only to controls configured for that changed slot.
 - Adding, removing, or reconfiguring controls replaces that iPad's complete registration set on the server. Registration failures are persisted in the shared app group and retried with backoff; opening the app retries any work the extension could not finish. Stale APNs tokens are deleted when Apple reports them as invalid.
 - Network, rate-limit, and APNs 5xx failures get one immediate retry and remain queued for later live-check ticks until delivery succeeds. **Undelivered Controls** in app diagnostics exposes outstanding state without revealing tokens.

@@ -3,7 +3,7 @@
 Ideas that are agreed-on but deliberately not built yet.
 
 - **Nightly `docstore.db` backup task.** The SQLite docstore is the entire state of
-  the app (streamer state, recommendations, feedback, task runs, briefing history).
+  the app (streamer state, recommendations, feedback, task runs).
   A scheduled task should snapshot it nightly (SQLite online backup API or
   `VACUUM INTO`) and rotate a handful of copies, ideally to a destination outside
   the container volume.

@@ -47,7 +47,7 @@ async fn serves_every_tool_and_registers_tasks_entities_and_the_email_handler() 
     let app = TestApp::new().await;
     let package = McpPackage::new(&with_token(&app, Some(TOKEN))).unwrap();
     let own = package.tools().unwrap();
-    assert_eq!(own.len(), 16);
+    assert_eq!(own.len(), 15);
     assert!(package.event_publisher().is_some());
     let handler = package.email_handler().unwrap();
     assert_eq!(handler.name(), "McpEvents");

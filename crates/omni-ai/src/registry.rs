@@ -12,10 +12,8 @@ use omni_config::ModelRole;
 pub const LANGUAGE_MODEL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 /// Every role, in registry order.
-pub const ALL_ROLES: [ModelRole; 14] = [
-    ModelRole::Briefing,
+pub const ALL_ROLES: [ModelRole; 12] = [
     ModelRole::LivestreamIntelligence,
-    ModelRole::Workspace,
     ModelRole::Extraction,
     ModelRole::CalendarExtraction,
     ModelRole::Triage,
@@ -33,10 +31,8 @@ pub const ALL_ROLES: [ModelRole; 14] = [
 /// operation use [`crate::CostTag::with_operation`].
 pub fn role_cost(role: ModelRole) -> (&'static str, &'static str) {
     match role {
-        ModelRole::Briefing => ("briefings", "generate"),
         // getLivestreamIntelligenceModel(operation) has no default; callers pass one.
         ModelRole::LivestreamIntelligence => ("livestream-intelligence", "generate"),
-        ModelRole::Workspace => ("workspaces", "run"),
         ModelRole::Extraction => ("parcel-tracker", "extract-deliveries"),
         ModelRole::CalendarExtraction => ("calendar-events", "extract-events"),
         ModelRole::Triage => ("email-triage", "classify"),

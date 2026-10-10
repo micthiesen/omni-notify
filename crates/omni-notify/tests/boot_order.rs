@@ -9,6 +9,8 @@ use std::time::Duration;
 use futures::future::BoxFuture;
 use omni_notify::boot::{self, BootTrace, ServeOptions};
 use omni_runtime::{AppContext, BackgroundService, BootPhase, BootStep, Subsystem};
+use omni_store::cbor::JsValue;
+use omni_store::{DocMeta, DocOps as _, DocWrite as _};
 use omni_tasks::{CronSchedule, RunContext, Task, TaskError, TaskOptions};
 use omni_testkit::TestApp;
 
@@ -117,6 +119,7 @@ async fn boots_in_order_and_shuts_down() {
     assert_eq!(
         events,
         vec![
+            "delete_retired_entities",
             "migrate_all",
             "import_historical_costs",
             "step:Migrate:migrate",
@@ -154,4 +157,46 @@ async fn server_only_registers_no_tasks_and_starts_no_services() {
     assert!(!events.iter().any(|e| e == "tasks" || e == "scheduler"));
     assert!(!steps.iter().any(|s| s == "service-started"));
     assert!(tasks.is_empty());
+}
+
+#[tokio::test]
+async fn boot_deletes_rows_of_retired_entities_only() {
+    let app = TestApp::new().await;
+    let meta = |entity: &str| DocMeta {
+        entity: Some(entity.to_owned()),
+        ..DocMeta::default()
+    };
+    app.ctx
+        .store
+        .write(move |tx| {
+            tx.upsert_doc(
+                "workspace-subject:a",
+                &JsValue::Null,
+                meta("workspace-subject"),
+            )?;
+            tx.upsert_doc(
+                "briefing-history:b",
+                &JsValue::Null,
+                meta("briefing-history"),
+            )?;
+            tx.upsert_doc("kept:c", &JsValue::Null, meta("kept"))
+        })
+        .await
+        .unwrap();
+    boot::migrate(&app.ctx, Vec::new(), &BootTrace::default())
+        .await
+        .unwrap();
+    let counts = app
+        .ctx
+        .store
+        .read(|docs| {
+            Ok::<_, omni_store::StoreError>((
+                docs.count_by_entity("workspace-subject")?,
+                docs.count_by_entity("briefing-history")?,
+                docs.count_by_entity("kept")?,
+            ))
+        })
+        .await
+        .unwrap();
+    assert_eq!(counts, (0, 0, 1));
 }

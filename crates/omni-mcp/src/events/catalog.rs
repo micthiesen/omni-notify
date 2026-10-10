@@ -11,7 +11,7 @@ pub const EMAIL_RECEIVED: &str = "email.received";
 pub const CLAUDE_TURN_FINISHED: &str = "claude.session.turn_finished";
 pub use omni_api::events::{
     CALENDAR_EVENT_CHANGED, CALENDAR_EVENT_STARTING, LIVESTREAM_STATUS_CHANGED,
-    PRESSPODS_JOB_FINISHED, TASK_RUN_FINISHED, WORKSPACE_UPDATED,
+    PRESSPODS_JOB_FINISHED, TASK_RUN_FINISHED,
 };
 
 /// Validated subscription arguments (insertion ordered).
@@ -23,7 +23,6 @@ pub enum EventKind {
     EmailReceived,
     ClaudeTurnFinished,
     LivestreamStatusChanged,
-    WorkspaceUpdated,
     PresspodsJobFinished,
     TaskRunFinished,
     CalendarEventChanged,
@@ -42,7 +41,6 @@ const EMAIL_DESCRIPTION: &str = "A new iCloud message arrived in the selected In
 const CLAUDE_DESCRIPTION: &str = "A Claude Code session on the Claude Code host finished its turn or stopped. Omni checks the host about every 15 seconds while a subscription is active. Read the result with claude_session_get (includeResult) using sessionId.";
 
 const LIVESTREAM_DESCRIPTION: &str = "A streamer went live or offline (aggregate edges across their platforms; a primary-platform switch is silent). Omni checks every 20 seconds, background-tier streamers every minute. Read details with livestream_get using streamerId.";
-const WORKSPACE_DESCRIPTION: &str = "A workspace run proposed an action that needs the owner's decision (action_pending) or posted its reply (reply_ready). Review actions with workspace_actions_list and read replies with workspace_get using workspaceId and subjectId.";
 const PRESSPODS_DESCRIPTION: &str = "A PressPods episode job finished: the episode was published or the job failed permanently. Retryable failures do not fire. Read the episode with presspods_episode_get or failed jobs with presspods_list.";
 const TASK_RUN_DESCRIPTION: &str = "A scheduled or manual Omni task run finished. Omni checks run history every 30 seconds while a subscription is active. Read the error and logs with task_run_get using runId.";
 
@@ -52,7 +50,7 @@ const CALENDAR_STARTING_DESCRIPTION: &str = "An occurrence in the primary iCloud
 /// `calendar.event_starting` leads, in minutes.
 pub const CALENDAR_LEAD_MINUTES: [&str; 8] = ["0", "5", "10", "15", "30", "60", "120", "1440"];
 
-pub const EVENT_DEFINITIONS: [EventDefinition; 8] = [
+pub const EVENT_DEFINITIONS: [EventDefinition; 7] = [
     EventDefinition {
         kind: EventKind::EmailReceived,
         name: EMAIL_RECEIVED,
@@ -67,11 +65,6 @@ pub const EVENT_DEFINITIONS: [EventDefinition; 8] = [
         kind: EventKind::LivestreamStatusChanged,
         name: LIVESTREAM_STATUS_CHANGED,
         description: LIVESTREAM_DESCRIPTION,
-    },
-    EventDefinition {
-        kind: EventKind::WorkspaceUpdated,
-        name: WORKSPACE_UPDATED,
-        description: WORKSPACE_DESCRIPTION,
     },
     EventDefinition {
         kind: EventKind::PresspodsJobFinished,
@@ -233,21 +226,6 @@ impl EventDefinition {
                     ),
                 ]))
             }
-            EventKind::WorkspaceUpdated => {
-                let args = string_arguments(raw, &["workspace", "kind"])?;
-                Some(canonical(vec![
-                    ("workspace", identifier(args, "workspace", is_project_name)?),
-                    (
-                        "kind",
-                        Some(choice(
-                            args,
-                            "kind",
-                            &["any", "action_pending", "reply_ready"],
-                            "any",
-                        )?),
-                    ),
-                ]))
-            }
             EventKind::PresspodsJobFinished => {
                 let args = string_arguments(raw, &["outcome"])?;
                 Some(canonical(vec![(
@@ -334,9 +312,6 @@ impl EventDefinition {
                     && (args.get("includeBackground").map(String::as_str) == Some("true")
                         || data_str(data, "tier") != Some("background"))
             }
-            EventKind::WorkspaceUpdated => {
-                same(args, "workspace", data, "workspaceId") && selected(args, "kind", data, "kind")
-            }
             EventKind::PresspodsJobFinished => selected(args, "outcome", data, "outcome"),
             EventKind::TaskRunFinished => {
                 let status = data_str(data, "status");
@@ -409,22 +384,6 @@ impl EventDefinition {
                         "enum": ["false", "true"],
                         "default": "false",
                         "description": "Include background-tier streamers, whose notifications are muted",
-                    },
-                },
-                "additionalProperties": false,
-            }),
-            EventKind::WorkspaceUpdated => json!({
-                "type": "object",
-                "properties": {
-                    "workspace": {
-                        "type": "string",
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$",
-                        "description": "Only this exact workspace ID (see workspaces_list)",
-                    },
-                    "kind": {
-                        "type": "string",
-                        "enum": ["any", "action_pending", "reply_ready"],
-                        "default": "any",
                     },
                 },
                 "additionalProperties": false,
@@ -544,22 +503,6 @@ impl EventDefinition {
                 "required": [
                     "streamerId", "displayName", "transition", "tier", "platform", "title",
                     "startedAt", "endedAt", "viewerCount", "maxViewerCount",
-                ],
-                "additionalProperties": false,
-            }),
-            EventKind::WorkspaceUpdated => json!({
-                "type": "object",
-                "properties": {
-                    "workspaceId": {"type": "string"},
-                    "subjectId": nullable("string"),
-                    "kind": {"type": "string", "enum": ["action_pending", "reply_ready"]},
-                    "actionId": nullable("string"),
-                    "actionType": nullable("string"),
-                    "title": {"type": ["string", "null"], "maxLength": 200},
-                    "runId": nullable("string"),
-                },
-                "required": [
-                    "workspaceId", "subjectId", "kind", "actionId", "actionType", "title", "runId",
                 ],
                 "additionalProperties": false,
             }),
@@ -755,11 +698,6 @@ mod tests {
             canonical_event_arguments(&empty),
             r#"{"includeBackground":"false","transition":"any"}"#
         );
-        let workspace = definition(WORKSPACE_UPDATED);
-        assert_eq!(
-            workspace.parse_arguments(&json!({})),
-            Some(args(&[("kind", "any")]))
-        );
         let pods = definition(PRESSPODS_JOB_FINISHED);
         assert_eq!(
             pods.parse_arguments(&json!({})),
@@ -788,17 +726,6 @@ mod tests {
         assert!(
             live.parse_arguments(&json!({"streamer": "dgg:youtube:abc%20d"}))
                 .is_some()
-        );
-        let workspace = definition(WORKSPACE_UPDATED);
-        assert!(
-            workspace
-                .parse_arguments(&json!({"workspace": ""}))
-                .is_none()
-        );
-        assert!(
-            workspace
-                .parse_arguments(&json!({"kind": "reply"}))
-                .is_none()
         );
         let pods = definition(PRESSPODS_JOB_FINISHED);
         assert!(
@@ -839,19 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn workspace_presspods_and_task_matching() {
-        let workspace = definition(WORKSPACE_UPDATED);
-        let pending = data(json!({"workspaceId": "w", "kind": "action_pending"}));
-        let only_replies = workspace
-            .parse_arguments(&json!({"kind": "reply_ready"}))
-            .unwrap();
-        assert!(!workspace.matches(&only_replies, &pending));
-        let other = workspace
-            .parse_arguments(&json!({"workspace": "x"}))
-            .unwrap();
-        assert!(!workspace.matches(&other, &pending));
-        assert!(workspace.matches(&workspace.parse_arguments(&json!({})).unwrap(), &pending));
-
+    fn presspods_and_task_matching() {
         let pods = definition(PRESSPODS_JOB_FINISHED);
         let failed = data(json!({"outcome": "failed"}));
         let published = pods

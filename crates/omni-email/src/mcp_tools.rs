@@ -29,7 +29,7 @@ use crate::sender_rules::{
 };
 
 /// Pipeline names `email_health` probes on the `EmailRetryHandlers` port.
-const KNOWN_PIPELINES: [&str; 3] = ["CalendarEvents", "ParcelTracker", "Workspaces"];
+const KNOWN_PIPELINES: [&str; 2] = ["CalendarEvents", "ParcelTracker"];
 
 /// Shared state of the email tools; cheap to clone.
 #[derive(Clone)]
@@ -564,7 +564,10 @@ impl EmailTools {
         };
         pipelines.sort();
         let compose = omni_mailer::resolve_compose_config(&self.config);
-        let calendar = self.ports.calendar_writer().map(|writer| writer.status());
+        let calendar = self
+            .ports
+            .calendar_connection()
+            .map(|writer| writer.status());
         HealthOutput {
             monitoring: HealthMonitoring {
                 active: health.is_some(),

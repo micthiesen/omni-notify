@@ -1,5 +1,7 @@
 //! Pet weight and litter-box visit trends: one panel per pet.
 
+use std::collections::HashMap;
+
 use leptos::prelude::*;
 use omni_api::pets::{
     DailyVisit, Pet, PetHealthAlertInfo, PetHealthFinding, PetHealthKind, PetHealthResponse,
@@ -566,10 +568,10 @@ fn PetPanel(
     #[prop(optional)] alerts: Vec<PetHealthAlertInfo>,
     #[prop(optional)] household_gap: bool,
     #[prop(optional)] highlighted: bool,
+    /// Owned by the page so the selection survives data reloads.
+    range: RwSignal<Range>,
+    mode: RwSignal<ChartMode>,
 ) -> impl IntoView {
-    let range = RwSignal::new(Range::Days30);
-    let mode = RwSignal::new(ChartMode::Weight);
-
     let mut sorted: Vec<(f64, WeightEntry)> = pet
         .weight_history
         .iter()
@@ -827,6 +829,47 @@ pub fn PetsPage() -> impl IntoView {
     });
     let lede = Signal::derive(move || sentence.get().map(|(_, lede)| lede));
 
+    // The panel inputs, compared by value: a reload that returns the same
+    // data (or only fails) does not rebuild the panels.
+    let body = Memo::new(move |_| match (pets.data.get(), pets.error.get()) {
+        (None, Some(e)) => PetsBody::Error(e),
+        (None, None) => PetsBody::Loading,
+        (Some(list), _) if list.is_empty() => PetsBody::Empty,
+        (Some(list), _) => {
+            let (trends, alerts, gap) = health.data.with(|h| match h {
+                Some(h) => (h.pets.clone(), h.alerts.clone(), h.data_gap.is_some()),
+                None => (Vec::new(), Vec::new(), false),
+            });
+            PetsBody::Grid {
+                pets: list,
+                trends,
+                alerts,
+                gap,
+            }
+        }
+    });
+    // Each pet's chart controls, created under the page's owner so they
+    // outlive a rebuild of the grid.
+    let owner = Owner::current();
+    let controls =
+        StoredValue::new(HashMap::<String, (RwSignal<Range>, RwSignal<ChartMode>)>::new());
+    let controls_for = move |pet_id: &str| {
+        if let Some(found) = controls.with_value(|m| m.get(pet_id).copied()) {
+            return found;
+        }
+        let make = || {
+            (
+                RwSignal::new(Range::Days30),
+                RwSignal::new(ChartMode::Weight),
+            )
+        };
+        let created = owner.as_ref().map_or_else(make, |o| o.with(make));
+        controls.update_value(|m| {
+            m.insert(pet_id.to_owned(), created);
+        });
+        created
+    };
+
     view! {
         <PageHead title lede sentence=true/>
         {move || health.error.get().filter(|_| health.data.with(Option::is_none)).map(|e| view! {
@@ -839,8 +882,8 @@ pub fn PetsPage() -> impl IntoView {
             />
         })}
         {move || {
-            match (pets.data.get(), pets.error.get()) {
-                (None, Some(e)) => view! {
+            match body.get() {
+                PetsBody::Error(e) => view! {
                     <ErrorState
                         title="Pet data could not load"
                         raw=e
@@ -849,7 +892,7 @@ pub fn PetsPage() -> impl IntoView {
                     />
                 }
                 .into_any(),
-                (None, None) => view! {
+                PetsBody::Loading => view! {
                     <div class="pets-grid" aria-busy="true">
                         {(0..2)
                             .map(|_| view! {
@@ -863,14 +906,10 @@ pub fn PetsPage() -> impl IntoView {
                     </div>
                 }
                 .into_any(),
-                (Some(list), _) if list.is_empty() => {
+                PetsBody::Empty => {
                     view! { <EmptyState message="No pets are being tracked yet." icon=Icon::Paw /> }.into_any()
                 }
-                (Some(list), _) => {
-                    let (trends, alerts, gap) = health.data.with(|h| match h {
-                        Some(h) => (h.pets.clone(), h.alerts.clone(), h.data_gap.is_some()),
-                        None => (Vec::new(), Vec::new(), false),
-                    });
+                PetsBody::Grid { pets: list, trends, alerts, gap } => {
                     let highlighted = highlighted.clone();
                     view! {
                         <div class="pets-grid">
@@ -878,9 +917,10 @@ pub fn PetsPage() -> impl IntoView {
                                 let trend = trends.iter().find(|t| t.pet_id == pet.pet_id).cloned();
                                 let hl = highlighted.as_deref() == Some(pet.pet_id.as_str());
                                 let alerts = alerts.clone();
+                                let (range, mode) = controls_for(&pet.pet_id);
                                 match trend {
-                                    Some(trend) => view! { <PetPanel pet health_trend=trend alerts household_gap=gap highlighted=hl/> }.into_any(),
-                                    None => view! { <PetPanel pet highlighted=hl/> }.into_any(),
+                                    Some(trend) => view! { <PetPanel pet health_trend=trend alerts household_gap=gap highlighted=hl range mode/> }.into_any(),
+                                    None => view! { <PetPanel pet highlighted=hl range mode/> }.into_any(),
                                 }
                             }).collect_view()}
                         </div>
@@ -890,6 +930,20 @@ pub fn PetsPage() -> impl IntoView {
             }
         }}
     }
+}
+
+/// What the pets grid shows.
+#[derive(Clone, Debug, PartialEq)]
+enum PetsBody {
+    Error(String),
+    Loading,
+    Empty,
+    Grid {
+        pets: Vec<Pet>,
+        trends: Vec<PetTrend>,
+        alerts: Vec<PetHealthAlertInfo>,
+        gap: bool,
+    },
 }
 
 /// Pets with a tripped rule (and the household data gap), for Home.

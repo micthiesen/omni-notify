@@ -29,14 +29,6 @@ fn rust_view(config: &Config) -> BTreeMap<&'static str, String> {
             config.pushover_token(PushoverChannel::Live),
         ),
         (
-            "PUSHOVER_BRIEFING_TOKEN",
-            config.pushover_token(PushoverChannel::Briefing),
-        ),
-        (
-            "PUSHOVER_WORKSPACE_TOKEN",
-            config.pushover_token(PushoverChannel::Workspace),
-        ),
-        (
             "PUSHOVER_CALENDAR_TOKEN",
             config.pushover_token(PushoverChannel::Calendar),
         ),

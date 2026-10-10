@@ -17,7 +17,7 @@ use crate::{flag_value, flag_values, repo_root};
 const USER_AGENT: &str = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 
 /// Read routes without path parameters; routes with ids
-/// are passed with `--route /api/workspaces/<id>`.
+/// are passed with `--route /api/recommendations/<id>`.
 pub const DEFAULT_ROUTES: &[&str] = &[
     "/api/health",
     "/api/tasks",
@@ -39,9 +39,6 @@ pub const DEFAULT_ROUTES: &[&str] = &[
     "/api/recommendations",
     "/api/recommendations/taste-profile",
     "/api/reminders/status",
-    "/api/workspace-papercuts",
-    "/api/workspaces",
-    "/api/briefings",
     "/pods/rss",
 ];
 

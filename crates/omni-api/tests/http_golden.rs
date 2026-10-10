@@ -163,14 +163,6 @@ golden! {
     recommendation: omni_api::media::RecommendationResponse =
         "api_recommendations_00000000-0000-4000-8000-000000000003";
     reminders_status_cross_origin: omni_api::common::ApiErrorBody = "api_reminders_status", 403;
-    workspace_papercuts: omni_api::workspaces::WorkspacePapercutsResponse = "api_workspace-papercuts";
-    workspaces: omni_api::workspaces::WorkspacesResponse = "api_workspaces";
-    workspace_purchase: omni_api::workspaces::WorkspaceResponse = "api_workspaces_purchase-research";
-    workspace_marketplace: omni_api::workspaces::WorkspaceResponse =
-        "api_workspaces_marketplace-selling";
-    workspace_subject: omni_api::workspaces::WorkspaceSubjectResponse =
-        "api_workspaces_purchase-research_subjects_00000000-0000-4000-8000-000000000006";
-    briefings: omni_api::briefings::BriefingsResponse = "api_briefings";
     mcp_activity: omni_api::mcp_activity::McpActivityResponse = "api_mcp_activity";
     claude_activity: omni_api::claude::ClaudeActivityResponse = "api_claude_activity";
     pods_rss_unauthorized: omni_api::common::ApiErrorBody = "pods_rss", 401;

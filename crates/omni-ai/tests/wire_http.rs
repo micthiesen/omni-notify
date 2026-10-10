@@ -104,7 +104,7 @@ async fn anthropic_and_gemini_use_their_auth_headers_and_paths() {
             .generate_text(
                 model.as_ref(),
                 GenerateRequest::prompt("hello"),
-                CostTag::for_role(ModelRole::Briefing),
+                CostTag::for_role(ModelRole::Extraction),
             )
             .await
             .unwrap();
@@ -133,7 +133,7 @@ async fn client_errors_are_not_retried_and_carry_the_message() {
         .generate_text(
             model.as_ref(),
             GenerateRequest::prompt("hello"),
-            CostTag::for_role(ModelRole::Workspace),
+            CostTag::for_role(ModelRole::RecsSelection),
         )
         .await;
     assert!(matches!(

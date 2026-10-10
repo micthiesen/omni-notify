@@ -112,7 +112,6 @@ pub fn TabBar(
             "home" => p == "/",
             "live" => p == "/live" || p.starts_with("/streamers/"),
             "media" => media_section(p).is_some() || p.starts_with("/feedback/"),
-            "research" => p.starts_with("/workspaces") || p == "/briefings",
             _ => false,
         })
     };
@@ -142,10 +141,6 @@ pub fn TabBar(
                     </Link>
                 }
             }}
-            <Link to="/workspaces" class="tab" aria_current=aria("research")>
-                <Glyph icon=Icon::Flask/>
-                "Research"
-            </Link>
             <button
                 type="button"
                 class="tab"

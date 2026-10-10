@@ -3,9 +3,8 @@
 Edit `AGENTS.md` and `.agents/skills/` directly. These are native Codex files;
 no generated copies or compatibility links are needed.
 
-Personal automation service for livestream monitoring, email processing, AI
-briefings, recommendations, PressPods, and durable Omni workspaces. It is a Rust
-workspace: one `omni-notify` binary serves the API, MCP endpoint and a Leptos
+Personal automation service for livestream monitoring, email processing,
+recommendations, and PressPods. It is a Rust workspace: one `omni-notify` binary serves the API, MCP endpoint and a Leptos
 frontend, and runs every scheduled task. See `docs/architecture.md`.
 
 Update this file when work establishes or changes a durable project convention.
@@ -147,7 +146,7 @@ change; reuse authorization already given in the conversation.
 - `omni-parcel`: Parcel email handler and the budgeted delivery-status cache.
 - `omni-calendar`: calendar email handler, CalDAV writes, and the primary
   calendar mirror, change feed and MCP tools.
-- `omni-live`: `channels.json`, aggregate streamer state, notifications, viewer
+- `omni-live`: database streamer configuration (UI and MCP), aggregate streamer state, notifications, viewer
   metrics and records, DGG discovery, `LiveCheckTask`.
 - `omni-ios-controls`: signed iOS control routes, live slots, APNs pushes.
 - `omni-live-intel`: livestream audio capture, local speech and speaker models,
@@ -162,8 +161,6 @@ change; reuse authorization already given in the conversation.
 - `omni-reminders`: server iCloud Reminders and the shared protected-access
   (PCS) workflow; callers own authenticated requests, encrypted cookie
   persistence and per-account serialization.
-- `omni-workspaces`: durable conversational workspaces.
-- `omni-briefings`: scheduled briefing agents and history.
 - `omni-mcp`: authenticated `/mcp` endpoint, MCP Events outbox, MCP activity,
   system/events/Claude session tools, policy inventory.
 - `omni-device-link`: the Claude Code host's `omni-link` long-poll relay.
@@ -198,8 +195,12 @@ viewer-count source. Failed identity revalidation preserves the last verified li
 A streamer is an aggregate identity over platform bindings. Notify only on the
 aggregate offline-to-live and live-to-offline edges. The first live binding is
 the sticky primary for the session; a primary switch is silent. Viewer counts
-sum currently live bindings. `channels.json` is the source of truth and invalid
-configuration must fail boot rather than silently unmute a streamer.
+sum currently live bindings. Streamer configuration lives in the database
+(`omni-live/src/config.rs`) and changes only through `StreamerConfigService`,
+which validates every write (unique names and sources, no background override)
+and reloads the roster. Pushover tokens are write-only and never cross MCP. A
+one-time `channels.json` import that fails validation fails boot rather than
+silently unmuting a streamer.
 
 `tier: "background"` mutes live, offline, and title notifications, records only
 all-time viewer highs, and polls every third tick. It cannot be combined with an
@@ -366,7 +367,7 @@ durably; never repeat uncertain deletions/searches automatically. Resolve only
 after search acceptance and a verified explanatory comment, then Pushover notify.
 Unsupported issues stay open and notify once. See `docs/observer-repair.md`.
 
-### Workspaces and MCP
+### Reminders and MCP
 
 Server iCloud Reminders is independent of Mac EventKit and IMAP/CalDAV. It stays
 disabled without its complete `ICLOUD_REMINDERS_*` configuration. Its HTTPS code
@@ -383,11 +384,8 @@ Ordinary recurring reminder edits remain blocked. List creation must preserve
 the Account ordering CRDT; a List record
 alone is insufficient. See `docs/server-reminders.md` and its upstream notice.
 
-Workspace rows are changed through their service/API, not direct database edits.
-Pending actions, Marketplace publishing, buyer messages, offers, address
-disclosure, and meetup arrangements require user authorization. Research and
-drafting do not authorize those actions. Keep MCP tools bounded adapters over
-existing services and preserve strong bearer-token validation.
+Keep MCP tools bounded adapters over existing services and preserve strong
+bearer-token validation.
 
 Claude Code session tools reach the Mac only through its outbound `omni-link`
 long-poll, authenticated by `OMNI_DEVICE_LINK_TOKEN`, which must never equal or
@@ -421,10 +419,9 @@ or From option; invalid legacy `EMAIL_FROM` configuration fails boot. Preserve
 historical Sent MIME during copy repair and never retransmit it to change identity.
 
 MCP Events (`email.received`, `claude.session.turn_finished`,
-`livestream.status_changed`, `workspace.updated`, `presspods.job_finished`,
-`task.run_finished`, `calendar.event_changed`, `calendar.event_starting`) share
-one outbox; each event keeps ordinary polling tools for
-clients without event support. Subsystems publish only through the
+`livestream.status_changed`, `presspods.job_finished`, `task.run_finished`,
+`calendar.event_changed`, `calendar.event_starting`) share one outbox; each
+event keeps ordinary polling tools for clients without event support. Subsystems publish only through the
 `EventPublisher` port (unset when events are disabled), outside their own
 transactions and locks, with a stable dedup key, a payload the catalog schema
 accepts (identifiers, state and at most one 200-character title; no bodies,
