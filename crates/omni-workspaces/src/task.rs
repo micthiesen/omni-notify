@@ -63,7 +63,7 @@ impl WorkspaceTask {
     /// Scheduled refresh: one subject-scoped run per active subject, in order.
     pub async fn run_scheduled(&self, run_id: Option<&str>) -> Result<(), WorkspaceError> {
         if !scheduled_runs(&self.definition) {
-            self.set_summary("On-demand workspace; scheduled refresh skipped".to_owned());
+            self.set_summary("On-demand workspace; runs when asked".to_owned());
             return Ok(());
         }
         let subjects: Vec<_> = self

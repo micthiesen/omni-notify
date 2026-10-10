@@ -115,14 +115,27 @@ a.rail-label:hover { color: var(--text); }
 }
 .rail-item > .label { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .rail-item .kbd { display: none; margin-left: auto; }
-.rail-item > .count, .rail-stream > .num { margin-left: auto; }
+.rail-item > .count, .rail-watch > .num { margin-left: auto; }
 .rail-toggle { margin-left: auto; color: var(--text-3); }
 .app[data-rail="collapsed"] .rail-brand { flex-direction: column; height: auto; padding: 0; }
 .app[data-rail="collapsed"] .rail-toggle { margin: var(--sp-2) 0 0; }
 .rail-item:hover .kbd, .rail-item:focus-visible .kbd { display: inline-flex; }
 .rail-item:hover .kbd + .count, .rail-item:focus-visible .kbd + .count { display: none; }
 .rail-more { height: 26px; padding-left: calc(var(--sp-3) + 3px + var(--sp-3)); color: var(--text-3); font: var(--t-small); }
-.rail-stream { height: 28px; padding-left: var(--sp-3); font: var(--t-small); }
+/* An On air row: the row opens the stream (new tab), the chevron opens the
+   streamer page. */
+.rail-stream { display: flex; gap: 1px; }
+.rail-watch { flex: 1; min-width: 0; gap: var(--sp-2); padding-left: var(--sp-3); font: var(--t-small); }
+.rail-watch .watch-hint { flex: none; color: var(--text-3); opacity: 0; transition: opacity var(--d-1) var(--ease); }
+.rail-watch:hover .watch-hint, .rail-watch:focus-visible .watch-hint { opacity: 1; }
+.rail-details { width: 32px; padding: 0; justify-content: center; color: var(--text-3); }
+.rail-details[aria-current="page"] { color: var(--text); }
+.rail-details[aria-current="page"]::before { display: none; }
+@media (pointer: coarse) {
+  .rail-watch, .rail-details { height: 44px; }
+  .rail-details { width: 44px; }
+  .rail-watch .watch-hint { opacity: 1; }
+}
 .rail-stream .pf-tick { flex: none; width: 3px; height: 12px; border-radius: 1px; background: var(--text-3); }
 .pf-tick.youtube { background: var(--yt); }
 .pf-tick.twitch { background: var(--twitch); }
@@ -175,8 +188,7 @@ a.rail-label:hover { color: var(--text); }
 
 @media (max-height: 860px) {
   .rail { padding-top: var(--sp-3); }
-  .rail-item { height: 28px; }
-  .rail-stream { height: 26px; }
+  .rail-item:not(.rail-watch, .rail-details) { height: 28px; }
   .rail-label { padding-top: 6px; }
   .rail-brand, .rail-search { margin-bottom: var(--sp-2); }
 }

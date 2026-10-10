@@ -4,6 +4,7 @@
 pub mod client;
 
 use omni_api::briefings::BriefingsResponse;
+use omni_api::calendar::{CalendarEventsResponse, CalendarStatusResponse};
 use omni_api::claude::{
     ClaudeActivityResponse, ClaudeLinkFailure, ClaudeSessionsResponse, ClaudeTranscriptResponse,
 };
@@ -21,6 +22,8 @@ use omni_api::media::{
     RecommendationFeedback, RecommendationResponse, RecommendationsResponse, RunResponse,
     TasteProfileResponse,
 };
+use omni_api::parcels::{PARCELS, ParcelsResponse};
+use omni_api::pets::PetHealthResponse;
 use omni_api::podcasts::{
     PodcastFeedback, PodcastRecommendationResponse, PodcastRecommendationsResponse,
     PodcastTasteProfileResponse,
@@ -135,6 +138,31 @@ pub async fn run_task_request(
         });
     }
     post(&format!("/api/tasks/{}/run", enc(name)), NO_BODY).await
+}
+
+// ----- personal: pets, parcels, calendar -----
+
+pub async fn fetch_pet_health() -> Result<PetHealthResponse, ApiClientError> {
+    get("/api/pets/health").await
+}
+
+/// Omni's cached Parcel read; never calls Parcel.
+pub async fn fetch_parcels() -> Result<ParcelsResponse, ApiClientError> {
+    get(PARCELS).await
+}
+
+pub async fn fetch_calendar_status() -> Result<CalendarStatusResponse, ApiClientError> {
+    get(omni_api::calendar::paths::STATUS).await
+}
+
+/// Occurrences in `[from, to)`; both are local `YYYY-MM-DD` dates in the
+/// calendar's zone.
+pub async fn fetch_calendar_events(
+    from: &str,
+    to: &str,
+) -> Result<CalendarEventsResponse, ApiClientError> {
+    let q = query(&[("from", Some(from.to_owned())), ("to", Some(to.to_owned()))]);
+    get(&format!("{}{q}", omni_api::calendar::paths::EVENTS)).await
 }
 
 // ----- streamers -----

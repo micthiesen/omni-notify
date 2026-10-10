@@ -227,6 +227,28 @@ pub fn use_rec_highlight(loaded: Signal<bool>) -> Option<String> {
     highlighted
 }
 
+/// `?<param>=<id>` deep links: once `loaded`, scrolls `#<prefix>-<id>` into
+/// view a single time. Returns the id so the target can wear
+/// `deep-link-target`.
+pub fn use_query_highlight(
+    param: &'static str,
+    prefix: &'static str,
+    loaded: Signal<bool>,
+) -> Option<String> {
+    let highlighted = query_param(param);
+    let target = highlighted.clone();
+    let done = StoredValue::new(false);
+    Effect::new(move |_| {
+        let Some(id) = target.as_ref() else { return };
+        if !loaded.get() || done.get_value() {
+            return;
+        }
+        done.set_value(true);
+        scroll_into_view_center(&format!("{prefix}-{id}"));
+    });
+    highlighted
+}
+
 /// The current URL's query parameter `name`.
 pub fn query_param(name: &str) -> Option<String> {
     let search = window().location().search().ok()?;

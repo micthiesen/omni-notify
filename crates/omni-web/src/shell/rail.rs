@@ -4,13 +4,15 @@
 
 use leptos::prelude::*;
 use omni_api::streamers::StreamerView;
-use omni_web_kit::components::streamers::{streamer_path, viewer_number};
+use omni_web_kit::components::streamers::{
+    platform_label, preferred_watch, streamer_path, viewer_number,
+};
 use omni_web_kit::components::{Glyph, Icon, IconSize, TickNum};
 use omni_web_kit::feeds::use_workspace_feed;
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::Link;
 use omni_web_kit::utils::js::locale_number;
-use omni_web_kit::utils::tasks::{TaskHealth, task_health};
+use omni_web_kit::utils::tasks::task_health;
 
 use super::ShellContext;
 use super::connection::Connection;
@@ -108,9 +110,7 @@ pub fn Rail(
             s.as_ref().map_or(0, |s| {
                 s.tasks
                     .iter()
-                    .filter(|t| {
-                        matches!(task_health(t, now), TaskHealth::Fault | TaskHealth::Stale)
-                    })
+                    .filter(|t| task_health(t, now).needs_attention())
                     .count()
             })
         })
@@ -148,13 +148,16 @@ pub fn Rail(
                     .unwrap_or_default()
             })
         });
-        let platform = move || {
-            streamer.with(|s| {
-                s.as_ref()
-                    .map(|s| s.primary.platform.clone())
-                    .unwrap_or_default()
+        let watch = Memo::new(move |_| streamer.with(|s| s.as_ref().map(preferred_watch)));
+        let platform =
+            move || watch.with(|w| w.as_ref().map(|w| w.platform.clone()).unwrap_or_default());
+        let watch_label = Signal::derive(move || {
+            let name = name.get();
+            watch.with(|w| match w {
+                Some(w) => format!("Watch {name} on {}", platform_label(&w.platform)),
+                None => format!("Watch {name}"),
             })
-        };
+        });
         let viewers = Signal::derive(move || {
             streamer.with(|s| {
                 s.as_ref()
@@ -165,18 +168,32 @@ pub fn Rail(
         let to = href.clone().unwrap_or_default();
         let current_path = to.clone();
         view! {
-            <Link
-                to=to
-                class="rail-item rail-stream"
-                title=Signal::derive(move || name.get())
-                aria_current=Signal::derive(move || {
-                    path.with(|p| on_streamer(p, &current_path)).then(|| "page".to_owned())
-                })
-            >
-                <span class=move || format!("pf-tick {}", platform()) aria-hidden="true"></span>
-                <span class="label">{move || name.get()}</span>
-                <TickNum value=viewers class="small dim" title="Watching now"/>
-            </Link>
+            <div class="rail-stream">
+                <a
+                    class="rail-item rail-watch"
+                    href=move || watch.with(|w| w.as_ref().map(|w| w.url.clone()).unwrap_or_default())
+                    target="_blank"
+                    rel="noopener"
+                    aria-label=watch_label
+                    title=watch_label
+                >
+                    <span class=move || format!("pf-tick {}", platform()) aria-hidden="true"></span>
+                    <span class="label">{move || name.get()}</span>
+                    <TickNum value=viewers class="small dim"/>
+                    <Glyph icon=Icon::External size=IconSize::Small class="watch-hint"/>
+                </a>
+                <Link
+                    to=to
+                    class="rail-item rail-details"
+                    aria_label=Signal::derive(move || format!("{} details", name.get()))
+                    title=Signal::derive(move || format!("{} details", name.get()))
+                    aria_current=Signal::derive(move || {
+                        path.with(|p| on_streamer(p, &current_path)).then(|| "page".to_owned())
+                    })
+                >
+                    <Glyph icon=Icon::ChevronRight size=IconSize::Small/>
+                </Link>
+            </div>
         }
     };
 

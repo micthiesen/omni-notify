@@ -56,21 +56,38 @@ pub fn SkeletonRows(
     }
 }
 
-/// One sentence and at most one action.
+/// One sentence and at most one action. `title` adds a heading (page-level
+/// empty and setup states): the glyph sits beside the heading and sentence.
 #[component]
 pub fn EmptyState(
     #[prop(into)] message: Signal<String>,
+    #[prop(into, optional)] title: MaybeProp<String>,
     #[prop(optional)] icon: Option<Icon>,
     #[prop(optional)] compact: bool,
     #[prop(optional)] action: Option<ViewFn>,
 ) -> impl IntoView {
+    let glyph = icon.map(|icon| view! { <span class="empty-glyph"><Glyph icon/></span> });
+    if let Some(heading) = title.get_untracked() {
+        return view! {
+            <div class="empty titled">
+                {glyph}
+                <div class="empty-body">
+                    <h2 class="empty-title">{heading}</h2>
+                    <p>{move || message.get()}</p>
+                    {action.map(|a| view! { <div class="empty-action">{a.run()}</div> })}
+                </div>
+            </div>
+        }
+        .into_any();
+    }
     view! {
         <div class=if compact { "empty compact" } else { "empty" }>
-            {icon.map(|icon| view! { <span class="empty-glyph"><Glyph icon/></span> })}
+            {glyph}
             <p>{move || message.get()}</p>
             {action.map(|a| a.run())}
         </div>
     }
+    .into_any()
 }
 
 /// What failed, why if known, Retry and an optional link. The raw API detail

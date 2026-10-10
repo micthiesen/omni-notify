@@ -29,6 +29,8 @@ use omni_web_kit::utils::js::{
     local_date_ms, local_day_index, locale_number, now_ms, number_string, week_start,
 };
 
+use crate::pages::live::watch_label;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Range {
     Days30,
@@ -585,6 +587,28 @@ fn BaselinePanel(
     }
 }
 
+/// "Open destiny on Kick".
+fn open_binding_label(account: &str, platform: &str) -> String {
+    format!("Open {account} on {}", platform_label(platform))
+}
+
+/// "Open destiny on Kick, primary, 1,234 watching".
+fn binding_row_label(
+    account: &str,
+    platform: &str,
+    is_primary: bool,
+    viewers: Option<i64>,
+) -> String {
+    let mut label = open_binding_label(account, platform);
+    if is_primary {
+        label.push_str(", primary");
+    }
+    if let Some(v) = viewers {
+        label.push_str(&format!(", {} watching", locale_number(v as f64)));
+    }
+    label
+}
+
 #[component]
 fn BindingsPanel(#[prop(into)] streamer: Signal<StreamerView>) -> impl IntoView {
     view! {
@@ -600,7 +624,13 @@ fn BindingsPanel(#[prop(into)] streamer: Signal<StreamerView>) -> impl IntoView 
                         let viewers = sources.iter().find(|src| src.platform == b.platform && src.username == b.username).and_then(|src| src.viewer_count);
                         let is_primary = primary.as_ref().is_some_and(|p| p.platform == b.platform && p.username == b.username);
                         view! {
-                            <a class="row dense" href=b.url.clone() target="_blank" rel="noopener">
+                            <a
+                                class="row dense"
+                                href=b.url.clone()
+                                target="_blank"
+                                rel="noopener"
+                                aria-label=binding_row_label(&b.username, &b.platform, is_primary, viewers)
+                            >
                                 <PlatformIcon platform=b.platform.clone()/>
                                 <span class="row-main">
                                     <span class="row-title">{b.username.clone()}</span>
@@ -775,7 +805,8 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
         };
         let watch = primary.clone().map(|p| {
             let label = if is_live { format!("Watch on {}", platform_label(&p.platform)) } else { "Open channel".to_owned() };
-            view! { <ButtonLink to=p.url variant=ButtonVariant::Primary external=true>{label}</ButtonLink> }
+            let aria = if is_live { watch_label(&name, Some(&p)) } else { open_binding_label(&name, &p.platform) };
+            view! { <ButtonLink to=p.url variant=ButtonVariant::Primary external=true title=aria.clone() aria_label=aria>{label}</ButtonLink> }
         });
         view! {
             <header class="page-head streamer-hero">
@@ -791,7 +822,14 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
                     <p class="lede">{sub_line}</p>
                     <div class="chips">
                         {bindings.into_iter().map(|b| view! {
-                            <a class="chip" href=b.url.clone() target="_blank" rel="noopener">
+                            <a
+                                class="chip"
+                                href=b.url.clone()
+                                target="_blank"
+                                rel="noopener"
+                                aria-label=open_binding_label(&b.username, &b.platform)
+                                title=open_binding_label(&b.username, &b.platform)
+                            >
                                 <PlatformIcon platform=b.platform.clone() size=14/>
                                 {b.username.clone()}
                             </a>
@@ -884,6 +922,22 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn watch_links_name_account_and_platform() {
+        assert_eq!(
+            open_binding_label("destiny", "kick"),
+            "Open destiny on Kick"
+        );
+        assert_eq!(
+            binding_row_label("destiny", "youtube", true, Some(1234)),
+            "Open destiny on YouTube, primary, 1,234 watching"
+        );
+        assert_eq!(
+            binding_row_label("destiny", "twitch", false, None),
+            "Open destiny on Twitch"
+        );
+    }
 
     fn session(started: i64, peak: i64) -> StreamSessionView {
         StreamSessionView {

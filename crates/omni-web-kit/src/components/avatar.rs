@@ -73,15 +73,26 @@ pub fn Poster(
     #[prop(into, optional)] kind: Option<String>,
     #[prop(optional)] square: bool,
     #[prop(optional)] eager: bool,
+    /// The title is already shown next to the poster, so the fallback tile
+    /// keeps only the initial.
+    #[prop(optional)]
+    captioned: bool,
 ) -> impl IntoView {
     let broken = RwSignal::new(false);
     let hue = hue_class(&title);
     let alt = format!("{title} artwork");
     let class = if square { "poster square" } else { "poster" };
+    let initial = poster_initial(&title);
+    // The typographic tile always sits underneath: it shows while artwork
+    // loads, when there is none, and when it fails.
     view! {
         <span class=class>
+            <span class=format!("poster-fallback {hue}") aria-hidden=src.is_some().then_some("true")>
+                <span class="poster-initial" aria-hidden="true">{initial}</span>
+                {(!captioned).then(|| view! { <span class="poster-fallback-title">{title.clone()}</span> })}
+            </span>
             {move || match (&src, broken.get()) {
-                (Some(src), false) => view! {
+                (Some(src), false) => Some(view! {
                     <img
                         src=src.clone()
                         alt=alt.clone()
@@ -89,23 +100,41 @@ pub fn Poster(
                         decoding="async"
                         on:error=move |_| broken.set(true)
                     />
-                }
-                .into_any(),
-                _ => view! { <span class=format!("poster-fallback {hue}")>{title.clone()}</span> }.into_any(),
+                }),
+                _ => None,
             }}
             {kind.map(|k| view! { <span class="poster-kind">{k}</span> })}
         </span>
     }
 }
 
+/// The first letter or digit of a title, skipping a leading "The"/"A".
+pub fn poster_initial(title: &str) -> String {
+    let words: Vec<&str> = title.split_whitespace().collect();
+    let skip = usize::from(
+        words.len() > 1 && matches!(words[0].to_lowercase().as_str(), "the" | "a" | "an"),
+    );
+    words
+        .iter()
+        .skip(skip)
+        .flat_map(|w| w.chars())
+        .find(|c| c.is_alphanumeric())
+        .map_or_else(|| "?".to_owned(), |c| c.to_uppercase().collect())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::initials;
+    use super::{initials, poster_initial};
 
     #[test]
     fn initials_take_first_and_last_words() {
         assert_eq!(initials("Hutch"), "H");
         assert_eq!(initials("lofi girl radio"), "LR");
         assert_eq!(initials("  "), "?");
+        assert_eq!(poster_initial("The Gold"), "G");
+        assert_eq!(poster_initial("1917"), "1");
+        assert_eq!(poster_initial("¿Qué?"), "Q");
+        assert_eq!(poster_initial("A"), "A");
+        assert_eq!(poster_initial(""), "?");
     }
 }

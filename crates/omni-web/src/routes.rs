@@ -25,6 +25,10 @@ pub enum Route {
     Operations,
     Reminders,
     Pets,
+    /// Parcel deliveries (`?tracking=` selects one).
+    Deliveries,
+    /// The read-only agenda (`?day=YYYY-MM-DD` selects a day).
+    Calendar,
     Mcp,
     Claude,
     NotFound,
@@ -108,6 +112,8 @@ pub fn match_route(path: &str) -> Route {
     match path {
         "/reminders" => Route::Reminders,
         "/pets" => Route::Pets,
+        "/deliveries" => Route::Deliveries,
+        "/calendar" => Route::Calendar,
         "/media" => Route::Media,
         "/data" => Route::Data,
         "/podcasts" => Route::Podcasts,
@@ -145,6 +151,8 @@ pub fn page_title(path: &str) -> String {
             "/live" => Some("Live"),
             "/reminders" => Some("iCloud Reminders"),
             "/pets" => Some("Pets"),
+            "/deliveries" => Some("Deliveries"),
+            "/calendar" => Some("Calendar"),
             "/media" => Some("Watch"),
             "/podcasts" => Some("Podcasts"),
             "/pods" => Some("PressPods"),
@@ -221,6 +229,11 @@ mod tests {
         assert_eq!(route("/operations"), Route::Operations);
         assert_eq!(route("/reminders"), Route::Reminders);
         assert_eq!(route("/pets"), Route::Pets);
+        assert_eq!(route("/deliveries"), Route::Deliveries);
+        assert_eq!(route("/deliveries/"), Route::Deliveries);
+        assert_eq!(route("/deliveries/x"), Route::NotFound);
+        assert_eq!(route("/calendar"), Route::Calendar);
+        assert_eq!(route("/calendar/2026-10-09"), Route::NotFound);
         assert_eq!(route("/mcp-activity"), Route::Mcp);
         assert_eq!(route("/claude"), Route::Claude);
         assert_eq!(route("/nope"), Route::NotFound);
@@ -232,6 +245,8 @@ mod tests {
     fn titles_follow_sections() {
         assert_eq!(page_title("/costs"), "Costs · Omni Notify");
         assert_eq!(page_title("/live"), "Live · Omni Notify");
+        assert_eq!(page_title("/deliveries"), "Deliveries · Omni Notify");
+        assert_eq!(page_title("/calendar"), "Calendar · Omni Notify");
         assert_eq!(page_title("/workspaces/w/s"), "Workspaces · Omni Notify");
         assert_eq!(page_title("/streamers/x"), "Omni Notify");
         assert_eq!(page_title("/"), "Omni Notify");

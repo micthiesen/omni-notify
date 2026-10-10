@@ -7,12 +7,12 @@ use leptos::html::Div;
 use leptos::prelude::*;
 use omni_api::runs::{LogLevel, Run, RunLogLine, RunLogStreamFrame, RunStatus};
 
-use super::badges::{Status, TriggerBadge, run_status_kind};
+use super::badges::{Status, TriggerBadge, run_status_kind, run_status_label};
 use super::button::{Button, ButtonSize, ButtonVariant};
 use super::controls::Chip;
 use super::icon::Icon;
 use super::inspector::Modal;
-use super::task_display::run_duration;
+use super::task_display::{detail_class, run_detail, run_duration};
 use crate::api;
 use crate::hooks::use_now;
 use crate::sse::{SseConnection, SseMessage};
@@ -331,7 +331,7 @@ pub fn LogViewer(run: Run, on_close: Callback<()>) -> impl IntoView {
         let run = logs.run.get();
         view! {
             <div class="cluster">
-                <Status kind=run_status_kind(run.status)/>
+                <Status kind=run_status_kind(run.status) label=run_status_label(run.status)/>
                 <TriggerBadge trigger=run.trigger/>
                 {move || logs.streaming.get().then(|| view! { <span class="tag signal">"streaming"</span> })}
             </div>
@@ -344,8 +344,8 @@ pub fn LogViewer(run: Run, on_close: Callback<()>) -> impl IntoView {
     });
     view! {
         <Modal label=Signal::derive(move || format!("Logs for {}", logs.run.with(|r| r.task_name.clone()))) on_close head>
-            {move || logs.run.with(|r| r.error.clone()).map(|e| view! {
-                <p class="log-note warn" style="border-bottom: 1px solid var(--line)">{e}</p>
+            {move || logs.run.with(|r| (r.status != RunStatus::Success).then(|| run_detail(r)).flatten()).map(|(tone, e)| view! {
+                <p class=format!("log-note run-detail {}", detail_class(tone))>{e}</p>
             })}
             <div class="log-toolbar">
                 <div class="chips" role="group" aria-label="Log levels">{chips}</div>

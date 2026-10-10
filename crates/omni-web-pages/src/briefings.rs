@@ -314,7 +314,7 @@ pub fn BriefingsPage() -> impl IntoView {
     };
 
     view! {
-        <PageHead title="Briefings" eyebrow="Research" lede />
+        <PageHead title="Briefings" lede />
         <ResearchSwitch current=ResearchTab::Briefings />
         {move || {
             if briefings.with(Option::is_none) {

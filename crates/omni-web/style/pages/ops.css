@@ -39,6 +39,42 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
 .lead-chapter { padding-left: var(--sp-4); border-left: 2px solid var(--signal-line); }
 .lead-chapter h3 { font: var(--t-h3); margin-bottom: var(--sp-1); }
 .lead-chapter p { color: var(--text-2); font: var(--t-body); }
+.lead-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.watch-btn .icon:last-child { opacity: 0.7; }
+/* A live row: the row is the Watch target (new tab), the chevron opens the
+   streamer page. Both are at least 44 px on phone. */
+.live-row { padding: 0; gap: 0; align-items: stretch; }
+.live-watch {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex: 1;
+  min-width: 0;
+  min-height: var(--row);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--pad);
+  color: inherit;
+  transition: background var(--d-1) var(--ease);
+}
+.live-watch:hover { background: var(--hover); }
+.live-watch:focus-visible, .live-details:focus-visible { outline-offset: -2px; }
+.live-watch .watch-hint { flex: none; color: var(--text-3); transition: color var(--d-1) var(--ease); }
+.live-watch:hover .watch-hint, .live-watch:focus-visible .watch-hint { color: var(--text); }
+.live-details {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  border-left: 1px solid var(--line);
+  color: var(--text-3);
+  transition: background var(--d-1) var(--ease), color var(--d-1) var(--ease);
+}
+.live-details:hover { background: var(--hover); color: var(--text); }
+@media (max-width: 899px) {
+  .live-watch { min-height: var(--row-touch); padding-left: var(--sp-4); gap: var(--sp-3); }
+  /* The platform mark on the avatar carries the cue; the title keeps the room. */
+  .live-watch .watch-hint { display: none; }
+  .lead-actions > * { flex: 1 1 auto; height: 44px; }
+}
 .lead-figures { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--sp-6); align-items: end; }
 .lead-now { display: flex; flex-direction: column; gap: var(--sp-3); }
 .lead-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-5); }
@@ -76,6 +112,22 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
 .ops-layout.split { display: grid; }
 .ops-table td { vertical-align: middle; }
 .task-name { font-weight: 500; color: var(--text); }
+/* Phone: two-line rows (name plus next; run strip plus last run), no
+   sideways scroll. */
+.ops-phone-meta { display: none; }
+@media (max-width: 899px) {
+  .ops-phone-meta { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); min-width: 0; }
+  .ops-phone-meta .ops-last { flex: none; white-space: nowrap; }
+  .ops-table .ops-phone-meta .runstrip { min-width: 0; gap: 3px; }
+  .ops-table .ops-phone-meta .runstrip i { width: 7px; }
+  /* The task name on its own line; a warning or failure reason wraps to two
+     lines instead of ellipsizing, since it is the row's key information. */
+  .ops-task-sub { white-space: normal; }
+  /* The label above already names the task; the id would only ellipsize. */
+  .ops-task-sub .mono { display: none; }
+  .ops-task-sub .ops-sep { display: none; }
+  .ops-task-sub .ops-detail { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+}
 .ops-table tr.selected td { background: var(--signal-wash); }
 
 /* ---------- Streamer ---------- */

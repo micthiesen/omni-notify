@@ -371,6 +371,7 @@ fn PickCard(
                     src=poster_url(rec.poster_path.as_deref(), "w342")
                     title=rec.title.clone()
                     kind=kind_label(rec.media_type)
+                    captioned=true
                 />
                 <span class="pick-title">
                     {rec.title.clone()}
@@ -1114,6 +1115,7 @@ pub fn MediaDetailPage(#[prop(into)] id: String) -> impl IntoView {
                         src=poster_url(r.poster_path.as_deref(), "w500")
                         title=r.title.clone()
                         eager=true
+                        captioned=true
                     />
                 </div>
                 <div class="rec-detail-main">

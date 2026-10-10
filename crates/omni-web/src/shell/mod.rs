@@ -20,7 +20,7 @@ use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::navigate;
 use omni_web_kit::task::on_cleanup_local;
 use omni_web_kit::utils::js::now_ms;
-use omni_web_kit::utils::tasks::{TaskHealth, task_health};
+use omni_web_kit::utils::tasks::task_health;
 use wasm_bindgen::JsCast as _;
 use wasm_bindgen::closure::Closure;
 
@@ -164,8 +164,8 @@ fn install_shortcuts(shell: ShellContext) {
 const SHORTCUTS: [(&str, &str); 8] = [
     ("⌘K  /", "Search and go anywhere"),
     (
-        "g then h l m p w b e o c d",
-        "Home, Live, Media, Podcasts, Workspaces, Briefings, Email, Operations, Costs, Data",
+        "g then h l m p w b e a v o c d",
+        "Home, Live, Media, Podcasts, Workspaces, Briefings, Email, Calendar, Deliveries, Operations, Costs, Data",
     ),
     ("j  k", "Move through the page's rows"),
     ("Enter", "Open or inspect the focused row"),
@@ -270,9 +270,7 @@ pub fn Shell(route: Memo<Route>, path: Memo<String>, children: ChildrenFn) -> im
             s.as_ref().map_or(0, |s| {
                 s.tasks
                     .iter()
-                    .filter(|t| {
-                        matches!(task_health(t, now), TaskHealth::Fault | TaskHealth::Stale)
-                    })
+                    .filter(|t| task_health(t, now).needs_attention())
                     .count()
             })
         })

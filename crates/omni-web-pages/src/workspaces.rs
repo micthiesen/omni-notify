@@ -509,7 +509,7 @@ fn Overview() -> impl IntoView {
     });
 
     view! {
-        <PageHead title=sentence eyebrow="Research" sentence=true lede="Research, decisions and next steps for ongoing projects." />
+        <PageHead title=sentence sentence=true lede="Research, decisions and next steps for ongoing projects." />
         <ResearchSwitch current=ResearchTab::Workspaces />
         {move || {
             error.get().map(|e| view! { <ErrorState title="That message could not start research" raw=e /> })
@@ -672,7 +672,7 @@ fn WorkspacePage(#[prop(into)] workspace_id: Signal<String>) -> impl IntoView {
             Tone::Neutral
         };
         Some(view! {
-            <PageHead title=def.title.clone() eyebrow="Research" lede=def.description.clone() />
+            <PageHead title=def.title.clone() lede=def.description.clone() />
             <ReadoutBand cols=4 aria_label="Workspace">
                 <Readout label="Active" value=active.to_string() />
                 <Readout
@@ -1048,11 +1048,13 @@ fn SubjectPage(
             <div id="workspace-summary">
                 <PageHead
                     title=subject.title.clone()
-                    eyebrow=workspace.title.clone()
                     lede=subject.summary.clone()
                     actions=status_select
                 >
                     <div class="cluster small muted ws-subject-meta">
+                        <Link to=format!("/workspaces/{}", encode_uri_component(&workspace.id)) class="textlink">
+                            {workspace.title.clone()}
+                        </Link>
                         <Status kind=kind label=word />
                         <span title=format_absolute(updated)>
                             {move || format!("Updated {}", format_relative_at(updated, now.get()))}

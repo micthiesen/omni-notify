@@ -4,13 +4,16 @@
 
 use leptos::prelude::*;
 use omni_api::intelligence::LivestreamIntelligence;
+use omni_api::streamers::StreamerBinding;
 use omni_api::streamers::{LiveStreamerView, OfflineStreamerView, StreamerTier, StreamerView};
 use omni_web_kit::components::streamers::{
-    DggPresenceTag, platform_label, streamer_intelligence, streamer_path, viewer_number,
+    DggPresenceTag, platform_label, preferred_watch, streamer_intelligence, streamer_path,
+    viewer_number,
 };
 use omni_web_kit::components::{
-    Avatar, Delta, EmptyState, ErrorState, Icon, LiveTag, Meter, PageHead, Panel, Presence,
-    Readout, ReadoutSize, SegOption, Segmented, SkeletonRows, Sparkline, Tag, TickNum, Tone,
+    Avatar, Delta, EmptyState, ErrorState, Glyph, Icon, IconSize, LiveTag, Meter, PageHead, Panel,
+    PlatformIcon, Presence, Readout, ReadoutSize, SegOption, Segmented, SkeletonRows, Sparkline,
+    Tag, TickNum, Tone,
 };
 use omni_web_kit::hooks::use_now;
 use omni_web_kit::live::{LiveData, use_live_data};
@@ -55,6 +58,21 @@ pub fn live_list(live: LiveData) -> Vec<LiveStreamerView> {
             .map(|s| omni_web_kit::components::streamers::live_streamers(&s.streamers))
             .unwrap_or_default()
     })
+}
+
+/// The binding a Watch target opens, tracking binding changes.
+pub fn use_watch_binding(
+    streamer: Memo<Option<LiveStreamerView>>,
+) -> Memo<Option<StreamerBinding>> {
+    Memo::new(move |_| streamer.with(|s| s.as_ref().map(preferred_watch)))
+}
+
+/// "Watch Destiny on YouTube".
+pub fn watch_label(name: &str, binding: Option<&StreamerBinding>) -> String {
+    match binding {
+        Some(b) => format!("Watch {name} on {}", platform_label(&b.platform)),
+        None => format!("Watch {name}"),
+    }
 }
 
 /// A keyed memo over one live streamer.
@@ -110,7 +128,9 @@ fn trend_delta(i: &Option<LivestreamIntelligence>) -> (Option<f64>, bool) {
         .map_or((None, false), |t| (Some(t.percent_change), t.anomalous))
 }
 
-/// One live channel row (Home's other channels, `/live` On air table).
+/// One live channel row (Home's other channels, `/live` On air table). The
+/// row opens the stream on the preferred live platform in a new tab; the
+/// chevron at the end opens the streamer page.
 #[component]
 pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView {
     let live = use_live_data();
@@ -123,7 +143,11 @@ pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView 
             .map(|s| s.display_name.clone())
             .unwrap_or_default()
     });
-    let platform = streamer.with_untracked(|s| s.as_ref().map(|s| s.primary.platform.clone()));
+    let watch = use_watch_binding(streamer);
+    let platform = watch.with_untracked(|w| w.as_ref().map(|w| w.platform.clone()));
+    let watch_name = name.clone();
+    let watch_aria = Signal::derive(move || watch.with(|w| watch_label(&watch_name, w.as_ref())));
+    let details_aria = format!("{name} details");
     let viewers = Signal::derive(move || {
         streamer.with(|s| {
             s.as_ref()
@@ -141,7 +165,15 @@ pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView 
         })
     };
     view! {
-        <Link to=href class="row" title=name.clone()>
+        <div class="row live-row">
+        <a
+            class="live-watch"
+            href=move || watch.with(|w| w.as_ref().map(|w| w.url.clone()).unwrap_or_default())
+            target="_blank"
+            rel="noopener"
+            aria-label=watch_aria
+            title=watch_aria
+        >
             <Avatar name=name.clone() size=32 presence=Presence::Live platform=platform.unwrap_or_default()/>
             <span class="row-main">
                 <span class="row-title">{name.clone()}</span>
@@ -168,8 +200,13 @@ pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView 
                     }
                 })}
                 <TickNum value=viewers class="row-value readout-m"/>
+                <Glyph icon=Icon::External size=IconSize::Small class="watch-hint"/>
             </span>
+        </a>
+        <Link to=href class="live-details" aria_label=details_aria.clone() title=details_aria>
+            <Glyph icon=Icon::ChevronRight/>
         </Link>
+        </div>
     }
 }
 
@@ -188,11 +225,12 @@ pub fn LeadStage(id: String) -> impl IntoView {
             .map(|s| s.display_name.clone())
             .unwrap_or_default()
     });
-    let platform = streamer.with_untracked(|s| {
-        s.as_ref()
-            .map(|s| s.primary.platform.clone())
-            .unwrap_or_default()
-    });
+    let watch = use_watch_binding(streamer);
+    let platform =
+        watch.with_untracked(|w| w.as_ref().map(|w| w.platform.clone()).unwrap_or_default());
+    let watch_name = name.clone();
+    let watch_aria = Signal::derive(move || watch.with(|w| watch_label(&watch_name, w.as_ref())));
+    let details_aria = format!("{name} details");
     let typical = Signal::derive(move || {
         intelligence.with(|i| {
             i.as_ref()
@@ -226,12 +264,28 @@ pub fn LeadStage(id: String) -> impl IntoView {
                 <div class="lead-id">
                     <div class="cluster">
                         <Link to=href.clone() class="lead-name">{name.clone()}</Link>
-                        <Tag>{platform_label(&platform)}</Tag>
                         {tier_background.then(|| view! { <Tag title="Notifications are muted for background streamers">"Background"</Tag> })}
                         <span class="num dim">{move || s().map(|s| format_uptime(now.get() - s.started_at as f64)).unwrap_or_default()}</span>
                     </div>
                     <h2 class="lead-title">{move || s().map(|s| s.title).unwrap_or_default()}</h2>
                 </div>
+            </div>
+            <div class="lead-actions">
+                <a
+                    class="btn primary watch-btn"
+                    href=move || watch.with(|w| w.as_ref().map(|w| w.url.clone()).unwrap_or_default())
+                    target="_blank"
+                    rel="noopener"
+                    aria-label=watch_aria
+                >
+                    {move || watch.with(|w| w.as_ref().map(|w| view! { <PlatformIcon platform=w.platform.clone() size=16/> }))}
+                    <span>{move || watch.with(|w| w.as_ref().map_or_else(|| "Watch".to_owned(), |w| format!("Watch on {}", platform_label(&w.platform))))}</span>
+                    <Glyph icon=Icon::External size=IconSize::Small/>
+                </a>
+                <Link to=href.clone() class="btn" aria_label=details_aria>
+                    "Details"
+                    <Glyph icon=Icon::ChevronRight size=IconSize::Small/>
+                </Link>
             </div>
             {move || chapter().map(|c| view! {
                 <div class="lead-chapter">
@@ -331,7 +385,7 @@ pub fn LivePage() -> impl IntoView {
     });
     let now = use_now(60_000);
     view! {
-        <PageHead title eyebrow="Live" sentence=true lede=Signal::derive(move || {
+        <PageHead title sentence=true lede=Signal::derive(move || {
             (order.with(|o| !o.is_empty())).then(|| meta.get())
         })/>
         {move || {

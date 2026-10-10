@@ -75,6 +75,10 @@ pub fn Readout(
         ReadoutSize::L => "",
         ReadoutSize::M => "m",
     };
+    // A word (Ready, Unavailable) is set in sans: no `num` tick figure.
+    let word = class
+        .get_untracked()
+        .is_some_and(|c| c.split_whitespace().any(|c| c == "word"));
     let class = move || {
         format!(
             "readout {size_class} {} {} {}",
@@ -87,7 +91,11 @@ pub fn Readout(
         <div class=class>
             <span class="readout-k">{move || label.get()}</span>
             <span class="readout-v">
-                <TickNum value title/>
+                {if word {
+                    view! { <span title=move || title.get()>{move || value.get()}</span> }.into_any()
+                } else {
+                    view! { <TickNum value title/> }.into_any()
+                }}
                 {move || unit.get().map(|u| view! { <small>{u}</small> })}
             </span>
             {children.map(|c| view! { <div class="readout-sub">{c()}</div> })}
@@ -251,10 +259,6 @@ pub fn Sparkline(
                     })
                 }}
             </svg>
-            // Shown until the line has moved: a flat line alone reads as no data.
-            {move || (shape.with(|s| s.5) < 2).then(|| view! {
-                <span class="spark-wait" aria-hidden="true">"Charting from now"</span>
-            })}
             {move || {
                 let (_, _, ex, ey, _, _, n) = shape.get();
                 (n > 1).then(|| view! {
@@ -265,6 +269,11 @@ pub fn Sparkline(
                 })
             }}
         </div>
+        // Shown under the chart until the line has moved: a flat line alone
+        // reads as no data. Below it, so no chart line crosses the text.
+        {move || (shape.with(|s| s.5) < 2).then(|| view! {
+            <span class="spark-wait" aria-hidden="true">"Charting from now"</span>
+        })}
     }
 }
 

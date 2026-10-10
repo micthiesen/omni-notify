@@ -643,7 +643,6 @@ pub fn McpPage() -> impl IntoView {
     view! {
         <PageHead
             title="MCP activity"
-            eyebrow="System"
             lede="Every tool call agents made through Omni's MCP server."
             actions=ViewFn::from(|| view! {
                 <ButtonLink to="/claude" icon=Icon::Terminal>"Claude Code"</ButtonLink>

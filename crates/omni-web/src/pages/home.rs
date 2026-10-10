@@ -15,16 +15,17 @@ use omni_web_kit::components::{
     Panel, Presence, Readout, ReadoutSize, Segmented, Skeleton, SkeletonKind, SkeletonRows, Status,
     StatusKind, Tone,
 };
-use omni_web_kit::feeds::use_workspace_feed;
+use omni_web_kit::feeds::{use_task_backed, use_workspace_feed};
 use omni_web_kit::hooks::use_now;
 use omni_web_kit::live::use_live_data;
 use omni_web_kit::router::Link;
 use omni_web_kit::task::spawn_scoped;
 use omni_web_kit::utils::format::{format_cents, format_relative, format_relative_at, task_label};
-use omni_web_kit::utils::js::{date_locale_string, now_ms};
+use omni_web_kit::utils::js::now_ms;
 use omni_web_kit::utils::tasks::{
     Cadence, TaskHealth, cadence, format_next, next_run_ms, period_ms, task_health,
 };
+use omni_web_pages::{AgendaTile, DeliveriesTile, use_calendar_status, use_parcels};
 
 use super::live::{
     LeadStage, LiveRow, LiveSort, live_list, on_air_meta, sort_options, use_live_order,
@@ -45,12 +46,22 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-/// Attention items from the snapshot tasks, pending actions and failed
-/// emails in the last day.
+/// Personal sources that can need you: deliveries waiting on a pickup or
+/// with a problem, a failing calendar sync, pets with a tripped health rule.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PersonalAttention {
+    pub deliveries: usize,
+    pub calendar: bool,
+    pub pets: usize,
+}
+
+/// Attention items from the snapshot tasks, pending actions, failed emails
+/// in the last day and the personal sources.
 pub fn attention_items(
     tasks: &[TaskInfo],
     pending_actions: usize,
     email_failures: usize,
+    personal: PersonalAttention,
     now: f64,
 ) -> Vec<Attention> {
     let failing = tasks
@@ -60,6 +71,10 @@ pub fn attention_items(
     let stale = tasks
         .iter()
         .filter(|t| task_health(t, now) == TaskHealth::Stale)
+        .count();
+    let degraded = tasks
+        .iter()
+        .filter(|t| task_health(t, now) == TaskHealth::Degraded)
         .count();
     [
         (
@@ -77,6 +92,13 @@ pub fn attention_items(
             StatusKind::Fault,
         ),
         (
+            degraded,
+            "task degraded",
+            "tasks degraded",
+            "/operations?filter=attention",
+            StatusKind::Warn,
+        ),
+        (
             stale,
             "task stale",
             "tasks stale",
@@ -89,6 +111,27 @@ pub fn attention_items(
             "emails failed today",
             "/emails?outcome=failed",
             StatusKind::Fault,
+        ),
+        (
+            personal.deliveries,
+            "delivery needs you",
+            "deliveries need you",
+            "/deliveries",
+            StatusKind::Warn,
+        ),
+        (
+            usize::from(personal.calendar),
+            "calendar sync failing",
+            "calendar sync failing",
+            "/calendar",
+            StatusKind::Warn,
+        ),
+        (
+            personal.pets,
+            "pet health alert",
+            "pet health alerts",
+            "/pets",
+            StatusKind::Warn,
         ),
     ]
     .into_iter()
@@ -529,6 +572,9 @@ pub fn HomePage() -> impl IntoView {
     let now = use_now(30_000);
     let emails = RwSignal::new(None::<Vec<EmailActivity>>);
     let email_error = RwSignal::new(None::<String>);
+    let parcels = use_parcels();
+    let calendar = use_calendar_status();
+    let pet_health = use_task_backed(omni_web_pages::pets::PET_TASK, api::fetch_pet_health);
     let newest_run = Memo::new(move |_| {
         live.snapshot
             .with(|s| s.as_ref().and_then(|s| s.runs.first()?.finished_at))
@@ -550,11 +596,25 @@ pub fn HomePage() -> impl IntoView {
         let now = now.get();
         let pending = feed.pending_actions() as usize;
         let failures = emails.with(|e| e.as_deref().map_or(0, |e| email_failures(e, now)));
+        let personal = PersonalAttention {
+            deliveries: parcels.data.with(|p| {
+                p.as_ref()
+                    .map_or(0, omni_web_pages::deliveries::attention_count)
+            }),
+            calendar: calendar.data.with(|c| {
+                c.as_ref()
+                    .is_some_and(|c| omni_web_pages::calendar::sync_needs_you(c, now))
+            }),
+            pets: pet_health
+                .data
+                .with(|h| h.as_ref().map_or(0, omni_web_pages::pets::attention_count)),
+        };
         live.snapshot.with(|s| {
             attention_items(
                 s.as_ref().map_or(&[][..], |s| &s.tasks),
                 pending,
                 failures,
+                personal,
                 now,
             )
         })
@@ -572,18 +632,6 @@ pub fn HomePage() -> impl IntoView {
             live.snapshot.with(Option::is_some),
         )
     });
-    let date = move || {
-        date_locale_string(
-            now.get(),
-            &[
-                ("weekday", "short"),
-                ("month", "short"),
-                ("day", "numeric"),
-                ("hour", "2-digit"),
-                ("minute", "2-digit"),
-            ],
-        )
-    };
 
     view! {
         {move || {
@@ -611,7 +659,6 @@ pub fn HomePage() -> impl IntoView {
             view! {
                 <PageHead
                     title=Signal::derive(move || sentence.get().0)
-                    eyebrow=Signal::derive(date)
                     lede=Signal::derive(move || Some(sentence.get().1))
                     sentence=true
                 />
@@ -622,6 +669,8 @@ pub fn HomePage() -> impl IntoView {
                     <OnAir/>
                     <div class="sticky-side">
                         <NeedsYou items=items.into() loading/>
+                        <AgendaTile status=calendar/>
+                        <DeliveriesTile parcels/>
                         <UpNext/>
                     </div>
                 </div>
@@ -629,6 +678,10 @@ pub fn HomePage() -> impl IntoView {
                     <section class="section">
                         <div class="section-head">
                             <h2 class="section-title">"On deck"</h2>
+                            <span class="section-meta">{move || {
+                                let n = live.snapshot.with(|s| s.as_ref().map_or(0, |s| s.on_deck.len()));
+                                if n == 1 { "1 pick".to_owned() } else { format!("{n} picks") }
+                            }}</span>
                             <div class="section-end"><Link to="/media" class="textlink small">"All picks"</Link></div>
                         </div>
                         <OnDeck items=Signal::derive(move || live.snapshot.with(|s| s.as_ref().map(|s| s.on_deck.clone()).unwrap_or_default()))/>
@@ -657,12 +710,56 @@ mod tests {
             line,
             "4 channels on air, every task healthy, nothing waiting on you."
         );
-        let items = attention_items(&[], 2, 1, 0.0);
+        let items = attention_items(&[], 2, 1, PersonalAttention::default(), 0.0);
         let (head, line) = status_sentence(&items, 0, true);
         assert_eq!(head, "3 things need you.");
         assert_eq!(
             line,
             "2 workspace actions waiting, 1 email failed today; nobody on air."
         );
+        let personal = PersonalAttention {
+            deliveries: 1,
+            calendar: true,
+            pets: 2,
+        };
+        let labels: Vec<String> = attention_items(&[], 0, 0, personal, 0.0)
+            .into_iter()
+            .map(|i| i.label)
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "1 delivery needs you",
+                "1 calendar sync failing",
+                "2 pet health alerts"
+            ]
+        );
+    }
+
+    #[test]
+    fn degraded_tasks_join_the_attention_list() {
+        use omni_api::runs::{Run, RunStatus, RunTrigger};
+        let task = TaskInfo {
+            name: "Events".into(),
+            display_name: None,
+            schedule: String::new(),
+            running: false,
+            next_runs: Vec::new(),
+            last_run: Some(Run {
+                run_id: "r".into(),
+                task_name: "Events".into(),
+                trigger: RunTrigger::Schedule,
+                scheduled_for: None,
+                started_at: 0,
+                finished_at: Some(1),
+                status: RunStatus::Degraded,
+                error: Some("upstream down".into()),
+                summary: None,
+            }),
+        };
+        let items = attention_items(&[task], 0, 0, PersonalAttention::default(), 0.0);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "1 task degraded");
+        assert_eq!(items[0].kind, StatusKind::Warn);
     }
 }

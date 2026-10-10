@@ -38,6 +38,10 @@ pub fn Segmented<T>(
     on_change: Callback<T>,
     #[prop(into)] aria_label: String,
     #[prop(optional)] small: bool,
+    /// Stretch to the full width on phone (segments share it evenly)
+    /// instead of scrolling sideways.
+    #[prop(optional)]
+    fill: bool,
 ) -> impl IntoView
 where
     T: Clone + PartialEq + Send + Sync + 'static,
@@ -66,7 +70,11 @@ where
             .collect_view()
     };
     view! {
-        <div class=if small { "seg sm" } else { "seg" } role="group" aria-label=aria_label>
+        <div
+            class=format!("seg{}{}", if small { " sm" } else { "" }, if fill { " fill" } else { "" })
+            role="group"
+            aria-label=aria_label
+        >
             {buttons}
         </div>
     }

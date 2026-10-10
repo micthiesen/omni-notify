@@ -13,6 +13,7 @@
 //! | [`PodsPage`] | `/pods` | none |
 //! | [`PodsDetailPage`] | `/pods/:id` | `id` |
 //! | [`WorkspacesPage`] | `/workspaces[/:w[/:s]]` | `workspace_id`, `subject_id` |
+//! | [`DeliveriesPage`], [`CalendarPage`] | `/deliveries` (`?tracking=`), `/calendar` (`?day=`) | none |
 //! | [`PetsPage`], [`RemindersPage`], [`BriefingsPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/briefings`, `/mcp-activity`, `/claude` | none |
 //!
 //! Path parameters arrive already percent-decoded. Each detail page is
@@ -20,8 +21,10 @@
 //! its ids as signals (as the React page received new props).
 
 mod briefings;
+pub mod calendar;
 mod claude;
 mod common;
+pub mod deliveries;
 mod feedback;
 mod mcp;
 mod media;
@@ -37,7 +40,9 @@ mod taste_brain;
 mod workspaces;
 
 pub use briefings::BriefingsPage;
+pub use calendar::{AgendaTile, CalendarPage, CalendarSyncFacts, use_calendar_status};
 pub use claude::ClaudePage;
+pub use deliveries::{DeliveriesPage, DeliveriesTile, ParcelCacheFacts, use_parcels};
 pub use feedback::{FeedbackKind, FeedbackPage};
 pub use mcp::McpPage;
 pub use media::{MediaDetailPage, MediaPage};

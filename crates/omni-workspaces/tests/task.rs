@@ -33,7 +33,7 @@ async fn skips_scheduled_work_even_when_an_active_subject_exists() {
     assert!(h.app.ai.requests().is_empty());
     assert_eq!(
         task.last_run_summary().as_deref(),
-        Some("On-demand workspace; scheduled refresh skipped")
+        Some("On-demand workspace; runs when asked")
     );
 }
 

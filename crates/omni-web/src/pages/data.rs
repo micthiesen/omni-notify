@@ -789,7 +789,6 @@ pub fn DataPage() -> impl IntoView {
         view! {
             <PageHead
                 title="Data"
-                eyebrow="System"
                 lede
                 actions=ViewFn::from(move || view! {
                     <Button

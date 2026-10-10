@@ -53,9 +53,21 @@ pub fn is_stale(task: &TaskInfo, now: f64) -> bool {
 pub enum TaskHealth {
     Running,
     Fault,
+    /// The last run completed but skipped its work (an upstream failed).
+    Degraded,
     Stale,
     Ok,
     Idle,
+}
+
+impl TaskHealth {
+    /// Failing, degraded and stale tasks join the attention list.
+    pub fn needs_attention(self) -> bool {
+        matches!(
+            self,
+            TaskHealth::Fault | TaskHealth::Degraded | TaskHealth::Stale
+        )
+    }
 }
 
 pub fn task_health(task: &TaskInfo, now: f64) -> TaskHealth {
@@ -67,6 +79,10 @@ pub fn task_health(task: &TaskInfo, now: f64) -> TaskHealth {
             status: RunStatus::Error,
             ..
         }) => TaskHealth::Fault,
+        Some(Run {
+            status: RunStatus::Degraded,
+            ..
+        }) => TaskHealth::Degraded,
         Some(_) if is_stale(task, now) => TaskHealth::Stale,
         Some(_) => TaskHealth::Ok,
         None => TaskHealth::Idle,
@@ -120,6 +136,26 @@ mod tests {
         assert_eq!(cadence(&hourly), Cadence::Frequent);
         assert_eq!(cadence(&daily), Cadence::Scheduled);
         assert_eq!(cadence(&task(&[])), Cadence::Scheduled);
+    }
+
+    #[test]
+    fn degraded_last_runs_need_attention() {
+        use omni_api::runs::RunTrigger;
+        let mut t = task(&["2026-01-01T00:00:00.000Z", "2026-01-01T01:00:00.000Z"]);
+        t.last_run = Some(Run {
+            run_id: "r".into(),
+            task_name: "T".into(),
+            trigger: RunTrigger::Schedule,
+            scheduled_for: None,
+            started_at: 0,
+            finished_at: Some(1),
+            status: RunStatus::Degraded,
+            error: Some("upstream".into()),
+            summary: None,
+        });
+        assert_eq!(task_health(&t, 1.0), TaskHealth::Degraded);
+        assert!(TaskHealth::Degraded.needs_attention());
+        assert!(!TaskHealth::Ok.needs_attention());
     }
 
     #[test]

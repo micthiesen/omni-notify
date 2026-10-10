@@ -42,6 +42,17 @@ pub fn run_status_kind(status: RunStatus) -> StatusKind {
     }
 }
 
+/// The word a run's [`Status`] shows. Degraded runs completed but skipped
+/// their real work because an upstream failed; they read as a warning.
+pub fn run_status_label(status: RunStatus) -> &'static str {
+    match status {
+        RunStatus::Running => "Running",
+        RunStatus::Success => "Succeeded",
+        RunStatus::Error => "Failed",
+        RunStatus::Degraded => "Degraded",
+    }
+}
+
 /// Static mono label (tier, kind, policy, trigger).
 #[component]
 pub fn Tag(
@@ -179,12 +190,19 @@ pub fn TriggerBadge(trigger: RunTrigger) -> impl IntoView {
 #[component]
 pub fn StatusDot(status: RunStatus) -> impl IntoView {
     let kind = run_status_kind(status);
-    view! { <Status kind dot_only=kind == StatusKind::Ok/> }
+    view! { <Status kind label=run_status_label(status) dot_only=kind == StatusKind::Ok/> }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn degraded_runs_read_as_warnings() {
+        assert_eq!(run_status_kind(RunStatus::Degraded), StatusKind::Warn);
+        assert_eq!(run_status_label(RunStatus::Degraded), "Degraded");
+        assert_eq!(run_status_kind(RunStatus::Error), StatusKind::Fault);
+    }
 
     #[test]
     fn deltas_round_to_one_decimal() {

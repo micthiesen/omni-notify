@@ -117,6 +117,10 @@
 .seg-n { font: 450 0.6875rem/1 var(--mono); color: var(--text-3); font-variant-numeric: tabular-nums; }
 .seg.sm .seg-btn { height: calc(var(--ctl-sm) - 8px); }
 .seg.scroll { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+@media (max-width: 899px) {
+  .seg.fill { display: flex; width: 100%; }
+  .seg.fill .seg-btn { flex: 1 1 auto; justify-content: center; padding: 0 var(--sp-2); }
+}
 .show-more { margin: var(--sp-2) auto 0; }
 @media (max-width: 899px) {
   .seg-btn { font-size: 0.8125rem; }
@@ -148,6 +152,11 @@ button.chip:hover { border-color: var(--line-strong); color: var(--text); }
 .chips { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 @media (max-width: 899px) {
   .chip { height: 36px; }
+  /* A chip that navigates is a primary touch target. */
+  a.chip { height: 44px; }
+}
+@media (pointer: coarse) {
+  a.chip { height: 44px; }
 }
 
 /* ---------- Tag ---------- */
@@ -194,9 +203,11 @@ button.chip:hover { border-color: var(--line-strong); color: var(--text); }
 .status.warn::before, .status.stale::before { width: 6px; height: 6px; border-radius: 1px; background: var(--warn); transform: rotate(45deg); }
 .status.fault { color: var(--fault); }
 .status.fault::before { border-radius: 1px; background: var(--fault); }
-.status.idle::before, .status.info::before { background: transparent; border: 1.5px solid var(--text-3); }
+/* A heavier ring with a faint fill so it reads as a status shape rather
+   than a letter "o" or "0" beside small text. */
+.status.idle::before, .status.info::before { width: 8px; height: 8px; background: var(--hover); border: 2px solid var(--text-3); }
 .status.info { color: var(--info); }
-.status.info::before { border-color: var(--info); }
+.status.info::before { background: var(--info-wash); border-color: var(--info); }
 .status.live { color: var(--live); }
 .status.live::before { background: var(--live); }
 .status.dot-only { gap: 0; }
@@ -241,6 +252,8 @@ button.chip:hover { border-color: var(--line-strong); color: var(--text); }
 .delta.up { color: var(--ok); }
 .delta.down { color: var(--text-2); }
 .delta.surge { color: var(--signal); font-family: var(--font); font-weight: 600; }
+.delta.warn { color: var(--warn); }
+.delta.off { color: var(--text-off); }
 
 /* ---------- Kbd and count badge ---------- */
 .kbd {
@@ -295,6 +308,9 @@ button.chip:hover { border-color: var(--line-strong); color: var(--text); }
 .readout-v small { font: var(--t-read-s); color: var(--text-3); letter-spacing: 0; }
 .readout.xl .readout-v { font: var(--t-read-xl); letter-spacing: -0.05em; }
 .readout.m .readout-v { font: var(--t-read-m); letter-spacing: -0.01em; }
+/* A word in a readout slot (Ready, Unavailable) is not a number: set it in
+   the UI face so it fits a phone tile. */
+.readout.word .readout-v { font: var(--t-h2); letter-spacing: -0.01em; white-space: normal; overflow-wrap: anywhere; }
 .readout-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font: var(--t-small); color: var(--text-3); }
 .readout.signal .readout-v { color: var(--signal); }
 .readout.fault .readout-v { color: var(--fault); }
@@ -364,7 +380,6 @@ button.chip:hover { border-color: var(--line-strong); color: var(--text); }
   margin-bottom: var(--sp-8);
 }
 .page-head-text { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; flex: 1 1 360px; }
-.eyebrow { font: 450 0.75rem/1rem var(--mono); color: var(--text-3); letter-spacing: 0.02em; text-transform: uppercase; }
 .page-title { font: var(--t-h1); letter-spacing: -0.02em; }
 .sentence { font: var(--t-display); letter-spacing: -0.035em; }
 .sentence a { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
@@ -410,6 +425,14 @@ a.row:focus-visible, button.row:focus-visible { outline-offset: -2px; }
 .row.run-warn { box-shadow: inset 2px 0 0 var(--warn); }
 .row.run-running { box-shadow: inset 2px 0 0 var(--signal); }
 .row.run-fault.selected, .row.run-warn.selected, .row.run-running.selected { box-shadow: inset 2px 0 0 var(--signal); }
+/* Phone run rows keep the shape and the inset rule; the word moves to the
+   screen-reader text so the task name keeps its width. */
+@media (max-width: 899px) {
+  .row:is(.run-ok, .run-warn, .run-fault, .run-running) > .status { gap: 0; }
+  .row:is(.run-ok, .run-warn, .run-fault, .run-running) > .status > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  /* A failure or skip reason wraps to two lines instead of ellipsizing. */
+  .row-sub.run-detail { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
 .row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .row-title { font: 500 0.875rem/1.25rem var(--font); color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .row-sub { font: var(--t-small); color: var(--text-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -509,7 +532,8 @@ a.row:focus-visible, button.row:focus-visible { outline-offset: -2px; }
 .runstrip i.fault { height: 18px; background: var(--fault); }
 .runstrip i.running { background: var(--signal); animation: breathe 1.4s ease-in-out infinite; }
 .runstrip i.warn { background: var(--warn); clip-path: polygon(50% 0, 100% 14%, 100% 100%, 0 100%, 0 14%); }
-.runstrip i.missing { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+/* A slot with no run yet (short history): a quiet placeholder, not a state. */
+.runstrip i.missing { background: var(--line); }
 .timelane { position: relative; display: inline-block; vertical-align: middle; width: 120px; height: 18px; border-bottom: 1px solid var(--line); }
 .timelane i { position: absolute; bottom: 0; width: 2px; height: 12px; margin-left: -1px; border-radius: 1px; background: var(--ok-dim); }
 .timelane i.fault { background: var(--fault); }
@@ -529,9 +553,10 @@ a.row:focus-visible, button.row:focus-visible { outline-offset: -2px; }
 .spark.signal .area { fill: var(--signal); }
 .spark.live .area { fill: var(--live); opacity: 0.16; }
 .spark .ref { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
-.spark-wrap { position: relative; }
+.spark-wrap { position: relative; width: 100%; }
+.readout-sub > .spark-wrap { flex: 1 1 100%; min-width: 120px; }
 .spark-wrap .spark { height: 100%; }
-.spark-wait { position: absolute; left: 0; right: 0; bottom: 0; padding-top: var(--sp-1); border-top: 1px solid var(--line); color: var(--text-3); font: var(--t-small); }
+.spark-wait { display: block; color: var(--text-3); font: var(--t-small); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spark-end {
   position: absolute;
   width: 7px;
@@ -594,12 +619,17 @@ a:hover .avatar.offline, .avatar.offline:hover { filter: none; }
     box-shadow var(--d-2) var(--ease);
 }
 .poster.square { aspect-ratio: 1; }
-.poster img { width: 100%; height: 100%; object-fit: cover; }
+.poster img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* The typographic tile sits under the artwork: visible while it loads,
+   when there is none and when it fails. */
 .poster-fallback {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-2);
   padding: var(--sp-4);
   background: linear-gradient(160deg, var(--av-a, var(--mono-a0)), var(--av-b, var(--mono-b0)) 70%);
   font: var(--t-h2);
@@ -607,6 +637,9 @@ a:hover .avatar.offline, .avatar.offline:hover { filter: none; }
   color: var(--text);
   overflow-wrap: anywhere;
 }
+.poster-initial { align-self: flex-end; font: 600 4rem/1 var(--font); letter-spacing: -0.04em; color: var(--text); opacity: 0.2; }
+.poster.square .poster-initial { font-size: 3rem; }
+.poster-fallback-title { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .poster-fallback.hue-1 { --av-a: var(--mono-a1); --av-b: var(--mono-b1); }
 .poster-fallback.hue-2 { --av-a: var(--mono-a2); --av-b: var(--mono-b2); }
 .poster-fallback.hue-3 { --av-a: var(--mono-a3); --av-b: var(--mono-b3); }
@@ -642,7 +675,8 @@ a:hover > .poster, a:focus-visible > .poster { transform: translateY(-2px); box-
     scrollbar-width: none;
   }
   .poster-rail::-webkit-scrollbar { display: none; }
-  .poster-rail > * { flex: 0 0 42%; scroll-snap-align: start; }
+  /* Two cards and a clear slice of the third show the rail scrolls. */
+  .poster-rail > * { flex: 0 0 40%; scroll-snap-align: start; }
 }
 
 /* Without scroll-driven animations (Firefox, Safari), the phone poster rail,
@@ -754,6 +788,12 @@ a:hover > .poster, a:focus-visible > .poster { transform: translateY(-2px); box-
   border: 1px solid var(--line);
   color: var(--text-3);
 }
+.empty.titled { flex-direction: row; align-items: flex-start; gap: var(--sp-4); padding: var(--sp-6) var(--pad); }
+.empty.titled .empty-glyph { flex: none; }
+.empty-body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; max-width: 60ch; padding-top: var(--sp-1); }
+.empty-title { font: var(--t-h3); color: var(--text); }
+.empty-body p { color: var(--text-2); }
+.empty-action { margin-top: var(--sp-3); }
 .empty.compact { flex-direction: row; align-items: center; padding: var(--sp-4) var(--pad); color: var(--text-3); }
 .error-state, .error-banner {
   display: flex;
@@ -877,6 +917,7 @@ a:hover > .poster, a:focus-visible > .poster { transform: translateY(-2px); box-
 .log-line.error .log-lv, .log-line.error .log-msg { color: var(--fault); }
 .log-note { padding: var(--sp-4); color: var(--text-3); font: var(--t-small); }
 .log-note.warn { color: var(--warn); }
+.log-note.run-detail { border-bottom: 1px solid var(--line); }
 .log-cursor { padding: 0 var(--sp-4) var(--sp-3); color: var(--signal); }
 .log-cursor::before { content: "▍"; animation: breathe 1s steps(2) infinite; margin-right: var(--sp-1); }
 .log-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--pad); border-bottom: 1px solid var(--line); }

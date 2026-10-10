@@ -5,8 +5,9 @@ use omni_web_kit::components::{ButtonLink, ButtonVariant, Glyph, Icon, IconSize}
 use omni_web_kit::live::provide_live_data;
 use omni_web_kit::router::{Link, provide_router};
 use omni_web_pages::{
-    BriefingsPage, ClaudePage, FeedbackPage, McpPage, MediaDetailPage, MediaPage, PetsPage,
-    PodcastDetailPage, PodcastsPage, PodsDetailPage, PodsPage, RemindersPage, WorkspacesPage,
+    BriefingsPage, CalendarPage, ClaudePage, DeliveriesPage, FeedbackPage, McpPage,
+    MediaDetailPage, MediaPage, PetsPage, PodcastDetailPage, PodcastsPage, PodsDetailPage,
+    PodsPage, RemindersPage, WorkspacesPage,
 };
 use wasm_bindgen::JsCast as _;
 
@@ -30,7 +31,6 @@ fn NotFound(path: Memo<String>) -> impl IntoView {
     let shell = use_context::<ShellContext>();
     view! {
         <div class="not-found-page">
-            <span class="eyebrow">"404"</span>
             <h1 class="page-title">"Nothing at " <span class="mono">{move || path.get()}</span></h1>
             <p class="lede">"This link does not lead to a page in Omni Notify."</p>
             <div class="cluster">
@@ -89,6 +89,8 @@ fn render(route: Route, path: Memo<String>) -> AnyView {
         Route::Operations => view! { <OperationsPage/> }.into_any(),
         Route::Reminders => view! { <RemindersPage/> }.into_any(),
         Route::Pets => view! { <PetsPage/> }.into_any(),
+        Route::Deliveries => view! { <DeliveriesPage/> }.into_any(),
+        Route::Calendar => view! { <CalendarPage/> }.into_any(),
         Route::Mcp => view! { <McpPage/> }.into_any(),
         Route::Claude => view! { <ClaudePage/> }.into_any(),
         Route::NotFound => view! { <NotFound path/> }.into_any(),

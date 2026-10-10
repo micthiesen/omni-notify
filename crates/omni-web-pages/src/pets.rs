@@ -1,17 +1,31 @@
 //! Pet weight and litter-box visit trends: one panel per pet.
 
 use leptos::prelude::*;
-use omni_api::pets::{DailyVisit, Pet, PetsResponse, WeightEntry};
+use omni_api::pets::{
+    DailyVisit, Pet, PetHealthAlertInfo, PetHealthFinding, PetHealthKind, PetHealthResponse,
+    PetTrend, PetWeek, PetsResponse, WeightEntry,
+};
 use omni_web_kit::api;
 use omni_web_kit::charts::{Curve, LineChart, LinePoint, LineSeries};
+use omni_web_kit::components::badges::delta_parts;
 use omni_web_kit::components::{
-    ButtonLink, ButtonSize, ButtonVariant, EmptyState, ErrorState, Icon, PageHead, Panel, Readout,
-    SegOption, Segmented, Skeleton, SkeletonKind,
+    ButtonLink, ButtonSize, ButtonVariant, EmptyState, ErrorState, Icon, Meter, PageHead, Panel,
+    Readout, ReadoutSize, SegOption, Segmented, Skeleton, SkeletonKind, Sparkline, Status,
+    StatusKind, Tone,
 };
-use omni_web_kit::task::spawn_scoped;
+use omni_web_kit::feeds::use_task_backed;
+use omni_web_kit::hooks::{use_now, use_query_highlight};
+use omni_web_kit::utils::format::{format_absolute, format_relative_at};
 use omni_web_kit::utils::js::{
     date_locale_date_string, iso_string, js_round, now_ms, number_string, parse_date_ms, to_fixed,
 };
+
+/// The task that reads the scale and evaluates the health rules.
+pub const PET_TASK: &str = "PetTracker";
+/// The trend card's change windows, in weeks (about 14, 30 and 90 days).
+pub const TREND_WEEKS: [u32; 3] = [2, 4, 12];
+/// Readings older than this are a gap (the household rule's threshold).
+const GAP_HOURS: f64 = 48.0;
 
 const MS_PER_DAY: f64 = 86_400_000.0;
 
@@ -274,8 +288,285 @@ fn tooltip_row(swatch: &'static str, label: &'static str, value: String) -> impl
     }
 }
 
+/// `2 wk` (the change window's label).
+pub fn change_label(weeks: u32) -> String {
+    format!("{weeks} wk")
+}
+
+/// The change windows a tripped rule covers: the two-week drop rule
+/// compares against two and four weeks back; the 90-day rule shows on the
+/// 12-week window.
+pub fn flagged_weeks(findings: &[PetHealthFinding]) -> Vec<u32> {
+    let mut weeks = Vec::new();
+    for f in findings {
+        match f.kind {
+            PetHealthKind::WeightDrop2w => weeks.extend([2, 4]),
+            PetHealthKind::WeightDrop90d => weeks.push(12),
+            PetHealthKind::VisitDrop | PetHealthKind::DataGap => {}
+        }
+    }
+    weeks
+}
+
+/// `(weeks, percent, baseline)` for [`TREND_WEEKS`], in that order.
+pub fn shown_changes(trend: &PetTrend) -> Vec<(u32, Option<f64>, Option<f64>)> {
+    TREND_WEEKS
+        .iter()
+        .map(|w| {
+            trend
+                .changes
+                .iter()
+                .find(|c| c.weeks == *w)
+                .map_or((*w, None, None), |c| (*w, c.percent, c.baseline_weight))
+        })
+        .collect()
+}
+
+/// A rule in words.
+pub fn finding_title(kind: PetHealthKind) -> &'static str {
+    match kind {
+        PetHealthKind::WeightDrop2w => "Weight down over two weeks",
+        PetHealthKind::WeightDrop90d => "Weight down over 90 days",
+        PetHealthKind::VisitDrop => "Fewer litter-box visits",
+        PetHealthKind::DataGap => "No scale readings",
+    }
+}
+
+/// The durable alert of `pet_id` and `kind` (household rules have no pet).
+pub fn alert_for<'a>(
+    alerts: &'a [PetHealthAlertInfo],
+    pet_id: Option<&str>,
+    kind: PetHealthKind,
+) -> Option<&'a PetHealthAlertInfo> {
+    alerts
+        .iter()
+        .find(|a| a.kind == kind && a.pet_id.as_deref() == pet_id)
+}
+
+/// Weekly medians with readings, oldest first (the sparkline).
+pub fn spark_points(weekly: &[PetWeek]) -> Vec<f64> {
+    weekly.iter().filter_map(|w| w.median_weight).collect()
+}
+
+/// Hours since an ISO reading time.
+pub fn hours_since(iso: Option<&str>, now: f64) -> Option<f64> {
+    iso.and_then(parse_date_ms).map(|t| (now - t) / 3_600_000.0)
+}
+
+fn join_names(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.clone(),
+        [a, b] => format!("{a} and {b}"),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// Headline and lede for the page: steady, a look needed, or a quiet scale.
+pub fn pets_sentence(health: &PetHealthResponse, now: f64) -> (String, String) {
+    let names: Vec<String> = health.pets.iter().map(|p| p.name.clone()).collect();
+    if names.is_empty() {
+        return ("No pets tracked yet.".to_owned(), String::new());
+    }
+    let last = hours_since(health.latest_reading_at.as_deref(), now);
+    if health.data_gap.is_some() {
+        let hours = last.map_or_else(|| "a while".to_owned(), |h| format!("{} h", js_round(h)));
+        return (
+            "The scale has gone quiet.".to_owned(),
+            format!("No readings for {hours}; trends stop at the last reading."),
+        );
+    }
+    let flagged: Vec<&PetTrend> = health
+        .pets
+        .iter()
+        .filter(|p| !p.findings.is_empty())
+        .collect();
+    let reading = last.map(|h| {
+        if h < 1.0 {
+            "Last reading under an hour ago.".to_owned()
+        } else {
+            format!("Last reading {} h ago.", js_round(h))
+        }
+    });
+    if flagged.is_empty() {
+        let head = match names.len() {
+            1 => format!("{} is steady.", names[0]),
+            2 => "Both pets are steady.".to_owned(),
+            n => format!("All {n} pets are steady."),
+        };
+        let lede = format!(
+            "No weight or visit alerts.{}",
+            reading.map(|r| format!(" {r}")).unwrap_or_default()
+        );
+        return (head, lede);
+    }
+    let flagged_names: Vec<String> = flagged.iter().map(|p| p.name.clone()).collect();
+    let verb = if flagged.len() > 1 { "need" } else { "needs" };
+    let head = format!("{} {verb} a look.", join_names(&flagged_names));
+    let lede = flagged
+        .iter()
+        .flat_map(|p| {
+            p.findings
+                .iter()
+                .map(move |f| format!("{}: {}", p.name, finding_title(f.kind).to_lowercase()))
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+        + ".";
+    (head, lede)
+}
+
+/// A change cell: `↓3.0%` with the baseline under it; warn only when a rule
+/// tripped on that window.
 #[component]
-fn PetPanel(pet: Pet) -> impl IntoView {
+fn ChangeCell(
+    weeks: u32,
+    percent: Option<f64>,
+    baseline: Option<f64>,
+    flagged: bool,
+) -> impl IntoView {
+    let (class, text) = match percent {
+        Some(p) => {
+            let (dir, text) = delta_parts(p);
+            let dir = match dir {
+                omni_web_kit::components::badges::DeltaDirection::Up => "up",
+                omni_web_kit::components::badges::DeltaDirection::Down => "down",
+                omni_web_kit::components::badges::DeltaDirection::Flat => "",
+            };
+            (
+                format!("delta {dir}{}", if flagged { " warn" } else { "" }),
+                text,
+            )
+        }
+        None => ("delta off".to_owned(), "—".to_owned()),
+    };
+    let title = match (percent, baseline) {
+        (Some(_), Some(b)) => format!(
+            "Against the 7 days ending {weeks} weeks ago ({} lb)",
+            number_string(b)
+        ),
+        _ => "Fewer than three readings in one of the windows".to_owned(),
+    };
+    view! {
+        <div class="pet-change" title=title>
+            <span class="readout-k">{change_label(weeks)}</span>
+            <span class=class>{text}</span>
+            <span class="small muted num">{baseline.map_or_else(|| "not enough data".to_owned(), |b| format!("from {}", number_string(b)))}</span>
+        </div>
+    }
+}
+
+/// The trend card: robust weight with its 26-week sparkline, 2/4/12-week
+/// changes, visit frequency, reading age and the active alerts.
+#[component]
+fn PetTrendBlock(
+    trend: PetTrend,
+    alerts: Vec<PetHealthAlertInfo>,
+    household_gap: bool,
+) -> impl IntoView {
+    let now = use_now(60_000);
+    let flagged = flagged_weeks(&trend.findings);
+    let points = spark_points(&trend.weekly);
+    let weeks_shown = points.len();
+    let visit_flag = trend
+        .findings
+        .iter()
+        .any(|f| f.kind == PetHealthKind::VisitDrop);
+    let latest = trend.latest_reading_at.clone();
+    let latest_ms = latest.as_deref().and_then(parse_date_ms);
+    let name = trend.name.clone();
+    let findings = trend.findings.clone();
+    let pet_id = trend.pet_id.clone();
+    let usual = trend.usual_visits_per_week;
+    let visits = trend.visits_last_7_days;
+    let weight = trend.weight;
+    view! {
+        <div class="pet-trend">
+            <div class="pet-trend-weight">
+                <Readout
+                    label="Weight · 7-day median"
+                    value=weight.map_or_else(|| "—".to_owned(), number_string)
+                    unit="lb"
+                    stale=Signal::derive(move || latest_ms.is_some_and(|t| now.get() - t > GAP_HOURS * 3_600_000.0))
+                >
+                    {move || match latest_ms {
+                        Some(t) => {
+                            let gap = now.get() - t > GAP_HOURS * 3_600_000.0 || household_gap;
+                            view! {
+                                <span class=if gap { "text-warn" } else { "" } title=format_absolute(t)>
+                                    {format!("last reading {}", format_relative_at(t, now.get()))}
+                                </span>
+                            }.into_any()
+                        }
+                        None => view! { <span class="text-warn">"No readings yet"</span> }.into_any(),
+                    }}
+                </Readout>
+                {(weeks_shown > 1).then(|| view! {
+                    <div class="pet-spark">
+                        <Sparkline points=points label=format!("{name}: weekly median weight, last {weeks_shown} weeks") height=44/>
+                        <span class="small muted">{format!("{weeks_shown} weeks")}</span>
+                    </div>
+                })}
+            </div>
+            <div class="pet-changes" role="group" aria-label="Weight change">
+                {shown_changes(&trend).into_iter().map(|(weeks, percent, baseline)| view! {
+                    <ChangeCell weeks percent baseline flagged=flagged.contains(&weeks)/>
+                }).collect_view()}
+            </div>
+            <div class="pet-visits">
+                <Readout
+                    label="Visits · 7 days"
+                    value=visits.to_string()
+                    size=ReadoutSize::M
+                    tone=if visit_flag { Tone::Warn } else { Tone::Neutral }
+                >
+                    {usual.map(|u| view! {
+                        <Meter
+                            value=f64::from(visits)
+                            max=(u * 1.5).max(f64::from(visits)).max(1.0)
+                            reference=Some(u)
+                            tone=if visit_flag { Tone::Warn } else { Tone::Neutral }
+                            width=96
+                            label=format!("{visits} visits against a usual {} per week", number_string(js_round(u)))
+                        />
+                        <span>{format!("usually {}/wk", number_string(js_round(u)))}</span>
+                    })}
+                </Readout>
+            </div>
+            {(!findings.is_empty()).then(|| view! {
+                <div class="rows pet-findings">
+                    {findings.into_iter().map(|f| {
+                        let alert = alert_for(&alerts, Some(&pet_id), f.kind).cloned();
+                        let notified = alert
+                            .as_ref()
+                            .and_then(|a| a.last_notified_at.as_deref().and_then(parse_date_ms));
+                        view! {
+                            <div class="row">
+                                <Status kind=StatusKind::Warn label=finding_title(f.kind)/>
+                                <span class="row-main"><span class="row-sub">{f.message.clone()}</span></span>
+                                <span class="row-end small muted num">
+                                    {move || notified.map_or_else(
+                                        || "not notified yet".to_owned(),
+                                        |t| format!("notified {}", format_relative_at(t, now.get())),
+                                    )}
+                                </span>
+                            </div>
+                        }
+                    }).collect_view()}
+                </div>
+            })}
+        </div>
+    }
+}
+
+#[component]
+fn PetPanel(
+    pet: Pet,
+    #[prop(optional)] health_trend: Option<PetTrend>,
+    #[prop(optional)] alerts: Vec<PetHealthAlertInfo>,
+    #[prop(optional)] household_gap: bool,
+    #[prop(optional)] highlighted: bool,
+) -> impl IntoView {
     let range = RwSignal::new(Range::Days30);
     let mode = RwSignal::new(ChartMode::Weight);
 
@@ -412,7 +703,11 @@ fn PetPanel(pet: Pet) -> impl IntoView {
             .collect::<Vec<_>>(),
     );
     view! {
-        <Panel class="pet" aria_label=pet.name.clone()>
+        <Panel
+            class=if highlighted { "pet deep-link-target" } else { "pet" }
+            id=format!("pet-{}", pet.pet_id)
+            aria_label=pet.name.clone()
+        >
             <div class="pet-head">
                 <h2 class="pet-name">{pet.name.clone()}</h2>
                 <span class="spacer"></span>
@@ -433,6 +728,9 @@ fn PetPanel(pet: Pet) -> impl IntoView {
                     }
                 }}
             </div>
+            {match health_trend {
+                Some(trend) => view! { <PetTrendBlock trend alerts household_gap/> }.into_any(),
+                None => view! {
             <div class="pet-figures">
                 <Readout label="Weight" value=number_string(pet.current_weight) unit="lbs">
                     {move || {
@@ -449,6 +747,8 @@ fn PetPanel(pet: Pet) -> impl IntoView {
                     <span class="mono">{move || format!("avg {}/day", to_fixed(avg_per_day(), 1))}</span>
                 </Readout>
             </div>
+                }.into_any(),
+            }}
             <div class="pet-controls">
                 <Segmented
                     options=mode_options
@@ -508,40 +808,43 @@ fn PetPanel(pet: Pet) -> impl IntoView {
 
 #[component]
 pub fn PetsPage() -> impl IntoView {
-    let pets = RwSignal::new(None::<Vec<Pet>>);
-    let error = RwSignal::new(None::<String>);
-    let reload = RwSignal::new(0u32);
+    // Both reload whenever the scale task finishes a run.
+    let pets = use_task_backed(PET_TASK, || api::get::<PetsResponse>("/api/pets"));
+    let health = use_task_backed(PET_TASK, api::fetch_pet_health);
+    let now = use_now(60_000);
+    let loaded = Signal::derive(move || pets.data.with(Option::is_some));
+    let highlighted = use_query_highlight("pet", "pet", loaded);
 
-    Effect::new(move |_| {
-        reload.track();
-        error.set(None);
-        spawn_scoped(async move {
-            match api::get::<PetsResponse>("/api/pets").await {
-                Ok(data) => pets.set(Some(data)),
-                Err(err) => error.set(Some(err.message().to_owned())),
-            }
-        });
+    let sentence = Memo::new(move |_| {
+        health
+            .data
+            .with(|h| h.as_ref().map(|h| pets_sentence(h, now.get())))
     });
-
-    let lede = Signal::derive(move || {
-        pets.with(|p| {
-            p.as_ref().map(|p| match p.len() {
-                0 => "Weight trends and litter-box visits.".to_owned(),
-                1 => "Weight trend and litter-box visits.".to_owned(),
-                n => format!("Weight trends and litter-box visits for {n} pets."),
-            })
-        })
+    let title = Signal::derive(move || {
+        sentence
+            .get()
+            .map_or_else(|| "Pets".to_owned(), |(head, _)| head)
     });
+    let lede = Signal::derive(move || sentence.get().map(|(_, lede)| lede));
 
     view! {
-        <PageHead title="Pets" eyebrow="Personal" lede />
+        <PageHead title lede sentence=true/>
+        {move || health.error.get().filter(|_| health.data.with(Option::is_none)).map(|e| view! {
+            <ErrorState
+                warn=true
+                title="Health trends could not load"
+                detail="Weight charts still work; alerts and trend cards are missing."
+                raw=e
+                retry=Callback::new(move |()| health.reload())
+            />
+        })}
         {move || {
-            match (pets.get(), error.get()) {
+            match (pets.data.get(), pets.error.get()) {
                 (None, Some(e)) => view! {
                     <ErrorState
                         title="Pet data could not load"
                         raw=e
-                        retry=Callback::new(move |()| reload.update(|n| *n += 1))
+                        retry=Callback::new(move |()| pets.reload())
                         page=true
                     />
                 }
@@ -563,15 +866,40 @@ pub fn PetsPage() -> impl IntoView {
                 (Some(list), _) if list.is_empty() => {
                     view! { <EmptyState message="No pets are being tracked yet." icon=Icon::Paw /> }.into_any()
                 }
-                (Some(list), _) => view! {
-                    <div class="pets-grid">
-                        {list.into_iter().map(|pet| view! { <PetPanel pet /> }).collect_view()}
-                    </div>
+                (Some(list), _) => {
+                    let (trends, alerts, gap) = health.data.with(|h| match h {
+                        Some(h) => (h.pets.clone(), h.alerts.clone(), h.data_gap.is_some()),
+                        None => (Vec::new(), Vec::new(), false),
+                    });
+                    let highlighted = highlighted.clone();
+                    view! {
+                        <div class="pets-grid">
+                            {list.into_iter().map(|pet| {
+                                let trend = trends.iter().find(|t| t.pet_id == pet.pet_id).cloned();
+                                let hl = highlighted.as_deref() == Some(pet.pet_id.as_str());
+                                let alerts = alerts.clone();
+                                match trend {
+                                    Some(trend) => view! { <PetPanel pet health_trend=trend alerts household_gap=gap highlighted=hl/> }.into_any(),
+                                    None => view! { <PetPanel pet highlighted=hl/> }.into_any(),
+                                }
+                            }).collect_view()}
+                        </div>
+                    }
+                    .into_any()
                 }
-                .into_any(),
             }
         }}
     }
+}
+
+/// Pets with a tripped rule (and the household data gap), for Home.
+pub fn attention_count(health: &PetHealthResponse) -> usize {
+    health
+        .pets
+        .iter()
+        .filter(|p| !p.findings.is_empty())
+        .count()
+        + usize::from(health.data_gap.is_some())
 }
 
 #[cfg(test)]
@@ -608,6 +936,134 @@ mod tests {
         let long: Vec<(f64, f64)> = (0..61).map(|i| (f64::from(i) * day, 1.0)).collect();
         assert!(build_chart(&long, true, Range::All).show_brush);
         assert!(!build_chart(&long, true, Range::Days90).show_brush);
+    }
+
+    fn trend(name: &str, findings: Vec<PetHealthKind>) -> PetTrend {
+        PetTrend {
+            pet_id: format!("PET-{name}"),
+            name: name.into(),
+            weight: Some(12.45),
+            latest_reading_at: Some("2026-10-09T10:00:00.000Z".into()),
+            weekly: vec![
+                PetWeek {
+                    start: String::new(),
+                    end: String::new(),
+                    readings: 9,
+                    median_weight: Some(12.8),
+                },
+                PetWeek {
+                    start: String::new(),
+                    end: String::new(),
+                    readings: 0,
+                    median_weight: None,
+                },
+                PetWeek {
+                    start: String::new(),
+                    end: String::new(),
+                    readings: 7,
+                    median_weight: Some(12.45),
+                },
+            ],
+            changes: vec![
+                omni_api::pets::PetWeightChange {
+                    weeks: 4,
+                    percent: Some(-1.2),
+                    baseline_weight: Some(12.6),
+                },
+                omni_api::pets::PetWeightChange {
+                    weeks: 2,
+                    percent: Some(-3.03),
+                    baseline_weight: Some(12.84),
+                },
+                omni_api::pets::PetWeightChange {
+                    weeks: 26,
+                    percent: Some(1.0),
+                    baseline_weight: Some(12.3),
+                },
+            ],
+            visits_last_7_days: 9,
+            usual_visits_per_week: Some(22.5),
+            findings: findings
+                .into_iter()
+                .map(|kind| PetHealthFinding {
+                    kind,
+                    value: 3.0,
+                    message: "m".into(),
+                })
+                .collect(),
+        }
+    }
+
+    fn health(pets: Vec<PetTrend>, gap: bool) -> PetHealthResponse {
+        PetHealthResponse {
+            generated_at: String::new(),
+            latest_reading_at: Some("2026-10-09T10:00:00.000Z".into()),
+            hours_since_latest_reading: Some(2.0),
+            data_gap: gap.then(|| PetHealthFinding {
+                kind: PetHealthKind::DataGap,
+                value: 52.0,
+                message: "gap".into(),
+            }),
+            pets,
+            alerts: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn trend_cards_pick_windows_and_flag_tripped_rules() {
+        let t = trend("Sandy", vec![PetHealthKind::WeightDrop2w]);
+        assert_eq!(
+            shown_changes(&t),
+            vec![
+                (2, Some(-3.03), Some(12.84)),
+                (4, Some(-1.2), Some(12.6)),
+                (12, None, None)
+            ]
+        );
+        assert_eq!(flagged_weeks(&t.findings), vec![2, 4]);
+        assert_eq!(spark_points(&t.weekly), vec![12.8, 12.45]);
+        assert_eq!(change_label(12), "12 wk");
+        let alerts = vec![PetHealthAlertInfo {
+            pet_id: Some("PET-Sandy".into()),
+            kind: PetHealthKind::WeightDrop2w,
+            active: true,
+            last_notified_at: None,
+            last_message: None,
+            recovered_at: None,
+        }];
+        assert!(alert_for(&alerts, Some("PET-Sandy"), PetHealthKind::WeightDrop2w).is_some());
+        assert!(alert_for(&alerts, None, PetHealthKind::WeightDrop2w).is_none());
+    }
+
+    #[test]
+    fn sentences_read_steady_flagged_or_quiet() {
+        let now = parse_date_ms("2026-10-09T12:00:00.000Z").unwrap();
+        let steady = health(vec![trend("Sandy", vec![]), trend("Mochi", vec![])], false);
+        assert_eq!(
+            pets_sentence(&steady, now),
+            (
+                "Both pets are steady.".into(),
+                "No weight or visit alerts. Last reading 2 h ago.".into()
+            )
+        );
+        let flagged = health(
+            vec![
+                trend("Sandy", vec![PetHealthKind::VisitDrop]),
+                trend("Mochi", vec![]),
+            ],
+            false,
+        );
+        assert_eq!(
+            pets_sentence(&flagged, now),
+            (
+                "Sandy needs a look.".into(),
+                "Sandy: fewer litter-box visits.".into()
+            )
+        );
+        assert_eq!(attention_count(&flagged), 1);
+        let quiet = health(vec![trend("Sandy", vec![])], true);
+        assert_eq!(pets_sentence(&quiet, now).0, "The scale has gone quiet.");
+        assert_eq!(attention_count(&quiet), 1);
     }
 
     #[test]

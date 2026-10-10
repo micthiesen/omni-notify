@@ -471,7 +471,7 @@ pub fn CostsPage() -> impl IntoView {
     });
     let refreshing = Signal::derive(move || loading.get() && data.with(Option::is_some));
     view! {
-        <PageHead title eyebrow="Costs" sentence=true actions=ViewFn::from(move || view! {
+        <PageHead title sentence=true actions=ViewFn::from(move || view! {
             <Segmented options=range_options value=range on_change=Callback::new(move |r| range.set(r)) aria_label="Cost date range"/>
         })/>
         {move || match (data.with(Option::is_some), error.get()) {

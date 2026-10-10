@@ -127,7 +127,8 @@ hues are never series colors.
 - Rows: `--row 52px` (desktop default), `--row-dense 36px` (tables in Data, MCP,
   run history), `--row-touch 56px` (phone). Panel padding 20 px desktop, 16 px
   phone.
-- Controls: `--ctl-md 36px`, `--ctl-sm 30px`; on phone 44 and 36.
+- Controls: `--ctl-md 36px`, `--ctl-sm 30px`; on phone 44 and 36. Coarse
+  pointers at any width also get `--ctl-md 44px`.
 - Radii: `--r-xs 4` (kbd, tags, LIVE tag), `--r-sm 6` (chips, segments),
   `--r-md 8` (buttons, inputs), `--r-lg 12` (panels, posters), `--r-xl 16`
   (sheets, palette, inspector, hero stage). `--r-pill 999px` only for count
@@ -195,7 +196,15 @@ hues are never series colors.
 | `read-s` | Mono 450 13/17 | 13/17 | Times, durations, ids, countdowns, cron |
 
 Rules: nothing below 12 px; phone body is 15 px and inputs are 16 px (no iOS
-zoom). Uppercase only for the `LIVE` tag and poster kind labels. Long-form
+zoom). Uppercase only for the `LIVE` tag and poster kind labels.
+
+**No eyebrows.** Nothing sits above a page title, section title or panel title:
+no small uppercase or mono kicker ("LIVE", "OPERATIONS", "PERSONAL", a date
+over the Home sentence). The crumbs and the rail already say where you are.
+`PageHead` has no eyebrow slot and there is no eyebrow class. A label that
+carries information shown nowhere else (the parent workspace of a subject, which
+session an intelligence page shows) goes under the title as ordinary `small`
+metadata in the `PageHead` children, never above it. Long-form
 prose (artifacts, transcripts, briefings) is 15/24 with a 68ch measure.
 
 ## 4. Layout
@@ -253,11 +262,11 @@ and no sub-tab strip (`SectionNav` is removed).
 | Group | Items (route) | Rail badge |
 |---|---|---|
 | (top) | Home (`/`) | |
-| **On air** *(from C)* | Header links to `/live`; below it one row per live streamer: platform tick, name, `read-s` viewer count updated in place, linking to `/streamers/:id`. When nobody is live: "Nobody live" in `--text-3`. | live count in `--live` |
+| **On air** *(from C)* | Header links to `/live`; below it one row per live streamer: platform tick, name, `read-s` viewer count updated in place. The row is the Watch target (see Watch targets, section 12); a chevron at its end links to `/streamers/:id`. When nobody is live: "Nobody live" in `--text-3`. | live count in `--live` |
 | **Watch** | Movies & TV (`/media`) | pending picks |
 | **Listen** | Podcasts (`/podcasts`), PressPods (`/pods`) | jobs in progress |
 | **Research** | Workspaces (`/workspaces`), Briefings (`/briefings`) | pending actions |
-| **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Pets (`/pets`) | email failures (fault) |
+| **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Deliveries (`/deliveries`), Pets (`/pets`) | email failures (fault) |
 | **System** | Operations (`/operations`), Costs (`/costs`), MCP (`/mcp-activity`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
 
 - `/live` is a **new route**: the full streamer roster (section 12). Add it to
@@ -341,10 +350,10 @@ modifier, replacing every `format!("prefix-{}")` tone class.
 | **Button** | `primary` (Signal fill, `--signal-ink` text; one per view), `secondary` (`--raised`, `--line-strong` border), `ghost`, `danger` (fault outline, fills on hover); sizes `md`/`sm`; `icon` (square, needs `aria-label`) | hover (lighter tier or `--signal-hi`), pressed (translateY 1 px), focus-visible ring, `busy` (spinner replaces icon, label width kept, `aria-busy`), `disabled` (`--text-off` text, dashed border, **always with a reason** in `title` and, on phone, a helper line). |
 | **ConfirmButton** | wraps any Button | Two-step: first press arms it ("Confirm run", warn wash and outline, 3 s countdown bar along the bottom edge); second press acts; Escape, blur or timeout disarms. Irreversible deletes arm to fault "Delete permanently". Replaces every `window.confirm()`. |
 | **RunButton** | inline `sm` (visible on row hover or focus, always visible on phone) and inspector `primary` | ConfirmButton semantics; on success optimistic `running`, button `busy`; HTTP 409 shows the toast "<name> is already running" and does not flip `running` (existing `LiveData::run_task` contract). |
-| **Segmented** | range (`30D 90D All`), mode, filters with inline mono counts | Track `--surface` with `--line` border; active segment `--raised` with `--e-2`; `aria-pressed`; zero-count options stay visible but `--text-3`. Replaces `.range-buttons`, `.mode-toggle`, single-select chip groups and the old `StatusFilterChips` (removed). |
-| **Chip** | neutral, signal | Multi-select filters and tags; pressed = `--signal-wash` fill plus `--signal-line` border, `aria-pressed`. |
+| **Segmented** | range (`30D 90D All`), mode, filters with inline mono counts | Track `--surface` with `--line` border; active segment `--raised` with `--e-2`; `aria-pressed`; zero-count options stay visible but `--text-3`. `fill` stretches it to full width on phone (segments share it evenly) instead of scrolling sideways. Replaces `.range-buttons`, `.mode-toggle`, single-select chip groups and the old `StatusFilterChips` (removed). |
+| **Chip** | neutral, signal | Multi-select filters and tags; pressed = `--signal-wash` fill plus `--signal-line` border, `aria-pressed`. A chip that is a link is 44 px on phone and coarse pointers. |
 | **Tag** | tone variants, mono 12 px, `--r-xs` | Static labels: tier, kind, policy, trigger (`schedule`, `manual`). |
-| **Status** | `ok` (dot only), `running` (spinner arc plus word), `warn` (diamond plus word), `fault` (square plus word), `idle` (ring plus word), `stale` (diamond plus "stale") | Replaces `StatusDot`, `status-chip-*`, `mail-outcome-*`, `mcp-status-*`, `workspace-status`, `claude-tag-*`. Always has a text alternative. |
+| **Status** | `ok` (dot only), `running` (spinner arc plus word), `warn` (diamond plus word), `fault` (square plus word), `idle` (ring plus word), `stale` (diamond plus "stale"); runs read Succeeded, Failed, Running or Degraded (warn) via `run_status_label` | Replaces `StatusDot`, `status-chip-*`, `mail-outcome-*`, `mcp-status-*`, `workspace-status`, `claude-tag-*`. Always has a text alternative. |
 | **LiveTag** | `LIVE`, `LIVE · 4h 12m` | Pulsing dot; `--live-wash` fill; not rendered when offline. |
 | **Readout** | `xl`, `l`, `m` with key, sub-line, optional Delta and Sparkline | Value-tick flash on change (section 9); skeleton bar while loading; `stale` (figure `--text-2`, sub-line "as of 12:10" in warn). |
 | **Delta** | up (`--ok`, `↑`), down (`--text-2`, `↓`; a dip is not an error), flat, `surge` (Signal word "Surging" when the backend's surge or anomaly gate fires) | Mono `read-s`. The UI never computes its own surge. |
@@ -353,7 +362,7 @@ modifier, replacing every `format!("prefix-{}")` tone class.
 | **Stage** *(from B)* | the one hero panel for something live | Panel plus a static `radial-gradient(120% 140% at 0% 0%, var(--live-wash), transparent 60%)` background and a `--live-line` top edge. Only when live, at most one per page. No blur. |
 | **Row** | link row, button row, grid row | hover `--hover`; focus ring inset; selected (`--signal-wash` fill plus 2 px Signal inset on the left). Clickable rows are a single `<a>` or `<button>`. |
 | **Table** | header row of `label` text, `rowgroup` group headers (h3 plus mono count plus meta), sticky header | Numeric columns right-aligned mono; the title column ellipsizes (`max-width:0; width:100%`). Per-column `hide-below-desk` / `hide-below-wide`. Phone: two-line rows (name plus key figure; mono meta line). Empty row "No tasks match · Clear filter". Loading: five skeleton rows at real height. |
-| **RunStrip** | last N runs as 4×14 px cells (N = 12 desktop, 8 phone) | success `--bar-hi`; failure `--fault`, 18 px tall; running Signal, breathing; skipped `--warn` diamond-topped; missing dashed outline. Each cell has a tooltip with time, duration and summary. |
+| **RunStrip** | last N runs as 4×14 px cells (N = 12 desktop, 8 phone) | success `--bar-hi`; failure `--fault`, 18 px tall; running Signal, breathing; skipped or degraded `--warn` diamond-topped; a slot with no run yet (history shorter than N) is a quiet `--line` placeholder, not an outline that reads as a state. Each cell has a tooltip with time, duration and summary. |
 | **TimeLane** *(from B)* | horizontal lane over the last 10 minutes plus 2 ahead, with a now-line | Runs are 2×12 px ticks colored as RunStrip; scheduled runs hollow; used only for realtime tasks. |
 | **Meter** | 96×6 track; fill = value/max; optional reference tick | Used for session length, peak vs record, budget, score rows. Fill `--bar-hi`; Signal only for the top item. |
 | **Sparkline** | 1.5 px line, 12% area wash, end dot with 2 px surface ring, optional dashed reference line | Line `--text-2` by default, Signal for the hero; live hero area uses `--live-wash`. |
@@ -366,10 +375,10 @@ modifier, replacing every `format!("prefix-{}")` tone class.
 | **Toast** | one global region in the shell, bottom-right (above the tab bar on phone) | Status shape plus one line; 4 s; `role="status"`, fault uses `role="alert"` and stays until dismissed. Replaces per-page `use_toast` instances (the API can stay, backed by a shell context). |
 | **Tooltip** | chart tooltip (`.chart-tooltip`) and hint tooltip | `--overlay`, `--e-2`, value line `read-s` in `--text`, context line `small` in `--text-3`. |
 | **Skeleton** | text line, readout, poster, row | `--raised` block with a 1.4 s shimmer; geometry matches the final layout. |
-| **EmptyState** | glyph tile, one sentence, one action | e.g. "Paste an article URL to make your first episode". |
+| **EmptyState** | glyph tile, one sentence, one action; `compact` (one line in a panel); `title` (page-level empty and setup states) | e.g. "Paste an article URL to make your first episode". With `title`, the 40 px glyph tile sits left of an h3 heading and the sentence, top-aligned with the heading, inside an unpadded Panel; the page title stays the plain page name ("Deliveries") so the heading is not repeated. |
 | **ErrorState** | inline (in a panel) and page | What failed, why if known, Retry, and a link to Operations or setup. Never shows a raw API string as the headline (raw detail goes in a Disclosure). Defines the missing `.error-banner` look. |
 | **StatusSentence** | the hero of overview pages | `display` type; deviating words take their hue and link to the cause. Loading is a skeleton line, never "Checking in…". |
-| **Poster** | 2:3 (movies), 1:1 (podcasts, episodes) | Real TMDB or artwork with `loading="lazy"`, explicit aspect ratio, `--r-lg`, 1 px inner `--line`. Fallback: title set in `h2` on a muted gradient derived from the title hash. Hover: lift 2 px and a `--line-strong` outline (no blurred color bloom; it costs too much on phones). |
+| **Poster** | 2:3 (movies), 1:1 (podcasts, episodes) | Real TMDB or artwork with `loading="lazy"`, explicit aspect ratio, `--r-lg`, 1 px inner `--line`. Fallback: a typographic tile always sits under the image (shown while it loads, when there is none and after it fails): muted gradient from the title hash, a large dim initial (skipping The/A/An) and the title clamped to four lines; `captioned` drops the title when it is already shown beside the poster. Hover: lift 2 px and a `--line-strong` outline (no blurred color bloom; it costs too much on phones). |
 | **PlatformIcon** | YouTube, Twitch, Kick, DGG | 16 px, fills from section 2.5. |
 | **Kbd** | mono 11 px on `--raised` with `--line-strong` border | |
 
@@ -462,6 +471,15 @@ Any panel whose data is older than twice its refresh interval shows
   older than three times its period shows the `stale` Status and joins the
   attention list. Computed only from the schedule and `lastRun` in the snapshot.
   Realtime tasks use the same rule.
+- **Degraded**: a run that finished but skipped work (`status: degraded`, or a
+  success whose summary starts "skipped:") reads in the warn tone everywhere a
+  run status appears: Operations rows and readouts ("Warnings": degraded plus
+  stale), RunStrip and TimeLane cells, the run log, the inspector and Home. The
+  word "Degraded" always travels with the reason ("Skipped: …"); a degraded
+  task joins the attention list.
+- **Task-backed reads**: panels fed by a task's cache (parcels, calendar, pet
+  health) refetch when that task's `lastRun.finishedAt` changes in the live
+  snapshot (`use_task_backed`), never on a timer of their own.
 
 ### 8.4 Freshness while refetching
 
@@ -471,8 +489,10 @@ the top of the panel; nothing reflows. This is the Costs behavior generalised.
 ### 8.5 Attention
 
 The Home status sentence and the "Needs you" panel aggregate: pending workspace
-actions, failing tasks, stale tasks, email failures, MCP errors in 24 h and an
-unconfigured or offline Claude host link when sessions are expected. Each item
+actions, failing, degraded and stale tasks, email failures, MCP errors in 24 h,
+an unconfigured or offline Claude host link when sessions are expected,
+deliveries that need you (pickup, failed attempt, exception), unhealthy calendar
+sync and active pet health alerts. Each item
 links to the filtered view (`/operations?filter=attention`, `/emails?outcome=failed`).
 
 ## 9. Motion
@@ -522,7 +542,7 @@ motion block is the only place `!important` is allowed.
   `aria-current`, `aria-pressed`, `aria-expanded`/`aria-controls`, `use_modal`
   focus trap, Escape, scroll lock and focus restore, `role="status"`/`"alert"`.
 - Targets: ≥ 44 px on phone (buttons 44, small buttons 36 with 8 px spacing,
-  rows 56, tabs 44 plus label).
+  rows 56, tabs 44 plus label, link chips 44).
 - Charts: focusable, arrow-key navigable, legend plus Table toggle for
   multi-series.
 - `prefers-reduced-motion`: section 9. `forced-colors`: status shapes and
@@ -538,7 +558,7 @@ hairline dividers (2 columns on phone).
 
 ### `/` Home
 
-1. **Status sentence** (display) with a mono date/time label above: "All quiet."
+1. **Status sentence** (display), nothing above it: "All quiet."
    plus a `body` line "4 channels on air, every task healthy, nothing waiting on
    you." With deviations: "2 things need you." with linked colored phrases.
 2. Wide: two columns (8/4).
@@ -547,21 +567,51 @@ hairline dividers (2 columns on phone).
      relevance): Avatar 64 live ring, name, platform, tier Tag, uptime, title (h2),
      current chapter (h3 plus summary, left rule), `read-xl` count with Sparkline
      and dashed typical-peak line, four facts (session peak, Δ vs 15-min baseline,
-     DGG with Delta, typical peak). Other live channels: rows with Avatar 32,
-     name and title, uptime, DGG, Delta and right-aligned `read-m` count.
+     DGG with Delta, typical peak), plus a primary **Watch on <platform>**
+     button and a secondary **Details** button. Other live channels: rows with
+     Avatar 32, name and title, uptime, DGG, Delta and right-aligned `read-m`
+     count; each row is a Watch target with a details chevron.
      Footer Disclosure "9 channels offline · 3 primary" opens desaturated Avatar
      chips (primary first) with last-live time.
    - Right: **Needs you / Nothing needs you** panel (check rows: workspace
      actions, task failures, stale tasks, email failures, each linking) and
-     **Up next** (next non-realtime runs with countdowns; realtime tasks collapsed
-     to one line "Realtime checks ×4 · 15–30 s").
+     **Agenda** (today plus the next days, at most six lines, linking
+     `/calendar?day=`), **Deliveries** (only while something is active: status,
+     expected date with "Was due" in warn, cache age) and **Up next** (next
+     non-realtime runs with countdowns; realtime tasks collapsed to one line
+     "Realtime checks ×4 · 15–30 s").
 3. **On deck**: four real posters (2:3) with title, year, one-line why, picked
-   age; "All picks" link. Phone: snap rail.
+   age; "All picks" link. Phone: snap rail. A Poster without artwork (or while
+   it loads, or after it fails) shows its typographic tile: hue from the title,
+   a large dim initial (skipping The/A/An) and the title clamped to four lines.
 4. Three panels (4/4/4): **Research** (active subjects with pending actions),
    **Inbox** (processed, filtered, failed readouts plus latest parcel events),
    **Spend** (30-day `read-l`, daily mini bars, largest feature).
 5. Phone order: sentence, lead Stage, other live rows, Needs you, Up next, On
    deck rail, Research, Inbox, Spend. The old System Health row is removed.
+
+### Watch targets
+
+Every on-air streamer at the top level (Home lead and rows, rail On air rows,
+`/live`) opens the stream directly. The stream URL is the watch URL of the
+preferred live binding: YouTube, then Kick, then Twitch, among bindings with a
+live source (`preferred_watch`); without a matching source, the primary binding.
+It opens in a new tab with `rel="noopener"`.
+
+- **Row:** the whole row (avatar to count) is the Watch link, with an external
+  glyph at its end that brightens on hover (hidden on phone, where the avatar's
+  platform mark carries the cue and the title keeps the room).
+  A separate 48 px chevron cell at the row end (hairline left border) links to
+  the streamer page. Phone rows are 56 px, so both targets clear 44 px.
+- **Lead:** a Signal **Watch on YouTube** button (platform glyph, label,
+  external glyph) and a secondary **Details** button; both 44 px on phone.
+- **Rail:** the row is the Watch link (external glyph on hover), the chevron
+  is the details link and carries `aria-current` on the streamer page; 44 px on
+  coarse pointers.
+- **Labels:** "Watch Destiny on YouTube" and "Destiny details", as
+  `aria-label` and `title`. Every other watch link (streamer page handle
+  chips, Watch button, Bindings rows) names the account and platform the same
+  way, for example "Open destiny on Kick".
 
 ### `/live` (new)
 
@@ -759,7 +809,8 @@ per 8.4.
 ### `/operations`
 
 1. Status sentence ("17 tasks, all healthy.") and readout band: healthy x/y,
-   running (names), failing, stale, next run with live countdown.
+   running (names), failing, warnings ("1 degraded · 0 stale"), next run with
+   live countdown.
 2. Toolbar: filter field (`/`), Segmented All / Attention / Running with counts
    (`?filter=` in the URL).
 3. **Task Table** grouped by cadence: Realtime (sub-minute), Frequent (minutes to
@@ -778,17 +829,51 @@ per 8.4.
    download).
 6. **Run log** below the table: recent runs collapsed by repeats
    ("LiveCheckTask ×12 · all succeeded · 615 ms avg"), with a task filter and an
-   `All | Errors` Segmented.
-7. Phone: two-line rows (name plus next; RunStrip plus last), inspector as sheet.
+   `All | Problems` Segmented (failed and degraded runs).
+7. Phone: two-line rows (name plus next; RunStrip of 8 plus last run), no
+   sideways scroll, inspector as sheet.
    The HISTORY accordions and `task-history-<name>` ids become inspector
    sections (keep the id on the inspector history list).
 
 ### `/pets`
 
-One Panel per pet: name, latest weight `read-l` with Delta, visits count,
+Status sentence from `/api/pets/health` ("Both pets are steady.", "Sandy needs a
+look.", "The scale has gone quiet." on a data gap). One Panel per pet (`?pet=`
+highlights `#pet-<id>`). The **trend card** leads it: 7-day median weight
+`read-l` with last-reading age (stale in `--text-3`), a Sparkline of weekly
+medians (26 weeks), three change cells (2, 4 and 12 weeks; warn only when a
+health rule tripped for that window), visits in 7 days on a Meter against the
+usual week, and finding rows (warn diamond, message, notified time). Below:
 Segmented Weight / Visits and range Segmented (7D, 30D, 90D, All), line chart
 (Signal line, neutral area, brush per section 7), CSV export as a ghost button.
 Two pets side by side on wide.
+
+### `/deliveries`
+
+Status sentence ("1 delivery needs you.", "1 delivery is late.", "2 arriving
+today.", "Nothing on the way.") with a `body` count line that also counts late
+parcels, so it agrees with their warn "Was due" dates. Backoff and failed reads show a warn
+ErrorState above the list; unconfigured shows the setup EmptyState. Panel "On
+the way · N" with the cache age ("updated 12m ago") in the header: rows with a
+fixed-width Status (In transit idle ring, Out for delivery info, Ready for
+pickup warn, Failed attempt and Exception fault), description (or carrier
+package), mono carrier and tracking number, the latest event, the expected date
+on the right ("Was due Oct 8" in warn only while the parcel is still moving),
+and a Disclosure with the event rail plus a link to the source email
+(`/emails#inspect=`). Delivered parcels sit in a collapsed Disclosure.
+`?tracking=` highlights `#delivery-<number>`. The ParcelDeliveries inspector
+shows the cache facts.
+
+### `/calendar`
+
+Read-only agenda for today plus 7 days. Status sentence ("3 events today.")
+with "Next: …" and a sync Status line. Split: "Next 8 days" Panel grouped by day
+(`#day-YYYY-MM-DD`, `?day=` highlights) with a mono time column (all-day spans
+"All day · 2 of 3"), the current event inset in Signal with a Now Tag, past
+events dim, tentative and cancelled as Tags (cancelled struck through); side
+Panel "Sync" with last sync, full sync, event count, writability. Sync health
+(stale after 10 minutes, errors) also shows in the CalendarPrimarySync
+inspector on Operations.
 
 ### `/mcp-activity`
 

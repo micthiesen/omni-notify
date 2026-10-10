@@ -15,7 +15,7 @@ use omni_web_kit::components::{
     ErrorState, PageHead, Panel, Readout, ReadoutBand, SearchField, SegOption, Segmented,
     ShowMoreButton, SkeletonRows, Status, Tag, ToastKind, Tone, use_show_more, use_toast,
 };
-use omni_web_kit::hooks::{query_param, replace_query_param, use_is_wide};
+use omni_web_kit::hooks::{hash_param, query_param, replace_query_param, use_is_wide};
 use omni_web_kit::task::{spawn_detached, spawn_scoped};
 use omni_web_kit::utils::email_labels::{PIPELINES, outcome_label, pipeline_label};
 use omni_web_kit::utils::format::format_cents;
@@ -321,7 +321,16 @@ pub fn EmailActivityPage() -> impl IntoView {
         error.set(None);
         spawn_scoped(async move {
             match api::fetch_email_activity(p, Some(500)).await {
-                Ok(res) => activities.set(Some(res.activities)),
+                Ok(res) => {
+                    // `#inspect=<activityId>` (Deliveries links its source email).
+                    if selected.with_untracked(Option::is_none)
+                        && let Some(id) = hash_param("inspect")
+                        && let Some(hit) = res.activities.iter().find(|a| a.activity_id == id)
+                    {
+                        selected.set(Some(hit.clone()));
+                    }
+                    activities.set(Some(res.activities));
+                }
                 Err(e) => error.set(Some(e.message().to_owned())),
             }
         });
@@ -532,7 +541,7 @@ pub fn EmailActivityPage() -> impl IntoView {
     };
 
     view! {
-        <PageHead title=sentence eyebrow="Email" sentence=true actions=ViewFn::from(move || view! {
+        <PageHead title=sentence sentence=true actions=ViewFn::from(move || view! {
             <Segmented
                 options=Signal::derive(|| vec![SegOption::new(Tab::Activity, "Activity"), SegOption::new(Tab::Rules, "Rules")])
                 value=tab

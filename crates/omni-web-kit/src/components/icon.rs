@@ -39,6 +39,8 @@ pub enum Icon {
     Inbox,
     Clock,
     Alert,
+    Package,
+    Calendar,
 }
 
 /// Size modifier for [`Glyph`].
@@ -172,6 +174,16 @@ fn shapes(icon: Icon) -> AnyView {
         }
         .into_any(),
         Icon::Alert => view! { <path d="M12 4 2.8 19.5h18.4zM12 10v4.5M12 17v.5"></path> }.into_any(),
+        Icon::Package => view! {
+            <path d="M4 7.5 12 3.5l8 4v9l-8 4-8-4z"></path>
+            <path d="m4 7.5 8 4 8-4M12 11.5v9M8 5.5l8 4"></path>
+        }
+        .into_any(),
+        Icon::Calendar => view! {
+            <rect x="4" y="5.5" width="16" height="14.5" rx="2"></rect>
+            <path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"></path>
+        }
+        .into_any(),
     }
 }
 

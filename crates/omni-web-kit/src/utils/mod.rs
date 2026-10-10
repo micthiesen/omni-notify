@@ -2,6 +2,7 @@
 
 pub mod claude_activity;
 pub mod cron;
+pub mod days;
 pub mod download;
 pub mod email_labels;
 pub mod format;

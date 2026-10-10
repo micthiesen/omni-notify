@@ -1004,24 +1004,27 @@ pub fn ClaudePage() -> impl IntoView {
         },
         POLL,
     );
-    // While activity reports the link down, the sessions route can only
-    // answer 503; skip the request and show the same state locally.
+    // The sessions route needs the host link: wait for the first activity
+    // read to say whether it is up, and while it reports the link down (or
+    // not configured) skip the request and show the same state locally.
     let link_down = Memo::new(move |_| {
         activity.with(|a| {
             a.as_ref()
-                .map(|a| LinkState::of(&a.link))
-                .filter(|state| *state != LinkState::Online)
+                .map(|a| Some(LinkState::of(&a.link)).filter(|state| *state != LinkState::Online))
         })
     });
     use_visible_poll(
         Signal::derive(move || format!("sessions:{}:{:?}", include_stopped.get(), link_down.get())),
         move || {
             let include = include_stopped.get_untracked();
-            let down = link_down.get_untracked();
+            let gate = link_down.get_untracked();
             async move {
-                match down {
-                    Some(state) => Err(ClaudeLinkGetError::Link(link_down_error(state))),
-                    None => api::fetch_claude_sessions(include, 25).await,
+                match gate {
+                    // Unknown yet: the key changes once activity loads,
+                    // which restarts this loop.
+                    None => futures::future::pending().await,
+                    Some(Some(state)) => Err(ClaudeLinkGetError::Link(link_down_error(state))),
+                    Some(None) => api::fetch_claude_sessions(include, 25).await,
                 }
             }
         },
@@ -1059,7 +1062,6 @@ pub fn ClaudePage() -> impl IntoView {
     view! {
         <PageHead
             title
-            eyebrow="Claude Code"
             sentence=true
             lede
             actions=ViewFn::from(|| view! {

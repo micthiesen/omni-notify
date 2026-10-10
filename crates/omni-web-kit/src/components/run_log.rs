@@ -1,13 +1,13 @@
 //! Recent task runs as rows, with consecutive successes collapsed.
 
 use leptos::prelude::*;
-use omni_api::runs::{Run, RunStatus};
+use omni_api::runs::{Run, RunStatus, RunTrigger};
 use omni_api::tasks::TaskInfo;
 
-use super::badges::{Status, TriggerBadge, run_status_kind};
+use super::badges::{Status, TriggerBadge, run_status_kind, run_status_label};
 use super::controls::{SegOption, Segmented};
 use super::states::{EmptyState, ErrorState, SkeletonRows};
-use super::task_display::run_duration_now;
+use super::task_display::{detail_class, run_detail, run_duration_now};
 use super::tone::StatusKind;
 use crate::api::{self, Snapshot};
 use crate::task::spawn_scoped;
@@ -63,12 +63,9 @@ pub fn RunRow(
         .map_or(newest.started_at, |r| r.started_at);
     let count = group.runs.len();
     let clicked = newest.clone();
-    let detail = newest
-        .error
-        .clone()
-        .map(|e| (true, e))
-        .or_else(|| newest.summary.clone().map(|s| (false, s)));
+    let detail = run_detail(&newest);
     let kind = run_status_kind(newest.status);
+    let word = run_status_label(newest.status);
     let tone = match kind {
         StatusKind::Fault => " run-fault",
         StatusKind::Warn => " run-warn",
@@ -82,7 +79,7 @@ pub fn RunRow(
             on:click=move |_| on_select.run(clicked.clone())
             title="View logs"
         >
-            <Status kind dot_only=kind == StatusKind::Ok/>
+            <Status kind label=word dot_only=kind == StatusKind::Ok/>
             <span class="row-main">
                 <span class="row-title">
                     {label}
@@ -95,12 +92,15 @@ pub fn RunRow(
                         </span>
                     })}
                 </span>
-                {detail.map(|(fault, text)| view! {
-                    <span class=if fault { "row-sub text-fault truncate" } else { "row-sub truncate" }>{text}</span>
+                {detail.map(|(tone, text)| view! {
+                    <span class=format!("row-sub run-detail {}", detail_class(tone))>{text}</span>
                 })}
             </span>
             <span class="row-end">
-                <TriggerBadge trigger=newest.trigger/>
+                // Scheduled is the default; on phone the task name gets the room.
+                <span class=if newest.trigger == RunTrigger::Schedule { "hide-phone" } else { "" }>
+                    <TriggerBadge trigger=newest.trigger/>
+                </span>
                 <span class="num dim" title=format_absolute(newest.started_at as f64)>
                     {format_relative(newest.started_at as f64)}
                 </span>
@@ -165,7 +165,7 @@ pub fn RunLog(
             if errors {
                 let only: Vec<Run> = runs
                     .iter()
-                    .filter(|r| r.status == RunStatus::Error)
+                    .filter(|r| matches!(r.status, RunStatus::Error | RunStatus::Degraded))
                     .cloned()
                     .collect();
                 group_runs(&only)
@@ -194,7 +194,7 @@ pub fn RunLog(
     let modes = Signal::derive(|| {
         vec![
             SegOption::new(RunFilter::All, "All"),
-            SegOption::new(RunFilter::Errors, "Errors"),
+            SegOption::new(RunFilter::Errors, "Problems"),
         ]
     });
 
@@ -233,7 +233,7 @@ pub fn RunLog(
             Some(groups) if groups.is_empty() => Some(view! {
                 <EmptyState
                     compact=true
-                    message=if mode.get() == RunFilter::Errors { "No failed runs." } else { "No runs recorded yet." }
+                    message=if mode.get() == RunFilter::Errors { "No failed or degraded runs." } else { "No runs recorded yet." }
                 />
             }.into_any()),
             Some(groups) => Some(view! {

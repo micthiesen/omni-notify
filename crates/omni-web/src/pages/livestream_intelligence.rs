@@ -42,7 +42,7 @@ const STAGES: [(&str, &str); 3] = [
     ("alert", "Alerts"),
 ];
 const FILTERS: [(TimelineFilter, &str); 5] = [
-    (TimelineFilter::Key, "Key events"),
+    (TimelineFilter::Key, "Key"),
     (TimelineFilter::All, "All"),
     (TimelineFilter::Voice, "Voice"),
     (TimelineFilter::Alerts, "Alerts"),
@@ -480,17 +480,18 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
         view! {
             <PageHead
                 title=format!("{name} intelligence")
-                eyebrow=if is_live { "Live session" } else { "Last session" }
                 lede="What the pipeline is doing, why it made each decision, and what it cost."
                 actions=ViewFn::from({
                     let back_to = back_to.clone();
                     move || view! { <ButtonLink to=back_to.clone() icon=Icon::Live>"Streamer"</ButtonLink> }
                 })
-            />
+            >
+                <p class="small muted">{if is_live { "Showing the live session" } else { "Showing the last session" }}</p>
+            </PageHead>
             {err.map(|e| view! { <InlineNote tone=Tone::Warn role="alert">{format!("Latest refresh failed: {e}")}</InlineNote> })}
             <div class="summary-bar sticky-summary" aria-label="Intelligence health">
                 <ReadoutBand cols=4>
-                    <Readout label="Pipeline" value=pipeline_word size=ReadoutSize::M tone={if has_stage_error { Tone::Fault } else { Tone::Neutral }}>
+                    <Readout label="Pipeline" value=pipeline_word size=ReadoutSize::M class="word" tone={if has_stage_error { Tone::Fault } else { Tone::Neutral }}>
                         <Status kind=pipeline_kind label=if has_stage_error {
                             "A stage failed".to_owned()
                         } else if queue_total == 0 {
@@ -503,6 +504,7 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
                         label="Voice model"
                         value=if runtime.as_ref().is_some_and(|r| r.voiceprint_loaded) { "Ready" } else { "Unavailable" }
                         size=ReadoutSize::M
+                        class="word"
                     >
                         {runtime.as_ref().map_or_else(
                             || "No runtime connection".to_owned(),
@@ -536,7 +538,7 @@ pub fn LivestreamIntelligencePage(#[prop(into)] streamer_id: String) -> impl Int
                     <Segmented options=filter_options value=filter on_change=Callback::new(move |f| {
                         filter.set(f);
                         event_limit.set(EVENTS_PAGE);
-                    }) aria_label="Timeline filter" small=true/>
+                    }) aria_label="Timeline filter" small=true fill=true/>
                 })}
             </div>
             {move || match view_mode.get() {

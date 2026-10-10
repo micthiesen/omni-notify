@@ -10,7 +10,6 @@ use super::icon::{Glyph, Icon, IconSize};
 #[component]
 pub fn PageHead(
     #[prop(into)] title: Signal<String>,
-    #[prop(into, optional)] eyebrow: MaybeProp<String>,
     #[prop(into, optional)] lede: MaybeProp<String>,
     #[prop(optional)] sentence: bool,
     #[prop(optional)] actions: Option<ViewFn>,
@@ -26,7 +25,6 @@ pub fn PageHead(
     view! {
         <header class="page-head">
             <div class="page-head-text">
-                {move || eyebrow.get().map(|e| view! { <span class="eyebrow">{e}</span> })}
                 {heading}
                 {move || lede.get().map(|l| view! { <p class="lede">{l}</p> })}
                 {children.map(|c| c())}

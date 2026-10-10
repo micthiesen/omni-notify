@@ -30,7 +30,7 @@ pub fn PosterCard(item: OnDeckItem) -> impl IntoView {
             to=format!("/media/{}", encode_uri_component(&item.recommendation_id))
             title=item.title.clone()
         >
-            <Poster src=tmdb_poster(item.poster_path.as_deref()) title=item.title.clone() kind=kind/>
+            <Poster src=tmdb_poster(item.poster_path.as_deref()) title=item.title.clone() kind=kind captioned=true/>
             <span class="poster-card-title">{title}</span>
             {item.why_for_user.clone().map(|why| view! { <span class="poster-card-why">{why}</span> })}
         </Link>

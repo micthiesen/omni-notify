@@ -9,8 +9,8 @@ use leptos::prelude::*;
 use omni_api::runs::{Run, RunStatus};
 use omni_api::tasks::TaskInfo;
 use omni_web_kit::api;
-use omni_web_kit::components::badges::run_status_kind;
-use omni_web_kit::components::task_display::run_duration;
+use omni_web_kit::components::badges::{run_status_kind, run_status_label};
+use omni_web_kit::components::task_display::{detail_class, run_detail, run_duration};
 use omni_web_kit::components::{
     Button, ButtonSize, ButtonVariant, CellKind, EmptyState, ErrorState, Icon, Inspector,
     LogViewer, LogWell, PageHead, Panel, Readout, ReadoutBand, RunButton, RunCell, RunLog,
@@ -60,10 +60,23 @@ impl TaskFilter {
     }
 }
 
+/// The word next to a task's status shape.
+fn health_word(health: TaskHealth) -> &'static str {
+    match health {
+        TaskHealth::Running => "Running",
+        TaskHealth::Fault => "Failing",
+        TaskHealth::Degraded => "Degraded",
+        TaskHealth::Stale => "Stale",
+        TaskHealth::Ok => "Healthy",
+        TaskHealth::Idle => "No runs yet",
+    }
+}
+
 fn health_kind(health: TaskHealth) -> StatusKind {
     match health {
         TaskHealth::Running => StatusKind::Running,
         TaskHealth::Fault => StatusKind::Fault,
+        TaskHealth::Degraded => StatusKind::Warn,
         TaskHealth::Stale => StatusKind::Stale,
         TaskHealth::Ok => StatusKind::Ok,
         TaskHealth::Idle => StatusKind::Idle,
@@ -82,12 +95,7 @@ pub fn matches_filter(task: &TaskInfo, filter: TaskFilter, query: &str, now: f64
         && match filter {
             TaskFilter::All => true,
             TaskFilter::Running => task.running,
-            TaskFilter::Attention => {
-                matches!(
-                    task_health(task, now),
-                    TaskHealth::Fault | TaskHealth::Stale
-                )
-            }
+            TaskFilter::Attention => task_health(task, now).needs_attention(),
         }
 }
 
@@ -255,7 +263,7 @@ fn OperationsContent() -> impl IntoView {
         tasks.with(|t| {
             let attention = t
                 .iter()
-                .filter(|t| matches!(task_health(t, now), TaskHealth::Fault | TaskHealth::Stale))
+                .filter(|t| task_health(t, now).needs_attention())
                 .count();
             let running = t.iter().filter(|t| t.running).count();
             let failing = t
@@ -266,7 +274,11 @@ fn OperationsContent() -> impl IntoView {
                 .iter()
                 .filter(|t| task_health(t, now) == TaskHealth::Stale)
                 .count();
-            (t.len(), attention, running, failing, stale)
+            let degraded = t
+                .iter()
+                .filter(|t| task_health(t, now) == TaskHealth::Degraded)
+                .count();
+            (t.len(), attention, running, failing, stale, degraded)
         })
     });
 
@@ -291,7 +303,7 @@ fn OperationsContent() -> impl IntoView {
         }
     });
     let lede = Signal::derive(move || {
-        let (_, _, running, _, _) = counts.get();
+        let (_, _, running, ..) = counts.get();
         (running > 0).then(|| {
             let names: Vec<String> = tasks.with(|t| {
                 t.iter()
@@ -350,17 +362,10 @@ fn OperationsContent() -> impl IntoView {
             let health = task_health(&t, minute.get());
             let label = task_label(&t.name, t.display_name.as_deref());
             let realtime = cadence(&t) == Cadence::Realtime;
-            let summary = t
-                .last_run
-                .as_ref()
-                .and_then(|r| r.error.clone().or_else(|| r.summary.clone()));
-            let skipped = summary
-                .as_deref()
-                .is_some_and(|s| s.starts_with("skipped:"));
-            let fault = t
-                .last_run
-                .as_ref()
-                .is_some_and(|r| r.status == RunStatus::Error);
+            let detail = t.last_run.as_ref().and_then(run_detail);
+            let status_title = (health == TaskHealth::Degraded)
+                .then(|| detail.as_ref().map(|d| d.1.clone()))
+                .flatten();
             let cron = describe_cron(&t.schedule);
             let last = t.last_run.clone();
             let next_ms = next_run_ms(&t);
@@ -375,6 +380,50 @@ fn OperationsContent() -> impl IntoView {
             let key_name = key_name.clone();
             let selected = selected.clone();
             let history_label = format!("Last {STRIP} runs of {label}");
+            // The history cell on desktop and the meta line on phone.
+            let history = move |phone: bool| {
+                let history_label = history_label.clone();
+                if realtime && !phone {
+                    let ticks = Signal::derive(move || {
+                        runs.with(|r| {
+                            r.iter()
+                                .map(|r| (r.started_at as f64, cell_kind(r)))
+                                .collect::<Vec<_>>()
+                        })
+                    });
+                    let next_list = next_list.clone();
+                    view! { <TimeLane now ticks scheduled=next_list label=history_label/> }
+                        .into_any()
+                } else if history_loaded.get() && runs.with(Vec::is_empty) {
+                    view! { <span class="small off">"No runs yet"</span> }.into_any()
+                } else {
+                    let slots = if phone { 8 } else { STRIP };
+                    let cells = Signal::derive(move || {
+                        runs.with(|r| {
+                            r.iter()
+                                .take(slots)
+                                .rev()
+                                .map(|r| RunCell {
+                                    kind: cell_kind(r),
+                                    title: format!(
+                                        "{} · {} · {}{}",
+                                        format_absolute(r.started_at as f64),
+                                        run_status_label(r.status),
+                                        run_duration(
+                                            r,
+                                            r.finished_at.unwrap_or(r.started_at) as f64
+                                        ),
+                                        run_detail(r)
+                                            .map(|(_, s)| format!(" · {s}"))
+                                            .unwrap_or_default(),
+                                    ),
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                    });
+                    view! { <RunStrip cells slots label=history_label/> }.into_any()
+                }
+            };
             Some(view! {
                 <tr
                     data-row="true"
@@ -391,18 +440,25 @@ fn OperationsContent() -> impl IntoView {
                         }
                     }
                 >
-                    <td class="cell-status"><Status kind=health_kind(health) dot_only=health == TaskHealth::Ok/></td>
+                    <td class="cell-status"><Status kind=health_kind(health) label=health_word(health) title=status_title dot_only=health == TaskHealth::Ok/></td>
                     <td class="grow">
                         <div class=if running { "task-name text-signal" } else { "task-name" }>{label.clone()}</div>
-                        <div class="row-sub truncate">
+                        <div class="row-sub ops-task-sub">
                             <span class="mono">{t.name.clone()}</span>
-                            {summary.map(|s| view! {
-                                " · "
-                                <span class=if fault { "text-fault" } else if skipped { "text-warn" } else { "" }>{s}</span>
+                            {detail.map(|(tone, s)| view! {
+                                <span class="ops-sep">" · "</span>
+                                <span class=format!("ops-detail {}", detail_class(tone))>{s}</span>
+                            })}
+                        </div>
+                        <div class="ops-phone-meta">
+                            {history(true)}
+                            {last.clone().map(|r| {
+                                let started = r.started_at as f64;
+                                view! { <span class="num dim ops-last">{move || format_relative_at(started, now.get())}</span> }
                             })}
                         </div>
                     </td>
-                    <td class="hide-phone nowrap" title=t.schedule.clone()>
+                    <td class="hide-phone hide-below-wide nowrap" title=t.schedule.clone()>
                         {cron.unwrap_or_else(|| t.schedule.clone())}
                     </td>
                     <td class="hide-phone nowrap">
@@ -414,22 +470,7 @@ fn OperationsContent() -> impl IntoView {
                             }
                         })}
                     </td>
-                    <td class="hide-phone">
-                        {if realtime {
-                            let ticks = Signal::derive(move || runs.with(|r| r.iter().map(|r| (r.started_at as f64, cell_kind(r))).collect::<Vec<_>>()));
-                            view! { <TimeLane now ticks scheduled=next_list label=history_label/> }.into_any()
-                        } else if history_loaded.get() && runs.with(Vec::is_empty) {
-                            view! { <span class="small off">"No runs yet"</span> }.into_any()
-                        } else {
-                            let cells = Signal::derive(move || runs.with(|r| {
-                                r.iter().take(STRIP).rev().map(|r| RunCell {
-                                    kind: cell_kind(r),
-                                    title: format!("{} · {}{}", format_absolute(r.started_at as f64), run_duration(r, r.finished_at.unwrap_or(r.started_at) as f64), r.summary.as_ref().or(r.error.as_ref()).map(|s| format!(" · {s}")).unwrap_or_default()),
-                                }).collect::<Vec<_>>()
-                            }));
-                            view! { <RunStrip cells slots=STRIP label=history_label/> }.into_any()
-                        }}
-                    </td>
+                    <td class="hide-phone">{history(false)}</td>
                     <td class="numeric num">
                         {move || if running { "running".to_owned() } else { next_ms.map(|n| format_next(n - now.get())).unwrap_or_else(|| "—".to_owned()) }}
                     </td>
@@ -442,7 +483,7 @@ fn OperationsContent() -> impl IntoView {
     };
 
     view! {
-        <PageHead title=sentence eyebrow="Operations" lede sentence=true/>
+        <PageHead title=sentence lede sentence=true/>
         {move || live.error.get().map(|e| view! {
             <p class="inline-note warn" role="status">{format!("Refresh failed ({e}); showing the last known state.")}</p>
         })}
@@ -453,7 +494,13 @@ fn OperationsContent() -> impl IntoView {
             }) unit=Signal::derive(move || Some(format!("/{}", counts.get().0)))/>
             <Readout label="Running" value=Signal::derive(move || counts.get().2.to_string()) tone=Signal::derive(move || if counts.get().2 > 0 { Tone::Signal } else { Tone::Neutral })/>
             <Readout label="Failing" value=Signal::derive(move || counts.get().3.to_string()) tone=Signal::derive(move || if counts.get().3 > 0 { Tone::Fault } else { Tone::Neutral })/>
-            <Readout label="Stale" value=Signal::derive(move || counts.get().4.to_string()) tone=Signal::derive(move || if counts.get().4 > 0 { Tone::Warn } else { Tone::Neutral })/>
+            <Readout
+                label="Warnings"
+                value=Signal::derive(move || { let c = counts.get(); (c.4 + c.5).to_string() })
+                tone=Signal::derive(move || { let c = counts.get(); if c.4 + c.5 > 0 { Tone::Warn } else { Tone::Neutral } })
+            >
+                {move || { let c = counts.get(); format!("{} degraded · {} stale", c.5, c.4) }}
+            </Readout>
             <Readout label="Next run" value=Signal::derive(move || next.get().map(|(t, _)| format_next(t - now.get())).unwrap_or_else(|| "—".to_owned()))>
                 {move || next.get().map(|(_, name)| view! { <span class="truncate">{name}</span> })}
             </Readout>
@@ -491,7 +538,7 @@ fn OperationsContent() -> impl IntoView {
                                     <tr>
                                         <th><span class="sr-only">"Status"</span></th>
                                         <th class="grow">"Task"</th>
-                                        <th class="hide-phone">"Cadence"</th>
+                                        <th class="hide-phone hide-below-wide">"Cadence"</th>
                                         <th class="hide-phone">"Last run"</th>
                                         <th class="hide-phone">"History"</th>
                                         <th class="numeric">"Next"</th>
@@ -571,7 +618,7 @@ fn TaskInspector(
         let health = task_memo.with(|t| t.as_ref().map(|t| task_health(t, now.get_untracked())));
         let group = cadence_label(&status_name, live);
         view! {
-            {health.map(|h| view! { <Status kind=health_kind(h)/> })}
+            {health.map(|h| view! { <Status kind=health_kind(h) label=health_word(h)/> })}
             <Tag>{group}</Tag>
         }
     });
@@ -612,6 +659,21 @@ fn TaskInspector(
                     })}
                 </dl>
             </section>
+            {match name.as_str() {
+                omni_web_pages::calendar::CALENDAR_TASK => Some(view! {
+                    <section class="inspector-section">
+                        <h3 class="label">"Calendar sync"</h3>
+                        <omni_web_pages::CalendarSyncFacts/>
+                    </section>
+                }.into_any()),
+                omni_web_pages::deliveries::PARCEL_TASK => Some(view! {
+                    <section class="inspector-section">
+                        <h3 class="label">"Parcel cache"</h3>
+                        <omni_web_pages::ParcelCacheFacts/>
+                    </section>
+                }.into_any()),
+                _ => None,
+            }}
             <section class="inspector-section">
                 <h3 class="label">"History"</h3>
                 <div class="rows" id=history_id.clone()>
@@ -627,16 +689,16 @@ fn TaskInspector(
                                 move || current_run.with(|c| c.as_ref().is_some_and(|c| c.run_id == id))
                             };
                             let kind = run_status_kind(run.status);
-                            let detail = run.error.clone().or_else(|| run.summary.clone());
-                            let fault = run.error.is_some();
+                            let word = run_status_label(run.status);
+                            let detail = run_detail(&run);
                             let started = run.started_at as f64;
                             let duration = run_duration(&run, now.get_untracked());
                             view! {
                                 <div class=move || if is_shown() { "row dense selected" } else { "row dense" }>
-                                    <Status kind dot_only=kind == StatusKind::Ok/>
+                                    <Status kind label=word dot_only=kind == StatusKind::Ok/>
                                     <span class="row-main">
                                         <span class="row-title num">{format_relative_at(started, now.get_untracked())} " · " {duration}</span>
-                                        {detail.map(|d| view! { <span class=if fault { "row-sub text-fault truncate" } else { "row-sub truncate" }>{d}</span> })}
+                                        {detail.map(|(tone, d)| view! { <span class=format!("row-sub run-detail {}", detail_class(tone))>{d}</span> })}
                                     </span>
                                     <span class="row-end">
                                         <Button
