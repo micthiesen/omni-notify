@@ -147,6 +147,13 @@ fn youtube_avatar_is_the_decoded_og_image_from_the_head() {
         Some("https://yt3.googleusercontent.com/abc=s900-c-k?x=1&y=2")
     );
     assert_eq!(extract_og_image("<html><head></head></html>"), None);
+    let script_first = r#"<html><head><script>var s = "</head>";</script>
+        <meta property="og:image" content="https://yt3.googleusercontent.com/real=s900">
+        </head><body></body></html>"#;
+    assert_eq!(
+        extract_og_image(script_first).as_deref(),
+        Some("https://yt3.googleusercontent.com/real=s900")
+    );
     assert_eq!(
         extract_og_image(r#"<head><meta property="og:image" content="  "></head>"#),
         None

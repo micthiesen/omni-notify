@@ -128,10 +128,16 @@ impl AvatarFetcher for Platforms {
     }
 }
 
-/// An absolute https URL of bounded length, else `None`.
+/// Kick's stand-in picture for accounts without one; initials read better.
+fn is_placeholder(url: &str) -> bool {
+    url.contains("/img/default-profile-pic")
+}
+
+/// An absolute https URL of bounded length that is not a platform
+/// placeholder, else `None`.
 pub fn checked_avatar_url(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
-    if trimmed.is_empty() || trimmed.len() > MAX_URL_LEN {
+    if trimmed.is_empty() || trimmed.len() > MAX_URL_LEN || is_placeholder(trimmed) {
         return None;
     }
     let url = url::Url::parse(trimmed).ok()?;
@@ -201,6 +207,7 @@ pub fn resolve_avatar(
 fn url_map(rows: Vec<StreamerAvatar>) -> HashMap<String, String> {
     rows.into_iter()
         .filter_map(|row| row.url.map(|url| (row.binding, url)))
+        .filter(|(_, url)| !is_placeholder(url))
         .collect()
 }
 
@@ -528,6 +535,10 @@ mod tests {
         assert_eq!(checked_avatar_url("javascript:alert(1)"), None);
         assert_eq!(checked_avatar_url("/a.png"), None);
         assert_eq!(checked_avatar_url(""), None);
+        assert_eq!(
+            checked_avatar_url("https://kick.com/img/default-profile-pictures/default2.jpeg"),
+            None
+        );
         let long = format!("https://cdn.example/{}", "a".repeat(MAX_URL_LEN));
         assert_eq!(checked_avatar_url(&long), None);
     }

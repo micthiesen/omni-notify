@@ -174,14 +174,11 @@ pub fn youtube_channel_path(username: &str) -> Option<String> {
     simple(username).then(|| username.to_owned())
 }
 
-/// Pure: the channel page's `og:image` (its avatar), entity-decoded, when it
-/// is an https URL on a YouTube avatar host. Only the document head is parsed.
+/// Pure: the channel page's first `og:image` (its avatar), entity-decoded,
+/// when it is an https URL on a YouTube avatar host. The whole page is parsed:
+/// channel pages contain a literal `</head>` inside scripts before the meta.
 pub fn extract_og_image(html: &str) -> Option<String> {
-    let head = html
-        .find("</head>")
-        .and_then(|end| html.get(..end))
-        .unwrap_or(html);
-    let document = scraper::Html::parse_document(head);
+    let document = scraper::Html::parse_document(html);
     document
         .select(&OG_IMAGE)
         .filter_map(|meta| meta.value().attr("content"))
