@@ -601,4 +601,41 @@ async fn fixture_namespaces_never_reach_the_real_profile() {
         )
         .await;
     assert!(unknown_field.contains("sneaky"), "{unknown_field}");
+
+    // Union failures name the field inside the selected alternative.
+    let mut short = body_measurement("chest", 100.0, "cm", "2026-10-01");
+    short["endpoints"] = json!("x");
+    let pointed = h
+        .reject(
+            "stylist_record_save",
+            json!({"namespace": "fixture-a", "idempotencyKey": key("short"), "record": short}),
+        )
+        .await;
+    assert!(
+        pointed.starts_with("record (kind measurement): /record/endpoints"),
+        "{pointed}"
+    );
+    assert!(!pointed.contains("oneOf"), "{pointed}");
+    let unknown_kind = h
+        .reject(
+            "stylist_event_append",
+            json!({"namespace": "fixture-a", "idempotencyKey": key("unknown-kind"),
+                   "occurredOn": "2026-10-01", "event": {"type": "spin_cycle"}}),
+        )
+        .await;
+    assert!(
+        unknown_kind.contains("is not one of acquired, try_on"),
+        "{unknown_kind}"
+    );
+    let missing = h
+        .reject(
+            "stylist_event_append",
+            json!({"namespace": "fixture-a", "idempotencyKey": key("missing-field"),
+                   "occurredOn": "2026-10-01", "event": {"type": "wash", "water": "cold"}}),
+        )
+        .await;
+    assert!(
+        missing.contains("/event") && missing.contains("pieceId"),
+        "{missing}"
+    );
 }
