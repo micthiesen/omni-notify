@@ -465,6 +465,68 @@ async fn checkpoints_a_profile_and_skips_the_model_when_evidence_is_unchanged() 
 }
 
 #[tokio::test]
+async fn an_overlong_model_claim_is_rejected_without_failing_the_reflection() {
+    let app = TestApp::new().await;
+    let models = Models {
+        ai: app.ctx.ai.clone(),
+        config: app.ctx.config.clone(),
+    };
+    let listens = vec![
+        listen(),
+        ListenedEpisode {
+            show_title: "Hard Fork".into(),
+            episode_guid: Some("guid-2".into()),
+            ..listen()
+        },
+    ];
+    let ids: Vec<String> = derive_listen_evidence(&listens)
+        .into_iter()
+        .map(|e| e.evidence_id)
+        .collect();
+    let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let response = || {
+        let profile = RawProfile {
+            stable_preferences: vec![
+                claim("Finishes long interviews", &id_refs),
+                claim(&"x".repeat(279), &id_refs),
+            ],
+            ..RawProfile::default()
+        };
+        GenerateResponse::text(serde_json::to_string(&profile).unwrap())
+    };
+    app.ai.script(
+        ModelRole::PodcastTasteReflection,
+        vec![response(), response()],
+    );
+    let created = run_podcast_taste_reflection(
+        &app.ctx.store,
+        &models,
+        PodcastTasteReflectionInput {
+            listened: listens,
+            recommendations: Vec::new(),
+            now: 5_000,
+            max_evidence: 160,
+        },
+    )
+    .await
+    .unwrap();
+    let PodcastTasteReflectionResult::Created {
+        profile,
+        rejected_claims,
+        ..
+    } = created
+    else {
+        panic!("expected a new profile");
+    };
+    assert_eq!(rejected_claims, 1);
+    assert_eq!(profile.stable_preferences.len(), 1);
+    assert_eq!(
+        profile.stable_preferences[0].claim,
+        "Finishes long interviews"
+    );
+}
+
+#[tokio::test]
 async fn an_unreadable_listen_history_skips_the_reflection_as_degraded() {
     use std::sync::Arc;
 

@@ -21,6 +21,8 @@ use crate::types::LivestreamAlertType;
 pub const FEATURE: &str = "livestream-intelligence";
 const ASSESSMENT_MAX_CENTS: f64 = 0.55;
 const TRANSCRIPT_PROMPT_CHARS: usize = 14_000;
+/// Reasoning tokens count against this cap; 700 truncated about 2% of calls.
+const ASSESSMENT_MAX_OUTPUT_TOKENS: u32 = 2_000;
 
 /// Alert types the transcript assessor may recommend.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -228,7 +230,7 @@ impl LivestreamClassifier {
             .ai
             .model_for(&self.config, ModelRole::LivestreamIntelligence)?;
         let request = GenerateRequest {
-            max_output_tokens: Some(700),
+            max_output_tokens: Some(ASSESSMENT_MAX_OUTPUT_TOKENS),
             ..GenerateRequest::prompt(assessment_prompt(&input, &feedback))
         };
         let result = self

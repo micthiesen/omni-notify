@@ -34,18 +34,29 @@ pub const DEFAULT_MAX_EVIDENCE: usize = 160;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RawClaim {
+    // A length bound here would fail the whole response at schema validation,
+    // so the limit is described and enforced per claim.
+    #[schemars(description = "One concise sentence of at most 240 characters.")]
     pub claim: String,
+    #[schemars(range(min = 0, max = 1))]
     pub confidence: f64,
+    #[schemars(length(max = 12))]
     pub evidence_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct RawProfile {
+    #[schemars(length(max = 10))]
     pub stable_preferences: Vec<RawClaim>,
+    #[schemars(length(max = 10))]
     pub conditional_preferences: Vec<RawClaim>,
+    #[schemars(length(max = 10))]
     pub aversions: Vec<RawClaim>,
+    #[schemars(length(max = 8))]
     pub current_saturation: Vec<RawClaim>,
+    #[schemars(length(max = 8))]
     pub exploration_targets: Vec<RawClaim>,
+    #[schemars(length(max = 8))]
     pub uncertainties: Vec<RawClaim>,
 }
 
@@ -64,10 +75,6 @@ impl Refine for RawProfile {
                 return Err(format!("{name} has more than {max} claims"));
             }
             for claim in claims {
-                let length = omni_core::js::utf16_len(&claim.claim);
-                if !(1..=240).contains(&length) {
-                    return Err(format!("{name} claim length {length} outside 1..=240"));
-                }
                 in_range(claim.confidence, 0.0, 1.0, "confidence")?;
                 if claim.evidence_ids.len() > 12 {
                     return Err(format!("{name} claim cites more than 12 evidence ids"));
@@ -280,6 +287,12 @@ fn is_taste_bearing(item: &PodcastTasteEvidenceData) -> bool {
     }
 }
 
+/// Models sometimes overrun the described length; such a claim is rejected
+/// on its own rather than failing the whole reflection.
+fn claim_length_ok(claim: &str) -> bool {
+    (1..=240).contains(&omni_core::js::utf16_len(claim))
+}
+
 pub fn validate_podcast_profile(
     raw: &RawProfile,
     evidence: &[PodcastTasteEvidenceData],
@@ -293,6 +306,10 @@ pub fn validate_podcast_profile(
         |claims: &[RawClaim], minimum_shows: usize, allow_single_explicit_aversion: bool| {
             let mut kept = Vec::new();
             for claim in claims {
+                if !claim_length_ok(&claim.claim) {
+                    rejected += 1;
+                    continue;
+                }
                 let mut seen = HashSet::new();
                 let evidence_ids: Vec<String> = claim
                     .evidence_ids
