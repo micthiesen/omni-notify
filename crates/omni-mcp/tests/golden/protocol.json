@@ -22508,7 +22508,7 @@
                 {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
-                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.ledgerRevision identifies this exact state; cite it as contextRevision when freezing a prediction. asOfRevision reconstructs an earlier state. Read-only.",
+                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -22567,6 +22567,13 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 50
+                      },
+                      "contextToken": {
+                        "type": "string",
+                        "minLength": 80,
+                        "maxLength": 2475,
+                        "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                        "description": "Re-render exactly the context a token names (its revision, date,\nfocus, limit and runbook version); the other selectors must be omitted."
                       }
                     },
                     "required": [
@@ -22605,7 +22612,8 @@
                             "type": "string"
                           },
                           "today": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The date due items and staleness were judged on."
                           },
                           "runbookVersion": {
                             "type": "string"
@@ -22615,7 +22623,11 @@
                           },
                           "contextSha256": {
                             "type": "string",
-                            "description": "SHA-256 of this context's content (everything except `generatedAt`)."
+                            "description": "SHA-256 of this context's content, excluding what changes as the\nledger grows (`generatedAt`, `newestRevision`, the runbook text, the\n`historical_snapshot` warning)."
+                          },
+                          "contextToken": {
+                            "type": "string",
+                            "description": "Names this exact context: namespace, revision, date, focus, limit and\nrunbook version, plus `contextSha256`. Pass it as a prediction's\n`contextToken`, or to `stylist_context_get` to re-render this context."
                           }
                         },
                         "required": [
@@ -22626,7 +22638,8 @@
                           "today",
                           "runbookVersion",
                           "runbookSha256",
-                          "contextSha256"
+                          "contextSha256",
+                          "contextToken"
                         ],
                         "additionalProperties": false
                       },
@@ -25906,7 +25919,7 @@
                 {
                   "name": "stylist_record_save",
                   "title": "Save Stylist Record",
-                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk and contextRevision; its basis is checked against owned history. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
+                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk, contextRevision and the contextToken from stylist_context_get (Omni re-renders that context and rejects a mismatch with [context_mismatch]). Its basis is checked: exact_repeat needs a piece of the same model, cut, size, version and fiber composition with proven fit and no failure; known_brand_new_cut needs recorded fit for some piece of the brand; owning an untested piece proves nothing. A plain recommend of a variant that failed before is refused with [known_failure]. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -27109,17 +27122,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -27341,11 +27354,12 @@
                                 "maximum": 9007199254740991,
                                 "description": "The `snapshot.ledgerRevision` of the `stylist_context_get` result this\nforecast was made from."
                               },
-                              "contextSha256": {
+                              "contextToken": {
                                 "type": "string",
-                                "minLength": 64,
-                                "maxLength": 64,
-                                "pattern": "^[0-9a-f]{64}$"
+                                "minLength": 80,
+                                "maxLength": 2475,
+                                "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                                "description": "Required for new forecasts: that result's `snapshot.contextToken`,\nunchanged. Omni re-renders the context it names and rejects the\nforecast with [context_mismatch] unless it matches. (Optional only so\nforecasts frozen before tokens existed still decode.)"
                               },
                               "kind": {
                                 "type": "string",
@@ -27506,17 +27520,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -54957,7 +54971,7 @@
                 {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
-                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.ledgerRevision identifies this exact state; cite it as contextRevision when freezing a prediction. asOfRevision reconstructs an earlier state. Read-only.",
+                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -55016,6 +55030,13 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 50
+                      },
+                      "contextToken": {
+                        "type": "string",
+                        "minLength": 80,
+                        "maxLength": 2475,
+                        "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                        "description": "Re-render exactly the context a token names (its revision, date,\nfocus, limit and runbook version); the other selectors must be omitted."
                       }
                     },
                     "required": [
@@ -55054,7 +55075,8 @@
                             "type": "string"
                           },
                           "today": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The date due items and staleness were judged on."
                           },
                           "runbookVersion": {
                             "type": "string"
@@ -55064,7 +55086,11 @@
                           },
                           "contextSha256": {
                             "type": "string",
-                            "description": "SHA-256 of this context's content (everything except `generatedAt`)."
+                            "description": "SHA-256 of this context's content, excluding what changes as the\nledger grows (`generatedAt`, `newestRevision`, the runbook text, the\n`historical_snapshot` warning)."
+                          },
+                          "contextToken": {
+                            "type": "string",
+                            "description": "Names this exact context: namespace, revision, date, focus, limit and\nrunbook version, plus `contextSha256`. Pass it as a prediction's\n`contextToken`, or to `stylist_context_get` to re-render this context."
                           }
                         },
                         "required": [
@@ -55075,7 +55101,8 @@
                           "today",
                           "runbookVersion",
                           "runbookSha256",
-                          "contextSha256"
+                          "contextSha256",
+                          "contextToken"
                         ],
                         "additionalProperties": false
                       },
@@ -58355,7 +58382,7 @@
                 {
                   "name": "stylist_record_save",
                   "title": "Save Stylist Record",
-                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk and contextRevision; its basis is checked against owned history. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
+                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk, contextRevision and the contextToken from stylist_context_get (Omni re-renders that context and rejects a mismatch with [context_mismatch]). Its basis is checked: exact_repeat needs a piece of the same model, cut, size, version and fiber composition with proven fit and no failure; known_brand_new_cut needs recorded fit for some piece of the brand; owning an untested piece proves nothing. A plain recommend of a variant that failed before is refused with [known_failure]. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -59558,17 +59585,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -59790,11 +59817,12 @@
                                 "maximum": 9007199254740991,
                                 "description": "The `snapshot.ledgerRevision` of the `stylist_context_get` result this\nforecast was made from."
                               },
-                              "contextSha256": {
+                              "contextToken": {
                                 "type": "string",
-                                "minLength": 64,
-                                "maxLength": 64,
-                                "pattern": "^[0-9a-f]{64}$"
+                                "minLength": 80,
+                                "maxLength": 2475,
+                                "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                                "description": "Required for new forecasts: that result's `snapshot.contextToken`,\nunchanged. Omni re-renders the context it names and rejects the\nforecast with [context_mismatch] unless it matches. (Optional only so\nforecasts frozen before tokens existed still decode.)"
                               },
                               "kind": {
                                 "type": "string",
@@ -59955,17 +59983,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -87540,7 +87568,7 @@
                 {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
-                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.ledgerRevision identifies this exact state; cite it as contextRevision when freezing a prediction. asOfRevision reconstructs an earlier state. Read-only.",
+                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -87599,6 +87627,13 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 50
+                      },
+                      "contextToken": {
+                        "type": "string",
+                        "minLength": 80,
+                        "maxLength": 2475,
+                        "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                        "description": "Re-render exactly the context a token names (its revision, date,\nfocus, limit and runbook version); the other selectors must be omitted."
                       }
                     },
                     "required": [
@@ -87637,7 +87672,8 @@
                             "type": "string"
                           },
                           "today": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The date due items and staleness were judged on."
                           },
                           "runbookVersion": {
                             "type": "string"
@@ -87647,7 +87683,11 @@
                           },
                           "contextSha256": {
                             "type": "string",
-                            "description": "SHA-256 of this context's content (everything except `generatedAt`)."
+                            "description": "SHA-256 of this context's content, excluding what changes as the\nledger grows (`generatedAt`, `newestRevision`, the runbook text, the\n`historical_snapshot` warning)."
+                          },
+                          "contextToken": {
+                            "type": "string",
+                            "description": "Names this exact context: namespace, revision, date, focus, limit and\nrunbook version, plus `contextSha256`. Pass it as a prediction's\n`contextToken`, or to `stylist_context_get` to re-render this context."
                           }
                         },
                         "required": [
@@ -87658,7 +87698,8 @@
                           "today",
                           "runbookVersion",
                           "runbookSha256",
-                          "contextSha256"
+                          "contextSha256",
+                          "contextToken"
                         ],
                         "additionalProperties": false
                       },
@@ -90938,7 +90979,7 @@
                 {
                   "name": "stylist_record_save",
                   "title": "Save Stylist Record",
-                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk and contextRevision; its basis is checked against owned history. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
+                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk, contextRevision and the contextToken from stylist_context_get (Omni re-renders that context and rejects a mismatch with [context_mismatch]). Its basis is checked: exact_repeat needs a piece of the same model, cut, size, version and fiber composition with proven fit and no failure; known_brand_new_cut needs recorded fit for some piece of the brand; owning an untested piece proves nothing. A plain recommend of a variant that failed before is refused with [known_failure]. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -92141,17 +92182,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -92373,11 +92414,12 @@
                                 "maximum": 9007199254740991,
                                 "description": "The `snapshot.ledgerRevision` of the `stylist_context_get` result this\nforecast was made from."
                               },
-                              "contextSha256": {
+                              "contextToken": {
                                 "type": "string",
-                                "minLength": 64,
-                                "maxLength": 64,
-                                "pattern": "^[0-9a-f]{64}$"
+                                "minLength": 80,
+                                "maxLength": 2475,
+                                "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                                "description": "Required for new forecasts: that result's `snapshot.contextToken`,\nunchanged. Omni re-renders the context it names and rejects the\nforecast with [context_mismatch] unless it matches. (Optional only so\nforecasts frozen before tokens existed still decode.)"
                               },
                               "kind": {
                                 "type": "string",
@@ -92538,17 +92580,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -120182,7 +120224,7 @@
                 {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
-                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.ledgerRevision identifies this exact state; cite it as contextRevision when freezing a prediction. asOfRevision reconstructs an earlier state. Read-only.",
+                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -120241,6 +120283,13 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 50
+                      },
+                      "contextToken": {
+                        "type": "string",
+                        "minLength": 80,
+                        "maxLength": 2475,
+                        "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                        "description": "Re-render exactly the context a token names (its revision, date,\nfocus, limit and runbook version); the other selectors must be omitted."
                       }
                     },
                     "required": [
@@ -120279,7 +120328,8 @@
                             "type": "string"
                           },
                           "today": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The date due items and staleness were judged on."
                           },
                           "runbookVersion": {
                             "type": "string"
@@ -120289,7 +120339,11 @@
                           },
                           "contextSha256": {
                             "type": "string",
-                            "description": "SHA-256 of this context's content (everything except `generatedAt`)."
+                            "description": "SHA-256 of this context's content, excluding what changes as the\nledger grows (`generatedAt`, `newestRevision`, the runbook text, the\n`historical_snapshot` warning)."
+                          },
+                          "contextToken": {
+                            "type": "string",
+                            "description": "Names this exact context: namespace, revision, date, focus, limit and\nrunbook version, plus `contextSha256`. Pass it as a prediction's\n`contextToken`, or to `stylist_context_get` to re-render this context."
                           }
                         },
                         "required": [
@@ -120300,7 +120354,8 @@
                           "today",
                           "runbookVersion",
                           "runbookSha256",
-                          "contextSha256"
+                          "contextSha256",
+                          "contextToken"
                         ],
                         "additionalProperties": false
                       },
@@ -123580,7 +123635,7 @@
                 {
                   "name": "stylist_record_save",
                   "title": "Save Stylist Record",
-                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk and contextRevision; its basis is checked against owned history. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
+                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk, contextRevision and the contextToken from stylist_context_get (Omni re-renders that context and rejects a mismatch with [context_mismatch]). Its basis is checked: exact_repeat needs a piece of the same model, cut, size, version and fiber composition with proven fit and no failure; known_brand_new_cut needs recorded fit for some piece of the brand; owning an untested piece proves nothing. A plain recommend of a variant that failed before is refused with [known_failure]. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -124783,17 +124838,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -125015,11 +125070,12 @@
                                 "maximum": 9007199254740991,
                                 "description": "The `snapshot.ledgerRevision` of the `stylist_context_get` result this\nforecast was made from."
                               },
-                              "contextSha256": {
+                              "contextToken": {
                                 "type": "string",
-                                "minLength": 64,
-                                "maxLength": 64,
-                                "pattern": "^[0-9a-f]{64}$"
+                                "minLength": 80,
+                                "maxLength": 2475,
+                                "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                                "description": "Required for new forecasts: that result's `snapshot.contextToken`,\nunchanged. Omni re-renders the context it names and rejects the\nforecast with [context_mismatch] unless it matches. (Optional only so\nforecasts frozen before tokens existed still decode.)"
                               },
                               "kind": {
                                 "type": "string",
@@ -125180,17 +125236,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -152746,7 +152802,7 @@
                 {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
-                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.ledgerRevision identifies this exact state; cite it as contextRevision when freezing a prediction. asOfRevision reconstructs an earlier state. Read-only.",
+                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -152805,6 +152861,13 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 50
+                      },
+                      "contextToken": {
+                        "type": "string",
+                        "minLength": 80,
+                        "maxLength": 2475,
+                        "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                        "description": "Re-render exactly the context a token names (its revision, date,\nfocus, limit and runbook version); the other selectors must be omitted."
                       }
                     },
                     "required": [
@@ -152843,7 +152906,8 @@
                             "type": "string"
                           },
                           "today": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The date due items and staleness were judged on."
                           },
                           "runbookVersion": {
                             "type": "string"
@@ -152853,7 +152917,11 @@
                           },
                           "contextSha256": {
                             "type": "string",
-                            "description": "SHA-256 of this context's content (everything except `generatedAt`)."
+                            "description": "SHA-256 of this context's content, excluding what changes as the\nledger grows (`generatedAt`, `newestRevision`, the runbook text, the\n`historical_snapshot` warning)."
+                          },
+                          "contextToken": {
+                            "type": "string",
+                            "description": "Names this exact context: namespace, revision, date, focus, limit and\nrunbook version, plus `contextSha256`. Pass it as a prediction's\n`contextToken`, or to `stylist_context_get` to re-render this context."
                           }
                         },
                         "required": [
@@ -152864,7 +152932,8 @@
                           "today",
                           "runbookVersion",
                           "runbookSha256",
-                          "contextSha256"
+                          "contextSha256",
+                          "contextToken"
                         ],
                         "additionalProperties": false
                       },
@@ -156144,7 +156213,7 @@
                 {
                   "name": "stylist_record_save",
                   "title": "Save Stylist Record",
-                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk and contextRevision; its basis is checked against owned history. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
+                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk, contextRevision and the contextToken from stylist_context_get (Omni re-renders that context and rejects a mismatch with [context_mismatch]). Its basis is checked: exact_repeat needs a piece of the same model, cut, size, version and fiber composition with proven fit and no failure; known_brand_new_cut needs recorded fit for some piece of the brand; owning an untested piece proves nothing. A plain recommend of a variant that failed before is refused with [known_failure]. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -157347,17 +157416,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -157579,11 +157648,12 @@
                                 "maximum": 9007199254740991,
                                 "description": "The `snapshot.ledgerRevision` of the `stylist_context_get` result this\nforecast was made from."
                               },
-                              "contextSha256": {
+                              "contextToken": {
                                 "type": "string",
-                                "minLength": 64,
-                                "maxLength": 64,
-                                "pattern": "^[0-9a-f]{64}$"
+                                "minLength": 80,
+                                "maxLength": 2475,
+                                "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                                "description": "Required for new forecasts: that result's `snapshot.contextToken`,\nunchanged. Omni re-renders the context it names and rejects the\nforecast with [context_mismatch] unless it matches. (Optional only so\nforecasts frozen before tokens existed still decode.)"
                               },
                               "kind": {
                                 "type": "string",
@@ -157744,17 +157814,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -185426,7 +185496,7 @@
                 {
                   "name": "stylist_context_get",
                   "title": "Get Stylist Context",
-                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.ledgerRevision identifies this exact state; cite it as contextRevision when freezing a prediction. asOfRevision reconstructs an earlier state. Read-only.",
+                  "description": "Call first in every clothing, sizing or styling session (namespace \"real\"; fixture-* namespaces are test data). Returns the versioned fit-first runbook and checklist, the current body profile and measurements with provenance, reference garments with washed measurements, fit history split into successes, failures and unresolved cases (counterexamples included), brand history, current preferences and recent changes, rules with unchecked cases, unresolved contradictions, completeness and freshness warnings (blocking means abstain), due return decisions and follow-ups, and open wardrobe needs. snapshot.contextToken names this exact context (revision, date, focus, limit, runbook version and digest): pass it, with snapshot.ledgerRevision as contextRevision, when freezing a prediction, or pass it back here to re-render that context. asOfRevision reconstructs an earlier state. Read-only.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -185485,6 +185555,13 @@
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 50
+                      },
+                      "contextToken": {
+                        "type": "string",
+                        "minLength": 80,
+                        "maxLength": 2475,
+                        "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                        "description": "Re-render exactly the context a token names (its revision, date,\nfocus, limit and runbook version); the other selectors must be omitted."
                       }
                     },
                     "required": [
@@ -185523,7 +185600,8 @@
                             "type": "string"
                           },
                           "today": {
-                            "type": "string"
+                            "type": "string",
+                            "description": "The date due items and staleness were judged on."
                           },
                           "runbookVersion": {
                             "type": "string"
@@ -185533,7 +185611,11 @@
                           },
                           "contextSha256": {
                             "type": "string",
-                            "description": "SHA-256 of this context's content (everything except `generatedAt`)."
+                            "description": "SHA-256 of this context's content, excluding what changes as the\nledger grows (`generatedAt`, `newestRevision`, the runbook text, the\n`historical_snapshot` warning)."
+                          },
+                          "contextToken": {
+                            "type": "string",
+                            "description": "Names this exact context: namespace, revision, date, focus, limit and\nrunbook version, plus `contextSha256`. Pass it as a prediction's\n`contextToken`, or to `stylist_context_get` to re-render this context."
                           }
                         },
                         "required": [
@@ -185544,7 +185626,8 @@
                           "today",
                           "runbookVersion",
                           "runbookSha256",
-                          "contextSha256"
+                          "contextSha256",
+                          "contextToken"
                         ],
                         "additionalProperties": false
                       },
@@ -188824,7 +188907,7 @@
                 {
                   "name": "stylist_record_save",
                   "title": "Save Stylist Record",
-                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk and contextRevision; its basis is checked against owned history. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
+                  "description": "Create or revise one typed record in the stylist ledger. Omit id to create. Variants, pieces, preferences, rules and needs are revised with id and the current expectedRevision (stale revisions are rejected; every revision stays retrievable). Measurements, profile snapshots and predictions are immutable: correct them with a new record using supersedes and correctionReason. A prediction freezes a forecast before any outcome: exact variant and size, per-region expectations, likely failure mode, evidence gaps, return risk, contextRevision and the contextToken from stylist_context_get (Omni re-renders that context and rejects a mismatch with [context_mismatch]). Its basis is checked: exact_repeat needs a piece of the same model, cut, size, version and fiber composition with proven fit and no failure; known_brand_new_cut needs recorded fit for some piece of the brand; owning an untested piece proves nothing. A plain recommend of a variant that failed before is refused with [known_failure]. A rule needs a narrow scope and cannot become active until every in-scope fit case is regression-checked. Never invent measurements or purchases. idempotencyKey: reuse only to retry identical input. Writes only Omni's private ledger.",
                   "inputSchema": {
                     "type": "object",
                     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -190027,17 +190110,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },
@@ -190259,11 +190342,12 @@
                                 "maximum": 9007199254740991,
                                 "description": "The `snapshot.ledgerRevision` of the `stylist_context_get` result this\nforecast was made from."
                               },
-                              "contextSha256": {
+                              "contextToken": {
                                 "type": "string",
-                                "minLength": 64,
-                                "maxLength": 64,
-                                "pattern": "^[0-9a-f]{64}$"
+                                "minLength": 80,
+                                "maxLength": 2475,
+                                "pattern": "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+                                "description": "Required for new forecasts: that result's `snapshot.contextToken`,\nunchanged. Omni re-renders the context it names and rejects the\nforecast with [context_mismatch] unless it matches. (Optional only so\nforecasts frozen before tokens existed still decode.)"
                               },
                               "kind": {
                                 "type": "string",
@@ -190424,17 +190508,17 @@
                                   {
                                     "type": "string",
                                     "const": "new_brand_inference",
-                                    "description": "No owned or tried piece of this brand."
+                                    "description": "No piece of this brand has recorded fit evidence."
                                   },
                                   {
                                     "type": "string",
                                     "const": "known_brand_new_cut",
-                                    "description": "The brand is known, but not this model, cut and size."
+                                    "description": "Some piece of the brand has recorded fit evidence, but no proven exact repeat."
                                   },
                                   {
                                     "type": "string",
                                     "const": "exact_repeat",
-                                    "description": "The same brand, model, cut and size was owned or tried."
+                                    "description": "A piece of the same brand, model, cut, size, version and fiber\ncomposition has proven fit, and none of them failed."
                                   }
                                 ]
                               },

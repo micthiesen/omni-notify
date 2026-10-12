@@ -155,7 +155,7 @@ async fn run_cycle(h: &Harness) -> Cycle {
 
     let context = h.context(NS, json!({"variantId": candidate})).await;
     let revision = context["snapshot"]["ledgerRevision"].as_u64().unwrap();
-    let digest = context["snapshot"]["contextSha256"].clone();
+    let token = context["snapshot"]["contextToken"].clone();
     assert_eq!(
         context["references"][0]["piece"]["id"],
         json!(reference_piece)
@@ -177,7 +177,7 @@ async fn run_cycle(h: &Harness) -> Cycle {
         "referencesUsed": [reference_piece, reference_chest, reference_length],
         "returnRisk": {"level": "medium", "returnBy": "2026-11-11", "rationale": "free in-store returns, unwashed only"},
         "contextRevision": revision,
-        "contextSha256": digest,
+        "contextToken": token,
     });
 
     let mut overclaimed = prediction_record.clone();
@@ -396,7 +396,7 @@ async fn measured_reference_to_revised_rule_keeps_the_forecast_frozen() {
     let frozen = &revisions[0];
     assert_eq!(frozen["revision"], json!(1));
     assert_eq!(frozen["data"], cycle.prediction_input);
-    assert_eq!(frozen["derived"]["runbookVersion"], json!("fit-first-v1"));
+    assert_eq!(frozen["derived"]["runbookVersion"], json!("fit-first-v2"));
     let revise = h
         .reject(
             "stylist_record_save",

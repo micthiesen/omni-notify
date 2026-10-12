@@ -339,6 +339,9 @@ pub struct ContextInput {
     /// Maximum items per history list (default 15).
     #[schemars(range(min = 1, max = 50), extend("default" = 15))]
     pub limit: Option<u64>,
+    /// Re-render exactly the context a token names (its revision, date,
+    /// focus, limit and runbook version); the other selectors must be omitted.
+    pub context_token: Option<crate::types::ContextToken>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -551,11 +554,18 @@ pub struct Snapshot {
     pub ledger_revision: u64,
     pub newest_revision: u64,
     pub generated_at: String,
+    /// The date due items and staleness were judged on.
     pub today: String,
     pub runbook_version: String,
     pub runbook_sha256: String,
-    /// SHA-256 of this context's content (everything except `generatedAt`).
+    /// SHA-256 of this context's content, excluding what changes as the
+    /// ledger grows (`generatedAt`, `newestRevision`, the runbook text, the
+    /// `historical_snapshot` warning).
     pub context_sha256: String,
+    /// Names this exact context: namespace, revision, date, focus, limit and
+    /// runbook version, plus `contextSha256`. Pass it as a prediction's
+    /// `contextToken`, or to `stylist_context_get` to re-render this context.
+    pub context_token: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]

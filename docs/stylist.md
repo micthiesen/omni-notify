@@ -41,11 +41,43 @@ plain-language feedback back as typed events.
   other pair as incompatible without converting it.
 - **Predictions** freeze a forecast before any outcome: the exact variant and
   size, per-region expectations, likely failure mode, evidence gaps,
-  references and rules used, return risk, the context revision and digest the
-  forecast was made from, and the runbook version. The server checks the
-  claimed basis (`exact_repeat`, `known_brand_new_cut`,
-  `new_brand_inference`) against the owned history and rejects a stronger
-  claim. The forecast also stores the variant's revision and identity and the
+  references and rules used, return risk, the context it was made from, and
+  the runbook version.
+- **Context proof.** Every `stylist_context_get` result carries
+  `snapshot.contextToken`: `ctx1.<parameters>.<digest>`, naming the
+  namespace, ledger revision, the date it was judged on, the focus, the list
+  limit and the runbook version, plus the content digest. A new prediction
+  must carry that token (with `contextRevision` equal to its revision). Inside
+  the write transaction Omni re-renders the context the token names from the
+  ledger at that revision and compares digests; a malformed, altered,
+  foreign-namespace or non-reproducible token is rejected with
+  `[context_mismatch]`. A genuine but stale token is accepted with a warning
+  counting the writes since. The digest leaves out what changes as the ledger
+  grows (`generatedAt`, `newestRevision`, runbook text and version list, the
+  `historical_snapshot` warning), so passing the token back to
+  `stylist_context_get` re-renders the identical context on any later day. A
+  deploy that changes the context's shape invalidates outstanding tokens:
+  read the context again. Forecasts frozen before tokens existed keep their
+  stored `contextRevision` and any client-supplied `contextSha256` in their
+  data; neither was verified, and their `derived` has no `context` entry.
+- **Basis** (`basisRule: fit-evidence-v2`). A piece's fit evidence is
+  `proven` (fitting try-ons, acceptable wear or feedback, a matched outcome,
+  or a `baseline` reference role), `failed` (a `too_*` region, a wrong-size
+  try-on, a missed outcome, a fit-related return, a too-small or too-large
+  reference role, or a wash that shrank or stretched it), `mixed`, or
+  `untested`. `exact_repeat` requires a piece of the same brand, model, cut,
+  size label and system, the same version (or none recorded on either) and
+  the same fiber composition (recorded on both, within 5 points per fiber),
+  with proven fit and no failed or mixed match; `known_brand_new_cut`
+  requires recorded fit evidence for some piece of the brand; otherwise the
+  basis is `new_brand_inference`. A stronger claim is rejected with
+  `[basis_mismatch]` and the reasons (untested, version or material differs,
+  unrecorded). When the same compatible variant failed before, a plain
+  `recommend` is rejected with `[known_failure]`; `recommend_with_caution` or
+  `abstain` are accepted with a warning. `derived.basisAssessment` records
+  the matches and reasons. Forecasts frozen before this rule keep the
+  `computedBasis` they stored.
+- **Frozen inputs.** The forecast also stores the variant's revision and identity and the
   revisions of the references and rules it used, and a variant that anything
   uses cannot change its brand, model, category, size, cut, colour, version
   or SKU. Events that link a forecast (`acquired`, `try_on`, `outcome`,
@@ -226,24 +258,35 @@ instruction, custom instruction or `AGENTS.md` line:
 > For any clothing, sizing, wardrobe or styling question, first call
 > `stylist_context_get` with `namespace: "real"` and a `focus` for the
 > category, brand or candidate, and follow the returned runbook and
-> checklist. Treat the ledger as the only memory: record measurements,
-> purchases, try-ons, decisions, washes and feedback with the stylist tools
-> as they happen, never invent values, and never shop, contact retailers or
-> set up alerts without my explicit approval for that action.
+> checklist. Treat the ledger as the canonical record: reconcile what I tell
+> you with it, and record measurements, purchases, try-ons, decisions, washes
+> and feedback with the stylist tools as they happen, never inventing values.
+> Suggest useful things proactively, but never buy, contact retailers or sign
+> up for anything without my explicit approval for that action.
 
-The runbook (`crates/omni-stylist/runbook/fit-first-v1.md`, returned by the
-context) covers the session order, measurement protocols, reference
-garments, the recommendation and freeze workflow, shopping-time checks,
-post-purchase events, narrow learning, contradictions, onboarding and how to
-translate plain-language feedback into events. Published runbook versions are
-frozen by a digest test; a change ships as a new version and predictions
-record the version they followed.
+The current runbook (`crates/omni-stylist/runbook/fit-first-v2.md`, returned
+by the context with its checklist) covers the session order, measurement
+protocols, body versus garment charts and ease, reference garments, the
+recommendation and freeze workflow, shopping-time checks, post-purchase
+events, narrow learning, contradictions, proactive suggestions, onboarding
+and how to translate plain-language feedback into events. v2 replaced v1's
+advice on adding ease to body charts, universal measuring landmarks, median
+averaging of disagreeing readings, absolute shrinkage claims, abstaining when
+only article measurements are missing, a blanket ban on proactive
+suggestions, and treating all earlier conversations as non-evidence.
+Published versions (text and checklist) are frozen by a digest test; v1 stays
+retrievable with `runbookVersion: "fit-first-v1"`, a change ships as a new
+version, and predictions record the version they followed.
 
 ## Proactive scope
 
 Context lists only genuine items: open needs whose `reviewAfter` has come,
 return decisions with their deadlines, outcome follow-ups for frozen
-forecasts, and post-wash checks for pieces bought on a forecast. Nothing is
-pushed. Budgets on needs are preferences and never authorize a purchase.
-Turning any of this into notifications would be a separate, explicitly
-authorized change.
+forecasts, and post-wash checks for pieces bought on a forecast. The owner
+wants assistants to raise these, and genuine opportunities for open needs,
+proactively in the conversation or the owner's own notification channel; the
+runbook (v2, section 12) says so. Omni itself schedules no stylist messages.
+A suggestion is not permission: buying, contacting retailers and signing up
+for external services each need explicit approval, given in the conversation
+or by tool policy, never stored in the ledger. Budgets on needs are
+preferences and never authorize a purchase.

@@ -490,22 +490,7 @@ impl McpProtocol {
             None | Some(Value::Null) => Value::Object(Map::new()),
             Some(other) => other.clone(),
         };
-        let issues: Vec<String> = entry
-            .validator
-            .iter_errors(&arguments)
-            .map(|error| {
-                let path = error
-                    .instance_path()
-                    .to_string()
-                    .trim_start_matches('/')
-                    .replace('/', ".");
-                if path.is_empty() {
-                    error.to_string()
-                } else {
-                    format!("{path}: {error}")
-                }
-            })
-            .collect();
+        let issues = argument_issues(&entry.validator, &entry.input_schema, &arguments);
         if !issues.is_empty() {
             return Ok(failed_result(&format!(
                 "Input validation error: Invalid arguments for tool {name}: {}",
@@ -585,6 +570,103 @@ fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
         .map(|s| (*s).to_owned())
         .or_else(|| panic.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "Tool call failed".to_owned())
+}
+
+/// One argument issue as `dotted.path: message`.
+fn issue(pointer: &str, message: &str) -> String {
+    let path = pointer.trim_start_matches('/').replace('/', ".");
+    if path.is_empty() {
+        message.to_owned()
+    } else {
+        format!("{path}: {message}")
+    }
+}
+
+/// Every argument issue. A failed tagged union (a `oneOf` or `anyOf` whose
+/// alternatives all fix one property with `const`) reports the errors of the
+/// alternative its tag selects, or the valid tags, instead of only "is not
+/// valid under any of the schemas" with the whole value echoed.
+fn argument_issues(
+    validator: &jsonschema::Validator,
+    schema: &Value,
+    arguments: &Value,
+) -> Vec<String> {
+    let mut issues = Vec::new();
+    for error in validator.iter_errors(arguments) {
+        let pointer = error.instance_path().to_string();
+        match union_issues(schema, arguments, &pointer) {
+            Some(detailed) => issues.extend(detailed),
+            None => issues.push(issue(&pointer, &error.to_string())),
+        }
+    }
+    issues.dedup();
+    issues
+}
+
+/// The subschema validating the value at `pointer` (properties and items only).
+fn schema_at<'a>(schema: &'a Value, pointer: &str) -> Option<&'a Value> {
+    let mut current = schema;
+    for segment in pointer.split('/').skip(1) {
+        current = match current.get("properties").and_then(|p| p.get(segment)) {
+            Some(next) => next,
+            None if segment.parse::<usize>().is_ok() => current.get("items")?,
+            None => return None,
+        };
+    }
+    Some(current)
+}
+
+fn union_issues(schema: &Value, arguments: &Value, pointer: &str) -> Option<Vec<String>> {
+    let union = schema_at(schema, pointer)?;
+    let alternatives = union
+        .get("oneOf")
+        .or_else(|| union.get("anyOf"))?
+        .as_array()?;
+    let instance = arguments.pointer(pointer)?.as_object()?;
+    let tag_of = |alternative: &Value, tag: &str| -> Option<Value> {
+        alternative
+            .get("properties")?
+            .get(tag)?
+            .get("const")
+            .cloned()
+    };
+    let tag = alternatives
+        .first()?
+        .get("properties")?
+        .as_object()?
+        .keys()
+        .find(|name| alternatives.iter().all(|a| tag_of(a, name).is_some()))?;
+    let tags: Vec<String> = alternatives
+        .iter()
+        .filter_map(|a| tag_of(a, tag))
+        .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_owned))
+        .collect();
+    let tag_pointer = format!("{pointer}/{tag}");
+    let Some(value) = instance.get(tag.as_str()) else {
+        return Some(vec![issue(
+            &tag_pointer,
+            &format!("required, one of {}", tags.join(", ")),
+        )]);
+    };
+    let Some(alternative) = alternatives
+        .iter()
+        .find(|a| tag_of(a, tag).as_ref() == Some(value))
+    else {
+        return Some(vec![issue(
+            &tag_pointer,
+            &format!("{value} is not one of {}", tags.join(", ")),
+        )]);
+    };
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .build(alternative)
+        .ok()?;
+    let member = Value::Object(instance.clone());
+    let detailed: Vec<String> = validator
+        .iter_errors(&member)
+        .map(|e| issue(&format!("{pointer}{}", e.instance_path()), &e.to_string()))
+        .collect();
+    (!detailed.is_empty()).then_some(detailed)
 }
 
 fn failed_result(message: &str) -> Map<String, Value> {

@@ -45,150 +45,6 @@ where
     })
 }
 
-/// A tool whose input has a tagged union (`record` by `kind`, `event` by
-/// `type`). A schema failure inside the union is reported with the errors of
-/// the alternative its tag selects, not as a bare "matches no alternative".
-struct UnionTool<I, F> {
-    input: SchemaValidator,
-    output: SchemaValidator,
-    field: &'static str,
-    tag: &'static str,
-    alternatives: Vec<(String, SchemaValidator)>,
-    run: F,
-    _input: std::marker::PhantomData<fn(I)>,
-}
-
-impl<I, F> UnionTool<I, F> {
-    fn explain(&self, input: &Value, original: String) -> String {
-        let field = self.field;
-        let Some(member) = input.get(field) else {
-            return original;
-        };
-        let names: Vec<&str> = self
-            .alternatives
-            .iter()
-            .map(|(name, _)| name.as_str())
-            .collect();
-        let Some(tag) = member.get(self.tag).and_then(Value::as_str) else {
-            return format!(
-                "/{field}/{}: required, one of {}",
-                self.tag,
-                names.join(", ")
-            );
-        };
-        let Some((_, validator)) = self.alternatives.iter().find(|(name, _)| name == tag) else {
-            return format!(
-                "/{field}/{}: {tag:?} is not one of {}",
-                self.tag,
-                names.join(", ")
-            );
-        };
-        let elsewhere: Vec<&str> = original
-            .split("; ")
-            .filter(|part| !part.starts_with(&format!("/{field}")))
-            .collect();
-        let mut parts: Vec<String> = match validator.check(member) {
-            Ok(()) => Vec::new(),
-            Err(details) => details
-                .split("; ")
-                .map(|part| {
-                    if part.starts_with('/') {
-                        format!("/{field}{part}")
-                    } else {
-                        format!("/{field}: {part}")
-                    }
-                })
-                .collect(),
-        };
-        parts.extend(elsewhere.into_iter().map(str::to_owned));
-        if parts.is_empty() {
-            original
-        } else {
-            format!("{field} ({} {tag}): {}", self.tag, parts.join("; "))
-        }
-    }
-}
-
-impl<I, O, F, Fut> ToolHandler for UnionTool<I, F>
-where
-    I: DeserializeOwned + Send + 'static,
-    O: Serialize + Send + 'static,
-    F: Fn(I) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<O, StylistError>> + Send + 'static,
-{
-    fn call<'a>(
-        &'a self,
-        input: Value,
-        _cx: ToolContext,
-    ) -> BoxFuture<'a, Result<ToolOutput, ToolError>> {
-        Box::pin(async move {
-            let input = omni_core::js::normalize_numbers(input);
-            if let Err(message) = self.input.check(&input) {
-                return Err(ToolError::input(self.explain(&input, message)));
-            }
-            let decoded: I =
-                serde_json::from_value(input).map_err(|e| ToolError::input(e.to_string()))?;
-            let output = (self.run)(decoded).await.map_err(execute)?;
-            let value =
-                serde_json::to_value(output).map_err(|e| ToolError::output(e.to_string()))?;
-            let value = omni_core::js::normalize_numbers(value);
-            self.output.check(&value).map_err(ToolError::output)?;
-            match value {
-                Value::Object(map) => Ok(ToolOutput::Structured(map)),
-                _ => Err(ToolError::output("tool output must be a JSON object")),
-            }
-        })
-    }
-}
-
-fn union_tool<I, O, F, Fut>(
-    def: &'static ToolDef<I, O>,
-    field: &'static str,
-    tag: &'static str,
-    run: F,
-) -> Result<McpTool, ToolMetaError>
-where
-    I: JsonSchema + DeserializeOwned + Send + 'static,
-    O: JsonSchema + Serialize + Send + 'static,
-    F: Fn(I) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<O, StylistError>> + Send + 'static,
-{
-    use omni_mcp_kit::ToolDefinition as _;
-    let meta = def.meta()?;
-    let mut alternatives = Vec::new();
-    let options = meta
-        .input_schema
-        .get("properties")
-        .and_then(|p| p.get(field))
-        .and_then(|f| f.get("oneOf"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    for option in options {
-        let name = option
-            .get("properties")
-            .and_then(|p| p.get(tag))
-            .and_then(|t| t.get("const"))
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-        if let (Some(name), Value::Object(schema)) = (name, option) {
-            alternatives.push((name, SchemaValidator::new(&meta.name, &schema)?));
-        }
-    }
-    raw_tool(
-        def,
-        Arc::new(UnionTool {
-            input: SchemaValidator::new(&meta.name, &meta.input_schema)?,
-            output: SchemaValidator::new(&meta.name, &meta.output_schema)?,
-            field,
-            tag,
-            alternatives,
-            run,
-            _input: std::marker::PhantomData,
-        }),
-    )
-}
-
 /// A tool whose result carries an embedded resource.
 struct ResourceTool<I, F> {
     input: SchemaValidator,
@@ -307,20 +163,16 @@ pub fn tools(stylist: Arc<Stylist>) -> Result<Vec<McpTool>, ToolMetaError> {
             &stylist,
             |s, input| async move { s.compare(input).await },
         )?,
-        union_tool(&defs::STYLIST_RECORD_SAVE, "record", "kind", {
-            let s = stylist.clone();
-            move |input| {
-                let s = s.clone();
-                async move { s.save_record(input).await }
-            }
-        })?,
-        union_tool(&defs::STYLIST_EVENT_APPEND, "event", "type", {
-            let s = stylist.clone();
-            move |input| {
-                let s = s.clone();
-                async move { s.append_event(input).await }
-            }
-        })?,
+        tool(
+            &defs::STYLIST_RECORD_SAVE,
+            &stylist,
+            |s, input| async move { s.save_record(input).await },
+        )?,
+        tool(
+            &defs::STYLIST_EVENT_APPEND,
+            &stylist,
+            |s, input| async move { s.append_event(input).await },
+        )?,
         tool(
             &defs::STYLIST_EVIDENCE_STORE,
             &stylist,

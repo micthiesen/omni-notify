@@ -628,3 +628,53 @@ async fn a_panicking_tool_becomes_a_failed_result() {
     assert!(is_error(&message));
     assert_eq!(error_text(&message), "private implementation failure");
 }
+
+#[tokio::test]
+async fn a_failed_tagged_union_names_the_field_in_the_selected_alternative() {
+    let clock = clock();
+    let store = test_store(&clock).await;
+    let router = mcp_router(&store.store, &clock, Vec::new(), None);
+    let short = call_tool(
+        &router,
+        "stylist_record_save",
+        json!({"namespace": "fixture-a", "idempotencyKey": "union-error-0000001",
+               "record": {"kind": "measurement", "subject": {"type": "body"}, "dimension": "chest",
+                          "method": "circumference", "endpoints": "x", "value": 100, "unit": "cm",
+                          "observedOn": "2026-10-01",
+                          "provenance": {"certainty": "explicit", "source": "user_measurement"}}}),
+    )
+    .await;
+    assert!(is_error(&short));
+    let text = error_text(&short);
+    assert!(
+        text.starts_with(
+            "Input validation error: Invalid arguments for tool stylist_record_save: record.endpoints:"
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("valid under any"), "{text}");
+    let unknown = call_tool(
+        &router,
+        "stylist_event_append",
+        json!({"namespace": "fixture-a", "idempotencyKey": "union-error-0000002",
+               "occurredOn": "2026-10-01", "event": {"type": "spin_cycle"}}),
+    )
+    .await;
+    let text = error_text(&unknown);
+    assert!(
+        text.contains("event.type: \"spin_cycle\" is not one of acquired, try_on"),
+        "{text}"
+    );
+    let missing = call_tool(
+        &router,
+        "stylist_event_append",
+        json!({"namespace": "fixture-a", "idempotencyKey": "union-error-0000003",
+               "occurredOn": "2026-10-01", "event": {"type": "wash", "water": "cold"}}),
+    )
+    .await;
+    let text = error_text(&missing);
+    assert!(
+        text.contains("event: \"pieceId\" is a required property"),
+        "{text}"
+    );
+}

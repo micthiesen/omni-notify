@@ -13,7 +13,7 @@ use crate::api::{
     DueItem, HistoryEntry, HistoryOut, HistoryTotals, PreferenceChange, PreferencesOut, ProfileOut,
     ReferenceOut, RegionVerdict, RuleOut, RulesOut, RunbookOut, Snapshot, WarningOut,
 };
-use crate::error::{StylistError, not_found};
+use crate::error::{StylistError, not_found, reject};
 use crate::fit::{self, RegionComparison, RegionMatch};
 use crate::model::{
     Certainty, ChangeKind, ContradictionStatus, EventBody, EventType, FeedbackTiming,
@@ -23,8 +23,9 @@ use crate::model::{
 use crate::runbook;
 use crate::service::{digest_json, iso, measurement_ref, record_item};
 use crate::state::{Event, LedgerState, PieceStatus, Record, enum_text};
-use crate::types::{Category, parse_date};
+use crate::types::{Category, ContextToken, parse_date};
 use crate::units;
+use serde::{Deserialize, Serialize};
 
 /// Days after which a body measurement or profile snapshot is stale.
 const STALE_DAYS: i64 = 365;
@@ -162,12 +163,13 @@ pub fn build(
             runbook_version: runbook.version.to_owned(),
             runbook_sha256: runbook.sha256().to_owned(),
             context_sha256: String::new(),
+            context_token: String::new(),
         },
         runbook: RunbookOut {
             version: runbook.version.to_owned(),
             sha256: runbook.sha256().to_owned(),
             versions: runbook::versions(),
-            checklist: runbook::CHECKLIST.iter().map(|s| (*s).to_owned()).collect(),
+            checklist: runbook.checklist.iter().map(|s| (*s).to_owned()).collect(),
             text: input
                 .include_runbook
                 .unwrap_or(true)
@@ -186,14 +188,148 @@ pub fn build(
         open_needs,
         counts,
     };
-    let mut hashed =
-        serde_json::to_value(&output).map_err(|e| StylistError::Corrupt(e.to_string()))?;
-    if let Some(snapshot) = hashed.get_mut("snapshot").and_then(Value::as_object_mut) {
-        snapshot.shift_remove("generatedAt");
-        snapshot.shift_remove("contextSha256");
-    }
-    output.snapshot.context_sha256 = digest_json(&hashed);
+    let digest = content_digest(&output)?;
+    let params = TokenParams {
+        v: 1,
+        ns: state.namespace.as_str().to_owned(),
+        rev: state.revision,
+        today: today.to_string(),
+        focus: input.focus.clone(),
+        limit: input.limit.unwrap_or(15).clamp(1, 50),
+        runbook: runbook.version.to_owned(),
+    };
+    output.snapshot.context_token = issue_token(&params, &digest)?;
+    output.snapshot.context_sha256 = digest;
     Ok(output)
+}
+
+/// What a context token names.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenParams {
+    pub v: u8,
+    pub ns: String,
+    pub rev: u64,
+    pub today: String,
+    pub focus: Option<crate::api::Focus>,
+    pub limit: u64,
+    pub runbook: String,
+}
+
+/// The digest of a context's content. Fields that change as the ledger grows
+/// or as runbooks are added are excluded, so the same revision, date, focus,
+/// limit and runbook version always produce the same digest.
+fn content_digest(output: &ContextOutput) -> Result<String, StylistError> {
+    let mut value =
+        serde_json::to_value(output).map_err(|e| StylistError::Corrupt(e.to_string()))?;
+    if let Some(snapshot) = value.get_mut("snapshot").and_then(Value::as_object_mut) {
+        for key in [
+            "generatedAt",
+            "newestRevision",
+            "contextSha256",
+            "contextToken",
+        ] {
+            snapshot.shift_remove(key);
+        }
+    }
+    if let Some(runbook) = value.get_mut("runbook").and_then(Value::as_object_mut) {
+        runbook.shift_remove("text");
+        runbook.shift_remove("versions");
+    }
+    if let Some(Value::Array(warnings)) = value.get_mut("warnings") {
+        warnings.retain(|w| w.get("code") != Some(&json!("historical_snapshot")));
+    }
+    Ok(digest_json(&value))
+}
+
+fn issue_token(params: &TokenParams, digest: &str) -> Result<String, StylistError> {
+    use base64::Engine as _;
+    let value = serde_json::to_value(params).map_err(|e| StylistError::Corrupt(e.to_string()))?;
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(crate::service::canonical(&value).to_string());
+    Ok(format!("ctx1.{encoded}.{digest}"))
+}
+
+fn mismatch(message: impl Into<String>) -> StylistError {
+    reject("context_mismatch", message)
+}
+
+/// The parameters and digest a token carries.
+pub fn parse_token(token: &ContextToken) -> Result<(TokenParams, String), StylistError> {
+    use base64::Engine as _;
+    let mut parts = token.as_str().split('.');
+    let (Some("ctx1"), Some(encoded), Some(digest), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return Err(mismatch(
+            "the context token is malformed; copy snapshot.contextToken unchanged",
+        ));
+    };
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|_| {
+            mismatch("the context token is malformed; copy snapshot.contextToken unchanged")
+        })?;
+    let params: TokenParams = serde_json::from_slice(&bytes).map_err(|_| {
+        mismatch("the context token is malformed; copy snapshot.contextToken unchanged")
+    })?;
+    if params.v != 1 {
+        return Err(mismatch(format!(
+            "unsupported context token version {}",
+            params.v
+        )));
+    }
+    Ok((params, digest.to_owned()))
+}
+
+/// A verified link between a forecast and the context it was made from.
+#[derive(Clone, Debug)]
+pub struct ContextProof {
+    pub params: TokenParams,
+    pub sha256: String,
+}
+
+/// Re-renders the context a token names from `conn` and checks its digest.
+pub fn verify_token(
+    conn: &rusqlite::Connection,
+    namespace: &crate::types::Namespace,
+    token: &ContextToken,
+) -> Result<ContextProof, StylistError> {
+    let (params, digest) = parse_token(token)?;
+    if params.ns != namespace.as_str() {
+        return Err(mismatch(format!(
+            "the context token is for namespace {}, not {namespace}",
+            params.ns
+        )));
+    }
+    let state = LedgerState::load(conn, namespace, Some(params.rev))
+        .map_err(|e| mismatch(format!("the context token's revision is unusable: {e}")))?;
+    let output = render(&state, &params)?;
+    if output.snapshot.context_sha256 != digest {
+        return Err(mismatch(format!(
+            "the context token does not match the ledger at revision {}: it was altered, or the context changed shape after a deploy; read the context again",
+            params.rev
+        )));
+    }
+    Ok(ContextProof {
+        params,
+        sha256: digest,
+    })
+}
+
+/// The context `params` name, rendered over `state` (already at `params.rev`).
+fn render(state: &LedgerState, params: &TokenParams) -> Result<ContextOutput, StylistError> {
+    let today = parse_date(&params.today).map_err(mismatch)?;
+    let input = ContextInput {
+        namespace: state.namespace.clone(),
+        focus: params.focus.clone(),
+        as_of_revision: Some(params.rev),
+        include_runbook: Some(false),
+        runbook_version: Some(params.runbook.clone()),
+        limit: Some(params.limit),
+        context_token: None,
+    };
+    build(state, &input, today, 0)
 }
 
 fn measurements(state: &LedgerState) -> impl Iterator<Item = (&Record, &MeasurementRecord)> {
@@ -1408,6 +1544,9 @@ impl crate::service::Stylist {
     /// evaluated on the date of that revision's last write, so the same
     /// revision always yields the same context and digest.
     pub async fn context(&self, input: ContextInput) -> Result<ContextOutput, StylistError> {
+        if let Some(token) = &input.context_token {
+            return self.rerender(&input, token).await;
+        }
         let state = self.state(&input.namespace, input.as_of_revision).await?;
         let historical = state.revision < state.current_revision;
         let today = match state.latest_recorded_at() {
@@ -1415,5 +1554,42 @@ impl crate::service::Stylist {
             _ => self.today(),
         };
         build(&state, &input, today, self.clock.now_ms())
+    }
+
+    /// Exactly the context a token names, checked against its digest.
+    async fn rerender(
+        &self,
+        input: &ContextInput,
+        token: &ContextToken,
+    ) -> Result<ContextOutput, StylistError> {
+        if input.focus.is_some()
+            || input.as_of_revision.is_some()
+            || input.runbook_version.is_some()
+            || input.limit.is_some()
+        {
+            return Err(crate::error::invalid(
+                "contextToken already names the focus, revision, runbook version and limit; omit them",
+            ));
+        }
+        let (params, digest) = parse_token(token)?;
+        if params.ns != input.namespace.as_str() {
+            return Err(mismatch(format!(
+                "the context token is for namespace {}, not {}",
+                params.ns, input.namespace
+            )));
+        }
+        let state = self.state(&input.namespace, Some(params.rev)).await?;
+        let mut output = render(&state, &params)?;
+        if output.snapshot.context_sha256 != digest {
+            return Err(mismatch(format!(
+                "the context token does not match the ledger at revision {}",
+                params.rev
+            )));
+        }
+        output.snapshot.generated_at = iso(self.clock.now_ms());
+        if input.include_runbook.unwrap_or(true) {
+            output.runbook.text = runbook::find(&params.runbook).map(|r| r.text.to_owned());
+        }
+        Ok(output)
     }
 }

@@ -605,11 +605,12 @@ pub enum FitVerdict {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Basis {
-    /// No owned or tried piece of this brand.
+    /// No piece of this brand has recorded fit evidence.
     NewBrandInference,
-    /// The brand is known, but not this model, cut and size.
+    /// Some piece of the brand has recorded fit evidence, but no proven exact repeat.
     KnownBrandNewCut,
-    /// The same brand, model, cut and size was owned or tried.
+    /// A piece of the same brand, model, cut, size, version and fiber
+    /// composition has proven fit, and none of them failed.
     ExactRepeat,
 }
 
@@ -737,7 +738,11 @@ pub struct PredictionRecord {
     /// forecast was made from.
     #[schemars(range(min = 0))]
     pub context_revision: u64,
-    pub context_sha256: Option<crate::types::Sha256Hex>,
+    /// Required for new forecasts: that result's `snapshot.contextToken`,
+    /// unchanged. Omni re-renders the context it names and rejects the
+    /// forecast with [context_mismatch] unless it matches. (Optional only so
+    /// forecasts frozen before tokens existed still decode.)
+    pub context_token: Option<crate::types::ContextToken>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

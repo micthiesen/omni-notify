@@ -6,11 +6,12 @@ use jiff::civil::Date;
 use serde_json::{Map, Value, json};
 
 use crate::api::{AppendEventInput, SaveRecordInput};
+use crate::context::ContextProof;
 use crate::error::{StylistError, invalid, not_found, reject};
 use crate::fit::{self, RegionMatch};
 use crate::model::{
-    Basis, EventBody, MeasurementRecord, PredictionDecision, PredictionRecord, Provenance,
-    RecordBody, RecordKind, RegressionVerdict, RuleRecord, RuleStatus, SubjectKind, VariantRecord,
+    EventBody, MeasurementRecord, PredictionDecision, PredictionRecord, Provenance, RecordBody,
+    RecordKind, RegressionVerdict, RuleRecord, RuleStatus, SubjectKind, VariantRecord,
 };
 use crate::state::{EventEnvelope, LedgerState};
 use crate::types::{EventId, EvidenceId, LedgerId, RecordId, new_id, parse_date};
@@ -133,10 +134,12 @@ pub fn variant_key(v: &VariantRecord) -> String {
 
 /// Plans a record write: revision checks, immutability, references and the
 /// kind-specific rules.
+/// `proof` is the verified context token of a prediction (None otherwise).
 pub fn plan_record(
     state: &LedgerState,
     input: &SaveRecordInput,
     today: Date,
+    proof: Option<&ContextProof>,
 ) -> Result<RecordPlan, StylistError> {
     let kind = input.record.kind();
     let mut warnings = Vec::new();
@@ -340,7 +343,7 @@ pub fn plan_record(
             }
             None
         }
-        RecordBody::Prediction(p) => Some(prediction(state, p, &mut warnings)?),
+        RecordBody::Prediction(p) => Some(prediction(state, p, proof, &mut warnings)?),
         RecordBody::Rule(r) => Some(rule(state, r, &mut warnings)?),
         RecordBody::Need(n) => {
             provenance_ok(state, &n.provenance, today)?;
@@ -610,8 +613,23 @@ fn profile_derived(p: &crate::model::ProfileSnapshotRecord) -> Map<String, Value
 fn prediction(
     state: &LedgerState,
     p: &PredictionRecord,
+    proof: Option<&ContextProof>,
     warnings: &mut Vec<String>,
 ) -> Result<Map<String, Value>, StylistError> {
+    let Some(proof) = proof else {
+        return Err(invalid(
+            "contextToken is required: pass snapshot.contextToken from the stylist_context_get result this forecast was made from",
+        ));
+    };
+    if proof.params.rev != p.context_revision {
+        return Err(reject(
+            "context_mismatch",
+            format!(
+                "contextRevision {} differs from the token's revision {}",
+                p.context_revision, proof.params.rev
+            ),
+        ));
+    }
     record_exists(state, &p.variant_id, &[RecordKind::Variant])?;
     let Some(variant) = state.variant(p.variant_id.as_str()) else {
         return Err(not_found(format!("no variant {}", p.variant_id)));
@@ -669,15 +687,20 @@ fn prediction(
     if let Some(return_by) = &p.return_risk.return_by {
         date("returnRisk.returnBy", return_by)?;
     }
-    let (computed, supporting) = fit::basis_for(state, variant);
+    let assessment = fit::assess_basis(state, variant);
+    let computed = assessment.basis;
+    let why = if assessment.reasons.is_empty() {
+        String::new()
+    } else {
+        format!(": {}", assessment.reasons.join("; "))
+    };
     if p.basis > computed {
         return Err(reject(
             "basis_mismatch",
             format!(
-                "basis {} is not supported: the ledger supports {} ({} supporting pieces)",
+                "basis {} is not supported; the ledger supports {}{why}",
                 crate::state::enum_text(&p.basis),
                 crate::state::enum_text(&computed),
-                supporting.len()
             ),
         ));
     }
@@ -688,21 +711,31 @@ fn prediction(
             crate::state::enum_text(&p.basis)
         ));
     }
-    if computed == Basis::ExactRepeat {
-        let versions: Vec<String> = supporting
-            .iter()
-            .filter_map(|id| state.piece_variant(id))
-            .filter_map(|(_, v)| v.version.clone())
-            .collect();
-        if let Some(version) = &variant.version
-            && !versions.is_empty()
-            && !versions.iter().any(|v| norm(v) == norm(version))
-        {
-            warnings.push(format!(
-                "earlier pieces were version {}; version {version} may be a new pattern",
-                versions.join(", ")
+    if !assessment.known_failures.is_empty() {
+        let failed = assessment.known_failures.join(", ");
+        if p.decision == PredictionDecision::Recommend {
+            return Err(reject(
+                "known_failure",
+                format!(
+                    "this exact variant failed before ({failed}); use recommend_with_caution with the reason it should fit now, or abstain"
+                ),
             ));
         }
+        warnings.push(format!(
+            "this exact variant failed before ({failed}); explain why the forecast differs"
+        ));
+    }
+    let mixed: Vec<&str> = assessment
+        .identity_matches
+        .iter()
+        .filter(|m| m.fit == fit::FitEvidence::Mixed)
+        .map(|m| m.piece_id.as_str())
+        .collect();
+    if !mixed.is_empty() {
+        warnings.push(format!(
+            "the same model and size has mixed fit evidence ({})",
+            mixed.join(", ")
+        ));
     }
     let writes_since = state.current_revision.saturating_sub(p.context_revision);
     if writes_since > 0 {
@@ -740,8 +773,21 @@ fn prediction(
         Value::Object(revisions(&p.rules_applied)),
     );
     derived.insert("computedBasis".into(), json!(computed));
-    derived.insert("supportingPieces".into(), json!(supporting));
+    derived.insert("basisRule".into(), json!("fit-evidence-v2"));
+    derived.insert("basisAssessment".into(), json!(assessment));
     derived.insert("contextRevision".into(), json!(p.context_revision));
+    derived.insert(
+        "context".into(),
+        json!({
+            "verified": true,
+            "revision": proof.params.rev,
+            "today": proof.params.today,
+            "focus": proof.params.focus,
+            "limit": proof.params.limit,
+            "runbookVersion": proof.params.runbook,
+            "sha256": proof.sha256,
+        }),
+    );
     derived.insert("writesSinceContext".into(), json!(writes_since));
     Ok(derived)
 }

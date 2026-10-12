@@ -34,25 +34,30 @@ async fn variant_and_piece(h: &Harness, label: &str) -> (String, String) {
     (variant, piece)
 }
 
-fn forecast(variant: &str, revision: u64) -> Value {
+/// A context's revision and token.
+type Seen = (u64, String);
+
+fn forecast(variant: &str, at: &Seen) -> Value {
     json!({
         "kind": "prediction", "variantId": variant, "recommendedSize": "M",
-        "decision": "recommend", "basis": "known_brand_new_cut",
+        "decision": "recommend", "basis": "new_brand_inference",
         "regionExpectations": [{"region": "chest", "expected": "good", "rationale": "history"}],
         "likelyFailureMode": {"description": "length"},
         "returnRisk": {"level": "low", "rationale": "free returns"},
-        "contextRevision": revision,
+        "contextRevision": at.0,
+        "contextToken": at.1,
     })
 }
 
-async fn revision(h: &Harness) -> u64 {
-    h.call(
-        "stylist_records_query",
-        json!({"namespace": NS, "limit": 1}),
+async fn seen(h: &Harness) -> Seen {
+    let context = h.context(NS, json!({})).await;
+    (
+        context["snapshot"]["ledgerRevision"].as_u64().unwrap(),
+        context["snapshot"]["contextToken"]
+            .as_str()
+            .unwrap()
+            .to_owned(),
     )
-    .await["snapshotRevision"]
-        .as_u64()
-        .unwrap()
 }
 
 #[tokio::test(start_paused = true)]
@@ -69,8 +74,8 @@ async fn forecasts_cannot_be_scored_against_what_they_could_see() {
             "regionFit": [{"region": "chest", "verdict": "good"}]}),
         )
         .await);
-    let at = revision(&h).await;
-    let prediction = id(&h.save(NS, &key("forecast"), forecast(&variant, at)).await);
+    let at = seen(&h).await;
+    let prediction = id(&h.save(NS, &key("forecast"), forecast(&variant, &at)).await);
     let outcome = h
         .reject(
             "stylist_event_append",
@@ -102,9 +107,9 @@ async fn forecasts_cannot_be_scored_against_what_they_could_see() {
 
     // An event dated before the freeze, and a piece of another variant.
     let (other_variant, other_piece) = variant_and_piece(&h, "Other Tee").await;
-    let at = revision(&h).await;
+    let at = seen(&h).await;
     let fresh = id(&h
-        .save(NS, &key("forecast-2"), forecast(&other_variant, at))
+        .save(NS, &key("forecast-2"), forecast(&other_variant, &at))
         .await);
     let backdated = h
         .reject(
@@ -138,7 +143,7 @@ async fn forecasts_cannot_be_scored_against_what_they_could_see() {
         .reject(
             "stylist_record_save",
             json!({"namespace": NS, "idempotencyKey": key("replace"), "supersedes": fresh,
-                   "correctionReason": "better forecast", "record": forecast(&other_variant, at)}),
+                   "correctionReason": "better forecast", "record": forecast(&other_variant, &at)}),
         )
         .await;
     assert!(replace.starts_with("[post_hoc]"), "{replace}");
@@ -148,8 +153,8 @@ async fn forecasts_cannot_be_scored_against_what_they_could_see() {
 async fn frozen_inputs_cannot_be_reinterpreted() {
     let h = Harness::new().await;
     let (variant, piece) = variant_and_piece(&h, "Frozen Tee").await;
-    let at = revision(&h).await;
-    let saved = h.save(NS, &key("forecast"), forecast(&variant, at)).await;
+    let at = seen(&h).await;
+    let saved = h.save(NS, &key("forecast"), forecast(&variant, &at)).await;
     let derived = &saved["record"]["derived"];
     assert_eq!(derived["variantRevision"], json!(1));
     assert_eq!(derived["variantSnapshot"]["sizeLabel"], json!("M"));

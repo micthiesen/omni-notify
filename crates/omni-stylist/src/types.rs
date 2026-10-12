@@ -139,6 +139,14 @@ constrained_string!(
 );
 
 constrained_string!(
+    /// `snapshot.contextToken` from `stylist_context_get`, copied unchanged.
+    ContextToken,
+    "^ctx1\\.[A-Za-z0-9_-]{8,2400}\\.[0-9a-f]{64}$",
+    80,
+    2475
+);
+
+constrained_string!(
     /// A record kind, event type or evidence kind name.
     KindName,
     "^[a-z][a-z_]{0,31}$",

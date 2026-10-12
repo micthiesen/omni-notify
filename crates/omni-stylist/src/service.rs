@@ -408,7 +408,17 @@ impl Stylist {
                     return Ok(output);
                 }
                 let state = LedgerState::load(conn, &input.namespace, None)?;
-                let plan = validate::plan_record(&state, &input, today)?;
+                // A forecast's context token is verified by re-rendering it here,
+                // inside the write transaction.
+                let proof = match &input.record {
+                    RecordBody::Prediction(p) => p
+                        .context_token
+                        .as_ref()
+                        .map(|token| crate::context::verify_token(conn, &input.namespace, token))
+                        .transpose()?,
+                    _ => None,
+                };
+                let plan = validate::plan_record(&state, &input, today, proof.as_ref())?;
                 let revision = ledger::next_revision(conn, namespace, now)?;
                 let mut derived = plan.derived.unwrap_or_default();
                 if plan.kind == RecordKind::Prediction {
