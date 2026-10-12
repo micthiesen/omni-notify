@@ -375,7 +375,8 @@ must keep decoding, so new fields are optional. Evidence stays in the 0700
 private directory, re-hashed on read, deleted only by name (never by
 sweeping), never served over HTTP, and MCP activity keeps only identifiers and
 error codes for `stylist_*` calls. Archives never cross between `real` and
-fixtures.
+fixtures. The LAN `/stylist` page is read-only and its `GET /api/stylist`
+overview never carries evidence bytes, photos or captions.
 Published runbook versions are frozen by a digest test: change the playbook
 by adding a version. Nothing in the stylist sends messages, shops or scans
 mail; proactive help is limited to items listed in the context.

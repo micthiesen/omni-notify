@@ -20,6 +20,7 @@ pub mod runbook;
 pub mod service;
 pub mod state;
 pub mod types;
+pub mod ui;
 pub mod units;
 pub mod validate;
 
@@ -64,6 +65,7 @@ pub fn subsystem(ctx: &AppContext) -> Result<Subsystem, SubsystemError> {
     )?)];
     Ok(Subsystem {
         tasks,
+        router: ui::router(stylist.clone()),
         mcp_tools: mcp::tools(Arc::new(stylist))?,
         // A failure here must not stop the rest of Omni: the tools retry the
         // same initialization on every call and report the error.

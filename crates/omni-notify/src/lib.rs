@@ -15,6 +15,7 @@ pub mod logging;
 pub mod maintenance;
 pub mod ops;
 pub mod preview;
+pub mod preview_stylist;
 pub mod services;
 pub mod stylist_cli;
 pub mod task_health;

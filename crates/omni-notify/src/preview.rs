@@ -592,7 +592,10 @@ async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
         omni_store::StoreOptions::new(clock.clone()),
     )
     .await?;
-    let ctx = context_over(&foundation, store, app_paths(&config, web_dist.clone()));
+    let mut paths = app_paths(&config, web_dist.clone());
+    // Stylist evidence and archives stay in the throwaway directory too.
+    paths.stylist_private = dir.join("stylist-private");
+    let ctx = context_over(&foundation, store, paths);
     let mut subsystems = crate::wiring::wire(&ctx, clock.now_ms()).await?.subsystems;
     let trace = BootTrace::default();
     boot::migrate(&ctx, boot::all_entities(&subsystems), &trace).await?;
@@ -615,6 +618,7 @@ async fn run(port: u16, web_dist: PathBuf, dir: &Path) -> anyhow::Result<()> {
     ctx.tasks.initialize().await?;
     boot::run_steps(&ctx, &mut subsystems, BootPhase::Reconcile, &trace).await?;
     seed(&ctx, clock.now_ms()).await?;
+    crate::preview_stylist::seed(&ctx).await?;
     for task in fake_tasks()? {
         ctx.tasks.track(task)?;
     }

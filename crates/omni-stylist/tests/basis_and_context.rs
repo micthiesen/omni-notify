@@ -83,7 +83,10 @@ async fn owning_an_untested_piece_of_another_version_and_fabric_is_not_an_exact_
         refused.contains("version 2025 differs from 2026"),
         "{refused}"
     );
-    assert!(refused.contains("fiber composition differs"), "{refused}");
+    assert!(
+        refused.contains("the material differs (cotton 100% vs 0%; polyester 0% vs 100%)"),
+        "{refused}"
+    );
     assert!(refused.contains("no recorded fit"), "{refused}");
     let saved = try_forecast(
         &h,
@@ -270,7 +273,7 @@ async fn a_forecast_must_cite_a_context_the_server_can_reproduce() {
     assert_eq!(context["verified"], json!(true));
     assert_eq!(context["revision"], at["ledgerRevision"]);
     assert_eq!(context["sha256"], at["contextSha256"]);
-    assert_eq!(context["runbookVersion"], json!("fit-first-v2"));
+    assert_eq!(context["runbookVersion"], json!("fit-first-v3"));
     assert!(
         saved["warnings"]
             .as_array()

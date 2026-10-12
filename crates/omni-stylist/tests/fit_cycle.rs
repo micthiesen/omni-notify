@@ -396,7 +396,7 @@ async fn measured_reference_to_revised_rule_keeps_the_forecast_frozen() {
     let frozen = &revisions[0];
     assert_eq!(frozen["revision"], json!(1));
     assert_eq!(frozen["data"], cycle.prediction_input);
-    assert_eq!(frozen["derived"]["runbookVersion"], json!("fit-first-v2"));
+    assert_eq!(frozen["derived"]["runbookVersion"], json!("fit-first-v3"));
     let revise = h
         .reject(
             "stylist_record_save",

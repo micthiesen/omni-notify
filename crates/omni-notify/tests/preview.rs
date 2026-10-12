@@ -34,6 +34,28 @@ async fn seeds_typed_fixture_data_the_routes_serve() {
     assert_eq!(pets[0]["weightHistory"].as_array().unwrap().len(), 91);
     let (_, activity) = app.get_json(&router, "/api/email-activity").await;
     assert_eq!(activity["activities"].as_array().unwrap().len(), 1);
+    omni_notify::preview_stylist::seed(&app.ctx).await.unwrap();
+    let (status, stylist) = app.get_json(&router, "/api/stylist").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(stylist["wardrobe"].as_array().unwrap().len(), 5);
+    let forecast = &stylist["predictions"][0];
+    assert_eq!(forecast["contextVerified"], true);
+    assert_eq!(forecast["outcomes"].as_array().unwrap().len(), 2);
+    assert!(
+        stylist["due"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["kind"] == "return_decision")
+    );
+    assert!(
+        stylist["contradictions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["kind"] == "body_measurement")
+    );
+    assert_eq!(stylist["archives"].as_array().unwrap().len(), 1);
 }
 
 #[test]

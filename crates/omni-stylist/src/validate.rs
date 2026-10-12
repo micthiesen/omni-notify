@@ -226,15 +226,21 @@ pub fn plan_record(
             provenance_ok(state, &v.provenance, today)?;
             let key = variant_key(v);
             if input.id.is_none() && !v.allow_duplicate.unwrap_or(false) {
+                // A different recorded material is a different product; a
+                // material recorded on only one side is the same product with
+                // more detail, so revise that variant instead.
                 let duplicate = state.current_records().find(|r| match &r.body {
-                    RecordBody::Variant(existing) => variant_key(existing) == key,
+                    RecordBody::Variant(existing) => {
+                        variant_key(existing) == key
+                            && fit::material_comparison(existing, v).0 != fit::Agreement::Differs
+                    }
                     _ => false,
                 });
                 if let Some(duplicate) = duplicate {
                     return Err(reject(
                         "duplicate_variant",
                         format!(
-                            "variant {} already records this brand, model, size, cut, colour, version and SKU; reuse it or set allowDuplicate",
+                            "variant {} already records this brand, model, size, cut, colour, version, SKU and material; reuse it (revise it to add a missing material) or set allowDuplicate",
                             duplicate.id
                         ),
                     ));
@@ -242,13 +248,14 @@ pub fn plan_record(
             }
             if let Some(id) = &input.id
                 && let Some(old) = state.variant(id.as_str())
-                && variant_identity(old) != variant_identity(v)
+                && (variant_identity(old) != variant_identity(v)
+                    || fit::material_comparison(old, v).0 == fit::Agreement::Differs)
                 && let Some(user) = variant_users(state, id.as_str()).first()
             {
                 return Err(reject(
                     "immutable",
                     format!(
-                        "variant {id} is used by {user}; its brand, model, category, size, cut, colour, version and SKU cannot change. Save a new variant instead"
+                        "variant {id} is used by {user}; its brand, model, category, size, cut, colour, version, SKU and recorded material cannot change (adding a missing material is allowed). Save a new variant instead"
                     ),
                 ));
             }
@@ -728,12 +735,12 @@ fn prediction(
     let mixed: Vec<&str> = assessment
         .identity_matches
         .iter()
-        .filter(|m| m.fit == fit::FitEvidence::Mixed)
+        .filter(|m| m.fit == fit::FitEvidence::Mixed && !m.failed_now)
         .map(|m| m.piece_id.as_str())
         .collect();
     if !mixed.is_empty() {
         warnings.push(format!(
-            "the same model and size has mixed fit evidence ({})",
+            "the same model and size has mixed fit evidence, latest positive ({})",
             mixed.join(", ")
         ));
     }
@@ -757,6 +764,7 @@ fn prediction(
             "brand": variant.brand, "model": variant.model, "category": variant.category,
             "sizeLabel": variant.size_label, "sizeSystem": variant.size_system, "cut": variant.cut,
             "colour": variant.colour, "version": variant.version, "sku": variant.sku,
+            "fabric": variant.fabric,
         }),
     );
     let revisions = |ids: &[RecordId]| -> Map<String, Value> {
@@ -773,7 +781,7 @@ fn prediction(
         Value::Object(revisions(&p.rules_applied)),
     );
     derived.insert("computedBasis".into(), json!(computed));
-    derived.insert("basisRule".into(), json!("fit-evidence-v2"));
+    derived.insert("basisRule".into(), json!("fit-evidence-v3"));
     derived.insert("basisAssessment".into(), json!(assessment));
     derived.insert("contextRevision".into(), json!(p.context_revision));
     derived.insert(

@@ -3,8 +3,9 @@
 The `omni-stylist` subsystem is a fit-first personal stylist ledger: a
 structured, case-based record of one person's body, garments, purchases, fit
 outcomes and preferences, with a versioned runbook that tells any assistant
-how to use it. It is served only through authenticated MCP tools. There is no
-UI, no scheduled message, no shopping integration and no receipt scanning.
+how to use it. Writes and private evidence go only through authenticated MCP
+tools; the LAN web UI has a read-only `/stylist` page (see "Web page"). There
+is no scheduled message, no shopping integration and no receipt scanning.
 
 The ledger is the source of truth. Assistants read it at the start of every
 session (`stylist_context_get`) instead of relying on chat memory, and write
@@ -60,23 +61,40 @@ plain-language feedback back as typed events.
   read the context again. Forecasts frozen before tokens existed keep their
   stored `contextRevision` and any client-supplied `contextSha256` in their
   data; neither was verified, and their `derived` has no `context` entry.
-- **Basis** (`basisRule: fit-evidence-v2`). A piece's fit evidence is
+- **Basis** (`basisRule: fit-evidence-v3`). A piece's fit evidence is
   `proven` (fitting try-ons, acceptable wear or feedback, a matched outcome,
   or a `baseline` reference role), `failed` (a `too_*` region, a wrong-size
   try-on, a missed outcome, a fit-related return, a too-small or too-large
   reference role, or a wash that shrank or stretched it), `mixed`, or
-  `untested`. `exact_repeat` requires a piece of the same brand, model, cut,
+  `untested`, and records whether its latest report (by `occurredOn`, then
+  ledger order; a reference role counts at its latest revision) was positive
+  or adverse. `exact_repeat` requires a piece of the same brand, model, cut,
   size label and system, the same version (or none recorded on either) and
-  the same fiber composition (recorded on both, within 5 points per fiber),
-  with proven fit and no failed or mixed match; `known_brand_new_cut`
-  requires recorded fit evidence for some piece of the brand; otherwise the
-  basis is `new_brand_inference`. A stronger claim is rejected with
-  `[basis_mismatch]` and the reasons (untested, version or material differs,
-  unrecorded). When the same compatible variant failed before, a plain
-  `recommend` is rejected with `[known_failure]`; `recommend_with_caution` or
-  `abstain` are accepted with a warning. `derived.basisAssessment` records
-  the matches and reasons. Forecasts frozen before this rule keep the
-  `computedBasis` they stored.
+  the same material, with proven fit and no failed or mixed match;
+  `known_brand_new_cut` requires recorded fit evidence for some piece of the
+  brand; otherwise the basis is `new_brand_inference`. A stronger claim is
+  rejected with `[basis_mismatch]` and the reasons (untested, version or
+  material differs with each difference, unrecorded). A compatible piece that
+  failed, or whose latest report is adverse after earlier positive ones (it
+  fit at try-on, then shrank), is a known failure: a plain `recommend` is
+  rejected with `[known_failure]`; `recommend_with_caution` or `abstain` are
+  accepted with a warning. A mixed piece whose latest report is positive only
+  warns. `derived.basisAssessment` records the matches, material
+  differences, latest signals and reasons. Forecasts frozen under earlier
+  rules keep the `computedBasis` and `basisRule` they stored.
+- **Material.** Two variants have the same material only when both record a
+  composition and every fiber is present on both or neither; stretch fibers
+  (elastane, spandex, lycra, elastomultiester, elasterell_p, polyurethane,
+  rubber) differ by at most 0.5 points and other fibers by at most 3 points
+  (label rounding); and construction, recorded stretch (other than
+  `unknown`) and `preShrunk` agree wherever both record them. So 100% cotton
+  and 95% cotton with 5% elastane differ, and so do 2% and 3% elastane, while
+  60/40 and 62/38 cotton/polyester agree. A variant whose material differs
+  from an existing one is a separate product and is saved without
+  `allowDuplicate`; one with the same material, or with material recorded on
+  only one side, is a `[duplicate_variant]` (revise the existing variant to
+  add a missing material). A variant something uses cannot change a recorded
+  material.
 - **Frozen inputs.** The forecast also stores the variant's revision and identity and the
   revisions of the references and rules it used, and a variant that anything
   uses cannot change its brand, model, category, size, cut, colour, version
@@ -247,6 +265,22 @@ database leaving the backup's evidence intact, and the pre-purge restore. Not
 tested: recovering the directory from an actual Kopia snapshot, so this is
 not yet a demonstrated disaster recovery.
 
+## Web page
+
+`/stylist` in the LAN UI (`http://omni.boris/stylist`) shows one namespace at
+a time (`?ns=`, default `real`; fixtures are marked as test data) from
+`GET /api/stylist?namespace=` (`omni_api::stylist::StylistOverview`, built in
+`crates/omni-stylist/src/ui.rs` from the same context the tools serve, with
+no focus and up to 50 cases per history list): due items, warnings and
+contradictions, the body profile, the wardrobe with fit evidence and
+reference roles, fit history, frozen forecasts with their outcomes, rules,
+preferences, needs, archives and the runbook checklist. It is read-only.
+Because the LAN UI has no login, the overview carries no evidence bytes,
+photos, captions or free-text evidence notes; photos stay behind
+authenticated MCP. Measurements and labels are shown as recorded.
+`--preview` seeds a synthetic wardrobe into its throwaway database
+(`crates/omni-notify/src/preview_stylist.rs`).
+
 ## Assistant setup
 
 Every harness reaches the tools through Omni's MCP endpoint. Executor serves
@@ -264,7 +298,7 @@ instruction, custom instruction or `AGENTS.md` line:
 > Suggest useful things proactively, but never buy, contact retailers or sign
 > up for anything without my explicit approval for that action.
 
-The current runbook (`crates/omni-stylist/runbook/fit-first-v2.md`, returned
+The current runbook (`crates/omni-stylist/runbook/fit-first-v3.md`, returned
 by the context with its checklist) covers the session order, measurement
 protocols, body versus garment charts and ease, reference garments, the
 recommendation and freeze workflow, shopping-time checks, post-purchase
@@ -273,10 +307,14 @@ and how to translate plain-language feedback into events. v2 replaced v1's
 advice on adding ease to body charts, universal measuring landmarks, median
 averaging of disagreeing readings, absolute shrinkage claims, abstaining when
 only article measurements are missing, a blanket ban on proactive
-suggestions, and treating all earlier conversations as non-evidence.
-Published versions (text and checklist) are frozen by a digest test; v1 stays
-retrievable with `runbookVersion: "fit-first-v1"`, a change ships as a new
-version, and predictions record the version they followed.
+suggestions, and treating all earlier conversations as non-evidence. v3
+keeps v2's checklist and clarifies two points: a garment chart is compared
+with references first and with an estimate of body plus learned ease only as
+a labelled, weaker inference (never with the body directly, and ease never
+applies to body charts); and the basis rules for material and latest-adverse
+failures. Published versions (text and checklist) are frozen by a digest
+test; earlier versions stay retrievable with `runbookVersion`, a change ships
+as a new version, and predictions record the version they followed.
 
 ## Proactive scope
 

@@ -58,7 +58,7 @@ const CHECKLIST_V2: [&str; 9] = [
 ];
 
 /// Every published version, oldest first; the last is current.
-pub static RUNBOOKS: [Runbook; 2] = [
+pub static RUNBOOKS: [Runbook; 3] = [
     Runbook::new(
         "fit-first-v1",
         include_str!("../runbook/fit-first-v1.md"),
@@ -67,6 +67,13 @@ pub static RUNBOOKS: [Runbook; 2] = [
     Runbook::new(
         "fit-first-v2",
         include_str!("../runbook/fit-first-v2.md"),
+        &CHECKLIST_V2,
+    ),
+    // v3 clarifies ease inference (section 5) and the material and
+    // latest-adverse basis rules (section 7); the checklist is unchanged.
+    Runbook::new(
+        "fit-first-v3",
+        include_str!("../runbook/fit-first-v3.md"),
         &CHECKLIST_V2,
     ),
 ];
@@ -100,6 +107,11 @@ mod tests {
             (
                 "fit-first-v2",
                 "f52a0c7e4b12c7e3ecdb10abdd4a763eebf8b39e5fad0b43f43f8b4951d604bd",
+                "9cbd647bc868263be9139ffecdc1376ee63f2ca91d066a9d7d01d5e02aa4b5d9",
+            ),
+            (
+                "fit-first-v3",
+                "839d7958f70da1d5f4a02b19fc6b343c5e4b9f87d0f8026db9efff80b1e96a5c",
                 "9cbd647bc868263be9139ffecdc1376ee63f2ca91d066a9d7d01d5e02aa4b5d9",
             ),
         ];

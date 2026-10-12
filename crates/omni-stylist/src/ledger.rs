@@ -183,6 +183,18 @@ pub fn namespace_revision(conn: &Connection, namespace: &str) -> Result<u64, Sty
         .map_err(sql)
 }
 
+/// Every namespace with its revision.
+pub fn namespaces(conn: &Connection) -> Result<Vec<(String, u64)>, StylistError> {
+    conn.prepare_cached("SELECT namespace, revision FROM stylist_namespaces ORDER BY namespace")
+        .and_then(|mut stmt| {
+            stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, to_u64(row.get::<_, i64>(1)?)))
+            })?
+            .collect()
+        })
+        .map_err(sql)
+}
+
 /// Advances the namespace to its next revision and returns it.
 pub fn next_revision(conn: &Connection, namespace: &str, now: i64) -> Result<u64, StylistError> {
     let next = namespace_revision(conn, namespace)? + 1;

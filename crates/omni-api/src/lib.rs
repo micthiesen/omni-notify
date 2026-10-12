@@ -62,3 +62,6 @@ pub mod pets;
 
 /// Parcel deliveries (cached Parcel API reads).
 pub mod parcels;
+
+/// The read-only stylist ledger overview.
+pub mod stylist;
