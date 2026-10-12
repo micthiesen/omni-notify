@@ -83,6 +83,11 @@ pub fn app_paths(config: &Config, web_dist: PathBuf) -> AppPaths {
         },
         // Empty: PressPods resolves `PRESSPODS_AUDIO_DIR` or the DB directory itself.
         presspods_audio: PathBuf::new(),
+        stylist_private: if config.dockerized {
+            PathBuf::from("/data/stylist-private")
+        } else {
+            PathBuf::from(".local/stylist-private")
+        },
     }
 }
 

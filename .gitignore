@@ -1,6 +1,8 @@
 dist
 .env
 .local/reminders-private/
+# Stylist evidence photos and archives outside Docker
+.local/stylist-private/
 # Raw production captures (`cargo xtask capture-golden`); only synthesized fixtures are committed
 .local/golden-capture/
 *.db

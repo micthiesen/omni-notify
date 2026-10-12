@@ -43,6 +43,16 @@ pub async fn main(command: Command) -> u8 {
         Command::Healthcheck => healthcheck().await,
         Command::Doctor { image } => doctor(image).await,
         Command::CompatAudit(args) => compat_audit(&args),
+        Command::Stylist(args) => match crate::stylist_cli::run(&args).await {
+            Ok(report) => {
+                stdout_text(&report);
+                0
+            }
+            Err(error) => {
+                stderr_line(&format!("stylist command failed: {error:#}"));
+                EXIT_FAILURE
+            }
+        },
         Command::RunTaskUsage => {
             stderr_line("Usage: --run-task <TaskName>");
             EXIT_FAILURE

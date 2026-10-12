@@ -53,6 +53,7 @@ omni-personal.workspace = true
 omni-podcasts.workspace = true
 omni-presspods.workspace = true
 omni-reminders.workspace = true
+omni-stylist.workspace = true
 omni-testkit.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

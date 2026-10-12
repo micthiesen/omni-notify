@@ -50,6 +50,9 @@ families cover:
   `parcels_get`); these tools never call Parcel
 - optional fixed-printer status and bounded public-PDF printing
 - Hister browser-history search, recent captured pages, saved text, and single-page labels
+- the fit-first stylist ledger (`stylist_*`): session context and runbook, exact
+  record queries, measurement comparison, typed records and immutable events,
+  private evidence, export, restore and fixture purge (see [Stylist](stylist.md))
 
 The server does not expose arbitrary shell or filesystem access, environment
 values, general database access, secret-bearing HTTP, arbitrary attachment or audio

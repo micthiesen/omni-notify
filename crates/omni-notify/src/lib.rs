@@ -16,5 +16,6 @@ pub mod maintenance;
 pub mod ops;
 pub mod preview;
 pub mod services;
+pub mod stylist_cli;
 pub mod task_health;
 pub mod wiring;

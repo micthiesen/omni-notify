@@ -167,8 +167,11 @@ change; reuse authorization already given in the conversation.
 - `omni-device-link`: the Claude Code host's `omni-link` long-poll relay.
 - `omni-personal`: pets, LAN printer, Hister, and Codex/Claude reset alerts
   (`reset_alerts`).
+- `omni-stylist`: the fit-first stylist ledger: typed records and events,
+  private evidence, frozen predictions, narrow rules, the versioned runbook,
+  archives and the `StylistBackup` task.
 - `omni-notify`: the binary: boot, wiring, ops routes, dashboard SSE, data
-  manager, `doctor`, `healthcheck`, `compat-audit`, `--preview`.
+  manager, `doctor`, `healthcheck`, `compat-audit`, `stylist-*`, `--preview`.
 - `omni-web`, `omni-web-kit`, `omni-web-pages`: the Leptos CSR frontend (app
   shell and ops pages, shared kit, domain pages), built by trunk.
 - `omni-events-adapter`: the `executor-events-adapter` sidecar binary.
@@ -357,6 +360,25 @@ failure off the ERROR-alert path while the watch tracks the gap. A UI dismissal
 newer episode or push is recorded; it never touches the alert rows or pushes.
 Pushes report numbers and never diagnose. Recalibrate against a production copy
 with the `prod_copy` replay test; see `docs/pet-health.md`.
+
+### Stylist
+
+The stylist ledger (`omni-stylist`, `docs/stylist.md`) is the only source of
+truth for fit and wardrobe facts; never seed or invent body data, purchases or
+outcomes. Every tool takes a namespace: `real` is the owner's and `fixture-*`
+is test data that must never be written to `real`; only fixtures can be purged
+or restored through MCP. Predictions, measurements and profile snapshots are
+immutable and events are append-only; corrections supersede and never rewrite.
+Writes are keyed and run in one transaction with optimistic concurrency;
+SQLite triggers keep rows append-only and `real` undeletable. Stored bodies
+must keep decoding, so new fields are optional. Evidence stays in the 0700
+private directory, re-hashed on read, deleted only by name (never by
+sweeping), never served over HTTP, and MCP activity keeps only identifiers and
+error codes for `stylist_*` calls. Archives never cross between `real` and
+fixtures.
+Published runbook versions are frozen by a digest test: change the playbook
+by adding a version. Nothing in the stylist sends messages, shops or scans
+mail; proactive help is limited to items listed in the context.
 
 ### Castro
 

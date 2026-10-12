@@ -368,6 +368,7 @@ impl TestApp {
                 web_dist: root.join("web"),
                 reminders_private: root.join("reminders-private"),
                 presspods_audio: root.join("presspods-audio"),
+                stylist_private: root.join("stylist-private"),
             },
         };
         Self {

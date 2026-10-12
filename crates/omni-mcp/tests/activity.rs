@@ -144,6 +144,72 @@ async fn records_successful_claude_calls_with_their_output_and_others_without() 
 }
 
 #[tokio::test(start_paused = true)]
+async fn stylist_calls_keep_only_identifiers() {
+    let clock = clock();
+    let db = test_store(&clock).await;
+    let recorder = ActivityRecorder::new(db.store.clone(), clock.clone(), TaskTracker::new());
+    let call = recorder
+        .start(
+            meta("stylist_record_save"),
+            &json!({
+                "namespace": "real",
+                "idempotencyKey": "onboarding-chest-0001",
+                "record": {"kind": "measurement", "dimension": "chest", "value": 101.5, "unit": "cm"},
+                "correctionReason": "re-measured after breakfast",
+            }),
+        )
+        .await;
+    call.finish(CallOutcome::Ok(None)).await;
+    let evidence = recorder
+        .start(
+            meta("stylist_evidence_store"),
+            &json!({"namespace": "real", "idempotencyKey": "photo-front-0001", "mimeType": "image/jpeg",
+                    "dataBase64": "/9j/4AAQ", "info": {"kind": "body_photo", "caption": "front"}}),
+        )
+        .await;
+    evidence.finish(CallOutcome::Ok(None)).await;
+    let rejected = recorder
+        .start(
+            meta("stylist_event_append"),
+            &json!({"namespace": "real", "idempotencyKey": "receipt-0000000001"}),
+        )
+        .await;
+    rejected
+        .finish(CallOutcome::Error(
+            "[duplicate_receipt] order 4471-ABC line 2 at Uniqlo is already recorded".to_owned(),
+        ))
+        .await;
+    let calls = all_calls(&db.store).await;
+    let save = calls
+        .iter()
+        .find(|c| c.tool == "stylist_record_save")
+        .unwrap();
+    assert_eq!(
+        omni_mcp::events::persistence::js_to_json(&save.input),
+        json!({
+            "namespace": "real",
+            "idempotencyKey": "onboarding-chest-0001",
+            "record": {"kind": "measurement"},
+            "correctionReason": "[private]",
+        })
+    );
+    let photo = calls
+        .iter()
+        .find(|c| c.tool == "stylist_evidence_store")
+        .unwrap();
+    assert_eq!(
+        omni_mcp::events::persistence::js_to_json(&photo.input),
+        json!({"namespace": "real", "idempotencyKey": "photo-front-0001", "mimeType": "image/jpeg",
+               "dataBase64": "[private]", "info": "[private]"})
+    );
+    let event = calls
+        .iter()
+        .find(|c| c.tool == "stylist_event_append")
+        .unwrap();
+    assert_eq!(event.error.as_deref(), Some("[duplicate_receipt]"));
+}
+
+#[tokio::test(start_paused = true)]
 async fn records_failures_without_changing_them() {
     let clock = clock();
     let db = test_store(&clock).await;

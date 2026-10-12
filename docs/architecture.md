@@ -16,7 +16,7 @@ names are `omni-*`; library names are `omni_*`.
 - **Subsystems:** `omni-imap`, `omni-email`, `omni-parcel`, `omni-calendar`,
   `omni-live`, `omni-ios-controls`, `omni-live-intel`, `omni-presspods`,
   `omni-podcasts`, `omni-media`, `omni-arr`, `omni-reminders`, `omni-mcp`,
-  `omni-device-link`, `omni-personal`. Each exposes
+  `omni-device-link`, `omni-personal`, `omni-stylist`. Each exposes
   a constructor that returns an `omni_runtime::Subsystem`.
 - **App:** `omni-notify` builds the `AppContext`, constructs every subsystem,
   wires ports, and owns boot, the ops routes, dashboard SSE, the data manager and

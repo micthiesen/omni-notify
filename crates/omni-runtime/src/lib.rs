@@ -68,6 +68,8 @@ pub struct AppPaths {
     pub web_dist: PathBuf,
     pub reminders_private: PathBuf,
     pub presspods_audio: PathBuf,
+    /// Stylist evidence files and archives (mode 0700).
+    pub stylist_private: PathBuf,
 }
 
 /// What one subsystem contributes to the app.

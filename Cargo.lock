@@ -3515,6 +3515,7 @@ dependencies = [
  "omni-runtime",
  "omni-server-kit",
  "omni-store",
+ "omni-stylist",
  "omni-tasks",
  "omni-testkit",
  "rand 0.10.3",
@@ -3617,6 +3618,7 @@ dependencies = [
  "omni-runtime",
  "omni-server-kit",
  "omni-store",
+ "omni-stylist",
  "omni-tasks",
  "omni-testkit",
  "rand 0.10.3",
@@ -3888,6 +3890,34 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "omni-stylist"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "futures",
+ "hex",
+ "jiff",
+ "omni-core",
+ "omni-mcp-kit",
+ "omni-runtime",
+ "omni-store",
+ "omni-tasks",
+ "omni-testkit",
+ "regex",
+ "rusqlite",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -136,6 +136,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     subsystems.push(omni_arr::subsystem(ctx));
     subsystems.push(wire!("podcasts", omni_podcasts::subsystem(ctx)));
     subsystems.push(wire!("reminders", omni_reminders::subsystem(ctx)));
+    subsystems.push(wire!("stylist", omni_stylist::subsystem(ctx)));
 
     // Email: one shared triage for parcel and calendar.
     let (imap, handles) = wire!(
@@ -242,6 +243,7 @@ pub const TASK_ORDER: &[&str] = &[
     "CodexResets",
     "ClaudeResets",
     "ParcelDeliveries",
+    "StylistBackup",
     "EmailArchive",
     "EmailWatchdog",
     "EmailRetry",

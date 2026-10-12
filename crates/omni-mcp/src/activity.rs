@@ -115,6 +115,69 @@ fn truncate_text(value: &str, limit: usize) -> String {
     }
 }
 
+/// Identifier fields kept from a `stylist_*` call; everything else is personal
+/// (body measurements, notes, photos) and recorded only as `[private]`.
+const STYLIST_ACTIVITY_KEYS: [&str; 17] = [
+    "namespace",
+    "idempotencyKey",
+    "id",
+    "expectedRevision",
+    "supersedes",
+    "supersedesEventId",
+    "collection",
+    "kinds",
+    "ids",
+    "linkedTo",
+    "evidenceId",
+    "archiveId",
+    "asOfRevision",
+    "cursor",
+    "limit",
+    "mimeType",
+    "occurredOn",
+];
+
+/// The input copy kept in activity: stylist calls keep only identifiers and
+/// the record kind or event type.
+pub fn activity_input(tool: &str, input: &Value) -> Value {
+    if !tool.starts_with("stylist_") {
+        return input.clone();
+    }
+    let Value::Object(map) = input else {
+        return Value::String("[private]".to_owned());
+    };
+    let mut kept = Map::new();
+    for (key, value) in map {
+        let entry = if STYLIST_ACTIVITY_KEYS.contains(&key.as_str()) {
+            value.clone()
+        } else if key == "record" || key == "event" {
+            let mut summary = Map::new();
+            for tag in ["kind", "type"] {
+                if let Some(tag_value) = value.get(tag) {
+                    summary.insert(tag.to_owned(), tag_value.clone());
+                }
+            }
+            Value::Object(summary)
+        } else {
+            Value::String("[private]".to_owned())
+        };
+        kept.insert(key.clone(), entry);
+    }
+    Value::Object(kept)
+}
+
+/// The error text kept in activity: for stylist calls only the `[code]`
+/// prefix, since a rejection can echo a measurement or an order.
+pub fn activity_error(tool: &str, message: String) -> String {
+    if !tool.starts_with("stylist_") {
+        return message;
+    }
+    match message.split_once(']') {
+        Some((code, _)) if code.starts_with('[') => format!("{code}]"),
+        _ => "[error]".to_owned(),
+    }
+}
+
 /// `/token|secret|password|passwd|authorization|api[_-]?key|cookie/i`.
 fn is_secret_key(key: &str) -> bool {
     let lower = key.to_lowercase();
@@ -239,7 +302,10 @@ impl ActivityRecorder {
             duration_ms: None,
             status: McpCallStatus::Running,
             error: None,
-            input: json_to_js(&bound_value(input, string_limit_for(&meta.name))),
+            input: json_to_js(&bound_value(
+                &activity_input(&meta.name, input),
+                string_limit_for(&meta.name),
+            )),
             output: JsValue::Null,
             extra: Extra::default(),
         };
@@ -271,6 +337,7 @@ impl ActivityRecorder {
                 None,
             ),
         };
+        let error = error.map(|message| activity_error(&tool, message));
         let output = match output {
             Some(output) if is_claude_tool(&tool) => json_to_js(&bound_value(
                 &Value::Object(output),

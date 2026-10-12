@@ -7,6 +7,7 @@
 //! omni-notify healthcheck
 //! omni-notify doctor [--image]
 //! omni-notify compat-audit --db COPY
+//! omni-notify stylist-export|stylist-verify|stylist-restore ... (see stylist_cli)
 //! ```
 //!
 //! `OMNI_SIDE_EFFECTS=record` selects record mode for shadow runs like the
@@ -38,6 +39,7 @@ pub enum Command {
         image: bool,
     },
     CompatAudit(AuditArgs),
+    Stylist(crate::stylist_cli::StylistArgs),
     Help,
 }
 
@@ -67,6 +69,9 @@ pub const USAGE: &str = "usage:
   omni-notify healthcheck
   omni-notify doctor [--image]
   omni-notify compat-audit --db COPY
+  omni-notify stylist-export --namespace NS --out FILE [--no-bytes] [--db PATH] [--private DIR]
+  omni-notify stylist-verify --archive FILE [--private DIR]
+  omni-notify stylist-restore --archive FILE --namespace NS [--allow-real] [--db PATH] [--private DIR]
 ";
 
 fn side_effects(value: &str) -> Result<SideEffectMode, CliError> {
@@ -125,6 +130,9 @@ pub fn parse(args: &[String], env: impl Fn(&str) -> Option<String>) -> Result<Co
             }
             let db = db.ok_or(CliError::MissingValue("--db"))?;
             return Ok(Command::CompatAudit(AuditArgs { db }));
+        }
+        Some(command @ ("stylist-export" | "stylist-verify" | "stylist-restore")) => {
+            return crate::stylist_cli::parse(command, &args[1..]).map(Command::Stylist);
         }
         _ => {}
     }

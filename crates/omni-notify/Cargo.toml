@@ -50,6 +50,7 @@ omni-reminders.workspace = true
 omni-runtime.workspace = true
 omni-server-kit.workspace = true
 omni-store.workspace = true
+omni-stylist.workspace = true
 omni-tasks.workspace = true
 rand.workspace = true
 rusqlite.workspace = true

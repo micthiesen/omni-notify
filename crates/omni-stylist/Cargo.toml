@@ -1,0 +1,38 @@
+[package]
+name = "omni-stylist"
+description = "Fit-first personal stylist ledger: typed records, immutable events, private evidence, frozen predictions, export and restore."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+futures.workspace = true
+hex.workspace = true
+jiff.workspace = true
+omni-core.workspace = true
+omni-mcp-kit.workspace = true
+omni-runtime.workspace = true
+omni-store.workspace = true
+omni-tasks.workspace = true
+regex.workspace = true
+rusqlite.workspace = true
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+omni-testkit.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+tokio-util.workspace = true
