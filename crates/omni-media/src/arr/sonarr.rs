@@ -1,9 +1,10 @@
 //! Sonarr series.
 
+use futures::future::BoxFuture;
 use omni_http::SideEffectMode;
 use serde::Deserialize;
 
-use super::{ArrConfig, ArrHttp, HttpResult, put_opt};
+use super::{ArrConfig, ArrHttp, HttpResult, WriteOutcome, put_opt};
 use crate::js::present;
 use crate::types::{AddToWatchlistResult, ExternalIds, MediaItem, MediaType, WatchlistAddOutcome};
 
@@ -24,6 +25,28 @@ pub struct SonarrSeries {
     pub tmdb_id: Option<i64>,
     #[serde(default, deserialize_with = "present")]
     pub imdb_id: Option<String>,
+    #[serde(default)]
+    pub seasons: Vec<SonarrSeasonNumber>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SonarrSeasonNumber {
+    pub season_number: i64,
+}
+
+/// The durable record of the whole-series search an add asks Sonarr to run,
+/// so the season tools never search those seasons again.
+pub trait AddSearchLedger: Sync {
+    /// Before the POST; `false` (the record failed) aborts the add.
+    fn reserve<'a>(&'a self, tvdb_id: i64, seasons: &'a [i64]) -> BoxFuture<'a, bool>;
+    /// After the POST, with what its response proves.
+    fn settle<'a>(
+        &'a self,
+        tvdb_id: i64,
+        seasons: &'a [i64],
+        outcome: WriteOutcome,
+    ) -> BoxFuture<'a, ()>;
 }
 
 /// Tracked series, or `None` when Sonarr is unavailable or unconfigured.
@@ -60,12 +83,23 @@ fn find_by(items: &[MediaItem], matches: impl Fn(&ExternalIds) -> bool) -> Optio
         .find(|item| item.external_ids.as_ref().is_some_and(&matches))
 }
 
-/// Existing (by TMDB) → lookup → existing (by TVDB) → add
-/// (search on) → verify by TVDB. The slug always comes from Sonarr's own list.
+/// [`add_sonarr_series_with`] without a search record.
 pub async fn add_sonarr_series(
     http: &ArrHttp,
     config: &ArrConfig,
     tmdb_id: i64,
+) -> WatchlistAddOutcome {
+    add_sonarr_series_with(http, config, tmdb_id, None).await
+}
+
+/// Existing (by TMDB) → lookup → existing (by TVDB) → reserve the search
+/// record → add (search on) → settle the record → verify by TVDB. The slug
+/// always comes from Sonarr's own list.
+pub async fn add_sonarr_series_with(
+    http: &ArrHttp,
+    config: &ArrConfig,
+    tmdb_id: i64,
+    ledger: Option<&dyn AddSearchLedger>,
 ) -> WatchlistAddOutcome {
     let (Some(connection), Some((root_folder_path, quality_profile_id))) =
         (config.connection(), config.acquisition())
@@ -137,10 +171,27 @@ pub async fn add_sonarr_series(
         http.record_write(connection.0, "series", body);
         return WatchlistAddOutcome::of(AddToWatchlistResult::Added);
     }
-    match http
-        .request_json::<SonarrSeries>(connection, "series", Some(body))
-        .await
+    // Sonarr's post-add search covers monitored episodes; specials start unmonitored.
+    let searched: Vec<i64> = series
+        .seasons
+        .iter()
+        .map(|s| s.season_number)
+        .filter(|&n| n > 0)
+        .collect();
+    if let Some(ledger) = ledger
+        && !ledger.reserve(tvdb_id, &searched).await
     {
+        return WatchlistAddOutcome::of(AddToWatchlistResult::Error);
+    }
+    let created = http
+        .request_json::<SonarrSeries>(connection, "series", Some(body))
+        .await;
+    if let Some(ledger) = ledger {
+        ledger
+            .settle(tvdb_id, &searched, WriteOutcome::of(&created))
+            .await;
+    }
+    match created {
         HttpResult::Ok(_) => {}
         HttpResult::Unavailable => {
             return WatchlistAddOutcome::of(AddToWatchlistResult::Unavailable);

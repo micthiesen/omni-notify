@@ -362,6 +362,17 @@ Reserve mutations durably and verify imports/deletions before reporting success.
 Search only missing monitored targets, with durable retry limits. See
 `docs/arr-recovery.md` for NZBGet health checks and shared temporary-path mounts.
 
+### Sonarr seasons
+
+The `media_series_*` MCP tools keep monitoring and searching separate: adding
+or monitoring a season never searches unless `search: true` is passed. A new
+series is added with only the selected seasons monitored and searched only by
+Sonarr's own post-add search. Every season search, including the post-add
+search of any series add, is reserved durably per season before the request;
+within 24 hours, or while a post-add or Sonarr search is pending, a season is
+reported and never searched again, and an uncertain request is never retried.
+See "Sonarr seasons" in `docs/mcp.md`.
+
 ### Observer issue repair
 
 `ObserverRepair` uses Luna to interpret reports and deterministic Arr tools to

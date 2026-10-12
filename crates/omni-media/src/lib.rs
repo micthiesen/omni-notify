@@ -48,6 +48,7 @@ pub mod watchlist;
 pub use on_deck::MediaOnDeck;
 pub use services::MediaServices;
 
+use arr::seasons::{SeasonSearchData, SonarrSeasons};
 use arr::{ArrConfig, ArrHttp};
 use media_library::PlexLibrary;
 use persistence::{IdentityAliasData, RecommendationData};
@@ -88,6 +89,18 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         |url, token| Arc::new(HttpPlexGet::new(ctx.http.clone(), url, token)),
     );
     let arr_http = ArrHttp::new(ctx.http.clone(), ctx.side_effects);
+    let sonarr = ArrConfig {
+        url: config.sonarr_url.clone(),
+        api_key: config.sonarr_api_key.clone(),
+        root_folder_path: config.sonarr_root_folder_path.clone(),
+        quality_profile_id: config.sonarr_quality_profile_id,
+    };
+    let seasons = SonarrSeasons::new(
+        arr_http.clone(),
+        sonarr.clone(),
+        ctx.store.clone(),
+        ctx.tracker.clone(),
+    );
     let watchlist = ArrWatchlist::new(
         arr_http,
         ArrConfig {
@@ -96,12 +109,8 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
             root_folder_path: config.radarr_root_folder_path.clone(),
             quality_profile_id: config.radarr_quality_profile_id,
         },
-        ArrConfig {
-            url: config.sonarr_url.clone(),
-            api_key: config.sonarr_api_key.clone(),
-            root_folder_path: config.sonarr_root_folder_path.clone(),
-            quality_profile_id: config.sonarr_quality_profile_id,
-        },
+        sonarr,
+        seasons.clone(),
     );
     let research = WebSearch::new(
         ctx.public_http.clone(),
@@ -114,6 +123,7 @@ pub fn services_from_context(ctx: &AppContext) -> MediaServices {
         ai: ctx.ai.clone(),
         library: Arc::new(library),
         watchlist: Arc::new(watchlist),
+        seasons,
         catalog: Arc::new(TmdbClient::new(
             ctx.http.clone(),
             config.tmdb_api_key.clone(),
@@ -131,6 +141,7 @@ pub fn entity_descriptors() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<IdentityAliasData>(),
         EntityDescriptor::of::<TasteEvidenceData>(),
         EntityDescriptor::of::<TasteProfileData>(),
+        EntityDescriptor::of::<SeasonSearchData>(),
     ]
 }
 

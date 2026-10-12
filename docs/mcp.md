@@ -41,7 +41,9 @@ families cover:
   lists first; a tier change moves the streamer to the boundary), and the
   Destiny.gg top-embeds setting (`streamer_config_*`, `livestream_settings_update`). These tools never
   accept or return Pushover tokens; set those in the UI
-- media library, watchlist, recommendations, podcast accounts, and podcast recommendations
+- media library, watchlist, Sonarr season management (`media_series_*`, see
+  "Sonarr seasons" below), recommendations, podcast accounts, and podcast
+  recommendations
 - PressPods jobs and episodes, pet weights and weekly health trends
   (`pets_read` `resource: "trend"`), and aggregate costs
 - Parcel delivery status from Omni's scheduled, budgeted cache (`parcels_list`,
@@ -289,6 +291,48 @@ Invitations are read-only, and events Michael organizes with attendees need
 skips changes written by these tools unless `origin` is `any`, and its cursor
 moves past filtered rows. `calendar_events_list` over now to now plus the lead
 is the polling form of `calendar.event_starting` (`docs/mcp-events.md`).
+
+### Sonarr seasons
+
+The `media_series_*` tools manage a TMDB series in Sonarr season by season
+(`crates/omni-media/src/arr/seasons.rs`). `media_watchlist_add` is unchanged: it
+monitors every season and searches all missing episodes when it adds a series.
+
+- `media_series_get` reports whether Sonarr tracks the series, series and season
+  monitoring, per-season episode, file, missing and queued counts, Omni's last
+  search per season, active Sonarr searches, and whether the post-add search is
+  still pending. An untracked series returns Sonarr's lookup seasons.
+- `media_series_add` adds the series with only the listed seasons monitored and
+  later seasons unmonitored (`monitorNewItems: none` unless
+  `monitorNewSeasons`). For a tracked series it monitors the listed seasons and
+  unmonitors nothing. `search` is required. With `search: true` a new series
+  is searched once by Sonarr itself after its first refresh
+  (`addOptions.searchForMissingEpisodes`, which covers only monitored episodes)
+  and an existing one goes through the guarded season search below.
+- `media_series_seasons_set` monitors or unmonitors listed seasons and never
+  searches. Monitoring a season of an unmonitored series turns the series on and
+  unmonitors every unlisted season in the same write, so seasons that were not
+  effectively monitored do not start downloading.
+- `media_series_search` sends one Sonarr `SeasonSearch` per listed season.
+
+Updates PUT Sonarr's full series resource back with only the monitoring flags
+changed, then read the series back; a mismatch reports `error`. Sonarr applies
+season flag changes to that season's episodes.
+
+Searches never repeat. Each season's search is reserved in the
+`media-season-search` row before the request (`<tvdbId>:<seasonNumber>`, kept
+seven days). A season reserved within 24 hours reports `recently_searched`;
+that includes seasons queued by `media_series_add` and every season of a series
+added by `media_watchlist_add` or a recommendation, reserved before Sonarr's
+add request. A pending post-add search (`initial_search_pending`), a first
+refresh still running after an add without a search (`refresh_pending`), or a
+queued or started Sonarr `SeasonSearch`, `SeriesSearch` or
+`MissingEpisodeSearch` for the series or the whole library
+(`already_running`) also skips the season, as do unmonitored seasons and
+seasons with nothing missing. `force` bypasses only the 24-hour reservation. A
+4xx rejection releases the reservation (restoring any record it replaced); a
+timeout, unreadable response or 5xx (`uncertain`) keeps it and is never
+retried automatically.
 
 ### Browser history
 

@@ -1007,6 +1007,73 @@
       "recommendedExecutorPolicy": "allow"
     },
     {
+      "name": "media_series_add",
+      "title": "Add Series Seasons to Sonarr",
+      "description": "Add a TMDB series to Sonarr with only the listed seasons monitored, or, when Sonarr already tracks it, monitor the listed seasons without unmonitoring any other. Monitoring alone downloads only episodes released later. `search: true` also searches the listed seasons once for missing episodes: a new series is searched by Sonarr itself right after its first refresh (outcome `queued_after_add`), an existing one through the same guarded search as media_series_search. Do not call media_series_search afterwards for seasons this call reports as queued, queued_after_add, initial_search_pending, already_running or recently_searched; that would search twice. Later seasons stay unmonitored unless monitorNewSeasons is true. Season 0 holds specials. The result is Sonarr's state read back after the change.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes the configured Sonarr account",
+        "May begin media acquisition and downloads for the listed seasons"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "media_series_get",
+      "title": "Get Sonarr Series Seasons",
+      "description": "Inspect one TMDB series in Sonarr: whether it is tracked, which seasons are monitored, per-season episode, file, missing and queued counts, Omni's last search per season, active Sonarr searches, and whether the post-add search of a newly added series is still pending. Use it before changing seasons or searching and to verify the result. An untracked series returns Sonarr's lookup with its season numbers and nothing monitored.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Reads the configured Sonarr account"
+      ],
+      "cost": "No expected monetary cost; bounded account API traffic",
+      "recommendedExecutorPolicy": "allow"
+    },
+    {
+      "name": "media_series_search",
+      "title": "Search Sonarr Seasons",
+      "description": "Ask Sonarr to search for missing episodes in specific monitored seasons of a tracked series. Each season is searched at most once per 24 hours, including searches started by media_series_add or media_watchlist_add through Omni: a season searched recently, one whose post-add search is still pending, or one with a Sonarr search already running is skipped and reported instead of searched again. Set force only when the user explicitly asks to search again; it bypasses the 24-hour record, including a post-add search whose outcome was uncertain, but never a post-add search Sonarr has not run yet or a Sonarr search still running. Unmonitored seasons and seasons with nothing missing are skipped.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Starts searches on the configured Sonarr account",
+        "Begins media acquisition and downloads for the listed seasons"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
+      "name": "media_series_seasons_set",
+      "title": "Set Sonarr Season Monitoring",
+      "description": "Monitor or unmonitor specific seasons of a series Sonarr already tracks; seasons not listed keep their state. This never searches: a monitored season downloads only episodes released later, so call media_series_search to fetch episodes that are already missing. Unmonitoring keeps existing files. Monitoring a season of an unmonitored series turns the series on and leaves only the listed seasons monitored. The result is Sonarr's state read back after the change.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "sideEffects": [
+        "Changes the configured Sonarr account",
+        "Newly released episodes of monitored seasons may download"
+      ],
+      "cost": "No direct API charge; may consume storage, bandwidth, and provider resources",
+      "recommendedExecutorPolicy": "require_approval"
+    },
+    {
       "name": "media_taste_read",
       "title": "Read Media Taste Data",
       "description": "Read the latest derived media taste profile or paginated evidence rows supporting it.",
@@ -1023,7 +1090,7 @@
     {
       "name": "media_watchlist_add",
       "title": "Add to Managed Watchlist",
-      "description": "Add a TMDB movie to Radarr or a TMDB series to Sonarr. This can begin acquisition and downloads on managed services, so Executor approval is required.",
+      "description": "Add a TMDB movie to Radarr or a TMDB series to Sonarr. A series is added with every season monitored and an immediate search for all missing episodes; use media_series_add to choose seasons. This can begin acquisition and downloads on managed services, so Executor approval is required.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,

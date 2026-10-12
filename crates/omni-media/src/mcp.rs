@@ -2,6 +2,7 @@
 
 pub mod defs;
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use omni_api::media::{
@@ -11,6 +12,10 @@ use omni_core::js::trim;
 use omni_mcp_kit::{McpTool, Page, ToolError, ToolMetaError, paginate, typed_tool};
 use serde::{Deserialize, Serialize};
 
+use crate::arr::seasons::{
+    SeasonAddRequest, SeasonSearchRequest, SeasonSearchResult, SeasonSetRequest, SeriesOutcome,
+    SeriesResult, SeriesStatus,
+};
 use crate::error::IntegrationError;
 use crate::persistence::{
     FeedbackInput, RecommendationData, get_all_recommendations, get_recommendation,
@@ -394,6 +399,87 @@ struct WatchlistAddOutput {
     title_slug: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesGetInput {
+    tmdb_id: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesAddInput {
+    tmdb_id: i64,
+    seasons: BTreeSet<i64>,
+    search: bool,
+    monitor_new_seasons: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesSeasonsSetInput {
+    tmdb_id: i64,
+    #[serde(default)]
+    monitor: BTreeSet<i64>,
+    #[serde(default)]
+    unmonitor: BTreeSet<i64>,
+    monitor_new_seasons: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesSearchInput {
+    tmdb_id: i64,
+    seasons: BTreeSet<i64>,
+    #[serde(default)]
+    force: bool,
+}
+
+#[derive(Serialize)]
+struct SeriesGetOutput {
+    result: SeriesResult,
+    series: Option<SeriesStatus>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesAddOutput {
+    result: SeriesResult,
+    series: Option<SeriesStatus>,
+    changed_seasons: Vec<i64>,
+    unknown_seasons: Vec<i64>,
+    search: Vec<SeasonSearchResult>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesSeasonsSetOutput {
+    result: SeriesResult,
+    series: Option<SeriesStatus>,
+    changed_seasons: Vec<i64>,
+    unknown_seasons: Vec<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SeriesSearchOutput {
+    result: SeriesResult,
+    series: Option<SeriesStatus>,
+    unknown_seasons: Vec<i64>,
+    seasons: Vec<SeasonSearchResult>,
+}
+
+impl From<SeriesOutcome> for SeriesAddOutput {
+    fn from(o: SeriesOutcome) -> Self {
+        Self {
+            result: o.result,
+            series: o.series,
+            changed_seasons: o.changed_seasons,
+            unknown_seasons: o.unknown_seasons,
+            search: o.search,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum FeedbackFilter {
@@ -468,7 +554,7 @@ enum TasteReadOutput {
     },
 }
 
-/// The ten media tools in `createMediaTools` order.
+/// The media tools in serving order.
 pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMetaError> {
     let s = services;
     Ok(vec![
@@ -611,6 +697,95 @@ pub fn media_tools(services: Arc<MediaServices>) -> Result<Vec<McpTool>, ToolMet
                     Ok(WatchlistAddOutput {
                         result: outcome.result.as_str(),
                         title_slug: outcome.title_slug,
+                    })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_SERIES_GET, {
+            let s = s.clone();
+            move |input: SeriesGetInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let outcome = s.seasons.status(input.tmdb_id).await;
+                    Ok(SeriesGetOutput {
+                        result: outcome.result,
+                        series: outcome.series,
+                    })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_SERIES_ADD, {
+            let s = s.clone();
+            move |input: SeriesAddInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let outcome = s
+                        .seasons
+                        .add(SeasonAddRequest {
+                            tmdb_id: input.tmdb_id,
+                            seasons: input.seasons,
+                            search: input.search,
+                            monitor_new_seasons: input.monitor_new_seasons,
+                        })
+                        .await;
+                    Ok(SeriesAddOutput::from(outcome))
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_SERIES_SEASONS_SET, {
+            let s = s.clone();
+            move |input: SeriesSeasonsSetInput, _cx| {
+                let s = s.clone();
+                async move {
+                    if input.monitor.is_empty()
+                        && input.unmonitor.is_empty()
+                        && input.monitor_new_seasons.is_none()
+                    {
+                        return Err(ToolError::input(
+                            "monitor, unmonitor or monitorNewSeasons is required",
+                        ));
+                    }
+                    if let Some(season) = input.monitor.intersection(&input.unmonitor).next() {
+                        return Err(ToolError::input(format!(
+                            "season {season} is in both monitor and unmonitor"
+                        )));
+                    }
+                    let outcome = s
+                        .seasons
+                        .set(SeasonSetRequest {
+                            tmdb_id: input.tmdb_id,
+                            monitor: input.monitor,
+                            unmonitor: input.unmonitor,
+                            monitor_new_seasons: input.monitor_new_seasons,
+                        })
+                        .await;
+                    Ok(SeriesSeasonsSetOutput {
+                        result: outcome.result,
+                        series: outcome.series,
+                        changed_seasons: outcome.changed_seasons,
+                        unknown_seasons: outcome.unknown_seasons,
+                    })
+                }
+            }
+        })?,
+        typed_tool(&defs::MEDIA_SERIES_SEARCH, {
+            let s = s.clone();
+            move |input: SeriesSearchInput, _cx| {
+                let s = s.clone();
+                async move {
+                    let outcome = s
+                        .seasons
+                        .search(SeasonSearchRequest {
+                            tmdb_id: input.tmdb_id,
+                            seasons: input.seasons,
+                            force: input.force,
+                        })
+                        .await;
+                    Ok(SeriesSearchOutput {
+                        result: outcome.result,
+                        series: outcome.series,
+                        unknown_seasons: outcome.unknown_seasons,
+                        seasons: outcome.search,
                     })
                 }
             }

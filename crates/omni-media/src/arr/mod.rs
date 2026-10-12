@@ -11,6 +11,7 @@ use omni_http::{HttpClient, Method, RedirectRule, SideEffectMode, Url};
 use serde::de::DeserializeOwned;
 
 pub mod radarr;
+pub mod seasons;
 pub mod sonarr;
 
 pub const ARR_JSON_MAX_BYTES: usize = 8 * 1024 * 1024;
@@ -50,6 +51,26 @@ pub enum HttpResult<T> {
     Ok(T),
     HttpError { status_code: u16 },
     Unavailable,
+}
+
+/// What a write's response proves about whether Sonarr or Radarr applied it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WriteOutcome {
+    Accepted,
+    /// A timeout, unreadable body or 5xx: the write may have been applied.
+    Uncertain,
+    /// A 4xx: the service refused the write.
+    Rejected,
+}
+
+impl WriteOutcome {
+    pub fn of<T>(result: &HttpResult<T>) -> Self {
+        match result {
+            HttpResult::Ok(_) => Self::Accepted,
+            HttpResult::HttpError { status_code } if *status_code < 500 => Self::Rejected,
+            _ => Self::Uncertain,
+        }
+    }
 }
 
 /// A POST body; `None` sends a GET.
@@ -99,7 +120,25 @@ impl ArrHttp {
         path: &str,
         body: JsonBody,
     ) -> HttpResult<T> {
-        match tokio::time::timeout(ARR_TIMEOUT, self.request(base, api_key, path, body)).await {
+        let method = if body.is_some() {
+            Method::POST
+        } else {
+            Method::GET
+        };
+        self.send_json((base, api_key), method, path, body).await
+    }
+
+    /// [`Self::request_json`] with an explicit method (Sonarr's series update is a PUT).
+    pub async fn send_json<T: DeserializeOwned>(
+        &self,
+        (base, api_key): (&str, &str),
+        method: Method,
+        path: &str,
+        body: JsonBody,
+    ) -> HttpResult<T> {
+        match tokio::time::timeout(ARR_TIMEOUT, self.request(base, api_key, method, path, body))
+            .await
+        {
             Ok(result) => result,
             Err(_) => {
                 tracing::debug!(target: LOG, "Arr request {path} timed out");
@@ -112,16 +151,12 @@ impl ArrHttp {
         &self,
         base: &str,
         api_key: &str,
+        method: Method,
         path: &str,
         body: JsonBody,
     ) -> HttpResult<T> {
         let Some(url) = arr_url(base, path) else {
             return HttpResult::Unavailable;
-        };
-        let method = if body.is_some() {
-            Method::POST
-        } else {
-            Method::GET
         };
         let mut request = self
             .http

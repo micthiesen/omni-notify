@@ -6,6 +6,9 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use futures::future::BoxFuture;
+use omni_http::SideEffectMode;
+use omni_media::arr::seasons::SonarrSeasons;
+use omni_media::arr::{ArrConfig, ArrHttp};
 use omni_media::error::IntegrationError;
 use omni_media::media_library::MediaLibrary;
 use omni_media::selection::{Research, ResearchHit};
@@ -290,6 +293,7 @@ impl Harness {
             ai: app.ctx.ai.clone(),
             library: Arc::new(library.clone()),
             watchlist: Arc::new(watchlist.clone()),
+            seasons: sonarr_seasons(&app, ArrConfig::default(), SideEffectMode::Live),
             catalog: Arc::new(catalog.clone()),
             research: Arc::new(research.clone()),
             notifier: Arc::new(notifier.clone()),
@@ -304,6 +308,16 @@ impl Harness {
             services,
         }
     }
+}
+
+/// Season management over `config` (an unconfigured Sonarr by default).
+pub fn sonarr_seasons(app: &TestApp, config: ArrConfig, mode: SideEffectMode) -> SonarrSeasons {
+    SonarrSeasons::new(
+        ArrHttp::new(omni_testkit::no_network(), mode),
+        config,
+        app.ctx.store.clone(),
+        app.ctx.tracker.clone(),
+    )
 }
 
 pub fn media(guid: &str, title: &str, media_type: MediaType, tmdb: Option<i64>) -> MediaItem {

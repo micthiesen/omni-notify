@@ -47,7 +47,7 @@ fn tools(h: &common::Harness) -> Vec<McpTool> {
 }
 
 #[tokio::test]
-async fn registers_the_ten_media_tools_in_serving_order() {
+async fn registers_the_media_tools_in_serving_order() {
     let h = common::Harness::new().await;
     let names: Vec<String> = tools(&h).iter().map(|t| t.meta.name.clone()).collect();
     assert_eq!(
@@ -59,6 +59,10 @@ async fn registers_the_ten_media_tools_in_serving_order() {
             "media_library_list",
             "media_watchlist_list",
             "media_watchlist_add",
+            "media_series_get",
+            "media_series_add",
+            "media_series_seasons_set",
+            "media_series_search",
             "media_recommendations_list",
             "media_recommendation_get",
             "media_recommendation_feedback",

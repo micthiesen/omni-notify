@@ -9,6 +9,7 @@ use omni_config::Config;
 use omni_core::clock::SharedClock;
 use omni_store::Store;
 
+use crate::arr::seasons::SonarrSeasons;
 use crate::media_library::MediaLibrary;
 use crate::selection::Research;
 use crate::tmdb::Catalog;
@@ -64,6 +65,8 @@ pub struct MediaServices {
     pub ai: Ai,
     pub library: Arc<dyn MediaLibrary>,
     pub watchlist: Arc<dyn Watchlist>,
+    /// Season-level Sonarr management for the series MCP tools.
+    pub seasons: SonarrSeasons,
     pub catalog: Arc<dyn Catalog>,
     pub research: Arc<dyn Research>,
     pub notifier: Arc<dyn Notifier>,

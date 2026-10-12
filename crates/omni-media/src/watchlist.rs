@@ -6,7 +6,8 @@
 use futures::future::BoxFuture;
 
 use crate::arr::radarr::{add_radarr_movie, fetch_radarr_movies};
-use crate::arr::sonarr::{add_sonarr_series, fetch_sonarr_series};
+use crate::arr::seasons::SonarrSeasons;
+use crate::arr::sonarr::fetch_sonarr_series;
 use crate::arr::{ArrConfig, ArrHttp};
 use crate::types::{ExternalIds, FetchResult, MediaItem, MediaType, WatchlistAddOutcome};
 
@@ -32,14 +33,23 @@ pub struct ArrWatchlist {
     http: ArrHttp,
     radarr: ArrConfig,
     sonarr: ArrConfig,
+    seasons: SonarrSeasons,
 }
 
 impl ArrWatchlist {
-    pub fn new(http: ArrHttp, radarr: ArrConfig, sonarr: ArrConfig) -> Self {
+    /// `seasons` records the search a series add starts, so the season tools
+    /// do not repeat it.
+    pub fn new(
+        http: ArrHttp,
+        radarr: ArrConfig,
+        sonarr: ArrConfig,
+        seasons: SonarrSeasons,
+    ) -> Self {
         Self {
             http,
             radarr,
             sonarr,
+            seasons,
         }
     }
 
@@ -71,7 +81,7 @@ impl Watchlist for ArrWatchlist {
                 MediaType::Movie => WatchlistAddOutcome::of(
                     add_radarr_movie(&self.http, &self.radarr, request.tmdb_id).await,
                 ),
-                MediaType::Tv => add_sonarr_series(&self.http, &self.sonarr, request.tmdb_id).await,
+                MediaType::Tv => self.seasons.add_whole_series(request.tmdb_id).await,
             }
         })
     }

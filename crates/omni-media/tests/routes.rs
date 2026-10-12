@@ -367,7 +367,7 @@ async fn builds_the_production_subsystem_from_the_app_context() {
         subsystem.tasks.is_empty(),
         "unconfigured tasks stay disabled"
     );
-    assert_eq!(subsystem.mcp_tools.len(), 10);
+    assert_eq!(subsystem.mcp_tools.len(), 14);
     assert_eq!(
         subsystem
             .entities
@@ -378,7 +378,8 @@ async fn builds_the_production_subsystem_from_the_app_context() {
             "recs-recommendation-attempt",
             "recs-identity-alias",
             "recs-taste-evidence",
-            "recs-taste-profile"
+            "recs-taste-profile",
+            "media-season-search"
         ]
     );
     assert_eq!(subsystem.managed_entities.len(), 4);
