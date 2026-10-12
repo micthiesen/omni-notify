@@ -23,6 +23,7 @@ use omni_runtime::ports::{self, LiveIntelligence, LiveTransition, Ports};
 use omni_store::Store;
 use omni_tasks::{AppEvent, CronSchedule, EventBus, RunContext, Task, TaskError, TaskOptions};
 
+use crate::avatars::avatar_candidates;
 use crate::config::TopEmbeds;
 use crate::dgg::{
     DggFeed, DggFeedSource, ResolvedDggStreams, canonical_binding, resolve_dgg_streams,
@@ -35,7 +36,7 @@ use crate::notification_policy::{
     NotificationPermissions, ViewerRecordScope, live_notifications_enabled,
     notification_permissions,
 };
-use crate::notify::{LiveMessage, LiveNotifier};
+use crate::notify::{LiveMessage, LiveNotifier, LiveSender};
 use crate::outage::{OutageAlerter, OutageKind, UNREACHABLE_TICK_THRESHOLD, UnknownStreak};
 use crate::platform::{FetchedStatus, Platform, PlatformBinding};
 use crate::platforms::StatusFetcher;
@@ -682,11 +683,7 @@ impl LiveCheck {
             OutageKind::Degraded => tracing::warn!(target: LOG, "{line}"),
             OutageKind::Recovered => tracing::info!(target: LOG, "{line}"),
         }
-        let message = LiveMessage {
-            title: alert.title,
-            message: alert.message,
-            url: None,
-        };
+        let message = LiveMessage::plain(alert.title, alert.message, None);
         if let Err(error) = self.deps.notifier.send(None, message).await {
             // The outage state already advanced; this exact alert cannot be retried.
             tracing::error!(target: LOG, "Failed to send live-check outage notification: {error}");
@@ -853,11 +850,12 @@ impl LiveCheck {
         .await;
 
         if self.permissions(streamer).went_live {
-            let message = LiveMessage {
-                title: format!("{} is LIVE!", streamer.display_name),
-                message: build_live_message(&next.primary_title, previous, now, &self.deps.tz),
-                url: Some(next.primary.notification_url_fields()),
-            };
+            let message = LiveMessage::about(
+                self.sender(streamer, &next.primary).await,
+                format!("{} is LIVE!", streamer.display_name),
+                build_live_message(&next.primary_title, previous, now, &self.deps.tz),
+                Some(next.primary.notification_url_fields()),
+            );
             self.deps
                 .notifier
                 .send(self.token_for(streamer).as_deref(), message)
@@ -913,11 +911,12 @@ impl LiveCheck {
                 now,
             );
             if let DebounceAction::Notify { title } = action {
-                let message = LiveMessage {
-                    title: format!("{} changed title", streamer.display_name),
-                    message: title,
-                    url: Some(next.primary.notification_url_fields()),
-                };
+                let message = LiveMessage::about(
+                    self.sender(streamer, &next.primary).await,
+                    format!("{} changed title", streamer.display_name),
+                    title,
+                    Some(next.primary.notification_url_fields()),
+                );
                 self.deps
                     .notifier
                     .send(self.token_for(streamer).as_deref(), message)
@@ -956,6 +955,7 @@ impl LiveCheck {
             url_fields: previous_live.primary.notification_url_fields(),
             token: self.token_for(streamer),
             scope: self.record_scope(streamer),
+            avatar_bindings: avatar_candidates(streamer, &previous_live.primary),
         };
         self.metrics.flush_pending_peaks(&observation, now).await?;
 
@@ -970,11 +970,12 @@ impl LiveCheck {
             } else {
                 format!("{base}.")
             };
-            let message = LiveMessage {
-                title: format!("{} is now offline", streamer.display_name),
+            let message = LiveMessage::about(
+                self.sender(streamer, &previous_live.primary).await,
+                format!("{} is now offline", streamer.display_name),
                 message,
-                url: None,
-            };
+                None,
+            );
             self.deps
                 .notifier
                 .send(self.token_for(streamer).as_deref(), message)
@@ -1021,6 +1022,7 @@ impl LiveCheck {
                 url_fields: status.primary.notification_url_fields(),
                 token: self.token_for(streamer),
                 scope: self.record_scope(streamer),
+                avatar_bindings: avatar_candidates(streamer, &status.primary),
             };
             self.metrics.record_viewer_count(&observation, now).await?;
         }
@@ -1056,10 +1058,26 @@ impl LiveCheck {
         )
     }
 
+    /// Streams outside the configured roster (DGG discoveries, or a streamer
+    /// removed since it was polled) never notify records.
     fn record_scope(&self, streamer: &Streamer) -> ViewerRecordScope {
+        if streamer.discovery_source.is_some() || !self.configured.contains(&streamer.id) {
+            return ViewerRecordScope::Silent;
+        }
         match self.roster.get(&streamer.id) {
             Some(current) => self.permissions(&current).viewer_records,
-            None => ViewerRecordScope::All,
+            None => ViewerRecordScope::Silent,
+        }
+    }
+
+    /// The notification sender, with the cached avatar of the live primary
+    /// (else the first account that has one).
+    async fn sender(&self, streamer: &Streamer, primary: &PlatformBinding) -> LiveSender {
+        let bindings = avatar_candidates(streamer, primary);
+        LiveSender {
+            streamer_id: streamer.id.clone(),
+            display_name: streamer.display_name.clone(),
+            avatar_url: crate::avatars::avatar_for(&self.deps.store, &bindings).await,
         }
     }
 

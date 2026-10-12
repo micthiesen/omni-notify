@@ -1,10 +1,16 @@
 //! Pushover delivery and ERROR-log alerts.
 //!
+//! Every send first offers the message to the optional [`AppPushRoute`] (the
+//! iOS app over APNs, set once at wiring). Pushover is the fallback only when
+//! the route reports [`AppDelivery::NotRouted`]; an uncertain app delivery is
+//! an error with no status, which callers treat like an uncertain Pushover
+//! send and never resend.
+//!
 //! Notification paths are throttled at exactly one layer (AGENTS.md): the
 //! [`throttle`] here applies only to ERROR-log alerts; feature notifications
 //! own their deduplication.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use futures::future::BoxFuture;
 use omni_config::Config;
@@ -40,6 +46,24 @@ pub struct PushoverMessage {
     pub priority: Option<i8>,
     pub sound: Option<String>,
     pub timestamp: Option<i64>,
+    /// Groups related app notifications (`aps.thread-id`); the channel name
+    /// when unset. Pushover ignores it.
+    pub thread_id: Option<String>,
+    /// The person or streamer a notification is about, shown as a
+    /// communication notification by the app. Pushover ignores it.
+    pub sender: Option<NotificationSender>,
+    /// App widget kinds to reload when the notification arrives (for example
+    /// `"on-air"`). Pushover ignores it.
+    pub refresh_widgets: Vec<String>,
+}
+
+/// The sender an app notification is about (communication notification style).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NotificationSender {
+    /// A stable id (the streamer id).
+    pub id: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +106,36 @@ impl PushoverError {
     }
 }
 
+/// What the app route did with one message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AppDelivery {
+    /// The app is not set up to receive it (no alert device, APNs not
+    /// configured, or every device definitively rejected it): use Pushover.
+    NotRouted,
+    /// At least one device accepted it.
+    Delivered,
+    /// No device accepted it and at least one attempt has an unknown outcome;
+    /// never fall back or resend.
+    Uncertain(String),
+}
+
+/// Delivers notifications to the Omni app before Pushover is considered.
+///
+/// Implementations must never log at ERROR: ERROR-log alerts are delivered
+/// through this route, so an ERROR here would feed itself.
+pub trait AppPushRoute: Send + Sync {
+    fn deliver<'a>(
+        &'a self,
+        channel: PushoverChannel,
+        message: &'a PushoverMessage,
+    ) -> BoxFuture<'a, AppDelivery>;
+}
+
+/// The route was set twice.
+#[derive(Debug, thiserror::Error)]
+#[error("the app push route is already set")]
+pub struct AppRouteAlreadySet;
+
 /// Pushover client with the configured user and per-channel tokens.
 #[derive(Clone)]
 pub struct Pushover {
@@ -89,6 +143,7 @@ pub struct Pushover {
 }
 
 struct PushoverInner {
+    app_route: OnceLock<Arc<dyn AppPushRoute>>,
     http: HttpClient,
     user: Option<String>,
     tokens: Vec<(PushoverChannel, Option<String>)>,
@@ -152,6 +207,7 @@ impl Pushover {
     ) -> Self {
         Self {
             inner: Arc::new(PushoverInner {
+                app_route: OnceLock::new(),
                 http,
                 user,
                 tokens,
@@ -161,8 +217,49 @@ impl Pushover {
         }
     }
 
-    /// Sends on a configured channel (10 s timeout).
+    /// Sets the app route shared by every clone of this client (once, at wiring).
+    pub fn set_app_route(&self, route: Arc<dyn AppPushRoute>) -> Result<(), AppRouteAlreadySet> {
+        self.inner
+            .app_route
+            .set(route)
+            .map_err(|_| AppRouteAlreadySet)
+    }
+
+    /// Whether an app route is set (it may still route nothing).
+    pub fn has_app_route(&self) -> bool {
+        self.inner.app_route.get().is_some()
+    }
+
+    /// Offers `m` to the app route: `Some` when it settled the message.
+    async fn try_app(
+        &self,
+        ch: PushoverChannel,
+        m: &PushoverMessage,
+    ) -> Option<Result<PushOutcome, PushoverError>> {
+        let route = self.inner.app_route.get()?;
+        match route.deliver(ch, m).await {
+            AppDelivery::NotRouted => None,
+            AppDelivery::Delivered => Some(Ok(PushOutcome::Sent)),
+            AppDelivery::Uncertain(detail) => Some(Err(PushoverError {
+                status: None,
+                body: format!("app push outcome unknown: {detail}"),
+            })),
+        }
+    }
+
+    /// Sends on a channel: the app first, then Pushover (10 s timeout).
     pub async fn send(
+        &self,
+        ch: PushoverChannel,
+        m: PushoverMessage,
+    ) -> Result<PushOutcome, PushoverError> {
+        if let Some(settled) = self.try_app(ch, &m).await {
+            return settled;
+        }
+        self.send_pushover(ch, m).await
+    }
+
+    async fn send_pushover(
         &self,
         ch: PushoverChannel,
         m: PushoverMessage,
@@ -174,13 +271,25 @@ impl Pushover {
             .find(|(channel, _)| *channel == ch)
             .and_then(|(_, token)| token.clone());
         match token {
-            Some(token) => self.send_with_token(&token, m).await,
+            Some(token) => self.send_token(&token, m).await,
             None => Ok(PushOutcome::SkippedNoToken),
         }
     }
 
-    /// Sends with an explicit application token (per-streamer Pushover apps).
+    /// Sends with an explicit application token (per-streamer Pushover apps):
+    /// the app first, on the Live channel, then Pushover.
     pub async fn send_with_token(
+        &self,
+        token: &str,
+        m: PushoverMessage,
+    ) -> Result<PushOutcome, PushoverError> {
+        if let Some(settled) = self.try_app(PushoverChannel::Live, &m).await {
+            return settled;
+        }
+        self.send_token(token, m).await
+    }
+
+    async fn send_token(
         &self,
         token: &str,
         m: PushoverMessage,

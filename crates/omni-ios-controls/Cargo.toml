@@ -1,6 +1,6 @@
 [package]
 name = "omni-ios-controls"
-description = "iOS live controls: signed routes, registrations, live slots and APNs control pushes."
+description = "The Omni iOS app backend: signed routes, devices, APNs alerts, live control slots and widgets."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -16,6 +16,7 @@ futures.workspace = true
 hex.workspace = true
 hmac.workspace = true
 jsonwebtoken.workspace = true
+omni-alerts.workspace = true
 omni-api.workspace = true
 omni-core.workspace = true
 omni-http.workspace = true

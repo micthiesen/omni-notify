@@ -116,6 +116,7 @@ async fn retries_one_transport_error() {
     let apns = FakeApns::new(Ok(ApnsPushResult::Sent)).then(Err(ApnsTransportError {
         operation: "request".into(),
         detail: "socket reset".into(),
+        not_sent: false,
     }));
     let service = common::service(
         &store.store,

@@ -7,6 +7,18 @@ private enum FixtureError: Error {
 @main
 struct StaticContractTests {
     static func main() async throws {
+        if CommandLine.arguments.contains("--sign") {
+            // Shared vector with scripts/ios-live/typecheck.sh's bash signer.
+            print(OmniSignature.sign(
+                token: "test-token-0123456789abcdef",
+                timestamp: "1760000000",
+                nonce: "00000000-0000-4000-8000-000000000000",
+                method: "PUT",
+                path: "/api/ios-controls/device",
+                body: Data(#"{"a":1}"#.utf8)
+            ))
+            return
+        }
         let fresh = LiveSlotState.preview(slot: 1)
         let cached = LiveSlotState(
             slot: 1,
@@ -63,6 +75,34 @@ struct StaticContractTests {
         precondition(diagnostics.registrationCount == 4, "Registration count must decode")
         precondition(diagnostics.undeliveredCount == 0, "Delivery state must decode")
 
-        print("Static control fixtures passed: fresh, cached, tap, home, wire, and diagnostics")
+        let watch = URL(string: "https://www.youtube.com/watch?v=a&t=1")!
+        let app = URL(string: "twitch://stream/x")!
+        let link = OmniDeepLink.parse(OmniDeepLink.openURL(target: watch, appURL: app))
+        precondition(link == OmniDeepLink.Open(target: watch, appURL: app), "omni://open must round-trip")
+
+        let registration = DeviceRegistration(
+            deviceId: "d", name: "n", kind: .ipad, apnsToken: nil, environment: "sandbox",
+            alertsEnabled: false, appVersion: "1.0 (1)"
+        )
+        let registrationJSON = String(decoding: try JSONEncoder().encode(registration), as: UTF8.self)
+        precondition(registrationJSON.contains(#""apnsToken":null"#), "apnsToken must encode as null")
+
+        let onAir = try JSONDecoder().decode(
+            OnAirSnapshot.self,
+            from: JSONEncoder().encode(WidgetFixtures.liveMany(Date(timeIntervalSince1970: 1_760_000_000)))
+        )
+        precondition(onAir.live.count == 6 && onAir.hasPrimaryLive, "On Air snapshot must round-trip")
+        precondition(OnAirPolicy.refreshInterval(for: onAir) == 15 * 60, "Live refresh is 15 minutes")
+
+        let payload = OmniPushPayload.parse(userInfo: [
+            "omni": ["url": "https://kick.com/x", "urlTitle": "Watch on Kick", "refreshWidgets": ["on-air"]],
+        ])
+        precondition(payload?.widgetKindsToReload == [OmniWidgetKind.onAir], "refreshWidgets maps to kinds")
+        precondition(
+            OmniNotificationCategory.category(for: payload, current: "") == "OMNI_LINK_KICK",
+            "urlTitle picks the titled category"
+        )
+
+        print("Static fixtures passed: controls, deep links, registration, On Air, and alert payloads")
     }
 }

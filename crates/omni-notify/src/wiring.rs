@@ -122,6 +122,11 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
     }
     let live = wire!("live", omni_live::LiveModule::load(ctx));
     let ios = omni_ios_controls::IosControls::new(ctx, live.roster()).await;
+    // Every notification (ERROR-log alerts included) tries the app over APNs
+    // before Pushover; the Pushover client is shared, so this covers all clones.
+    if ctx.pushover.set_app_route(ios.app_route()).is_err() {
+        tracing::warn!(target: LOG, "iOS app notification route was already set");
+    }
     subsystems.push(wire!("live", live.into_subsystem(Some(ios.reconciler()))));
     subsystems.push(ios.into_subsystem());
 
@@ -146,6 +151,7 @@ pub async fn wire(ctx: &AppContext, booted_at: i64) -> Result<Wired, WiringError
         ctx.config.clone(),
         ctx.store.clone(),
     );
+    let _ = ports.set_deliveries_source(omni_parcel::deliveries_source(ctx));
     let mut parcel = wire!("parcel", omni_parcel::subsystem(ctx, triage.clone()));
     let parcel_handlers = take_handlers(&mut parcel);
     let _ = ports.set_calendar_connection(omni_calendar::calendar_connection(ctx));
@@ -223,6 +229,7 @@ pub const TASK_ORDER: &[&str] = &[
     "CalendarPrimarySync",
     "CalendarStartingEvents",
     "LiveCheckTask",
+    "StreamerAvatars",
     "PetTracker",
     "PressPods",
     "Recommendations",

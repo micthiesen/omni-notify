@@ -6,7 +6,7 @@
 use omni_http::public::PublicHttpClient;
 use serde::Deserialize;
 
-use super::{PLATFORM_GQL_MAX_BYTES, fetch_gql};
+use super::{PLATFORM_GQL_MAX_BYTES, PlatformRequestError, fetch_gql};
 use crate::platform::{FetchedLive, FetchedStatus, js_count};
 
 const TWITCH_GQL_URL: &str = "https://gql.twitch.tv/gql";
@@ -80,6 +80,29 @@ pub fn extract_twitch_status(response: &TwitchGqlResponse) -> FetchedStatus {
     })
 }
 
+/// `user(login:){profileImageURL(width:300)}`.
+#[derive(Debug, Deserialize)]
+pub struct TwitchAvatarResponse {
+    pub data: TwitchAvatarData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TwitchAvatarData {
+    pub user: Option<TwitchAvatarUser>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TwitchAvatarUser {
+    #[serde(rename = "profileImageURL")]
+    pub profile_image_url: Option<String>,
+}
+
+/// The profile-image GQL document for one login (escaped like [`twitch_query`]).
+pub fn twitch_avatar_query(username: &str) -> String {
+    let login = serde_json::Value::String(username.to_owned()).to_string();
+    format!("query{{user(login:{login}){{profileImageURL(width:300)}}}}")
+}
+
 #[derive(Clone)]
 pub struct TwitchClient {
     http: PublicHttpClient,
@@ -103,5 +126,21 @@ impl TwitchClient {
             Ok(response) => extract_twitch_status(&response),
             Err(error) => FetchedStatus::unknown(error.message),
         }
+    }
+
+    /// The channel's profile image; `None` for an unknown login.
+    pub async fn fetch_avatar(
+        &self,
+        username: &str,
+    ) -> Result<Option<String>, PlatformRequestError> {
+        let response = fetch_gql::<TwitchAvatarResponse>(
+            &self.http,
+            TWITCH_GQL_URL,
+            TWITCH_CLIENT_ID,
+            &twitch_avatar_query(username),
+            PLATFORM_GQL_MAX_BYTES,
+        )
+        .await?;
+        Ok(response.data.user.and_then(|user| user.profile_image_url))
     }
 }

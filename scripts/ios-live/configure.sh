@@ -65,7 +65,6 @@ destination="$IOS_PROJECT_DIR/Config/Local.xcconfig"
   echo "OMNI_DEFAULT_AUTH_TOKEN = $token"
   echo "OMNI_BUNDLE_ID = $bundle_id"
   echo "OMNI_APP_GROUP = $group_id"
-  echo "OMNI_APNS_ENVIRONMENT = development"
 } > "$destination"
 chmod 600 "$destination"
 

@@ -271,15 +271,17 @@ async fn registers_the_task_and_drops_kick_without_credentials() {
         vec![PlatformBinding::new(Platform::YouTube, "@destiny")]
     );
     let subsystem = module.into_subsystem(None).unwrap();
-    assert_eq!(subsystem.tasks.len(), 1);
+    assert_eq!(subsystem.tasks.len(), 2);
     assert_eq!(subsystem.tasks[0].name(), "LiveCheckTask");
+    assert_eq!(subsystem.tasks[1].name(), "StreamerAvatars");
+    assert_eq!(subsystem.tasks[1].schedule().as_str(), "0 */10 * * * *");
     assert_eq!(subsystem.tasks[0].schedule().as_str(), "*/20 * * * * *");
     assert_eq!(
         subsystem.tasks[0].options().jitter,
         std::time::Duration::from_secs(3)
     );
     assert!(subsystem.tasks[0].options().run_on_startup);
-    assert_eq!(subsystem.entities.len(), 7);
+    assert_eq!(subsystem.entities.len(), 8);
     assert_eq!(subsystem.mcp_tools.len(), 6);
     // An in-memory configuration has no boot step.
     assert!(subsystem.boot_steps.is_empty());
@@ -289,6 +291,6 @@ async fn registers_the_task_and_drops_kick_without_credentials() {
         .unwrap()
         .into_subsystem(None)
         .unwrap();
-    assert_eq!(empty.tasks.len(), 1);
+    assert_eq!(empty.tasks.len(), 2);
     assert_eq!(empty.boot_steps.len(), 1);
 }

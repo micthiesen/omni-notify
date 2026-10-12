@@ -1,5 +1,7 @@
 //! Wire views of streamers for the REST API, the dashboard and MCP.
 
+use std::collections::HashMap;
+
 use omni_api::streamers::{
     DailyViewerBucket, LiveSourceView, LiveStreamerView, LivestreamSourceSummary,
     LivestreamSummary, OfflineStreamerView, PlatformViewerMetrics as PlatformMetricsView,
@@ -12,6 +14,7 @@ use omni_store::entity::{Entity, EntityOps, pk};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
 
+use crate::avatars::{load_urls, resolve_avatar};
 use crate::display_order::{LiveRank, sort_live_display, sort_offline_display};
 use crate::error::LiveError;
 use crate::metrics::{DailyBucket, PlatformViewerMetrics, ViewerMetrics};
@@ -109,13 +112,19 @@ fn float_json(f: f64) -> Value {
 }
 
 /// One streamer's dashboard view from its status (and, when live, the raw
-/// intelligence document).
+/// intelligence document), with its avatar from `avatars` (by account key).
 pub fn streamer_view(
     streamer: &Streamer,
     status: &StreamerStatus,
     intelligence: Option<Value>,
+    avatars: &HashMap<String, String>,
 ) -> StreamerView {
     let bindings = streamer.bindings.iter().map(binding_view).collect();
+    let primary = match status {
+        StreamerStatus::Live(live) => Some(&live.primary),
+        StreamerStatus::Offline(_) => None,
+    };
+    let avatar_url = resolve_avatar(streamer, primary, avatars);
     match status {
         StreamerStatus::Live(live) => StreamerView::Live(LiveStreamerView {
             id: streamer.id.clone(),
@@ -132,6 +141,7 @@ pub fn streamer_view(
             category: live.category.clone(),
             primary: binding_view(&live.primary),
             intelligence,
+            avatar_url,
         }),
         StreamerStatus::Offline(offline) => StreamerView::Offline(OfflineStreamerView {
             id: streamer.id.clone(),
@@ -143,6 +153,7 @@ pub fn streamer_view(
             last_started_at: offline.last_started_at,
             last_ended_at: offline.last_ended_at,
             last_max_viewer_count: offline.last_max_viewer_count,
+            avatar_url,
         }),
     }
 }
@@ -155,26 +166,32 @@ pub async fn load_statuses(
 ) -> Result<Vec<(StreamerStatus, Option<Value>)>, LiveError> {
     let ids: Vec<String> = streamers.iter().map(|s| s.id.clone()).collect();
     store
-        .read(move |docs| {
-            ids.iter()
-                .map(|id| {
-                    let status = docs.get::<StreamerStatus>(id)?.unwrap_or_else(|| {
-                        StreamerStatus::Offline(crate::status::OfflineStatus::never_live(
-                            id.clone(),
-                        ))
-                    });
-                    let intelligence = if with_intelligence && status.is_live() {
-                        docs.get_doc(&pk::<IntelligenceDocKey>(id)?)?
-                            .map(|doc| js_to_json(&doc))
-                    } else {
-                        None
-                    };
-                    Ok((status, intelligence))
-                })
-                .collect()
-        })
+        .read(move |docs| read_statuses(docs, &ids, with_intelligence))
         .await
         .map_err(LiveError::persistence("read streamer status"))
+}
+
+type StatusRows = Vec<(StreamerStatus, Option<Value>)>;
+
+fn read_statuses(
+    docs: &omni_store::Docs<'_>,
+    ids: &[String],
+    with_intelligence: bool,
+) -> Result<StatusRows, omni_store::StoreError> {
+    ids.iter()
+        .map(|id| {
+            let status = docs.get::<StreamerStatus>(id)?.unwrap_or_else(|| {
+                StreamerStatus::Offline(crate::status::OfflineStatus::never_live(id.clone()))
+            });
+            let intelligence = if with_intelligence && status.is_live() {
+                docs.get_doc(&pk::<IntelligenceDocKey>(id)?)?
+                    .map(|doc| js_to_json(&doc))
+            } else {
+                None
+            };
+            Ok((status, intelligence))
+        })
+        .collect()
 }
 
 /// Live first (primary tier, then hottest), then offline by most recent end.
@@ -182,11 +199,15 @@ pub async fn display_views(
     store: &Store,
     streamers: &[Streamer],
 ) -> Result<Vec<StreamerView>, LiveError> {
-    let statuses = load_statuses(store, streamers, true).await?;
+    let ids: Vec<String> = streamers.iter().map(|s| s.id.clone()).collect();
+    let (statuses, avatars) = store
+        .read(move |docs| Ok((read_statuses(docs, &ids, true)?, load_urls(docs)?)))
+        .await
+        .map_err(LiveError::persistence("read streamer status"))?;
     let mut live = Vec::new();
     let mut offline = Vec::new();
     for (streamer, (status, intelligence)) in streamers.iter().zip(statuses) {
-        let view = streamer_view(streamer, &status, intelligence);
+        let view = streamer_view(streamer, &status, intelligence, &avatars);
         match &view {
             StreamerView::Live(entry) => {
                 let rank = LiveRank {

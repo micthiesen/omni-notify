@@ -1,12 +1,17 @@
-//! iOS live controls: signed routes for the OmniLive app, device
-//! registrations, the four live slots and APNs "controls changed" pushes
-//! reconciled after every live-check tick.
+//! The Omni iOS app backend: signed routes for the app and its extensions,
+//! the device registry and APNs alert route that `omni_alerts::Pushover`
+//! tries before Pushover, the four live control slots, the On Air and
+//! Deliveries widget timelines, and APNs `controls` and `widgets` pushes
+//! reconciled after every live-check tick. See `docs/ios-app.md`.
 
+pub mod alerts;
 pub mod apns;
+pub mod devices;
 pub mod persistence;
 pub mod routes;
 pub mod service;
 pub mod slots;
+pub mod widgets;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -16,7 +21,9 @@ use omni_live::{Roster, TickHook};
 use omni_runtime::{AppContext, Subsystem};
 use omni_store::entity::EntityDescriptor;
 
+use crate::alerts::AppAlertRoute;
 use crate::apns::{ApnsConfig, ApnsControlClient, ApnsSender};
+use crate::devices::{IosDevice, IosWidgetPush};
 use crate::persistence::IosControlRegistration;
 use crate::routes::IosRoutesState;
 use crate::service::IosControlService;
@@ -81,13 +88,16 @@ impl IosControls {
         if complete && auth_token.is_none() {
             tracing::warn!(target: LOG, "iOS control APNs pushes disabled: IOS_CONTROL_AUTH_TOKEN is not set");
         }
-        let service = Arc::new(IosControlService::new(
-            ctx.store.clone(),
-            roster,
-            config.ios_control_home_url.clone(),
-            ctx.clock.clone(),
-            apns,
-        ));
+        let service = Arc::new(
+            IosControlService::new(
+                ctx.store.clone(),
+                roster,
+                config.ios_control_home_url.clone(),
+                ctx.clock.clone(),
+                apns,
+            )
+            .with_ports(ctx.ports.clone()),
+        );
         Self::from_service(service, auth_token, ctx.clock.clone())
     }
 
@@ -110,7 +120,16 @@ impl IosControls {
         self.service.clone()
     }
 
-    /// The live-check hook that reconciles controls after every tick.
+    /// The app notification route for `omni_alerts::Pushover::set_app_route`.
+    pub fn app_route(&self) -> Arc<dyn omni_alerts::AppPushRoute> {
+        Arc::new(AppAlertRoute::new(
+            self.service.store().clone(),
+            self.service.apns(),
+            self.service.clock(),
+        ))
+    }
+
+    /// The live-check hook that reconciles controls and widgets after every tick.
     pub fn reconciler(&self) -> Arc<dyn TickHook> {
         Arc::new(Reconciler {
             service: self.service.clone(),
@@ -120,7 +139,11 @@ impl IosControls {
     pub fn into_subsystem(self) -> Subsystem {
         let mut subsystem = Subsystem::named("ios-controls");
         subsystem.router = routes::router(self.state);
-        subsystem.entities = vec![EntityDescriptor::of::<IosControlRegistration>()];
+        subsystem.entities = vec![
+            EntityDescriptor::of::<IosControlRegistration>(),
+            EntityDescriptor::of::<IosDevice>(),
+            EntityDescriptor::of::<IosWidgetPush>(),
+        ];
         subsystem
     }
 }
@@ -131,6 +154,19 @@ struct Reconciler {
 
 impl TickHook for Reconciler {
     fn after_tick(&self) -> BoxFuture<'_, Result<(), String>> {
-        Box::pin(async move { self.service.reconcile().await.map_err(|e| e.to_string()) })
+        Box::pin(async move {
+            let controls = self.service.reconcile().await;
+            let widgets = self.service.reconcile_widgets().await;
+            let errors: Vec<String> = [controls, widgets]
+                .into_iter()
+                .filter_map(Result::err)
+                .map(|e| e.to_string())
+                .collect();
+            if errors.is_empty() {
+                Ok(())
+            } else {
+                Err(errors.join("; "))
+            }
+        })
     }
 }

@@ -30,6 +30,40 @@ pub async fn load_response(
     ))
 }
 
+/// The [`DeliveriesSource`] port over the cache (never calls Parcel).
+///
+/// [`DeliveriesSource`]: omni_runtime::ports::DeliveriesSource
+pub struct CachedDeliveries {
+    store: Store,
+    configured: bool,
+}
+
+impl CachedDeliveries {
+    pub fn new(store: Store, configured: bool) -> Self {
+        Self { store, configured }
+    }
+}
+
+impl omni_runtime::ports::DeliveriesSource for CachedDeliveries {
+    fn deliveries(
+        &self,
+    ) -> futures::future::BoxFuture<'_, Result<serde_json::Value, omni_runtime::ports::PortError>>
+    {
+        Box::pin(async move {
+            let response = load_response(&self.store, self.configured)
+                .await
+                .map_err(|e| omni_runtime::ports::PortError::Failed {
+                    message: e.to_string(),
+                    transient: true,
+                })?;
+            serde_json::to_value(response).map_err(|e| omni_runtime::ports::PortError::Failed {
+                message: e.to_string(),
+                transient: false,
+            })
+        })
+    }
+}
+
 #[derive(Clone)]
 struct RouteState {
     store: Store,

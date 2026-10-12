@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
-  <key>CFBundleDisplayName</key><string>Omni Live Controls</string>
+  <key>CFBundleDisplayName</key><string>Omni</string>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -12,7 +12,8 @@
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>NSExtension</key><dict><key>NSExtensionPointIdentifier</key><string>com.apple.widgetkit-extension</string></dict>
-  <key>NSLocalNetworkUsageDescription</key><string>Omni Live checks your private Omni server for current livestreams.</string>
+  <key>UIAppFonts</key><array><string>Geist-Variable.ttf</string><string>GeistMono-Variable.ttf</string></array>
+  <key>NSLocalNetworkUsageDescription</key><string>Omni connects to your private Omni server on this network.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key><true/>

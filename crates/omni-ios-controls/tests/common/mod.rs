@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::BoxFuture;
 use omni_api::ios::ApnsEnvironment;
 use omni_core::clock::SharedClock;
-use omni_ios_controls::apns::{ApnsPushResult, ApnsSender, ApnsTransportError};
+use omni_ios_controls::apns::{ApnsPush, ApnsPushResult, ApnsSender, ApnsTransportError};
 use omni_ios_controls::persistence::{ControlInput, IosControlRegistration};
 use omni_ios_controls::service::IosControlService;
 use omni_live::{Roster, Streamer};
@@ -33,6 +33,8 @@ pub struct FakeApns {
     pub script: Mutex<VecDeque<Reply>>,
     pub default: Mutex<Reply>,
     pub calls: Mutex<Vec<IosControlRegistration>>,
+    /// Alert and widget pushes, in order.
+    pub pushes: Mutex<Vec<ApnsPush>>,
     /// When set, every send waits forever after recording the call.
     pub hang: bool,
 }
@@ -43,6 +45,7 @@ impl FakeApns {
             script: Mutex::default(),
             default: Mutex::new(default),
             calls: Mutex::default(),
+            pushes: Mutex::default(),
             hang: false,
         })
     }
@@ -52,6 +55,7 @@ impl FakeApns {
             script: Mutex::default(),
             default: Mutex::new(Ok(ApnsPushResult::Sent)),
             calls: Mutex::default(),
+            pushes: Mutex::default(),
             hang: true,
         })
     }
@@ -71,6 +75,19 @@ impl FakeApns {
 
     pub fn clear(&self) {
         self.calls.lock().unwrap().clear();
+        self.pushes.lock().unwrap().clear();
+    }
+
+    pub fn pushes(&self) -> Vec<ApnsPush> {
+        self.pushes.lock().unwrap().clone()
+    }
+
+    fn next_reply(&self) -> Reply {
+        self.script
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| self.default.lock().unwrap().clone())
     }
 }
 
@@ -80,12 +97,19 @@ impl ApnsSender for FakeApns {
         registration: &'a IosControlRegistration,
     ) -> BoxFuture<'a, Reply> {
         self.calls.lock().unwrap().push(registration.clone());
-        let reply = self
-            .script
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| self.default.lock().unwrap().clone());
+        let reply = self.next_reply();
+        let hang = self.hang;
+        Box::pin(async move {
+            if hang {
+                futures::future::pending::<()>().await;
+            }
+            reply
+        })
+    }
+
+    fn send_push<'a>(&'a self, push: &'a ApnsPush) -> BoxFuture<'a, Reply> {
+        self.pushes.lock().unwrap().push(push.clone());
+        let reply = self.next_reply();
         let hang = self.hang;
         Box::pin(async move {
             if hang {

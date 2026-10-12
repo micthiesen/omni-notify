@@ -11,6 +11,18 @@ final class OmniSettings: @unchecked Sendable {
         static let lastRegistrationCount = "lastRegistrationCount"
         static let pendingRegistrations = "pendingRegistrations"
         static let lastRegistrationError = "lastRegistrationError"
+        static let alertsEnabled = "alertsEnabled"
+        static let apnsToken = "apnsToken"
+        static let pendingDevice = "pendingDevice"
+        static let lastSentDevice = "lastSentDevice"
+        static let lastDeviceRegistrationAt = "lastDeviceRegistrationAt"
+        static let deviceRegistrationError = "deviceRegistrationError"
+        static let serverApnsEnabled = "serverApnsEnabled"
+        static let pendingWidgetPush = "pendingWidgetPush"
+        static let lastSentWidgetPush = "lastSentWidgetPush"
+        static let widgetPushError = "widgetPushError"
+        static let lastWidgetPushAt = "lastWidgetPushAt"
+        static let didRequestNotificationAuthorization = "didRequestNotificationAuthorization"
         static func cachedSlot(_ slot: Int) -> String { "cachedSlot.\(slot)" }
     }
 
@@ -63,8 +75,12 @@ final class OmniSettings: @unchecked Sendable {
     }
 
     var apnsEnvironment: String {
-        let raw = Bundle.main.object(forInfoDictionaryKey: "OmniAPNSEnvironment") as? String
-        return raw == "production" ? "production" : "sandbox"
+        Self.apnsEnvironment(entitlement: Bundle.main.object(forInfoDictionaryKey: "OmniAPNSEnvironment") as? String)
+    }
+
+    /// `aps-environment` (development / production) to Omni's wire value.
+    static func apnsEnvironment(entitlement: String?) -> String {
+        entitlement == "production" ? "production" : "sandbox"
     }
 
     var lastRegistrationAt: Date? {
@@ -98,6 +114,104 @@ final class OmniSettings: @unchecked Sendable {
     var lastRegistrationError: String? {
         get { locked { defaults.string(forKey: Key.lastRegistrationError) } }
         set { locked { defaults.set(newValue, forKey: Key.lastRegistrationError) } }
+    }
+
+    /// This device's alert toggle; nil until the user changes it (then the device
+    /// kind's default applies).
+    var alertsEnabledOverride: Bool? {
+        get { locked { defaults.object(forKey: Key.alertsEnabled) as? Bool } }
+        set { locked { defaults.set(newValue, forKey: Key.alertsEnabled) } }
+    }
+
+    func alertsEnabled(for kind: DeviceKind) -> Bool {
+        alertsEnabledOverride ?? kind.alertsEnabledByDefault
+    }
+
+    /// Hex APNs device token from the last successful remote-notification registration.
+    var apnsToken: String? {
+        get { locked { defaults.string(forKey: Key.apnsToken) } }
+        set { locked { defaults.set(newValue, forKey: Key.apnsToken) } }
+    }
+
+    var pendingDevice: DeviceRegistration? {
+        get { codable(Key.pendingDevice) }
+        set { setCodable(newValue, Key.pendingDevice) }
+    }
+
+    var lastSentDevice: DeviceRegistration? {
+        get { codable(Key.lastSentDevice) }
+        set { setCodable(newValue, Key.lastSentDevice) }
+    }
+
+    var lastDeviceRegistrationAt: Date? {
+        get { locked { defaults.object(forKey: Key.lastDeviceRegistrationAt) as? Date } }
+        set { locked { defaults.set(newValue, forKey: Key.lastDeviceRegistrationAt) } }
+    }
+
+    var deviceRegistrationError: String? {
+        get { locked { defaults.string(forKey: Key.deviceRegistrationError) } }
+        set { locked { defaults.set(newValue, forKey: Key.deviceRegistrationError) } }
+    }
+
+    var serverApnsEnabled: Bool? {
+        get { locked { defaults.object(forKey: Key.serverApnsEnabled) as? Bool } }
+        set { locked { defaults.set(newValue, forKey: Key.serverApnsEnabled) } }
+    }
+
+    var pendingWidgetPush: WidgetPushRegistration? {
+        get { codable(Key.pendingWidgetPush) }
+        set { setCodable(newValue, Key.pendingWidgetPush) }
+    }
+
+    var lastSentWidgetPush: WidgetPushRegistration? {
+        get { codable(Key.lastSentWidgetPush) }
+        set { setCodable(newValue, Key.lastSentWidgetPush) }
+    }
+
+    var lastWidgetPushAt: Date? {
+        get { locked { defaults.object(forKey: Key.lastWidgetPushAt) as? Date } }
+        set { locked { defaults.set(newValue, forKey: Key.lastWidgetPushAt) } }
+    }
+
+    var widgetPushError: String? {
+        get { locked { defaults.string(forKey: Key.widgetPushError) } }
+        set { locked { defaults.set(newValue, forKey: Key.widgetPushError) } }
+    }
+
+    var didRequestNotificationAuthorization: Bool {
+        get { locked { defaults.bool(forKey: Key.didRequestNotificationAuthorization) } }
+        set { locked { defaults.set(newValue, forKey: Key.didRequestNotificationAuthorization) } }
+    }
+
+    /// Shared container for widget caches (snapshots, avatars). Falls back to the
+    /// process caches directory where no App Group exists (tests, unsigned builds).
+    var sharedContainerURL: URL {
+        if let group = Bundle.main.object(forInfoDictionaryKey: "OmniAppGroup") as? String,
+           !group.isEmpty,
+           let url = FileManager.default.containerURL(
+               forSecurityApplicationGroupIdentifier: group
+           )
+        {
+            return url
+        }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    }
+
+    private func codable<T: Decodable>(_ key: String) -> T? {
+        locked {
+            guard let data = defaults.data(forKey: key) else { return nil }
+            return try? JSONDecoder().decode(T.self, from: data)
+        }
+    }
+
+    private func setCodable<T: Encodable>(_ value: T?, _ key: String) {
+        locked {
+            if let value, let data = try? JSONEncoder().encode(value) {
+                defaults.set(data, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
+        }
     }
 
     func cache(_ state: LiveSlotState) {

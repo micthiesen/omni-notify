@@ -14,6 +14,7 @@ use crate::platform::{FetchedLive, FetchedStatus, js_count};
 
 const TOKEN_URL: &str = "https://id.kick.com/oauth/token";
 const CHANNELS_URL: &str = "https://api.kick.com/public/v1/channels";
+const USERS_URL: &str = "https://api.kick.com/public/v1/users";
 const TOKEN_REFRESH_LEEWAY_MS: i64 = 60_000;
 /// Token response cap.
 pub const KICK_TOKEN_MAX_BYTES: usize = 128 * 1024;
@@ -82,6 +83,29 @@ pub struct KickStream {
     pub viewer_count: Option<f64>,
     #[serde(default)]
     pub start_time: Option<String>,
+}
+
+/// The channel fields the avatar lookup needs.
+#[derive(Debug, Deserialize)]
+struct KickChannelOwners {
+    data: Vec<KickChannelOwner>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KickChannelOwner {
+    #[serde(default)]
+    broadcaster_user_id: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KickUsers {
+    data: Vec<KickUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KickUser {
+    #[serde(default)]
+    profile_picture: Option<String>,
 }
 
 /// Pure: the first channel's status.
@@ -166,12 +190,9 @@ impl KickClient {
     }
 
     async fn try_fetch(&self, username: &str) -> Result<FetchedStatus, String> {
-        let mut token = self.access_token(None).await?;
-        let mut response = self.request_channels(username, &token).await?;
-        if response.status == 401 {
-            token = self.access_token(Some(&token)).await?;
-            response = self.request_channels(username, &token).await?;
-        }
+        let response = self
+            .authorized_get("Kick channels request", CHANNELS_URL, ("slug", username))
+            .await?;
         if !(200..300).contains(&response.status) {
             return Ok(FetchedStatus::unknown(format!(
                 "Kick API returned {}: {}",
@@ -182,6 +203,53 @@ impl KickClient {
         let decoded: KickChannelsResponse = serde_json::from_str(&response.body)
             .map_err(|e| format!("Decode kick channels request: {e}"))?;
         Ok(extract_kick_status(&decoded))
+    }
+
+    /// Whether Kick credentials are configured (the API needs them).
+    pub fn has_credentials(&self) -> bool {
+        self.credentials
+            .as_ref()
+            .is_some_and(|c| !c.client_id.is_empty() && !c.client_secret.is_empty())
+    }
+
+    /// The channel owner's profile picture: the channel's
+    /// `broadcaster_user_id`, then `/users?id=`. `None` for an unknown slug or
+    /// a user without a picture.
+    pub async fn fetch_avatar(&self, username: &str) -> Result<Option<String>, String> {
+        let channels = self
+            .authorized_get("Kick channels request", CHANNELS_URL, ("slug", username))
+            .await?;
+        let channels: KickChannelOwners = decode_ok("Kick channels", &channels)?;
+        let Some(user_id) = channels.data.first().and_then(|c| c.broadcaster_user_id) else {
+            return Ok(None);
+        };
+        let id = user_id.to_string();
+        let users = self
+            .authorized_get("Kick users request", USERS_URL, ("id", &id))
+            .await?;
+        let users: KickUsers = decode_ok("Kick users", &users)?;
+        Ok(users
+            .data
+            .into_iter()
+            .next()
+            .and_then(|user| user.profile_picture)
+            .filter(|url| !url.is_empty()))
+    }
+
+    /// GET with the cached app token, refreshed once on a 401.
+    async fn authorized_get(
+        &self,
+        operation: &str,
+        url: &str,
+        query: (&str, &str),
+    ) -> Result<RawResponse, String> {
+        let mut token = self.access_token(None).await?;
+        let mut response = self.request(operation, url, query, &token).await?;
+        if response.status == 401 {
+            token = self.access_token(Some(&token)).await?;
+            response = self.request(operation, url, query, &token).await?;
+        }
+        Ok(response)
     }
 
     async fn access_token(&self, stale: Option<&str>) -> Result<String, String> {
@@ -237,18 +305,38 @@ impl KickClient {
         })
     }
 
-    async fn request_channels(&self, username: &str, bearer: &str) -> Result<RawResponse, String> {
-        let operation = "Kick channels request";
-        let url = Url::parse(CHANNELS_URL).map_err(|e| format!("{operation}: {e}"))?;
+    async fn request(
+        &self,
+        operation: &str,
+        url: &str,
+        query: (&str, &str),
+        bearer: &str,
+    ) -> Result<RawResponse, String> {
+        let url = Url::parse(url).map_err(|e| format!("{operation}: {e}"))?;
         let request = self
             .http
             .request(Method::GET, url)
-            .query(&[("slug", username)])
+            .query(&[query])
             .bearer_auth(bearer);
         send(request, self.channels_max_bytes)
             .await
             .map_err(|e| request_failure(operation, &e))
     }
+}
+
+/// A 2xx body decoded into `T`.
+fn decode_ok<T: serde::de::DeserializeOwned>(
+    operation: &str,
+    response: &RawResponse,
+) -> Result<T, String> {
+    if !(200..300).contains(&response.status) {
+        return Err(format!(
+            "{operation} returned {}: {}",
+            response.status,
+            snippet(&response.body)
+        ));
+    }
+    serde_json::from_str(&response.body).map_err(|e| format!("Decode {operation} response: {e}"))
 }
 
 async fn send(

@@ -53,12 +53,15 @@ tasks and tools, and starts the services.
 Cross-subsystem calls go through the port traits in
 `crates/omni-runtime/src/ports.rs`: `EmailReader`, `ArchiveEcho`,
 `EmailRetryHandlers`, `CalendarConnection`, `LiveDirectory`, `LiveIntelligence`,
-`OnDeckSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
+`OnDeckSource`, `DeliveriesSource`, `ClaudeSessionNotifier`, `ClaudeHost` and
 `EventPublisher` (MCP Events publishing; `docs/mcp-events.md`). Each
 port is set once during wiring (`crates/omni-notify/src/wiring.rs`); a consumer
 must handle an unset port, because the providing subsystem may be disabled by
 configuration. Port payloads that belong to another subsystem's `omni-api` DTO
 cross as `serde_json::Value` and are decoded into the same DTO on the other side.
+The Pushover client also takes one `AppPushRoute`, set by wiring from
+`omni-ios-controls`, so every notification tries the iOS app first
+(`docs/ios-app.md`).
 
 `SideEffectMode::Record` makes every mutating adapter (Pushover, SMTP, IMAP
 writes, CalDAV, Arr/Castro/Plex mutations, APNs, webhooks, printer, Parcel)

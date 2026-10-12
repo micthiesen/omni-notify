@@ -309,7 +309,7 @@ fn OfflineChips(streamers: Vec<OfflineStreamerView>) -> impl IntoView {
                 let last = s.last_ended_at.or(s.last_started_at).map(|t| format_relative_at(t as f64, now));
                 view! {
                     <Link to=streamer_path(&s.id) class="offline-chip" title=last.clone().map(|l| format!("Last live {l}")).unwrap_or_default()>
-                        <Avatar name=s.display_name.clone() size=24 presence=Presence::Offline/>
+                        <Avatar name=s.display_name.clone() size=24 presence=Presence::Offline image=s.avatar_url.clone()/>
                         <span>{s.display_name.clone()}</span>
                         {last.map(|l| view! { <span class="small dim">{l}</span> })}
                     </Link>

@@ -3,6 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleDisplayName</key><string>Omni</string>
   <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -10,11 +11,32 @@
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>$(PRODUCT_BUNDLE_IDENTIFIER).open</string>
+      <key>CFBundleURLSchemes</key><array><string>omni</string></array>
+    </dict>
+  </array>
   <key>LSRequiresIPhoneOS</key><true/>
-  <key>UILaunchScreen</key><dict/>
-  <key>UISupportedInterfaceOrientations</key>
-  <array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
-  <key>NSLocalNetworkUsageDescription</key><string>Omni Live checks your private Omni server for current livestreams.</string>
+  <key>UILaunchScreen</key>
+  <dict>
+    <key>UIColorName</key><string>LaunchBackground</string>
+  </dict>
+  <key>UIUserInterfaceStyle</key><string>Dark</string>
+  <key>UIStatusBarStyle</key><string>UIStatusBarStyleLightContent</string>
+  <key>UISupportedInterfaceOrientations~iphone</key>
+  <array><string>UIInterfaceOrientationPortrait</string></array>
+  <key>UISupportedInterfaceOrientations~ipad</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+  <key>NSUserActivityTypes</key><array><string>INSendMessageIntent</string></array>
+  <key>UIAppFonts</key><array><string>Geist-Variable.ttf</string><string>GeistMono-Variable.ttf</string></array>
+  <key>NSLocalNetworkUsageDescription</key><string>Omni connects to your private Omni server on this network.</string>
   <key>NSAppTransportSecurity</key>
   <dict>
     <key>NSAllowsLocalNetworking</key><true/>

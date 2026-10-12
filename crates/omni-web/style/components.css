@@ -595,6 +595,14 @@ a.row:focus-visible, button.row:focus-visible { outline-offset: -2px; }
   letter-spacing: -0.02em;
   transition: filter var(--d-2) var(--ease);
 }
+.avatar > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
 .avatar.live { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--live); }
 .avatar.offline { filter: grayscale(0.85) brightness(0.7); }
 a:hover .avatar.offline, .avatar.offline:hover { filter: none; }

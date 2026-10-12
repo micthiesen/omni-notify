@@ -170,6 +170,7 @@ mod tests {
             category: None,
             primary,
             intelligence: None,
+            avatar_url: None,
         }
     }
 

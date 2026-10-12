@@ -16,12 +16,15 @@ check_command() {
   fi
 }
 
-echo "Omni Live iOS doctor"
+echo "Omni iOS doctor"
 check_command xcodebuild
 check_command xcrun
 check_command xcodegen
 check_command curl
 check_command jq
+check_command openssl
+check_command uuidgen
+check_command xxd
 
 if xcodebuild -version >/dev/null 2>&1; then
   xcodebuild -version | sed 's/^/  /'
@@ -58,11 +61,9 @@ if [[ -f "$IOS_PROJECT_DIR/Config/Local.xcconfig" ]]; then
   server_xcconfig="$(sed -n 's/^OMNI_DEFAULT_SERVER_URL = //p' "$IOS_PROJECT_DIR/Config/Local.xcconfig" | tail -1)"
   server="${server_xcconfig/"\$()"/}"
   diagnostics_file="/tmp/omni-live-doctor-diagnostics.json"
-  if [[ -n "$token" && -n "$server" ]] && curl -fsS --max-time 5 \
-    -A "OpenAI File Downloader, XaiImageApiFetch/1.0" \
-    -H "Authorization: Bearer $token" \
-    "$server/api/ios-controls/diagnostics" \
-    -o "$diagnostics_file"
+  # The server only accepts Omni-HMAC signed requests (never a bearer token).
+  if [[ -n "$token" && -n "$server" ]] \
+    && omni_get "$server" "$token" /api/ios-controls/diagnostics "$diagnostics_file"
   then
     echo "✓ Omni control API authenticated at $server"
     if jq -e '.apnsEnabled == true' "$diagnostics_file" >/dev/null; then

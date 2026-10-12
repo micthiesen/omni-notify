@@ -3376,6 +3376,7 @@ dependencies = [
  "hex",
  "hmac 0.13.0",
  "jsonwebtoken",
+ "omni-alerts",
  "omni-api",
  "omni-core",
  "omni-http",

@@ -185,6 +185,7 @@ impl ResetNotifier for PushoverNotifier {
                 priority: None,
                 sound: None,
                 timestamp: None,
+                ..PushoverMessage::default()
             };
             send_general(&self.pushover, message).await
         })

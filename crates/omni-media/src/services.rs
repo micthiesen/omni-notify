@@ -47,6 +47,7 @@ impl Notifier for PushoverNotifier {
                         priority: None,
                         sound: None,
                         timestamp: None,
+                        ..PushoverMessage::default()
                     },
                 )
                 .await

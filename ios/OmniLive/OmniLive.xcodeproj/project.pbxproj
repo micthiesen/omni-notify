@@ -7,22 +7,95 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0015D57825C52B4ED52A5CF3 /* ControlRegistrationSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F67109E428FF7D81EE1EC9AB /* ControlRegistrationSync.swift */; };
 		006B0A0BFDCCC3EC900CC2FF /* OmniSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17F6308E734F8CEEF6528C0F /* OmniSettings.swift */; };
+		00F99D9C7274BB5E5196BF97 /* Geist-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CA8AF8C0BA034326299861B7 /* Geist-Variable.ttf */; };
+		03970805F9037B6B44B10397 /* LiveSlotResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */; };
+		06B039B316C66CA5D3121634 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AD4C8F14069594720D1595D /* SettingsView.swift */; };
+		097D097994EB70653C7FBFC0 /* WidgetPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53254F8BD280F3E11B0D124A /* WidgetPreviews.swift */; };
+		09980672277C4DA39C4CFA11 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1253EDC85CB2650B8B494F30 /* OFL.txt */; };
+		0FCF31618588593572B096F7 /* WidgetSnapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8445596F9FC7E1544F05BA24 /* WidgetSnapshots.swift */; };
+		1485920165126588846B7618 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74EF700FD6ACEA8502EE94C0 /* DeepLink.swift */; };
+		168351D369F62D276CE7334C /* WidgetFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36F77D1FD60CA3C582ECF331 /* WidgetFixtures.swift */; };
+		1A55F351605028572AC06D05 /* OmniTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034AB464E3C9DC409C8A4569 /* OmniTheme.swift */; };
+		1E429D41015E0435CE4C59E1 /* OmniComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C03097D4C1D58F14613B0C /* OmniComponents.swift */; };
+		1F7430E237BCD410068D7BCC /* DeviceRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */; };
+		224B425D3A762CA49D8E3DCB /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74EF700FD6ACEA8502EE94C0 /* DeepLink.swift */; };
+		2282298D9E4AC618CEAA4C88 /* WidgetCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1381F170C5BEAC8FA58C3CCD /* WidgetCache.swift */; };
 		237A5A3B53227445CBC2A53D /* LiveSlotStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD67D8D7BC66F749CFC0E3E7 /* LiveSlotStateTests.swift */; };
+		246ACFBBC8B03D37817FD24D /* WidgetCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1381F170C5BEAC8FA58C3CCD /* WidgetCache.swift */; };
 		300A0895AF5DC526B226CA63 /* OmniLiveControls.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4DD6377DA1528358A0381290 /* OmniLiveControls.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		32A9831CA6DDFEAC6BA4A65A /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16156B744D1F6C8A302B3DCE /* SetupView.swift */; };
-		4444C46151C91DB6A9714B0F /* ControlRegistrationSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F67109E428FF7D81EE1EC9AB /* ControlRegistrationSync.swift */; };
+		310C8D88DEA559ED84ACA327 /* OmniSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17F6308E734F8CEEF6528C0F /* OmniSettings.swift */; };
+		3350B97F93AA5D853A43025E /* WidgetCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1381F170C5BEAC8FA58C3CCD /* WidgetCache.swift */; };
+		39ABF75B974A7A34C9BA76AE /* ControlRegistrationSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D08CF6E8580CAE5581728A /* ControlRegistrationSync.swift */; };
+		3B6E47A6C18D85B77440C944 /* GeistMono-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3977573B15A20AD896AAEA7E /* GeistMono-Variable.ttf */; };
+		3CBF561A856B0A21E0A63776 /* WidgetPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D5F5D199335176D11011D0 /* WidgetPolicy.swift */; };
+		3F18337D38A940B3516F44FE /* DeviceRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */; };
+		40470D43AA8E54B4B072889C /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */; };
+		47EB88983BB92A39F4665599 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F325D5B07AB0128E4E19CE83 /* PushPayload.swift */; };
+		4C4DF66D2D0BC43D673B4EDE /* DeliveriesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67500FCC3338661C6D21291 /* DeliveriesViews.swift */; };
+		4DBF6E2C0359C71DD2181128 /* DeliveriesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */; };
+		536230DD69DD547C1E896307 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA380A91BBC51E36A1B0F371 /* NotificationService.swift */; };
+		53C7910D5D33164D81EC9CF8 /* LiveSlotState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A4870CF91D777924CCACB2 /* LiveSlotState.swift */; };
 		5732F7CED06111AF237B5A7E /* LiveSlotState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A4870CF91D777924CCACB2 /* LiveSlotState.swift */; };
-		5FF8F14A051BADB1609D58E4 /* ControlDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10556848604FFA988CF0946 /* ControlDefinitions.swift */; };
-		6C9F3B95455D7E7E087CB384 /* ControlDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10556848604FFA988CF0946 /* ControlDefinitions.swift */; };
+		57DA4E1A0D64B6A01C25B878 /* GeistMono-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3977573B15A20AD896AAEA7E /* GeistMono-Variable.ttf */; };
+		5928C90B71B4F1A547F95DB0 /* WidgetFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36F77D1FD60CA3C582ECF331 /* WidgetFixtures.swift */; };
+		60505688C9491547F5BC5EC1 /* LiveSlotState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A4870CF91D777924CCACB2 /* LiveSlotState.swift */; };
+		61C32109A56E5E04D7D57B6A /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F325D5B07AB0128E4E19CE83 /* PushPayload.swift */; };
+		632CD8BA2F0F388208B105A3 /* WidgetPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D5F5D199335176D11011D0 /* WidgetPolicy.swift */; };
+		63725B41EFEF4F6648A6B3C2 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DD0E44E4D2B8C9F892D447 /* AppModel.swift */; };
+		6AA16812BA482D48AC9A9D48 /* WidgetPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D5F5D199335176D11011D0 /* WidgetPolicy.swift */; };
 		70B60DE390C733C2802D41ED /* OmniSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17F6308E734F8CEEF6528C0F /* OmniSettings.swift */; };
+		74E232BDB7D3E1CA8F5028B5 /* WidgetCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1381F170C5BEAC8FA58C3CCD /* WidgetCache.swift */; };
+		771EC84EBA58A7CB91CD69C2 /* WidgetFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36F77D1FD60CA3C582ECF331 /* WidgetFixtures.swift */; };
+		7B50104EBD6FFA2227591D9D /* OmniTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034AB464E3C9DC409C8A4569 /* OmniTheme.swift */; };
+		7B83E8C006EB8173899C4181 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F325D5B07AB0128E4E19CE83 /* PushPayload.swift */; };
+		7BF9DCD922E196D2E5F9648A /* OmniComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C03097D4C1D58F14613B0C /* OmniComponents.swift */; };
+		7D5464BEC8F0AB4C57201471 /* WidgetFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36F77D1FD60CA3C582ECF331 /* WidgetFixtures.swift */; };
+		7F3744E5760DB00444BC247A /* WidgetPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4D5F5D199335176D11011D0 /* WidgetPolicy.swift */; };
+		8884E151577A09B0C21FFAA7 /* WidgetSnapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8445596F9FC7E1544F05BA24 /* WidgetSnapshots.swift */; };
+		8CAA7D94B44F6D70764F1D4B /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1253EDC85CB2650B8B494F30 /* OFL.txt */; };
+		8E1FEB557995B70F87BC777E /* WidgetPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03730F082DC0D759F1B595EB /* WidgetPush.swift */; };
+		919C40EB9348C3F89BF9780B /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74EF700FD6ACEA8502EE94C0 /* DeepLink.swift */; };
 		94FC1C8B7E9C9DE0EE750E60 /* LiveSlotState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A4870CF91D777924CCACB2 /* LiveSlotState.swift */; };
+		9A253462866EFF29EE18E6D8 /* OnAirWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C11EE9F127BE981E2DACA8 /* OnAirWidget.swift */; };
 		9A717E71A47BF1BE0143A18B /* OmniLiveControlsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAB44207D036716D31246570 /* OmniLiveControlsBundle.swift */; };
+		9B42741A0709D9E47D97919D /* OmniTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034AB464E3C9DC409C8A4569 /* OmniTheme.swift */; };
+		9CCEF0AB35F3CE749EB25944 /* PushPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = F325D5B07AB0128E4E19CE83 /* PushPayload.swift */; };
+		A09B754F4FBAC47A93152C3A /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 1253EDC85CB2650B8B494F30 /* OFL.txt */; };
+		A3DF4FC6C90A822F1B1BC874 /* DeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74EF700FD6ACEA8502EE94C0 /* DeepLink.swift */; };
+		A63915A5B1E42E89192EB6D3 /* WidgetSnapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8445596F9FC7E1544F05BA24 /* WidgetSnapshots.swift */; };
+		B0E27BAF683F8D40A43EC027 /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */; };
+		B5F209440AA1F21435F461C6 /* WidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 039E0E4874FBC435E42C8876 /* WidgetSnapshotTests.swift */; };
 		B71CDC721EB703B7E52D58F4 /* LiveSlotResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */; };
+		B788BEAB68E2D07CCC9FEF9E /* DeliveriesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */; };
+		B86BA2F4D018DAA2B404F236 /* DeviceRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */; };
+		BA571E05EE03191808E5D401 /* WebShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 470D4CD4E1E3AF352487CCE1 /* WebShell.swift */; };
+		BC49104C21C97FF917A0D5DC /* ControlDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14233EA095BA7076E9DD876 /* ControlDefinitions.swift */; };
+		BF378E080041F36F6216AE19 /* GeistMono-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3977573B15A20AD896AAEA7E /* GeistMono-Variable.ttf */; };
+		BF49B7728FDF2F02884EBC0D /* OnAirWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C11EE9F127BE981E2DACA8 /* OnAirWidget.swift */; };
+		C922D0C77056032FE93373E3 /* OmniComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C03097D4C1D58F14613B0C /* OmniComponents.swift */; };
+		CACA7749427C214FB3372B71 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3AC983D0E3EE2D36D1D1621 /* RootView.swift */; };
 		D0BB2A1D610DF0A10EE6A78A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 843636EE807B1A16633C793A /* Assets.xcassets */; };
+		D0C1957064781C22CB227354 /* PushRegistrar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F26CD52597A3242A63DCFA2 /* PushRegistrar.swift */; };
+		D3B604646B92B104502916A2 /* DeviceRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */; };
+		D8977C2F26AFD48599D7066D /* Geist-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CA8AF8C0BA034326299861B7 /* Geist-Variable.ttf */; };
+		DAC508288580ADAD180F82D1 /* Geist-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CA8AF8C0BA034326299861B7 /* Geist-Variable.ttf */; };
+		DB89CD66E87E8A33FB658CDC /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */; };
+		DC68C96A258570D0BE0F0266 /* ControlDefinitions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E14233EA095BA7076E9DD876 /* ControlDefinitions.swift */; };
+		DD143C727469C25423879C8A /* OmniNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = E18554EC2FE52486689B4DA2 /* OmniNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DEA751677EDD2C8865057B69 /* ControlRegistrationSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D08CF6E8580CAE5581728A /* ControlRegistrationSync.swift */; };
+		E086211F421B9F480EDD38B4 /* WidgetContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C7CE5A7AD73C6FBA704285 /* WidgetContractTests.swift */; };
+		E26FCDEDADDEF9F606BF5B0A /* WidgetPush.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03730F082DC0D759F1B595EB /* WidgetPush.swift */; };
 		E29BE3F470ABF0EBB37B0CB6 /* LiveStreamControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14497C4D0F9B5E575F0B9A16 /* LiveStreamControl.swift */; };
+		E353E0B9D83BE669A4F7A1BB /* WidgetSnapshots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8445596F9FC7E1544F05BA24 /* WidgetSnapshots.swift */; };
+		E4889906DD837FD4C5DDB957 /* OmniSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17F6308E734F8CEEF6528C0F /* OmniSettings.swift */; };
+		E61602A6AEAAA4F550A56245 /* OmniAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */; };
 		E73C09D2C15B298A27DDA68B /* OmniLiveApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 175444263FE47569E16ED7AA /* OmniLiveApp.swift */; };
+		EEF7EEE2FF2D8D165D982BC8 /* WidgetPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53254F8BD280F3E11B0D124A /* WidgetPreviews.swift */; };
+		F55DFBABE0E018A7CAAC34F0 /* DeliveriesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D67500FCC3338661C6D21291 /* DeliveriesViews.swift */; };
+		F773CEB1AEDEA29B28CBB941 /* OnAirViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BE527CBA3078F4F2B494DF /* OnAirViews.swift */; };
+		F9D4E66D2BF7A502CFE35B3F /* LiveSlotResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */; };
+		FE3170650A5CFA3EDEF8EC4E /* OnAirViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03BE527CBA3078F4F2B494DF /* OnAirViews.swift */; };
 		FFCF12DC1BFC69FD3F8774E6 /* LiveSlotResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */; };
 /* End PBXBuildFile section */
 
@@ -41,6 +114,13 @@
 			remoteGlobalIDString = DECB6EA92E34AA325EE7E02F;
 			remoteInfo = OmniLiveControls;
 		};
+		BE05DBEC047AEA8E31DEB435 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C17DE235A10AFF84A06B31DA /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 126BD4B23E6B420AC723615B;
+			remoteInfo = OmniNotificationService;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -51,6 +131,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				300A0895AF5DC526B226CA63 /* OmniLiveControls.appex in Embed Foundation Extensions */,
+				DD143C727469C25423879C8A /* OmniNotificationService.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -58,36 +139,107 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		026F64A1C6CB70D40194FC9A /* OmniWidgetSnapshotTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OmniWidgetSnapshotTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		034AB464E3C9DC409C8A4569 /* OmniTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmniTheme.swift; sourceTree = "<group>"; };
+		03730F082DC0D759F1B595EB /* WidgetPush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPush.swift; sourceTree = "<group>"; };
+		039E0E4874FBC435E42C8876 /* WidgetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotTests.swift; sourceTree = "<group>"; };
+		03BE527CBA3078F4F2B494DF /* OnAirViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnAirViews.swift; sourceTree = "<group>"; };
+		09C11EE9F127BE981E2DACA8 /* OnAirWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnAirWidget.swift; sourceTree = "<group>"; };
+		0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmniAPIClient.swift; sourceTree = "<group>"; };
+		0F26CD52597A3242A63DCFA2 /* PushRegistrar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistrar.swift; sourceTree = "<group>"; };
+		1253EDC85CB2650B8B494F30 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
+		1381F170C5BEAC8FA58C3CCD /* WidgetCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetCache.swift; sourceTree = "<group>"; };
 		14497C4D0F9B5E575F0B9A16 /* LiveStreamControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveStreamControl.swift; sourceTree = "<group>"; };
-		16156B744D1F6C8A302B3DCE /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		175444263FE47569E16ED7AA /* OmniLiveApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmniLiveApp.swift; sourceTree = "<group>"; };
 		17F6308E734F8CEEF6528C0F /* OmniSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmniSettings.swift; sourceTree = "<group>"; };
+		30979E1EEEA3C6EFCB092834 /* OmniNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OmniNotificationService.entitlements; sourceTree = "<group>"; };
+		36F77D1FD60CA3C582ECF331 /* WidgetFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetFixtures.swift; sourceTree = "<group>"; };
+		3977573B15A20AD896AAEA7E /* GeistMono-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "GeistMono-Variable.ttf"; sourceTree = "<group>"; };
+		3AD4C8F14069594720D1595D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		3FBDCB5C1C981CA4C1C46C6B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		41034041C06DD466DEEC0A81 /* OmniLive.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OmniLive.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		470D4CD4E1E3AF352487CCE1 /* WebShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebShell.swift; sourceTree = "<group>"; };
 		4DD6377DA1528358A0381290 /* OmniLiveControls.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OmniLiveControls.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		53254F8BD280F3E11B0D124A /* WidgetPreviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPreviews.swift; sourceTree = "<group>"; };
+		64DD0E44E4D2B8C9F892D447 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRegistration.swift; sourceTree = "<group>"; };
 		71F36B8367A8B022AED581F9 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
+		74EF700FD6ACEA8502EE94C0 /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepLink.swift; sourceTree = "<group>"; };
 		83A4870CF91D777924CCACB2 /* LiveSlotState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSlotState.swift; sourceTree = "<group>"; };
 		843636EE807B1A16633C793A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		8445596F9FC7E1544F05BA24 /* WidgetSnapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshots.swift; sourceTree = "<group>"; };
+		9192B2C65D255924437C5BA2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		98C7CE5A7AD73C6FBA704285 /* WidgetContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetContractTests.swift; sourceTree = "<group>"; };
+		A6D08CF6E8580CAE5581728A /* ControlRegistrationSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlRegistrationSync.swift; sourceTree = "<group>"; };
 		ABE3DF1C3BC652FE08F3E180 /* OmniLive.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OmniLive.entitlements; sourceTree = "<group>"; };
 		B138FCBFC825F4FE79CF9C37 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B2C03097D4C1D58F14613B0C /* OmniComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmniComponents.swift; sourceTree = "<group>"; };
+		BA380A91BBC51E36A1B0F371 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		BAB44207D036716D31246570 /* OmniLiveControlsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OmniLiveControlsBundle.swift; sourceTree = "<group>"; };
 		BD67D8D7BC66F749CFC0E3E7 /* LiveSlotStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSlotStateTests.swift; sourceTree = "<group>"; };
 		C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSlotResolution.swift; sourceTree = "<group>"; };
+		CA8AF8C0BA034326299861B7 /* Geist-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Geist-Variable.ttf"; sourceTree = "<group>"; };
+		D67500FCC3338661C6D21291 /* DeliveriesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveriesViews.swift; sourceTree = "<group>"; };
+		D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeliveriesWidget.swift; sourceTree = "<group>"; };
 		DC051F5412F2A5FD4E3EB0EF /* OmniLiveControls.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OmniLiveControls.entitlements; sourceTree = "<group>"; };
+		E14233EA095BA7076E9DD876 /* ControlDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlDefinitions.swift; sourceTree = "<group>"; };
+		E18554EC2FE52486689B4DA2 /* OmniNotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = OmniNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EF8A79F84D1EC25C02AB3ABA /* OmniLiveTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OmniLiveTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F10556848604FFA988CF0946 /* ControlDefinitions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlDefinitions.swift; sourceTree = "<group>"; };
-		F67109E428FF7D81EE1EC9AB /* ControlRegistrationSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlRegistrationSync.swift; sourceTree = "<group>"; };
+		F325D5B07AB0128E4E19CE83 /* PushPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushPayload.swift; sourceTree = "<group>"; };
+		F3AC983D0E3EE2D36D1D1621 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		F4D5F5D199335176D11011D0 /* WidgetPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetPolicy.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		002DFCD7A51D8388EC900F58 /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				D67500FCC3338661C6D21291 /* DeliveriesViews.swift */,
+				D8DAC413B7D25FF414D95E2B /* DeliveriesWidget.swift */,
+				03BE527CBA3078F4F2B494DF /* OnAirViews.swift */,
+				09C11EE9F127BE981E2DACA8 /* OnAirWidget.swift */,
+				53254F8BD280F3E11B0D124A /* WidgetPreviews.swift */,
+				03730F082DC0D759F1B595EB /* WidgetPush.swift */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
 		154982AE53DEBC14065155ED /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				41034041C06DD466DEEC0A81 /* OmniLive.app */,
 				4DD6377DA1528358A0381290 /* OmniLiveControls.appex */,
 				EF8A79F84D1EC25C02AB3ABA /* OmniLiveTests.xctest */,
+				E18554EC2FE52486689B4DA2 /* OmniNotificationService.appex */,
+				026F64A1C6CB70D40194FC9A /* OmniWidgetSnapshotTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2EC2AC8F8624FF0C992704AB /* SnapshotTests */ = {
+			isa = PBXGroup;
+			children = (
+				039E0E4874FBC435E42C8876 /* WidgetSnapshotTests.swift */,
+			);
+			path = SnapshotTests;
+			sourceTree = "<group>";
+		};
+		32BBD685643C034FD3A594BA /* DesignKit */ = {
+			isa = PBXGroup;
+			children = (
+				B2C03097D4C1D58F14613B0C /* OmniComponents.swift */,
+				034AB464E3C9DC409C8A4569 /* OmniTheme.swift */,
+			);
+			path = DesignKit;
+			sourceTree = "<group>";
+		};
+		4101A40FD8288DB548053A45 /* SharedControls */ = {
+			isa = PBXGroup;
+			children = (
+				E14233EA095BA7076E9DD876 /* ControlDefinitions.swift */,
+				A6D08CF6E8580CAE5581728A /* ControlRegistrationSync.swift */,
+			);
+			path = SharedControls;
 			sourceTree = "<group>";
 		};
 		59259C353246160B5FF4C20A /* Config */ = {
@@ -101,10 +253,14 @@
 		75B2083ED42A4EB5F4EBBB70 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				64DD0E44E4D2B8C9F892D447 /* AppModel.swift */,
 				B138FCBFC825F4FE79CF9C37 /* Info.plist */,
 				ABE3DF1C3BC652FE08F3E180 /* OmniLive.entitlements */,
 				175444263FE47569E16ED7AA /* OmniLiveApp.swift */,
-				16156B744D1F6C8A302B3DCE /* SetupView.swift */,
+				0F26CD52597A3242A63DCFA2 /* PushRegistrar.swift */,
+				F3AC983D0E3EE2D36D1D1621 /* RootView.swift */,
+				3AD4C8F14069594720D1595D /* SettingsView.swift */,
+				470D4CD4E1E3AF352487CCE1 /* WebShell.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -120,15 +276,32 @@
 			path = Controls;
 			sourceTree = "<group>";
 		};
+		AE308BF5840DC4ADD3816A56 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				CA8AF8C0BA034326299861B7 /* Geist-Variable.ttf */,
+				3977573B15A20AD896AAEA7E /* GeistMono-Variable.ttf */,
+				1253EDC85CB2650B8B494F30 /* OFL.txt */,
+			);
+			name = Fonts;
+			path = Resources/Fonts;
+			sourceTree = "<group>";
+		};
 		B4A22D5BC9390FAB3D13CE54 = {
 			isa = PBXGroup;
 			children = (
 				75B2083ED42A4EB5F4EBBB70 /* App */,
 				59259C353246160B5FF4C20A /* Config */,
 				9DF4F4CAACB26C3B324FCE11 /* Controls */,
+				32BBD685643C034FD3A594BA /* DesignKit */,
+				AE308BF5840DC4ADD3816A56 /* Fonts */,
+				D6D3E810F6C11A4119BD7286 /* NotificationService */,
 				C11583C899CE624D3C52B02A /* Resources */,
 				BFFD209D9286AEB96E231CF4 /* Shared */,
+				4101A40FD8288DB548053A45 /* SharedControls */,
+				2EC2AC8F8624FF0C992704AB /* SnapshotTests */,
 				F83651F26F50357BE02A905E /* Tests */,
+				002DFCD7A51D8388EC900F58 /* Widgets */,
 				154982AE53DEBC14065155ED /* Products */,
 			);
 			sourceTree = "<group>";
@@ -136,11 +309,17 @@
 		BFFD209D9286AEB96E231CF4 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
-				F10556848604FFA988CF0946 /* ControlDefinitions.swift */,
-				F67109E428FF7D81EE1EC9AB /* ControlRegistrationSync.swift */,
+				74EF700FD6ACEA8502EE94C0 /* DeepLink.swift */,
+				6CD0ACD2F323EACE0CECDBF7 /* DeviceRegistration.swift */,
 				C2A3DBC5B46574BC2B74AA15 /* LiveSlotResolution.swift */,
 				83A4870CF91D777924CCACB2 /* LiveSlotState.swift */,
+				0D77F5FBCB7BD133AB778793 /* OmniAPIClient.swift */,
 				17F6308E734F8CEEF6528C0F /* OmniSettings.swift */,
+				F325D5B07AB0128E4E19CE83 /* PushPayload.swift */,
+				1381F170C5BEAC8FA58C3CCD /* WidgetCache.swift */,
+				36F77D1FD60CA3C582ECF331 /* WidgetFixtures.swift */,
+				F4D5F5D199335176D11011D0 /* WidgetPolicy.swift */,
+				8445596F9FC7E1544F05BA24 /* WidgetSnapshots.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -153,10 +332,21 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		D6D3E810F6C11A4119BD7286 /* NotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				9192B2C65D255924437C5BA2 /* Info.plist */,
+				BA380A91BBC51E36A1B0F371 /* NotificationService.swift */,
+				30979E1EEEA3C6EFCB092834 /* OmniNotificationService.entitlements */,
+			);
+			path = NotificationService;
+			sourceTree = "<group>";
+		};
 		F83651F26F50357BE02A905E /* Tests */ = {
 			isa = PBXGroup;
 			children = (
 				BD67D8D7BC66F749CFC0E3E7 /* LiveSlotStateTests.swift */,
+				98C7CE5A7AD73C6FBA704285 /* WidgetContractTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -164,6 +354,41 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		0C593E1779471D1D03DF000D /* OmniWidgetSnapshotTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FB8C01AFA51A51A72002832C /* Build configuration list for PBXNativeTarget "OmniWidgetSnapshotTests" */;
+			buildPhases = (
+				766583FEF47F085E95DB7149 /* Sources */,
+				6EEF6F322A3D4F09D2E6429A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OmniWidgetSnapshotTests;
+			packageProductDependencies = (
+			);
+			productName = OmniWidgetSnapshotTests;
+			productReference = 026F64A1C6CB70D40194FC9A /* OmniWidgetSnapshotTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		126BD4B23E6B420AC723615B /* OmniNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 80001FAB36D437BE035A4A92 /* Build configuration list for PBXNativeTarget "OmniNotificationService" */;
+			buildPhases = (
+				65751CEBB0CCD59F301C25F2 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OmniNotificationService;
+			packageProductDependencies = (
+			);
+			productName = OmniNotificationService;
+			productReference = E18554EC2FE52486689B4DA2 /* OmniNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		4A9620228716152345CD05D3 /* OmniLiveTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F6006DF767D7CE57DFA8B836 /* Build configuration list for PBXNativeTarget "OmniLiveTests" */;
@@ -194,6 +419,7 @@
 			);
 			dependencies = (
 				9FBDAF3EFDC7532E2F1F5CED /* PBXTargetDependency */,
+				673DDB2AA646CE664537CCC0 /* PBXTargetDependency */,
 			);
 			name = OmniLive;
 			packageProductDependencies = (
@@ -207,6 +433,7 @@
 			buildConfigurationList = 2614ACA3F4E92C32AE39C512 /* Build configuration list for PBXNativeTarget "OmniLiveControls" */;
 			buildPhases = (
 				FC63383514830F4B1BEC9155 /* Sources */,
+				E7B71998690A2BA28DC35E34 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -228,6 +455,14 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2600;
 				TargetAttributes = {
+					0C593E1779471D1D03DF000D = {
+						DevelopmentTeam = "$(OMNI_DEVELOPMENT_TEAM)";
+						ProvisioningStyle = Automatic;
+					};
+					126BD4B23E6B420AC723615B = {
+						DevelopmentTeam = "$(OMNI_DEVELOPMENT_TEAM)";
+						ProvisioningStyle = Automatic;
+					};
 					4A9620228716152345CD05D3 = {
 						DevelopmentTeam = "$(OMNI_DEVELOPMENT_TEAM)";
 						ProvisioningStyle = Automatic;
@@ -258,17 +493,42 @@
 			targets = (
 				4C0ADED7A4E0B0F3FFA07467 /* OmniLive */,
 				DECB6EA92E34AA325EE7E02F /* OmniLiveControls */,
+				126BD4B23E6B420AC723615B /* OmniNotificationService */,
 				4A9620228716152345CD05D3 /* OmniLiveTests */,
+				0C593E1779471D1D03DF000D /* OmniWidgetSnapshotTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		6EEF6F322A3D4F09D2E6429A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00F99D9C7274BB5E5196BF97 /* Geist-Variable.ttf in Resources */,
+				BF378E080041F36F6216AE19 /* GeistMono-Variable.ttf in Resources */,
+				8CAA7D94B44F6D70764F1D4B /* OFL.txt in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E7B71998690A2BA28DC35E34 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAC508288580ADAD180F82D1 /* Geist-Variable.ttf in Resources */,
+				57DA4E1A0D64B6A01C25B878 /* GeistMono-Variable.ttf in Resources */,
+				09980672277C4DA39C4CFA11 /* OFL.txt in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E8485ACAE19C5399E0731978 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				D0BB2A1D610DF0A10EE6A78A /* Assets.xcassets in Resources */,
+				D8977C2F26AFD48599D7066D /* Geist-Variable.ttf in Resources */,
+				3B6E47A6C18D85B77440C944 /* GeistMono-Variable.ttf in Resources */,
+				A09B754F4FBAC47A93152C3A /* OFL.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -279,13 +539,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5FF8F14A051BADB1609D58E4 /* ControlDefinitions.swift in Sources */,
-				0015D57825C52B4ED52A5CF3 /* ControlRegistrationSync.swift in Sources */,
+				63725B41EFEF4F6648A6B3C2 /* AppModel.swift in Sources */,
+				BC49104C21C97FF917A0D5DC /* ControlDefinitions.swift in Sources */,
+				DEA751677EDD2C8865057B69 /* ControlRegistrationSync.swift in Sources */,
+				1485920165126588846B7618 /* DeepLink.swift in Sources */,
+				1F7430E237BCD410068D7BCC /* DeviceRegistration.swift in Sources */,
 				B71CDC721EB703B7E52D58F4 /* LiveSlotResolution.swift in Sources */,
 				94FC1C8B7E9C9DE0EE750E60 /* LiveSlotState.swift in Sources */,
+				40470D43AA8E54B4B072889C /* OmniAPIClient.swift in Sources */,
+				C922D0C77056032FE93373E3 /* OmniComponents.swift in Sources */,
 				E73C09D2C15B298A27DDA68B /* OmniLiveApp.swift in Sources */,
 				006B0A0BFDCCC3EC900CC2FF /* OmniSettings.swift in Sources */,
-				32A9831CA6DDFEAC6BA4A65A /* SetupView.swift in Sources */,
+				7B50104EBD6FFA2227591D9D /* OmniTheme.swift in Sources */,
+				61C32109A56E5E04D7D57B6A /* PushPayload.swift in Sources */,
+				D0C1957064781C22CB227354 /* PushRegistrar.swift in Sources */,
+				CACA7749427C214FB3372B71 /* RootView.swift in Sources */,
+				06B039B316C66CA5D3121634 /* SettingsView.swift in Sources */,
+				BA571E05EE03191808E5D401 /* WebShell.swift in Sources */,
+				3350B97F93AA5D853A43025E /* WidgetCache.swift in Sources */,
+				7D5464BEC8F0AB4C57201471 /* WidgetFixtures.swift in Sources */,
+				7F3744E5760DB00444BC247A /* WidgetPolicy.swift in Sources */,
+				E353E0B9D83BE669A4F7A1BB /* WidgetSnapshots.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -294,6 +568,53 @@
 			buildActionMask = 2147483647;
 			files = (
 				237A5A3B53227445CBC2A53D /* LiveSlotStateTests.swift in Sources */,
+				E086211F421B9F480EDD38B4 /* WidgetContractTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		65751CEBB0CCD59F301C25F2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A3DF4FC6C90A822F1B1BC874 /* DeepLink.swift in Sources */,
+				B86BA2F4D018DAA2B404F236 /* DeviceRegistration.swift in Sources */,
+				F9D4E66D2BF7A502CFE35B3F /* LiveSlotResolution.swift in Sources */,
+				53C7910D5D33164D81EC9CF8 /* LiveSlotState.swift in Sources */,
+				536230DD69DD547C1E896307 /* NotificationService.swift in Sources */,
+				B0E27BAF683F8D40A43EC027 /* OmniAPIClient.swift in Sources */,
+				310C8D88DEA559ED84ACA327 /* OmniSettings.swift in Sources */,
+				7B83E8C006EB8173899C4181 /* PushPayload.swift in Sources */,
+				246ACFBBC8B03D37817FD24D /* WidgetCache.swift in Sources */,
+				5928C90B71B4F1A547F95DB0 /* WidgetFixtures.swift in Sources */,
+				6AA16812BA482D48AC9A9D48 /* WidgetPolicy.swift in Sources */,
+				8884E151577A09B0C21FFAA7 /* WidgetSnapshots.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		766583FEF47F085E95DB7149 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				919C40EB9348C3F89BF9780B /* DeepLink.swift in Sources */,
+				4C4DF66D2D0BC43D673B4EDE /* DeliveriesViews.swift in Sources */,
+				4DBF6E2C0359C71DD2181128 /* DeliveriesWidget.swift in Sources */,
+				D3B604646B92B104502916A2 /* DeviceRegistration.swift in Sources */,
+				03970805F9037B6B44B10397 /* LiveSlotResolution.swift in Sources */,
+				60505688C9491547F5BC5EC1 /* LiveSlotState.swift in Sources */,
+				E61602A6AEAAA4F550A56245 /* OmniAPIClient.swift in Sources */,
+				7BF9DCD922E196D2E5F9648A /* OmniComponents.swift in Sources */,
+				E4889906DD837FD4C5DDB957 /* OmniSettings.swift in Sources */,
+				1A55F351605028572AC06D05 /* OmniTheme.swift in Sources */,
+				F773CEB1AEDEA29B28CBB941 /* OnAirViews.swift in Sources */,
+				BF49B7728FDF2F02884EBC0D /* OnAirWidget.swift in Sources */,
+				9CCEF0AB35F3CE749EB25944 /* PushPayload.swift in Sources */,
+				74E232BDB7D3E1CA8F5028B5 /* WidgetCache.swift in Sources */,
+				168351D369F62D276CE7334C /* WidgetFixtures.swift in Sources */,
+				3CBF561A856B0A21E0A63776 /* WidgetPolicy.swift in Sources */,
+				EEF7EEE2FF2D8D165D982BC8 /* WidgetPreviews.swift in Sources */,
+				8E1FEB557995B70F87BC777E /* WidgetPush.swift in Sources */,
+				B5F209440AA1F21435F461C6 /* WidgetSnapshotTests.swift in Sources */,
+				0FCF31618588593572B096F7 /* WidgetSnapshots.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -301,13 +622,29 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6C9F3B95455D7E7E087CB384 /* ControlDefinitions.swift in Sources */,
-				4444C46151C91DB6A9714B0F /* ControlRegistrationSync.swift in Sources */,
+				DC68C96A258570D0BE0F0266 /* ControlDefinitions.swift in Sources */,
+				39ABF75B974A7A34C9BA76AE /* ControlRegistrationSync.swift in Sources */,
+				224B425D3A762CA49D8E3DCB /* DeepLink.swift in Sources */,
+				F55DFBABE0E018A7CAAC34F0 /* DeliveriesViews.swift in Sources */,
+				B788BEAB68E2D07CCC9FEF9E /* DeliveriesWidget.swift in Sources */,
+				3F18337D38A940B3516F44FE /* DeviceRegistration.swift in Sources */,
 				FFCF12DC1BFC69FD3F8774E6 /* LiveSlotResolution.swift in Sources */,
 				5732F7CED06111AF237B5A7E /* LiveSlotState.swift in Sources */,
 				E29BE3F470ABF0EBB37B0CB6 /* LiveStreamControl.swift in Sources */,
+				DB89CD66E87E8A33FB658CDC /* OmniAPIClient.swift in Sources */,
+				1E429D41015E0435CE4C59E1 /* OmniComponents.swift in Sources */,
 				9A717E71A47BF1BE0143A18B /* OmniLiveControlsBundle.swift in Sources */,
 				70B60DE390C733C2802D41ED /* OmniSettings.swift in Sources */,
+				9B42741A0709D9E47D97919D /* OmniTheme.swift in Sources */,
+				FE3170650A5CFA3EDEF8EC4E /* OnAirViews.swift in Sources */,
+				9A253462866EFF29EE18E6D8 /* OnAirWidget.swift in Sources */,
+				47EB88983BB92A39F4665599 /* PushPayload.swift in Sources */,
+				2282298D9E4AC618CEAA4C88 /* WidgetCache.swift in Sources */,
+				771EC84EBA58A7CB91CD69C2 /* WidgetFixtures.swift in Sources */,
+				632CD8BA2F0F388208B105A3 /* WidgetPolicy.swift in Sources */,
+				097D097994EB70653C7FBFC0 /* WidgetPreviews.swift in Sources */,
+				E26FCDEDADDEF9F606BF5B0A /* WidgetPush.swift in Sources */,
+				A63915A5B1E42E89192EB6D3 /* WidgetSnapshots.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -318,6 +655,11 @@
 			isa = PBXTargetDependency;
 			target = 4C0ADED7A4E0B0F3FFA07467 /* OmniLive */;
 			targetProxy = 0005FEE915AFEC30A581CD1A /* PBXContainerItemProxy */;
+		};
+		673DDB2AA646CE664537CCC0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 126BD4B23E6B420AC723615B /* OmniNotificationService */;
+			targetProxy = BE05DBEC047AEA8E31DEB435 /* PBXContainerItemProxy */;
 		};
 		9FBDAF3EFDC7532E2F1F5CED /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -332,7 +674,7 @@
 			baseConfigurationReference = 71F36B8367A8B022AED581F9 /* Base.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				APS_ENVIRONMENT = "$(OMNI_APNS_ENVIRONMENT)";
+				APS_ENVIRONMENT = production;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -378,7 +720,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -387,6 +729,7 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -453,13 +796,44 @@
 				CODE_SIGN_ENTITLEMENTS = App/OmniLive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = App/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Omni Live";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNI_BUNDLE_ID)";
-				PRODUCT_NAME = "Omni Live";
+				PRODUCT_NAME = OmniLive;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		90237FAFBB40EC67B5DAA892 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNI_BUNDLE_ID).widget-snapshots";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9101CE0BD6CF1077AD3D0945 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNI_BUNDLE_ID).widget-snapshots";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -473,14 +847,51 @@
 				CODE_SIGN_ENTITLEMENTS = App/OmniLive.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = App/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Omni Live";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNI_BUNDLE_ID)";
-				PRODUCT_NAME = "Omni Live";
+				PRODUCT_NAME = OmniLive;
 				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AE6A70AD6F1BDD3A8D55DBB0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NotificationService/OmniNotificationService.entitlements;
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNI_BUNDLE_ID).notification-service";
+				PRODUCT_NAME = "Omni Notification Service";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BC455BCBE0AAF2D803D507CA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = NotificationService/OmniNotificationService.entitlements;
+				INFOPLIST_FILE = NotificationService/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OMNI_BUNDLE_ID).notification-service";
+				PRODUCT_NAME = "Omni Notification Service";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -559,7 +970,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -569,6 +980,7 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -602,11 +1014,29 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		80001FAB36D437BE035A4A92 /* Build configuration list for PBXNativeTarget "OmniNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC455BCBE0AAF2D803D507CA /* Debug */,
+				AE6A70AD6F1BDD3A8D55DBB0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		F6006DF767D7CE57DFA8B836 /* Build configuration list for PBXNativeTarget "OmniLiveTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				EF8BC0F806BA75575A1B318E /* Debug */,
 				333A10BDD942999E06369F2F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FB8C01AFA51A51A72002832C /* Build configuration list for PBXNativeTarget "OmniWidgetSnapshotTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				90237FAFBB40EC67B5DAA892 /* Debug */,
+				9101CE0BD6CF1077AD3D0945 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

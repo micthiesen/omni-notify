@@ -82,6 +82,7 @@ pub fn build_service(ctx: &AppContext) -> RemindersService {
                         priority: None,
                         sound: None,
                         timestamp: None,
+                        ..PushoverMessage::default()
                     },
                 )
                 .await

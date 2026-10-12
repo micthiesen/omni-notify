@@ -105,6 +105,14 @@ fn api_key(ctx: &AppContext) -> Option<String> {
         .filter(|key| !key.is_empty())
 }
 
+/// The cached deliveries for the iOS widget (`DeliveriesSource` port).
+pub fn deliveries_source(ctx: &AppContext) -> Arc<dyn omni_runtime::ports::DeliveriesSource> {
+    Arc::new(deliveries::CachedDeliveries::new(
+        ctx.store.clone(),
+        api_key(ctx).is_some(),
+    ))
+}
+
 /// `None` (logged) without `PARCEL_API_KEY`.
 pub fn handler(
     ctx: &AppContext,

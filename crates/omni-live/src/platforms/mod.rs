@@ -13,10 +13,11 @@ pub use kick::{
     KickClient, KickCredentials, KickStream, extract_kick_status,
 };
 pub use twitch::{
-    TwitchBroadcastSettings, TwitchClient, TwitchData, TwitchGame, TwitchGqlResponse, TwitchStream,
-    TwitchUser, extract_twitch_status, twitch_query,
+    TwitchAvatarData, TwitchAvatarResponse, TwitchAvatarUser, TwitchBroadcastSettings,
+    TwitchClient, TwitchData, TwitchGame, TwitchGqlResponse, TwitchStream, TwitchUser,
+    extract_twitch_status, twitch_avatar_query, twitch_query,
 };
-pub use youtube::{YouTubeClient, extract_youtube_status};
+pub use youtube::{YouTubeClient, extract_og_image, extract_youtube_status, youtube_channel_path};
 
 use crate::platform::{FetchedStatus, Platform, PlatformBinding};
 

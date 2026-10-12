@@ -19,8 +19,8 @@ use super::windows::{
 use crate::error::LiveError;
 use crate::format::{format_count, group_digits};
 use crate::notification_policy::ViewerRecordScope;
-use crate::notify::{LiveMessage, LiveNotifier};
-use crate::platform::NotificationUrlFields;
+use crate::notify::{LiveMessage, LiveNotifier, LiveSender};
+use crate::platform::{NotificationUrlFields, PlatformBinding};
 
 const HYSTERESIS: f64 = 0.95;
 const MAX_BUCKET_AGE_DAYS: i64 = 100;
@@ -51,6 +51,9 @@ pub struct ViewerObservation {
     pub url_fields: NotificationUrlFields,
     pub token: Option<String>,
     pub scope: ViewerRecordScope,
+    /// Accounts whose cached avatar a record notification shows, in order
+    /// (the live primary first).
+    pub avatar_bindings: Vec<PlatformBinding>,
 }
 
 type PeakState = BTreeMap<MetricWindow, PendingPeak>;
@@ -118,7 +121,7 @@ impl ViewerMetricsService {
                                 metrics.all_time_max = pending.value;
                                 metrics.all_time_max_timestamp = now;
                             }
-                            if observation.scope == ViewerRecordScope::All || window == MetricWindow::AllTime {
+                            if observation.scope.notifies(window) {
                                 confirmed.push(ConfirmedPeak {
                                     window,
                                     config,
@@ -168,7 +171,7 @@ impl ViewerMetricsService {
                 metrics.all_time_max = peak.value;
                 metrics.all_time_max_timestamp = now;
             }
-            if observation.scope == ViewerRecordScope::All || window == MetricWindow::AllTime {
+            if observation.scope.notifies(window) {
                 confirmed.push(ConfirmedPeak {
                     window,
                     config,
@@ -208,14 +211,20 @@ impl ViewerMetricsService {
             String::new()
         };
         tracing::info!(target: LOG, "{}: {} at {} viewers", observation.display_name, highest.config.label, highest.peak);
-        let message = LiveMessage {
-            title: format!(
+        let sender = LiveSender {
+            streamer_id: observation.streamer_id.clone(),
+            display_name: observation.display_name.clone(),
+            avatar_url: crate::avatars::avatar_for(&self.store, &observation.avatar_bindings).await,
+        };
+        let message = LiveMessage::about(
+            sender,
+            format!(
                 "New {} for {}!",
                 highest.config.label, observation.display_name
             ),
-            message: format!("Peaked at {}{previous}.", format_count(highest.peak)),
-            url: Some(observation.url_fields.clone()),
-        };
+            format!("Peaked at {}{previous}.", format_count(highest.peak)),
+            Some(observation.url_fields.clone()),
+        );
         self.notifier
             .send(observation.token.as_deref(), message)
             .await

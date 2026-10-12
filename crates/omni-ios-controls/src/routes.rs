@@ -1,4 +1,5 @@
-//! Signed iOS control routes.
+//! The app's signed routes: control slots, diagnostics and registrations,
+//! device and widget push registration, and the widget timelines.
 //!
 //! Every `/api/ios-controls/*` request carries
 //! `Authorization: Omni-HMAC <hex>`, `X-Omni-Timestamp` (seconds, within
@@ -18,7 +19,10 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
 use hmac::{Hmac, KeyInit, Mac};
-use omni_api::ios::{ApnsEnvironment, IOS_CONTROL_SLOT_COUNT, RegistrationResponse};
+use omni_api::ios::{
+    ApnsEnvironment, DeviceRegistrationResponse, IOS_CONTROL_SLOT_COUNT, IosDeviceKind,
+    RegistrationResponse, WidgetPushResponse,
+};
 use omni_core::clock::SharedClock;
 use omni_server_kit::api_error;
 use regex::Regex;
@@ -26,6 +30,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+use crate::devices::{DeviceInput, DeviceWriteError};
 use crate::persistence::ControlInput;
 use crate::service::IosControlService;
 
@@ -235,11 +240,7 @@ pub fn decode_registration(body: &[u8]) -> Option<(String, Vec<ControlInput>)> {
             if !PUSH_TOKEN.is_match(push_token) {
                 return None;
             }
-            let environment = match control.get("environment")?.as_str()? {
-                "sandbox" => ApnsEnvironment::Sandbox,
-                "production" => ApnsEnvironment::Production,
-                _ => return None,
-            };
+            let environment = environment(control.get("environment"))?;
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             Some(ControlInput {
                 control_id,
@@ -275,6 +276,129 @@ async fn register(State(state): State<IosRoutesState>, body: Bytes) -> Response 
     }
 }
 
+fn environment(value: Option<&Value>) -> Option<ApnsEnvironment> {
+    match value?.as_str()? {
+        "sandbox" => Some(ApnsEnvironment::Sandbox),
+        "production" => Some(ApnsEnvironment::Production),
+        _ => None,
+    }
+}
+
+fn push_token(value: Option<&Value>) -> Option<String> {
+    let token = value?.as_str()?;
+    PUSH_TOKEN.is_match(token).then(|| token.to_owned())
+}
+
+/// Decodes `{deviceId, name, kind, apnsToken, environment, alertsEnabled,
+/// appVersion}`. `apnsToken` and `appVersion` may be null or absent; the name
+/// is trimmed.
+pub fn decode_device(body: &[u8]) -> Option<DeviceInput> {
+    let value: Value = serde_json::from_slice(body).ok()?;
+    let device_id = bounded_string(value.get("deviceId"), 8, 200)?;
+    let name = omni_live::streamers::js_trim(value.get("name")?.as_str()?).to_owned();
+    if !(1..=200).contains(&omni_core::js::utf16_len(&name)) {
+        return None;
+    }
+    let kind = match value.get("kind")?.as_str()? {
+        "iphone" => IosDeviceKind::Iphone,
+        "ipad" => IosDeviceKind::Ipad,
+        _ => return None,
+    };
+    let apns_token = match value.get("apnsToken") {
+        None | Some(Value::Null) => None,
+        token => Some(push_token(token)?),
+    };
+    let app_version = match value.get("appVersion") {
+        None | Some(Value::Null) => None,
+        version => Some(bounded_string(version, 1, 64)?),
+    };
+    Some(DeviceInput {
+        device_id,
+        name,
+        kind,
+        apns_token,
+        environment: environment(value.get("environment"))?,
+        alerts_enabled: value.get("alertsEnabled")?.as_bool()?,
+        app_version,
+    })
+}
+
+/// Decodes `{deviceId, pushToken, environment}`.
+pub fn decode_widget_push(body: &[u8]) -> Option<(String, String, ApnsEnvironment)> {
+    let value: Value = serde_json::from_slice(body).ok()?;
+    Some((
+        bounded_string(value.get("deviceId"), 8, 200)?,
+        push_token(value.get("pushToken"))?,
+        environment(value.get("environment"))?,
+    ))
+}
+
+fn write_failure(error: &DeviceWriteError, what: &str) -> Response {
+    match error {
+        DeviceWriteError::TooMany => api_error(StatusCode::CONFLICT, error.to_string()),
+        DeviceWriteError::Store(store) => {
+            tracing::warn!(target: LOG, "Failed to save {what}: {store}");
+            api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Could not save {what}"),
+            )
+        }
+    }
+}
+
+async fn register_device(State(state): State<IosRoutesState>, body: Bytes) -> Response {
+    let Some(input) = decode_device(&body) else {
+        return api_error(StatusCode::BAD_REQUEST, "Invalid device registration");
+    };
+    match state.service.register_alert_device(input).await {
+        Ok(device) => {
+            tracing::info!(
+                target: LOG,
+                "Registered device {} (alerts {})",
+                device.name,
+                if device.receives_alerts() { "on" } else { "off" }
+            );
+            no_store(
+                axum::Json(DeviceRegistrationResponse {
+                    registered: true,
+                    alerts_enabled: device.alerts_enabled,
+                    apns_enabled: state.service.apns_enabled(),
+                })
+                .into_response(),
+            )
+        }
+        Err(error) => write_failure(&error, "device registration"),
+    }
+}
+
+async fn register_widget_push(State(state): State<IosRoutesState>, body: Bytes) -> Response {
+    let Some((device_id, token, environment)) = decode_widget_push(&body) else {
+        return api_error(StatusCode::BAD_REQUEST, "Invalid widget push registration");
+    };
+    match state
+        .service
+        .register_widget_push(&device_id, &token, environment)
+        .await
+    {
+        Ok(_) => no_store(axum::Json(WidgetPushResponse { registered: true }).into_response()),
+        Err(error) => write_failure(&error, "widget push registration"),
+    }
+}
+
+async fn on_air(State(state): State<IosRoutesState>) -> Response {
+    match state.service.on_air().await {
+        Ok(on_air) => no_store(axum::Json(on_air).into_response()),
+        Err(error) => omni_server_kit::ApiError::internal(error).into_response(),
+    }
+}
+
+async fn deliveries(State(state): State<IosRoutesState>) -> Response {
+    match state.service.deliveries().await {
+        Ok(deliveries) => no_store(axum::Json(deliveries).into_response()),
+        Err(error) => omni_server_kit::ApiError::internal(error).into_response(),
+    }
+}
+
 async fn not_found() -> Response {
     api_error(StatusCode::NOT_FOUND, "Not Found")
 }
@@ -287,6 +411,10 @@ pub fn router(state: IosRoutesState) -> Router {
         .route("/slots/{slot}", get(slot))
         .route("/diagnostics", get(diagnostics))
         .route("/registrations", put(register))
+        .route("/device", put(register_device))
+        .route("/widget-push", put(register_widget_push))
+        .route("/widgets/on-air", get(on_air))
+        .route("/widgets/deliveries", get(deliveries))
         .fallback(not_found)
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state);

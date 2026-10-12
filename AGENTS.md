@@ -147,8 +147,9 @@ change; reuse authorization already given in the conversation.
 - `omni-calendar`: calendar email handler, CalDAV writes, and the primary
   calendar mirror, change feed and MCP tools.
 - `omni-live`: database streamer configuration (UI and MCP), aggregate streamer state, notifications, viewer
-  metrics and records, DGG discovery, `LiveCheckTask`.
-- `omni-ios-controls`: signed iOS control routes, live slots, APNs pushes.
+  metrics and records, DGG discovery, `LiveCheckTask`, cached streamer avatars (`StreamerAvatars`).
+- `omni-ios-controls`: the iOS app backend: signed routes, device registry,
+  APNs alert route, live control slots, On Air and Deliveries widgets.
 - `omni-live-intel`: livestream audio capture, local speech and speaker models,
   viewer anomalies, Destiny presence, summaries, alerts.
 - `omni-presspods`: article retrieval, narration, speech, audio chain, storage,
@@ -172,6 +173,10 @@ change; reuse authorization already given in the conversation.
   shell and ops pages, shared kit, domain pages), built by trunk.
 - `omni-events-adapter`: the `executor-events-adapter` sidecar binary.
 - `xtask`: gate, hygiene, deps-check, golden capture and synthesis, MCP snapshots.
+- `ios/OmniLive` (not a crate): the iOS/iPadOS app, its WidgetKit extension
+  (Live Slot control, On Air and Deliveries widgets) and notification service
+  extension, built from XcodeGen `project.yml`. See `docs/ios-app.md`; verify
+  with `scripts/ios-live/typecheck.sh` and `scripts/ios-live/test.sh`.
 
 The frontend is Leptos 0.8 client-side rendering built by trunk into
 `crates/omni-web/dist` and served from `OMNI_WEB_DIST`. It talks only to the
@@ -213,7 +218,9 @@ viewer peak becomes a record only after count falls 5 percent below it; flush a
 pending peak when the stream goes offline. Primary-tier streamers notify 7, 30
 and 90-day window records as well as all-time records; the window maximum is
 taken from history before the current observation, and a record already
-confirmed today does not repeat (`omni-live/src/metrics/`).
+confirmed today does not repeat (`omni-live/src/metrics/`). Streams outside the
+configured roster (transient DGG discoveries) keep viewer metrics but never
+push a record.
 
 Viewer surges compare against a 5-20-minute-old baseline that must be flat, not
 still climbing after go-live, and a platform surge must also reach the median
@@ -286,6 +293,13 @@ on-demand refresh. The add path (`parcel_api.rs`) is separate and unchanged.
 See `crates/omni-parcel/src/deliveries/`.
 
 ### Notifications and runs
+
+Every notification, including ERROR-log alerts, goes to the iOS app over APNs
+first (`omni_alerts::AppPushRoute`, implemented in `omni-ios-controls`).
+Pushover sends it only when the app is not set up: APNs is unconfigured, no
+device has alerts enabled with a token, or every alert device definitively
+rejected the push. A push with no APNs answer is uncertain: it never falls back
+or resends. The route never logs at ERROR. See `docs/ios-app.md`.
 
 Throttle each notification path at exactly one layer. Preserve distinct incident
 keys for distinct users, URLs, subjects, or tracking numbers. Logs emitted during

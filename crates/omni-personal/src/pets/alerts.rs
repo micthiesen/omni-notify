@@ -161,6 +161,7 @@ impl HealthNotifier for PushoverHealthNotifier {
                 priority: None,
                 sound: None,
                 timestamp: None,
+                ..PushoverMessage::default()
             };
             send_general(&self.pushover, message).await
         })

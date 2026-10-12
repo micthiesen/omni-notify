@@ -99,6 +99,9 @@ pub struct LiveStreamerView {
     /// The raw `livestream-intelligence` document (`omni-live-intel` owns its shape).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<serde_json::Value>,
+    /// Cached profile picture (the live primary account's when it has one).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }
 
 /// An offline streamer (`live: false`).
@@ -115,6 +118,9 @@ pub struct OfflineStreamerView {
     pub last_started_at: Option<Ms>,
     pub last_ended_at: Option<Ms>,
     pub last_max_viewer_count: Option<i64>,
+    /// Cached profile picture of the first account that has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }
 
 /// `StreamerView = LiveStreamer | OfflineStreamer`, discriminated by `live`.
@@ -135,6 +141,14 @@ impl StreamerView {
 
     pub fn is_live(&self) -> bool {
         matches!(self, StreamerView::Live(_))
+    }
+
+    /// The cached profile picture, when known.
+    pub fn avatar_url(&self) -> Option<&str> {
+        match self {
+            StreamerView::Live(live) => live.avatar_url.as_deref(),
+            StreamerView::Offline(offline) => offline.avatar_url.as_deref(),
+        }
     }
 }
 

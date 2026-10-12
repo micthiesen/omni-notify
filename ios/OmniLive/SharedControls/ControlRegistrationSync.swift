@@ -55,14 +55,10 @@ private actor RegistrationRetry {
             } catch {
                 finalError = error
                 OmniSettings.shared.lastRegistrationError = error.localizedDescription
-                guard attempt + 1 < maxAttempts else { break }
+                guard attempt + 1 < maxAttempts, OmniAPIError.isRetryable(error) else { break }
                 try? await Task.sleep(for: .seconds(1 << attempt))
             }
         }
         throw finalError ?? OmniAPIError.invalidResponse
     }
-}
-
-private extension Data {
-    var hexString: String { map { String(format: "%02x", $0) }.joined() }
 }

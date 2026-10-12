@@ -803,6 +803,7 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
             StreamerView::Live(l) => Some(l.primary.clone()),
             StreamerView::Offline(o) => o.bindings.first().cloned(),
         });
+        let avatar = current.with_untracked(|s| s.avatar_url().map(str::to_owned));
         let intel_href = format!("/streamers/{}/intelligence", encode_uri_component(&page_id));
         let sub_line = move || match current.get() {
             StreamerView::Live(l) => l.title,
@@ -825,7 +826,7 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
         });
         view! {
             <header class="page-head streamer-hero">
-                <Avatar name=name.clone() size=64 presence=if is_live { Presence::Live } else { Presence::Offline } platform=primary.as_ref().map(|p| p.platform.clone()).unwrap_or_default()/>
+                <Avatar name=name.clone() size=64 presence=if is_live { Presence::Live } else { Presence::Offline } platform=primary.as_ref().map(|p| p.platform.clone()).unwrap_or_default() image=avatar/>
                 <div class="page-head-text">
                     <div class="cluster">
                         {move || live_view.get().map(|l| view! { <LiveTag detail=format_uptime(now.get() - l.started_at as f64)/> })}

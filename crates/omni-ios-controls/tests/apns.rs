@@ -12,8 +12,8 @@ use base64::Engine;
 use omni_api::ios::ApnsEnvironment;
 use omni_http::SideEffectMode;
 use omni_ios_controls::apns::{
-    ApnsConfig, ApnsControlClient, ApnsPushResult, ApnsSender, build_apns_control_request,
-    create_apns_provider_token,
+    ApnsConfig, ApnsControlClient, ApnsPush, ApnsPushKind, ApnsPushResult, ApnsSender,
+    build_apns_control_request, build_apns_request, create_apns_provider_token,
 };
 use omni_ios_controls::persistence::IosControlRegistration;
 use omni_store::cbor::Extra;
@@ -233,4 +233,153 @@ async fn times_out_a_stalled_request_as_a_transport_error() {
     assert_eq!(error.operation, "request");
     assert!(error.to_string().contains("timed out"), "{error}");
     assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn keeps_the_controls_request_byte_identical() {
+    let request = build_apns_control_request("com.example.OmniLive", "abc", "jwt");
+    assert_eq!(
+        request.headers,
+        vec![
+            ("authorization", "bearer jwt".to_owned()),
+            ("apns-push-type", "controls".to_owned()),
+            (
+                "apns-topic",
+                "com.example.OmniLive.push-type.controls".to_owned()
+            ),
+            ("apns-priority", "10".to_owned()),
+            ("apns-expiration", "0".to_owned()),
+            ("content-type", "application/json".to_owned()),
+        ]
+    );
+    assert_eq!(request.body, r#"{"aps":{"content-changed":true}}"#);
+    assert_eq!(
+        build_apns_request(
+            "com.example.OmniLive",
+            &ApnsPush::controls(&registration()),
+            "jwt"
+        ),
+        build_apns_control_request("com.example.OmniLive", "token", "jwt")
+    );
+}
+
+#[test]
+fn builds_alert_and_widget_requests() {
+    let alert = build_apns_request(
+        "com.example.OmniLive",
+        &ApnsPush::alert(
+            "abc",
+            ApnsEnvironment::Sandbox,
+            r#"{"aps":{}}"#.into(),
+            1_790_003_600,
+        ),
+        "jwt",
+    );
+    assert_eq!(alert.path, "/3/device/abc");
+    assert_eq!(
+        alert.headers,
+        vec![
+            ("authorization", "bearer jwt".to_owned()),
+            ("apns-push-type", "alert".to_owned()),
+            ("apns-topic", "com.example.OmniLive".to_owned()),
+            ("apns-priority", "10".to_owned()),
+            ("apns-expiration", "1790003600".to_owned()),
+            ("content-type", "application/json".to_owned()),
+        ]
+    );
+    assert_eq!(alert.body, r#"{"aps":{}}"#);
+    let widgets = build_apns_request(
+        "com.example.OmniLive",
+        &ApnsPush::widgets("def", ApnsEnvironment::Production, 1_790_003_600),
+        "jwt",
+    );
+    assert_eq!(widgets.headers[1], ("apns-push-type", "widgets".to_owned()));
+    assert_eq!(
+        widgets.headers[2],
+        (
+            "apns-topic",
+            "com.example.OmniLive.push-type.widgets".to_owned()
+        )
+    );
+    assert_eq!(
+        widgets.headers[4],
+        ("apns-expiration", "1790003600".to_owned())
+    );
+    assert_eq!(widgets.body, r#"{"aps":{"content-changed":true}}"#);
+}
+
+#[tokio::test]
+async fn posts_an_alert_push_to_the_device_environment() {
+    let server = omni_testkit::mock_server().await;
+    Mock::given(method("POST"))
+        .and(path("/3/device/abc"))
+        .respond_with(ResponseTemplate::new(200))
+        .mount(&server)
+        .await;
+    let apns = client(&server, SideEffectMode::Live).await;
+    let push = ApnsPush::alert(
+        "abc",
+        ApnsEnvironment::Production,
+        r#"{"aps":{}}"#.into(),
+        1,
+    );
+    assert_eq!(apns.send_push(&push).await.unwrap(), ApnsPushResult::Sent);
+    let requests = server.received_requests().await.unwrap();
+    assert_eq!(requests[0].headers.get("apns-push-type").unwrap(), "alert");
+    assert_eq!(requests[0].body, br#"{"aps":{}}"#);
+    assert!(apns.recorded().is_empty());
+}
+
+#[tokio::test]
+async fn records_alert_pushes_in_record_mode() {
+    let server = omni_testkit::mock_server().await;
+    let apns = client(&server, SideEffectMode::Record).await;
+    let push = ApnsPush::alert("abc", ApnsEnvironment::Sandbox, "{}".into(), 1);
+    assert_eq!(apns.send_push(&push).await.unwrap(), ApnsPushResult::Sent);
+    assert_eq!(apns.recorded().len(), 1);
+    assert_eq!(apns.recorded()[0].kind, ApnsPushKind::Alert);
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_bad_signing_key_fails_before_sending_anything() {
+    let server = omni_testkit::mock_server().await;
+    let http = omni_testkit::mock_http(&server, &["https://api.sandbox.push.apple.com"]);
+    let apns = ApnsControlClient::with_key(
+        config(),
+        "not a key".into(),
+        http,
+        omni_testkit::test_clock(1_000_000),
+        SideEffectMode::Live,
+    );
+    let push = ApnsPush::alert("abc", ApnsEnvironment::Sandbox, "{}".into(), 1);
+    let error = apns.send_push(&push).await.unwrap_err();
+    assert!(error.not_sent);
+    assert_eq!(error.operation, "provider token creation");
+    assert!(server.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_stalled_request_is_not_known_unsent() {
+    let server = omni_testkit::mock_server().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(30)))
+        .mount(&server)
+        .await;
+    let apns = client(&server, SideEffectMode::Live).await;
+    let push = ApnsPush::alert("abc", ApnsEnvironment::Sandbox, "{}".into(), 1);
+    assert!(!apns.send_push(&push).await.unwrap_err().not_sent);
+}
+
+#[tokio::test]
+async fn keeps_only_the_most_recent_recorded_pushes() {
+    let server = omni_testkit::mock_server().await;
+    let apns = client(&server, SideEffectMode::Record).await;
+    for expiration in 0..510 {
+        let push = ApnsPush::alert("abc", ApnsEnvironment::Sandbox, "{}".into(), expiration);
+        apns.send_push(&push).await.unwrap();
+    }
+    let recorded = apns.recorded();
+    assert_eq!(recorded.len(), 500);
+    assert_eq!(recorded[0].expiration, 10);
 }

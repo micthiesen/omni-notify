@@ -1,9 +1,11 @@
-//! iOS live controls: `GET /api/ios-controls/slots/:slot`,
-//! `GET /api/ios-controls/diagnostics`, `PUT /api/ios-controls/registrations`.
+//! The Omni iOS app's signed API under `/api/ios-controls`: live control
+//! slots, diagnostics, control, device and widget-push registrations, and the
+//! On Air and Deliveries widget timelines.
 
 use serde::{Deserialize, Serialize};
 
 use crate::common::Ms;
+use crate::streamers::StreamerTier;
 
 /// Number of control slots the app can register.
 pub const IOS_CONTROL_SLOT_COUNT: u8 = 4;
@@ -40,6 +42,145 @@ pub struct IosDiagnostics {
     pub registration_count: u64,
     pub undelivered_count: u64,
     pub last_reconciled_at: Option<Ms>,
+    /// Registered app devices.
+    #[serde(default)]
+    pub device_count: u64,
+    /// Devices that receive alerts (alerts enabled and an APNs token).
+    #[serde(default)]
+    pub alert_device_count: u64,
+    /// Registered widget push tokens.
+    #[serde(default)]
+    pub widget_push_count: u64,
+}
+
+/// `"iphone" | "ipad"`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IosDeviceKind {
+    Iphone,
+    Ipad,
+}
+
+/// `PUT /api/ios-controls/device` body: this device's alert registration.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceRegistrationRequest {
+    pub device_id: String,
+    pub name: String,
+    pub kind: IosDeviceKind,
+    /// `null` keeps the device registered but un-pushable.
+    pub apns_token: Option<String>,
+    pub environment: ApnsEnvironment,
+    pub alerts_enabled: bool,
+    pub app_version: Option<String>,
+}
+
+/// `PUT /api/ios-controls/device` success body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceRegistrationResponse {
+    pub registered: bool,
+    pub alerts_enabled: bool,
+    /// Whether the server can push (APNs configured).
+    pub apns_enabled: bool,
+}
+
+/// `PUT /api/ios-controls/widget-push` body: the widget extension's
+/// WidgetKit push token.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetPushRequest {
+    pub device_id: String,
+    pub push_token: String,
+    pub environment: ApnsEnvironment,
+}
+
+/// `PUT /api/ios-controls/widget-push` success body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WidgetPushResponse {
+    pub registered: bool,
+}
+
+/// One live streamer in the On Air widget.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnAirLive {
+    pub id: String,
+    pub name: String,
+    pub tier: StreamerTier,
+    /// `"kick" | "twitch" | "youtube"`: the session's primary platform.
+    pub platform: String,
+    pub title: Option<String>,
+    pub category: Option<String>,
+    pub viewers: Option<i64>,
+    pub peak_viewers: Option<i64>,
+    pub started_at: Option<Ms>,
+    pub avatar_url: Option<String>,
+    /// The primary binding's watch URL.
+    pub watch_url: String,
+    /// A native app URL when the https watch URL is not a universal link
+    /// (Twitch `twitch://stream/<login>`).
+    pub app_url: Option<String>,
+    /// The intelligence headline for the current session.
+    pub headline: Option<String>,
+}
+
+/// A recently ended primary streamer (the On Air empty state).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnAirRecent {
+    pub id: String,
+    pub name: String,
+    pub platform: String,
+    pub ended_at: Ms,
+    pub avatar_url: Option<String>,
+    pub watch_url: String,
+}
+
+/// `GET /api/ios-controls/widgets/on-air`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnAirResponse {
+    pub generated_at: Ms,
+    /// Every live streamer, including background tier and discoveries.
+    pub live_count: u64,
+    /// Sum of current viewers over live streamers that report one.
+    pub total_viewers: i64,
+    /// Ranked like the live slots (tier, then viewers), at most 8.
+    pub live: Vec<OnAirLive>,
+    /// Up to 4 most recently ended primary streamers.
+    pub recent: Vec<OnAirRecent>,
+}
+
+/// One parcel in the Deliveries widget.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetDelivery {
+    pub tracking_number: String,
+    pub carrier: Option<String>,
+    pub description: String,
+    pub status: crate::parcels::ParcelDeliveryStatus,
+    pub status_label: String,
+    pub active: bool,
+    /// Parcel's expected date, verbatim.
+    pub expected: Option<String>,
+    pub expected_end: Option<String>,
+    pub last_event: Option<String>,
+    /// The carrier's event date text, verbatim.
+    pub last_event_at: Option<String>,
+    pub last_location: Option<String>,
+}
+
+/// `GET /api/ios-controls/widgets/deliveries`: Omni's cached Parcel read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveriesWidgetResponse {
+    pub generated_at: Ms,
+    pub configured: bool,
+    pub fetched_at: Option<Ms>,
+    pub active_count: u32,
+    /// Active first, then up to 3 recently completed, at most 8.
+    pub deliveries: Vec<WidgetDelivery>,
 }
 
 /// One control in a registration request.
@@ -70,6 +211,10 @@ pub struct RegistrationResponse {
 pub mod paths {
     pub const DIAGNOSTICS: &str = "/api/ios-controls/diagnostics";
     pub const REGISTRATIONS: &str = "/api/ios-controls/registrations";
+    pub const DEVICE: &str = "/api/ios-controls/device";
+    pub const WIDGET_PUSH: &str = "/api/ios-controls/widget-push";
+    pub const WIDGET_ON_AIR: &str = "/api/ios-controls/widgets/on-air";
+    pub const WIDGET_DELIVERIES: &str = "/api/ios-controls/widgets/deliveries";
 
     /// `GET /api/ios-controls/slots/:slot`.
     pub fn slot(slot: u8) -> String {

@@ -49,6 +49,34 @@
                ReferencedContainer = "container:OmniLive.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "126BD4B23E6B420AC723615B"
+               BuildableName = "OmniNotificationService.appex"
+               BlueprintName = "OmniNotificationService"
+               ReferencedContainer = "container:OmniLive.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0C593E1779471D1D03DF000D"
+               BuildableName = "OmniWidgetSnapshotTests.xctest"
+               BlueprintName = "OmniWidgetSnapshotTests"
+               ReferencedContainer = "container:OmniLive.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -76,6 +104,17 @@
                BlueprintIdentifier = "4A9620228716152345CD05D3"
                BuildableName = "OmniLiveTests.xctest"
                BlueprintName = "OmniLiveTests"
+               ReferencedContainer = "container:OmniLive.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "0C593E1779471D1D03DF000D"
+               BuildableName = "OmniWidgetSnapshotTests.xctest"
+               BlueprintName = "OmniWidgetSnapshotTests"
                ReferencedContainer = "container:OmniLive.xcodeproj">
             </BuildableReference>
          </TestableReference>

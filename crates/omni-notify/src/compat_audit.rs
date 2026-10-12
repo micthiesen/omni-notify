@@ -27,6 +27,8 @@ pub fn entity_catalog() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<omni_ai::costs::CostEventData>(),
         EntityDescriptor::of::<omni_ai::costs::CostMigrationData>(),
         EntityDescriptor::of::<omni_ios_controls::persistence::IosControlRegistration>(),
+        EntityDescriptor::of::<omni_ios_controls::devices::IosDevice>(),
+        EntityDescriptor::of::<omni_ios_controls::devices::IosWidgetPush>(),
     ];
     for group in [
         omni_live::entities(),

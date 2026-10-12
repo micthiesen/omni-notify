@@ -58,6 +58,7 @@ async fn posts_the_pushover_form_fields() {
                 priority: Some(-1),
                 sound: Some(String::new()),
                 timestamp: Some(0),
+                ..PushoverMessage::default()
             },
         )
         .await

@@ -851,6 +851,8 @@ async fn sends_one_fleet_outage_alert_after_three_all_unknown_ticks() {
         "Live check degraded: 1/1 streamers unreachable"
     );
     assert_eq!(sent[0].1.message, "Alpha\ntimeout");
+    assert_eq!(sent[0].1.sender, None, "fleet alerts have no sender");
+    assert_eq!(sent[0].1.thread_id, None);
 }
 
 struct FailingHook;
@@ -914,4 +916,89 @@ async fn retires_a_streamer_removed_while_live_without_an_offline_notification()
         f.notifier.titles(),
         ["Destiny is LIVE!", "Destiny is LIVE!"]
     );
+}
+
+fn dgg_feed_with_viewers(id: &str, viewers: i64) -> DggFeed {
+    DggFeed {
+        destiny_live: false,
+        hosting: None,
+        embeds: vec![embed("twitch", id, id, "live", 12, viewers)],
+    }
+}
+
+#[tokio::test]
+async fn never_pushes_viewer_records_for_unconfigured_dgg_discoveries_but_keeps_their_metrics() {
+    let f = fixture(T0).await;
+    let roster = Roster::default();
+    let feed = FakeFeed::new(
+        vec![
+            Ok(dgg_feed_with_viewers("drifter", 1_000)),
+            Ok(dgg_feed_with_viewers("drifter", 100)),
+        ],
+        || Some(Ok(dgg_feed_with_viewers("drifter", 100))),
+    );
+    let check = f.dgg_check(&roster, feed, no_identity());
+    for _ in 0..4 {
+        check.tick().await.unwrap();
+    }
+    assert_eq!(ids(&roster), ["dgg:twitch:drifter"]);
+    assert_eq!(f.notifier.count(), 0, "{:?}", f.notifier.titles());
+    let metrics = omni_live::metrics::get_viewer_metrics(&f.store.store, "dgg:twitch:drifter")
+        .await
+        .unwrap();
+    assert_eq!(metrics.all_time_max, 1_000);
+}
+
+#[tokio::test]
+async fn streamer_notifications_carry_the_sender_avatar_and_a_per_streamer_thread() {
+    let f = fixture(T0).await;
+    let avatar = omni_live::avatars::StreamerAvatar {
+        binding: "twitch:vinesauce".into(),
+        platform: Platform::Twitch,
+        username: "vinesauce".into(),
+        url: Some("https://static-cdn.jtvnw.net/vinny.png".into()),
+        fetched_at: Some(T0),
+        failed_at: None,
+        extra: Extra::new(),
+    };
+    f.store
+        .store
+        .write(move |tx| {
+            omni_store::EntityWrite::upsert(tx, &avatar, omni_store::entity::UpsertOpts::default())
+        })
+        .await
+        .unwrap();
+    let roster = Roster::new(vec![streamer(
+        "vinesauce",
+        "Vinesauce",
+        Platform::Twitch,
+        "Vinesauce",
+        StreamerTier::Primary,
+    )]);
+    f.fetcher
+        .set(Platform::Twitch, live("Corruptions", Some(10)));
+    let check = f.check(&roster);
+    check.tick().await.unwrap();
+    f.fetcher.set(Platform::Twitch, FetchedStatus::Offline);
+    check.tick().await.unwrap();
+
+    let sent = f.notifier.sent();
+    assert_eq!(
+        f.notifier.titles(),
+        [
+            "Vinesauce is LIVE!",
+            "New all-time record for Vinesauce!",
+            "Vinesauce is now offline"
+        ]
+    );
+    for (_, message) in sent {
+        assert_eq!(message.thread_id.as_deref(), Some("live:vinesauce"));
+        let sender = message.sender.unwrap();
+        assert_eq!(sender.streamer_id, "vinesauce");
+        assert_eq!(sender.display_name, "Vinesauce");
+        assert_eq!(
+            sender.avatar_url.as_deref(),
+            Some("https://static-cdn.jtvnw.net/vinny.png")
+        );
+    }
 }

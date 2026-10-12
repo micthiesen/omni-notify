@@ -20,10 +20,10 @@ xcodebuild -project "$IOS_PROJECT" -scheme "$IOS_SCHEME" \
   -derivedDataPath "$IOS_DERIVED_DATA" \
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
 
-app_path="$IOS_DERIVED_DATA/Build/Products/Debug-iphoneos/Omni Live.app"
+app_path="$IOS_DERIVED_DATA/Build/Products/Debug-iphoneos/OmniLive.app"
 if [[ ! -d "$app_path" ]]; then
   echo "Built app not found at $app_path" >&2
   exit 1
 fi
 xcrun devicectl device install app --device "$device_id" "$app_path"
-echo "Installed Omni Live. Open it once, then add Omni Live Stream in Control Center."
+echo "Installed Omni. Open it once (it asks for notification permission on iPhone), then add widgets and controls."

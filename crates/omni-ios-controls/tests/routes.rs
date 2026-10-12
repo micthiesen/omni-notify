@@ -128,7 +128,11 @@ async fn reports_non_secret_server_diagnostics() {
     assert_eq!(cache.as_deref(), Some("no-store"));
     assert_eq!(
         body,
-        json!({"apnsEnabled": false, "registrationCount": 0, "undeliveredCount": 0, "lastReconciledAt": null})
+        json!({
+            "apnsEnabled": false, "registrationCount": 0, "undeliveredCount": 0,
+            "lastReconciledAt": null, "deviceCount": 0, "alertDeviceCount": 0,
+            "widgetPushCount": 0
+        })
     );
 }
 

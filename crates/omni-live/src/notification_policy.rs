@@ -2,11 +2,28 @@
 
 use omni_api::streamers::StreamerTier;
 
-/// Whether viewer records may notify for every window or only all-time.
+use crate::metrics::MetricWindow;
+
+/// Which confirmed viewer records may notify. Records are tracked and
+/// persisted for every window regardless.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewerRecordScope {
     All,
     AllTimeOnly,
+    /// Streams outside the configured roster (transient DGG discoveries):
+    /// records are kept for history but never notify.
+    Silent,
+}
+
+impl ViewerRecordScope {
+    /// Whether a confirmed record for `window` may notify.
+    pub fn notifies(self, window: MetricWindow) -> bool {
+        match self {
+            ViewerRecordScope::All => true,
+            ViewerRecordScope::AllTimeOnly => window == MetricWindow::AllTime,
+            ViewerRecordScope::Silent => false,
+        }
+    }
 }
 
 /// The decision for one streamer.

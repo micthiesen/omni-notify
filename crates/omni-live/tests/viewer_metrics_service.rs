@@ -5,12 +5,16 @@ mod common;
 
 use std::sync::Arc;
 
+use omni_live::avatars::StreamerAvatar;
 use omni_live::error::LiveError;
 use omni_live::metrics::{
     ViewerMetrics, ViewerMetricsService, ViewerObservation, get_viewer_metrics,
 };
 use omni_live::notification_policy::ViewerRecordScope;
+use omni_live::notify::LiveSender;
 use omni_live::platform::NotificationUrlFields;
+use omni_live::{Platform, PlatformBinding};
+use omni_store::cbor::Extra;
 use omni_store::entity::{EntityWrite, UpsertOpts};
 
 fn url_fields() -> NotificationUrlFields {
@@ -34,6 +38,7 @@ fn observation(
         url_fields: url_fields(),
         token: token.map(str::to_owned),
         scope,
+        avatar_bindings: Vec::new(),
     }
 }
 
@@ -388,4 +393,66 @@ async fn background_scope_never_notifies_a_beaten_window_with_history() {
             .unwrap();
     }
     assert_eq!(notifier.count(), 0);
+}
+
+#[tokio::test]
+async fn silent_scope_records_an_all_time_high_without_notifying() {
+    let (store, service, notifier) = service(T).await;
+    let scope = ViewerRecordScope::Silent;
+    for count in [1_000, 900] {
+        service
+            .record_viewer_count(&observation("dgg:kick:x", "X", count, None, scope), T)
+            .await
+            .unwrap();
+    }
+    service
+        .record_viewer_count(&observation("dgg:kick:x", "X", 2_000, None, scope), T)
+        .await
+        .unwrap();
+    service
+        .flush_pending_peaks(&observation("dgg:kick:x", "X", 0, None, scope), T)
+        .await
+        .unwrap();
+    assert_eq!(notifier.count(), 0);
+    let persisted = get_viewer_metrics(&store.store, "dgg:kick:x")
+        .await
+        .unwrap();
+    assert_eq!(persisted.all_time_max, 2_000);
+}
+
+#[tokio::test]
+async fn record_notifications_name_the_streamer_with_its_cached_avatar() {
+    let (store, service, notifier) = service(T).await;
+    let primary = PlatformBinding::new(Platform::Kick, "destiny");
+    let avatar = StreamerAvatar {
+        binding: "kick:destiny".into(),
+        platform: Platform::Kick,
+        username: "destiny".into(),
+        url: Some("https://files.kick.com/destiny.png".into()),
+        fetched_at: Some(T),
+        failed_at: None,
+        extra: Extra::new(),
+    };
+    store
+        .store
+        .write(move |tx| tx.upsert(&avatar, UpsertOpts::default()))
+        .await
+        .unwrap();
+    let scope = ViewerRecordScope::All;
+    let mut first = observation("destiny", "Destiny", 100, None, scope);
+    first.avatar_bindings = vec![primary.clone()];
+    let mut second = first.clone();
+    second.viewer_count = 90;
+    service.record_viewer_count(&first, T).await.unwrap();
+    service.record_viewer_count(&second, T).await.unwrap();
+    let (_, message) = notifier.sent().pop().unwrap();
+    assert_eq!(message.thread_id.as_deref(), Some("live:destiny"));
+    assert_eq!(
+        message.sender,
+        Some(LiveSender {
+            streamer_id: "destiny".into(),
+            display_name: "Destiny".into(),
+            avatar_url: Some("https://files.kick.com/destiny.png".into()),
+        })
+    );
 }

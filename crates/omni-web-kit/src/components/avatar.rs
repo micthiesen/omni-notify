@@ -29,7 +29,8 @@ pub enum Presence {
     Offline,
 }
 
-/// Monogram on a deterministic muted gradient (or an image), sizes 24 to 64.
+/// Monogram on a deterministic muted gradient, covered by `image` when it
+/// loads; sizes 24 to 64.
 #[component]
 pub fn Avatar(
     #[prop(into)] name: String,
@@ -39,7 +40,7 @@ pub fn Avatar(
     #[prop(optional, default = 32)] size: u32,
     #[prop(into, optional)] presence: Signal<Presence>,
     #[prop(into, optional)] platform: Option<String>,
-    #[prop(into, optional)] image: Option<String>,
+    #[prop(optional_no_strip)] image: Option<String>,
 ) -> impl IntoView {
     let hue = hue_class(seed.as_deref().unwrap_or(&name));
     let class = move || {
@@ -52,13 +53,26 @@ pub fn Avatar(
             }
         )
     };
-    let face = match image {
-        Some(src) => view! { <img src=src alt="" loading="lazy"/> }.into_any(),
-        None => view! { <span aria-hidden="true">{initials(&name)}</span> }.into_any(),
+    // The monogram always sits underneath: it shows while the image loads,
+    // when there is none, and when it fails.
+    let broken = RwSignal::new(false);
+    let photo = move || match (&image, broken.get()) {
+        (Some(src), false) => Some(view! {
+            <img
+                src=src.clone()
+                alt=""
+                loading="lazy"
+                decoding="async"
+                referrerpolicy="no-referrer"
+                on:error=move |_| broken.set(true)
+            />
+        }),
+        _ => None,
     };
     view! {
         <span class=class style=format!("--av: {size}px") role="img" aria-label=name.clone()>
-            {face}
+            <span aria-hidden="true">{initials(&name)}</span>
+            {photo}
             {(size >= 40).then_some(()).and(platform).map(|p| view! { <PlatformIcon platform=p/> })}
         </span>
     }

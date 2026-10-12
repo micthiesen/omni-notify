@@ -173,6 +173,14 @@ pub trait OnDeckSource: Send + Sync {
     fn on_deck(&self) -> BoxFuture<'_, Result<Vec<Value>, PortError>>;
 }
 
+/// Implemented by `omni-parcel` over its delivery cache; used by the iOS
+/// Deliveries widget. The value is a serialized
+/// `omni_api::parcels::ParcelsResponse`. It only reads the cache and never
+/// calls Parcel.
+pub trait DeliveriesSource: Send + Sync {
+    fn deliveries(&self) -> BoxFuture<'_, Result<Value, PortError>>;
+}
+
 /// A turn Omni just started on the Claude Code host (`noteTurnStarted` input).
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClaudeTurnStarted {
@@ -341,6 +349,7 @@ ports! {
     live_directory, set_live_directory: LiveDirectory,
     live_intelligence, set_live_intelligence: LiveIntelligence,
     on_deck_source, set_on_deck_source: OnDeckSource,
+    deliveries_source, set_deliveries_source: DeliveriesSource,
     claude_session_notifier, set_claude_session_notifier: ClaudeSessionNotifier,
     claude_host, set_claude_host: ClaudeHost,
     event_publisher, set_event_publisher: EventPublisher,

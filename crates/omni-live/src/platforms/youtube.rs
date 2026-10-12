@@ -6,7 +6,9 @@ use omni_http::public::PublicHttpClient;
 use regex::Regex;
 use serde_json::Value;
 
-use super::{PLATFORM_HTML_MAX_BYTES, fetch_page_html};
+use super::{
+    PLATFORM_HTML_MAX_BYTES, PlatformRequestError, fetch_page_html, fetch_text, request_failure,
+};
 use crate::platform::{FetchedLive, FetchedStatus, Platform};
 
 #[allow(clippy::expect_used)]
@@ -22,6 +24,11 @@ static TITLE_META: LazyLock<Regex> = LazyLock::new(|| {
 #[allow(clippy::expect_used)]
 static VIEW_COUNT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#""viewCount":\{"runs":\[\{"text":"([0-9,]+)"\}"#).expect("valid regex")
+});
+
+#[allow(clippy::expect_used)]
+static OG_IMAGE: LazyLock<scraper::Selector> = LazyLock::new(|| {
+    scraper::Selector::parse(r#"meta[property="og:image"]"#).expect("valid selector")
 });
 
 /// Pure: the status a `/live` page shows.
@@ -137,6 +144,62 @@ fn extract_json_object(html: &str, start: usize) -> Option<&str> {
     None
 }
 
+/// Hosts that serve YouTube channel avatars. Anything else in `og:image`
+/// (the YouTube logo, `/img/` or `/yts/img/` defaults) is not an avatar.
+const AVATAR_HOSTS: [&str; 2] = ["yt3.ggpht.com", "yt3.googleusercontent.com"];
+
+/// The channel page path for a binding username, or `None` for a shape the
+/// avatar lookup does not request: `@handle`, `channel/UC<22>`, or a legacy
+/// bare custom name (letters, digits, `.`, `_`, `-`). Any other `/`, and any
+/// `?` or `#`, is rejected.
+pub fn youtube_channel_path(username: &str) -> Option<String> {
+    let simple = |name: &str| {
+        !name.is_empty()
+            && !name.starts_with('.')
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    if let Some(handle) = username.strip_prefix('@') {
+        return simple(handle).then(|| username.to_owned());
+    }
+    if let Some(id) = username.strip_prefix("channel/") {
+        let valid = id.len() == 24
+            && id.starts_with("UC")
+            && id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
+        return valid.then(|| username.to_owned());
+    }
+    simple(username).then(|| username.to_owned())
+}
+
+/// Pure: the channel page's `og:image` (its avatar), entity-decoded, when it
+/// is an https URL on a YouTube avatar host. Only the document head is parsed.
+pub fn extract_og_image(html: &str) -> Option<String> {
+    let head = html
+        .find("</head>")
+        .and_then(|end| html.get(..end))
+        .unwrap_or(html);
+    let document = scraper::Html::parse_document(head);
+    document
+        .select(&OG_IMAGE)
+        .filter_map(|meta| meta.value().attr("content"))
+        .map(str::trim)
+        .find(|content| !content.is_empty())
+        .filter(|content| is_avatar_url(content))
+        .map(str::to_owned)
+}
+
+fn is_avatar_url(raw: &str) -> bool {
+    url::Url::parse(raw).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url
+                .host_str()
+                .is_some_and(|host| AVATAR_HOSTS.contains(&host))
+    })
+}
+
 fn viewer_count(html: &str) -> Option<i64> {
     let digits: String = VIEW_COUNT
         .captures(html)?
@@ -164,5 +227,28 @@ impl YouTubeClient {
             Ok(html) => extract_youtube_status(&html),
             Err(error) => FetchedStatus::unknown(error.message),
         }
+    }
+
+    /// The channel page's avatar `og:image`; `None` when the page has none or
+    /// only a generic image, and without a request for a username whose
+    /// shape [`youtube_channel_path`] rejects.
+    pub async fn fetch_avatar(
+        &self,
+        username: &str,
+    ) -> Result<Option<String>, PlatformRequestError> {
+        let Some(path) = youtube_channel_path(username) else {
+            return Ok(None);
+        };
+        let page = format!("https://www.youtube.com/{path}");
+        let operation = format!("Failed to fetch YouTube channel page {page}");
+        let fail = |message: String| PlatformRequestError { message };
+        let url = url::Url::parse(&page).map_err(|e| fail(format!("{operation}: {e}")))?;
+        let html = fetch_text(
+            self.http.request(omni_http::Method::GET, url),
+            PLATFORM_HTML_MAX_BYTES,
+        )
+        .await
+        .map_err(|e| fail(request_failure(&operation, &e)))?;
+        Ok(extract_og_image(&html))
     }
 }

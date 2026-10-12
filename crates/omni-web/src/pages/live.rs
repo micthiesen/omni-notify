@@ -143,6 +143,7 @@ pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView 
             .map(|s| s.display_name.clone())
             .unwrap_or_default()
     });
+    let avatar = streamer.with_untracked(|s| s.as_ref().and_then(|s| s.avatar_url.clone()));
     let watch = use_watch_binding(streamer);
     let platform = watch.with_untracked(|w| w.as_ref().map(|w| w.platform.clone()));
     let watch_name = name.clone();
@@ -174,7 +175,7 @@ pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView 
             aria-label=watch_aria
             title=watch_aria
         >
-            <Avatar name=name.clone() size=32 presence=Presence::Live platform=platform.unwrap_or_default()/>
+            <Avatar name=name.clone() size=32 presence=Presence::Live platform=platform.unwrap_or_default() image=avatar/>
             <span class="row-main">
                 <span class="row-title">{name.clone()}</span>
                 <span class="row-sub truncate">{move || streamer.with(|s| s.as_ref().map(|s| s.title.clone()).unwrap_or_default())}</span>
@@ -225,6 +226,7 @@ pub fn LeadStage(id: String) -> impl IntoView {
             .map(|s| s.display_name.clone())
             .unwrap_or_default()
     });
+    let avatar = streamer.with_untracked(|s| s.as_ref().and_then(|s| s.avatar_url.clone()));
     let watch = use_watch_binding(streamer);
     let platform =
         watch.with_untracked(|w| w.as_ref().map(|w| w.platform.clone()).unwrap_or_default());
@@ -260,7 +262,7 @@ pub fn LeadStage(id: String) -> impl IntoView {
     view! {
         <div class="lead">
             <div class="lead-head">
-                <Avatar name=name.clone() size=64 presence=Presence::Live platform=platform.clone()/>
+                <Avatar name=name.clone() size=64 presence=Presence::Live platform=platform.clone() image=avatar/>
                 <div class="lead-id">
                     <div class="cluster">
                         <Link to=href.clone() class="lead-name">{name.clone()}</Link>
@@ -349,7 +351,7 @@ pub fn OfflineRow(streamer: OfflineStreamerView, now: f64) -> impl IntoView {
         .unwrap_or_default();
     view! {
         <Link to=streamer_path(&streamer.id) class="row">
-            <Avatar name=streamer.display_name.clone() size=32 presence=Presence::Offline platform=platform/>
+            <Avatar name=streamer.display_name.clone() size=32 presence=Presence::Offline platform=platform image=streamer.avatar_url.clone()/>
             <span class="row-main">
                 <span class="row-title">{streamer.display_name.clone()}</span>
                 <span class="row-sub">{last.map_or_else(|| "Never seen live".to_owned(), |l| format!("Last live {l}"))}</span>
@@ -492,6 +494,7 @@ mod tests {
             category: None,
             primary: binding,
             intelligence: None,
+            avatar_url: None,
         }
     }
 

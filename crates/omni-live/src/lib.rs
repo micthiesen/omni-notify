@@ -2,7 +2,8 @@
 //! docstore, edited through the UI and MCP), aggregate streamer state over
 //! platform bindings, edge notifications, viewer metrics and sessions,
 //! Destiny.gg discovery with durable profile identity links, the
-//! `LiveCheckTask`, the streamer routes and the `LiveDirectory` port.
+//! `LiveCheckTask`, streamer avatars (`StreamerAvatars`), the streamer routes
+//! and the `LiveDirectory` port.
 //!
 //! App wiring:
 //! ```text
@@ -15,8 +16,10 @@
 //! A `Migrate` boot step loads the configuration; a stored configuration that cannot be read fails
 //! boot.
 
+pub mod avatars;
 pub mod config;
 pub mod config_routes;
+pub mod deep_link;
 pub mod dgg;
 pub mod directory;
 pub mod display;
@@ -57,6 +60,7 @@ pub use platform::{Platform, PlatformBinding};
 pub use streamers::{Roster, Streamer};
 pub use task::{LiveCheck, LiveCheckTask, TickHook};
 
+use crate::avatars::{AvatarRefresh, StreamerAvatarsTask};
 use crate::dgg::WebSocketDggFeed;
 use crate::identity::ProfileIdentityLink;
 use crate::metrics::{PlatformViewerMetrics, ViewerMetrics};
@@ -76,7 +80,7 @@ pub enum LiveBootError {
     Config(#[from] ConfigError),
     #[error("invalid TZ {tz:?}: {message}")]
     TimeZone { tz: String, message: String },
-    #[error("invalid LiveCheckTask schedule: {0}")]
+    #[error("invalid live task schedule: {0}")]
     Schedule(String),
     #[error(transparent)]
     Tools(#[from] omni_mcp_kit::ToolMetaError),
@@ -92,6 +96,7 @@ pub fn entities() -> Vec<EntityDescriptor> {
         EntityDescriptor::of::<ViewerMetrics>(),
         EntityDescriptor::of::<PlatformViewerMetrics>(),
         EntityDescriptor::of::<ProfileIdentityLink>(),
+        EntityDescriptor::of::<avatars::StreamerAvatar>(),
     ]
 }
 
@@ -158,7 +163,8 @@ pub struct LiveModule {
     configured: Roster,
     top_embeds: TopEmbeds,
     tz: TimeZone,
-    kick: Option<KickCredentials>,
+    /// Shared by the live check and the avatar refresh (one Kick token cache).
+    platforms: Arc<Platforms>,
     service: StreamerConfigService,
     /// Streamers were given directly (tests); no boot step loads them.
     preloaded: bool,
@@ -204,6 +210,9 @@ impl LiveModule {
             }
             _ => None,
         };
+        let platforms = Arc::new(
+            Platforms::new(ctx.public_http.clone(), kick.clone()).with_clock(ctx.clock.clone()),
+        );
         let streamers = if kick.is_some() {
             configured
         } else {
@@ -227,7 +236,7 @@ impl LiveModule {
             configured,
             top_embeds,
             tz,
-            kick,
+            platforms,
             service,
             preloaded,
         })
@@ -257,9 +266,7 @@ impl LiveModule {
     /// The production live check over this configuration.
     pub fn live_check(&self, reconcile: Option<Arc<dyn TickHook>>) -> LiveCheck {
         let ctx = &self.ctx;
-        let platforms = Platforms::new(ctx.public_http.clone(), self.kick.clone())
-            .with_clock(ctx.clock.clone());
-        let fetcher = Arc::new(platforms);
+        let fetcher = self.platforms.clone();
         let deps = LiveCheckDeps {
             store: ctx.store.clone(),
             clock: ctx.clock.clone(),
@@ -305,6 +312,16 @@ impl LiveModule {
         let task = LiveCheckTask::new(check, &self.tz)
             .map_err(|e| LiveBootError::Schedule(e.to_string()))?;
         subsystem.tasks.push(Arc::new(task));
+        let refresh = AvatarRefresh::new(
+            self.ctx.store.clone(),
+            self.ctx.clock.clone(),
+            self.roster.clone(),
+            self.configured.clone(),
+            self.platforms.clone(),
+        );
+        let avatars = StreamerAvatarsTask::new(Arc::new(refresh), &self.tz)
+            .map_err(|e| LiveBootError::Schedule(e.to_string()))?;
+        subsystem.tasks.push(Arc::new(avatars));
         if !self.preloaded {
             let service = self.service.clone();
             subsystem.boot_steps.push(BootStep {

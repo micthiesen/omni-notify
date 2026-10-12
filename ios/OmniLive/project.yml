@@ -2,7 +2,7 @@ name: OmniLive
 options:
   bundleIdPrefix: com.micthiesen
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   xcodeVersion: "26.0"
   groupSortPosition: top
 settings:
@@ -13,41 +13,60 @@ settings:
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 1.0
     GENERATE_INFOPLIST_FILE: NO
+    TARGETED_DEVICE_FAMILY: "1,2"
+  # APS_ENVIRONMENT feeds both the aps-environment entitlement and the environment
+  # the app reports to Omni: Debug (development signing) is sandbox APNs, Release is
+  # production APNs.
   configs:
     Debug:
       SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
       APS_ENVIRONMENT: development
     Release:
-      APS_ENVIRONMENT: "$(OMNI_APNS_ENVIRONMENT)"
+      APS_ENVIRONMENT: production
 configFiles:
   Debug: Config/Base.xcconfig
   Release: Config/Base.xcconfig
 targets:
+  # The app: a full-screen web view of Omni plus native settings, push
+  # registration and notification routing.
   OmniLive:
     type: application
     platform: iOS
     sources:
       - path: Shared
+      - path: SharedControls
+      - path: DesignKit
       - path: App
       - path: Resources/Assets.xcassets
+      - path: Resources/Fonts
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(OMNI_BUNDLE_ID)"
         INFOPLIST_FILE: App/Info.plist
         CODE_SIGN_ENTITLEMENTS: App/OmniLive.entitlements
-        PRODUCT_NAME: Omni Live
-        INFOPLIST_KEY_CFBundleDisplayName: Omni Live
+        # The Home Screen name comes from CFBundleDisplayName ("Omni").
+        PRODUCT_NAME: OmniLive
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: OmniLiveControls
         embed: true
+      - target: OmniNotificationService
+        embed: true
+  # WidgetKit extension: the Control Center control plus the On Air and
+  # Deliveries widgets and their WidgetKit push handler.
   OmniLiveControls:
     type: app-extension
     platform: iOS
     sources:
       - path: Shared
+      - path: SharedControls
+      - path: DesignKit
       - path: Controls
+      - path: Widgets
+      - path: Resources/Fonts
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: "$(OMNI_BUNDLE_ID).controls"
@@ -56,6 +75,22 @@ targets:
         SKIP_INSTALL: YES
         APPLICATION_EXTENSION_API_ONLY: YES
         PRODUCT_NAME: Omni Live Controls
+  # Notification Service Extension: sender avatars (communication notifications),
+  # action categories and widget reloads named by the push.
+  OmniNotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Shared
+      - path: NotificationService
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(OMNI_BUNDLE_ID).notification-service"
+        INFOPLIST_FILE: NotificationService/Info.plist
+        CODE_SIGN_ENTITLEMENTS: NotificationService/OmniNotificationService.entitlements
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        PRODUCT_NAME: Omni Notification Service
   OmniLiveTests:
     type: bundle.unit-test
     platform: iOS
@@ -67,14 +102,33 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: OmniLive
+  # Hostless: compiles the widget views itself and renders every family to PNG
+  # under /tmp/omni-widget-snapshots for design review.
+  OmniWidgetSnapshotTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Shared
+      - path: DesignKit
+      - path: Widgets
+      - path: SnapshotTests
+      - path: Resources/Fonts
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: "$(OMNI_BUNDLE_ID).widget-snapshots"
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   OmniLive:
     build:
       targets:
         OmniLive: all
         OmniLiveControls: all
+        OmniNotificationService: all
         OmniLiveTests: [test]
+        OmniWidgetSnapshotTests: [test]
     test:
       targets:
         - OmniLiveTests
+        - OmniWidgetSnapshotTests
       gatherCoverageData: true

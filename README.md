@@ -57,16 +57,18 @@ Set `LIVESTREAM_DESTINY_VOICEPRINT_PATH=/data/livestream-intelligence/destiny.js
 
 If the bundled speech or speaker model files are missing, empty or corrupt, boot logs `Livestream intelligence disabled: ...` and the rest of the service, including live checks, keeps running.
 
-## iPad Control Center
+## iOS app
 
-The private **Omni Live** iOS app exposes four configurable Control Center slots.
-They use the dashboard's primary-first, hottest-first live ordering, show the
-current channel name and title, and open the current stream directly. Omni sends
-targeted WidgetKit control pushes through APNs whenever a displayed slot changes.
+The private **Omni** iOS/iPadOS app receives every Omni notification over APNs,
+with streamer avatars on go-live and title-change alerts. Pushover is only the
+fallback when the app is not set up: APNs is unconfigured, no device has alerts
+enabled, or every device rejected the push. The app also provides On Air and
+Deliveries widgets, four Control Center live slots, and a full-screen view of
+the Omni UI.
 
-See [the CLI installation and operations guide](docs/ios-live-controls.md) for
-Apple/APNs setup, the `scripts/ios-live/*.sh` commands, private device
-installation, and the physical-iPad validation checklist.
+See [the iOS app guide](docs/ios-app.md) for the notification fallback rule,
+the signed API, Apple/APNs setup, the `scripts/ios-live/*.sh` commands, and
+private device installation.
 
 ## Per-Streamer Options
 
