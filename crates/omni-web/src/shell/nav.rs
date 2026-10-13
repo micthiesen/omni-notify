@@ -63,7 +63,7 @@ const fn item(
 }
 
 /// Every destination except `/live` (the On air header), in rail order.
-pub const NAV: [NavItem; 14] = [
+pub const NAV: [NavItem; 15] = [
     item("Home", "/", Icon::Home, Group::Top, Some('h')),
     item("Movies & TV", "/media", Icon::Film, Group::Watch, Some('m')),
     item(
@@ -97,6 +97,7 @@ pub const NAV: [NavItem; 14] = [
         Some('v'),
     ),
     item("Pets", "/pets", Icon::Paw, Group::Personal, None),
+    item("Stylist", "/stylist", Icon::Hanger, Group::Personal, None),
     item(
         "Operations",
         "/operations",
@@ -249,6 +250,8 @@ mod tests {
         assert_eq!(current_href("/live/streamers"), Some("/live"));
         assert_eq!(current_href("/deliveries"), Some("/deliveries"));
         assert_eq!(current_href("/calendar"), Some("/calendar"));
+        assert_eq!(current_href("/stylist"), Some("/stylist"));
+        assert_eq!(current_href("/stylistx"), None);
         assert_eq!(current_href("/podsx"), None);
         assert_eq!(current_href("/nope"), None);
     }
@@ -295,6 +298,10 @@ mod tests {
         assert_eq!(
             labels(&crumbs("/operations", None, &CrumbNames::default())),
             [("System", true), ("Operations", false)]
+        );
+        assert_eq!(
+            labels(&crumbs("/stylist", None, &CrumbNames::default())),
+            [("Personal", true), ("Stylist", false)]
         );
         let names = CrumbNames {
             page: Some("Dune".into()),

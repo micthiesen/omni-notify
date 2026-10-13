@@ -42,6 +42,7 @@ pub enum Icon {
     Package,
     Calendar,
     Pencil,
+    Hanger,
 }
 
 /// Size modifier for [`Glyph`].
@@ -182,6 +183,11 @@ fn shapes(icon: Icon) -> AnyView {
         }
         .into_any(),
         Icon::Pencil => view! { <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"></path> }.into_any(),
+        Icon::Hanger => view! {
+            <path d="M10 6a2 2 0 1 1 2 2v2"></path>
+            <path d="M12 10 3.9 15.7c-.8.6-.4 1.8.6 1.8h15c1 0 1.4-1.2.6-1.8z"></path>
+        }
+        .into_any(),
     }
 }
 

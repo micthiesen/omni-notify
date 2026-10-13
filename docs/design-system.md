@@ -265,7 +265,7 @@ and no sub-tab strip (`SectionNav` is removed).
 | **On air** *(from C)* | Header links to `/live`; below it one row per live streamer: platform tick, name, `read-s` viewer count updated in place. The row is the Watch target (see Watch targets, section 12); a chevron at its end links to `/streamers/:id`. When nobody is live: "Nobody live" in `--text-3`. | live count in `--live` |
 | **Watch** | Movies & TV (`/media`) | pending picks |
 | **Listen** | Podcasts (`/podcasts`), PressPods (`/pods`) | jobs in progress |
-| **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Deliveries (`/deliveries`), Pets (`/pets`) | email failures (fault) |
+| **Personal** | Email (`/emails`), Reminders (`/reminders`, full page load), Calendar (`/calendar`), Deliveries (`/deliveries`), Pets (`/pets`), Stylist (`/stylist`) | email failures (fault) |
 | **System** | Operations (`/operations`), Costs (`/costs`), MCP (`/mcp-activity`), Claude (`/claude`), Data (`/data`) | failing tasks (fault) |
 
 - `/live` is a **new route**: the full streamer roster (section 12). Add it to
@@ -868,6 +868,49 @@ Panel "Sync" with last sync, full sync, event count, writability. Sync health
 (stale after 10 minutes, errors) also shows in the CalendarPrimarySync
 inspector on Operations.
 
+### `/stylist`
+
+Read-only view of the stylist ledger (`GET /api/stylist`); it never shows or
+fetches photos or evidence. Status sentence from what needs the owner ("1
+return decision is open.", "2 things need you.", "No profile yet."), otherwise
+the wardrobe ("5 pieces, 2 references."), with a `body` lede of counts and
+records. Under the title: an Info Tag "Test data" on fixture namespaces, the
+runbook version and ledger revision. The one page action is a namespace
+select (`?ns=`; the real ledger first, fixtures in a "Test fixtures" group),
+shown only when a fixture exists; switching keeps the previous ledger dimmed
+under a Signal progress line until the new one loads. Then:
+
+- **Needs you** Panel (only when non-empty): rows with a fixed-width Status
+  (return decisions warn in the last three days and fault once overdue,
+  blocking warnings fault, contradictions and ledger checks warn, follow-ups
+  idle), the item, its detail, and the date with days left on the right.
+- Readout band: pieces, body measurements, fit cases, forecasts (with "n of
+  m regions exact").
+- Wide two columns (8/4). Left: **Body** (attributes as `read-m` figures,
+  fit sensitivities as ruled notes, then one row per dimension: name, method,
+  endpoints and source, the value as recorded when it differs, date or a
+  `stale` Status, a certainty Tag only when not explicit, and `read-m` cm to
+  one decimal; earlier readings in a Disclosure; info notes in a footer
+  Disclosure), **Wardrobe** (group headers per category; rows lead with the
+  fit-evidence Status: proven dot, failed square, mixed diamond, untested
+  ring; reference role and non-owned status as Tags, return-by in warn or
+  fault, washes; newest garment measurements in a Disclosure; returned and
+  retired pieces collapsed), **Fit history** (Segmented Failures / Successes
+  / Unresolved with counts, opening on failures; cases with kind Tag, detail
+  and region chips), **Forecasts** (decision Status, subject, category,
+  basis with a warn "Claimed … · computed …" when the claim is stronger,
+  return risk, frozen date, "Context verified" check; Expected and per-stage
+  outcome lines of region chips scored exact dot, close diamond, miss square;
+  likely failure and evidence gaps in a Disclosure; superseded collapsed).
+  Right: **Rules** (Needs review warn), **Preferences** (strength Tag, the
+  earlier statement ruled under a changed one), **Wardrobe needs**,
+  **Backups** (newest archives, a note when the newest trails the ledger) and
+  **Runbook** (session checklist Disclosure).
+- Empty ledger: the plain title "Stylist" and a titled EmptyState "No profile
+  yet" that names onboarding, with Runbook (checklist open) and Backups below.
+- Region chips (`.fit-chip`) pair the region label with a Status shape and
+  word; good is a quiet dot.
+
 ### `/mcp-activity`
 
 Readout band (calls 24h, errors, approvals, p50 latency). Tools Table (tool,
@@ -944,6 +987,7 @@ Routes and their tests (plus the new `/live` tests), `/recommendations` alias,
 trailing-slash and percent-decoding rules, `page_title()` and dynamic streamer
 titles; query and hash deep links (`?recommendation=`);
 ids `article-url`, `article-url-error`, `data-entity-select`,
+`piece-<id>`, `forecast-<id>`,
 `rec-feedback-note`, `podrec-feedback-note`, `episode-transcript`,
 `task-history-<name>`, `recommendation-<id>`, section anchors; SSE plus poll fallback and
 reconnect; keyed in-place live updates; the 409 toast semantics; PressPods

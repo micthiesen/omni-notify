@@ -28,6 +28,8 @@ pub enum Route {
     Deliveries,
     /// The read-only agenda (`?day=YYYY-MM-DD` selects a day).
     Calendar,
+    /// The read-only stylist ledger (`?ns=` picks a namespace).
+    Stylist,
     Mcp,
     Claude,
     NotFound,
@@ -110,6 +112,7 @@ pub fn match_route(path: &str) -> Route {
         "/pets" => Route::Pets,
         "/deliveries" => Route::Deliveries,
         "/calendar" => Route::Calendar,
+        "/stylist" => Route::Stylist,
         "/media" => Route::Media,
         "/data" => Route::Data,
         "/podcasts" => Route::Podcasts,
@@ -135,6 +138,7 @@ pub fn page_title(path: &str) -> String {
         "/pets" => Some("Pets"),
         "/deliveries" => Some("Deliveries"),
         "/calendar" => Some("Calendar"),
+        "/stylist" => Some("Stylist"),
         "/media" => Some("Watch"),
         "/podcasts" => Some("Podcasts"),
         "/pods" => Some("PressPods"),
@@ -209,6 +213,9 @@ mod tests {
         assert_eq!(route("/deliveries/x"), Route::NotFound);
         assert_eq!(route("/calendar"), Route::Calendar);
         assert_eq!(route("/calendar/2026-10-09"), Route::NotFound);
+        assert_eq!(route("/stylist"), Route::Stylist);
+        assert_eq!(route("/stylist/"), Route::Stylist);
+        assert_eq!(route("/stylist/real"), Route::NotFound);
         assert_eq!(route("/mcp-activity"), Route::Mcp);
         assert_eq!(route("/claude"), Route::Claude);
         assert_eq!(route("/nope"), Route::NotFound);
@@ -223,6 +230,7 @@ mod tests {
         assert_eq!(page_title("/live/streamers"), "Streamers · Omni Notify");
         assert_eq!(page_title("/deliveries"), "Deliveries · Omni Notify");
         assert_eq!(page_title("/calendar"), "Calendar · Omni Notify");
+        assert_eq!(page_title("/stylist"), "Stylist · Omni Notify");
         assert_eq!(page_title("/workspaces/w/s"), "Omni Notify");
         assert_eq!(page_title("/streamers/x"), "Omni Notify");
         assert_eq!(page_title("/"), "Omni Notify");

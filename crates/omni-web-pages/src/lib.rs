@@ -14,6 +14,7 @@
 //! | [`PodsDetailPage`] | `/pods/:id` | `id` |
 //! | [`DeliveriesPage`], [`CalendarPage`] | `/deliveries` (`?tracking=`), `/calendar` (`?day=`) | none |
 //! | [`StreamerConfigPage`] | `/live/streamers` | none |
+//! | [`StylistPage`] | `/stylist` (`?ns=` picks a namespace) | none |
 //! | [`PetsPage`], [`RemindersPage`], [`McpPage`], [`ClaudePage`] | `/pets`, `/reminders`, `/mcp-activity`, `/claude` | none |
 //!
 //! Path parameters arrive already percent-decoded. Each detail page is
@@ -34,6 +35,7 @@ mod rec_ui;
 mod recommendation_runs;
 pub mod reminders;
 pub mod streamer_config;
+pub mod stylist;
 mod taste_brain;
 
 pub use calendar::{AgendaTile, CalendarPage, CalendarSyncFacts, use_calendar_status};
@@ -49,4 +51,5 @@ pub use pods_detail::PodsDetailPage;
 pub use recommendation_runs::RecommendationRuns;
 pub use reminders::RemindersPage;
 pub use streamer_config::StreamerConfigPage;
+pub use stylist::StylistPage;
 pub use taste_brain::{TasteBrain, TasteBrainProfile, TasteClaimView};

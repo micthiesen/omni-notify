@@ -36,6 +36,7 @@ use omni_api::streamer_config::{
     StreamerConfigResponse, StreamerConfigView,
 };
 use omni_api::streamers::{StreamSessionsResponse, StreamerMetricsResponse};
+use omni_api::stylist::StylistOverview;
 use omni_api::tasks::{RunNowResponse, TasksResponse};
 use serde_json::{Map, Value, json};
 
@@ -162,6 +163,17 @@ pub async fn fetch_calendar_events(
 ) -> Result<CalendarEventsResponse, ApiClientError> {
     let q = query(&[("from", Some(from.to_owned())), ("to", Some(to.to_owned()))]);
     get(&format!("{}{q}", omni_api::calendar::paths::EVENTS)).await
+}
+
+/// `GET /api/stylist` for `namespace` (`real` or a `fixture-*` namespace).
+pub fn stylist_path(namespace: &str) -> String {
+    let q = query(&[("namespace", Some(namespace.to_owned()))]);
+    format!("/api/stylist{q}")
+}
+
+/// The read-only stylist ledger overview. It never carries evidence bytes.
+pub async fn fetch_stylist(namespace: &str) -> Result<StylistOverview, ApiClientError> {
+    get(&stylist_path(namespace)).await
 }
 
 // ----- streamers -----
@@ -593,5 +605,9 @@ mod tests {
             "/api/task-runs/LiveCheckTask%3A1/logs/stream"
         );
         assert_eq!(cost_range_param(CostRange::All), "all");
+        assert_eq!(
+            stylist_path("fixture-fit-1"),
+            "/api/stylist?namespace=fixture-fit-1"
+        );
     }
 }
