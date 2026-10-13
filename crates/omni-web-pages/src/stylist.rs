@@ -101,10 +101,15 @@ fn join_and(parts: &[String]) -> String {
     }
 }
 
-/// A `YYYY-MM-DD` (or ISO timestamp) day as `Oct 3`, with the year outside
-/// `today`'s; other text as is.
+/// A `YYYY-MM-DD` day, or the local day of an ISO timestamp, as `Oct 3`,
+/// with the year outside `today`'s; other text as is.
 pub fn date_label(date: &str, today: i64) -> String {
-    parse_ymd(date).map_or_else(|| date.to_owned(), |day| short_date(day, today))
+    let day = if date.len() > 10 {
+        parse_date_ms(date).map(local_day_index)
+    } else {
+        parse_ymd(date)
+    };
+    day.map_or_else(|| date.to_owned(), |day| short_date(day, today))
 }
 
 /// Millimetres as centimetres to one decimal (`965` → `96.5`).
