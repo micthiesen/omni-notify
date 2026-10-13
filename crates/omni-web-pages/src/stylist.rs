@@ -310,19 +310,34 @@ pub fn return_by_label(return_by: &str, today: i64) -> (Tone, String) {
         return (Tone::Neutral, format!("Return by {return_by}"));
     };
     let left = day - today;
-    let tone = if left < 0 {
-        Tone::Fault
-    } else if left <= 3 {
-        Tone::Warn
-    } else {
-        Tone::Neutral
-    };
+    let tone = return_tone(left);
     let text = match left {
         l if l < 0 => format!("Return window closed {}", short_date(day, today)),
         0 => "Return by today".to_owned(),
         _ => format!("Return by {}", short_date(day, today)),
     };
     (tone, text)
+}
+
+/// The tone of a return deadline `left` days away: warn in the last three
+/// days, fault once it has passed. The needs list and the wardrobe share it.
+pub fn return_tone(left: i64) -> Tone {
+    if left < 0 {
+        Tone::Fault
+    } else if left <= 3 {
+        Tone::Warn
+    } else {
+        Tone::Neutral
+    }
+}
+
+/// Days from `today` to a due date, from the date itself when it parses so
+/// every panel judges it against the same day; the server's count otherwise.
+pub fn days_until(due_on: Option<&str>, server_days_left: Option<f64>, today: i64) -> Option<i64> {
+    due_on
+        .and_then(parse_ymd)
+        .map(|day| day - today)
+        .or_else(|| server_days_left.map(|d| d as i64))
 }
 
 /// `3 days left`, `today`, `2 days overdue`.
@@ -411,13 +426,9 @@ fn due_item(due: &omni_api::stylist::StylistDue, today: i64) -> Attention {
         "need_review" => (AttentionKind::NeedReview, "Need review".to_owned()),
         other => (AttentionKind::Other, sentence_case(&words(other))),
     };
-    let days = due.days_left.map(|d| d as i64);
+    let days = days_until(due.due_on.as_deref(), due.days_left, today);
     let (status, when) = if kind == AttentionKind::Return {
-        let tone = match days {
-            Some(d) if d < 0 => Tone::Fault,
-            Some(d) if d > 3 => Tone::Neutral,
-            _ => Tone::Warn,
-        };
+        let tone = days.map_or(Tone::Warn, return_tone);
         let status = match tone {
             Tone::Fault => StatusKind::Fault,
             Tone::Neutral => StatusKind::Idle,
@@ -575,9 +586,41 @@ pub struct Summary {
     pub unresolved: usize,
     /// Forecasts that were not superseded.
     pub forecasts: usize,
+    /// Outcomes recorded on current forecasts, scored by region or not.
+    pub outcomes: usize,
     /// Region scores that came out exact, of those scored exact, close or miss.
     pub exact: usize,
     pub scored: usize,
+}
+
+/// What the recorded outcomes say: nothing yet, outcomes without any region
+/// score (not purchased, unresolved or unknown only), or the exact share.
+pub fn forecast_scores_phrase(outcomes: usize, exact: usize, scored: usize) -> String {
+    match (outcomes, scored) {
+        (0, _) => "no outcomes yet".to_owned(),
+        (1, 0) => "1 outcome, no region scored".to_owned(),
+        (n, 0) => format!("{n} outcomes, no region scored"),
+        (_, n) => format!("{exact} of {n} regions exact"),
+    }
+}
+
+/// Outcomes, exact and scored region counts over `predictions`.
+fn forecast_scores<'a>(
+    predictions: impl Iterator<Item = &'a StylistPrediction>,
+) -> (usize, usize, usize) {
+    predictions.flat_map(|p| p.outcomes.iter()).fold(
+        (0, 0, 0),
+        |(outcomes, exact, scored), outcome| {
+            let regions = outcome
+                .scores
+                .iter()
+                .filter(|s| matches!(s.matched.as_str(), "exact" | "close" | "miss"));
+            let (e, n) = regions.fold((0, 0), |(e, n), s| {
+                (e + usize::from(s.matched == "exact"), n + 1)
+            });
+            (outcomes + 1, exact + e, scored + n)
+        },
+    )
 }
 
 impl Summary {
@@ -589,14 +632,7 @@ impl Summary {
 pub fn summary(o: &StylistOverview) -> Summary {
     let wardrobe: Vec<&StylistPiece> = o.wardrobe.iter().filter(|p| in_wardrobe(p)).collect();
     let current: Vec<&StylistPrediction> = o.predictions.iter().filter(|p| !p.superseded).collect();
-    let scores = current
-        .iter()
-        .flat_map(|p| p.outcomes.iter())
-        .flat_map(|o| o.scores.iter())
-        .filter(|s| matches!(s.matched.as_str(), "exact" | "close" | "miss"));
-    let (exact, scored) = scores.fold((0, 0), |(e, n), s| {
-        (e + usize::from(s.matched == "exact"), n + 1)
-    });
+    let (outcomes, exact, scored) = forecast_scores(current.iter().copied());
     Summary {
         pieces: wardrobe.len(),
         references: wardrobe
@@ -616,6 +652,7 @@ pub fn summary(o: &StylistOverview) -> Summary {
         failures: o.history.failure_total as usize,
         unresolved: o.history.unresolved_total as usize,
         forecasts: current.len(),
+        outcomes,
         exact,
         scored,
     }
@@ -998,10 +1035,7 @@ fn SummaryBand(summary: Memo<Summary>, today: Memo<i64>) -> impl IntoView {
                 <span>{move || summary.with(|s| format!("{} worked · {} failed · {} open", s.successes, s.failures, s.unresolved))}</span>
             </Readout>
             <Readout label="Forecasts" value=figure(|s| s.forecasts)>
-                <span>{move || summary.with(|s| match s.scored {
-                    0 => "no outcomes yet".to_owned(),
-                    n => format!("{} of {n} regions exact", s.exact),
-                })}</span>
+                <span>{move || summary.with(|s| forecast_scores_phrase(s.outcomes, s.exact, s.scored))}</span>
             </Readout>
         </ReadoutBand>
     }
@@ -1489,16 +1523,10 @@ fn ForecastsPanel(predictions: Vec<StylistPrediction>, today: i64) -> impl IntoV
     let (current, superseded): (Vec<StylistPrediction>, Vec<StylistPrediction>) =
         predictions.into_iter().partition(|p| !p.superseded);
     let title = format!("Forecasts · {}", current.len());
-    let s = current
-        .iter()
-        .flat_map(|p| p.outcomes.iter().flat_map(|o| o.scores.iter()))
-        .filter(|s| matches!(s.matched.as_str(), "exact" | "close" | "miss"))
-        .fold((0usize, 0usize), |(e, n), s| {
-            (e + usize::from(s.matched == "exact"), n + 1)
-        });
+    let (outcomes, exact, scored) = forecast_scores(current.iter());
     let meta = ViewFn::from(move || {
-        (s.1 > 0).then(
-            || view! { <span class="num">{format!("{} of {} regions exact", s.0, s.1)}</span> },
+        (outcomes > 0).then(
+            || view! { <span class="num">{forecast_scores_phrase(outcomes, exact, scored)}</span> },
         )
     });
     let superseded_count = superseded.len();
@@ -1742,13 +1770,55 @@ fn RunbookPanel(runbook: StylistRunbook, #[prop(optional)] open: bool) -> impl I
 // ----- page -----
 
 /// What the page shows; `switch` is whether there is more than one
-/// namespace to pick from.
+/// namespace to pick from, and `fixture` whether the loaded ledger (not the
+/// one being requested) is a test fixture.
 #[derive(Clone, Debug, PartialEq)]
-enum PageState {
+pub enum PageState {
     Error(String),
     Loading,
-    Blank { switch: bool },
+    Blank { switch: bool, fixture: bool },
     Loaded { switch: bool },
+}
+
+/// The page state for the loaded overview, the last load error and whether
+/// a namespace switch is offered.
+pub fn page_state(
+    data: Option<&StylistOverview>,
+    error: Option<String>,
+    switch: bool,
+) -> PageState {
+    match data {
+        Some(d) if is_blank(d) => PageState::Blank {
+            switch,
+            fixture: d.namespace != REAL,
+        },
+        Some(_) => PageState::Loaded { switch },
+        None => error.map_or(PageState::Loading, PageState::Error),
+    }
+}
+
+/// The empty-ledger panel's title and message.
+pub fn blank_copy(fixture: bool) -> (&'static str, &'static str) {
+    if fixture {
+        (
+            "This fixture is empty",
+            "Test runs write synthetic records here through the stylist tools; it holds nothing yet.",
+        )
+    } else {
+        (
+            "No profile yet",
+            "The onboarding interview records body measurements and reference garments. Until it does, assistants abstain from size advice. Nothing here is seeded or guessed.",
+        )
+    }
+}
+
+/// A panel's input paired with the day it is judged on, so the panel
+/// rebuilds when either its data or the day changes.
+pub fn with_day<T>(slice: Memo<Option<T>>, today: Memo<i64>) -> Memo<Option<(T, i64)>>
+where
+    T: Clone + PartialEq + Send + Sync + 'static,
+{
+    Memo::new(move |_| slice.get().map(|value| (value, today.get())))
 }
 
 #[component]
@@ -1794,17 +1864,9 @@ pub fn StylistPage() -> impl IntoView {
         data.with(|d| d.as_ref().map(|d| d.namespaces.clone()).unwrap_or_default())
     });
     let has_switch = move || namespaces.with(Vec::len) > 1 || ns.get() != REAL;
-    let state = Memo::new(move |_| match data.with(|d| d.as_ref().map(is_blank)) {
-        Some(true) => PageState::Blank {
-            switch: has_switch(),
-        },
-        Some(false) => PageState::Loaded {
-            switch: has_switch(),
-        },
-        None => match error.get() {
-            Some(e) => PageState::Error(e),
-            None => PageState::Loading,
-        },
+    let state = Memo::new(move |_| {
+        let switch = has_switch();
+        data.with(|d| page_state(d.as_ref(), error.get(), switch))
     });
     let today = Memo::new(move |_| {
         data.with(|d| d.as_ref().and_then(|d| parse_ymd(&d.today)))
@@ -1829,15 +1891,16 @@ pub fn StylistPage() -> impl IntoView {
     let predictions = Memo::new(move |_| data.with(|d| d.as_ref().map(|d| d.predictions.clone())));
     let rules =
         Memo::new(move |_| data.with(|d| d.as_ref().map(|d| d.rules.clone()).unwrap_or_default()));
-    let preferences = Memo::new(move |_| {
-        data.with(|d| {
-            d.as_ref()
-                .map(|d| d.preferences.clone())
-                .unwrap_or_default()
-        })
-    });
-    let needs =
-        Memo::new(move |_| data.with(|d| d.as_ref().map(|d| d.needs.clone()).unwrap_or_default()));
+    let preferences = Memo::new(move |_| data.with(|d| d.as_ref().map(|d| d.preferences.clone())));
+    let needs = Memo::new(move |_| data.with(|d| d.as_ref().map(|d| d.needs.clone())));
+    // Panels that judge dates rebuild when the day changes, not only when
+    // their data does.
+    let body = with_day(body, today);
+    let wardrobe = with_day(wardrobe, today);
+    let history = with_day(history, today);
+    let predictions = with_day(predictions, today);
+    let preferences = with_day(preferences, today);
+    let needs = with_day(needs, today);
     let backups = Memo::new(move |_| {
         data.with(|d| {
             d.as_ref().map(|d| StylistOverview {
@@ -1920,19 +1983,8 @@ pub fn StylistPage() -> impl IntoView {
             </div>
         }
         .into_any(),
-        PageState::Blank { switch } => {
-            let fixture = ns.get_untracked() != REAL;
-            let (title, message) = if fixture {
-                (
-                    "This fixture is empty",
-                    "Test runs write synthetic records here through the stylist tools; it holds nothing yet.",
-                )
-            } else {
-                (
-                    "No profile yet",
-                    "The onboarding interview records body measurements and reference garments. Until it does, assistants abstain from size advice. Nothing here is seeded or guessed.",
-                )
-            };
+        PageState::Blank { switch, fixture } => {
+            let (title, message) = blank_copy(fixture);
             view! {
                 {heading(Signal::stored("Stylist".to_owned()), Signal::stored(None), false, switch)}
                 <div class=page_class>
@@ -1958,10 +2010,10 @@ pub fn StylistPage() -> impl IntoView {
                 <SummaryBand summary=figures today/>
                 <div class="split stylist-layout">
                     <div class="stylist-col">
-                        {move || body.get().map(|(profile, notes)| view! { <BodyPanel profile notes today=today.get_untracked()/> })}
-                        {move || wardrobe.get().map(|wardrobe| view! { <WardrobePanel wardrobe today=today.get_untracked()/> })}
-                        {move || history.get().map(|history| view! { <HistoryPanel history tab today=today.get_untracked()/> })}
-                        {move || predictions.get().map(|predictions| view! { <ForecastsPanel predictions today=today.get_untracked()/> })}
+                        {move || body.get().map(|((profile, notes), today)| view! { <BodyPanel profile notes today/> })}
+                        {move || wardrobe.get().map(|(wardrobe, today)| view! { <WardrobePanel wardrobe today/> })}
+                        {move || history.get().map(|(history, today)| view! { <HistoryPanel history tab today/> })}
+                        {move || predictions.get().map(|(predictions, today)| view! { <ForecastsPanel predictions today/> })}
                     </div>
                     <div class="stylist-col">
                         {move || {
@@ -1969,12 +2021,16 @@ pub fn StylistPage() -> impl IntoView {
                             (!list.is_empty()).then(|| view! { <RulesPanel rules=list/> })
                         }}
                         {move || {
-                            let list = preferences.get();
-                            (!list.is_empty()).then(|| view! { <PreferencesPanel preferences=list today=today.get_untracked()/> })
+                            preferences
+                                .get()
+                                .filter(|(list, _)| !list.is_empty())
+                                .map(|(list, today)| view! { <PreferencesPanel preferences=list today/> })
                         }}
                         {move || {
-                            let list = needs.get();
-                            (!list.is_empty()).then(|| view! { <NeedsPanel needs=list today=today.get_untracked()/> })
+                            needs
+                                .get()
+                                .filter(|(list, _)| !list.is_empty())
+                                .map(|(list, today)| view! { <NeedsPanel needs=list today/> })
                         }}
                         {move || backups.get().map(|overview| view! { <BackupsPanel overview/> })}
                         {move || runbook.get().map(|runbook| view! { <RunbookPanel runbook/> })}
@@ -2426,5 +2482,116 @@ mod tests {
         assert_eq!(default_tab(&h), HistoryTab::Successes);
         h.failure_total = 1.0;
         assert_eq!(default_tab(&h), HistoryTab::Failures);
+    }
+
+    #[test]
+    fn the_empty_state_follows_the_loaded_ledger_not_the_requested_one() {
+        let real = overview();
+        let fixture = StylistOverview {
+            namespace: "fixture-empty".into(),
+            ..overview()
+        };
+        let real_state = page_state(Some(&real), None, true);
+        let fixture_state = page_state(Some(&fixture), None, true);
+        assert_eq!(
+            real_state,
+            PageState::Blank {
+                switch: true,
+                fixture: false
+            }
+        );
+        assert_eq!(
+            fixture_state,
+            PageState::Blank {
+                switch: true,
+                fixture: true
+            }
+        );
+        // Switching between two empty ledgers changes the state, so the
+        // copy is rebuilt.
+        assert_ne!(real_state, fixture_state);
+        assert_eq!(blank_copy(false).0, "No profile yet");
+        assert_eq!(blank_copy(true).0, "This fixture is empty");
+        assert_eq!(page_state(None, None, false), PageState::Loading);
+        assert_eq!(
+            page_state(None, Some("down".into()), false),
+            PageState::Error("down".into())
+        );
+    }
+
+    #[test]
+    fn panels_rebuild_when_the_day_changes_with_unchanged_data() {
+        let day = RwSignal::new(today());
+        let today = Memo::new(move |_| day.get());
+        let pieces =
+            Memo::new(move |_| Some(vec![piece("b", "tops/tshirt", "undecided", "untested")]));
+        let input = with_day(pieces, today);
+        assert_eq!(input.get().map(|(_, d)| d), Some(day.get_untracked()));
+        let tomorrow = day.get_untracked() + 1;
+        day.set(tomorrow);
+        assert_eq!(input.get().map(|(_, d)| d), Some(tomorrow));
+    }
+
+    #[test]
+    fn return_deadlines_agree_across_panels_through_midnight() {
+        let deadline = "2026-10-12";
+        let mut o = overview();
+        // The server counted the days on Oct 11; the page judges by its own day.
+        o.due = vec![due("return_decision", Some(1.0), Some(deadline))];
+        for (day, text, tone) in [
+            ("2026-10-11", "Return by Oct 12", Tone::Warn),
+            ("2026-10-12", "Return by today", Tone::Warn),
+            ("2026-10-13", "Return window closed Oct 12", Tone::Fault),
+        ] {
+            let today = parse_ymd(day).unwrap();
+            let (wardrobe_tone, wardrobe_text) = return_by_label(deadline, today);
+            assert_eq!(
+                (wardrobe_tone, wardrobe_text.as_str()),
+                (tone, text),
+                "{day}"
+            );
+            let needs = &attention(&o, today)[0];
+            assert_eq!(needs.when.as_ref().map(|w| w.0), Some(tone), "{day}");
+        }
+        assert_eq!(
+            attention(&o, parse_ymd("2026-10-13").unwrap())[0].status,
+            StatusKind::Fault
+        );
+    }
+
+    #[test]
+    fn recorded_outcomes_without_region_scores_are_not_no_outcomes() {
+        let mut unscored = scored(&[], false);
+        unscored.outcomes[0].result = "not_purchased".into();
+        let mut o = overview();
+        o.predictions = vec![unscored.clone()];
+        let s = summary(&o);
+        assert_eq!((s.outcomes, s.exact, s.scored), (1, 0, 0));
+        assert_eq!(
+            forecast_scores_phrase(s.outcomes, s.exact, s.scored),
+            "1 outcome, no region scored"
+        );
+        let mut unknown = scored(&["unknown", "not_reported"], false);
+        unknown.outcomes[0].result = "unresolved".into();
+        o.predictions = vec![unscored, unknown];
+        let s = summary(&o);
+        assert_eq!(
+            forecast_scores_phrase(s.outcomes, s.exact, s.scored),
+            "2 outcomes, no region scored"
+        );
+        let mut none = scored(&[], false);
+        none.outcomes.clear();
+        o.predictions = vec![none];
+        let s = summary(&o);
+        assert_eq!(
+            forecast_scores_phrase(s.outcomes, s.exact, s.scored),
+            "no outcomes yet"
+        );
+        o.predictions = vec![scored(&["exact", "miss"], false)];
+        let s = summary(&o);
+        assert_eq!(
+            forecast_scores_phrase(s.outcomes, s.exact, s.scored),
+            "1 of 2 regions exact"
+        );
     }
 }
