@@ -34,6 +34,9 @@ Catalog edit dates are not a polling heartbeat: a quiet feed remains usable.
 Each run logs fetch time, catalog update date, event count, and newest event,
 at INFO only when they change and at debug otherwise.
 HTTP or schema errors fail the task visibly rather than masquerading as no news.
+The ERROR-log alert for those failures is gated by `TaskFailureGate`: Claude
+and Codex reset runs reach Pushover only after 30 minutes of consecutive
+failures, so one timed-out read never notifies.
 
 Both providers use `omni-personal`'s `reset_alerts` module for bounded HTTP/JSON/schema reads,
 one-minute task execution, source snapshot logging, summaries, and durable

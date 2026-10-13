@@ -23,7 +23,10 @@ use tracing_subscriber::layer::Context;
 
 pub use omni_config::PushoverChannel;
 
+pub mod task_gate;
 pub mod throttle;
+
+pub use task_gate::TaskFailureGate;
 
 /// Log target for this crate's own diagnostics (never logged at ERROR, so the
 /// alert path cannot feed itself).
@@ -403,7 +406,8 @@ fn pushover_form(token: &str, user: &str, m: &PushoverMessage) -> Vec<(&'static 
     form
 }
 
-/// A notification gate consulted before the throttle (used by Castro).
+/// A notification gate consulted before the throttle; the first gate that
+/// applies to a title decides it.
 pub trait AlertGate: Send + Sync {
     fn applies(&self, title: &str) -> bool;
     fn should_notify<'a>(&'a self, title: &'a str) -> BoxFuture<'a, bool>;

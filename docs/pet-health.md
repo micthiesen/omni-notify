@@ -45,8 +45,9 @@ resent. Without Pushover configured, the rows are not touched.
 While the household has no reading for 48 h, the run fails with
 `No litter-box readings for N h (latest ...)`. `PetGapAlertGate` keeps that run
 failure off the ERROR-alert Pushover path while the gap row is active, so the gap
-pushes through one layer. Any other PetTracker failure, or a gap the ledger did
-not record, still alerts.
+pushes through one layer. A gap the ledger did not record alerts at once; any
+other PetTracker failure alerts only after 30 minutes of consecutive failed runs
+(`SUSTAINED_FAILURE`), so one Whisker network blip stays a failed run.
 
 ## Dismissing a finding
 

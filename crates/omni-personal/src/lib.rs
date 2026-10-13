@@ -12,9 +12,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jiff::tz::TimeZone;
+use omni_alerts::TaskFailureGate;
 use omni_runtime::{AppContext, Subsystem};
 use omni_store::entity::EntityDescriptor;
 use omni_tasks::Task;
+use omni_tasks::health::SUSTAINED_FAILURE;
 
 pub mod claude_resets;
 pub mod codex_resets;
@@ -206,7 +208,18 @@ pub async fn subsystem(ctx: &AppContext) -> Result<Subsystem, PersonalError> {
         tasks,
         mcp_tools,
         entities: entities(),
-        alert_gates: vec![Arc::new(PetGapAlertGate::new(ctx.store.clone()))],
+        alert_gates: vec![
+            Arc::new(PetGapAlertGate::new(ctx.store.clone())),
+            // Minute pollers of public trackers: one timed-out read is noise.
+            Arc::new(TaskFailureGate::new(
+                ctx.store.clone(),
+                &[
+                    codex_resets::task::TASK_NAME,
+                    claude_resets::task::TASK_NAME,
+                ],
+                SUSTAINED_FAILURE,
+            )),
+        ],
         ..Subsystem::default()
     })
 }

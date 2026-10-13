@@ -92,9 +92,12 @@ async fn registers_tasks_tools_and_entities() {
             "pet-health-dismissal"
         ]
     );
-    assert_eq!(subsystem.alert_gates.len(), 1);
+    assert_eq!(subsystem.alert_gates.len(), 2);
     assert!(subsystem.alert_gates[0].applies("Error running task \"PetTracker\""));
     assert!(!subsystem.alert_gates[0].applies("Error running task \"CodexResets\""));
+    assert!(subsystem.alert_gates[1].applies("Error running task \"CodexResets\""));
+    assert!(subsystem.alert_gates[1].applies("Manual run of \"ClaudeResets\" failed"));
+    assert!(!subsystem.alert_gates[1].applies("Error running task \"PetTracker\""));
 }
 
 /// Three readings a day for 30 days, ending 72 hours before the test epoch

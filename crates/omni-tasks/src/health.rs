@@ -94,6 +94,27 @@ pub const PERSISTENT_FAILURE: PersistenceRule = PersistenceRule {
     jitter_ms: 5 * 60_000,
 };
 
+/// Thirty minutes of consecutive bad runs (at least three), with two minutes
+/// of jitter. Sized for frequent pollers whose single failures are network
+/// blips: a minute task needs about 29 runs, inside [`KEEP_PER_TASK`].
+///
+/// [`KEEP_PER_TASK`]: crate::persistence::KEEP_PER_TASK
+pub const SUSTAINED_FAILURE: PersistenceRule = PersistenceRule {
+    min_runs: 3,
+    min_span_ms: 30 * 60_000,
+    jitter_ms: 2 * 60_000,
+};
+
+/// The ERROR titles the scheduler and registry log when a run of `task`
+/// fails, for alert gates that match them.
+pub fn failure_alert_titles(task: &str) -> [String; 3] {
+    [
+        format!("Error running task \"{task}\""),
+        format!("Manual run of \"{task}\" failed"),
+        format!("Catch-up run of \"{task}\" failed"),
+    ]
+}
+
 impl PersistenceRule {
     /// Whether the leading bad runs of `runs` (newest first) are persistent.
     /// A leading `running` row ends the streak.

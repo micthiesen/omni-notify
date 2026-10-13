@@ -313,30 +313,39 @@ async fn a_48_hour_silence_fails_the_run_and_pushes_once() {
     let title = "Error running task \"PetTracker\"";
     insert_run(&store.store, 1, &message).await;
     assert!(!gate.should_notify(title).await);
-    // Any other failure still alerts.
+    // Any other failure alerts once it persists for thirty minutes.
     insert_run(&store.store, 2, "Whisker authentication failed").await;
+    assert!(!gate.should_notify(title).await);
+    insert_run(&store.store, 30, "Whisker authentication failed").await;
     assert!(gate.should_notify(title).await);
     let runs = store
         .store
         .read(|docs| docs.get_all::<TaskRunData>())
         .await
         .unwrap();
-    assert_eq!(runs.len(), 2);
+    assert_eq!(runs.len(), 3);
 }
 
 #[tokio::test(start_paused = true)]
-async fn the_gate_admits_non_gap_failures() {
+async fn the_gate_admits_non_gap_failures_once_they_persist() {
     let store = TestStore::new(test_clock(NOW)).await;
     let gate = PetGapAlertGate::new(store.store.clone());
     let title = "Manual run of \"PetTracker\" failed";
     assert!(gate.applies(title));
-    assert!(gate.should_notify(title).await);
-    insert_run(&store.store, 1, "Whisker API returned status code 500").await;
+    // No history cannot establish a persistent failure.
+    assert!(!gate.should_notify(title).await);
+    // One Whisker blip, then a second ten minutes later: still transient.
+    insert_run(&store.store, 0, "Whisker API returned status code 500").await;
+    assert!(!gate.should_notify(title).await);
+    insert_run(&store.store, 10, "Whisker API returned status code 500").await;
+    assert!(!gate.should_notify(title).await);
+    // Failing for thirty minutes (less jitter) is an outage.
+    insert_run(&store.store, 28, "Whisker API returned status code 500").await;
     assert!(gate.should_notify(title).await);
     // A gap error without a tracked gap row (the ledger never recorded it) alerts.
     insert_run(
         &store.store,
-        2,
+        29,
         &format!("{GAP_ERROR_PREFIX} for 50 h (latest x)"),
     )
     .await;

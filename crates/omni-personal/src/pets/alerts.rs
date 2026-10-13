@@ -17,7 +17,8 @@ use omni_core::js::to_iso_string;
 use omni_store::cbor::Extra;
 use omni_store::entity::{Entity, UpsertOpts};
 use omni_store::{EntityOps, EntityWrite, Store, StoreError};
-use omni_tasks::persistence::{self};
+use omni_tasks::health::{SUSTAINED_FAILURE, failure_alert_titles};
+use omni_tasks::persistence::{self, KEEP_PER_TASK};
 use serde::{Deserialize, Serialize};
 
 use super::dismissals::{PetHealthDismissal, still_dismissed};
@@ -434,7 +435,9 @@ pub const GAP_ERROR_PREFIX: &str = "No litter-box readings";
 /// Keeps a data-gap run failure off the ERROR-log Pushover path while the
 /// health watch tracks that gap (its row is active), so the gap is throttled
 /// at one layer: one push per gap, at most one per week. Any other PetTracker
-/// failure, or a gap the ledger failed to record, still alerts.
+/// failure, or a gap the ledger failed to record, alerts once the failure has
+/// persisted under [`SUSTAINED_FAILURE`], so one Whisker network blip does
+/// not notify.
 pub struct PetGapAlertGate {
     store: Store,
     titles: [String; 3],
@@ -442,14 +445,9 @@ pub struct PetGapAlertGate {
 
 impl PetGapAlertGate {
     pub fn new(store: Store) -> Self {
-        let task = super::task::TASK_NAME;
         Self {
             store,
-            titles: [
-                format!("Error running task \"{task}\""),
-                format!("Manual run of \"{task}\" failed"),
-                format!("Catch-up run of \"{task}\" failed"),
-            ],
+            titles: failure_alert_titles(super::task::TASK_NAME),
         }
     }
 }
@@ -461,14 +459,19 @@ impl AlertGate for PetGapAlertGate {
 
     fn should_notify<'a>(&'a self, _title: &'a str) -> BoxFuture<'a, bool> {
         Box::pin(async move {
-            let latest_is_gap = persistence::get_runs(&self.store, Some(super::task::TASK_NAME), 1)
-                .await
-                .ok()
-                .and_then(|runs| runs.into_iter().next())
-                .and_then(|run| run.error)
+            // Missing history cannot establish a persistent failure.
+            let Ok(runs) =
+                persistence::get_runs(&self.store, Some(super::task::TASK_NAME), KEEP_PER_TASK)
+                    .await
+            else {
+                return false;
+            };
+            let latest_is_gap = runs
+                .first()
+                .and_then(|run| run.error.as_deref())
                 .is_some_and(|error| error.starts_with(GAP_ERROR_PREFIX));
             if !latest_is_gap {
-                return true;
+                return SUSTAINED_FAILURE.is_persistent(&runs);
             }
             let tracked = HealthLedger::new(self.store.clone(), None)
                 .gap()

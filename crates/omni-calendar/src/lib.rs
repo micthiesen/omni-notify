@@ -25,11 +25,13 @@ pub mod support;
 
 use std::sync::Arc;
 
+use omni_alerts::TaskFailureGate;
 use omni_email::triage::EmailTriage;
 use omni_mcp_kit::ToolMetaError;
 use omni_runtime::ports::CalendarConnection;
 use omni_runtime::{AppContext, BootError, BootPhase, BootStep, ManagedEntity, Subsystem};
 use omni_store::entity::EntityDescriptor;
+use omni_tasks::health::SUSTAINED_FAILURE;
 
 pub use caldav::{Caldav, CaldavSettings};
 pub use email_core::OmniEmailSupport;
@@ -202,6 +204,12 @@ pub fn subsystem(ctx: &AppContext, deps: CalendarDeps) -> Result<Subsystem, Tool
         Ok((sync, starting)) => {
             subsystem.tasks.push(Arc::new(sync));
             subsystem.tasks.push(Arc::new(starting));
+            // iCloud CalDAV network errors are routine; alert on an outage.
+            subsystem.alert_gates.push(Arc::new(TaskFailureGate::new(
+                ctx.store.clone(),
+                &[primary::task::TASK_NAME],
+                SUSTAINED_FAILURE,
+            )));
         }
         Err(error) => tracing::error!(target: LOG, "Calendar tasks not scheduled: {error}"),
     }

@@ -316,7 +316,12 @@ reason in `error`; "no work due" and missing configuration stay `success`.
 (three consecutive failed or degraded runs spanning twelve hours, less five
 minutes of jitter) and sends one Pushover note per incident whose streak includes a
 degraded run, plus one recovery note after the next success. Plain error streaks
-stay on the ERROR-log alert path and its gates, such as Castro's.
+stay on the ERROR-log alert path and its gates, such as Castro's. Frequent
+pollers whose single failures are network blips (`CodexResets`,
+`ClaudeResets`, `CalendarPrimarySync`, non-gap `PetTracker` failures) alert
+only after 30 minutes of consecutive failed runs through
+`omni_alerts::TaskFailureGate` and `SUSTAINED_FAILURE`; the first gate that
+applies to a title decides it.
 
 `CodexResets` polls Reset Beacon's public alert feed and history every minute.
 Keep predictions, announcements, observed rollouts and reported landings distinct.

@@ -3123,6 +3123,8 @@ dependencies = [
  "omni-config",
  "omni-core",
  "omni-http",
+ "omni-store",
+ "omni-tasks",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
