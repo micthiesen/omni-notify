@@ -153,4 +153,8 @@ async fn comfort_style_and_unknown_reports_are_not_fit_success() {
         proven["record"]["derived"]["computedBasis"],
         json!("exact_repeat")
     );
+    assert_eq!(
+        proven["record"]["derived"]["basisRule"],
+        json!("fit-evidence-v4")
+    );
 }

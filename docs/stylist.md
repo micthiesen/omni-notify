@@ -61,9 +61,10 @@ plain-language feedback back as typed events.
   read the context again. Forecasts frozen before tokens existed keep their
   stored `contextRevision` and any client-supplied `contextSha256` in their
   data; neither was verified, and their `derived` has no `context` entry.
-- **Basis** (`basisRule: fit-evidence-v3`). A piece's fit evidence is
-  `proven` (fitting try-ons, wear or feedback with at least one known region
-  verdict and none `too_*`, a matched outcome, or a `baseline` reference
+- **Basis** (`basisRule: fit-evidence-v4`; v4 stopped counting reports
+  without a known region verdict as fit). A piece's fit evidence is `proven`
+  (fitting try-ons, wear or feedback with at least one known region verdict
+  and none `too_*`, a matched outcome, or a `baseline` reference
   role; comfort, style or value without a known region verdict is no fit
   evidence, and in history it is unresolved, "no regional fit reported"),
   `failed` (a `too_*` region, a wrong-size

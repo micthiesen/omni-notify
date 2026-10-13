@@ -781,7 +781,7 @@ fn prediction(
         Value::Object(revisions(&p.rules_applied)),
     );
     derived.insert("computedBasis".into(), json!(computed));
-    derived.insert("basisRule".into(), json!("fit-evidence-v3"));
+    derived.insert("basisRule".into(), json!("fit-evidence-v4"));
     derived.insert("basisAssessment".into(), json!(assessment));
     derived.insert("contextRevision".into(), json!(p.context_revision));
     derived.insert(
