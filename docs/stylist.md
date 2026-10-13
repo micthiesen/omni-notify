@@ -62,8 +62,11 @@ plain-language feedback back as typed events.
   stored `contextRevision` and any client-supplied `contextSha256` in their
   data; neither was verified, and their `derived` has no `context` entry.
 - **Basis** (`basisRule: fit-evidence-v3`). A piece's fit evidence is
-  `proven` (fitting try-ons, acceptable wear or feedback, a matched outcome,
-  or a `baseline` reference role), `failed` (a `too_*` region, a wrong-size
+  `proven` (fitting try-ons, wear or feedback with at least one known region
+  verdict and none `too_*`, a matched outcome, or a `baseline` reference
+  role; comfort, style or value without a known region verdict is no fit
+  evidence, and in history it is unresolved, "no regional fit reported"),
+  `failed` (a `too_*` region, a wrong-size
   try-on, a missed outcome, a fit-related return, a too-small or too-large
   reference role, or a wash that shrank or stretched it), `mixed`, or
   `untested`, and records whether its latest report (by `occurredOn`, then

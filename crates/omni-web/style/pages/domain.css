@@ -423,8 +423,8 @@ a.agenda-tile-head:hover { color: var(--signal); }
 .stylist-checklist li::marker { color: var(--text-3); font: var(--t-read-s); }
 .stylist-digest { margin-top: var(--sp-4); }
 @media (max-width: 899px) {
-  .stylist-ns { width: 100%; }
-  .stylist-ns .select { flex: 1; max-width: none; }
+  .stylist-ns { width: 100%; min-width: 0; }
+  .stylist-ns .select { flex: 1; min-width: 0; max-width: none; }
   /* The status and its end facts share the first line; the item takes the
      full width below them. */
   .attention-row, .piece-row, .forecast-row { flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }

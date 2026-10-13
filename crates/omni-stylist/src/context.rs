@@ -549,7 +549,9 @@ fn history(state: &LedgerState, focus: &Focus, limit: usize) -> HistoryOut {
         let body = &event.envelope.event;
         let piece_id = body.piece_id().map(|id| id.as_str());
         let prediction_id = body.prediction_id().map(|id| id.as_str());
-        if !body.region_fit().is_empty()
+        let judged_try_on =
+            matches!(body, EventBody::TryOn(t) if t.overall != TryOnOverall::Unresolved);
+        if (judged_try_on || fit::known_fits(body.region_fit()).next().is_some())
             && let Some(piece) = piece_id
         {
             assessed_pieces.insert(piece.to_owned());
@@ -651,23 +653,42 @@ fn history(state: &LedgerState, focus: &Focus, limit: usize) -> HistoryOut {
                         .region_fit()
                         .iter()
                         .any(|f| f.verdict == crate::model::FitVerdict::Unknown);
+                    // A success needs positive fit: a known region verdict or
+                    // a fitting try-on. Comfort, style or value alone, or only
+                    // unknown regions, leave the fit unresolved.
+                    let fit_reported = fit::known_fits(body.region_fit()).next().is_some()
+                        || overall == Some(TryOnOverall::Fits);
                     let bucket = if !adverse_regions.is_empty()
                         || !negatives.is_empty()
                         || regret
                         || overall == Some(TryOnOverall::WrongSize)
                     {
                         Bucket::Failure
-                    } else if mixed
-                        || unknown
-                        || matches!(
+                    } else if fit_reported
+                        && !mixed
+                        && !unknown
+                        && !matches!(
                             overall,
                             Some(TryOnOverall::Close | TryOnOverall::Unresolved)
                         )
                     {
-                        Bucket::Unresolved
-                    } else {
                         Bucket::Success
+                    } else {
+                        Bucket::Unresolved
                     };
+                    if !fit_reported {
+                        let positives: Vec<String> = ["comfort", "style", "quality", "value"]
+                            .into_iter()
+                            .zip(ratings)
+                            .filter(|(_, r)| *r == Some(Rating::Positive))
+                            .map(|(name, _)| format!("{name} positive"))
+                            .collect();
+                        detail.push(if positives.is_empty() {
+                            "no regional fit reported".to_owned()
+                        } else {
+                            format!("no regional fit reported ({})", positives.join(", "))
+                        });
+                    }
                     if detail.is_empty() {
                         detail.push(if bucket == Bucket::Success {
                             "fit good in every reported region".to_owned()
@@ -862,7 +883,7 @@ fn brand_history(state: &LedgerState, focus: &Focus) -> Vec<BrandHistory> {
         }
         for event in state.piece_events(id) {
             let fits = event.envelope.event.region_fit();
-            if fits.is_empty() {
+            if fit::known_fits(fits).next().is_none() {
                 continue;
             }
             if fits.iter().any(|f| fit::is_adverse(f.verdict)) {
@@ -1292,7 +1313,9 @@ fn warnings(
             .filter(|r| r.piece.status == PieceStatus::Owned.as_str())
             .collect();
         let category_fit_reports = state.current_events().any(|e| {
-            !e.envelope.event.region_fit().is_empty()
+            fit::known_fits(e.envelope.event.region_fit())
+                .next()
+                .is_some()
                 && e.envelope
                     .event
                     .piece_id()

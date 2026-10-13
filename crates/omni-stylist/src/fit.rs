@@ -197,7 +197,9 @@ pub fn piece_fit_evidence(state: &LedgerState, piece_id: &str) -> PieceEvidence 
                     None
                 }
             }
-            EventBody::Wear(_) | EventBody::Feedback(_) if !fits.is_empty() => {
+            // Comfort- or style-only reports and all-unknown regions are not
+            // fit evidence.
+            EventBody::Wear(_) | EventBody::Feedback(_) if known_fits(fits).next().is_some() => {
                 Some(if any_adverse {
                     Signal::Adverse
                 } else {
@@ -617,6 +619,13 @@ fn region_in_scope(scope: &RuleScope, body: &EventBody) -> bool {
             .any(|change| change.region == *region && change.change != ChangeKind::NoChange),
         _ => false,
     }
+}
+
+/// The region verdicts that say something about fit (not `unknown`). An
+/// event with none of them is no fit evidence, whatever its comfort, style
+/// or other ratings say.
+pub fn known_fits(fits: &[RegionFit]) -> impl Iterator<Item = &RegionFit> {
+    fits.iter().filter(|f| f.verdict != FitVerdict::Unknown)
 }
 
 /// Whether a verdict reports a clear misfit (`too_*`).
