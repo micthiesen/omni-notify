@@ -1,0 +1,5 @@
+# Each firmware workspace builds into its own target directory.
+firmware/target/
+firmware/app/target/
+pcb/node_modules/
+pcb/dist/

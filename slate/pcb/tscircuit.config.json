@@ -1,0 +1,15 @@
+{
+  "$schema": "https://cdn.jsdelivr.net/npm/@tscircuit/cli/types/tscircuit.config.schema.json",
+  "mainEntrypoint": "mainboard/design/mainboard.circuit.tsx",
+  "previewComponentPath": "mainboard/design/mainboard.circuit.tsx",
+  "includeBoardFiles": ["mainboard/design/*.circuit.tsx"],
+  "ignoredFiles": ["dist"],
+  "build": {
+    "circuitJson": true,
+    "kicadProject": false,
+    "previewImages": false
+  },
+  "pcbSnapshotSettings": {
+    "showCourtyards": true
+  }
+}

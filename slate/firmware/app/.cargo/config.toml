@@ -1,0 +1,11 @@
+[target.riscv32imac-unknown-none-elf]
+# No OTA, so the stock bootloader and single factory partition are correct and plain
+# espflash is the flasher. It resets the H2 into download mode over USB Serial/JTAG.
+runner = "espflash flash --chip esp32h2 --monitor"
+rustflags = ["-C", "link-arg=-Tlinkall.x"]
+
+[build]
+target = "riscv32imac-unknown-none-elf"
+
+[env]
+ESP_LOG = "info"

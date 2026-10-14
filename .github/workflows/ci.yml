@@ -5,9 +5,16 @@ on:
   push:
     branches:
       - main
+    # The Slate hardware project has its own workflow and never enters the image.
+    paths-ignore:
+      - slate/**
+      - .github/workflows/slate.yml
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - slate/**
+      - .github/workflows/slate.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

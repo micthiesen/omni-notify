@@ -1,0 +1,30 @@
+{
+  "name": "omni-slate-pcb-designs",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.11",
+  "scripts": {
+    "dev:mainboard": "tsci dev mainboard/design/mainboard.circuit.tsx",
+    "typecheck": "tsc --noEmit",
+    "build:mainboard": "tsci build mainboard/design/mainboard.circuit.tsx --routing-disabled",
+    "check:mainboard": "tsci check source mainboard/design/mainboard.circuit.tsx && tsci check netlist mainboard/design/mainboard.circuit.tsx && tsci check placement mainboard/design/mainboard.circuit.tsx",
+    "test": "bun run build:mainboard && bun test mainboard/design",
+    "lint": "oxlint --report-unused-disable-directives mainboard/design",
+    "format": "oxfmt --check \"mainboard/design/**/*.ts\" \"mainboard/design/**/*.tsx\"",
+    "check": "bun run lint && bun run format",
+    "check:write": "oxlint --fix --report-unused-disable-directives mainboard/design && oxfmt --write \"mainboard/design/**/*.ts\" \"mainboard/design/**/*.tsx\""
+  },
+  "dependencies": {
+    "circuit-json-to-kicad": "0.0.205",
+    "polygon-clipping": "0.15.7",
+    "react": "19.2.8",
+    "tscircuit": "0.0.2465"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.1",
+    "@types/react": "19.2.18",
+    "typescript": "5.9.3",
+    "oxlint": "1.80.0",
+    "oxfmt": "0.65.0"
+  }
+}

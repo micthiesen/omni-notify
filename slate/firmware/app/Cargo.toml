@@ -1,0 +1,59 @@
+[package]
+name = "slate-app"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+# Its own workspace on purpose: `firmware/` keeps the host as its default target so
+# `cargo test` there runs the contract, while everything under `app/` builds for the H2 via
+# `app/.cargo/config.toml`.
+[workspace]
+
+[[bin]]
+name = "slate"
+path = "src/main.rs"
+test = false
+bench = false
+
+# Scaffold only. Thread arrives with bring-up as the esp-rs `openthread` crate (MTD/SED,
+# prebuilt OpenThread libs for riscv32imac, so no C toolchain) on esp-radio's 802.15.4
+# driver, plus `tinyrlibc` for its `str*` imports. See docs/firmware.md > "Stack".
+[dependencies]
+slate-core = { path = "../core" }
+slate-protocol = { path = "../protocol" }
+
+esp-hal = { version = "1.2", default-features = false, features = ["esp32h2", "rt"] }
+esp-bootloader-esp-idf = { version = "0.6", default-features = false, features = ["esp32h2"] }
+esp-println = { version = "0.18", default-features = false, features = [
+  "esp32h2",
+  "jtag-serial",
+  "log-04",
+] }
+esp-backtrace = { version = "0.20", default-features = false, features = [
+  "esp32h2",
+  "panic-handler",
+  "println",
+] }
+log = { version = "0.4", default-features = false }
+
+[profile.release]
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+# The app is its own workspace, so it repeats the host workspace's lints.
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"

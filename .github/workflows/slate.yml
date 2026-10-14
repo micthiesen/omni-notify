@@ -1,0 +1,82 @@
+name: Omni Slate
+
+# The Slate hardware project (slate/). Independent of the Omni Notify image: the main
+# workflow ignores slate/ changes and this one runs only for them.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - slate/**
+      - .github/workflows/slate.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - slate/**
+      - .github/workflows/slate.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the pinned Rust toolchain
+        # slate/firmware/rust-toolchain.toml selects stable plus the RISC-V target.
+        working-directory: slate/firmware
+        run: rustup toolchain install
+
+      - name: Cache Cargo builds
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: |
+            slate/firmware
+            slate/firmware/app
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Host contract
+        working-directory: slate/firmware
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked
+
+      - name: ESP32-H2 build
+        working-directory: slate/firmware/app
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --release -- -D warnings
+          cargo build --locked --release
+
+  pcb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: slate/pcb
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: slate/pcb/.node-version
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: slate/pcb/.bun-version
+
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run typecheck
+      - run: bun run check:mainboard
+      - run: bun run test

@@ -1,0 +1,15 @@
+[package]
+name = "slate-core"
+description = "Omni Slate device behaviour as sans-I/O logic with no hardware dependency"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# No esp-* dependencies, deliberately: the device contract builds and tests on the host.
+[dependencies]
+slate-protocol = { path = "../protocol" }
+
+[lints]
+workspace = true

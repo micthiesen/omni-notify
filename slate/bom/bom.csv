@@ -1,0 +1,21 @@
+Subsystem,Manufacturer,Part number,Qty,Purpose,Design status,Purchase status,Order ref,Source,Notes
+Display,Good Display,GDEY133F91,1,13.3-inch four-ink e-paper panel with SSD2677,Selected; pinout gate G-01 open,Not ordered,,https://www.good-display.com,About US$152 (2026-10); listing showed zero stock: confirm before ordering
+Compute,Espressif,ESP32-H2-MINI-1-H4S,1,MCU and 802.15.4 radio module,Selected,Not ordered,,,About US$3.82 qty 1 at DigiKey US (2026-10); H4S is the current 4 MB code
+Power,Texas Instruments,TPS63900DSKR,1,3.3 V buck-boost,Selected,Not ordered,,,
+Power,Coilcraft,XFL4020-222ME,1,Buck-boost inductor 2.2 uH,Provisional; any shielded 2.2 uH >= 1.5 A about 4 x 4 mm,Not ordered,,,
+Power,Texas Instruments,BQ25185DLHR,1,Charger and power path,Selected,Not ordered,,,ILIM/VSET 18 kOhm and ISET 600 Ohm for 4.2 V / 500 mA
+Power,Texas Instruments,TPS22917DBVR,1,Panel rail load switch,Selected,Not ordered,,,
+Power,Texas Instruments,BQ29700DSER,1,Board-side cell protection,DNP; only for an unprotected cell,Not ordered,,,
+Display drive,Vishay,SI1308EDL-T1-GE3,1,Panel HV boost switch,Selected; values follow the GD reference circuit,Not ordered,,,
+Display drive,onsemi,MBR0530,3,Panel HV rectifiers,Selected,Not ordered,,,
+Display drive,Bourns,SRN4018-470M,1,Panel HV inductor 47 uH,Provisional; any shielded 47 uH >= 500 mA,Not ordered,,,
+Display drive,Hirose,FH12-24S-0.5SH(55),1,Panel FPC connector,Selected; confirm pin count at G-01,Not ordered,,,
+USB,GCT,USB4105-GF-A,1,USB-C receptacle,Selected,Not ordered,,,
+USB,STMicroelectronics,USBLC6-2SC6,1,USB D+/D- ESD,Selected,Not ordered,,,
+Battery,JST,S3B-PH-SM4-TB,1,Battery connector BAT+ NTC BAT-,Provisional; match the chosen pack lead,Not ordered,,,
+Battery,TBD,1S LiPo pouch 15 Ah protected with NTC,1,Main battery,Gated on G-04 (15 Ah nominal; up to 20 Ah),Not ordered,,,Factory-assembled pack with protection and NTC; never parallel cells on the board
+Passives,Various,Capacitors and resistors per docs/electrical.md,1,Decoupling dividers and settings,Listed line by line after capture,Not ordered,,,
+Bench,Espressif,ESP32-H2-DevKitM-1,2,Firmware spike and panel bring-up,Selected,Not ordered,,,
+Bench,Good Display,DESPI-C02,1,Panel adapter for the bench spike,Selected,Not ordered,,,Bench only; the mainboard carries its own HV network
+Infrastructure,TBD,Thread RCP dongle,1,OTBR radio co-processor on boris,Candidates: Home Assistant Connect ZBT-1 (web-flashable OpenThread RCP) or Nordic nRF52840 Dongle,Not ordered,,,Decide at G-03
+Bench,Nordic,Power Profiler Kit II,1,Energy measurements,Candidate if no current analyser is on hand,Not ordered,,,

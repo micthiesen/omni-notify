@@ -180,6 +180,13 @@ change; reuse authorization already given in the conversation.
   (Live Slot control, On Air and Deliveries widgets) and notification service
   extension, built from XcodeGen `project.yml`. See `docs/ios-app.md`; verify
   with `scripts/ios-live/typecheck.sh` and `scripts/ios-live/test.sh`.
+- `slate/` (not a crate): Omni Slate, the battery e-paper display hardware project
+  (ESP32-H2 on Thread, its own firmware workspaces, tscircuit PCB, BOM and test matrix).
+  It has its own `slate/AGENTS.md` and gate (`sh slate/scripts/check.sh`), its own
+  workflow, and never enters the image; the main workflow ignores `slate/**`. Its
+  server side will be an `omni-slate` crate depending on `slate/firmware/protocol`; that
+  crate must then be added to the `.dockerignore` allowlist and stop being ignored by
+  `ci.yml`.
 
 The frontend is Leptos 0.8 client-side rendering built by trunk into
 `crates/omni-web/dist` and served from `OMNI_WEB_DIST`. It talks only to the

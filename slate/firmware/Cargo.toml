@@ -1,0 +1,24 @@
+[workspace]
+resolver = "3"
+members = ["protocol", "core"]
+# `app` is the ESP32-H2 binary. It is its own workspace so this one keeps the host as its
+# default target and `cargo test` here runs the contract; `app/.cargo/config.toml` pins the
+# RISC-V target for builds run from `app/`.
+exclude = ["app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"

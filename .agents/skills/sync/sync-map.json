@@ -7,7 +7,11 @@
     },
     "stillair": {
       "path": "../stillair",
-      "notes": "Custom ceiling fan project (docs + Rust ESP32 firmware). Bootstrapped its sync skill from here; shares only the sync skill itself."
+      "notes": "Custom ceiling fan project (docs + Rust ESP32 firmware). Bootstrapped its sync skill from here; slate/ follows its firmware layout and adapts its next/wrap skills."
+    },
+    "crystal-shim": {
+      "path": "../crystal-shim",
+      "notes": "Hardware peer for slate/: PCB tooling pins, bun.lock and the pcb/konnect/kicad-manufacture skills Slate ports before capture."
     }
   },
   "resources": [
@@ -18,6 +22,30 @@
       ],
       "mode": "judgment",
       "notes": "Shared shape only (sync remote -> survey -> research majors -> apply -> verify -> ship). Steps are environment-specific: this repo is a Rust workspace with exact crate pins, a wasm frontend built by trunk, a Dockerfile with verified downloads, and LLM model IDs; mitools is a published TypeScript library whose CI publishes to npm on a version bump. Port procedure improvements, never the project-specific steps."
+    },
+    {
+      "path": ".agents/skills/slate-next/",
+      "peers": [
+        "stillair"
+      ],
+      "mode": "judgment",
+      "notes": "Adapted from stillair's next skill for the slate/ subproject (paths under slate/, Slate-specific gate examples). Port procedure improvements, never fan-specific steps."
+    },
+    {
+      "path": ".agents/skills/slate-wrap/",
+      "peers": [
+        "stillair"
+      ],
+      "mode": "judgment",
+      "notes": "Adapted from stillair's wrap skill for the slate/ subproject. Port procedure improvements, never fan-specific homes."
+    },
+    {
+      "path": "slate/pcb/",
+      "peers": [
+        "crystal-shim"
+      ],
+      "mode": "judgment",
+      "notes": "Tooling pins (package.json, bun.lock, .bun-version, .node-version, oxc configs) match crystal-shim's pcb/. Move them together; never copy board designs."
     }
   ]
 }
