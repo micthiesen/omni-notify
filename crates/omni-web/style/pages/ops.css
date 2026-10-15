@@ -35,7 +35,7 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
 .lead-id { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .lead-name { font: 600 var(--t-h2) var(--font); color: var(--text); text-decoration: none; }
 .lead-name:hover { color: var(--signal); }
-.lead-title { font: var(--t-h3); font-weight: 400; color: var(--text-2); overflow-wrap: anywhere; }
+.lead-title { font: var(--t-h3); color: var(--text); overflow-wrap: anywhere; }
 .lead-chapter { padding-left: var(--sp-4); border-left: 2px solid var(--signal-line); }
 .lead-chapter h3 { font: var(--t-h3); margin-bottom: var(--sp-1); }
 .lead-chapter p { color: var(--text-2); font: var(--t-body); }
@@ -139,8 +139,13 @@ button.chart-legend-item { border: 0; background: none; font: inherit; cursor: p
 .date-block { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 40px; flex: none; line-height: 1; }
 .date-day { font: var(--t-read-s); color: var(--text); }
 .date-dow { font: var(--t-label); color: var(--text-3); margin-top: 2px; }
-.now-chapter h3 { font: var(--t-h3); margin: var(--sp-1) 0; }
-.now-chapter p { color: var(--text-2); }
+.hero-topic { font: var(--t-h3); color: var(--text); overflow-wrap: anywhere; }
+.streamer-hero .lede { color: var(--text); }
+.topic-list { display: flex; flex-direction: column; gap: var(--sp-4); }
+.topic { padding-left: var(--sp-3); border-left: 2px solid var(--line); }
+.topic:first-child { border-left-color: var(--signal-line); }
+.topic h3 { font: var(--t-h3); margin: var(--sp-1) 0; }
+.topic p { color: var(--text-2); }
 .now-alert {
   display: flex;
   flex-direction: column;

@@ -52,6 +52,59 @@ pub fn preferred_watch(streamer: &LiveStreamerView) -> StreamerBinding {
         .unwrap_or_else(|| streamer.primary.clone())
 }
 
+/// A rolling summary older than this no longer describes the stream: windows
+/// land about every eight minutes, so this allows one missed window.
+const FRESH_READ_MS: f64 = 20.0 * 60_000.0;
+
+/// What a live stream is about right now, from its latest rolling summary.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LiveRead {
+    pub topic: String,
+    pub summary: String,
+}
+
+/// The latest rolling summary, when it is fresh at `now_ms`.
+pub fn live_read(intelligence: &LivestreamIntelligence, now_ms: f64) -> Option<LiveRead> {
+    let summary = intelligence.summary.as_ref()?;
+    #[allow(clippy::cast_precision_loss)]
+    let age = now_ms - summary.updated_at as f64;
+    (age <= FRESH_READ_MS && !summary.topic.trim().is_empty()).then(|| LiveRead {
+        topic: summary.topic.clone(),
+        summary: summary.text.clone(),
+    })
+}
+
+fn is_decoration(c: char) -> bool {
+    matches!(u32::from(c),
+        0x1F000..=0x1FAFF   // emoji, pictographs, symbols
+        | 0x2600..=0x27BF   // miscellaneous symbols and dingbats
+        | 0x2B00..=0x2BFF   // arrows, stars
+        | 0x2190..=0x21FF   // arrows
+        | 0xFE00..=0xFE0F   // variation selectors
+        | 0x200D            // zero-width joiner
+        | 0x20E3            // keycap
+        | 0xE0000..=0xE007F // tags
+    )
+}
+
+/// A stream title without emoji and decorations, with whitespace collapsed:
+/// "🚨ALL IN PODCAST HATEWATCH🚨" reads "ALL IN PODCAST HATEWATCH". A title
+/// made only of decorations is returned unchanged.
+pub fn clean_stream_title(title: &str) -> String {
+    let cleaned = title
+        .chars()
+        .map(|c| if is_decoration(c) { ' ' } else { c })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if cleaned.is_empty() {
+        title.trim().to_owned()
+    } else {
+        cleaned
+    }
+}
+
 /// The typed intelligence document of a live streamer, when present and valid.
 pub fn streamer_intelligence(streamer: &LiveStreamerView) -> Option<LivestreamIntelligence> {
     serde_json::from_value(streamer.intelligence.clone()?).ok()
@@ -221,5 +274,67 @@ mod tests {
     fn youtube_is_labelled_with_its_brand_casing() {
         assert_eq!(platform_label("youtube"), "YouTube");
         assert_eq!(platform_label("kick"), "Kick");
+    }
+
+    #[test]
+    fn stream_titles_lose_emoji_and_extra_whitespace() {
+        assert_eq!(
+            clean_stream_title("\u{1f6a8}ALL IN PODCAST HATEWATCH\u{1f6a8}"),
+            "ALL IN PODCAST HATEWATCH"
+        );
+        assert_eq!(
+            clean_stream_title("nopixel V \u{1f453}LIVE\u{1f453}BIG DAY  \u{2764}\u{fe0f}"),
+            "nopixel V LIVE BIG DAY"
+        );
+        assert_eq!(
+            clean_stream_title("lizards, gimps and pilots"),
+            "lizards, gimps and pilots"
+        );
+        assert_eq!(
+            clean_stream_title(" \u{1f525}\u{1f525} "),
+            "\u{1f525}\u{1f525}"
+        );
+    }
+
+    fn intelligence(summary: Option<(&str, i64)>) -> LivestreamIntelligence {
+        serde_json::from_value(serde_json::json!({
+            "streamerId": "destiny",
+            "sessionStartedAt": 0,
+            "relevanceScore": 0,
+            "relevanceReasons": [],
+            "chapters": [],
+            "updatedAt": 0,
+            "summary": summary.map(|(topic, at)| serde_json::json!({
+                "text": "Destiny argues about the claim.",
+                "topic": topic,
+                "confidence": 0.9,
+                "transcriptExcerpt": "",
+                "updatedAt": at,
+                "windowSeconds": 480,
+            })),
+        }))
+        .expect("intelligence")
+    }
+
+    #[test]
+    fn a_live_read_is_the_latest_summary_while_it_is_fresh() {
+        let minute = 60_000.0;
+        let read = live_read(
+            &intelligence(Some(("Debate over the claim", 0))),
+            19.0 * minute,
+        );
+        assert_eq!(
+            read,
+            Some(LiveRead {
+                topic: "Debate over the claim".into(),
+                summary: "Destiny argues about the claim.".into(),
+            })
+        );
+        assert_eq!(
+            live_read(&intelligence(Some(("Debate", 0))), 21.0 * minute),
+            None
+        );
+        assert_eq!(live_read(&intelligence(Some((" ", 0))), 0.0), None);
+        assert_eq!(live_read(&intelligence(None), 0.0), None);
     }
 }

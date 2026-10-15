@@ -7,8 +7,8 @@ use omni_api::intelligence::LivestreamIntelligence;
 use omni_api::streamers::StreamerBinding;
 use omni_api::streamers::{LiveStreamerView, OfflineStreamerView, StreamerTier, StreamerView};
 use omni_web_kit::components::streamers::{
-    DggPresenceTag, platform_label, preferred_watch, streamer_intelligence, streamer_path,
-    viewer_number,
+    DggPresenceTag, LiveRead, clean_stream_title, live_read, platform_label, preferred_watch,
+    streamer_intelligence, streamer_path, viewer_number,
 };
 use omni_web_kit::components::{
     Avatar, ButtonLink, Delta, EmptyState, ErrorState, Glyph, Icon, IconSize, LiveTag, Meter,
@@ -121,6 +121,23 @@ fn intel(s: &Option<LiveStreamerView>) -> Option<LivestreamIntelligence> {
     s.as_ref().and_then(streamer_intelligence)
 }
 
+/// The fresh rolling-summary read of a live streamer, if any.
+pub fn use_live_read(
+    intelligence: Memo<Option<LivestreamIntelligence>>,
+    now: Signal<f64>,
+) -> Memo<Option<LiveRead>> {
+    Memo::new(move |_| {
+        let now = now.get();
+        intelligence.with(|i| i.as_ref().and_then(|i| live_read(i, now)))
+    })
+}
+
+/// What a live row or hero leads with: the current topic when there is a
+/// fresh read, else the cleaned stream title.
+fn headline(read: Option<&LiveRead>, title: &str) -> String {
+    read.map_or_else(|| clean_stream_title(title), |r| r.topic.clone())
+}
+
 /// Δ vs the 15-minute baseline and the backend surge gate.
 fn trend_delta(i: &Option<LivestreamIntelligence>) -> (Option<f64>, bool) {
     i.as_ref()
@@ -138,6 +155,9 @@ pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView 
     let href = streamer_path(&id);
     let streamer = use_live_streamer(live, id);
     let intelligence = Memo::new(move |_| streamer.with(intel));
+    let read = use_live_read(intelligence, now.into());
+    let title = move || streamer.with(|s| s.as_ref().map(|s| s.title.clone()).unwrap_or_default());
+    let sub = move || read.with(|r| headline(r.as_ref(), &title()));
     let name = streamer.with_untracked(|s| {
         s.as_ref()
             .map(|s| s.display_name.clone())
@@ -178,7 +198,7 @@ pub fn LiveRow(id: String, #[prop(optional)] with_meter: bool) -> impl IntoView 
             <Avatar name=name.clone() size=32 presence=Presence::Live platform=platform.unwrap_or_default() image=avatar/>
             <span class="row-main">
                 <span class="row-title">{name.clone()}</span>
-                <span class="row-sub truncate">{move || streamer.with(|s| s.as_ref().map(|s| s.title.clone()).unwrap_or_default())}</span>
+                <span class="row-sub truncate" title=title>{sub}</span>
             </span>
             <span class="row-end">
                 <span class="num dim hide-phone">{uptime}</span>
@@ -256,8 +276,8 @@ pub fn LeadStage(id: String) -> impl IntoView {
     });
     let delta = Signal::derive(move || trend_delta(&intelligence.get()).0);
     let surge = Signal::derive(move || trend_delta(&intelligence.get()).1);
-    let chapter =
-        move || intelligence.with(|i| i.as_ref().and_then(|i| i.chapters.last().cloned()));
+    let read = use_live_read(intelligence, now.into());
+    let title = move || s().map(|s| s.title).unwrap_or_default();
     let tier_background = s().is_some_and(|s| s.tier == StreamerTier::Background);
     view! {
         <div class="lead">
@@ -269,7 +289,10 @@ pub fn LeadStage(id: String) -> impl IntoView {
                         {tier_background.then(|| view! { <Tag title="Notifications are muted for background streamers">"Background"</Tag> })}
                         <span class="num dim">{move || s().map(|s| format_uptime(now.get() - s.started_at as f64)).unwrap_or_default()}</span>
                     </div>
-                    <h2 class="lead-title">{move || s().map(|s| s.title).unwrap_or_default()}</h2>
+                    <h2 class="lead-title">{move || read.with(|r| headline(r.as_ref(), &title()))}</h2>
+                    {move || read.with(Option::is_some).then(|| view! {
+                        <p class="stream-title" title="Stream title">{clean_stream_title(&title())}</p>
+                    })}
                 </div>
             </div>
             <div class="lead-actions">
@@ -289,10 +312,9 @@ pub fn LeadStage(id: String) -> impl IntoView {
                     <Glyph icon=Icon::ChevronRight size=IconSize::Small/>
                 </Link>
             </div>
-            {move || chapter().map(|c| view! {
+            {move || read.get().map(|r| view! {
                 <div class="lead-chapter">
-                    <h3>{c.title}</h3>
-                    <p class="clamp-2">{c.summary}</p>
+                    <p class="clamp-3">{r.summary}</p>
                 </div>
             })}
             <div class="lead-figures">

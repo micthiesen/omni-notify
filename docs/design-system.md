@@ -577,13 +577,21 @@ hairline dividers (2 columns on phone).
 2. Wide: two columns (8/4).
    - Left, **On air Stage**: header (LiveTag "On air", "4 channels · 41,786
      watching", segmented Relevance/Viewers). The lead channel (highest
-     relevance): Avatar 64 live ring, name, platform, tier Tag, uptime, title (h2),
-     current chapter (h3 plus summary, left rule), `read-xl` count with Sparkline
+     relevance): Avatar 64 live ring, name, platform, tier Tag, uptime, the live
+     topic (h2, `--text`) with the cleaned stream title under it (small,
+     `--text-3`), the latest summary (clamped to three lines, left rule),
+     `read-xl` count with Sparkline
      and dashed typical-peak line, four facts (session peak, Δ vs 15-min baseline,
      DGG with Delta, typical peak), plus a primary **Watch on <platform>**
      button and a secondary **Details** button. Other live channels: rows with
-     Avatar 32, name and title, uptime, DGG, Delta and right-aligned `read-m`
-     count; each row is a Watch target with a details chevron.
+     Avatar 32, name and live topic (the stream title in its tooltip), uptime,
+     DGG, Delta and right-aligned `read-m` count; each row is a Watch target
+     with a details chevron.
+
+   **Live topic.** Live surfaces lead with what the stream is about now: the
+   latest rolling-summary topic while it is under 20 minutes old. Without a
+   fresh read they show the stream title. Stream titles are always shown
+   cleaned: emoji and decorative symbols removed, whitespace collapsed.
      Footer Disclosure "9 channels offline · 3 primary" opens desaturated Avatar
      chips (primary first) with last-live time.
    - Right: **Needs you / Nothing needs you** panel (check rows: task failures, stale tasks, email failures, each linking) and
@@ -659,9 +667,11 @@ It opens in a new tab with `rel="noopener"`.
 ### `/streamers/:id` live (e.g. `/streamers/hutch`)
 
 1. Hero: Avatar 64 with live ring, LiveTag with uptime, tier Tag ("Background
-   tier" explains muted notifications in its tooltip), name (display), title
-   (body, `--text-2`), binding chips (platform, handle, primary flag, DGG embed
-   count). Actions: "Intelligence" (secondary) and primary "Watch on <platform>".
+   tier" explains muted notifications in its tooltip), name (display), then
+   with a fresh read the live topic (h3, `--text`), the summary (lede,
+   `--text`) and the cleaned stream title (small, `--text-3`); without one,
+   the cleaned title as the lede. Binding chips (platform, handle, primary
+   flag, DGG embed count). Actions: "Intelligence" (secondary) and primary "Watch on <platform>".
 2. Readout band as a **Stage**: Watching now (`read-xl`, value tick) with the
    session Sparkline and dashed typical-peak line *(from B)*; Session peak (since
    08:01); DGG with Delta; Typical peak with all-time record and date.
@@ -673,16 +683,18 @@ It opens in a new tab with `rel="noopener"`.
      (Signal plus ★ for the record; peaks ≥ 1.3× typical in `--text` weight 600).
      The live session is pinned on top with a LiveTag. First 4 weeks, then
      ShowMore "Show 34 older streams".
-   - Right (sticky): **Now** panel: session lane from start to now with chapter
-     ticks, current chapter (h3 plus summary), Tags for confidence and relevance,
+   - Right (sticky): **This session** panel: the session's topics as a
+     timeline, latest first (clock time, h3, summary, left rule in Signal for
+     the latest), four shown and the rest under "N earlier topics"; Tags for
+     confidence and relevance,
      "Is this summary right?" Accurate / Off (existing intelligence-feedback POST),
-     Disclosure "Transcript excerpt · 75 s". **Baseline** panel *(from C)*: key
+     Disclosure "Transcript excerpt · 480 s" with each speaker's share. **Baseline** panel *(from C)*: key
      values current (sampled), baseline 5–20 min, change, slope, DGG now/base,
      baseline samples, surge gate (typical peak), suppression, updated time. It
      makes the surge rules visible without computing anything new. **Bindings**
      (per platform viewers, primary). **Records** (all-time peak, longest stream,
      streams tracked).
-4. Phone order: hero, readouts, Now, chart (200 px tall), streams (two-line rows),
+4. Phone order: hero, readouts, This session, chart (200 px tall), streams (two-line rows),
    Baseline, Bindings, Records.
 
 ### `/streamers/:id` offline (e.g. `/streamers/destiny`)
@@ -690,8 +702,8 @@ It opens in a new tab with `rel="noopener"`.
 Same layout without the Stage glow: Avatar desaturated, no LiveTag; hero line
 "Last live 15h ago · peak 2,436"; readout band shows Last peak, Typical peak,
 All-time, Streams in 30 days. Actions: "Intelligence" and primary "Open
-channel". The Now panel becomes "Last session" with its final chapter, and the
-Baseline panel is hidden.
+channel". The This session panel becomes "Last session", and the Baseline
+panel is hidden.
 
 ### `/streamers/:id/intelligence`
 

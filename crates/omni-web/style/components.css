@@ -395,6 +395,8 @@ button.chip:hover { border-color: var(--line-strong); color: var(--text); }
 .sentence .live { color: var(--live); }
 .sentence .signal { color: var(--signal); }
 .lede { color: var(--text-2); max-width: 64ch; }
+/* The streamer-set title, demoted below the live topic. */
+.stream-title { font: var(--t-small); color: var(--text-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; max-width: 64ch; }
 .page-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 @media (max-width: 899px) {
   .page-head { margin-bottom: var(--sp-6); }

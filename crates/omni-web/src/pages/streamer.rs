@@ -1,18 +1,23 @@
-//! One monitored streamer: hero, readout Stage, daily peak chart, streams by
-//! week, and the Now, Baseline, Bindings and Records panels.
+//! One monitored streamer: hero (leading with the live topic and summary),
+//! readout Stage, daily peak chart, streams by week, and the session
+//! chapters, Baseline, Bindings and Records panels.
 
 use std::collections::HashMap;
 
 use leptos::prelude::*;
 use omni_api::common::encode_uri_component;
-use omni_api::intelligence::{FeedbackVerdict, LivestreamIntelligence, PresenceState};
+use omni_api::intelligence::{
+    FeedbackVerdict, LivestreamChapter, LivestreamIntelligence, PresenceState,
+};
 use omni_api::streamers::{
     LiveStreamerView, StreamSessionView, StreamerMetricsResponse, StreamerTier, StreamerView,
 };
 use omni_web_kit::api;
 use omni_web_kit::charts::{BarChart, BarPoint, BarSeries};
 use omni_web_kit::chrome::use_page_label;
-use omni_web_kit::components::streamers::{platform_label, streamer_intelligence, viewer_number};
+use omni_web_kit::components::streamers::{
+    clean_stream_title, live_read, platform_label, streamer_intelligence, viewer_number,
+};
 use omni_web_kit::components::{
     Avatar, ButtonLink, ButtonVariant, Chip, Delta, Disclosure, EmptyState, ErrorState, Icon,
     LiveTag, Meter, Panel, PlatformIcon, Presence, Readout, ReadoutSize, SegOption, Segmented,
@@ -466,6 +471,20 @@ fn Streams(
     }
 }
 
+/// Session topics shown before the rest collapse under "earlier".
+const RECENT_CHAPTERS: usize = 4;
+
+#[component]
+fn ChapterItem(chapter: LivestreamChapter) -> impl IntoView {
+    view! {
+        <li class="topic">
+            <span class="label num">{date_locale_time_string(chapter.started_at, &[("hour", "numeric"), ("minute", "2-digit")])}</span>
+            <h3>{chapter.title}</h3>
+            <p>{chapter.summary}</p>
+        </li>
+    }
+}
+
 #[component]
 fn NowPanel(
     streamer_id: String,
@@ -499,13 +518,21 @@ fn NowPanel(
             }
         });
     };
-    let title = if is_live { "Now" } else { "Last session" };
+    let title = if is_live {
+        "This session"
+    } else {
+        "Last session"
+    };
     // Each part reads its own memo: intelligence changes with every viewer
     // trend update, and rebuilding the panel would close the transcript
     // disclosure and drop focus from the feedback chips.
     let present = Memo::new(move |_| intelligence.with(Option::is_some));
-    let chapter = Memo::new(move |_| {
-        intelligence.with(|i| i.as_ref().and_then(|i| i.chapters.last().cloned()))
+    let chapters = Memo::new(move |_| {
+        intelligence.with(|i| {
+            i.as_ref()
+                .map(|i| i.chapters.iter().rev().cloned().collect::<Vec<_>>())
+                .unwrap_or_default()
+        })
     });
     let summary =
         Memo::new(move |_| intelligence.with(|i| i.as_ref().and_then(|i| i.summary.clone())));
@@ -518,14 +545,28 @@ fn NowPanel(
             } else {
                 view! {
                     <div class="stack">
-                        {move || chapter.get().map(|c| view! {
-                            <div class="now-chapter">
-                                <span class="label">{format!("Since {}", format_relative(c.started_at))}</span>
-                                <h3>{c.title}</h3>
-                                <p>{c.summary}</p>
-                            </div>
-                        })}
-                        {move || summary.with(|s| s.as_ref().map(|s| view! { <p class="dim">{s.text.clone()}</p> }))}
+                        {move || {
+                            let list = chapters.get();
+                            if list.is_empty() {
+                                return None;
+                            }
+                            let earlier = list.len().saturating_sub(RECENT_CHAPTERS);
+                            let mut list = list.into_iter();
+                            let recent: Vec<_> = list.by_ref().take(RECENT_CHAPTERS).collect();
+                            let older: Vec<_> = list.collect();
+                            Some(view! {
+                                <ol class="topic-list" aria-label="Topics this session, latest first">
+                                    {recent.into_iter().map(|c| view! { <ChapterItem chapter=c/> }).collect_view()}
+                                </ol>
+                                {(earlier > 0).then(|| view! {
+                                    <Disclosure summary=format!("{earlier} earlier {}", if earlier == 1 { "topic" } else { "topics" }) flush=true>
+                                        <ol class="topic-list">
+                                            {older.into_iter().map(|c| view! { <ChapterItem chapter=c/> }).collect_view()}
+                                        </ol>
+                                    </Disclosure>
+                                })}
+                            })
+                        }}
                         {move || intelligence.get().map(|i| {
                             let confidence = i.summary.as_ref().map(|s| s.confidence);
                             view! {
@@ -759,6 +800,10 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
     // page closure would rebuild it (resetting the chart range, expanded
     // weeks and disclosures) on every snapshot.
     let is_live = Memo::new(move |_| live_view.with(Option::is_some));
+    let read = Memo::new(move |_| {
+        let now = now.get();
+        intelligence.with(|i| i.as_ref().and_then(|i| live_read(i, now)))
+    });
     let typical = Memo::new(move |_| {
         intelligence
             .with(|i| {
@@ -807,7 +852,7 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
         let avatar = current.with_untracked(|s| s.avatar_url().map(str::to_owned));
         let intel_href = format!("/streamers/{}/intelligence", encode_uri_component(&page_id));
         let sub_line = move || match current.get() {
-            StreamerView::Live(l) => l.title,
+            StreamerView::Live(l) => clean_stream_title(&l.title),
             StreamerView::Offline(o) => match o.last_ended_at {
                 Some(ended) => format!(
                     "Last live {}{}",
@@ -836,7 +881,15 @@ pub fn StreamerPage(#[prop(into)] streamer_id: String) -> impl IntoView {
                         })}
                     </div>
                     <h1 class="sentence">{name.clone()}</h1>
-                    <p class="lede">{sub_line}</p>
+                    {move || match read.get() {
+                        Some(r) => view! {
+                            <p class="hero-topic">{r.topic}</p>
+                            <p class="lede">{r.summary}</p>
+                            <p class="stream-title" title="Stream title">{sub_line()}</p>
+                        }
+                        .into_any(),
+                        None => view! { <p class="lede">{sub_line()}</p> }.into_any(),
+                    }}
                     <div class="chips">
                         {bindings.into_iter().map(|b| view! {
                             <a
