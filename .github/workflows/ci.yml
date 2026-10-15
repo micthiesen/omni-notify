@@ -65,9 +65,14 @@ jobs:
 
       - name: Fetch the verified sherpa-onnx static library
         # Clippy runs build scripts too, including sherpa-onnx-sys's, which reads it.
+        # The library is extracted outside target/ and linked through
+        # SHERPA_ONNX_LIB_DIR: sherpa-onnx-sys otherwise extracts into
+        # target/sherpa-onnx-prebuilt, which the Cargo cache does not keep while
+        # its cached build-script output still points there.
         run: |
           deploy/sherpa-onnx/fetch-static-lib.sh "$RUNNER_TEMP/sherpa-onnx"
-          echo "SHERPA_ONNX_ARCHIVE_DIR=$RUNNER_TEMP/sherpa-onnx" >> "$GITHUB_ENV"
+          tar -xjf "$RUNNER_TEMP"/sherpa-onnx/sherpa-onnx-v*-static-lib.tar.bz2 -C "$RUNNER_TEMP/sherpa-onnx"
+          echo "SHERPA_ONNX_LIB_DIR=$(echo "$RUNNER_TEMP"/sherpa-onnx/sherpa-onnx-v*-static-lib/lib)" >> "$GITHUB_ENV"
 
       - name: Lint
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -109,9 +114,14 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Fetch the verified sherpa-onnx static library
+        # The library is extracted outside target/ and linked through
+        # SHERPA_ONNX_LIB_DIR: sherpa-onnx-sys otherwise extracts into
+        # target/sherpa-onnx-prebuilt, which the Cargo cache does not keep while
+        # its cached build-script output still points there.
         run: |
           deploy/sherpa-onnx/fetch-static-lib.sh "$RUNNER_TEMP/sherpa-onnx"
-          echo "SHERPA_ONNX_ARCHIVE_DIR=$RUNNER_TEMP/sherpa-onnx" >> "$GITHUB_ENV"
+          tar -xjf "$RUNNER_TEMP"/sherpa-onnx/sherpa-onnx-v*-static-lib.tar.bz2 -C "$RUNNER_TEMP/sherpa-onnx"
+          echo "SHERPA_ONNX_LIB_DIR=$(echo "$RUNNER_TEMP"/sherpa-onnx/sherpa-onnx-v*-static-lib/lib)" >> "$GITHUB_ENV"
 
       - name: Install pinned cargo-nextest
         uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
