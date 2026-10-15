@@ -98,6 +98,9 @@ pub struct TranscriptAssessmentInput {
     pub display_name: String,
     pub title: String,
     pub transcript: String,
+    /// Each diarized speaker's share of the transcript, when attributed.
+    pub speakers: Option<String>,
+    pub window_seconds: f64,
     pub previous_summary: Option<String>,
     pub previous_topic: Option<String>,
     pub viewer_anomaly: Option<String>,
@@ -287,10 +290,14 @@ Prefer the exact previous topic label when the broader subject is still the same
 
 Only recommend an alert for a genuinely time-sensitive event: breaking news being actively discussed, a substantive debate beginning, a notable guest joining, or a major announcement. Routine reactions, jokes, gaming, and ordinary conversation are not alerts. Previous user feedback is binding evidence about desired alert noise.
 
+Transcript lines may start with a speaker label from automatic voice clustering. \"Destiny\" means that voice matched Destiny's enrolled voiceprint. \"Speaker 1\", \"Speaker 2\" and so on are unidentified voices, numbered only within this transcript. The streamer is usually the speaker with the most speech, but voices from videos, clips or calls the streamer plays also appear as speakers, and clustering can split one voice or merge two. Use the labels and the conversation to say who said or argued what, naming a person only when the transcript or labels support it, rather than writing \"someone\" or \"a speaker\". When most of the audio is a game, video or clip the streamer is playing, say that and what the streamer is doing or reacting to, rather than only retelling its plot.
+
 When testing Destiny presence, decide whether Destiny appears to be a live conversational participant rather than audio from a video or clip. A speaker-model match is supporting evidence, never sufficient by itself. Look for direct turn-taking, people addressing him, first-person responses, and conversational continuity. If uncertain, return false.
 
 Streamer: {}
 Stream title: {}
+Transcript covers: {} seconds
+Speakers: {}
 Previous summary: {}
 Previous topic: {}
 Viewer anomaly: {}
@@ -304,6 +311,8 @@ Transcript:
 {transcript}",
         input.display_name,
         input.title,
+        omni_core::js::number_to_string(omni_core::js::math_round(input.window_seconds)),
+        input.speakers.as_deref().unwrap_or("not attributed"),
         input.previous_summary.as_deref().unwrap_or("none"),
         input.previous_topic.as_deref().unwrap_or("none"),
         input.viewer_anomaly.as_deref().unwrap_or("none"),

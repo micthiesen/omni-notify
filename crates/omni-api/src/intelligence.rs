@@ -97,6 +97,8 @@ pub struct RollingSummary {
     pub transcript_excerpt: String,
     pub updated_at: Ms,
     pub window_seconds: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speakers: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

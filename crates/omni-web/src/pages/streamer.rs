@@ -557,7 +557,8 @@ fn NowPanel(
                         })}
                         {move || summary.get().filter(|s| !s.transcript_excerpt.is_empty()).map(|s| view! {
                             <Disclosure summary=format!("Transcript excerpt · {} s", number_string(js_round(s.window_seconds))) flush=true>
-                                <p class="prose small">{s.transcript_excerpt}</p>
+                                <p class="prose small transcript-excerpt">{s.transcript_excerpt}</p>
+                                {s.speakers.map(|speakers| view! { <p class="small dim num">{speakers}</p> })}
                             </Disclosure>
                         })}
                     </div>

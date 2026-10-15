@@ -31,6 +31,7 @@ pub mod service;
 pub mod sherpa;
 pub mod speech;
 pub mod summary_text;
+pub mod transcript;
 pub mod types;
 pub mod voice_evidence;
 pub mod voice_targets;

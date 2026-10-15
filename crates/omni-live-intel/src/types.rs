@@ -164,6 +164,7 @@ pub struct ViewerTrend {
 #[serde(rename_all = "camelCase")]
 pub struct LivestreamChapter {
     pub chapter_id: String,
+    /// When the chapter's first window started recording; older rows hold
     /// `now - durationSeconds * 1000`, which can be fractional.
     pub started_at: f64,
     pub title: String,
@@ -181,6 +182,9 @@ pub struct RollingSummary {
     pub transcript_excerpt: String,
     pub updated_at: i64,
     pub window_seconds: f64,
+    /// Each diarized speaker's share of the window, `Destiny 62%, Speaker 1 30%`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speakers: Option<String>,
     #[serde(flatten)]
     pub extra: Extra,
 }

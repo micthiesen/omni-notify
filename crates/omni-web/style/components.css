@@ -1139,6 +1139,7 @@ button.chart-legend-item[aria-pressed="false"] .chart-tooltip-swatch { opacity: 
   overflow-wrap: anywhere;
 }
 .prose > * + * { margin-top: var(--sp-3); }
+.transcript-excerpt { white-space: pre-line; }
 .prose h4, .prose h5, .prose h6 { margin-top: var(--sp-6); color: var(--text); font: var(--t-h3); }
 .prose strong { color: var(--text); font-weight: 600; }
 .prose a { color: var(--text); text-decoration: underline; text-decoration-color: var(--signal-line); text-underline-offset: 3px; }

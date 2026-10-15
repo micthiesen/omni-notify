@@ -237,9 +237,18 @@ still climbing after go-live, and a platform surge must also reach the median
 peak of recent full sessions. Sparse baselines after a restart or primary switch
 suppress rather than alert.
 
-Missing, empty or corrupt livestream speech or speaker model files disable
-livestream intelligence at boot (`Livestream intelligence disabled: ...`) and
-leave live checks running; they never crash boot.
+Missing, empty or corrupt livestream speech, speaker or diarization model files
+disable livestream intelligence at boot (`Livestream intelligence disabled: ...`)
+and leave live checks running; they never crash boot.
+
+Rolling summaries listen continuously. Each summary target gets one listener
+(at most six) that captures back-to-back `LIVESTREAM_SUMMARY_INTERVAL_SECONDS`
+windows (the first is two minutes) outside the voice capture queue and
+summarizes each window while the next records. A window is diarized (pyannote
+segmentation 3.0 with the CAM++ extractor), each speaker turn is transcribed,
+and a speaker is labeled "Destiny" only when most of its scored voiceprint
+windows match. The labels feed the summary prompt and never change Destiny
+presence, which keeps its own short voice samples and LLM confirmation.
 A capture that finds the stream has ended (yt-dlp "not currently live", an m3u8
 404, or a `post_live`/`was_live`/`not_live`/`is_upcoming` status) is
 `AudioError::NotLive`: never retried, recorded as a Skipped stage, no WARN.

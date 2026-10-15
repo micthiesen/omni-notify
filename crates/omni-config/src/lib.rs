@@ -206,7 +206,6 @@ config_struct! {
     livestream_max_voice_targets: u32 = "LIVESTREAM_MAX_VOICE_TARGETS",
     livestream_voice_sample_seconds: u32 = "LIVESTREAM_VOICE_SAMPLE_SECONDS",
     livestream_voice_sample_interval_seconds: u32 = "LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS",
-    livestream_summary_sample_seconds: u32 = "LIVESTREAM_SUMMARY_SAMPLE_SECONDS",
     livestream_summary_interval_seconds: u32 = "LIVESTREAM_SUMMARY_INTERVAL_SECONDS",
     pushover_calendar_token: Option<String> = "PUSHOVER_CALENDAR_TOKEN",
     google_generative_ai_api_key: Option<String> = "GOOGLE_GENERATIVE_AI_API_KEY",
@@ -462,8 +461,6 @@ impl Config {
                 .positive_int_with_default("LIVESTREAM_VOICE_SAMPLE_SECONDS", 18)?,
             livestream_voice_sample_interval_seconds: env
                 .positive_int_with_default("LIVESTREAM_VOICE_SAMPLE_INTERVAL_SECONDS", 45)?,
-            livestream_summary_sample_seconds: env
-                .positive_int_with_default("LIVESTREAM_SUMMARY_SAMPLE_SECONDS", 75)?,
             livestream_summary_interval_seconds: env
                 .positive_int_with_default("LIVESTREAM_SUMMARY_INTERVAL_SECONDS", 480)?,
             pushover_calendar_token: env.opt("PUSHOVER_CALENDAR_TOKEN"),

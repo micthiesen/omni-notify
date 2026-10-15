@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.27.1
 
 # Stage graph (BuildKit builds independent stages in parallel):
-#   downloads: cargo-chef, sherpa-lib, web-tools, yt-dlp, silero, speaker, parakeet
+#   downloads: cargo-chef, sherpa-lib, web-tools, yt-dlp, silero, speaker,
+#              segmentation, parakeet
 #   rust:      chef -> planner -> server (cook, then workspace build)
 #                             \-> web (cook, then trunk) -> web-dist
 #   runtime:   apt layer, then static assets, then the frequently changing outputs
@@ -56,6 +57,18 @@ RUN fetch-verified.sh \
   https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx \
   357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b \
   /models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx
+
+# pyannote segmentation 3.0 (MIT) for rolling-summary speaker diarization.
+FROM fetch AS segmentation
+RUN fetch-verified.sh \
+    https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2 \
+    24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488 \
+    /tmp/segmentation.tar.bz2 \
+  && mkdir -p /models \
+  && tar -xjf /tmp/segmentation.tar.bz2 -C /models \
+    sherpa-onnx-pyannote-segmentation-3-0/model.onnx \
+    sherpa-onnx-pyannote-segmentation-3-0/LICENSE \
+  && rm /tmp/segmentation.tar.bz2
 
 FROM fetch AS parakeet
 RUN fetch-verified.sh \
@@ -171,6 +184,7 @@ WORKDIR /app
 COPY --chown=node:node docs/licenses ./licenses
 COPY --from=silero --chown=node:node /models/ ./assets/livestream-intelligence/models/
 COPY --from=speaker --chown=node:node /models/ ./assets/livestream-intelligence/models/
+COPY --from=segmentation --chown=node:node /models/ ./assets/livestream-intelligence/models/
 COPY --from=parakeet --chown=node:node /models/ ./assets/livestream-intelligence/models/
 COPY --from=yt-dlp /out/yt-dlp /usr/local/bin/yt-dlp
 COPY --chown=node:node assets ./assets

@@ -1,21 +1,31 @@
 //! The sherpa-onnx backend (safe wrapper only): Silero VAD, 3D-Speaker CAM++
-//! embeddings and the Parakeet TDT 0.6B v3 int8 transducer, all on CPU,
-//! configured so embeddings match the enrolled voiceprints.
+//! embeddings, pyannote segmentation 3.0 diarization and the Parakeet TDT 0.6B
+//! v3 int8 transducer, all on CPU, configured so embeddings match the enrolled
+//! voiceprints.
 
 use std::path::Path;
 use std::sync::Mutex;
 
 use sherpa_onnx::{
-    OfflineRecognizer, OfflineRecognizerConfig, OfflineTransducerModelConfig, SileroVadModelConfig,
-    SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig, VadModelConfig,
-    VoiceActivityDetector,
+    FastClusteringConfig, OfflineRecognizer, OfflineRecognizerConfig, OfflineSpeakerDiarization,
+    OfflineSpeakerDiarizationConfig, OfflineSpeakerSegmentationModelConfig,
+    OfflineSpeakerSegmentationPyannoteModelConfig, OfflineTransducerModelConfig,
+    SileroVadModelConfig, SpeakerEmbeddingExtractor, SpeakerEmbeddingExtractorConfig,
+    VadModelConfig, VoiceActivityDetector,
 };
 
 use crate::audio::SAMPLE_RATE;
-use crate::speech::{ModelFiles, SpeechBackend, SpeechRecognitionError};
+use crate::speech::{DiarizedSegment, ModelFiles, SpeechBackend, SpeechRecognitionError};
 
 const VAD_WINDOW: usize = 512;
 const VAD_BUFFER_SECONDS: f32 = 120.0;
+/// Diarization merges speaker clusters closer than this; sherpa's 0.5 default
+/// split one streamer into a dozen clusters on 8-minute stream windows, while
+/// 0.8-1.0 gave the same few speakers.
+const DIARIZATION_CLUSTER_THRESHOLD: f32 = 0.9;
+/// Segmentation window step as a fraction of its 10 s window. The 0.1 default
+/// cost four times as much on stream audio and clustered worse.
+const SEGMENTATION_WINDOW_SHIFT: f32 = 0.5;
 
 fn path_string(path: &Path) -> Option<String> {
     Some(path.to_string_lossy().into_owned())
@@ -113,10 +123,51 @@ impl SherpaSpeaker {
     }
 }
 
-/// Native models: [`SherpaSpeaker`] plus the transducer recognizer.
+/// Native models: [`SherpaSpeaker`] plus the transducer recognizer and the
+/// diarizer.
 pub struct SherpaBackend {
     speaker: SherpaSpeaker,
     recognizer: Mutex<OfflineRecognizer>,
+    diarizer: Mutex<OfflineSpeakerDiarization>,
+}
+
+fn create_diarizer(
+    files: &ModelFiles,
+) -> Result<OfflineSpeakerDiarization, SpeechRecognitionError> {
+    let config = OfflineSpeakerDiarizationConfig {
+        segmentation: OfflineSpeakerSegmentationModelConfig {
+            pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
+                model: path_string(&files.segmentation),
+                window_shift_ratio: SEGMENTATION_WINDOW_SHIFT,
+            },
+            num_threads: 2,
+            debug: false,
+            provider: Some("cpu".to_owned()),
+        },
+        embedding: SpeakerEmbeddingExtractorConfig {
+            model: path_string(&files.speaker),
+            num_threads: 2,
+            debug: false,
+            provider: Some("cpu".to_owned()),
+        },
+        clustering: FastClusteringConfig {
+            threshold: DIARIZATION_CLUSTER_THRESHOLD,
+            ..FastClusteringConfig::default()
+        },
+        ..OfflineSpeakerDiarizationConfig::default()
+    };
+    let diarizer =
+        OfflineSpeakerDiarization::create(&config).ok_or_else(|| init_error("speaker diarizer"))?;
+    if diarizer.sample_rate() != SAMPLE_RATE_I32 {
+        return Err(SpeechRecognitionError::new(
+            "initialize livestream speech models",
+            format!(
+                "the diarizer expects {} Hz audio, not {SAMPLE_RATE} Hz",
+                diarizer.sample_rate()
+            ),
+        ));
+    }
+    Ok(diarizer)
 }
 
 impl SherpaBackend {
@@ -136,9 +187,11 @@ impl SherpaBackend {
         config.decoding_method = Some("greedy_search".to_owned());
         let recognizer =
             OfflineRecognizer::create(&config).ok_or_else(|| init_error("offline recognizer"))?;
+        let diarizer = create_diarizer(files)?;
         Ok(Self {
             speaker,
             recognizer: Mutex::new(recognizer),
+            diarizer: Mutex::new(diarizer),
         })
     }
 }
@@ -166,5 +219,23 @@ impl SpeechBackend for SherpaBackend {
         stream.get_result().map(|r| r.text).ok_or_else(|| {
             SpeechRecognitionError::new("transcribe livestream audio", "no recognition result")
         })
+    }
+
+    fn diarize(&self, samples: &[f32]) -> Result<Vec<DiarizedSegment>, SpeechRecognitionError> {
+        let diarizer = lock(&self.diarizer);
+        let result = diarizer.process(samples).ok_or_else(|| {
+            SpeechRecognitionError::new("diarize livestream audio", "no diarization result")
+        })?;
+        Ok(result
+            .sort_by_start_time()
+            .into_iter()
+            .filter_map(|segment| {
+                Some(DiarizedSegment {
+                    start: f64::from(segment.start),
+                    end: f64::from(segment.end),
+                    speaker: u32::try_from(segment.speaker).ok()?,
+                })
+            })
+            .collect())
     }
 }

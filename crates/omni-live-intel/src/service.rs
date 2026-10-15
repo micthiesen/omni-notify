@@ -1,11 +1,16 @@
 //! The livestream intelligence service: viewer anomalies,
 //! Destiny voice presence, rolling summaries and alerts.
 //!
+//! Rolling summaries listen continuously: each summary target gets one
+//! listener that captures back-to-back windows and summarizes each window,
+//! speaker-attributed, while the next one records.
+//!
 //! In-memory state (anomaly samples, voice evidence, cooldowns, schedules)
 //! resets on restart. The state mutex is never held across an await.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use indexmap::IndexMap;
 use omni_ai::costs::{CostRecorder, NewCostEvent};
@@ -18,6 +23,7 @@ use omni_store::cbor::{Extra, JsValue};
 use omni_store::entity::EntityOps as _;
 use omni_store::{Store, StoreError};
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::LOG;
@@ -38,6 +44,7 @@ use crate::persistence::{
 use crate::presence_policy::{VoiceMatchAction, decide_voice_match_action};
 use crate::speech::{SpeakerMatch, SpeechEngine, SpeechRecognitionError, TRANSCRIPTION_MODEL};
 use crate::summary_text::are_same_livestream_topic;
+use crate::transcript::{TranscribedTurn, describe_speakers, format_attributed};
 use crate::types::{
     DestinyPresence, EventStatus, LivestreamAlertRecord, LivestreamAlertType, LivestreamChapter,
     LivestreamEventKind, LivestreamIntelligenceData, Metrics, PipelineStage, PipelineStatus,
@@ -55,6 +62,16 @@ const MAX_CHAPTERS: usize = 40;
 const TRANSCRIPT_EXCERPT_CHARS: usize = 800;
 const VERIFY_CONTEXT_SECONDS: u32 = 45;
 const DETAIL_MAX_CHARS: usize = 500;
+/// Streams listened to at once; further summary targets wait for a slot.
+const MAX_LISTENERS: usize = 6;
+/// A listener's first window is short so a new target gets a summary soon.
+const FIRST_WINDOW_SECONDS: u32 = 120;
+/// Shorter captures (a stream ending mid-window) are not summarized.
+const MIN_WINDOW_SECONDS: f64 = 30.0;
+/// Floor for the configured window length, so windows clear the minimum.
+const MIN_LISTEN_WINDOW_SECONDS: u32 = 60;
+/// Wait after a failed or short capture before listening again.
+const LISTEN_RETRY_DELAY: Duration = Duration::from_secs(120);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
@@ -102,7 +119,7 @@ pub struct ServiceSettings {
     pub max_voice_targets: usize,
     pub voice_sample_seconds: u32,
     pub voice_sample_interval_seconds: u32,
-    pub summary_sample_seconds: u32,
+    /// Length of each continuously captured summary window.
     pub summary_interval_seconds: u32,
     pub monthly_budget_usd: f64,
     pub tz: jiff::tz::TimeZone,
@@ -115,7 +132,6 @@ impl ServiceSettings {
             max_voice_targets: config.livestream_max_voice_targets as usize,
             voice_sample_seconds: config.livestream_voice_sample_seconds,
             voice_sample_interval_seconds: config.livestream_voice_sample_interval_seconds,
-            summary_sample_seconds: config.livestream_summary_sample_seconds,
             summary_interval_seconds: config.livestream_summary_interval_seconds,
             monthly_budget_usd: config.livestream_monthly_budget_usd,
             tz: jiff::tz::TimeZone::get(&config.tz).unwrap_or(jiff::tz::TimeZone::UTC),
@@ -149,9 +165,11 @@ struct State {
     anomaly: ViewerAnomalyTracker,
     typical_peaks: HashMap<String, (i64, Option<f64>)>,
     pending_voice: HashMap<String, i64>,
-    pending_summary: HashMap<String, i64>,
     last_voice_sample: HashMap<String, i64>,
-    last_summary: HashMap<String, i64>,
+    /// Streamers that currently qualify for rolling summaries.
+    summary_targets: HashSet<String>,
+    /// Streamers with a running listener.
+    listening: HashSet<String>,
     voice_evidence: VoiceEvidenceTracker,
     active: IndexMap<String, LiveObservation>,
     alert_times: HashMap<String, i64>,
@@ -162,8 +180,13 @@ struct Inner {
     deps: ServiceDeps,
     capture_queue: WorkQueue,
     speech_queue: WorkQueue,
+    /// Rolling-summary diarization and transcription, apart from
+    /// `speech_queue` so voice detection never waits behind a window.
+    summary_speech_queue: WorkQueue,
     llm_queue: WorkQueue,
     background_queue: WorkQueue,
+    listen_queue: WorkQueue,
+    shutdown: CancellationToken,
     state: Mutex<State>,
 }
 
@@ -209,27 +232,51 @@ pub struct RuntimeDiagnostics {
     pub intervals: RuntimeIntervals,
 }
 
-/// Clears a pending marker when the job ends or is interrupted, if it is
-/// still the job's own session.
+/// Clears a pending voice marker when the job ends or is interrupted, if it
+/// is still the job's own session.
 struct PendingGuard {
     inner: Arc<Inner>,
     streamer_id: String,
     session_started_at: i64,
-    summary: bool,
 }
 
 impl Drop for PendingGuard {
     fn drop(&mut self) {
         let mut state = lock(&self.inner.state);
-        let map = if self.summary {
-            &mut state.pending_summary
-        } else {
-            &mut state.pending_voice
-        };
-        if map.get(&self.streamer_id) == Some(&self.session_started_at) {
-            map.remove(&self.streamer_id);
+        if state.pending_voice.get(&self.streamer_id) == Some(&self.session_started_at) {
+            state.pending_voice.remove(&self.streamer_id);
         }
     }
+}
+
+/// Clears the listening marker when a listener ends or is interrupted.
+struct ListenerGuard {
+    inner: Arc<Inner>,
+    streamer_id: String,
+}
+
+impl Drop for ListenerGuard {
+    fn drop(&mut self) {
+        lock(&self.inner.state).listening.remove(&self.streamer_id);
+    }
+}
+
+/// A window's speaker-attributed transcript.
+struct AttributedTranscript {
+    text: String,
+    /// Each speaker's share, `Destiny 62%, Speaker 1 30%`.
+    speakers: String,
+    speaker_count: usize,
+    /// Transcribed characters without speaker labels.
+    spoken_chars: usize,
+}
+
+/// One captured summary window awaiting transcription and assessment.
+struct SummaryWindow {
+    observation: LiveObservation,
+    started_at: i64,
+    duration_seconds: f64,
+    samples: Arc<Vec<f32>>,
 }
 
 fn lock(state: &Mutex<State>) -> MutexGuard<'_, State> {
@@ -311,8 +358,15 @@ impl LivestreamIntelligenceService {
             inner: Arc::new(Inner {
                 capture_queue: WorkQueue::new("livestream-capture", 2, tracker.clone()),
                 speech_queue: WorkQueue::new("livestream-speech", 1, tracker.clone()),
+                summary_speech_queue: WorkQueue::new(
+                    "livestream-summary-speech",
+                    1,
+                    tracker.clone(),
+                ),
                 llm_queue: WorkQueue::new("livestream-llm", 1, tracker.clone()),
-                background_queue: WorkQueue::new("livestream-background", 8, tracker),
+                background_queue: WorkQueue::new("livestream-background", 8, tracker.clone()),
+                listen_queue: WorkQueue::new("livestream-listen", MAX_LISTENERS, tracker),
+                shutdown: CancellationToken::new(),
                 deps,
                 state: Mutex::new(State::default()),
             }),
@@ -485,13 +539,6 @@ impl LivestreamIntelligenceService {
                 >= self.settings().voice_interval_ms()
     }
 
-    fn summary_due(&self, streamer_id: &str, now: i64) -> bool {
-        let state = self.state();
-        !state.pending_summary.contains_key(streamer_id)
-            && now - state.last_summary.get(streamer_id).copied().unwrap_or(0)
-                >= self.settings().summary_interval_ms()
-    }
-
     async fn current_session(
         &self,
         observation: &LiveObservation,
@@ -645,8 +692,18 @@ impl LivestreamIntelligenceService {
             });
         }
 
-        if Self::is_summary_target(&observation, &state) && self.summary_due(&id, now) {
-            self.schedule_summary(observation).await?;
+        let start_listener = {
+            let mut listeners = self.state();
+            if Self::is_summary_target(&observation, &state) {
+                listeners.summary_targets.insert(id.clone());
+                listeners.listening.insert(id.clone())
+            } else {
+                listeners.summary_targets.remove(&id);
+                false
+            }
+        };
+        if start_listener {
+            self.start_listener(id);
         }
         Ok(())
     }
@@ -766,9 +823,8 @@ impl LivestreamIntelligenceService {
         state.typical_peaks.remove(streamer_id);
         state.voice_evidence.clear(streamer_id);
         state.pending_voice.remove(streamer_id);
-        state.pending_summary.remove(streamer_id);
         state.last_voice_sample.remove(streamer_id);
-        state.last_summary.remove(streamer_id);
+        state.summary_targets.remove(streamer_id);
         Ok(())
     }
 
@@ -790,11 +846,15 @@ impl LivestreamIntelligenceService {
         Ok(())
     }
 
-    /// Drains in dependency order: capture jobs may enqueue speech work, which
-    /// may enqueue classifier work.
+    /// Drains in dependency order: listeners stop capturing and finish their
+    /// last window, capture jobs may enqueue speech work, which may enqueue
+    /// classifier work.
     pub async fn close(&self) {
+        self.inner.shutdown.cancel();
+        self.inner.listen_queue.close().await;
         self.inner.capture_queue.close().await;
         self.inner.speech_queue.close().await;
+        self.inner.summary_speech_queue.close().await;
         self.inner.llm_queue.close().await;
         self.inner.background_queue.close().await;
     }
@@ -820,7 +880,6 @@ impl LivestreamIntelligenceService {
                 inner: Arc::clone(&service.inner),
                 streamer_id: id.clone(),
                 session_started_at: session,
-                summary: false,
             };
             if let Err(error) = Box::pin(service.voice_job(&observation, started_at)).await {
                 let finished_at = service.now();
@@ -1101,6 +1160,8 @@ impl LivestreamIntelligenceService {
                 display_name: observation.streamer.display_name.clone(),
                 title: observation.status.primary_title.clone(),
                 transcript,
+                speakers: None,
+                window_seconds: combined_seconds,
                 previous_summary: current.summary.as_ref().map(|s| s.text.clone()),
                 previous_topic: current.summary.as_ref().map(|s| s.topic.clone()),
                 viewer_anomaly: current.trend.as_ref().and_then(|t| t.reason.clone()),
@@ -1187,81 +1248,180 @@ impl LivestreamIntelligenceService {
         Ok(())
     }
 
-    async fn schedule_summary(&self, observation: LiveObservation) -> Result<(), ServiceError> {
-        let id = observation.streamer.id.clone();
-        let session = observation.session_started_at();
-        let started_at = self.now();
-        let cost_before =
-            livestream_spend_cents(&self.deps().store, started_at, &self.settings().tz).await?;
-        {
-            let mut state = self.state();
-            state.pending_summary.insert(id.clone(), session);
-            state.last_summary.insert(id.clone(), started_at);
-        }
-        let mut running = stage(PipelineStatus::Running);
-        running.eligible = Some(true);
-        running.started_at = Some(started_at);
-        running.detail = Some("Capturing and transcribing the current window".to_owned());
-        self.set_stage(&id, session, PipelineStage::Summary, running)
-            .await;
+    fn start_listener(&self, streamer_id: String) {
         let service = self.clone();
-        self.inner.capture_queue.fork(async move {
-            let _pending = PendingGuard {
+        self.inner.listen_queue.fork(async move {
+            let _guard = ListenerGuard {
                 inner: Arc::clone(&service.inner),
-                streamer_id: id.clone(),
-                session_started_at: session,
-                summary: true,
+                streamer_id: streamer_id.clone(),
             };
-            if let Err(error) = service
-                .summary_job(&observation, started_at, cost_before)
-                .await
-            {
-                let finished_at = service.now();
-                let detail = failure_detail(&error);
-                let not_live = is_not_live(&error);
-                let mut failed = stage(if not_live {
-                    PipelineStatus::Skipped
-                } else {
-                    PipelineStatus::Error
-                });
-                failed.eligible = Some(true);
-                failed.started_at = Some(started_at);
-                failed.finished_at = Some(finished_at);
-                failed.next_at = Some(started_at + service.settings().summary_interval_ms());
-                failed.duration_ms = Some(finished_at - started_at);
-                failed.detail = Some(detail.clone());
-                service
-                    .set_stage(&id, session, PipelineStage::Summary, failed)
+            service.listen(&streamer_id).await;
+        });
+    }
+
+    /// The latest observation of a streamer that is still a live summary target.
+    fn listen_target(&self, streamer_id: &str) -> Option<LiveObservation> {
+        if self.inner.shutdown.is_cancelled() {
+            return None;
+        }
+        let state = self.state();
+        if !state.summary_targets.contains(streamer_id) {
+            return None;
+        }
+        state.active.get(streamer_id).cloned()
+    }
+
+    /// Captures back-to-back windows while the streamer stays a live summary
+    /// target, summarizing each window while the next one records.
+    async fn listen(&self, streamer_id: &str) {
+        let shutdown = self.inner.shutdown.clone();
+        let interval = self
+            .settings()
+            .summary_interval_seconds
+            .max(MIN_LISTEN_WINDOW_SECONDS);
+        let mut window_seconds = FIRST_WINDOW_SECONDS.min(interval);
+        let mut pending: Option<SummaryWindow> = None;
+        while let Some(observation) = self.listen_target(streamer_id) {
+            let started_at = self.now();
+            let session = observation.session_started_at();
+            // With a window pending, its summary result is the stage to show.
+            if pending.is_none() {
+                let mut running = stage(PipelineStatus::Running);
+                running.eligible = Some(true);
+                running.started_at = Some(started_at);
+                running.next_at = Some(started_at + i64::from(window_seconds) * 1000);
+                running.detail = Some("Listening to the current window".to_owned());
+                self.set_stage(streamer_id, session, PipelineStage::Summary, running)
                     .await;
-                if not_live {
-                    tracing::debug!(
-                        target: LOG,
-                        "Rolling summary skipped for {}: {detail}",
-                        observation.streamer.display_name
-                    );
-                    return;
+            }
+            let url = observation.stream_url();
+            let capture = async {
+                tokio::select! {
+                    result = self.deps().capture.capture(&url, window_seconds) => Some(result),
+                    () = shutdown.cancelled() => None,
                 }
-                service
-                    .record(
-                        NewLivestreamEvent::new(
-                            &id,
-                            Some(session),
-                            LivestreamEventKind::Summary,
-                            EventStatus::Error,
-                            "Rolling summary failed",
-                        )
-                        .detail(detail.clone())
-                        .duration_ms(finished_at - started_at),
+            };
+            let previous = pending.take();
+            let summarize = async {
+                if let Some(window) = previous {
+                    self.summarize(window).await;
+                }
+            };
+            let (captured, ()) = tokio::join!(capture, summarize);
+            let Some(captured) = captured else {
+                break;
+            };
+            window_seconds = interval;
+            let retry_after = match captured {
+                Ok(audio) if audio.duration_seconds >= MIN_WINDOW_SECONDS => {
+                    pending = Some(SummaryWindow {
+                        observation,
+                        started_at,
+                        duration_seconds: audio.duration_seconds,
+                        samples: Arc::new(audio.samples),
+                    });
+                    None
+                }
+                Ok(_) => {
+                    let finished_at = self.now();
+                    self.set_stage(
+                        streamer_id,
+                        session,
+                        PipelineStage::Summary,
+                        self.finished_stage(
+                            PipelineStatus::Skipped,
+                            started_at,
+                            finished_at,
+                            "The captured window was too short to summarize",
+                        ),
                     )
                     .await;
-                tracing::warn!(
-                    target: LOG,
-                    "Rolling summary failed for {}: {detail}",
-                    observation.streamer.display_name
-                );
+                    Some(LISTEN_RETRY_DELAY)
+                }
+                Err(error) => Some(
+                    self.capture_failed(&observation, started_at, &ServiceError::Audio(error))
+                        .await,
+                ),
+            };
+            if let Some(delay) = retry_after {
+                tokio::select! {
+                    () = tokio::time::sleep(delay) => {}
+                    () = shutdown.cancelled() => break,
+                }
             }
-        });
-        Ok(())
+        }
+        // At shutdown the last window is dropped: summarizing it would outlast
+        // the drain window.
+        if let Some(window) = pending.filter(|_| !shutdown.is_cancelled()) {
+            self.summarize(window).await;
+        }
+    }
+
+    /// Records a failed window capture; returns how long to wait before
+    /// listening again.
+    async fn capture_failed(
+        &self,
+        observation: &LiveObservation,
+        started_at: i64,
+        error: &ServiceError,
+    ) -> Duration {
+        let not_live = is_not_live(error);
+        self.summary_failed(observation, started_at, error).await;
+        if not_live {
+            Duration::from_secs(u64::from(self.settings().summary_interval_seconds))
+        } else {
+            LISTEN_RETRY_DELAY
+        }
+    }
+
+    async fn summary_failed(
+        &self,
+        observation: &LiveObservation,
+        started_at: i64,
+        error: &ServiceError,
+    ) {
+        let id = &observation.streamer.id;
+        let session = observation.session_started_at();
+        let finished_at = self.now();
+        let detail = failure_detail(error);
+        let not_live = is_not_live(error);
+        let failed = self.finished_stage(
+            if not_live {
+                PipelineStatus::Skipped
+            } else {
+                PipelineStatus::Error
+            },
+            started_at,
+            finished_at,
+            detail.clone(),
+        );
+        self.set_stage(id, session, PipelineStage::Summary, failed)
+            .await;
+        if not_live {
+            tracing::debug!(
+                target: LOG,
+                "Rolling summary skipped for {}: {detail}",
+                observation.streamer.display_name
+            );
+            return;
+        }
+        self.record(
+            NewLivestreamEvent::new(
+                id,
+                Some(session),
+                LivestreamEventKind::Summary,
+                EventStatus::Error,
+                "Rolling summary failed",
+            )
+            .detail(detail.clone())
+            .duration_ms(finished_at - started_at),
+        )
+        .await;
+        tracing::warn!(
+            target: LOG,
+            "Rolling summary failed for {}: {detail}",
+            observation.streamer.display_name
+        );
     }
 
     fn finished_stage(
@@ -1275,38 +1435,84 @@ impl LivestreamIntelligenceService {
         value.eligible = Some(true);
         value.started_at = Some(started_at);
         value.finished_at = Some(finished_at);
-        value.next_at = Some(started_at + self.settings().summary_interval_ms());
+        value.next_at = Some(finished_at + self.settings().summary_interval_ms());
         value.duration_ms = Some(finished_at - started_at);
         value.detail = Some(detail.into());
         value
     }
 
-    async fn summary_job(
+    async fn summarize(&self, window: SummaryWindow) {
+        if let Err(error) = self.summary_job(&window).await {
+            self.summary_failed(&window.observation, window.started_at, &error)
+                .await;
+        }
+    }
+
+    /// Diarizes the window and transcribes each speaker turn. A turn that
+    /// fails to transcribe is skipped; the window fails only if every turn does.
+    async fn attributed_transcript(
         &self,
-        observation: &LiveObservation,
-        started_at: i64,
-        cost_before: f64,
-    ) -> Result<(), ServiceError> {
+        samples: Arc<Vec<f32>>,
+    ) -> Result<AttributedTranscript, ServiceError> {
+        let speech = &self.deps().speech;
+        let queue = &self.inner.summary_speech_queue;
+        let attribution = queue
+            .run(speech.attribute_speakers(Arc::clone(&samples)))
+            .await??;
+        let mut turns = Vec::with_capacity(attribution.turns.len());
+        let mut last_error = None;
+        for turn in &attribution.turns {
+            let Some(audio) = samples.get(turn.start..turn.end) else {
+                continue;
+            };
+            match queue
+                .run(speech.transcribe(Arc::new(audio.to_vec())))
+                .await?
+            {
+                Ok(text) => turns.push(TranscribedTurn {
+                    speaker: turn.speaker,
+                    text,
+                }),
+                Err(error) => {
+                    tracing::debug!(target: LOG, "Skipping an untranscribable speaker turn: {error}");
+                    last_error = Some(error);
+                }
+            }
+        }
+        if let Some(error) = last_error.filter(|_| turns.is_empty()) {
+            return Err(error.into());
+        }
+        Ok(AttributedTranscript {
+            text: format_attributed(&turns, &attribution.speakers),
+            speakers: describe_speakers(&attribution.speakers),
+            speaker_count: attribution.speakers.len(),
+            spoken_chars: turns
+                .iter()
+                .map(|t| omni_core::js::utf16_len(&t.text))
+                .sum(),
+        })
+    }
+
+    async fn summary_job(&self, window: &SummaryWindow) -> Result<(), ServiceError> {
+        let observation = &window.observation;
         let id = &observation.streamer.id;
         let session = observation.session_started_at();
-        let audio = self
-            .deps()
-            .capture
-            .capture(
-                &observation.stream_url(),
-                self.settings().summary_sample_seconds,
-            )
+        let started_at = window.started_at;
+        let processing_started = self.now();
+        let duration_seconds = window.duration_seconds;
+        let AttributedTranscript {
+            text: transcript,
+            speakers,
+            speaker_count,
+            spoken_chars,
+        } = self
+            .attributed_transcript(Arc::clone(&window.samples))
             .await?;
-        let duration_seconds = audio.duration_seconds;
-        let samples = Arc::new(audio.samples);
-        let transcript = self
-            .inner
-            .speech_queue
-            .run(self.deps().speech.transcribe(samples))
-            .await??;
+        #[allow(clippy::cast_precision_loss)]
+        let speech_seconds = (self.now() - processing_started) as f64 / 1000.0;
         self.record_local_transcription("rolling-summary", duration_seconds)
             .await;
-        if omni_core::js::utf16_len(&transcript) < 30 {
+        if spoken_chars < 30 {
             let finished_at = self.now();
             self.set_stage(
                 id,
@@ -1338,19 +1544,30 @@ impl LivestreamIntelligenceService {
             return Ok(());
         };
         let classifier = Arc::clone(&self.deps().classifier);
-        let assessment = self
+        let input = TranscriptAssessmentInput {
+            display_name: observation.streamer.display_name.clone(),
+            title: observation.status.primary_title.clone(),
+            transcript: transcript.clone(),
+            speakers: Some(speakers.clone()),
+            window_seconds: duration_seconds,
+            previous_summary: current.summary.as_ref().map(|s| s.text.clone()),
+            previous_topic: current.summary.as_ref().map(|s| s.topic.clone()),
+            viewer_anomaly: current.trend.as_ref().and_then(|t| t.reason.clone()),
+            speaker_match_confidence: None,
+            testing_destiny_presence: false,
+        };
+        // Spend is measured inside the LLM queue, which serializes model calls,
+        // so concurrent windows do not count each other's cost.
+        let (store, tz) = (&self.deps().store, &self.settings().tz);
+        let (assessment, cost_cents) = self
             .inner
             .llm_queue
-            .run(classifier.assess(TranscriptAssessmentInput {
-                display_name: observation.streamer.display_name.clone(),
-                title: observation.status.primary_title.clone(),
-                transcript: transcript.clone(),
-                previous_summary: current.summary.as_ref().map(|s| s.text.clone()),
-                previous_topic: current.summary.as_ref().map(|s| s.topic.clone()),
-                viewer_anomaly: current.trend.as_ref().and_then(|t| t.reason.clone()),
-                speaker_match_confidence: None,
-                testing_destiny_presence: false,
-            }))
+            .run(async {
+                let before = livestream_spend_cents(store, self.now(), tz).await?;
+                let assessment = classifier.assess(input).await?;
+                let after = livestream_spend_cents(store, self.now(), tz).await?;
+                Ok::<_, ServiceError>((assessment, (after - before).max(0.0)))
+            })
             .await??;
         let Some(assessment) = assessment else {
             let finished_at = self.now();
@@ -1379,12 +1596,9 @@ impl LivestreamIntelligenceService {
             .await;
             return Ok(());
         };
-        self.save_assessment(observation, &transcript, duration_seconds, &assessment)
+        self.save_assessment(window, &transcript, &speakers, &assessment)
             .await?;
         let finished_at = self.now();
-        let spent =
-            livestream_spend_cents(&self.deps().store, finished_at, &self.settings().tz).await?;
-        let cost_cents = (spent - cost_before).max(0.0);
         let audio_seconds = math_round(duration_seconds);
         let mut done = self.finished_stage(
             PipelineStatus::Success,
@@ -1394,9 +1608,13 @@ impl LivestreamIntelligenceService {
         );
         #[allow(clippy::cast_precision_loss)]
         let transcript_characters = omni_core::js::utf16_len(&transcript) as f64;
+        #[allow(clippy::cast_precision_loss)]
+        let speaker_count = speaker_count as f64;
         done.metrics = Some(metrics([
             ("confidence", metric_number(assessment.confidence)),
             ("audioSeconds", metric_number(audio_seconds)),
+            ("speechSeconds", metric_number(math_round(speech_seconds))),
+            ("speakers", metric_number(speaker_count)),
             ("transcriptCharacters", metric_number(transcript_characters)),
             ("costCents", metric_number(cost_cents)),
         ]));
@@ -1416,6 +1634,7 @@ impl LivestreamIntelligenceService {
             .metrics(metrics([
                 ("confidence", metric_number(assessment.confidence)),
                 ("audioSeconds", metric_number(audio_seconds)),
+                ("speakers", metric_number(speaker_count)),
             ])),
         )
         .await;
@@ -1424,11 +1643,12 @@ impl LivestreamIntelligenceService {
 
     async fn save_assessment(
         &self,
-        observation: &LiveObservation,
+        window: &SummaryWindow,
         transcript: &str,
-        duration_seconds: f64,
+        speakers: &str,
         assessment: &TranscriptAssessment,
     ) -> Result<(), ServiceError> {
+        let observation = &window.observation;
         let Some(mut current) = self.current_session(observation).await? else {
             return Ok(());
         };
@@ -1445,7 +1665,8 @@ impl LivestreamIntelligenceService {
             )
             .into_owned(),
             updated_at: now,
-            window_seconds: math_round(duration_seconds),
+            window_seconds: math_round(window.duration_seconds),
+            speakers: Some(speakers.to_owned()),
             extra: Extra::new(),
         });
         let same_topic = current
@@ -1458,7 +1679,7 @@ impl LivestreamIntelligenceService {
             }
         } else {
             #[allow(clippy::cast_precision_loss)]
-            let started_at = now as f64 - duration_seconds * 1000.0;
+            let started_at = window.started_at as f64;
             current.chapters.push(LivestreamChapter {
                 chapter_id: omni_core::ids::uuid_v4(),
                 started_at,

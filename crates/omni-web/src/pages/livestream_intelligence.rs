@@ -286,13 +286,14 @@ fn Evidence(intelligence: Option<LivestreamIntelligence>) -> impl IntoView {
     let transcript = match &intel.summary {
         Some(summary) => view! {
             <h3>{summary.topic.clone()}</h3>
-            <p class="prose small">{summary.transcript_excerpt.clone()}</p>
+            <p class="prose small transcript-excerpt">{summary.transcript_excerpt.clone()}</p>
             <p class="small dim num">
                 {format!(
                     "{}% confidence · {} s window",
                     number_string(js_round(summary.confidence * 100.0)),
                     number_string(summary.window_seconds)
                 )}
+                {summary.speakers.clone().map(|speakers| format!(" · {speakers}"))}
             </p>
         }
         .into_any(),

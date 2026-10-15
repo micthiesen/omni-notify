@@ -30,7 +30,10 @@ use omni_live_intel::persistence::{
 use omni_live_intel::service::{
     LivestreamIntelligenceService, ServiceDeps, ServiceSettings, is_destiny_owned_stream,
 };
-use omni_live_intel::speech::{SpeakerMatch, SpeechEngine, SpeechRecognitionError};
+use omni_live_intel::speech::{
+    SpeakerAttribution, SpeakerMatch, SpeakerProfile, SpeakerTurn, SpeechEngine,
+    SpeechRecognitionError,
+};
 use omni_live_intel::types::{
     DestinyPresence, EventStatus, LivestreamAlertRecord, LivestreamAlertType, LivestreamEventKind,
     LivestreamIntelligenceData, Metrics, PresenceState, metric_number,
@@ -258,19 +261,28 @@ impl Clock for FixedClock {
     }
 }
 
-struct FakeCapture;
+/// Captures the requested length at once; a summary listener's windows after
+/// the first never finish, so a listener records exactly one window.
+#[derive(Default)]
+struct FakeCapture {
+    listened: AtomicBool,
+}
 
 impl AudioSource for FakeCapture {
     fn capture<'a>(
         &'a self,
         _url: &'a str,
-        _seconds: u32,
+        seconds: u32,
     ) -> BoxFuture<'a, Result<CapturedAudio, AudioError>> {
-        Box::pin(async {
+        let summary_window = seconds > 60;
+        if summary_window && self.listened.swap(true, Ordering::SeqCst) {
+            return Box::pin(futures::future::pending());
+        }
+        Box::pin(async move {
             Ok(CapturedAudio {
-                samples: vec![0.0; 18 * 16_000],
+                samples: vec![0.0; seconds as usize * 16_000],
                 sample_rate: 16_000,
-                duration_seconds: 18.0,
+                duration_seconds: f64::from(seconds),
             })
         })
     }
@@ -301,6 +313,29 @@ impl SpeechEngine for FakeSpeech {
         _samples: Arc<Vec<f32>>,
     ) -> BoxFuture<'_, Result<String, SpeechRecognitionError>> {
         Box::pin(async { Ok("unused transcript".to_owned()) })
+    }
+
+    fn attribute_speakers(
+        &self,
+        samples: Arc<Vec<f32>>,
+    ) -> BoxFuture<'_, Result<SpeakerAttribution, SpeechRecognitionError>> {
+        Box::pin(async move { Ok(one_speaker(samples.len())) })
+    }
+}
+
+fn one_speaker(samples: usize) -> SpeakerAttribution {
+    SpeakerAttribution {
+        turns: vec![SpeakerTurn {
+            speaker: 0,
+            start: 0,
+            end: samples,
+        }],
+        speakers: vec![SpeakerProfile {
+            speaker: 0,
+            label: "Speaker 1".into(),
+            seconds: samples as f64 / 16_000.0,
+            destiny_confidence: None,
+        }],
     }
 }
 
@@ -353,7 +388,7 @@ impl Harness {
             clock: clock.clone(),
             pushover: self.pushover.clone(),
             costs: CostRecorder::new(self.store.clone(), clock),
-            capture: Arc::new(FakeCapture),
+            capture: Arc::new(FakeCapture::default()),
             speech: Arc::new(FakeSpeech),
             classifier: Arc::new(NoClassifier),
             tracker: TaskTracker::new(),
@@ -362,7 +397,6 @@ impl Harness {
                 max_voice_targets: 3,
                 voice_sample_seconds: 18,
                 voice_sample_interval_seconds: 45,
-                summary_sample_seconds: 75,
                 summary_interval_seconds: 480,
                 monthly_budget_usd: 3.0,
                 tz: jiff::tz::TimeZone::UTC,
@@ -506,16 +540,22 @@ async fn records_local_transcription_usage_when_summary_audio_is_processed() {
         }))
         .await
         .expect("observe");
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let costs = harness
+                .store
+                .read(|docs| docs.get_all::<CostEventData>())
+                .await
+                .expect("costs");
+            if let Some(event) = costs.into_iter().find(|e| e.operation == "rolling-summary") {
+                return event;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("transcription cost recorded");
     service.close().await;
-    let costs = harness
-        .store
-        .read(|docs| docs.get_all::<CostEventData>())
-        .await
-        .expect("costs");
-    let event = costs
-        .iter()
-        .find(|e| e.operation == "rolling-summary")
-        .expect("transcription cost recorded");
     assert_eq!(
         serde_json::to_value(event.category).expect("json"),
         "transcription"

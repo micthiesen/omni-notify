@@ -1,5 +1,5 @@
-//! Local speech: VAD, speaker embeddings, Destiny voiceprint matching and
-//! transcription.
+//! Local speech: VAD, speaker embeddings, Destiny voiceprint matching,
+//! speaker diarization and transcription.
 //!
 //! [`LocalSpeechRuntime`] holds the decision logic (windowing, scoring,
 //! thresholds) over a [`SpeechBackend`]; [`crate::sherpa::SherpaBackend`] is the
@@ -46,11 +46,23 @@ pub struct SpeakerMatch {
     pub checked_windows: u32,
 }
 
-/// The six model paths under `LIVESTREAM_MODEL_DIR`.
+/// Diarized speaker turns shorter than this are dropped: they rarely hold a word.
+const MIN_TURN_SECONDS: f64 = 0.6;
+/// Consecutive turns of one speaker separated by at most this gap merge.
+const TURN_MERGE_GAP_SECONDS: f64 = 1.0;
+/// Longer turns are split so each transcription call stays bounded.
+const MAX_TURN_SECONDS: f64 = 45.0;
+/// Voiceprint windows scored per diarized speaker, longest turns first.
+const MAX_SPEAKER_WINDOWS: usize = 12;
+/// Voiceprint windows scored per turn of a speaker not already Destiny.
+const MAX_TURN_WINDOWS: usize = 6;
+
+/// The seven model paths under `LIVESTREAM_MODEL_DIR`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelFiles {
     pub vad: PathBuf,
     pub speaker: PathBuf,
+    pub segmentation: PathBuf,
     pub encoder: PathBuf,
     pub decoder: PathBuf,
     pub joiner: PathBuf,
@@ -63,6 +75,9 @@ impl ModelFiles {
         Self {
             vad: model_dir.join("silero_vad.int8.onnx"),
             speaker: model_dir.join("3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"),
+            segmentation: model_dir
+                .join("sherpa-onnx-pyannote-segmentation-3-0")
+                .join("model.onnx"),
             encoder: parakeet.join("encoder.int8.onnx"),
             decoder: parakeet.join("decoder.int8.onnx"),
             joiner: parakeet.join("joiner.int8.onnx"),
@@ -70,10 +85,11 @@ impl ModelFiles {
         }
     }
 
-    pub fn all(&self) -> [&Path; 6] {
+    pub fn all(&self) -> [&Path; 7] {
         [
             &self.vad,
             &self.speaker,
+            &self.segmentation,
             &self.encoder,
             &self.decoder,
             &self.joiner,
@@ -196,6 +212,181 @@ pub trait SpeechBackend: Send + Sync + 'static {
     fn embedding(&self, samples: &[f32]) -> Result<Vec<f32>, SpeechRecognitionError>;
     /// Raw transcript text.
     fn transcribe(&self, samples: &[f32]) -> Result<String, SpeechRecognitionError>;
+    /// Speaker-clustered segments, sorted by start time.
+    fn diarize(&self, samples: &[f32]) -> Result<Vec<DiarizedSegment>, SpeechRecognitionError>;
+}
+
+/// One diarized segment: seconds from the start of the audio and a cluster
+/// index that is meaningful only within that audio.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DiarizedSegment {
+    pub start: f64,
+    pub end: f64,
+    pub speaker: u32,
+}
+
+/// One speaker's contiguous speech, as a sample range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpeakerTurn {
+    pub speaker: u32,
+    pub start: usize,
+    pub end: usize,
+}
+
+impl SpeakerTurn {
+    pub fn len(&self) -> usize {
+        self.end - self.start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.end <= self.start
+    }
+}
+
+/// A diarized speaker's label and share of the audio.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpeakerProfile {
+    pub speaker: u32,
+    /// "Destiny" for a voiceprint match, otherwise "Speaker N" by first appearance.
+    pub label: String,
+    pub seconds: f64,
+    /// Best voiceprint score, when a voiceprint is loaded.
+    pub destiny_confidence: Option<f64>,
+}
+
+/// Speaker turns ready to transcribe, with a profile per speaker.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpeakerAttribution {
+    pub turns: Vec<SpeakerTurn>,
+    pub speakers: Vec<SpeakerProfile>,
+}
+
+/// Voiceprint windows scored for one diarized speaker.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpeakerVoiceMatch {
+    pub speaker: u32,
+    pub matched_windows: usize,
+    pub checked_windows: usize,
+    pub confidence: f64,
+}
+
+fn seconds_to_samples(seconds: f64, total: usize) -> usize {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let samples = (seconds.max(0.0) * f64::from(SAMPLE_RATE)).round() as usize;
+    samples.min(total)
+}
+
+/// Turns from diarized segments: overlapping speech is given to the speaker
+/// already talking (so no audio is transcribed twice), turns under
+/// [`MIN_TURN_SECONDS`] are dropped, a speaker's turns separated by at most
+/// [`TURN_MERGE_GAP_SECONDS`] merge, and turns over [`MAX_TURN_SECONDS`] split.
+pub fn speaker_turns(segments: &[DiarizedSegment], total_samples: usize) -> Vec<SpeakerTurn> {
+    let rate = SAMPLE_RATE as usize;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let min_len = (MIN_TURN_SECONDS * f64::from(SAMPLE_RATE)) as usize;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let merge_gap = (TURN_MERGE_GAP_SECONDS * f64::from(SAMPLE_RATE)) as usize;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let max_len = MAX_TURN_SECONDS as usize * rate;
+    let mut sorted: Vec<DiarizedSegment> = segments
+        .iter()
+        .copied()
+        .filter(|s| s.start.is_finite() && s.end.is_finite())
+        .collect();
+    sorted.sort_by(|a, b| a.start.total_cmp(&b.start));
+    let mut clipped: Vec<SpeakerTurn> = Vec::new();
+    let mut covered = 0;
+    for segment in sorted {
+        let start = seconds_to_samples(segment.start, total_samples).max(covered);
+        let end = seconds_to_samples(segment.end, total_samples);
+        if end < start + min_len {
+            continue;
+        }
+        covered = end;
+        clipped.push(SpeakerTurn {
+            speaker: segment.speaker,
+            start,
+            end,
+        });
+    }
+    let mut merged: Vec<SpeakerTurn> = Vec::new();
+    for turn in clipped {
+        match merged.last_mut() {
+            Some(last) if last.speaker == turn.speaker && turn.start <= last.end + merge_gap => {
+                last.end = turn.end;
+            }
+            _ => merged.push(turn),
+        }
+    }
+    let mut turns = Vec::new();
+    for turn in merged {
+        let mut start = turn.start;
+        while start < turn.end {
+            let end = (start + max_len).min(turn.end);
+            turns.push(SpeakerTurn {
+                speaker: turn.speaker,
+                start,
+                end,
+            });
+            start = end;
+        }
+    }
+    turns
+}
+
+/// Voiceprint evidence that audio is Destiny: at least two scored windows,
+/// at least half of them at the threshold. One strong window is not enough,
+/// and a cluster that mostly holds another voice is not Destiny.
+pub fn is_destiny_voice(matched_windows: usize, checked_windows: usize) -> bool {
+    checked_windows >= 2 && matched_windows * 2 >= checked_windows
+}
+
+/// The diarized speakers whose voice is Destiny ([`is_destiny_voice`]).
+/// Clustering can split one voice, so several speakers can qualify.
+pub fn destiny_speakers(matches: &[SpeakerVoiceMatch]) -> Vec<u32> {
+    matches
+        .iter()
+        .filter(|m| is_destiny_voice(m.matched_windows, m.checked_windows))
+        .map(|m| m.speaker)
+        .collect()
+}
+
+/// Profiles in order of first appearance: the Destiny speaker is "Destiny",
+/// the rest are numbered "Speaker 1", "Speaker 2", ...
+pub fn label_speakers(
+    turns: &[SpeakerTurn],
+    destiny: Option<u32>,
+    matches: &[SpeakerVoiceMatch],
+) -> Vec<SpeakerProfile> {
+    let mut profiles: Vec<SpeakerProfile> = Vec::new();
+    for turn in turns {
+        #[allow(clippy::cast_precision_loss)]
+        let seconds = turn.len() as f64 / f64::from(SAMPLE_RATE);
+        if let Some(profile) = profiles.iter_mut().find(|p| p.speaker == turn.speaker) {
+            profile.seconds += seconds;
+            continue;
+        }
+        let label = if destiny == Some(turn.speaker) {
+            "Destiny".to_owned()
+        } else {
+            let number = profiles
+                .iter()
+                .filter(|p| Some(p.speaker) != destiny)
+                .count()
+                + 1;
+            format!("Speaker {number}")
+        };
+        profiles.push(SpeakerProfile {
+            speaker: turn.speaker,
+            label,
+            seconds,
+            destiny_confidence: matches
+                .iter()
+                .find(|m| m.speaker == turn.speaker)
+                .map(|m| m.confidence),
+        });
+    }
+    profiles
 }
 
 /// `LocalSpeechRuntime`: voiceprint matching and transcription over a backend.
@@ -241,19 +432,23 @@ impl<B: SpeechBackend> LocalSpeechRuntime<B> {
         self.backend.embedding(samples)
     }
 
-    /// Scores 4 s windows (2 s stride) of each speech segment against every
-    /// enrolled embedding; a window matches at `>= speaker_threshold`.
-    pub fn detect_destiny(&self, samples: &[f32]) -> Result<SpeakerMatch, SpeechRecognitionError> {
-        let Some(voiceprint) = &self.voiceprint else {
-            return Ok(SpeakerMatch::default());
-        };
-        let speech = self.extract_speech(samples)?;
+    /// Best voiceprint score of each 4 s window (2 s stride) in `segments`,
+    /// stopping after `limit` windows.
+    fn score_windows<'a>(
+        &self,
+        voiceprint: &VoiceprintFile,
+        segments: impl IntoIterator<Item = &'a [f32]>,
+        limit: usize,
+    ) -> Result<Vec<f64>, SpeechRecognitionError> {
         let window = SPEAKER_WINDOW_SECONDS * SAMPLE_RATE as usize;
         let stride = SPEAKER_STRIDE_SECONDS * SAMPLE_RATE as usize;
         let mut scores = Vec::new();
-        for segment in &speech {
+        for segment in segments {
             let mut offset = 0;
             while offset + window <= segment.len() {
+                if scores.len() >= limit {
+                    return Ok(scores);
+                }
                 let embedding = self.compute_embedding(&segment[offset..offset + window])?;
                 let best = voiceprint
                     .embeddings
@@ -264,6 +459,18 @@ impl<B: SpeechBackend> LocalSpeechRuntime<B> {
                 offset += stride;
             }
         }
+        Ok(scores)
+    }
+
+    /// Scores 4 s windows (2 s stride) of each speech segment against every
+    /// enrolled embedding; a window matches at `>= speaker_threshold`.
+    pub fn detect_destiny(&self, samples: &[f32]) -> Result<SpeakerMatch, SpeechRecognitionError> {
+        let Some(voiceprint) = &self.voiceprint else {
+            return Ok(SpeakerMatch::default());
+        };
+        let speech = self.extract_speech(samples)?;
+        let mut scores =
+            self.score_windows(voiceprint, speech.iter().map(Vec::as_slice), usize::MAX)?;
         scores.sort_by(|a, b| b.total_cmp(a));
         let matched = scores
             .iter()
@@ -274,6 +481,74 @@ impl<B: SpeechBackend> LocalSpeechRuntime<B> {
             matched_windows: u32::try_from(matched).unwrap_or(u32::MAX),
             checked_windows: u32::try_from(scores.len()).unwrap_or(u32::MAX),
         })
+    }
+
+    /// Diarizes `samples` into speaker turns and names Destiny: every speaker
+    /// whose turns match the voiceprint ([`destiny_speakers`]) becomes one
+    /// "Destiny" speaker, as does any other turn that matches by itself.
+    pub fn attribute_speakers(
+        &self,
+        samples: &[f32],
+    ) -> Result<SpeakerAttribution, SpeechRecognitionError> {
+        let mut turns = speaker_turns(&self.backend.diarize(samples)?, samples.len());
+        let mut matches = Vec::new();
+        let mut destiny = None;
+        if let Some(voiceprint) = &self.voiceprint {
+            let mut speakers: Vec<u32> = turns.iter().map(|t| t.speaker).collect();
+            speakers.sort_unstable();
+            speakers.dedup();
+            for speaker in speakers {
+                let mut own: Vec<&SpeakerTurn> =
+                    turns.iter().filter(|t| t.speaker == speaker).collect();
+                own.sort_by_key(|t| std::cmp::Reverse(t.len()));
+                let scores = self.score_windows(
+                    voiceprint,
+                    own.iter().map(|t| &samples[t.start..t.end]),
+                    MAX_SPEAKER_WINDOWS,
+                )?;
+                matches.push(SpeakerVoiceMatch {
+                    speaker,
+                    matched_windows: scores
+                        .iter()
+                        .filter(|score| **score >= self.speaker_threshold)
+                        .count(),
+                    checked_windows: scores.len(),
+                    confidence: scores.iter().copied().fold(0.0, crate::js_math::js_max),
+                });
+            }
+            let clusters = destiny_speakers(&matches);
+            let canonical = clusters.first().copied().unwrap_or_else(|| {
+                turns
+                    .iter()
+                    .map(|t| t.speaker)
+                    .max()
+                    .map_or(0, |max| max.saturating_add(1))
+            });
+            for turn in &mut turns {
+                if clusters.contains(&turn.speaker) {
+                    turn.speaker = canonical;
+                    continue;
+                }
+                let scores = self.score_windows(
+                    voiceprint,
+                    [&samples[turn.start..turn.end]],
+                    MAX_TURN_WINDOWS,
+                )?;
+                let matched = scores
+                    .iter()
+                    .filter(|score| **score >= self.speaker_threshold)
+                    .count();
+                if is_destiny_voice(matched, scores.len()) {
+                    turn.speaker = canonical;
+                }
+            }
+            destiny = turns
+                .iter()
+                .any(|t| t.speaker == canonical)
+                .then_some(canonical);
+        }
+        let speakers = label_speakers(&turns, destiny, &matches);
+        Ok(SpeakerAttribution { turns, speakers })
     }
 
     /// Trimmed transcript.
@@ -293,6 +568,10 @@ pub trait SpeechEngine: Send + Sync + 'static {
         &self,
         samples: Arc<Vec<f32>>,
     ) -> BoxFuture<'_, Result<String, SpeechRecognitionError>>;
+    fn attribute_speakers(
+        &self,
+        samples: Arc<Vec<f32>>,
+    ) -> BoxFuture<'_, Result<SpeakerAttribution, SpeechRecognitionError>>;
 }
 
 /// Runs a [`LocalSpeechRuntime`] on tokio's blocking pool.
@@ -335,6 +614,16 @@ impl<B: SpeechBackend> SpeechEngine for BlockingSpeech<B> {
         let runtime = Arc::clone(&self.0);
         Box::pin(blocking("transcribe livestream audio", move || {
             runtime.transcribe(&samples)
+        }))
+    }
+
+    fn attribute_speakers(
+        &self,
+        samples: Arc<Vec<f32>>,
+    ) -> BoxFuture<'_, Result<SpeakerAttribution, SpeechRecognitionError>> {
+        let runtime = Arc::clone(&self.0);
+        Box::pin(blocking("diarize livestream audio", move || {
+            runtime.attribute_speakers(&samples)
         }))
     }
 }

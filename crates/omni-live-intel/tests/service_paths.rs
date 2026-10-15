@@ -3,7 +3,7 @@
 //! failure rollback, and the port's per-tick pull from `LiveDirectory`.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -24,7 +24,10 @@ use omni_live_intel::persistence::{get_diagnostics, get_events, get_intelligence
 use omni_live_intel::port::IntelligencePort;
 use omni_live_intel::routes::IntelState;
 use omni_live_intel::service::{LivestreamIntelligenceService, ServiceDeps, ServiceSettings};
-use omni_live_intel::speech::{SpeakerMatch, SpeechEngine, SpeechRecognitionError};
+use omni_live_intel::speech::{
+    SpeakerAttribution, SpeakerMatch, SpeakerProfile, SpeakerTurn, SpeechEngine,
+    SpeechRecognitionError,
+};
 use omni_live_intel::types::{LivestreamAlertType, PipelineStatus, PresenceState};
 use omni_runtime::Ports;
 use omni_runtime::ports::{
@@ -36,7 +39,7 @@ use omni_testkit::TestStore;
 use serde_json::{Value, json};
 use tokio_util::task::TaskTracker;
 
-const TRANSCRIPT: &str = "Destiny: no, listen to me, I am telling you the argument is wrong here.";
+const TRANSCRIPT: &str = "no, listen to me, I am telling you the argument is wrong here.";
 
 struct FixedClock(AtomicI64);
 
@@ -46,9 +49,12 @@ impl Clock for FixedClock {
     }
 }
 
+/// Captures the requested length at once; a summary listener's windows after
+/// the first never finish, so a listener records exactly one window.
 struct Capture {
     calls: AtomicUsize,
     failure: Mutex<Option<AudioError>>,
+    listened: AtomicBool,
 }
 
 impl AudioSource for Capture {
@@ -59,6 +65,9 @@ impl AudioSource for Capture {
     ) -> BoxFuture<'a, Result<CapturedAudio, AudioError>> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let failure = self.failure.lock().expect("lock").clone();
+        if seconds > 60 && self.listened.swap(true, Ordering::SeqCst) {
+            return Box::pin(futures::future::pending());
+        }
         Box::pin(async move {
             if let Some(error) = failure {
                 return Err(error);
@@ -95,6 +104,44 @@ impl SpeechEngine for Speech {
         _samples: Arc<Vec<f32>>,
     ) -> BoxFuture<'_, Result<String, SpeechRecognitionError>> {
         Box::pin(async { Ok(TRANSCRIPT.to_owned()) })
+    }
+    /// The host for the first three quarters, then Destiny.
+    fn attribute_speakers(
+        &self,
+        samples: Arc<Vec<f32>>,
+    ) -> BoxFuture<'_, Result<SpeakerAttribution, SpeechRecognitionError>> {
+        let split = samples.len() / 4 * 3;
+        let seconds = |n: usize| n as f64 / 16_000.0;
+        Box::pin(async move {
+            Ok(SpeakerAttribution {
+                turns: vec![
+                    SpeakerTurn {
+                        speaker: 0,
+                        start: 0,
+                        end: split,
+                    },
+                    SpeakerTurn {
+                        speaker: 1,
+                        start: split,
+                        end: samples.len(),
+                    },
+                ],
+                speakers: vec![
+                    SpeakerProfile {
+                        speaker: 0,
+                        label: "Speaker 1".into(),
+                        seconds: seconds(split),
+                        destiny_confidence: Some(0.2),
+                    },
+                    SpeakerProfile {
+                        speaker: 1,
+                        label: "Destiny".into(),
+                        seconds: seconds(samples.len() - split),
+                        destiny_confidence: Some(0.8),
+                    },
+                ],
+            })
+        })
     }
 }
 
@@ -160,6 +207,7 @@ impl Harness {
             capture: Arc::new(Capture {
                 calls: AtomicUsize::new(0),
                 failure: Mutex::new(None),
+                listened: AtomicBool::new(false),
             }),
         }
     }
@@ -184,7 +232,6 @@ impl Harness {
                 max_voice_targets: 3,
                 voice_sample_seconds: 18,
                 voice_sample_interval_seconds: 45,
-                summary_sample_seconds: 75,
                 summary_interval_seconds: 480,
                 monthly_budget_usd: 3.0,
                 tz: jiff::tz::TimeZone::UTC,
@@ -366,10 +413,16 @@ async fn summaries_build_chapters_and_send_semantic_alerts() {
         .await
         .expect("read")
         .expect("present");
+    let attributed = format!("Speaker 1: {TRANSCRIPT}\nDestiny: {TRANSCRIPT}");
     let summary = state.summary.expect("summary");
     assert_eq!(summary.topic, "Debate over the claim");
-    assert_eq!(summary.window_seconds, 75.0);
-    assert_eq!(summary.transcript_excerpt, TRANSCRIPT);
+    // A listener's first window is two minutes.
+    assert_eq!(summary.window_seconds, 120.0);
+    assert_eq!(summary.transcript_excerpt, attributed);
+    assert_eq!(
+        summary.speakers.as_deref(),
+        Some("Speaker 1 75%, Destiny 25%")
+    );
     assert_eq!(state.chapters.len(), 1);
     assert_eq!(state.chapters[0].title, "Debate over the claim");
     let pushes = harness.pushover.recorded();
@@ -384,8 +437,14 @@ async fn summaries_build_chapters_and_send_semantic_alerts() {
         .expect("present");
     let stage = &diagnostics.stages["summary"];
     assert_eq!(stage.status, PipelineStatus::Success);
-    assert_eq!(stage.next_at, stage.started_at.map(|s| s + 480_000));
+    assert_eq!(stage.next_at, stage.finished_at.map(|s| s + 480_000));
     let inputs = harness.classifier.inputs.lock().expect("lock").clone();
+    assert_eq!(inputs[0].transcript, attributed);
+    assert_eq!(
+        inputs[0].speakers.as_deref(),
+        Some("Speaker 1 75%, Destiny 25%")
+    );
+    assert_eq!(inputs[0].window_seconds, 120.0);
     assert!(!inputs[0].testing_destiny_presence);
     assert_eq!(inputs[0].speaker_match_confidence, None);
 }

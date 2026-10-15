@@ -21,8 +21,8 @@ use std::path::PathBuf;
 use omni_live_intel::audio::decode_f32le;
 use omni_live_intel::sherpa::SherpaSpeaker;
 use omni_live_intel::speech::{
-    DEFAULT_SPEAKER_THRESHOLD, LocalSpeechRuntime, SpeechBackend, SpeechRecognitionError,
-    VoiceprintFile, cosine_similarity,
+    DEFAULT_SPEAKER_THRESHOLD, DiarizedSegment, LocalSpeechRuntime, SpeechBackend,
+    SpeechRecognitionError, VoiceprintFile, cosine_similarity,
 };
 use serde::Deserialize;
 
@@ -64,6 +64,13 @@ impl SpeechBackend for Speaker {
     fn transcribe(&self, _samples: &[f32]) -> Result<String, SpeechRecognitionError> {
         Err(SpeechRecognitionError::new(
             "transcribe livestream audio",
+            "not loaded for the speaker spike",
+        ))
+    }
+
+    fn diarize(&self, _samples: &[f32]) -> Result<Vec<DiarizedSegment>, SpeechRecognitionError> {
+        Err(SpeechRecognitionError::new(
+            "diarize livestream audio",
             "not loaded for the speaker spike",
         ))
     }
